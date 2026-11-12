@@ -155,14 +155,14 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("row", Get(r, "flex-direction"));
             Assert.AreEqual("45deg", Get(r, "rotate"));
             Assert.AreEqual("24px", Get(r, "border-top-left-radius"));
-            Assert.AreEqual("16 / 9", Get(r, "aspect-ratio"));
+            Assert.AreEqual("1.777778", Get(r, "aspect-ratio"));
         }
 
         [Test]
         public void BakedAndIgnoredProperties_AreNotEmitted()
         {
             Assert.IsEmpty(Map(("box-shadow", "0 8px 24px rgba(0,0,0,.4)"), ("background-image", "linear-gradient(red, blue)"), ("border-style", "solid"),
-                ("box-sizing", "border-box"), ("border-top-style", "none")));
+                ("box-sizing", "border-box"), ("border-top-style", "solid")));
         }
 
         [TestCase("cursor", "pointer")]
@@ -198,21 +198,19 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("nowrap", Get(Map(("white-space", "nowrap")), "white-space"));
         }
 
-        [Test]
-        public void TransitionLonghands_AndBehaviorNormal_Pass()
+        [TestCase("transition", "opacity 0.2s ease-out 0s")]
+        [TestCase("transition-property", "opacity, translate")]
+        [TestCase("transition-duration", "0.2s")]
+        [TestCase("transition-delay", "0s")]
+        [TestCase("transition-timing-function", "ease-in-out")]
+        public void Transitions_AreLowered_NeverEmittedAsUss(string prop, string value)
         {
-            var r = Map(("transition-property", "opacity, translate"), ("transition-duration", "0.2s, 150ms"), ("transition-delay", "0s"),
-                ("transition-timing-function", "ease-in-out, linear"), ("transition-behavior", "normal"));
-            Assert.AreEqual("opacity, translate", Get(r, "transition-property"));
-            Assert.AreEqual("ease-in-out, linear", Get(r, "transition-timing-function"));
-            Assert.IsNull(Get(r, "transition-behavior"));
+            var e = Assert.Throws<UnsupportedStyleException>(() => Map((prop, value)));
+            StringAssert.Contains("lowered", e.Message);
         }
 
         [Test]
-        public void TransitionShorthand_WithKeywordEasing_Passes()
-        {
-            Assert.AreEqual("opacity 0.2s ease-out 0s", Get(Map(("transition", "opacity 0.2s ease-out 0s")), "transition"));
-        }
+        public void TransitionBehaviorNormal_IsDropped() => Assert.IsEmpty(Map(("transition-behavior", "normal")));
 
         [Test]
         public void Output_ShorthandsFirstThenOrdinalByProperty()
@@ -317,10 +315,60 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void Easing_AllowedKeywordsPass()
+        public void AspectRatio_SlashBecomesInvariantNumber_AutoAndNumberStay()
         {
-            foreach (var k in new[] { "linear", "ease", "ease-in", "ease-out", "ease-in-out" })
-                Assert.AreEqual(k, Get(Map(("transition-timing-function", k)), "transition-timing-function"));
+            Assert.AreEqual("2", Get(Map(("aspect-ratio", "2 / 1")), "aspect-ratio"));
+            Assert.AreEqual("1.5", Get(Map(("aspect-ratio", "1.5")), "aspect-ratio"));
+            Assert.AreEqual("auto", Get(Map(("aspect-ratio", "auto")), "aspect-ratio"));
+        }
+
+        [Test]
+        public void TextShadow_NoneIsDropped_LayerNoneResetsBaseShadow()
+        {
+            Assert.IsEmpty(Map(("text-shadow", "none")));
+            Assert.AreEqual("initial", Get(StyleMapper.Map(D(("text-shadow", "none")), D(("text-shadow", "1px 1px 2px #000000")), true), "text-shadow"));
+            Assert.AreEqual("1px 1px 2px #000000", Get(Map(("text-shadow", "1px 1px 2px #000000")), "text-shadow"));
+        }
+
+        [Test]
+        public void BorderStyleNone_EmitsZeroWidth()
+        {
+            var r = Map(("border-top-style", "none"), ("border-top-width", "2px"), ("border-left-width", "3px"));
+            Assert.AreEqual("0", Get(r, "border-top-width"));
+            Assert.AreEqual("3px", Get(r, "border-left-width"));
+            var all = Map(("border-style", "none"), ("border-width", "2px"));
+            foreach (var side in new[] { "top", "right", "bottom", "left" }) Assert.AreEqual("0", Get(all, "border-" + side + "-width"));
+            Assert.IsNull(Get(all, "border-width"));
+        }
+
+        [Test]
+        public void Visibility_Passes() => Assert.AreEqual("hidden", Get(Map(("visibility", "hidden")), "visibility"));
+
+        [Test]
+        public void LayerOnlyMinAuto_AndLayerGradient_Throw()
+        {
+            var baseCss = D(("min-width", "100px"));
+            Assert.Throws<UnsupportedStyleException>(() => StyleMapper.Map(D(("min-width", "auto")), baseCss, false));
+            Assert.Throws<UnsupportedStyleException>(() => StyleMapper.Map(D(("background-image", "linear-gradient(red, blue)")), baseCss, false));
+        }
+
+        [Test]
+        public void TextAlign_FlexRow_JustifyContentPlacesHorizontally()
+        {
+            Assert.AreEqual("middle-center", Align(true, ("display", "flex"), ("flex-direction", "row"), ("align-items", "center"), ("justify-content", "center")));
+            Assert.AreEqual("upper-right", Align(true, ("display", "flex"), ("flex-direction", "row"), ("justify-content", "flex-end")));
+            Assert.AreEqual("upper-center", Align(true, ("display", "flex"), ("flex-direction", "row"), ("justify-content", "space-evenly")));
+            Assert.AreEqual("upper-right", Align(true, ("display", "flex"), ("flex-direction", "row-reverse")));
+            Assert.AreEqual("upper-left", Align(true, ("display", "flex"), ("flex-direction", "row-reverse"), ("justify-content", "flex-end")));
+        }
+
+        [Test]
+        public void TextAlign_FlexColumn_AlignItemsPlacesHorizontally_JustifyVertically()
+        {
+            Assert.AreEqual("middle-center", Align(true, ("display", "flex"), ("flex-direction", "column"), ("align-items", "center"), ("justify-content", "center")));
+            Assert.AreEqual("lower-right", Align(true, ("display", "flex"), ("flex-direction", "column"), ("align-items", "flex-end"), ("justify-content", "flex-end")));
+            Assert.AreEqual("middle-left", Align(true, ("display", "flex"), ("flex-direction", "column"), ("justify-content", "space-around")));
+            Assert.AreEqual("upper-center", Align(true, ("display", "flex"), ("flex-direction", "column"), ("align-items", "stretch"), ("text-align", "center")));
         }
 
         [Test]

@@ -101,6 +101,19 @@ namespace DesignUi.Editor
         /// emits picking-mode Ignore. Not part of the IR file.
         /// </summary>
         [JsonIgnore] public bool PickingIgnore;
+
+        /// <summary>
+        /// Set on a shadow host whose rules for the element's pseudo-states are class layers (<c>class:dui-hover</c>,
+        /// <c>class:dui-active</c>, <c>class:dui-focus</c>, <c>class:dui-checked</c>, <c>class:dui-disabled</c>): the
+        /// compiler attaches the runtime PseudoStateMirror, which toggles those classes on the host. Not part of the IR file.
+        /// </summary>
+        [JsonIgnore] public bool MirrorPseudoState;
+
+        /// <summary>
+        /// Transition declarations per layer, taken out of Style by Lowering.Apply for the animation player (they are
+        /// never written as USS). Not part of the IR file.
+        /// </summary>
+        [JsonIgnore] public Dictionary<string, Dictionary<string, string>> Transitions = new Dictionary<string, Dictionary<string, string>>();
     }
 
     public sealed class IrScreen

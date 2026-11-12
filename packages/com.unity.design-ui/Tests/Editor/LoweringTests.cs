@@ -370,7 +370,7 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void CssDefaults_NonBaseLayerRestrictions_Throw()
         {
-            foreach (var (k, v) in new[] { ("z-index", "2"), ("box-shadow", "0 1px 2px red"), ("pointer-events", "none"), ("position", "absolute"), ("display", "flex") })
+            foreach (var (k, v) in new[] { ("z-index", "2"), ("box-shadow", "0 1px 2px red"), ("pointer-events", "none"), ("position", "absolute") })
             {
                 var a = Node("a");
                 a.Style["hover"] = Layer((k, v));
@@ -525,64 +525,104 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void Shadow_ElementLayerWithOnlyMovedProperties_IsRemovedFromElement()
+        public void Shadow_PseudoStateLayers_BecomeHostClassLayers_ElementKeepsItsOwn()
         {
             var card = Node("card");
-            card.Style["hover"] = Layer(("translate", "0 -4px"));
-            card.Shadow = Shadow(0, 8, 0, 0);
-            var host = Hosted(card).Children[0];
-            Assert.AreEqual("0 -4px", host.Style["hover"]["translate"]);
-            Assert.IsFalse(host.Children[1].Style.ContainsKey("hover"));
-            Assert.IsFalse(host.Clickable);
-        }
-
-        [Test]
-        public void Shadow_ActiveLayerWithMovedProperties_GivesTheHostAClickable()
-        {
-            var card = Node("card");
+            card.Action = "open";
+            card.Style["hover"] = Layer(("translate", "0 -4px"), ("background-color", "#222222"));
             card.Style["active"] = Layer(("scale", "0.98"), ("background-color", "#111111"));
+            card.Style["focus"] = Layer(("opacity", "0.9"));
+            card.Style["checked"] = Layer(("rotate", "2deg"));
+            card.Style["disabled"] = Layer(("opacity", "0.4"));
             card.Shadow = Shadow(0, 8, 0, 0);
             var host = Hosted(card).Children[0];
-            Assert.IsTrue(host.Clickable);
-            Assert.AreEqual("0.98", host.Style["active"]["scale"]);
-            Assert.AreEqual("#111111", host.Children[1].Style["active"]["background-color"]);
-            Assert.IsTrue(host.Children[1].Clickable);
+            var el = host.Children[1];
+            Assert.AreEqual("0 -4px", host.Style["class:dui-hover"]["translate"]);
+            Assert.AreEqual("0.98", host.Style["class:dui-active"]["scale"]);
+            Assert.AreEqual("0.9", host.Style["class:dui-focus"]["opacity"]);
+            Assert.AreEqual("2deg", host.Style["class:dui-checked"]["rotate"]);
+            Assert.AreEqual("0.4", host.Style["class:dui-disabled"]["opacity"]);
+            foreach (var k in new[] { "hover", "active", "focus", "checked", "disabled" }) Assert.IsFalse(host.Style.ContainsKey(k), k);
+            Assert.AreEqual("#222222", el.Style["hover"]["background-color"]);
+            Assert.AreEqual("#111111", el.Style["active"]["background-color"]);
+            Assert.IsFalse(el.Style["hover"].ContainsKey("translate"));
+            Assert.IsFalse(el.Style.ContainsKey("focus"));
+            Assert.IsTrue(host.MirrorPseudoState);
+            Assert.IsFalse(host.Clickable);
+            Assert.IsTrue(el.Clickable);
         }
 
         [Test]
-        public void Shadow_ElementClickableWithOnlyMovedActiveLayer_IsNoLongerClickableItself()
+        public void Shadow_PseudoStateWithoutMovedProperties_NeedsNoMirror()
+        {
+            var card = Node("card");
+            card.Style["hover"] = Layer(("background-color", "#222222"));
+            card.Shadow = Shadow(0, 8, 0, 0);
+            var host = Hosted(card).Children[0];
+            Assert.IsFalse(host.MirrorPseudoState);
+            Assert.AreEqual("#222222", host.Children[1].Style["hover"]["background-color"]);
+        }
+
+        [Test]
+        public void Shadow_BreakpointAndStateLayers_MoveWithTheirOwnNames()
+        {
+            var card = Node("card");
+            card.Style["bp:narrow"] = Layer(("margin-top", "4px"));
+            card.Shadow = Shadow(0, 8, 0, 0);
+            var host = Hosted(card).Children[0];
+            Assert.AreEqual("4px", host.Style["bp:narrow"]["margin-top"]);
+            Assert.IsFalse(host.MirrorPseudoState);
+        }
+
+        [Test]
+        public void Shadow_ElementWithOnlyAMovedActiveLayer_IsNotClickableItself_HostNeverIs()
         {
             var card = Node("card");
             card.Style["active"] = Layer(("scale", "0.98"));
             card.Shadow = Shadow(0, 8, 0, 0);
             var host = Hosted(card).Children[0];
-            Assert.IsTrue(host.Clickable);
+            Assert.IsFalse(host.Clickable);
             Assert.IsFalse(host.Children[1].Clickable);
+            Assert.IsTrue(host.MirrorPseudoState);
         }
 
         [Test]
-        public void Shadow_TransitionOfMovedProperties_MovesToHost()
+        public void Transitions_LeaveTheStyleLayers_AndAreRecordedForThePlayer()
+        {
+            var a = Node("a", ("transition", "opacity 0.2s ease"), ("transition-property", "opacity"), ("transition-duration", "0.2s"));
+            a.Style["hover"] = Layer(("transition-delay", "0.1s"), ("opacity", "0.5"));
+            var r = Lowering.Apply(WithChildren(Node("p"), a)).Children[0];
+            Assert.IsFalse(B(r).ContainsKey("transition"));
+            Assert.IsFalse(B(r).ContainsKey("transition-property"));
+            Assert.IsFalse(r.Style["hover"].ContainsKey("transition-delay"));
+            Assert.AreEqual("opacity 0.2s ease", r.Transitions["base"]["transition"]);
+            Assert.AreEqual("0.1s", r.Transitions["hover"]["transition-delay"]);
+            Assert.DoesNotThrow(() => StyleMapper.Map(B(r), B(r), false));
+        }
+
+        [Test]
+        public void Shadow_TransitionOfMovedProperties_MovesToHostRecord()
         {
             var card = Node("card", ("transition-property", "opacity, background-color"), ("transition-duration", "0.2s, 0.3s"), ("transition-timing-function", "ease, linear"));
             card.Shadow = Shadow(0, 8, 0, 0);
             var host = Hosted(card).Children[0];
             var el = host.Children[1];
-            Assert.AreEqual("opacity", B(host)["transition-property"]);
-            Assert.AreEqual("0.2s", B(host)["transition-duration"]);
-            Assert.AreEqual("ease", B(host)["transition-timing-function"]);
-            Assert.AreEqual("background-color", B(el)["transition-property"]);
-            Assert.AreEqual("0.3s", B(el)["transition-duration"]);
-            Assert.AreEqual("linear", B(el)["transition-timing-function"]);
+            Assert.AreEqual("opacity", host.Transitions["base"]["transition-property"]);
+            Assert.AreEqual("0.2s", host.Transitions["base"]["transition-duration"]);
+            Assert.AreEqual("ease", host.Transitions["base"]["transition-timing-function"]);
+            Assert.AreEqual("background-color", el.Transitions["base"]["transition-property"]);
+            Assert.AreEqual("0.3s", el.Transitions["base"]["transition-duration"]);
+            Assert.AreEqual("linear", el.Transitions["base"]["transition-timing-function"]);
         }
 
         [Test]
-        public void Shadow_TransitionShorthand_MovedEntriesGoToHost()
+        public void Shadow_TransitionShorthand_MovedEntriesGoToHost_EasingFirstEntriesParse()
         {
-            var card = Node("card", ("transition", "opacity 0.2s ease, background-color 0.3s linear"));
+            var card = Node("card", ("transition", "ease-in 0.2s opacity, linear 0.3s background-color"));
             card.Shadow = Shadow(0, 8, 0, 0);
             var host = Hosted(card).Children[0];
-            Assert.AreEqual("opacity 0.2s ease", B(host)["transition"]);
-            Assert.AreEqual("background-color 0.3s linear", B(host.Children[1])["transition"]);
+            Assert.AreEqual("ease-in 0.2s opacity", host.Transitions["base"]["transition"]);
+            Assert.AreEqual("linear 0.3s background-color", host.Children[1].Transitions["base"]["transition"]);
         }
 
         [Test]
@@ -591,8 +631,7 @@ namespace DesignUi.Editor.Tests
             var card = Node("card", ("transition-property", "opacity"), ("transition-duration", "0.2s"));
             card.Shadow = Shadow(0, 8, 0, 0);
             var el = Hosted(card).Children[0].Children[1];
-            Assert.IsFalse(B(el).ContainsKey("transition-property"));
-            Assert.IsFalse(B(el).ContainsKey("transition-duration"));
+            Assert.IsFalse(el.Transitions.ContainsKey("base"));
         }
 
         [Test]
@@ -632,6 +671,164 @@ namespace DesignUi.Editor.Tests
             outer.Shadow = Shadow(0, 8, 0, 0);
             var r = Lowering.Apply(WithChildren(Node("p"), outer));
             Assert.AreEqual("inner__shadowhost", r.Children[0].Children[1].Children[0].Id);
+        }
+
+        // ---- visible display (C1) --------------------------------------------------------------------------
+
+        [Test]
+        public void Display_BaseHiddenStateShown_Flex_Compiles_AndWritesFlexInTheStateLayer()
+        {
+            var spinner = WithChildren(Node("spinner", ("display", "none")), Node("dot"), Node("dot2"));
+            spinner.Style["state:loading"] = Layer(("display", "flex"), ("gap", "6px"));
+            var r = Lowering.Apply(WithChildren(Node("screen"), spinner)).Children[0];
+            Assert.AreEqual("none", B(r)["display"]);
+            Assert.AreEqual("flex", r.Style["state:loading"]["display"]);
+            Assert.AreEqual("row", B(r)["flex-direction"]);
+            Assert.AreEqual("6px", r.Children[1].Style["state:loading"]["margin-left"]);
+        }
+
+        [Test]
+        public void Display_BaseHiddenStateShownBlock_BecomesColumnWithFlexInTheLayer()
+        {
+            var empty = WithChildren(Node("empty", ("display", "none")), Node("a"), Node("b"));
+            empty.Style["state:empty"] = Layer(("display", "block"));
+            var r = Lowering.Apply(WithChildren(Node("screen"), empty)).Children[0];
+            Assert.AreEqual("none", B(r)["display"]);
+            Assert.AreEqual("flex", r.Style["state:empty"]["display"]);
+            Assert.AreEqual("column", B(r)["flex-direction"]);
+            Assert.AreEqual("0", B(r.Children[0])["flex-shrink"]);
+        }
+
+        [Test]
+        public void Display_MissingBase_FlexLayer_IsFlexEverywhere()
+        {
+            var a = WithChildren(Node("a"), Node("x"));
+            a.Style["state:loading"] = Layer(("display", "flex"));
+            var r = Lowering.Apply(WithChildren(Node("screen"), a)).Children[0];
+            Assert.AreEqual("row", B(r)["flex-direction"]);
+            Assert.IsFalse(r.Style["state:loading"].ContainsKey("display"));
+            Assert.IsFalse(B(r.Children[0]).ContainsKey("flex-shrink"));
+        }
+
+        [Test]
+        public void Display_LayersSwitchingBetweenFlexAndBlock_Throw()
+        {
+            var a = Node("a", ("display", "flex"));
+            a.Style["state:x"] = Layer(("display", "block"));
+            Assert.Throws<UnsupportedStyleException>(() => Lowering.Apply(WithChildren(Node("screen"), a)));
+        }
+
+        [Test]
+        public void Display_RedundantBlockInALayer_IsRemoved()
+        {
+            var a = Node("a");
+            a.Style["bp:narrow"] = Layer(("display", "block"));
+            var r = Lowering.Apply(WithChildren(Node("screen"), a)).Children[0];
+            Assert.IsFalse(r.Style["bp:narrow"].ContainsKey("display"));
+        }
+
+        [Test]
+        public void Display_InlineFlexAndInlineBlock_AreBlockified()
+        {
+            var inlineFlex = WithChildren(Node("f", ("display", "inline-flex")), Node("x"), Node("y"));
+            var inlineBlock = WithChildren(Node("b", ("display", "inline-block")), Node("x"));
+            var r = Lowering.Apply(WithChildren(Flex("p", "row"), inlineFlex, inlineBlock));
+            Assert.AreEqual("flex", B(r.Children[0])["display"]);
+            Assert.AreEqual("row", B(r.Children[0])["flex-direction"]);
+            Assert.IsFalse(B(r.Children[1]).ContainsKey("display"));
+            Assert.AreEqual("column", B(r.Children[1])["flex-direction"]);
+            Assert.DoesNotThrow(() => StyleMapper.Map(B(r.Children[0]), B(r.Children[0]), false));
+        }
+
+        [Test]
+        public void Display_InlineChildOfFlexContainer_IsBlock()
+        {
+            var r = Lowering.Apply(WithChildren(Flex("p", "row"), Node("i", ("display", "inline"))));
+            Assert.IsFalse(B(r.Children[0]).ContainsKey("display"));
+        }
+
+        [Test]
+        public void Gap_ChildHiddenInBaseAndShownInALayer_GapMovesToTheNextChildInThatLayer()
+        {
+            var a = Node("a", ("display", "none"));
+            a.Style["state:loading"] = Layer(("display", "flex"));
+            var r = Lowering.Apply(WithChildren(Flex("p", "row", ("gap", "10px")), a, Node("b")));
+            Assert.IsFalse(B(r.Children[1]).ContainsKey("margin-left"));
+            Assert.AreEqual("10px", r.Children[1].Style["state:loading"]["margin-left"]);
+        }
+
+        // ---- positioned siblings and containing block (N1, N2) ---------------------------------------------
+
+        [Test]
+        public void PaintOrder_AbsoluteBackgroundBeforeRelativeContent_StaysBelowIt()
+        {
+            var r = Lowering.Apply(WithChildren(Node("p"), Node("bg", ("position", "absolute")), Node("content", ("position", "relative"))));
+            CollectionAssert.AreEqual(new[] { "bg", "content" }, Ids(r));
+        }
+
+        [Test]
+        public void PaintOrder_AbsoluteAfterRelative_StaysAfter()
+        {
+            var r = Lowering.Apply(WithChildren(Node("p"), Node("content", ("position", "relative")), Node("overlay", ("position", "absolute"))));
+            CollectionAssert.AreEqual(new[] { "content", "overlay" }, Ids(r));
+        }
+
+        [Test]
+        public void PaintOrder_AbsoluteBetweenRelativeAndStatic_CannotBeReproduced_Throws()
+        {
+            Assert.Throws<IrFormatException>(() => Lowering.Apply(WithChildren(Node("p"),
+                Node("bg", ("position", "absolute")), Node("content", ("position", "relative")), Node("tail"))));
+        }
+
+        [Test]
+        public void PaintOrder_StaticSiblingsBecomeRelativeAfterOrdering()
+        {
+            var r = Lowering.Apply(WithChildren(Node("p"), Node("a", ("position", "static"))));
+            Assert.AreEqual("relative", B(r.Children[0])["position"]);
+        }
+
+        [Test]
+        public void Absolute_InUnpositionedParent_Throws_NamingBoth()
+        {
+            var card = WithChildren(Node("card"), Node("badge", ("position", "absolute")));
+            var e = Assert.Throws<UnsupportedStyleException>(() => Lowering.Apply(WithChildren(Node("screen"), card)));
+            StringAssert.Contains("badge", e.Message);
+            StringAssert.Contains("position: relative", e.Message);
+        }
+
+        [TestCase("relative")]
+        [TestCase("absolute")]
+        public void Absolute_InPositionedParent_IsAccepted(string position)
+        {
+            var card = WithChildren(Node("card", ("position", position)), Node("badge", ("position", "absolute")));
+            Assert.DoesNotThrow(() => Lowering.Apply(WithChildren(Node("screen"), card)));
+        }
+
+        [Test]
+        public void Absolute_ChildOfRoot_IsExempt()
+        {
+            Assert.DoesNotThrow(() => Lowering.Apply(WithChildren(Node("screen"), Node("badge", ("position", "absolute")))));
+        }
+
+        // ---- pointer-events (N6) ---------------------------------------------------------------------------
+
+        [Test]
+        public void PointerEventsNone_IsInheritedUntilAuto_AndReachesTheShadowHost()
+        {
+            var inner = Node("inner", ("pointer-events", "auto"));
+            var icon = WithChildren(Node("icon"), inner);
+            var card = Node("card", ("pointer-events", "none"));
+            card.Shadow = Shadow(0, 8, 0, 0);
+            var overlay = WithChildren(Node("overlay", ("pointer-events", "none")), Node("label"), icon, card);
+            var r = Lowering.Apply(WithChildren(Node("p"), overlay)).Children[0];
+            Assert.IsTrue(r.PickingIgnore);
+            Assert.IsTrue(r.Children[0].PickingIgnore);
+            Assert.IsTrue(r.Children[1].PickingIgnore);
+            Assert.IsFalse(r.Children[1].Children[0].PickingIgnore);
+            var host = r.Children[2];
+            Assert.AreEqual("card__shadowhost", host.Id);
+            Assert.IsTrue(host.PickingIgnore);
+            Assert.IsTrue(host.Children[0].PickingIgnore);
         }
 
         // ---- clickable, sample -----------------------------------------------------------------------------

@@ -51,28 +51,76 @@ namespace DesignUi.Editor
             if (root == null) throw new ArgumentNullException(nameof(root));
             var copy = Clone(root);
             if (copy.Shadow != null) throw new IrFormatException("the root node '" + copy.Id + "' has a shadow; a shadow needs a parent to host it");
-            Process(copy, false);
+            Process(copy, false, false, true, false, true);
+            if (Get(copy, Base, "position") == "static") BaseLayer(copy)["position"] = "relative";
             return copy;
         }
 
-        static void Process(IrNode node, bool parentBlock)
+        static void Process(IrNode node, bool parentBlock, bool parentFlex, bool parentPositioned, bool ignorePointer, bool isRoot)
         {
-            bool flex = Get(node, Base, "display") == "flex";
+            var visible = VisibleDisplay(node, parentFlex);
+            bool flex = visible == "flex";
             bool blockSelf = node.Children.Length > 0 && !flex;
-            CssDefaults(node, parentBlock, flex, blockSelf);
-            foreach (var child in node.Children) Process(child, blockSelf);
+            var position = Get(node, Base, "position");
+            bool positioned = isRoot || position == "relative" || position == "absolute";
+
+            if (position == "absolute" && !parentPositioned)
+                throw new UnsupportedStyleException("position", "absolute", null,
+                    "Element '" + node.Id + "' is absolute but its parent is not positioned; set position: relative on the parent (UI Toolkit anchors absolute elements to the parent, CSS to the nearest positioned ancestor).");
+
+            CssDefaults(node, parentBlock, parentFlex, flex, blockSelf);
+
+            // pointer-events is inherited in CSS; picking mode is not
+            var pe = Get(node, Base, "pointer-events");
+            if (pe == "none") ignorePointer = true;
+            else if (pe == "auto") ignorePointer = false;
+            else if (pe != null) throw new UnsupportedStyleException("pointer-events", pe);
+            if (pe != null) BaseLayer(node).Remove("pointer-events");
+            node.PickingIgnore = ignorePointer;
+
+            foreach (var child in node.Children) Process(child, blockSelf, flex, positioned, ignorePointer, false);
             WrapShadows(node);
             LowerGap(node);
             PaintOrder(node);
             RefreshClickable(node);
         }
 
+        /// <summary>
+        /// The one visible display of a node: the single non-none value across all layers (inline-flex and
+        /// inline-block are blockified to flex and block; inline too inside a flex container), block when none is set.
+        /// Layers may hide a node (none) or show it, but must not switch between flex and block.
+        /// </summary>
+        static string VisibleDisplay(IrNode node, bool parentFlex)
+        {
+            string result = null;
+            foreach (var layer in node.Style.Values)
+            {
+                if (!layer.TryGetValue("display", out var raw)) continue;
+                var d = NormalizeDisplay(raw.Trim(), parentFlex);
+                if (d == "none") continue;
+                if (result == null) result = d;
+                else if (result != d) throw new UnsupportedStyleException("display", raw, null, "display switches between '" + result + "' and '" + d + "' across layers of '" + node.Id + "'; only none may differ.");
+            }
+            return result ?? "block";
+        }
+
+        static string NormalizeDisplay(string d, bool parentFlex)
+        {
+            switch (d)
+            {
+                case "inline-flex": return "flex";
+                case "inline-block": return "block";
+                case "inline": return parentFlex ? "block" : "inline";
+                default: return d;
+            }
+        }
+
         // ---- CSS defaults ----------------------------------------------------------------------------------
 
-        static void CssDefaults(IrNode node, bool parentBlock, bool flex, bool blockSelf)
+        static void CssDefaults(IrNode node, bool parentBlock, bool parentFlex, bool flex, bool blockSelf)
         {
             var baseLayer = BaseLayer(node);
-            baseLayer.TryGetValue("display", out var baseDisplay);
+            bool baseHidden = baseLayer.TryGetValue("display", out var baseDisplay) && baseDisplay.Trim() == "none";
             baseLayer.TryGetValue("position", out var basePosition);
 
             foreach (var pair in node.Style)
@@ -87,8 +135,6 @@ namespace DesignUi.Editor
                     throw new UnsupportedStyleException("pointer-events", pe, null, "pointer-events is only allowed in the base layer.");
                 if (layer.TryGetValue("position", out var pos) && Position(pos) != Position(basePosition))
                     throw new UnsupportedStyleException("position", pos, null, "position cannot change between layers ('" + pair.Key + "').");
-                if (layer.TryGetValue("display", out var disp) && DisplayGroup(disp) != "none" && DisplayGroup(disp) != DisplayGroup(baseDisplay))
-                    throw new UnsupportedStyleException("display", disp, null, "display can only switch to none between layers ('" + pair.Key + "').");
             }
 
             // box-sizing: the kit sets border-box globally; an explicit content-box only matters on a sized element with padding or border
@@ -100,8 +146,17 @@ namespace DesignUi.Editor
                 pair.Value.Remove("box-sizing");
             }
 
-            // display: block is the container default
-            if (baseDisplay == "block") baseLayer.Remove("display");
+            // display: USS has flex and none only. block is flex with a column (below); a layer that shows a node the base
+            // hides writes flex, any other visible display is redundant
+            foreach (var pair in node.Style)
+            {
+                if (!pair.Value.TryGetValue("display", out var raw)) continue;
+                var d = NormalizeDisplay(raw.Trim(), parentFlex);
+                if (d == "none" || (d != "flex" && d != "block")) continue;
+                if (pair.Key == Base) { if (d == "block") pair.Value.Remove("display"); else pair.Value["display"] = "flex"; }
+                else if (baseHidden) pair.Value["display"] = "flex";
+                else pair.Value.Remove("display");
+            }
 
             // flex container without a direction is a row; a block container is a column
             if (flex && !baseLayer.ContainsKey("flex-direction")) baseLayer["flex-direction"] = "row";
@@ -115,12 +170,11 @@ namespace DesignUi.Editor
             if (!flex) foreach (var layer in node.Style.Values) foreach (var k in GapKeys) layer.Remove(k);
 
             // static (and absent) position ignores insets; USS would apply them
-            if (basePosition == "static") baseLayer["position"] = "relative";
             if (basePosition == null || basePosition == "static")
                 foreach (var layer in node.Style.Values) foreach (var k in Insets) layer.Remove(k);
 
             // wrapping rows: CSS align-content normal behaves like stretch, USS defaults to flex-start
-            if (flex && baseLayer.TryGetValue("flex-wrap", out var wrap) && wrap != "nowrap" && !baseLayer.ContainsKey("align-content"))
+            if (flex && node.Style.Values.Any(l => l.TryGetValue("flex-wrap", out var w) && w != "nowrap") && !baseLayer.ContainsKey("align-content"))
                 baseLayer["align-content"] = "stretch";
             foreach (var layer in node.Style.Values)
                 if (layer.TryGetValue("align-content", out var ac) && ac == "normal") layer["align-content"] = "stretch";
@@ -132,12 +186,7 @@ namespace DesignUi.Editor
                 baseLayer["flex-shrink"] = "0";
             }
 
-            if (baseLayer.TryGetValue("pointer-events", out var pev))
-            {
-                if (pev == "none") node.PickingIgnore = true;
-                else if (pev != "auto") throw new UnsupportedStyleException("pointer-events", pev);
-                baseLayer.Remove("pointer-events");
-            }
+            ExtractTransitions(node);
         }
 
         static bool HasBoxExtras(IrNode node)
@@ -150,7 +199,6 @@ namespace DesignUi.Editor
             return false;
         }
 
-        static string DisplayGroup(string d) => d == null || d == "block" ? "block" : d;
         static string Position(string p) => p == null || p == "static" ? "static" : p;
 
         // ---- shadow host -----------------------------------------------------------------------------------
@@ -180,13 +228,15 @@ namespace DesignUi.Editor
             var host = new IrNode { Id = el.Id + "__shadowhost", Kind = "container" };
             BaseLayer(host)["flex-direction"] = "column";
 
+            host.PickingIgnore = el.PickingIgnore;
             foreach (var name in el.Style.Keys.ToList())
             {
                 var layer = el.Style[name];
+                var hostName = HostLayerName(name);
                 Dictionary<string, string> hostLayer = null;
                 Dictionary<string, string> HostLayer()
                 {
-                    if (hostLayer == null && !host.Style.TryGetValue(name, out hostLayer)) host.Style[name] = hostLayer = new Dictionary<string, string>();
+                    if (hostLayer == null && !host.Style.TryGetValue(hostName, out hostLayer)) host.Style[hostName] = hostLayer = new Dictionary<string, string>();
                     return hostLayer;
                 }
                 foreach (var key in layer.Keys.ToList())
@@ -197,11 +247,22 @@ namespace DesignUi.Editor
                         layer.Remove(key);
                     }
                 }
-                MoveTransitions(layer, HostLayer);
                 if (layer.Count == 0 && name != Base) el.Style.Remove(name);
             }
+            foreach (var name in el.Transitions.Keys.ToList())
+            {
+                var layer = el.Transitions[name];
+                MoveTransitions(layer, () =>
+                {
+                    var hn = HostLayerName(name);
+                    if (!host.Transitions.TryGetValue(hn, out var l)) host.Transitions[hn] = l = new Dictionary<string, string>();
+                    return l;
+                });
+                if (layer.Count == 0) el.Transitions.Remove(name);
+            }
+            // the host never has the element's pseudo-states; a runtime mirror copies them onto it as dui-* classes
+            host.MirrorPseudoState = host.Style.Keys.Concat(host.Transitions.Keys).Any(k => k.StartsWith(ClassPrefix, StringComparison.Ordinal));
             BaseLayer(el)["flex-grow"] = "1";
-            if (host.Style.ContainsKey("active")) host.Clickable = true;
             RefreshClickable(el);
 
             float x = s.Offset.X, y = s.Offset.Y, w = s.Offset.W, h = s.Offset.H;
@@ -225,6 +286,29 @@ namespace DesignUi.Editor
             };
             host.Children = new[] { shadow, el };
             return host;
+        }
+
+        /// <summary>Prefix of the layers whose rules apply to the host while the element is in a pseudo-state.</summary>
+        public const string ClassPrefix = "class:dui-";
+
+        static string HostLayerName(string layer) => Pseudo.Contains(layer) ? ClassPrefix + layer : layer;
+
+        static readonly string[] TransitionKeys = { "transition", "transition-property", "transition-duration", "transition-delay", "transition-timing-function" };
+
+        /// <summary>
+        /// Transitions are played by the animation player, not by USS: they leave the style layers and are recorded in
+        /// <see cref="IrNode.Transitions"/> so nothing animates twice.
+        /// </summary>
+        static void ExtractTransitions(IrNode node)
+        {
+            foreach (var pair in node.Style)
+                foreach (var key in TransitionKeys)
+                {
+                    if (!pair.Value.TryGetValue(key, out var v)) continue;
+                    if (!node.Transitions.TryGetValue(pair.Key, out var t)) node.Transitions[pair.Key] = t = new Dictionary<string, string>();
+                    t[key] = v;
+                    pair.Value.Remove(key);
+                }
         }
 
         /// <summary>Moves the transition entries of moved properties to the host (index-aligned longhand lists, or whole shorthand entries).</summary>
@@ -261,7 +345,10 @@ namespace DesignUi.Editor
             }
         }
 
-        static string FirstIdent(string entry) => entry.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault(t => !char.IsDigit(t[0]) && t[0] != '.' && t[0] != '-') ?? "";
+        static readonly HashSet<string> EasingWords = new HashSet<string> { "linear", "ease", "ease-in", "ease-out", "ease-in-out", "step-start", "step-end" };
+
+        static string FirstIdent(string entry) => entry.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(t => !char.IsDigit(t[0]) && t[0] != '.' && t[0] != '-' && !t.Contains("(") && !EasingWords.Contains(t)) ?? "";
 
         // ---- gap -------------------------------------------------------------------------------------------
 
@@ -396,8 +483,12 @@ namespace DesignUi.Editor
         // ---- paint order -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// UI Toolkit paints in hierarchy order, CSS paints negative z-index first, then in-flow siblings, then
-        /// absolute siblings by z-index (auto is 0). Siblings are reordered to match; in-flow order is unchanged.
+        /// UI Toolkit paints in hierarchy order. CSS paints negative z-index first, then non-positioned in-flow
+        /// siblings, then positioned siblings (relative or absolute, z-index auto is 0) by z-index and tree order.
+        /// Only absolute siblings can move (in-flow order is layout): z &lt; 0 goes first, z &gt; 0 last in z order,
+        /// z = 0 goes before the first explicitly relative sibling that follows it, or at the end. When a static
+        /// sibling follows that spot the CSS order cannot be reproduced and this throws.
+        /// Afterwards <c>position: static</c> children become relative (USS has no static).
         /// </summary>
         static void PaintOrder(IrNode node)
         {
@@ -415,11 +506,35 @@ namespace DesignUi.Editor
                 }
                 z[child] = value;
             }
-            var abs = node.Children.Where(IsAbsolute).ToList();
+
+            var order = node.Children.ToList();
+            var abs = order.Where(IsAbsolute).ToList();
+            var inflow = order.Where(c => !IsAbsolute(c)).ToList();
             var neg = abs.Where(c => z[c] < 0).OrderBy(c => z[c]).ToList();
-            var pos = abs.Where(c => z[c] >= 0).OrderBy(c => z[c]).ToList();
-            var flow = node.Children.Where(c => !IsAbsolute(c)).ToList();
-            node.Children = neg.Concat(flow).Concat(pos).ToArray();
+            var zero = abs.Where(c => z[c] == 0).ToList();
+            var pos = abs.Where(c => z[c] > 0).OrderBy(c => z[c]).ToList();
+
+            bool Relative(IrNode c) => Get(c, Base, "position") == "relative";
+            var result = new List<IrNode>(inflow);
+            var insertAt = new List<(int index, IrNode node)>();
+            foreach (var a in zero)
+            {
+                int domIndex = order.IndexOf(a);
+                int idx = inflow.Count;
+                for (int k = 0; k < inflow.Count; k++)
+                    if (order.IndexOf(inflow[k]) > domIndex && Relative(inflow[k])) { idx = k; break; }
+                for (int k = idx; k < inflow.Count; k++)
+                    if (!Relative(inflow[k]))
+                        throw new IrFormatException("absolute '" + a.Id + "' paints between positioned siblings and below the static sibling '" + inflow[k].Id + "' in CSS; UI Toolkit's sibling order cannot reproduce that");
+                insertAt.Add((idx, a));
+            }
+            // insert from the back so earlier indexes stay valid; equal indexes keep tree order
+            foreach (var group in insertAt.GroupBy(t => t.index).OrderByDescending(g => g.Key))
+                result.InsertRange(group.Key, group.Select(t => t.node));
+
+            node.Children = neg.Concat(result).Concat(pos).ToArray();
+            foreach (var child in node.Children)
+                if (Get(child, Base, "position") == "static") BaseLayer(child)["position"] = "relative";
         }
 
         // ---- helpers ---------------------------------------------------------------------------------------
@@ -483,6 +598,8 @@ namespace DesignUi.Editor
                 Children = (n.Children ?? new IrNode[0]).Select(Clone).ToArray(),
                 Clickable = n.Clickable,
                 PickingIgnore = n.PickingIgnore,
+                MirrorPseudoState = n.MirrorPseudoState,
+                Transitions = n.Transitions?.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)) ?? new Dictionary<string, Dictionary<string, string>>(),
             };
         }
 

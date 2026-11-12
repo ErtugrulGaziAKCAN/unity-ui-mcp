@@ -734,16 +734,8 @@
       ]
     },
     "transition": {
-      "handling": "direct",
-      "types": [
-        "time",
-        "ident"
-      ],
-      "list": true,
-      "components": [
-        1,
-        4
-      ]
+      "handling": "lowered",
+      "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
     },
     "transition-behavior": {
       "handling": "dropped",
@@ -753,36 +745,20 @@
       "list": true
     },
     "transition-delay": {
-      "handling": "direct",
-      "types": [
-        "time"
-      ],
-      "list": true
+      "handling": "lowered",
+      "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
     },
     "transition-duration": {
-      "handling": "direct",
-      "types": [
-        "time"
-      ],
-      "list": true
+      "handling": "lowered",
+      "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
     },
     "transition-property": {
-      "handling": "direct",
-      "types": [
-        "ident"
-      ],
-      "list": true
+      "handling": "lowered",
+      "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
     },
     "transition-timing-function": {
-      "handling": "direct",
-      "keywords": [
-        "linear",
-        "ease",
-        "ease-in",
-        "ease-out",
-        "ease-in-out"
-      ],
-      "list": true
+      "handling": "lowered",
+      "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
     },
     "translate": {
       "handling": "direct",
@@ -800,6 +776,13 @@
     },
     "user-select": {
       "handling": "dropped"
+    },
+    "visibility": {
+      "handling": "direct",
+      "keywords": [
+        "visible",
+        "hidden"
+      ]
     },
     "white-space": {
       "handling": "direct",
