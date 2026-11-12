@@ -1,0 +1,6 @@
+/* Minimal runtime theme for design screens. Functional defaults only; it deliberately imports no Unity default
+   theme, so verification and game render design screens with the same inherited rules. */
+:root {
+    -unity-text-align: upper-left;
+    white-space: normal;
+}

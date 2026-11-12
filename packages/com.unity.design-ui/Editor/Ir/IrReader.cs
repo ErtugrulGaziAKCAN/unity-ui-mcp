@@ -22,7 +22,11 @@ namespace DesignUi.Editor
             catch (Exception e) { throw new IrFormatException("cannot read IR file '" + path + "': " + e.Message, e); }
 
             JObject obj;
-            try { obj = JObject.Parse(text); }
+            try
+            {
+                using (var reader = new JsonTextReader(new StringReader(text)) { DateParseHandling = DateParseHandling.None })
+                    obj = JObject.Load(reader);
+            }
             catch (JsonException e) { throw new IrFormatException("IR file is not valid JSON: " + e.Message, e); }
 
             var version = obj["irVersion"];
@@ -31,7 +35,7 @@ namespace DesignUi.Editor
                                             " is not supported (expected " + SupportedVersion + ")");
 
             IrScreen screen;
-            try { screen = obj.ToObject<IrScreen>(); }
+            try { screen = obj.ToObject<IrScreen>(JsonSerializer.Create(new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })); }
             catch (JsonException e) { throw new IrFormatException("IR file does not match the IR schema: " + e.Message, e); }
 
             if (screen == null || screen.Root == null)

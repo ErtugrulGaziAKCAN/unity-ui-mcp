@@ -51,10 +51,10 @@ namespace DesignUi.Editor
         [JsonProperty("kind")] public string Kind;
         [JsonProperty("file")] public string File;
         [JsonProperty("sha256")] public string Sha256;
-        [JsonProperty("width")] public int Width;
-        [JsonProperty("height")] public int Height;
+        [JsonProperty("width")] public float Width;
+        [JsonProperty("height")] public float Height;
         /// <summary>9-slice insets (four values, as written by the exporter), or null.</summary>
-        [JsonProperty("slice")] public int[] Slice;
+        [JsonProperty("slice")] public float[] Slice;
     }
 
     /// <summary>
@@ -95,6 +95,12 @@ namespace DesignUi.Editor
         /// Not part of the IR file.
         /// </summary>
         [JsonIgnore] public bool Clickable;
+
+        /// <summary>
+        /// Set by Lowering.Apply for a baked shadow image and for elements with pointer-events: none; the compiler
+        /// emits picking-mode Ignore. Not part of the IR file.
+        /// </summary>
+        [JsonIgnore] public bool PickingIgnore;
     }
 
     public sealed class IrScreen

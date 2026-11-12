@@ -6,10 +6,19 @@ namespace DesignUi.Editor.Tests
 {
     public class IrReaderTests
     {
-        internal static string SamplePath()
+        internal static string PackagePath(params string[] parts)
         {
             var info = PackageInfo.FindForAssembly(typeof(IrReader).Assembly);
-            return Path.Combine(info.resolvedPath, "Tests", "Editor", "Data", "ir-sample.json");
+            return Path.Combine(info.resolvedPath, Path.Combine(parts));
+        }
+
+        internal static string SamplePath() => PackagePath("Tests", "Editor", "Data", "ir-sample.json");
+
+        static string WriteTemp(string json)
+        {
+            var path = Path.Combine(Path.GetTempPath(), "design-ui-ir-" + System.Guid.NewGuid().ToString("N") + ".json");
+            File.WriteAllText(path, json);
+            return path;
         }
 
         [Test]
@@ -36,7 +45,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("card", card.Id);
             Assert.AreEqual("shadow9", card.Shadow.Kind);
             Assert.AreEqual(8f, card.Shadow.Offset.Y);
-            CollectionAssert.AreEqual(new[] { 40, 40, 40, 40 }, card.Shadow.Slice);
+            CollectionAssert.AreEqual(new[] { 40f, 40f, 40f, 40f }, card.Shadow.Slice);
             Assert.AreEqual("image", card.Asset.Kind);
             var title = root.Children[0];
             Assert.AreEqual("playerName", title.Bind);
@@ -45,15 +54,15 @@ namespace DesignUi.Editor.Tests
             var play = root.Children[2];
             Assert.AreEqual("play", play.Action);
             Assert.AreEqual("#1fa89e", play.Style["active"]["background-color"]);
-            Assert.AreEqual("row", root.Children[3].Repeat != null ? root.Children[3].Children[0].Id : null);
-            Assert.AreEqual("list", root.Children[3].Repeat.Mode);
+            var rows = root.Children[3];
+            Assert.AreEqual("list", rows.Repeat.Mode);
+            Assert.AreEqual("row", rows.Children[0].Id);
         }
 
         [Test]
         public void Read_UnsupportedVersion_Throws()
         {
-            var path = Path.Combine(Path.GetTempPath(), "design-ui-ir-v2-" + System.Guid.NewGuid().ToString("N") + ".json");
-            File.WriteAllText(path, "{\"irVersion\":2,\"root\":{}}");
+            var path = WriteTemp("{\"irVersion\":2,\"root\":{}}");
             try
             {
                 var e = Assert.Throws<IrFormatException>(() => IrReader.Read(path));
@@ -65,9 +74,55 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void Read_MissingVersion_Throws()
         {
-            var path = Path.Combine(Path.GetTempPath(), "design-ui-ir-nov-" + System.Guid.NewGuid().ToString("N") + ".json");
-            File.WriteAllText(path, "{\"root\":{}}");
+            var path = WriteTemp("{\"root\":{}}");
             try { Assert.Throws<IrFormatException>(() => IrReader.Read(path)); }
+            finally { File.Delete(path); }
+        }
+
+        [Test]
+        public void Read_InvalidJson_ThrowsIrFormatException()
+        {
+            var path = WriteTemp("{ not json");
+            try { Assert.Throws<IrFormatException>(() => IrReader.Read(path)); }
+            finally { File.Delete(path); }
+        }
+
+        [Test]
+        public void Read_MissingRoot_Throws()
+        {
+            var path = WriteTemp("{\"irVersion\":1}");
+            try
+            {
+                var e = Assert.Throws<IrFormatException>(() => IrReader.Read(path));
+                StringAssert.Contains("root", e.Message);
+            }
+            finally { File.Delete(path); }
+        }
+
+        [Test]
+        public void Read_MissingFile_ThrowsIrFormatException()
+        {
+            Assert.Throws<IrFormatException>(() => IrReader.Read(Path.Combine(Path.GetTempPath(), "design-ui-no-such-" + System.Guid.NewGuid().ToString("N"))));
+        }
+
+        [Test]
+        public void Read_DateLikeText_StaysVerbatim()
+        {
+            var path = WriteTemp("{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"text\":{\"key\":null,\"tr\":\"2026-11-12T10:00:00\",\"en\":null,\"args\":[],\"rich\":false}}}");
+            try { Assert.AreEqual("2026-11-12T10:00:00", IrReader.Read(path).Root.Text.Tr); }
+            finally { File.Delete(path); }
+        }
+
+        [Test]
+        public void Read_FractionalAssetSizes_AreKept()
+        {
+            var path = WriteTemp("{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"image\",\"asset\":{\"kind\":\"image\",\"file\":\"a.png\",\"sha256\":\"x\",\"width\":96.5,\"height\":20.25,\"slice\":null}}}");
+            try
+            {
+                var a = IrReader.Read(path).Root.Asset;
+                Assert.AreEqual(96.5f, a.Width);
+                Assert.AreEqual(20.25f, a.Height);
+            }
             finally { File.Delete(path); }
         }
     }
