@@ -1,4 +1,4 @@
-<!-- M0 spike twin of f11-gradients.html: linear and radial gradients (R8) -- no USS equivalent; Unity uses SVG backgrounds. Font twin is wired in Task 3. -->
+<!-- M0 spike twin of f11-gradients.html: linear and radial gradients (R8); no USS equivalent, Unity uses SVG backgrounds. Font twin is wired in Task 3. -->
 <ui:UXML xmlns:ui="UnityEngine.UIElements">
   <ui:Style src="f11-gradients.uss" />
   <ui:VisualElement name="root">
