@@ -5,7 +5,7 @@ import type { KitConfig } from "./kit.js";
 import { logicalViewport } from "./viewport.js";
 
 export interface DcDynamic {
-  kind: "hole" | "sc-for" | "sc-if" | "dc-import" | "x-import" | "script-ui" | "data-props";
+  kind: "hole" | "sc-for" | "sc-if" | "dc-import" | "x-import" | "script-ui" | "data-props" | "outside-x-dc";
   detail: string;
 }
 
@@ -14,6 +14,12 @@ export interface LoadedDesign {
   page: Page;
   cdp: CDPSession;
   blocked: { url: string; type: string }[];
+  /** Design-origin requests that 404ed (missing local assets); lint turns each into an error. */
+  missing: string[];
+  /** Blob ids the page references that blobs.json does not map (.dc.html input only). */
+  unresolvedBlobs: string[];
+  /** Dynamic Design Component features found while unwrapping (.dc.html input only). */
+  dynamic: DcDynamic[];
   /** Closes the page and its context; closes the browser only when openDesign launched it. */
   close(): Promise<void>;
 }
@@ -25,8 +31,9 @@ const decodeEntities = (s: string) =>
   s.replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
 /** Static view of a Claude Design Component page (spec 5.5). Dynamic features are reported, never executed. */
-export function unwrapDcHtml(source: string, blobs: Record<string, string>): { html: string; dynamic: DcDynamic[] } {
+export function unwrapDcHtml(source: string, blobs: Record<string, string>): { html: string; dynamic: DcDynamic[]; unresolvedBlobs: string[] } {
   const dynamic: DcDynamic[] = [];
+  const unresolved = new Set<string>();
 
   // the DC script block (data-props + script text)
   const dcScript = /<script\b[^>]*type\s*=\s*["']text\/x-dc["'][^>]*>([\s\S]*?)<\/script>/i.exec(source);
@@ -48,7 +55,15 @@ export function unwrapDcHtml(source: string, blobs: Record<string, string>): { h
   let helmet = "";
   inner = inner.replace(/<helmet\b[^>]*>([\s\S]*?)<\/helmet>/gi, (_m, h: string) => { helmet += h; return ""; });
 
-  for (const m of inner.matchAll(/\{\{[^}]*\}\}/g)) dynamic.push({ kind: "hole", detail: m[0] });
+  // content outside <x-dc> is not part of the artboard: report it instead of dropping it silently
+  const rest = xdc ? source.replace(xdc[0], "") : source;
+  if (/<helmet\b/i.test(rest)) dynamic.push({ kind: "outside-x-dc", detail: "<helmet> outside <x-dc>" });
+  const bodyRest = (/<body\b[^>]*>([\s\S]*?)(?:<\/body>|$)/i.exec(rest)?.[1] ?? "")
+    .replace(/<script\b[\s\S]*?<\/script>/gi, "").replace(/<!--[\s\S]*?-->/g, "").replace(/<helmet\b[\s\S]*?<\/helmet>/gi, "").trim();
+  if (bodyRest) dynamic.push({ kind: "outside-x-dc", detail: bodyRest.slice(0, 80) });
+
+  const headSrc0 = /<head\b[^>]*>([\s\S]*?)<\/head>/i.exec(source)?.[1] ?? "";
+  for (const m of (inner + helmet + headSrc0).matchAll(/\{\{[^}]*\}\}/g)) dynamic.push({ kind: "hole", detail: m[0] });
   for (const kind of ["sc-for", "sc-if", "dc-import", "x-import"] as const) {
     for (const m of inner.matchAll(new RegExp(`<${kind}\\b[^>]*>`, "gi"))) dynamic.push({ kind, detail: m[0] });
   }
@@ -57,23 +72,66 @@ export function unwrapDcHtml(source: string, blobs: Record<string, string>): { h
   const headSrc = /<head\b[^>]*>([\s\S]*?)<\/head>/i.exec(source)?.[1] ?? "";
   const head = headSrc.replace(/<script\b[^>]*\bsrc\s*=\s*["'][^"']*support\.js["'][^>]*>\s*<\/script>/gi, "");
 
-  const rewrite = (s: string) => s.replace(/\/_blob\/([A-Za-z0-9_-]+)/g, (m, id: string) => blobs[id] ?? m);
+  // the id may carry an extension (/_blob/abc.png): the mapped file replaces the whole reference
+  const rewrite = (s: string) =>
+    s.replace(/\/_blob\/([A-Za-z0-9_-]+)(?:\.[A-Za-z0-9]+)?/g, (m, id: string) => {
+      if (Object.prototype.hasOwnProperty.call(blobs, id)) return blobs[id].split("/").map(encodeURIComponent).join("/");
+      unresolved.add(id);
+      return m;
+    });
   const html = `<!doctype html><html><head>${rewrite(head)}${rewrite(helmet)}</head><body>${rewrite(inner)}</body></html>`;
-  return { html, dynamic };
+  return { html, dynamic, unresolvedBlobs: Array.from(unresolved) };
 }
 
-/** Font families actually requested by rendered text (first family of each computed font-family). */
+/**
+ * Every font family named in the computed font stack of rendered text (elements with direct text, ::before/::after
+ * content and input placeholders). Limit: glyph-level fallback is invisible here. A kit family that lacks a glyph
+ * silently falls back to a system font, so lint must also check glyph coverage of the kit fonts for the used text.
+ */
 export async function usedFamilies(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const out = new Set<string>();
+    const add = (stack: string) => {
+      for (const f of stack.split(",")) {
+        const name = f.trim().replace(/^["']|["']$/g, "");
+        if (name) out.add(name);
+      }
+    };
     for (const el of Array.from(document.querySelectorAll<HTMLElement>("body, body *"))) {
-      const hasText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent ?? "").trim() !== "");
-      if (!hasText) continue;
-      const first = getComputedStyle(el).fontFamily.split(",")[0].trim().replace(/^["']|["']$/g, "");
-      out.add(first);
+      if (Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent ?? "").trim() !== "")) add(getComputedStyle(el).fontFamily);
+      if ((el as HTMLInputElement).placeholder) add(getComputedStyle(el, "::placeholder").fontFamily);
+      for (const pseudo of ["::before", "::after"]) {
+        const c = getComputedStyle(el, pseudo).content;
+        if (c && c !== "none" && c !== "normal" && c !== '""') add(getComputedStyle(el, pseudo).fontFamily);
+      }
     }
     return Array.from(out).sort();
   });
+}
+
+export interface DeclaredFontFace { family: string; src: string | null; sheet: string | null; fromKit: boolean }
+
+/** Every font face the page declares (stylesheet @font-face rules, including @import-ed sheets, and script-added FontFace objects). */
+export async function declaredFontFaces(page: Page, kit?: KitConfig): Promise<DeclaredFontFace[]> {
+  const kitSheet = `${ORIGIN}${KIT_PREFIX}${kit?.fontsCss ?? "fonts/fonts.css"}`;
+  return page.evaluate((kitSheetUrl) => {
+    const out: { family: string; src: string | null; sheet: string | null; fromKit: boolean }[] = [];
+    const strip = (v: string) => v.trim().replace(/^["']|["']$/g, "");
+    const walk = (sheet: CSSStyleSheet) => {
+      let rules: CSSRuleList;
+      try { rules = sheet.cssRules; } catch { return; }
+      for (const r of Array.from(rules)) {
+        if (r instanceof CSSFontFaceRule) {
+          out.push({ family: strip(r.style.getPropertyValue("font-family")), src: r.style.getPropertyValue("src"), sheet: sheet.href, fromKit: sheet.href === kitSheetUrl });
+        } else if (r instanceof CSSImportRule && r.styleSheet) walk(r.styleSheet);
+      }
+    };
+    for (const s of Array.from(document.styleSheets)) walk(s);
+    for (const f of Array.from(document.fonts)) {
+      if (!out.some((o) => o.family === strip(f.family))) out.push({ family: strip(f.family), src: null, sheet: null, fromKit: false });
+    }
+    return out;
+  }, kitSheet);
 }
 
 const MIME: Record<string, string> = {
@@ -89,16 +147,21 @@ function inject(html: string, kit: KitConfig): string {
   const links =
     `<link rel="stylesheet" href="${KIT_PREFIX}${kit.fontsCss}">` +
     `<link rel="stylesheet" href="${KIT_PREFIX}${kit.tokensCss}">`;
-  const block = links + STATIC_STYLE;
+  let out: string;
   const head = /<head\b[^>]*>/i.exec(html);
-  if (head) return html.slice(0, head.index + head[0].length) + block + html.slice(head.index + head[0].length);
   const root = /<html\b[^>]*>/i.exec(html);
-  if (root) return html.slice(0, root.index + root[0].length) + `<head>${block}</head>` + html.slice(root.index + root[0].length);
-  return block + html;
+  if (head) out = html.slice(0, head.index + head[0].length) + links + html.slice(head.index + head[0].length);
+  else if (root) out = html.slice(0, root.index + root[0].length) + `<head>${links}</head>` + html.slice(root.index + root[0].length);
+  else out = `<head>${links}</head>` + html;
+  // the no-animation style goes last in head so no design rule can override it
+  const close = out.search(/<\/head>/i);
+  return close >= 0 ? out.slice(0, close) + STATIC_STYLE + out.slice(close) : out + STATIC_STYLE;
 }
 
 function within(root: string, rel: string): string | null {
-  const p = path.resolve(root, "." + path.posix.normalize("/" + decodeURIComponent(rel)));
+  let decoded: string;
+  try { decoded = decodeURIComponent(rel); } catch { return null; }
+  const p = path.resolve(root, "." + path.posix.normalize("/" + decoded));
   return p === root || p.startsWith(root + path.sep) ? p : null;
 }
 
@@ -111,59 +174,87 @@ export async function openDesign(
   const file = path.resolve(htmlPath);
   const designDir = path.dirname(file);
   const name = path.basename(file);
-  const ownBrowser = !existingBrowser;
-  const browser = existingBrowser ?? (await chromium.launch());
 
+  // everything that can fail on disk runs before a browser is launched
   let source = fs.readFileSync(file, "utf8");
+  let unresolvedBlobs: string[] = [];
+  let dynamic: DcDynamic[] = [];
   if (name.endsWith(".dc.html")) {
     const blobsFile = path.join(designDir, "blobs.json");
     const blobs = fs.existsSync(blobsFile) ? JSON.parse(fs.readFileSync(blobsFile, "utf8")) : {};
-    source = unwrapDcHtml(source, blobs).html;
+    const un = unwrapDcHtml(source, blobs);
+    source = un.html;
+    unresolvedBlobs = un.unresolvedBlobs;
+    dynamic = un.dynamic;
   }
   const pageHtml = inject(source, kit);
-
   const lv = logicalViewport(viewport, kit.reference, kit.screenMatch);
-  const context: BrowserContext = await browser.newContext({
-    viewport: { width: Math.round(lv.width), height: Math.round(lv.height) },
-    deviceScaleFactor: lv.scale,
-  });
-  const blocked: { url: string; type: string }[] = [];
-  const allowedOrigins = new Set(kit.allowedScriptOrigins.map((o) => new URL(o).origin));
 
-  await context.route("**/*", async (route) => {
-    const req = route.request();
-    const url = new URL(req.url());
-    if (url.origin === ORIGIN) {
-      let target: string | null;
-      if (url.pathname === "/" + name) return route.fulfill({ status: 200, contentType: MIME[".html"], body: pageHtml });
-      if (url.pathname.startsWith(KIT_PREFIX)) target = within(kit.dir, url.pathname.slice(KIT_PREFIX.length));
-      else target = within(designDir, url.pathname.slice(1));
-      if (target && fs.existsSync(target) && fs.statSync(target).isFile()) {
-        return route.fulfill({ status: 200, contentType: MIME[path.extname(target).toLowerCase()] ?? "application/octet-stream", body: fs.readFileSync(target) });
+  const ownBrowser = !existingBrowser;
+  const browser = existingBrowser ?? (await chromium.launch());
+  let context: BrowserContext | undefined;
+  try {
+    context = await browser.newContext({
+      viewport: { width: Math.round(lv.width), height: Math.round(lv.height) },
+      deviceScaleFactor: lv.scale,
+      serviceWorkers: "block",
+      reducedMotion: "reduce",
+    });
+    const blocked: { url: string; type: string }[] = [];
+    const missing: string[] = [];
+    const allowedOrigins = new Set(kit.allowedScriptOrigins.map((o) => new URL(o).origin));
+
+    await context.route("**/*", async (route) => {
+      const req = route.request();
+      const url = new URL(req.url());
+      if (url.origin === ORIGIN) {
+        let decoded: string | null = null;
+        try { decoded = decodeURIComponent(url.pathname); } catch { /* malformed escape: 404 */ }
+        if (decoded === "/" + name) return route.fulfill({ status: 200, contentType: MIME[".html"], body: pageHtml });
+        let target: string | null = null;
+        if (decoded !== null) {
+          target = url.pathname.startsWith(KIT_PREFIX)
+            ? within(kit.dir, url.pathname.slice(KIT_PREFIX.length))
+            : within(designDir, url.pathname.slice(1));
+        }
+        if (target && fs.existsSync(target) && fs.statSync(target).isFile()) {
+          return route.fulfill({ status: 200, contentType: MIME[path.extname(target).toLowerCase()] ?? "application/octet-stream", body: fs.readFileSync(target) });
+        }
+        if (url.pathname !== "/favicon.ico") missing.push(decoded ?? url.pathname);
+        return route.fulfill({ status: 404, body: "not found" });
       }
-      return route.fulfill({ status: 404, body: "not found" });
-    }
-    if (req.resourceType() === "script" && allowedOrigins.has(url.origin)) {
-      // fetched outside the page so the synthetic design origin does not trip CORS/private-network checks
-      return route.fulfill({ response: await route.fetch() });
-    }
-    blocked.push({ url: req.url(), type: req.resourceType() });
-    return route.abort();
-  });
+      if (req.resourceType() === "script" && allowedOrigins.has(url.origin)) {
+        // fetched outside the page so the synthetic design origin does not trip CORS/private-network checks;
+        // no redirects (they could leave the allowed origin) and only JavaScript is accepted
+        try {
+          const res = await route.fetch({ maxRedirects: 0 });
+          const type = res.headers()["content-type"] ?? "";
+          if (res.status() >= 200 && res.status() < 300 && /javascript|ecmascript/i.test(type)) return await route.fulfill({ response: res });
+        } catch { /* fall through to blocked */ }
+      }
+      blocked.push({ url: req.url(), type: req.resourceType() });
+      return route.abort();
+    });
 
-  const page = await context.newPage();
-  const cdp = await context.newCDPSession(page);
-  await page.goto(`${ORIGIN}/${encodeURIComponent(name)}`, { waitUntil: "load" });
-  await page.evaluate(() => document.fonts.ready);
+    const page = await context.newPage();
+    const cdp = await context.newCDPSession(page);
+    await page.goto(`${ORIGIN}/${encodeURIComponent(name)}`, { waitUntil: "load" });
+    await page.evaluate(() => document.fonts.ready);
+    // static capture: finish anything already running, keep the no-animation style last in head
+    await page.addStyleTag({ content: STATIC_STYLE.replace(/<\/?style>/g, "") });
+    await page.evaluate(() => document.getAnimations().forEach((a) => { try { a.finish(); } catch { /* infinite */ } }));
 
-  return {
-    browser,
-    page,
-    cdp,
-    blocked,
-    async close() {
-      await context.close();
-      if (ownBrowser) await browser.close();
-    },
-  };
+    const ctx = context;
+    return {
+      browser, page, cdp, blocked, missing, unresolvedBlobs, dynamic,
+      async close() {
+        await ctx.close();
+        if (ownBrowser) await browser.close();
+      },
+    };
+  } catch (e) {
+    await context?.close().catch(() => {});
+    if (ownBrowser) await browser.close().catch(() => {});
+    throw e;
+  }
 }

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
 import { readKit, type KitConfig } from "../src/kit.js";
 import { logicalViewport } from "../src/viewport.js";
-import { openDesign, unwrapDcHtml, usedFamilies } from "../src/load.js";
+import { openDesign, unwrapDcHtml, usedFamilies, declaredFontFaces } from "../src/load.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fx = (n: string) => path.join(here, "fixtures", "load", n);
@@ -43,6 +43,17 @@ describe("unwrapDcHtml", () => {
     expect(html).toContain('src="assets/logo.png"');
     expect(html).not.toContain("_blob");
     expect(dynamic).toEqual([]);
+  });
+  it("reports unresolved blobs, extension-carrying ids, holes in helmet and content outside x-dc", () => {
+    expect(unwrapDcHtml(src, {}).unresolvedBlobs).toEqual(["abc"]);
+    expect(unwrapDcHtml(src, blobs).unresolvedBlobs).toEqual([]);
+    const ext = unwrapDcHtml(src.replace('src="/_blob/abc"', 'src="/_blob/abc.png"'), blobs).html;
+    expect(ext).toContain('src="assets/logo.png"');
+    expect(ext).not.toContain("logo.png.png");
+    const h = unwrapDcHtml(src.replace("</style></helmet>", "/*{{x}}*/</style></helmet>"), blobs).dynamic;
+    expect(h).toEqual([{ kind: "hole", detail: "{{x}}" }]);
+    const out = unwrapDcHtml(src.replace("<x-dc>", "<p>stray</p><x-dc>"), blobs).dynamic;
+    expect(out.map((d) => d.kind)).toEqual(["outside-x-dc"]);
   });
   const wrap = (inner: string, props = '{"$preview":{"width":1,"height":1}}', script = "class Component extends DCLogic{}") =>
     `<html><head></head><body><x-dc><helmet><style></style></helmet>${inner}</x-dc><script type="text/x-dc" data-dc-script data-props='${props}'>${script}</script></body></html>`;
@@ -139,5 +150,85 @@ describe("openDesign", () => {
     const b = d.browser;
     await d.close();
     expect(b.isConnected()).toBe(false);
+  });
+
+  const tmpDir = () => fs.mkdtempSync(path.join(here, "fixtures", "tmp-"));
+
+  it("records missing local assets and unresolved blobs", async () => {
+    const dir = tmpDir();
+    try {
+      fs.writeFileSync(path.join(dir, "a.html"), '<html><body><img src="nope.png"><p>x</p></body></html>');
+      const d = await openDesign(path.join(dir, "a.html"), kit, [2560, 1440], shared);
+      expect(d.missing).toEqual(["/nope.png"]);
+      await d.close();
+      fs.copyFileSync(fx("canvas.dc.html"), path.join(dir, "c.dc.html"));
+      const c = await openDesign(path.join(dir, "c.dc.html"), kit, [2560, 1440], shared);
+      expect(c.unresolvedBlobs).toEqual(["abc"]);
+      expect(c.missing.length).toBeGreaterThan(0);
+      await c.close();
+    } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
+  it("does not leak contexts or browsers on failure", async () => {
+    const dir = tmpDir();
+    try {
+      fs.copyFileSync(fx("canvas.dc.html"), path.join(dir, "c.dc.html"));
+      fs.writeFileSync(path.join(dir, "blobs.json"), "{not json");
+      const before = shared.contexts().length;
+      await expect(openDesign(path.join(dir, "c.dc.html"), kit, [2560, 1440], shared)).rejects.toThrow();
+      expect(shared.contexts().length).toBe(before);
+      // failure after newContext: navigation target vanishes is not possible, so break the kit viewport instead
+      const bad = { ...kit, allowedScriptOrigins: ["not a url"] };
+      await expect(openDesign(fx("plain.html"), bad, [2560, 1440], shared)).rejects.toThrow();
+      expect(shared.contexts().length).toBe(before);
+    } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
+  it("does not follow redirects out of an allowed origin and rejects non-JavaScript", async () => {
+    const evil = http.createServer((_q, r) => { r.setHeader("content-type", "text/javascript"); r.end("window.__evil = 1;"); });
+    await new Promise<void>((res) => evil.listen(0, "127.0.0.1", res));
+    const evilUrl = `http://127.0.0.1:${(evil.address() as { port: number }).port}/e.js`;
+    const srv = http.createServer((q, r) => {
+      if (q.url === "/redir.js") { r.statusCode = 302; r.setHeader("location", evilUrl); r.end(); }
+      else if (q.url === "/text.js") { r.setHeader("content-type", "text/html"); r.end("window.__text = 1;"); }
+      else { r.statusCode = 500; r.destroy(); }
+    });
+    await new Promise<void>((res) => srv.listen(0, "127.0.0.1", res));
+    const o = `http://127.0.0.1:${(srv.address() as { port: number }).port}`;
+    const dir = tmpDir();
+    try {
+      fs.writeFileSync(path.join(dir, "s.html"), `<html><body><script src="${o}/redir.js"></script><script src="${o}/text.js"></script><script src="${o}/boom.js"></script></body></html>`);
+      const d = await openDesign(path.join(dir, "s.html"), { ...kit, allowedScriptOrigins: [o] }, [2560, 1440], shared);
+      expect(await d.page.evaluate(() => [(window as any).__evil, (window as any).__text])).toEqual([undefined, undefined]);
+      expect(d.blocked.length).toBe(3);
+      await d.close();
+    } finally { fs.rmSync(dir, { recursive: true }); evil.close(); srv.close(); }
+  });
+
+  it("serves file names with spaces and non-ASCII characters", async () => {
+    const dir = tmpDir();
+    try {
+      fs.writeFileSync(path.join(dir, "my screen \u0131.html"), "<html><body><p id='t'>ok</p><img src='%E0%A4%A.png'></body></html>");
+      const d = await openDesign(path.join(dir, "my screen \u0131.html"), kit, [2560, 1440], shared);
+      expect(await d.page.evaluate(() => document.getElementById("t")!.textContent)).toBe("ok");
+      await d.close();
+    } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
+  it("gates fonts: whole stack, placeholders, own @font-face", async () => {
+    const dir = tmpDir();
+    try {
+      fs.writeFileSync(path.join(dir, "f.html"), `<html><head><style>@font-face{font-family:"Mine";src:local("Arial")}
+        input{font-family:"Inter UI"} input::placeholder{font-family:Courier}</style></head>
+        <body><p style="font-family:'Inter UI', Helvetica">a</p><input placeholder="p"><p style="font-family:Mine">b</p></body></html>`);
+      const d = await openDesign(path.join(dir, "f.html"), kit, [2560, 1440], shared);
+      expect(await usedFamilies(d.page)).toEqual(["Courier", "Helvetica", "Inter UI", "Mine"]);
+      const faces = await declaredFontFaces(d.page, kit);
+      expect(faces.filter((f) => f.fromKit).map((f) => f.family)).toEqual(["Inter UI", "Inter UI"]);
+      const own = faces.filter((f) => !f.fromKit);
+      expect(own.map((f) => f.family)).toEqual(["Mine"]);
+      expect(own[0].src).toContain("local(");
+      await d.close();
+    } finally { fs.rmSync(dir, { recursive: true }); }
   });
 });
