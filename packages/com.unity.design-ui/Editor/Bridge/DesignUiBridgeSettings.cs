@@ -35,6 +35,14 @@ namespace DesignUi.Editor
             s_Enabled = null;
         }
 
+        internal static void WriteAtomic(string path, string text)
+        {
+            var tmp = path + ".tmp";
+            File.WriteAllText(tmp, text);
+            if (File.Exists(path)) File.Replace(tmp, path, null);
+            else File.Move(tmp, path);
+        }
+
         static bool Read()
         {
             try
@@ -57,8 +65,11 @@ namespace DesignUi.Editor
             {
                 var path = SettingsPath;
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
-                var o = new JObject { ["bridgeEnabled"] = value };
-                File.WriteAllText(path, o.ToString());
+                JObject o;
+                try { o = File.Exists(path) ? JObject.Parse(File.ReadAllText(path)) : new JObject(); }
+                catch (Exception) { o = new JObject(); }
+                o["bridgeEnabled"] = value;
+                WriteAtomic(path, o.ToString());
             }
             catch (Exception e)
             {

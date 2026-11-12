@@ -33,6 +33,8 @@ namespace DesignUi.Editor
         sealed class WorkItem
         {
             public Func<OpResult> Run;
+            public string Op;
+            public int Generation;
             public readonly TaskCompletionSource<OpResult> Done =
                 new TaskCompletionSource<OpResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
@@ -48,6 +50,8 @@ namespace DesignUi.Editor
         static BridgeRequestInfo? s_LastRequest;
         static BridgeRequestInfo? s_LastOperation;
         static volatile bool s_IsCompiling;
+        static volatile bool s_AutoStartPending;
+        static int s_Generation;
 
         // Cached on the main thread for the listener thread.
         static string s_ProjectPath;
@@ -77,14 +81,16 @@ namespace DesignUi.Editor
             AssemblyReloadEvents.beforeAssemblyReload += OnBeforeReload;
             EditorApplication.quitting += OnQuitting;
             EditorApplication.update += Update;
-            if (Application.isBatchMode) return;
-            // Unity APIs (Application.dataPath, SessionState) are not allowed inside a static constructor
-            // during some load phases, so start on the first editor tick.
-            EditorApplication.delayCall += () =>
-            {
-                if (DesignUiBridgeSettings.Enabled) Start();
-            };
+            // Auto-start runs on the first update tick: delayCall is not processed while Unity is unfocused.
+            if (!Application.isBatchMode) s_AutoStartPending = true;
         }
+
+        internal static void ResetLastRequestForTests()
+        {
+            lock (s_Lock) { s_LastRequest = null; s_LastOperation = null; }
+        }
+
+        internal static void RequestAutoStartForTests() => s_AutoStartPending = true;
 
         public static void Restart()
         {
@@ -102,11 +108,22 @@ namespace DesignUi.Editor
         static void Update()
         {
             s_IsCompiling = EditorApplication.isCompiling;
+            if (s_AutoStartPending)
+            {
+                s_AutoStartPending = false;
+                if (DesignUiBridgeSettings.Enabled) Start();
+            }
             while (s_Work.TryDequeue(out var item))
             {
+                if (item.Generation != Volatile.Read(ref s_Generation))
+                {
+                    item.Done.TrySetResult(new OpResult(1, "Bridge stopped."));
+                    continue;
+                }
                 OpResult r;
                 try { r = item.Run(); }
                 catch (Exception e) { r = new OpResult(1, "Unhandled error: " + e.Message); Debug.LogException(e); }
+                Record(item.Op, r.Code, true);
                 item.Done.TrySetResult(r);
             }
             while (s_MainActions.TryDequeue(out var a))
@@ -136,7 +153,11 @@ namespace DesignUi.Editor
             try
             {
                 var p = BridgeJsonPath;
-                if (File.Exists(p)) return JObject.Parse(File.ReadAllText(p)).Value<int?>("port") ?? 0;
+                if (File.Exists(p))
+                {
+                    var port = JObject.Parse(File.ReadAllText(p)).Value<int?>("port") ?? 0;
+                    if (port >= 1 && port <= 65535) return port;
+                }
             }
             catch (Exception) { }
             return 0;
@@ -152,17 +173,18 @@ namespace DesignUi.Editor
 
         static HttpListener TryListen(int port)
         {
-            if (port <= 0) return null;
-            var l = new HttpListener();
-            l.Prefixes.Add("http://127.0.0.1:" + port + "/");
+            if (port < 1 || port > 65535) return null;
+            HttpListener l = null;
             try
             {
+                l = new HttpListener();
+                l.Prefixes.Add("http://127.0.0.1:" + port + "/");
                 l.Start();
                 return l;
             }
             catch (Exception)
             {
-                try { l.Close(); } catch (Exception) { }
+                try { l?.Close(); } catch (Exception) { }
                 return null;
             }
         }
@@ -175,24 +197,21 @@ namespace DesignUi.Editor
             }
 
             s_ProjectPath = DesignUiBridgeSettings.ProjectRoot;
-            var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(DesignUiBridge).Assembly);
-            s_Version = info != null ? info.version : "unknown";
+            if (s_Version == "unknown")
+            {
+                var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(DesignUiBridge).Assembly);
+                if (info != null) s_Version = info.version;
+            }
             s_Token = GetOrCreateToken();
             s_IsCompiling = EditorApplication.isCompiling;
 
-            HttpListener listener = TryListen(ReadPreviousPort());
-            int port = 0;
-            if (listener != null)
+            int port = ReadPreviousPort();
+            HttpListener listener = TryListen(port);
+            for (int i = 0; i < 10 && listener == null; i++)
             {
-                port = ReadPreviousPort();
-            }
-            else
-            {
-                for (int i = 0; i < 10 && listener == null; i++)
-                {
-                    port = FindFreePort();
-                    listener = TryListen(port);
-                }
+                try { port = FindFreePort(); }
+                catch (Exception) { continue; }
+                listener = TryListen(port);
             }
 
             if (listener == null)
@@ -208,7 +227,6 @@ namespace DesignUi.Editor
             }
 
             WriteBridgeJson(port);
-            var token = s_Token;
             Task.Run(() => AcceptLoop(listener));
             Notify();
         }
@@ -227,7 +245,7 @@ namespace DesignUi.Editor
                     ["pid"] = System.Diagnostics.Process.GetCurrentProcess().Id,
                     ["version"] = s_Version,
                 };
-                File.WriteAllText(p, o.ToString());
+                DesignUiBridgeSettings.WriteAtomic(p, o.ToString());
             }
             catch (Exception e)
             {
@@ -244,13 +262,14 @@ namespace DesignUi.Editor
                 s_Listener = null;
                 s_Port = 0;
             }
+            Interlocked.Increment(ref s_Generation);
+            while (s_Work.TryDequeue(out var item))
+                item.Done.TrySetResult(new OpResult(1, "Bridge stopped."));
             if (l != null)
             {
                 try { l.Stop(); } catch (Exception) { }
                 try { l.Close(); } catch (Exception) { }
             }
-            while (s_Work.TryDequeue(out var item))
-                item.Done.TrySetResult(new OpResult(1, "Bridge stopped."));
             if (deleteFile)
             {
                 try
@@ -294,8 +313,9 @@ namespace DesignUi.Editor
         static async Task HandleSafe(HttpListenerContext ctx)
         {
             try { await Handle(ctx).ConfigureAwait(false); }
-            catch (Exception)
+            catch (Exception e)
             {
+                s_MainActions.Enqueue(() => Debug.LogException(e));
                 try { ctx.Response.Abort(); } catch (Exception) { }
             }
         }
@@ -324,10 +344,23 @@ namespace DesignUi.Editor
             return diff == 0;
         }
 
+        // Discards up to 16 MB of the rest of the upload so the client sees the 413 instead of a reset connection.
+        static void Drain(HttpListenerRequest req, long alreadyRead)
+        {
+            try
+            {
+                var buf = new byte[8192];
+                long total = alreadyRead;
+                int n;
+                while (total < 16L * 1024 * 1024 && (n = req.InputStream.Read(buf, 0, buf.Length)) > 0) total += n;
+            }
+            catch (Exception) { }
+        }
+
         static string ReadBody(HttpListenerRequest req, out bool tooLarge)
         {
             tooLarge = false;
-            if (req.ContentLength64 > MaxBodyBytes) { tooLarge = true; return null; }
+            if (req.ContentLength64 > MaxBodyBytes) { tooLarge = true; Drain(req, 0); return null; }
             using (var ms = new MemoryStream())
             {
                 var buf = new byte[8192];
@@ -335,7 +368,7 @@ namespace DesignUi.Editor
                 while ((n = req.InputStream.Read(buf, 0, buf.Length)) > 0)
                 {
                     ms.Write(buf, 0, n);
-                    if (ms.Length > MaxBodyBytes) { tooLarge = true; return null; }
+                    if (ms.Length > MaxBodyBytes) { tooLarge = true; Drain(req, ms.Length); return null; }
                 }
                 return Encoding.UTF8.GetString(ms.ToArray());
             }
@@ -402,12 +435,9 @@ namespace DesignUi.Editor
             {
                 var item = new WorkItem();
                 var op = isImport ? "import" : "kit-sync";
-                item.Run = () =>
-                {
-                    var r = isImport ? ImportHandler(profile, dir, discard) : KitSyncHandler(profile, dir);
-                    Record(op, r.Code, true);
-                    return r;
-                };
+                item.Op = op;
+                item.Generation = Volatile.Read(ref s_Generation);
+                item.Run = () => isImport ? ImportHandler(profile, dir, discard) : KitSyncHandler(profile, dir);
                 s_Work.Enqueue(item);
                 var result = await item.Done.Task.ConfigureAwait(false);
                 Respond(ctx, 200, new JObject { ["code"] = result.Code, ["log"] = result.Log ?? "" });

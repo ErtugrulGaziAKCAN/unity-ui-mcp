@@ -20,7 +20,6 @@ namespace DesignUi.Editor.Tests
         static readonly HttpClient s_Http = new HttpClient();
 
         bool m_WasListening;
-        bool m_OriginalEnabled;
         bool m_SettingsExisted;
         string m_SettingsBackup;
         Func<string, string, bool, OpResult> m_Import;
@@ -39,7 +38,6 @@ namespace DesignUi.Editor.Tests
             var p = DesignUiBridgeSettings.SettingsPath;
             m_SettingsExisted = File.Exists(p);
             m_SettingsBackup = m_SettingsExisted ? File.ReadAllText(p) : null;
-            m_OriginalEnabled = DesignUiBridgeSettings.Enabled;
             m_Import = DesignUiBridge.ImportHandler;
             m_Kit = DesignUiBridge.KitSyncHandler;
             // Make sure the bridge runs with the setting on, without persisting a different value than the original.
@@ -244,9 +242,68 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(DesignUiBridge.IsListening);
             Assert.AreEqual(0, DesignUiBridge.Port);
             Assert.IsFalse(File.Exists(BridgeJson));
+            var o = JObject.Parse(File.ReadAllText(DesignUiBridgeSettings.SettingsPath));
+            Assert.AreEqual(false, o.Value<bool>("bridgeEnabled"));
             DesignUiBridgeSettings.Enabled = true;
             Assert.IsTrue(DesignUiBridge.IsListening);
             Assert.IsTrue(File.Exists(BridgeJson));
+            o = JObject.Parse(File.ReadAllText(DesignUiBridgeSettings.SettingsPath));
+            Assert.AreEqual(true, o.Value<bool>("bridgeEnabled"));
+        }
+
+        [Test]
+        public void Settings_PreserveOtherKeys()
+        {
+            var path = DesignUiBridgeSettings.SettingsPath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, "{\"other\": 7}");
+            DesignUiBridgeSettings.Enabled = false;
+            DesignUiBridgeSettings.Enabled = true;
+            var o = JObject.Parse(File.ReadAllText(path));
+            Assert.AreEqual(7, o.Value<int>("other"));
+            Assert.AreEqual(true, o.Value<bool>("bridgeEnabled"));
+        }
+
+        [UnityTest]
+        public IEnumerator ThrowingHandler_IsRecordedWithCode1()
+        {
+            DesignUiBridge.ImportHandler = (p, d, x) => throw new InvalidOperationException("kaboom");
+            LogAssert.Expect(LogType.Exception, new Regex("kaboom"));
+            var t = Send("POST", "/import", Token(),
+                "{\"profile\":\"p\",\"exportDir\":\"e\",\"discardManualEdits\":false}");
+            yield return Wait(t);
+            Assert.AreEqual(200, t.Result.status);
+            Assert.AreEqual(1, t.Result.body.Value<int>("code"));
+            Assert.AreEqual("import", DesignUiBridge.LastRequest.Value.Op);
+            Assert.AreEqual(1, DesignUiBridge.LastRequest.Value.Code);
+            var st = Send("GET", "/status", Token());
+            yield return Wait(st);
+            Assert.AreEqual(1, st.Result.body["last"].Value<int>("code"));
+        }
+
+        [UnityTest]
+        public IEnumerator AutoStartPending_StartsOnUpdateTick()
+        {
+            DesignUiBridge.StopForTests();
+            Assert.IsFalse(DesignUiBridge.IsListening);
+            DesignUiBridge.RequestAutoStartForTests();
+            for (int i = 0; i < 5 && !DesignUiBridge.IsListening; i++) yield return null;
+            Assert.IsTrue(DesignUiBridge.IsListening);
+        }
+
+        [Test]
+        public void CorruptBridgeJson_DoesNotKeepBridgeDead()
+        {
+            foreach (var content in new[] { "{\"port\":70000,\"token\":\"x\"}", "{\"port\":-5}", "garbage{{" })
+            {
+                DesignUiBridge.StopForTests();
+                Directory.CreateDirectory(Path.GetDirectoryName(BridgeJson));
+                File.WriteAllText(BridgeJson, content);
+                DesignUiBridge.Restart();
+                Assert.IsTrue(DesignUiBridge.IsListening, content);
+                Assert.That(DesignUiBridge.Port, Is.InRange(1, 65535));
+                Assert.AreEqual(DesignUiBridge.Port, Cfg().Value<int>("port"));
+            }
         }
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -7,6 +8,7 @@ namespace DesignUi.Editor
 {
     public sealed class DesignUiWindow : EditorWindow
     {
+        static string s_Version;
         Label m_Status;
         Toggle m_Enable;
         Label m_Project;
@@ -82,11 +84,15 @@ namespace DesignUi.Editor
 
             var last = DesignUiBridge.LastRequest;
             m_Last.text = last.HasValue
-                ? last.Value.Utc.ToLocalTime().ToString("HH:mm:ss") + " · " + last.Value.Op + " · code " + last.Value.Code
+                ? last.Value.Utc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture) + " · " + last.Value.Op + " · code " + last.Value.Code
                 : "None yet";
 
-            var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(DesignUiWindow).Assembly);
-            m_Package.text = "Design UI " + (info != null ? info.version : "unknown");
+            if (s_Version == null)
+            {
+                var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(DesignUiWindow).Assembly);
+                s_Version = info != null ? info.version : "unknown";
+            }
+            m_Package.text = "Design UI " + s_Version;
         }
     }
 }
