@@ -1,0 +1,262 @@
+{
+  "breakpoints": [
+    {
+      "maxWidth": 1600,
+      "name": "narrow"
+    }
+  ],
+  "fonts": [
+    {
+      "family": "Inter",
+      "file": "fonts/Inter-Regular.ttf",
+      "locale": "tr",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "weight": 400
+    }
+  ],
+  "irVersion": 1,
+  "referenceViewport": [
+    2560,
+    1440
+  ],
+  "root": {
+    "action": null,
+    "anims": [],
+    "asset": null,
+    "background": {
+      "file": "assets/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.svg",
+      "height": 1440,
+      "kind": "svg",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "slice": null,
+      "width": 2560
+    },
+    "bind": null,
+    "children": [
+      {
+        "action": null,
+        "anims": [],
+        "asset": null,
+        "background": null,
+        "bind": "playerName",
+        "children": [],
+        "classes": [],
+        "external": false,
+        "id": "title",
+        "kind": "text",
+        "repeat": null,
+        "shadow": null,
+        "style": {
+          "base": {
+            "color": "#ffffff",
+            "font-size": "48px"
+          }
+        },
+        "text": {
+          "args": [
+            "name"
+          ],
+          "en": "Welcome {0}",
+          "key": "sample.title",
+          "rich": false,
+          "tr": "Hoş geldin {0}"
+        }
+      },
+      {
+        "action": null,
+        "anims": [],
+        "asset": {
+          "file": "assets/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.png",
+          "height": 300,
+          "kind": "image",
+          "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "slice": null,
+          "width": 600
+        },
+        "background": null,
+        "bind": null,
+        "children": [],
+        "classes": [],
+        "external": false,
+        "id": "card",
+        "kind": "container",
+        "repeat": null,
+        "shadow": {
+          "file": "assets/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.png",
+          "height": 96,
+          "kind": "shadow9",
+          "offset": {
+            "h": 0,
+            "w": 0,
+            "x": 0,
+            "y": 8
+          },
+          "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "slice": [
+            40,
+            40,
+            40,
+            40
+          ],
+          "width": 96
+        },
+        "style": {
+          "base": {
+            "border-radius": "24px",
+            "height": "300px",
+            "width": "600px"
+          }
+        },
+        "text": null
+      },
+      {
+        "action": "play",
+        "anims": [],
+        "asset": null,
+        "background": null,
+        "bind": null,
+        "children": [
+          {
+            "action": null,
+            "anims": [],
+            "asset": null,
+            "background": null,
+            "bind": null,
+            "children": [],
+            "classes": [],
+            "external": false,
+            "id": "play-label",
+            "kind": "text",
+            "repeat": null,
+            "shadow": null,
+            "style": {
+              "base": {}
+            },
+            "text": {
+              "args": [],
+              "en": "Play",
+              "key": "sample.play",
+              "rich": false,
+              "tr": "Oyna"
+            }
+          }
+        ],
+        "classes": [],
+        "external": false,
+        "id": "play",
+        "kind": "button",
+        "repeat": null,
+        "shadow": null,
+        "style": {
+          "active": {
+            "background-color": "#1fa89e"
+          },
+          "base": {
+            "background-color": "#2fd1c5"
+          },
+          "disabled": {
+            "opacity": "0.4"
+          },
+          "hover": {
+            "background-color": "#5fe3d8"
+          }
+        },
+        "text": null
+      },
+      {
+        "action": null,
+        "anims": [],
+        "asset": null,
+        "background": null,
+        "bind": null,
+        "children": [
+          {
+            "action": null,
+            "anims": [],
+            "asset": null,
+            "background": null,
+            "bind": null,
+            "children": [],
+            "classes": [
+              "row"
+            ],
+            "external": false,
+            "id": "row",
+            "kind": "container",
+            "repeat": null,
+            "shadow": null,
+            "style": {
+              "base": {
+                "height": "64px"
+              }
+            },
+            "text": null
+          }
+        ],
+        "classes": [],
+        "external": false,
+        "id": "rows",
+        "kind": "list",
+        "repeat": {
+          "mode": "list",
+          "name": "row"
+        },
+        "shadow": null,
+        "style": {
+          "base": {
+            "flex-direction": "column"
+          }
+        },
+        "text": null
+      }
+    ],
+    "classes": [
+      "screen"
+    ],
+    "external": false,
+    "id": "root",
+    "kind": "container",
+    "repeat": null,
+    "shadow": null,
+    "style": {
+      "base": {
+        "background-color": "#0b1f26",
+        "display": "flex",
+        "flex-direction": "column",
+        "height": "100%",
+        "width": "100%"
+      },
+      "bp:narrow": {
+        "flex-direction": "column"
+      },
+      "state:loading": {
+        "opacity": "0.5"
+      }
+    },
+    "text": null
+  },
+  "screen": "sample.screen",
+  "screenMatch": 0.99,
+  "source": {
+    "path": "sample.dc.html",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "states": [
+    "default",
+    "loading"
+  ],
+  "tokens": {
+    "color.accent": "#2fd1c5",
+    "color.surface": "#0b1f26"
+  },
+  "viewports": [
+    [
+      2560,
+      1440
+    ],
+    [
+      1280,
+      720
+    ]
+  ]
+}
