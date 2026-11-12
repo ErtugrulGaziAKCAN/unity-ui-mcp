@@ -139,7 +139,7 @@ rows that cite them; items marked *unmeasured* are allowed by the reference but 
 
 | CSS | UI Toolkit | Rule |
 |---|---|---|
-| flex layout, `%`, `px`, `auto`, min/max sizes, margin, padding, `position: absolute`, top/right/bottom/left, overflow, border widths/colors, opacity; *unmeasured:* `rotate`/`scale`/`translate`/`transform-origin`, `aspect-ratio`, `text-shadow`, `letter-spacing`, `word-spacing`, `white-space` beyond line breaks, `text-overflow`, transitions | Direct USS | Allowed. M0 parity was measured with UI Toolkit's initial values mirrored in the HTML (column flex, `position: relative`, `flex-shrink: 1`, `border-box`, `align-content: flex-start`); where a CSS initial value differs, the compiler must write it explicitly or lint must reject it (findings O-6) |
+| flex layout, `%`, `px`, `auto`, min/max sizes, margin, padding, `position: absolute`, top/right/bottom/left, overflow, border widths/colors, opacity; *unmeasured:* `rotate`/`scale`/`translate`/`transform-origin`, `aspect-ratio`, `text-shadow`, `letter-spacing`, `word-spacing`, `white-space` beyond line breaks, `text-overflow`, transitions (played by the animation player, §11) | Direct USS | Allowed. M0 parity was measured with UI Toolkit's initial values mirrored in the HTML (column flex, `position: relative`, `flex-shrink: 1`, `border-box`, `align-content: flex-start`); where a CSS initial value differs, the compiler must write it explicitly or lint must reject it (findings O-6) |
 | `filter` | USS built-in filter functions | Only functions listed in `kit.config.json` `filterFunctions` (U-CSS-015); the list is empty until a function passes the fidelity suite |
 | `border-radius` | Resolved at export to one px radius per corner against the element's box, with CSS's overlapping-curves scaling (`9999px` on a 300×80 box becomes 40px; UI Toolkit would clamp each axis and draw an ellipse) | Circular corners only: elliptical radii (`/` syntax, `%` on a non-square box) are U-CSS-020 |
 | `border-style` | USS borders are always solid | Only `solid` or `none` (U-CSS-021) |
@@ -154,16 +154,16 @@ rows that cite them; items marked *unmeasured* are allowed by the reference but 
 | `@keyframes` / `animation` | Not in USS → generated keyframe data + runtime player | Only transform, opacity and color properties |
 | Inline emphasis inside a paragraph | TextCore rich text tags | Only `b`, `i`, `color`, `size` |
 | `rem` | Resolved to px at export | Allowed |
-| Transition easing | USS timing functions | Only `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` |
+| Transitions and easing | Recorded in the IR and played by the animation player (§11), never emitted as USS transitions, so nothing animates twice | `linear`, `ease*`, `cubic-bezier()`, `steps()` once the player lands; until then the five keywords |
 | `display: grid`, `::before`/`::after`, `:nth-child` and structural pseudo-classes, `z-index` on in-flow elements, `calc()`, `vw`/`vh`, `backdrop-filter`, `cubic-bezier()`, `inline`/`inline-block` text flow, `font-family` outside the kit | No equivalent | **Lint error** |
 | `font-size`, `line-height`, `font-weight` | Font size and weight direct; `line-height` is not in USS and is dropped by the compiler | Only the kit text styles in `text-styles.json` (U-CSS-016, matched numerically with a tolerance because Chromium serialises computed lengths to 6 significant digits); see "Text styles" below. Weights need a real face in the reference locale's font (checked by kit sync; U-FONT-001 as backstop) |
 
 `z-index` on absolutely positioned siblings is allowed and compiled by reordering siblings, since UI Toolkit
 draws in hierarchy order.
 
-The compiled USS also resets the control styles a runtime theme adds (margins, padding, borders and backgrounds of
-`Label`, `Button` and the other generated controls), so a screen looks the same in the theme-less verification panel
-(§15) and in game under the project's theme.
+Design screens render on a dedicated PanelSettings with the package's minimal `DesignUiRuntimeTheme` (no Unity
+default theme), in the verifier and in game alike, so no theme rule can change a compiled control; the inner parts of
+controls are styled by the compiled kit components.
 
 **Text styles.** UI Toolkit cannot set a line height: a text element is `ceil(n × P)` tall for n lines, with
 `P = fontSize × faceInfo.lineHeight / faceInfo.pointSize` of the font twin (the advanced generator floors `P` to
