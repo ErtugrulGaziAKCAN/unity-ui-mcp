@@ -133,32 +133,51 @@ Visible Turkish text is the element's text content. Elements without `data-u-id`
 
 ### 5.3 CSS to UI Toolkit mapping
 
-Checked against the Unity 6.3 USS property reference.
+Checked against the Unity 6.3 USS property reference and calibrated by the M0 measurements
+(`docs/findings/m0.md`).
 
 | CSS | UI Toolkit | Rule |
 |---|---|---|
-| flex layout, `%`, `px`, `auto`, min/max sizes, margin, padding, `position: absolute`, top/right/bottom/left, overflow, border widths/colors/radii, opacity, `rotate`/`scale`/`translate`/`transform-origin`, `aspect-ratio`, `filter` (built-in functions), `text-shadow`, `letter-spacing`, `word-spacing`, `white-space`, `text-overflow`, transitions | Direct USS | Allowed |
-| `:hover`, `:active`, `:focus`, `:disabled`, `:checked` | USS pseudo-classes | Allowed |
+| flex layout, `%`, `px`, `auto`, min/max sizes, margin, padding, `position: absolute`, top/right/bottom/left, overflow, border widths/colors, opacity, `rotate`/`scale`/`translate`/`transform-origin`, `aspect-ratio`, `text-shadow`, `letter-spacing`, `word-spacing`, `white-space`, `text-overflow`, transitions | Direct USS | Allowed. M0 parity was measured with UI Toolkit's initial values mirrored in the HTML (column flex, `position: relative`, `flex-shrink: 1`, `border-box`, `align-content: flex-start`); where a CSS initial value differs, the compiler must write it explicitly or lint must reject it (findings O-6) |
+| `filter` | USS built-in filter functions | Only functions listed in `kit.config.json` `filterFunctions` (U-CSS-015); the list is empty until a function passes the fidelity suite |
+| `border-radius` | Resolved at export to one px radius per corner against the element's box, with CSS's overlapping-curves scaling (`9999px` on a 300×80 box becomes 40px; UI Toolkit would clamp each axis and draw an ellipse) | Circular corners only: elliptical radii (`/` syntax, `%` on a non-square box) are U-CSS-020 |
+| `border-style` | USS borders are always solid | Only `solid` or `none` (U-CSS-021) |
+| `align-items` / `align-self` | Direct USS, except `baseline` (rejected by USS) | No `baseline` values (U-CSS-018) |
+| `min-width` / `min-height: auto` on flex items | USS treats `auto` as 0 (no automatic minimum size; long words break) | A design whose layout depends on the automatic minimum size fails lint (U-CSS-019) |
+| `:hover`, `:active`, `:focus`, `:disabled`, `:checked` | USS pseudo-classes | Allowed. UI Toolkit applies `:active` only to elements with a `Clickable`, so elements with an `:active` rule compile to `Button` or get a `Clickable` |
 | Custom states (selected, active tab) | Class toggled by the view, e.g. `.is-selected` | Allowed via `is-*` classes |
 | `gap`, `row-gap`, `column-gap` | Not in USS → lowered to child margins | Only on non-wrapping flex containers |
 | `box-shadow` | Not in USS → baked to a 9-slice image by Chromium, placed behind the element | Allowed; no `inset` |
-| `linear-gradient`, `radial-gradient` | Not in USS → SVG gradient → VectorImage background | Allowed |
+| `linear-gradient`, `radial-gradient` | Not in USS → SVG gradient → VectorImage background (`SVGType.VectorImage`; the importer bakes a 64-step ramp) | Allowed; colour stops closer than 1/64 of the gradient line, hard stops included, are U-CSS-022 |
 | `@media` | Not in USS → breakpoint classes on the root | Only `min/max-width`, `min/max-aspect-ratio` |
 | `@keyframes` / `animation` | Not in USS → generated keyframe data + runtime player | Only transform, opacity and color properties |
 | Inline emphasis inside a paragraph | TextCore rich text tags | Only `b`, `i`, `color`, `size` |
 | `rem` | Resolved to px at export | Allowed |
 | Transition easing | USS timing functions | Only `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` |
 | `display: grid`, `::before`/`::after`, `:nth-child` and structural pseudo-classes, `z-index` on in-flow elements, `calc()`, `vw`/`vh`, `backdrop-filter`, `cubic-bezier()`, `inline`/`inline-block` text flow, `font-family` outside the kit | No equivalent | **Lint error** |
-| `line-height` | Not in USS | Constrained by the kit; see §21 risk R2 |
+| `font-size`, `line-height`, `font-weight` | Font size and weight direct; `line-height` is not in USS and is dropped by the compiler | Only the kit text styles in `text-styles.json` (U-CSS-016); see "Text styles" below. Weights need a real face in the reference locale's font (U-FONT-001) |
 
 `z-index` on absolutely positioned siblings is allowed and compiled by reordering siblings, since UI Toolkit
 draws in hierarchy order.
+
+The compiled USS also resets the control styles a runtime theme adds (margins, padding, borders and backgrounds of
+`Label`, `Button` and the other generated controls), so a screen looks the same in the theme-less verification panel
+(§15) and in game under the project's theme.
+
+**Text styles.** UI Toolkit cannot set a line height: a text element is `ceil(n × P)` tall for n lines, with
+`P = fontSize × faceInfo.lineHeight / faceInfo.pointSize` of the font twin, while Chromium makes it `n × line-height`.
+Every kit text style therefore pins `lineHeight` to `ceil(P)` of the reference locale's font, so a single line has the
+same height and baseline (±0.5 px) in both engines, and uses only line heights that are multiples of 4 px, which stay
+whole device pixels at the 0.75 and 0.5 viewport scales. The kit ships Inter Regular and Bold at 13/16, 16/20, 23/28,
+26/32, 33/40, 46/56 and 56/68 px (font size / line height). Several lines drift by `lineHeight − P` per line; the
+findings list how many lines each style keeps within the thresholds (for example 8 for 23/28 and 14 for 33/40). Kit
+sync checks the file against the reference font twin and fails on a style that breaks the rule.
 
 ### 5.4 Lint
 
 Lint runs on the live DOM and CSSOM in Chromium. Each finding has a stable rule id (e.g. `U-CSS-012`), the element
 path, the offending declaration or attribute, and a fix hint. Errors block export; warnings are reported (e.g. a
-font weight not present in the project font, a layout property animated by a transition).
+font weight with no real face in a non-reference locale's font, a layout property animated by a transition).
 
 ### 5.5 Claude Design canvases
 
@@ -205,7 +224,10 @@ bidirectional text) does not accept static font assets. Twins regenerate when TM
 change. The project keeps one font configuration: its TMP setup.
 
 **Weights.** If the resolved font has no real face for a weight, both Chromium and Unity synthesize bold, and they
-do it differently. Lint warns on such weights; adding the real face to the TMP weight table is the recommended fix.
+do it differently: UI Toolkit's standard text generator widens every advance by 14 %, Chromium keeps them (M0). For
+the reference locale's font, whose pixels are compared, lint fails such a weight (U-FONT-001); for other locales it
+warns (W-FONT-001). The fix is adding the real face to the TMP weight table; the twin generator mirrors it into the
+twin's `fontWeightTable`.
 
 ## 7. Exporter and IR
 
@@ -378,19 +400,47 @@ each state, and produces hover/active/focus by dispatching real pointer and focu
 pseudo-class rules are exercised. It records the PNG, every element's `worldBound`, and text line information.
 In a project whose Editor stays open it runs on an isolated copy of the project, never in the user's open Editor.
 
+The route and setup measured in M0 (`docs/findings/m0.md`):
+
+- **Entry.** An EditMode test (`UnityTest` driven by editor updates, public API only) in Unity batchmode; the
+  request comes in environment variables. With the maintainer's clone tool:
+  `scripts/unity-check.sh --warm --editmode "<capture test>" --wait` (a reused batch clone); elsewhere
+  `-batchmode -runTests -testPlatform EditMode -testFilter <capture test>` on a copy of the project. Metal renders
+  in batchmode; no window and no Play mode are needed.
+- **Panel.** `UIDocument` with `PanelSettings`: no theme style sheet, Scale With Screen Size at the profile's
+  reference resolution and match, `forceGammaRendering = true`, clear to a sentinel colour (pixels left in it mean
+  "not covered"), `targetTexture` = an `R8G8B8A8_UNorm` RenderTexture with a `D24_UNorm_S8_UInt` depth-stencil. The
+  document root is stretched to the panel (`position: absolute`, insets 0), which a theme would otherwise do.
+- **Frames.** 10 editor updates after mounting, then the stretch and 10 more; 5 after each state change or pointer
+  event. Transitions are disabled for static captures, as in the exporter.
+- **Readback.** `ReadPixels` into a linear `RGBA32` texture or `AsyncGPUReadback`, written to the PNG unchanged; no
+  colour conversion. Gamma-space blending on a UNorm target reproduces the browser's colours (ΔE2000 ≤ 0.72 with
+  alpha); the default linear blending of a Linear project shifts alpha-blended colours by up to ΔE 22.
+- **Pseudo-states.** One element per capture: `PointerMoveEvent` at the element centre (panel coordinates) sent to
+  `panel.visualTree` gives `:hover`; a following `PointerDownEvent` gives `:active` (only on elements with a
+  `Clickable`, see §5.3); `PointerUpEvent` and a move outside every element reset it.
+- **Text lines.** `TextElement.selection.GetCursorPositionFromStringIndex(i)` for every index gives the lines, their
+  break indices and widths; a line's baseline is its top plus `faceInfo.ascentLine × fontSize / faceInfo.pointSize`
+  of the font twin. If that API is missing, the line count is `round(contentHeight / P)` (§5.3 text styles) and break
+  positions are reported as not compared.
+
 **Comparison.** `design-export compare` aligns Unity output with the goldens and writes one HTML report: side by
 side, overlay slider, difference heatmap, per-element box deltas, locale checks and performance numbers.
 
-Initial thresholds, calibrated in M0:
+Thresholds (`tools/design-export/fidelity-thresholds.json`), calibrated in M0:
 
-| Measure | Threshold |
-|---|---|
-| Element boxes | ±1 px at 2560×1440 (and ±1 px at other viewports) |
-| Text | Same line count and break positions; baseline ±1 px |
-| Non-text color at sampled points | ΔE2000 ≤ 1 |
-| Structural similarity, non-text regions | SSIM ≥ 0.99 |
+| Measure | Threshold | M0 evidence |
+|---|---|---|
+| Element boxes (`boxPx`) | ±1 px at every viewport | Layout ≤ 0.5 px (UI Toolkit snaps to whole pixels); text 0 px with kit text styles |
+| Text (`baselinePx`) | Same line count and break positions; baseline ±1 px | Line counts equal; first-line baseline ≤ 0.5 px; later lines within the per-style limits |
+| Non-text color at sampled points (`deltaE2000`) | ΔE2000 ≤ 1 | ≤ 0.72 for opaque and alpha colours, ≤ 0.89 for gradients |
+| SSIM, non-text, whole capture (`ssimNonText`) | ≥ 0.99 | Clean fixtures ≥ 0.99998; gradient banding lowers it to about 0.998 for a full-screen gradient. Too coarse for element-sized defects |
+| SSIM, non-text, per element ≥ 16×16 px (`ssimElement`) | ≥ 0.99 | Elements without defects ≥ 0.9956; a pill drawn as an ellipse 0.72, a missing glow 0.92, a dashed border drawn solid 0.97 |
 
-Glyph rasterization differences are tolerated only inside text boxes. Regions marked `data-u-external` are masked.
+SSIM is the mean over non-overlapping 8×8 blocks of BT.601 luma with `C1 = (0.01·255)²`, `C2 = (0.03·255)²`; for an
+element, over the blocks that overlap its golden box. Glyph rasterization differences are tolerated only inside text
+boxes: pixels inside text boxes (inflated by 2 px) are copied from the golden before the SSIM is computed. Regions
+marked `data-u-external` are masked the same way.
 A screen is **verified** only when every viewport × state × pseudo-state capture passes, and the locale checks
 pass for every active locale. Pixel fidelity is measured in Turkish; other locales are checked structurally.
 
@@ -454,9 +504,9 @@ configurable runner:
   until compilation finishes. When `editor` is preferred and no bridge answers for the configured project, the tool
   fails with that reason; it never falls back silently to another route.
 - `command` (M1, used for capture and when no Editor is open, e.g. CI): command templates for import, capture and
-  kit sync, e.g. Unity batchmode `-executeMethod DesignUi.Editor.DesignUiBatch.Import …`, or an
-  isolated-clone tool. Verification captures always use this route, so the user's open Editor is never put into a
-  capture or Play state.
+  kit sync, e.g. Unity batchmode `-executeMethod DesignUi.Editor.DesignUiBatch.Import …` for import, the EditMode
+  capture test of §15 for capture, or an isolated-clone tool. Verification captures always use this route, so the
+  user's open Editor is never put into a capture or Play state.
 
 Neither route needs a Unity-side MCP package.
 
@@ -550,19 +600,44 @@ Decisions (resolved by the user on 2026-11-12):
 - **D4 GitHub repository:** `unity-ui-mcp` under the user's account; public since 2026-11-12, with project-specific
   notes kept outside the repository.
 
-Risks measured in M0:
+Risks measured in M0 (results and evidence in `docs/findings/m0.md`):
 
 - **R1** Chromium flexbox vs UI Toolkit layout engine differences (flex-basis, min-size, percentages in auto
   parents, absolute children in flex). Differences become lint rules or compiler lowerings.
+  **Resolved (see findings):** parity within 0.5 px; new lint rules U-CSS-018 (baseline alignment), U-CSS-019
+  (automatic minimum size), U-CSS-020 (elliptical radii), U-CSS-021 (non-solid borders), U-CSS-022 (gradient stops
+  closer than the 64-step ramp); radii resolved at export.
 - **R2** No `line-height` in USS. Options: kit text styles pin line-height to the font twin's metrics, or the twin
   generator produces line-spacing variants. Choose by measurement.
-- **R3** Synthetic bold differs between Chromium and TextCore.
+  **Resolved (see findings):** kit text styles pin `lineHeight` to UI Toolkit's own single-line height,
+  `ceil(fontSize × faceInfo.lineHeight / faceInfo.pointSize)` of the reference font twin, in multiples of 4 px (§5.3
+  text styles, `design-kit/text-styles.json`).
+- **R3** Synthetic bold differs between Chromium and TextCore. **Resolved (see findings):** real faces only;
+  U-FONT-001 for the reference locale (§6).
 - **R4** Font twin metric parity (ascent, descent, line gap, sampling) with Chromium; dynamic twins under the
-  advanced text generator.
+  advanced text generator. **Resolved (see findings):** `FontAsset.CreateFontAsset` with the TMP asset's sampling,
+  padding, render mode and atlas size, dynamic; metrics equal; weight table mirrored; advances within 0.09 px.
 - **R5** Capture route: RenderTexture capture from a PlayMode test on an isolated clone, including GPU availability.
-- **R6** Pointer and focus event simulation for pseudo-states.
-- **R7** Reading text line breaks from UI Toolkit for comparison.
+  **Resolved (see findings):** an EditMode test in batchmode renders on Metal; no Play mode or window (§15).
+- **R6** Pointer and focus event simulation for pseudo-states. **Resolved (see findings)** for `:hover` and
+  `:active` (§15); `:active` needs a `Clickable` (§5.3). `:focus`, `:disabled` and `:checked` are checked in the M1
+  fidelity suite.
+- **R7** Reading text line breaks from UI Toolkit for comparison. **Resolved (see findings):** public caret
+  positions plus the twin's ascent (§15).
 - **R8** Color parity in a Linear-color-space URP project, including SVG gradient interpolation vs CSS gradients.
+  **Resolved for verification (see findings):** UNorm target with `forceGammaRendering`, ΔE2000 ≤ 0.72; SVG
+  gradients as `SVGType.VectorImage` match within 0.83. In-game colour moves to R9.
+
+Risks open after M0:
+
+- **R9** In-game colour on screen in a URP, Linear project. M0 measured RenderTextures on the built-in pipeline only:
+  gamma-space blending (`forceGammaRendering`) matches the design on a UNorm target and double-encodes on an sRGB
+  target. The runtime profile carries `forceGammaRendering` for game panels, on by default, until the pilot measures
+  the on-screen path.
+- **R10** Viewports other than the reference. UI Toolkit rounds text sizes up to whole pixels; text styles with
+  line heights in multiples of 4 px keep heights exact at scales 0.75 and 0.5 by derivation, and rows of auto-width
+  text accumulate the rounded-up widths (up to about 2 px per text at the reference). The M1 fidelity suite measures
+  both at 1920×1080 and 1280×720.
 
 ## 22. Sources
 
