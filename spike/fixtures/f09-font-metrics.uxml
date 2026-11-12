@@ -1,0 +1,22 @@
+<!-- M0 spike twin of f09-font-metrics.html: single-line line box height and baseline per size, line-height normal (R4). Font twin is wired in Task 3. -->
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+  <ui:Style src="f09-font-metrics.uss" />
+  <ui:VisualElement name="root">
+    <ui:VisualElement name="f09-list">
+      <ui:Label name="f09-12" text="Hxgy Wag" />
+      <ui:Label name="f09-14" text="Hxgy Wag" />
+      <ui:Label name="f09-16" text="Hxgy Wag" />
+      <ui:Label name="f09-18" text="Hxgy Wag" />
+      <ui:Label name="f09-20" text="Hxgy Wag" />
+      <ui:Label name="f09-24" text="Hxgy Wag" />
+      <ui:Label name="f09-28" text="Hxgy Wag" />
+      <ui:Label name="f09-32" text="Hxgy Wag" />
+      <ui:Label name="f09-40" text="Hxgy Wag" />
+      <ui:Label name="f09-48" text="Hxgy Wag" />
+    </ui:VisualElement>
+    <ui:VisualElement name="f09-row">
+      <ui:Label name="f09-bl-a" text="Hx" />
+      <ui:Label name="f09-bl-b" text="Hx" />
+    </ui:VisualElement>
+  </ui:VisualElement>
+</ui:UXML>

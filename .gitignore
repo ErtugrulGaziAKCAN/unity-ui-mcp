@@ -12,3 +12,4 @@ samples/FidelityProject/obj/
 samples/FidelityProject/UserSettings/
 samples/FidelityProject/*.csproj
 samples/FidelityProject/*.sln
+spike/out/

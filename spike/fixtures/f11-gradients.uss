@@ -1,0 +1,83 @@
+/* M0 spike twin of f11-gradients.html. Element names equal the HTML ids. */
+/* UI Toolkit defaults match the HTML base rules: flex-direction column, position relative, flex-shrink 1. */
+/* CSS in the HTML fixture that UI Toolkit cannot express:
+   - #f11-l90 background: linear-gradient(90deg, #1f8a70, #2c6fbb) -- USS cannot express CSS gradients; compiler emits SVG background
+   - #f11-l180 background: linear-gradient(180deg, #00e5ff, #0b1f26) -- USS cannot express CSS gradients; compiler emits SVG background
+   - #f11-l45 background: linear-gradient(45deg, #c0572b, #d4a017) -- USS cannot express CSS gradients; compiler emits SVG background
+   - #f11-l3 background: linear-gradient(90deg, #ff0000 0%, #00ff00 50%, #0000ff 100%) -- USS cannot express CSS gradients; compiler emits SVG background
+   - #f11-lalpha background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.8)) -- USS cannot express CSS gradients; compiler emits SVG background
+   - #f11-lhard background: linear-gradient(90deg, #1f8a70 0%, #1f8a70 50%, #2c6fbb 50%, #2c6fbb 100%) -- USS cannot express CSS gradients; compiler emits SVG background
+   - #f11-rcircle background: radial-gradient(circle at center, #00e5ff, #0b1f26) -- USS cannot express CSS gradients; compiler emits SVG background
+   - #f11-rellipse background: radial-gradient(ellipse at center, #d4a017, rgba(212,160,23,0)) -- USS cannot express CSS gradients; compiler emits SVG background
+   - #f11-roff background: radial-gradient(circle at 25% 25%, #8e44ad, #0b1f26 70%) -- USS cannot express CSS gradients; compiler emits SVG background
+*/
+#root {
+  width: 100%;
+  height: 100%;
+  background-color: #0b1f26;
+}
+#root {
+  padding: 40px;
+}
+#f11-lin {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+/* UNSUPPORTED in UITK: background: linear-gradient(90deg, #1f8a70, #2c6fbb) -- USS cannot express CSS gradients; compiler emits SVG background */
+#f11-l90 {
+  width: 400px;
+  height: 200px;
+  margin: 10px;
+}
+/* UNSUPPORTED in UITK: background: linear-gradient(180deg, #00e5ff, #0b1f26) -- USS cannot express CSS gradients; compiler emits SVG background */
+#f11-l180 {
+  width: 400px;
+  height: 200px;
+  margin: 10px;
+}
+/* UNSUPPORTED in UITK: background: linear-gradient(45deg, #c0572b, #d4a017) -- USS cannot express CSS gradients; compiler emits SVG background */
+#f11-l45 {
+  width: 400px;
+  height: 200px;
+  margin: 10px;
+}
+/* UNSUPPORTED in UITK: background: linear-gradient(90deg, #ff0000 0%, #00ff00 50%, #0000ff 100%) -- USS cannot express CSS gradients; compiler emits SVG background */
+#f11-l3 {
+  width: 400px;
+  height: 200px;
+  margin: 10px;
+}
+/* UNSUPPORTED in UITK: background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.8)) -- USS cannot express CSS gradients; compiler emits SVG background */
+#f11-lalpha {
+  width: 400px;
+  height: 200px;
+  margin: 10px;
+}
+/* UNSUPPORTED in UITK: background: linear-gradient(90deg, #1f8a70 0%, #1f8a70 50%, #2c6fbb 50%, #2c6fbb 100%) -- USS cannot express CSS gradients; compiler emits SVG background */
+#f11-lhard {
+  width: 400px;
+  height: 200px;
+  margin: 10px;
+}
+#f11-rad {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+/* UNSUPPORTED in UITK: background: radial-gradient(circle at center, #00e5ff, #0b1f26) -- USS cannot express CSS gradients; compiler emits SVG background */
+#f11-rcircle {
+  width: 400px;
+  height: 200px;
+  margin: 10px;
+}
+/* UNSUPPORTED in UITK: background: radial-gradient(ellipse at center, #d4a017, rgba(212,160,23,0)) -- USS cannot express CSS gradients; compiler emits SVG background */
+#f11-rellipse {
+  width: 400px;
+  height: 200px;
+  margin: 10px;
+}
+/* UNSUPPORTED in UITK: background: radial-gradient(circle at 25% 25%, #8e44ad, #0b1f26 70%) -- USS cannot express CSS gradients; compiler emits SVG background */
+#f11-roff {
+  width: 400px;
+  height: 200px;
+  margin: 10px;
+}

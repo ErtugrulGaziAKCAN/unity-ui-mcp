@@ -1,0 +1,24 @@
+<!-- M0 spike twin of f03-percent-auto-parent.html: percent sizes inside auto-sized parents (R1). Font twin is wired in Task 3. -->
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+  <ui:Style src="f03-percent-auto-parent.uss" />
+  <ui:VisualElement name="root">
+    <ui:VisualElement name="f03-wrap">
+      <ui:VisualElement name="f03-p1">
+        <ui:VisualElement name="f03-p1-fixed" />
+        <ui:VisualElement name="f03-p1-pct" />
+      </ui:VisualElement>
+      <ui:VisualElement name="f03-p2">
+        <ui:VisualElement name="f03-p2-fixed" />
+        <ui:VisualElement name="f03-p2-pcth" />
+      </ui:VisualElement>
+      <ui:VisualElement name="f03-p3">
+        <ui:VisualElement name="f03-p3-fixed" />
+        <ui:VisualElement name="f03-p3-pct" />
+      </ui:VisualElement>
+    </ui:VisualElement>
+    <ui:VisualElement name="f03-p4">
+      <ui:VisualElement name="f03-p4-a" />
+      <ui:VisualElement name="f03-p4-b" />
+    </ui:VisualElement>
+  </ui:VisualElement>
+</ui:UXML>

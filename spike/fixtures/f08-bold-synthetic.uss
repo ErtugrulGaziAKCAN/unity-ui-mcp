@@ -1,0 +1,57 @@
+/* M0 spike twin of f08-bold-synthetic.html. Element names equal the HTML ids. */
+/* UI Toolkit defaults match the HTML base rules: flex-direction column, position relative, flex-shrink 1. */
+/* CSS in the HTML fixture that UI Toolkit cannot express:
+   - #f08-regular font-family: "Inter" -- font twin wired in Task 3 via -unity-font-definition
+   - #f08-bold-real font-family: "Inter" -- font twin wired in Task 3 via -unity-font-definition
+   - #f08-bold-synth font-family: "InterRegularOnly" -- font twin wired in Task 3 via -unity-font-definition
+   - #f08-regular-sm font-family: "Inter" -- font twin wired in Task 3 via -unity-font-definition
+   - #f08-bold-real-sm font-family: "Inter" -- font twin wired in Task 3 via -unity-font-definition
+   - #f08-bold-synth-sm font-family: "InterRegularOnly" -- font twin wired in Task 3 via -unity-font-definition
+*/
+#root {
+  width: 100%;
+  height: 100%;
+  background-color: #0b1f26;
+}
+#root {
+  padding: 40px;
+}
+/* UNSUPPORTED in UITK: font-family: "Inter" -- font twin wired in Task 3 via -unity-font-definition */
+#f08-regular {
+  font-size: 32px;
+  -unity-font-style: normal;
+  margin-bottom: 20px;
+}
+/* UNSUPPORTED in UITK: font-family: "Inter" -- font twin wired in Task 3 via -unity-font-definition */
+#f08-bold-real {
+  font-size: 32px;
+  -unity-font-style: bold;
+  margin-bottom: 20px;
+}
+/* UNSUPPORTED in UITK: font-family: "InterRegularOnly" -- font twin wired in Task 3 via -unity-font-definition */
+#f08-bold-synth {
+  font-size: 32px;
+  -unity-font-style: bold;
+  margin-bottom: 20px;
+}
+#f08-row {
+  flex-direction: row;
+  align-items: flex-start;
+}
+/* UNSUPPORTED in UITK: font-family: "Inter" -- font twin wired in Task 3 via -unity-font-definition */
+#f08-regular-sm {
+  font-size: 16px;
+  -unity-font-style: normal;
+  margin-right: 40px;
+}
+/* UNSUPPORTED in UITK: font-family: "Inter" -- font twin wired in Task 3 via -unity-font-definition */
+#f08-bold-real-sm {
+  font-size: 16px;
+  -unity-font-style: bold;
+  margin-right: 40px;
+}
+/* UNSUPPORTED in UITK: font-family: "InterRegularOnly" -- font twin wired in Task 3 via -unity-font-definition */
+#f08-bold-synth-sm {
+  font-size: 16px;
+  -unity-font-style: bold;
+}

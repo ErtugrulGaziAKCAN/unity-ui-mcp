@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>f02-flex-grow-shrink</title>
+<!-- M0 spike fixture: flex-grow / flex-shrink / flex-basis distribution (R1) -->
+<style>
+@font-face { font-family: "Inter"; font-weight: 400; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Regular.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 700; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Bold.ttf") format("truetype"); }
+/* Regular file only: weight 700 requests are synthesized (faux bold) by Chromium. */
+@font-face { font-family: "InterRegularOnly"; font-weight: 400; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Regular.ttf") format("truetype"); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; background: #0b1f26; font-family: "Inter", sans-serif; color: #e8f1f2; }
+/* UI Toolkit defaults mirrored: column flex containers, relative position, shrink 1 */
+div { display: flex; flex-direction: column; flex-shrink: 1; position: relative; }
+div.tx { display: block; }
+#root { width: 100%; height: 100%; background-color: #0b1f26; }
+#root { padding: 40px; }
+#f02-grow { flex-direction: row; width: 1200px; height: 100px; background-color: #14303a; }
+#f02-g1 { width: auto; height: 80px; background-color: #1f8a70; flex-grow: 1; flex-shrink: 1; flex-basis: 100px; }
+#f02-g2 { width: auto; height: 80px; background-color: #2c6fbb; flex-grow: 2; flex-shrink: 1; flex-basis: 100px; }
+#f02-g3 { width: 200px; height: 80px; background-color: #c0572b; flex-grow: 0; flex-shrink: 0; }
+#f02-g4 { width: auto; height: 80px; background-color: #8e44ad; flex-grow: 1; flex-shrink: 1; flex-basis: 0px; }
+#f02-shrink { flex-direction: row; width: 500px; height: 100px; margin-top: 40px; background-color: #14303a; }
+#f02-s1 { width: 300px; height: 80px; background-color: #1f8a70; flex-shrink: 1; }
+#f02-s2 { width: 400px; height: 80px; background-color: #2c6fbb; flex-shrink: 2; }
+#f02-s3 { width: 300px; height: 80px; background-color: #c0572b; flex-shrink: 0; }
+#f02-basis { flex-direction: row; width: 900px; height: 100px; margin-top: 40px; background-color: #14303a; }
+#f02-b1 { width: 100px; height: 80px; background-color: #1f8a70; flex-basis: 300px; }
+#f02-b2 { width: 500px; height: 80px; background-color: #2c6fbb; flex-basis: 200px; flex-grow: 1; }
+#f02-b3 { width: 100px; height: 80px; background-color: #c0572b; flex-basis: auto; flex-grow: 1; }
+#f02-col { width: 400px; height: 500px; margin-top: 40px; background-color: #14303a; }
+#f02-c1 { width: 200px; height: auto; background-color: #1f8a70; flex-grow: 1; }
+#f02-c2 { width: 200px; height: auto; background-color: #2c6fbb; flex-grow: 3; }
+#f02-c3 { width: 200px; height: 150px; background-color: #c0572b; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div id="root">
+<div id="f02-grow">
+<div id="f02-g1">
+
+</div>
+<div id="f02-g2">
+
+</div>
+<div id="f02-g3">
+
+</div>
+<div id="f02-g4">
+
+</div>
+</div>
+<div id="f02-shrink">
+<div id="f02-s1">
+
+</div>
+<div id="f02-s2">
+
+</div>
+<div id="f02-s3">
+
+</div>
+</div>
+<div id="f02-basis">
+<div id="f02-b1">
+
+</div>
+<div id="f02-b2">
+
+</div>
+<div id="f02-b3">
+
+</div>
+</div>
+<div id="f02-col">
+<div id="f02-c1">
+
+</div>
+<div id="f02-c2">
+
+</div>
+<div id="f02-c3">
+
+</div>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,14 @@
+<!-- M0 spike twin of f08-bold-synthetic.html: Inter 400 vs real 700 vs synthetic 700 from the Regular file (R3). Font twin is wired in Task 3. -->
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+  <ui:Style src="f08-bold-synthetic.uss" />
+  <ui:VisualElement name="root">
+    <ui:Label name="f08-regular" text="Bold test Wagyu 0123 HIL" />
+    <ui:Label name="f08-bold-real" text="Bold test Wagyu 0123 HIL" />
+    <ui:Label name="f08-bold-synth" text="Bold test Wagyu 0123 HIL" />
+    <ui:VisualElement name="f08-row">
+      <ui:Label name="f08-regular-sm" text="Bold test Wagyu 0123 HIL" />
+      <ui:Label name="f08-bold-real-sm" text="Bold test Wagyu 0123 HIL" />
+      <ui:Label name="f08-bold-synth-sm" text="Bold test Wagyu 0123 HIL" />
+    </ui:VisualElement>
+  </ui:VisualElement>
+</ui:UXML>

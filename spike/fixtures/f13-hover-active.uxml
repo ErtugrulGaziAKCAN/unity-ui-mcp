@@ -1,0 +1,12 @@
+<!-- M0 spike twin of f13-hover-active.html: button with :hover and :active styles; script forces pseudo states via CDP (R6). Font twin is wired in Task 3. -->
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+  <ui:Style src="f13-hover-active.uss" />
+  <ui:VisualElement name="root">
+    <ui:VisualElement name="f13-btn">
+      <ui:Label name="f13-label" text="Play" />
+    </ui:VisualElement>
+    <ui:VisualElement name="f13-btn2">
+      <ui:Label name="f13-label2" text="Settings" />
+    </ui:VisualElement>
+  </ui:VisualElement>
+</ui:UXML>

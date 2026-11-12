@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>f13-hover-active</title>
+<!-- M0 spike fixture: button with :hover and :active styles; script forces pseudo states via CDP (R6) -->
+<style>
+@font-face { font-family: "Inter"; font-weight: 400; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Regular.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 700; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Bold.ttf") format("truetype"); }
+/* Regular file only: weight 700 requests are synthesized (faux bold) by Chromium. */
+@font-face { font-family: "InterRegularOnly"; font-weight: 400; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Regular.ttf") format("truetype"); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; background: #0b1f26; font-family: "Inter", sans-serif; color: #e8f1f2; }
+/* UI Toolkit defaults mirrored: column flex containers, relative position, shrink 1 */
+div { display: flex; flex-direction: column; flex-shrink: 1; position: relative; }
+div.tx { display: block; }
+#root { width: 100%; height: 100%; background-color: #0b1f26; }
+#root { padding: 40px; }
+#f13-btn { width: 320px; height: 96px; background-color: #1f8a70; border-width: 2px; border-style: solid; border-color: #0b5c47; border-radius: 12px; align-items: center; justify-content: center; }
+#f13-btn:hover { background-color: #27ab8b; border-color: #7be0c4; }
+#f13-btn:active { background-color: #0f5f4c; border-color: #ffffff; }
+#f13-label { font-size: 32px; font-weight: 700; color: #ffffff; }
+#f13-btn2 { width: 320px; height: 96px; margin-top: 40px; background-color: rgba(255,255,255,0.1); border-radius: 48px; align-items: center; justify-content: center; }
+#f13-btn2:hover { background-color: rgba(255,255,255,0.25); }
+#f13-btn2:active { background-color: rgba(255,255,255,0.4); }
+#f13-label2 { font-size: 24px; }
+</style>
+</head>
+<body>
+<div id="root">
+<div id="f13-btn" data-force="1">
+<div id="f13-label" class="tx">Play</div>
+</div>
+<div id="f13-btn2" data-force="1">
+<div id="f13-label2" class="tx">Settings</div>
+</div>
+</div>
+</body>
+</html>

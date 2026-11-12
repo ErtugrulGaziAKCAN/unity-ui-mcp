@@ -1,0 +1,152 @@
+/* M0 spike twin of f10-solid-colors-alpha.html. Element names equal the HTML ids. */
+/* UI Toolkit defaults match the HTML base rules: flex-direction column, position relative, flex-shrink 1. */
+#root {
+  width: 100%;
+  height: 100%;
+  background-color: #0b1f26;
+}
+#root {
+  padding: 40px;
+}
+#f10-opaque {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+#f10-o-red {
+  width: 200px;
+  height: 120px;
+  background-color: #ff0000;
+  margin: 10px;
+}
+#f10-o-green {
+  width: 200px;
+  height: 120px;
+  background-color: #00ff00;
+  margin: 10px;
+}
+#f10-o-blue {
+  width: 200px;
+  height: 120px;
+  background-color: #0000ff;
+  margin: 10px;
+}
+#f10-o-white {
+  width: 200px;
+  height: 120px;
+  background-color: #ffffff;
+  margin: 10px;
+}
+#f10-o-gray {
+  width: 200px;
+  height: 120px;
+  background-color: #808080;
+  margin: 10px;
+}
+#f10-o-teal {
+  width: 200px;
+  height: 120px;
+  background-color: #1f8a70;
+  margin: 10px;
+}
+#f10-o-cyan {
+  width: 200px;
+  height: 120px;
+  background-color: #00e5ff;
+  margin: 10px;
+}
+#f10-o-dark {
+  width: 200px;
+  height: 120px;
+  background-color: #102a33;
+  margin: 10px;
+}
+#f10-alpha-w {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+#f10-w-10 {
+  width: 200px;
+  height: 120px;
+  background-color: rgba(255,255,255,0.1);
+  margin: 10px;
+}
+#f10-w-25 {
+  width: 200px;
+  height: 120px;
+  background-color: rgba(255,255,255,0.25);
+  margin: 10px;
+}
+#f10-w-50 {
+  width: 200px;
+  height: 120px;
+  background-color: rgba(255,255,255,0.5);
+  margin: 10px;
+}
+#f10-w-75 {
+  width: 200px;
+  height: 120px;
+  background-color: rgba(255,255,255,0.75);
+  margin: 10px;
+}
+#f10-alpha-c {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+#f10-c-10 {
+  width: 200px;
+  height: 120px;
+  background-color: rgba(0,229,255,0.1);
+  margin: 10px;
+}
+#f10-c-25 {
+  width: 200px;
+  height: 120px;
+  background-color: rgba(0,229,255,0.25);
+  margin: 10px;
+}
+#f10-c-50 {
+  width: 200px;
+  height: 120px;
+  background-color: rgba(0,229,255,0.5);
+  margin: 10px;
+}
+#f10-c-75 {
+  width: 200px;
+  height: 120px;
+  background-color: rgba(0,229,255,0.75);
+  margin: 10px;
+}
+#f10-nested {
+  flex-direction: row;
+}
+#f10-nest-parent {
+  width: 300px;
+  height: 160px;
+  margin: 10px;
+  background-color: rgba(255,255,255,0.25);
+  padding: 20px;
+}
+#f10-nest-child {
+  width: 160px;
+  height: 100px;
+  background-color: rgba(255,0,0,0.5);
+}
+#f10-stripe {
+  width: 400px;
+  height: 160px;
+  margin: 10px;
+  background-color: #ffffff;
+  padding: 20px;
+}
+#f10-stripe-over {
+  width: 300px;
+  height: 100px;
+  background-color: rgba(0,0,0,0.5);
+}
+#f10-opacity {
+  width: 300px;
+  height: 160px;
+  margin: 10px;
+  background-color: #1f8a70;
+  opacity: 0.5;
+}

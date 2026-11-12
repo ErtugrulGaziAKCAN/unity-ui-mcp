@@ -1,0 +1,18 @@
+<!-- M0 spike twin of f05-absolute-in-flex.html: absolute children inside flex containers (R1). Font twin is wired in Task 3. -->
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+  <ui:Style src="f05-absolute-in-flex.uss" />
+  <ui:VisualElement name="root">
+    <ui:VisualElement name="f05-host">
+      <ui:VisualElement name="f05-flow" />
+      <ui:VisualElement name="f05-abs-br" />
+      <ui:VisualElement name="f05-abs-tl" />
+      <ui:VisualElement name="f05-abs-noinset" />
+      <ui:VisualElement name="f05-abs-stretch" />
+      <ui:VisualElement name="f05-abs-pct" />
+    </ui:VisualElement>
+    <ui:VisualElement name="f05-host2">
+      <ui:VisualElement name="f05-flow2" />
+      <ui:VisualElement name="f05-abs-pad" />
+    </ui:VisualElement>
+  </ui:VisualElement>
+</ui:UXML>

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>f10-solid-colors-alpha</title>
+<!-- M0 spike fixture: solid colors and alpha over dark background and bright stripe (R8) -->
+<style>
+@font-face { font-family: "Inter"; font-weight: 400; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Regular.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 700; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Bold.ttf") format("truetype"); }
+/* Regular file only: weight 700 requests are synthesized (faux bold) by Chromium. */
+@font-face { font-family: "InterRegularOnly"; font-weight: 400; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Regular.ttf") format("truetype"); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; background: #0b1f26; font-family: "Inter", sans-serif; color: #e8f1f2; }
+/* UI Toolkit defaults mirrored: column flex containers, relative position, shrink 1 */
+div { display: flex; flex-direction: column; flex-shrink: 1; position: relative; }
+div.tx { display: block; }
+#root { width: 100%; height: 100%; background-color: #0b1f26; }
+#root { padding: 40px; }
+#f10-opaque { flex-direction: row; flex-wrap: wrap; }
+#f10-o-red { width: 200px; height: 120px; background-color: #ff0000; margin: 10px; }
+#f10-o-green { width: 200px; height: 120px; background-color: #00ff00; margin: 10px; }
+#f10-o-blue { width: 200px; height: 120px; background-color: #0000ff; margin: 10px; }
+#f10-o-white { width: 200px; height: 120px; background-color: #ffffff; margin: 10px; }
+#f10-o-gray { width: 200px; height: 120px; background-color: #808080; margin: 10px; }
+#f10-o-teal { width: 200px; height: 120px; background-color: #1f8a70; margin: 10px; }
+#f10-o-cyan { width: 200px; height: 120px; background-color: #00e5ff; margin: 10px; }
+#f10-o-dark { width: 200px; height: 120px; background-color: #102a33; margin: 10px; }
+#f10-alpha-w { flex-direction: row; flex-wrap: wrap; }
+#f10-w-10 { width: 200px; height: 120px; background-color: rgba(255,255,255,0.1); margin: 10px; }
+#f10-w-25 { width: 200px; height: 120px; background-color: rgba(255,255,255,0.25); margin: 10px; }
+#f10-w-50 { width: 200px; height: 120px; background-color: rgba(255,255,255,0.5); margin: 10px; }
+#f10-w-75 { width: 200px; height: 120px; background-color: rgba(255,255,255,0.75); margin: 10px; }
+#f10-alpha-c { flex-direction: row; flex-wrap: wrap; }
+#f10-c-10 { width: 200px; height: 120px; background-color: rgba(0,229,255,0.1); margin: 10px; }
+#f10-c-25 { width: 200px; height: 120px; background-color: rgba(0,229,255,0.25); margin: 10px; }
+#f10-c-50 { width: 200px; height: 120px; background-color: rgba(0,229,255,0.5); margin: 10px; }
+#f10-c-75 { width: 200px; height: 120px; background-color: rgba(0,229,255,0.75); margin: 10px; }
+#f10-nested { flex-direction: row; }
+#f10-nest-parent { width: 300px; height: 160px; margin: 10px; background-color: rgba(255,255,255,0.25); padding: 20px; }
+#f10-nest-child { width: 160px; height: 100px; background-color: rgba(255,0,0,0.5); }
+#f10-stripe { width: 400px; height: 160px; margin: 10px; background-color: #ffffff; padding: 20px; }
+#f10-stripe-over { width: 300px; height: 100px; background-color: rgba(0,0,0,0.5); }
+#f10-opacity { width: 300px; height: 160px; margin: 10px; background-color: #1f8a70; opacity: 0.5; }
+</style>
+</head>
+<body>
+<div id="root">
+<div id="f10-opaque">
+<div id="f10-o-red">
+
+</div>
+<div id="f10-o-green">
+
+</div>
+<div id="f10-o-blue">
+
+</div>
+<div id="f10-o-white">
+
+</div>
+<div id="f10-o-gray">
+
+</div>
+<div id="f10-o-teal">
+
+</div>
+<div id="f10-o-cyan">
+
+</div>
+<div id="f10-o-dark">
+
+</div>
+</div>
+<div id="f10-alpha-w">
+<div id="f10-w-10">
+
+</div>
+<div id="f10-w-25">
+
+</div>
+<div id="f10-w-50">
+
+</div>
+<div id="f10-w-75">
+
+</div>
+</div>
+<div id="f10-alpha-c">
+<div id="f10-c-10">
+
+</div>
+<div id="f10-c-25">
+
+</div>
+<div id="f10-c-50">
+
+</div>
+<div id="f10-c-75">
+
+</div>
+</div>
+<div id="f10-nested">
+<div id="f10-nest-parent">
+<div id="f10-nest-child">
+
+</div>
+</div>
+<div id="f10-stripe">
+<div id="f10-stripe-over">
+
+</div>
+</div>
+<div id="f10-opacity">
+
+</div>
+</div>
+</div>
+</body>
+</html>

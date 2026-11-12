@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>f05-absolute-in-flex</title>
+<!-- M0 spike fixture: absolute children inside flex containers (R1) -->
+<style>
+@font-face { font-family: "Inter"; font-weight: 400; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Regular.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 700; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Bold.ttf") format("truetype"); }
+/* Regular file only: weight 700 requests are synthesized (faux bold) by Chromium. */
+@font-face { font-family: "InterRegularOnly"; font-weight: 400; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Regular.ttf") format("truetype"); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; background: #0b1f26; font-family: "Inter", sans-serif; color: #e8f1f2; }
+/* UI Toolkit defaults mirrored: column flex containers, relative position, shrink 1 */
+div { display: flex; flex-direction: column; flex-shrink: 1; position: relative; }
+div.tx { display: block; }
+#root { width: 100%; height: 100%; background-color: #0b1f26; }
+#root { padding: 40px; }
+#f05-host { flex-direction: row; width: 800px; height: 300px; background-color: #14303a; justify-content: center; align-items: center; }
+#f05-flow { width: 200px; height: 100px; background-color: #1f8a70; }
+#f05-abs-br { width: 100px; height: 50px; background-color: #2c6fbb; position: absolute; right: 20px; bottom: 20px; }
+#f05-abs-tl { width: 100px; height: 50px; background-color: #c0572b; position: absolute; left: 10px; top: 10px; }
+#f05-abs-noinset { width: 100px; height: 50px; background-color: #8e44ad; position: absolute; }
+#f05-abs-stretch { width: auto; height: 40px; background-color: #d4a017; position: absolute; left: 300px; right: 300px; top: 200px; }
+#f05-abs-pct { width: 10%; height: 20%; background-color: #00a5b8; position: absolute; left: 60%; top: 5%; }
+#f05-host2 { width: 500px; height: 300px; margin-top: 40px; background-color: #14303a; padding: 30px; }
+#f05-flow2 { width: 200px; height: 100px; background-color: #1f8a70; }
+#f05-abs-pad { width: 100px; height: 50px; background-color: #2c6fbb; position: absolute; left: 0px; top: 0px; }
+</style>
+</head>
+<body>
+<div id="root">
+<div id="f05-host">
+<div id="f05-flow">
+
+</div>
+<div id="f05-abs-br">
+
+</div>
+<div id="f05-abs-tl">
+
+</div>
+<div id="f05-abs-noinset">
+
+</div>
+<div id="f05-abs-stretch">
+
+</div>
+<div id="f05-abs-pct">
+
+</div>
+</div>
+<div id="f05-host2">
+<div id="f05-flow2">
+
+</div>
+<div id="f05-abs-pad">
+
+</div>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<!-- M0 spike twin of f12-box-shadow.html: box-shadow variants (bake check); compiler bakes to 9-slice assets. Font twin is wired in Task 3. -->
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+  <ui:Style src="f12-box-shadow.uss" />
+  <ui:VisualElement name="root">
+    <ui:VisualElement name="f12-grid">
+      <ui:VisualElement name="f12-soft" />
+      <ui:VisualElement name="f12-hard" />
+      <ui:VisualElement name="f12-glow" />
+      <ui:VisualElement name="f12-radius" />
+    </ui:VisualElement>
+  </ui:VisualElement>
+</ui:UXML>

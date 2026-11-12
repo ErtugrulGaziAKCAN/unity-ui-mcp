@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>f08-bold-synthetic</title>
+<!-- M0 spike fixture: Inter 400 vs real 700 vs synthetic 700 from the Regular file (R3) -->
+<style>
+@font-face { font-family: "Inter"; font-weight: 400; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Regular.ttf") format("truetype"); }
+@font-face { font-family: "Inter"; font-weight: 700; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Bold.ttf") format("truetype"); }
+/* Regular file only: weight 700 requests are synthesized (faux bold) by Chromium. */
+@font-face { font-family: "InterRegularOnly"; font-weight: 400; src: url("../../samples/FidelityProject/Assets/Fonts/Inter/Inter_18pt-Regular.ttf") format("truetype"); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; background: #0b1f26; font-family: "Inter", sans-serif; color: #e8f1f2; }
+/* UI Toolkit defaults mirrored: column flex containers, relative position, shrink 1 */
+div { display: flex; flex-direction: column; flex-shrink: 1; position: relative; }
+div.tx { display: block; }
+#root { width: 100%; height: 100%; background-color: #0b1f26; }
+#root { padding: 40px; }
+#f08-regular { font-size: 32px; font-weight: 400; font-family: "Inter"; margin-bottom: 20px; }
+#f08-bold-real { font-size: 32px; font-weight: 700; font-family: "Inter"; margin-bottom: 20px; }
+#f08-bold-synth { font-size: 32px; font-weight: 700; font-family: "InterRegularOnly"; margin-bottom: 20px; }
+#f08-row { flex-direction: row; align-items: flex-start; }
+#f08-regular-sm { font-size: 16px; font-weight: 400; font-family: "Inter"; margin-right: 40px; }
+#f08-bold-real-sm { font-size: 16px; font-weight: 700; font-family: "Inter"; margin-right: 40px; }
+#f08-bold-synth-sm { font-size: 16px; font-weight: 700; font-family: "InterRegularOnly"; }
+</style>
+</head>
+<body>
+<div id="root">
+<div id="f08-regular" class="tx">Bold test Wagyu 0123 HIL</div>
+<div id="f08-bold-real" class="tx">Bold test Wagyu 0123 HIL</div>
+<div id="f08-bold-synth" class="tx">Bold test Wagyu 0123 HIL</div>
+<div id="f08-row">
+<div id="f08-regular-sm" class="tx">Bold test Wagyu 0123 HIL</div>
+<div id="f08-bold-real-sm" class="tx">Bold test Wagyu 0123 HIL</div>
+<div id="f08-bold-synth-sm" class="tx">Bold test Wagyu 0123 HIL</div>
+</div>
+</div>
+</body>
+</html>
