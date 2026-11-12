@@ -6,9 +6,11 @@ namespace DesignUi
     /// Mirrors the pseudo-states of the element it is attached to onto another element (a shadow host) as the classes
     /// <c>dui-hover</c>, <c>dui-active</c>, <c>dui-focus</c>, <c>dui-checked</c> and <c>dui-disabled</c>, so the
     /// host can be styled by the element's states (a press scale, a hover lift). The element keeps its own Clickable.
-    /// Active is mirrored from the pointer down (before the Clickable stops the event) until pointer up, cancel,
-    /// capture loss or leave; checked from a bool value element (Toggle); disabled by a light poll of
-    /// enabledInHierarchy.
+    /// Hover from pointer enter/leave; active from the primary button's pointer down (trickle, before a Clickable
+    /// stops the event) until pointer up, cancel or capture loss, cleared while the pointer is outside and restored when
+    /// it re-enters while still pressed; focus only when the element itself is focused (not a descendant); checked from
+    /// a bool value element (Toggle); disabled by a light poll of enabledInHierarchy (up to 100 ms late).
+    /// Detaching removes all dui-* classes from the host.
     /// </summary>
     public sealed class PseudoStateMirror : Manipulator
     {
@@ -18,8 +20,11 @@ namespace DesignUi
         public const string CheckedClass = "dui-checked";
         public const string DisabledClass = "dui-disabled";
 
+        static readonly string[] States = { "hover", "active", "focus", "checked", "disabled" };
+
         readonly VisualElement _host;
         IVisualElementScheduledItem _poll;
+        bool _pressed;
 
         public PseudoStateMirror(VisualElement host)
         {
@@ -75,22 +80,26 @@ namespace DesignUi
             target.UnregisterCallback<ChangeEvent<bool>>(OnChecked);
             _poll?.Pause();
             _poll = null;
+            _pressed = false;
+            foreach (var state in States) SetState(state, false);
         }
 
-        void Sync()
+        /// <summary>Copies the polled states (disabled, checked) now.</summary>
+        public void Sync()
         {
+            if (target == null) return;
             SetState("disabled", !target.enabledInHierarchy);
             if (target is INotifyValueChanged<bool> toggle) SetState("checked", toggle.value);
         }
 
-        void OnEnter(PointerEnterEvent e) => SetState("hover", true);
+        void OnEnter(PointerEnterEvent e) { SetState("hover", true); if (_pressed) SetState("active", true); }
         void OnLeave(PointerLeaveEvent e) { SetState("hover", false); SetState("active", false); }
-        void OnDown(PointerDownEvent e) => SetState("active", true);
-        void OnUp(PointerUpEvent e) => SetState("active", false);
-        void OnCancel(PointerCancelEvent e) => SetState("active", false);
-        void OnCaptureOut(PointerCaptureOutEvent e) => SetState("active", false);
-        void OnFocusIn(FocusInEvent e) => SetState("focus", true);
-        void OnFocusOut(FocusOutEvent e) => SetState("focus", false);
+        void OnDown(PointerDownEvent e) { if (e.button != 0) return; _pressed = true; SetState("active", true); }
+        void OnUp(PointerUpEvent e) { if (e.button != 0) return; _pressed = false; SetState("active", false); }
+        void OnCancel(PointerCancelEvent e) { _pressed = false; SetState("active", false); }
+        void OnCaptureOut(PointerCaptureOutEvent e) { _pressed = false; SetState("active", false); }
+        void OnFocusIn(FocusInEvent e) { if (e.target == target) SetState("focus", true); }
+        void OnFocusOut(FocusOutEvent e) { if (e.target == target) SetState("focus", false); }
         void OnChecked(ChangeEvent<bool> e) { if (e.target == target) SetState("checked", e.newValue); }
     }
 }

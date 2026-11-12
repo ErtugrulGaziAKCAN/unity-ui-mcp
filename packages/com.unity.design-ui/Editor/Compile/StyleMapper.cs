@@ -61,14 +61,16 @@ namespace DesignUi.Editor
         };
 
         /// <summary>Maps a base layer. The layer is its own cascade and the node is treated as a text element.</summary>
-        public static IReadOnlyList<UssDeclaration> Map(IReadOnlyDictionary<string, string> css) => Map(css, css, true);
+        public static IReadOnlyList<UssDeclaration> Map(IReadOnlyDictionary<string, string> css) => Map(css, css, true, true);
 
         /// <summary>
-        /// Maps one layer of a node. <paramref name="baseCss"/> is the node's base layer: properties that combine into
+        /// Maps one layer of a node. <paramref name="isBaseLayer"/> says whether <paramref name="css"/> is the base layer
+        /// (then <paramref name="baseCss"/> is the same layer); a state or breakpoint layer cannot undo base values
+        /// that have no USS counterpart (min-size auto, a baked gradient). <paramref name="baseCss"/> is the node's base layer: properties that combine into
         /// one USS property (font style, text alignment, white space) are computed from base overlaid with the layer.
         /// Text alignment is emitted for text elements only (USS inherits it, so containers must not carry it).
         /// </summary>
-        public static IReadOnlyList<UssDeclaration> Map(IReadOnlyDictionary<string, string> css, IReadOnlyDictionary<string, string> baseCss, bool isText)
+        public static IReadOnlyList<UssDeclaration> Map(IReadOnlyDictionary<string, string> css, IReadOnlyDictionary<string, string> baseCss, bool isText, bool isBaseLayer)
         {
             var result = new List<UssDeclaration>();
             if (css == null) return result;
@@ -81,7 +83,7 @@ namespace DesignUi.Editor
                 if (Has(kv.Key) && kv.Value.Any(Has))
                     throw new UnsupportedStyleException(kv.Key, css[kv.Key], null, "A shorthand and one of its longhands are in the same layer; the exporter writes longhands only.");
 
-            bool isLayer = !ReferenceEquals(css, baseCss) && baseCss != null;
+            bool isLayer = !isBaseLayer;
 
             foreach (var key in css.Keys.OrderBy(k => k, StringComparer.Ordinal))
             {
@@ -120,13 +122,8 @@ namespace DesignUi.Editor
                         result.Add(new UssDeclaration(key, AspectRatio(value)));
                         break;
                     case "text-shadow":
-                        if (value == "none")
-                        {
-                            // USS has no none; a layer that removes a base shadow resets it
-                            if (isLayer && baseCss.TryGetValue("text-shadow", out var bts) && bts.Trim() != "none")
-                                result.Add(new UssDeclaration(key, "initial"));
-                        }
-                        else result.Add(new UssDeclaration(key, value));
+                        // USS has no none, and it inherits text-shadow: none resets it (harmless when nothing is inherited)
+                        result.Add(new UssDeclaration(key, value == "none" ? "initial" : value));
                         break;
                     default:
                         result.Add(new UssDeclaration(key, value));
@@ -144,23 +141,35 @@ namespace DesignUi.Editor
                 result.Add(new UssDeclaration("overflow", x));
             }
 
-            // border-style none makes the used width 0 in CSS; USS borders have no style
+            // border-style none makes the used width 0 in CSS; USS borders have no style. Resolved on the merged cascade.
             var sides = new[] { "top", "right", "bottom", "left" };
-            var noneSides = new List<string>();
-            if (css.TryGetValue("border-style", out var borderStyle))
+            string[] Box(string v) { var p = v.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries); return p.Length == 1 ? new[] { p[0], p[0], p[0], p[0] } : p.Length == 2 ? new[] { p[0], p[1], p[0], p[1] } : p.Length == 3 ? new[] { p[0], p[1], p[2], p[1] } : p; }
+            string SideValue(IReadOnlyDictionary<string, string> d, string longhand, string shorthand, int i)
             {
-                var comps = borderStyle.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                if (comps.All(c => c == "none")) noneSides.AddRange(sides);
-                else if (comps.Any(c => c == "none"))
-                    throw new UnsupportedStyleException("border-style", borderStyle, null, "Mixed none and solid border sides in the shorthand; write the longhands.");
+                if (d == null) return null;
+                if (d.TryGetValue(longhand, out var lv)) return lv.Trim();
+                return d.TryGetValue(shorthand, out var sv) ? Box(sv)[i] : null;
             }
-            foreach (var side in sides)
-                if (css.TryGetValue("border-" + side + "-style", out var sideStyle) && sideStyle.Trim() == "none" && !noneSides.Contains(side)) noneSides.Add(side);
-            if (noneSides.Count == 4) result.RemoveAll(d => d.Property == "border-width");
-            foreach (var side in noneSides)
+            string MergedSide(IReadOnlyDictionary<string, string> layer, IReadOnlyDictionary<string, string> basis, string longhand, string shorthand, int i) =>
+                SideValue(layer, longhand, shorthand, i) ?? (isLayer ? SideValue(basis, longhand, shorthand, i) : null);
+            for (int i = 0; i < 4; i++)
             {
-                result.RemoveAll(d => d.Property == "border-" + side + "-width");
-                result.Add(new UssDeclaration("border-" + side + "-width", "0"));
+                var side = sides[i];
+                var style = MergedSide(css, baseCss, "border-" + side + "-style", "border-style", i);
+                bool styleInLayer = SideValue(css, "border-" + side + "-style", "border-style", i) != null;
+                bool widthInLayer = SideValue(css, "border-" + side + "-width", "border-width", i) != null;
+                if (!styleInLayer && !widthInLayer) continue;
+                if (style == "none")
+                {
+                    result.RemoveAll(d => d.Property == "border-" + side + "-width");
+                    result.Add(new UssDeclaration("border-" + side + "-width", "0"));
+                }
+                else if (isLayer && styleInLayer && !widthInLayer)
+                {
+                    // a layer that turns a hidden border on restores the width the base wrote as 0
+                    var width = SideValue(baseCss, "border-" + side + "-width", "border-width", i);
+                    if (width != null) result.Add(new UssDeclaration("border-" + side + "-width", width));
+                }
             }
 
             if (Has("font-family"))

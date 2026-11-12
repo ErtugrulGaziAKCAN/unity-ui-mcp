@@ -317,7 +317,7 @@ namespace DesignUi.Editor.Tests
         {
             var node = Node("a", ("display", "block"), ("position", "static"), ("box-sizing", "border-box"), ("width", "10px"));
             var r = Lowering.Apply(WithChildren(Node("p"), node)).Children[0];
-            Assert.DoesNotThrow(() => StyleMapper.Map(r.Style["base"], r.Style["base"], false));
+            Assert.DoesNotThrow(() => StyleMapper.Map(r.Style["base"], r.Style["base"], false, true));
         }
 
         [Test]
@@ -431,6 +431,57 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void PaintOrder_ZIndexAuto_IsAcceptedEverywhere()
+        {
+            var r = Lowering.Apply(WithChildren(Node("p"), Node("a", ("z-index", "auto")), Node("b", ("position", "relative"), ("z-index", "auto")), Node("c", ("position", "absolute"), ("z-index", "auto"))));
+            CollectionAssert.AreEqual(new[] { "a", "b", "c" }, Ids(r));
+            foreach (var c in r.Children) Assert.IsFalse(B(c).ContainsKey("z-index"));
+        }
+
+        [Test]
+        public void PaintOrder_RelativeContentWithPositiveZ_AfterStatics_IsAccepted()
+        {
+            var r = Lowering.Apply(WithChildren(Node("p"), Node("bg"), Node("content", ("position", "relative"), ("z-index", "1"))));
+            CollectionAssert.AreEqual(new[] { "bg", "content" }, Ids(r));
+            Assert.IsFalse(B(r.Children[1]).ContainsKey("z-index"));
+        }
+
+        [Test]
+        public void PaintOrder_RelativePositiveZBeforeAStatic_NeedsReordering_Throws()
+        {
+            Assert.Throws<IrFormatException>(() => Lowering.Apply(WithChildren(Node("p"), Node("content", ("position", "relative"), ("z-index", "1")), Node("bg"))));
+        }
+
+        [Test]
+        public void PaintOrder_RelativeNegativeZFirst_IsAccepted_AfterAStatic_Throws()
+        {
+            var ok = Lowering.Apply(WithChildren(Node("p"), Node("under", ("position", "relative"), ("z-index", "-1")), Node("flow")));
+            CollectionAssert.AreEqual(new[] { "under", "flow" }, Ids(ok));
+            Assert.Throws<IrFormatException>(() => Lowering.Apply(WithChildren(Node("p"), Node("flow"), Node("under", ("position", "relative"), ("z-index", "-1")))));
+        }
+
+        [Test]
+        public void PaintOrder_AbsoluteZAmongRelativeZ_FollowsCssOrder()
+        {
+            var r = Lowering.Apply(WithChildren(Node("p"),
+                Node("abs1", ("position", "absolute"), ("z-index", "1")),
+                Node("flow"),
+                Node("rel2", ("position", "relative"), ("z-index", "2")),
+                Node("abs3", ("position", "absolute"), ("z-index", "3"))));
+            CollectionAssert.AreEqual(new[] { "flow", "abs1", "rel2", "abs3" }, Ids(r));
+        }
+
+        [Test]
+        public void PaintOrder_AbsoluteNegativeAfterLeadingNegativeRelative()
+        {
+            var r = Lowering.Apply(WithChildren(Node("p"),
+                Node("absNeg", ("position", "absolute"), ("z-index", "-1")),
+                Node("relNeg", ("position", "relative"), ("z-index", "-2")),
+                Node("flow")));
+            CollectionAssert.AreEqual(new[] { "relNeg", "absNeg", "flow" }, Ids(r));
+        }
+
+        [Test]
         public void PaintOrder_InFlowOrderUnchanged()
         {
             var r = Lowering.Apply(WithChildren(Node("p"), Node("a"), Node("x", ("position", "absolute")), Node("b"), Node("c")));
@@ -509,19 +560,48 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void Shadow_ElementDisplayFlex_StaysOnElement_DisplayNoneMovesToHost()
+        public void Shadow_AllDisplayValuesMoveToTheHost_ElementStaysDisplayed()
         {
             var card = Node("card", ("display", "flex"));
             card.Style["state:loading"] = Layer(("display", "none"), ("opacity", "0.4"), ("background-color", "#000000"));
             card.Shadow = Shadow(0, 8, 0, 0);
             var host = Hosted(card).Children[0];
             var el = host.Children[1];
-            Assert.AreEqual("flex", B(el)["display"]);
-            Assert.IsFalse(B(host).ContainsKey("display"));
+            Assert.IsFalse(B(el).ContainsKey("display"));
+            Assert.AreEqual("flex", B(host)["display"]);
             Assert.AreEqual("none", host.Style["state:loading"]["display"]);
             Assert.AreEqual("0.4", host.Style["state:loading"]["opacity"]);
             Assert.AreEqual("#000000", el.Style["state:loading"]["background-color"]);
             Assert.IsFalse(el.Style["state:loading"].ContainsKey("opacity"));
+        }
+
+        [Test]
+        public void Shadow_DialogHiddenInBaseShownInAState_IsVisibleThere_AndTheSiblingGetsTheGap()
+        {
+            var dialog = WithChildren(Node("dialog", ("display", "none"), ("width", "400px")), Node("title"));
+            dialog.Style["state:error"] = Layer(("display", "flex"));
+            dialog.Shadow = Shadow(0, 8, 0, 0);
+            var r = Lowering.Apply(WithChildren(Flex("p", "row", ("gap", "10px")), dialog, Node("b")));
+            var host = r.Children[0];
+            Assert.AreEqual("dialog__shadowhost", host.Id);
+            Assert.AreEqual("none", B(host)["display"]);
+            Assert.AreEqual("flex", host.Style["state:error"]["display"]);
+            var el = host.Children[1];
+            Assert.IsFalse(B(el).ContainsKey("display"));
+            Assert.IsFalse(el.Style.ContainsKey("state:error") && el.Style["state:error"].ContainsKey("display"));
+            Assert.IsFalse(B(r.Children[1]).ContainsKey("margin-left"));
+            Assert.AreEqual("10px", r.Children[1].Style["state:error"]["margin-left"]);
+        }
+
+        [Test]
+        public void Shadow_BlockStateRoot_ShownInAState_HostShowsWithFlex()
+        {
+            var empty = WithChildren(Node("empty", ("display", "none")), Node("a"));
+            empty.Style["state:empty"] = Layer(("display", "block"));
+            empty.Shadow = Shadow(0, 8, 0, 0);
+            var host = Lowering.Apply(WithChildren(Node("p"), empty)).Children[0];
+            Assert.AreEqual("flex", host.Style["state:empty"]["display"]);
+            Assert.AreEqual("column", B(host.Children[1])["flex-direction"]);
         }
 
         [Test]
@@ -597,7 +677,7 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(r.Style["hover"].ContainsKey("transition-delay"));
             Assert.AreEqual("opacity 0.2s ease", r.Transitions["base"]["transition"]);
             Assert.AreEqual("0.1s", r.Transitions["hover"]["transition-delay"]);
-            Assert.DoesNotThrow(() => StyleMapper.Map(B(r), B(r), false));
+            Assert.DoesNotThrow(() => StyleMapper.Map(B(r), B(r), false, true));
         }
 
         [Test]
@@ -623,6 +703,16 @@ namespace DesignUi.Editor.Tests
             var host = Hosted(card).Children[0];
             Assert.AreEqual("ease-in 0.2s opacity", host.Transitions["base"]["transition"]);
             Assert.AreEqual("linear 0.3s background-color", host.Children[1].Transitions["base"]["transition"]);
+        }
+
+        [Test]
+        public void Shadow_TransitionEntryWithAllowDiscreteFirst_MovesWithItsProperty()
+        {
+            var card = Node("card", ("transition", "allow-discrete opacity 0.2s, normal background-color 0.3s"));
+            card.Shadow = Shadow(0, 8, 0, 0);
+            var host = Hosted(card).Children[0];
+            Assert.AreEqual("allow-discrete opacity 0.2s", host.Transitions["base"]["transition"]);
+            Assert.AreEqual("normal background-color 0.3s", host.Children[1].Transitions["base"]["transition"]);
         }
 
         [Test]
@@ -700,14 +790,23 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void Display_MissingBase_FlexLayer_IsFlexEverywhere()
+        public void Display_MissingBase_FlexLayer_ThrowsLikeExplicitBlock()
+        {
+            var absent = WithChildren(Node("a"), Node("x"));
+            absent.Style["bp:narrow"] = Layer(("display", "flex"));
+            Assert.Throws<UnsupportedStyleException>(() => Lowering.Apply(WithChildren(Node("screen"), absent)));
+            var explicitBlock = WithChildren(Node("a", ("display", "block")), Node("x"));
+            explicitBlock.Style["bp:narrow"] = Layer(("display", "flex"));
+            Assert.Throws<UnsupportedStyleException>(() => Lowering.Apply(WithChildren(Node("screen"), explicitBlock)));
+        }
+
+        [Test]
+        public void Display_MissingBase_NoneLayer_IsStillBlock()
         {
             var a = WithChildren(Node("a"), Node("x"));
-            a.Style["state:loading"] = Layer(("display", "flex"));
+            a.Style["state:loading"] = Layer(("display", "none"));
             var r = Lowering.Apply(WithChildren(Node("screen"), a)).Children[0];
-            Assert.AreEqual("row", B(r)["flex-direction"]);
-            Assert.IsFalse(r.Style["state:loading"].ContainsKey("display"));
-            Assert.IsFalse(B(r.Children[0]).ContainsKey("flex-shrink"));
+            Assert.AreEqual("column", B(r)["flex-direction"]);
         }
 
         [Test]
@@ -737,7 +836,16 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("row", B(r.Children[0])["flex-direction"]);
             Assert.IsFalse(B(r.Children[1]).ContainsKey("display"));
             Assert.AreEqual("column", B(r.Children[1])["flex-direction"]);
-            Assert.DoesNotThrow(() => StyleMapper.Map(B(r.Children[0]), B(r.Children[0]), false));
+            Assert.DoesNotThrow(() => StyleMapper.Map(B(r.Children[0]), B(r.Children[0]), false, true));
+        }
+
+        [TestCase("inline-flex")]
+        [TestCase("inline-block")]
+        [TestCase("inline")]
+        public void Display_InlineLevelChildOfBlockContainer_Throws_NamingTheElement(string display)
+        {
+            var e = Assert.Throws<UnsupportedStyleException>(() => Lowering.Apply(WithChildren(Node("card"), Node("tag", ("display", display)))));
+            StringAssert.Contains("tag", e.Message);
         }
 
         [Test]
@@ -859,7 +967,7 @@ namespace DesignUi.Editor.Tests
         {
             foreach (var layer in n.Style)
                 if (layer.Key != Lowering.FirstItemLayer)
-                    Assert.DoesNotThrow(() => StyleMapper.Map(layer.Value, n.Style["base"], n.Kind == "text"), n.Id + "/" + layer.Key);
+                    Assert.DoesNotThrow(() => StyleMapper.Map(layer.Value, n.Style["base"], n.Kind == "text", layer.Key == "base"), n.Id + "/" + layer.Key);
             foreach (var c in n.Children) Visit(c);
         }
     }

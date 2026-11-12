@@ -43,7 +43,7 @@ namespace DesignUi.Editor
             "flex", "flex-grow", "flex-shrink", "flex-basis", "align-self",
             "position", "top", "right", "bottom", "left",
             "width", "height", "min-width", "min-height", "max-width", "max-height", "aspect-ratio",
-            "opacity", "visibility", "rotate", "scale", "translate", "transform-origin", "z-index",
+            "opacity", "visibility", "rotate", "scale", "translate", "transform-origin", "z-index", "display",
         };
 
         public static IrNode Apply(IrNode root)
@@ -92,11 +92,12 @@ namespace DesignUi.Editor
         /// </summary>
         static string VisibleDisplay(IrNode node, bool parentFlex)
         {
-            string result = null;
+            // an absent base display is a visible block, exactly like an explicit block
+            string result = node.Style.TryGetValue(Base, out var baseLayer) && baseLayer.ContainsKey("display") ? null : "block";
             foreach (var layer in node.Style.Values)
             {
                 if (!layer.TryGetValue("display", out var raw)) continue;
-                var d = NormalizeDisplay(raw.Trim(), parentFlex);
+                var d = NormalizeDisplay(raw.Trim(), parentFlex, node);
                 if (d == "none") continue;
                 if (result == null) result = d;
                 else if (result != d) throw new UnsupportedStyleException("display", raw, null, "display switches between '" + result + "' and '" + d + "' across layers of '" + node.Id + "'; only none may differ.");
@@ -104,13 +105,18 @@ namespace DesignUi.Editor
             return result ?? "block";
         }
 
-        static string NormalizeDisplay(string d, bool parentFlex)
+        /// <summary>CSS blockifies inline-level children of a flex container; in a block container they flow inline, which UI Toolkit cannot do.</summary>
+        static string NormalizeDisplay(string d, bool parentFlex, IrNode node)
         {
             switch (d)
             {
-                case "inline-flex": return "flex";
-                case "inline-block": return "block";
-                case "inline": return parentFlex ? "block" : "inline";
+                case "inline-flex":
+                case "inline-block":
+                case "inline":
+                    if (!parentFlex)
+                        throw new UnsupportedStyleException("display", d, null,
+                            "Element '" + node.Id + "' is inline-level in a block container; UI Toolkit has no inline flow. Make the parent a flex row.");
+                    return d == "inline-flex" ? "flex" : "block";
                 default: return d;
             }
         }
@@ -151,7 +157,7 @@ namespace DesignUi.Editor
             foreach (var pair in node.Style)
             {
                 if (!pair.Value.TryGetValue("display", out var raw)) continue;
-                var d = NormalizeDisplay(raw.Trim(), parentFlex);
+                var d = NormalizeDisplay(raw.Trim(), parentFlex, node);
                 if (d == "none" || (d != "flex" && d != "block")) continue;
                 if (pair.Key == Base) { if (d == "block") pair.Value.Remove("display"); else pair.Value["display"] = "flex"; }
                 else if (baseHidden) pair.Value["display"] = "flex";
@@ -241,7 +247,7 @@ namespace DesignUi.Editor
                 }
                 foreach (var key in layer.Keys.ToList())
                 {
-                    if (Moved.Contains(key) || (key == "display" && layer[key].Trim() == "none"))
+                    if (Moved.Contains(key))
                     {
                         HostLayer()[key] = layer[key];
                         layer.Remove(key);
@@ -348,7 +354,7 @@ namespace DesignUi.Editor
         static readonly HashSet<string> EasingWords = new HashSet<string> { "linear", "ease", "ease-in", "ease-out", "ease-in-out", "step-start", "step-end" };
 
         static string FirstIdent(string entry) => entry.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault(t => !char.IsDigit(t[0]) && t[0] != '.' && t[0] != '-' && !t.Contains("(") && !EasingWords.Contains(t)) ?? "";
+            .FirstOrDefault(t => !char.IsDigit(t[0]) && t[0] != '.' && t[0] != '-' && !t.Contains("(") && !EasingWords.Contains(t) && t != "allow-discrete" && t != "normal") ?? "";
 
         // ---- gap -------------------------------------------------------------------------------------------
 
@@ -483,11 +489,14 @@ namespace DesignUi.Editor
         // ---- paint order -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// UI Toolkit paints in hierarchy order. CSS paints negative z-index first, then non-positioned in-flow
-        /// siblings, then positioned siblings (relative or absolute, z-index auto is 0) by z-index and tree order.
-        /// Only absolute siblings can move (in-flow order is layout): z &lt; 0 goes first, z &gt; 0 last in z order,
-        /// z = 0 goes before the first explicitly relative sibling that follows it, or at the end. When a static
-        /// sibling follows that spot the CSS order cannot be reproduced and this throws.
+        /// UI Toolkit paints in hierarchy order. CSS paints, per stacking level: positioned z &lt; 0, non-positioned
+        /// in-flow siblings, positioned z = 0 / auto (relative or absolute, tree order), positioned z &gt; 0. In-flow
+        /// order is layout, so only absolute siblings are moved into it:
+        /// z &lt; 0 after the leading negative relative siblings, z = 0 before the first later relative sibling (else at
+        /// the end; a static sibling after that spot makes the order unreachable and throws), z &gt; 0 before the first
+        /// in-flow sibling with a higher z (tree order on ties). A relative sibling with an explicit non-zero z-index
+        /// is accepted when the in-flow order already is its CSS order, otherwise this throws. z-index auto and 0 are
+        /// accepted everywhere; a non-zero z-index on a static element throws.
         /// Afterwards <c>position: static</c> children become relative (USS has no static).
         /// </summary>
         static void PaintOrder(IrNode node)
@@ -498,41 +507,68 @@ namespace DesignUi.Editor
                 int value = 0;
                 if (BaseLayer(child).TryGetValue("z-index", out var raw))
                 {
-                    if (!IsAbsolute(child))
-                        throw new IrFormatException("z-index on in-flow node '" + child.Id + "' cannot be lowered");
                     if (raw.Trim() != "auto" && !int.TryParse(raw.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
                         throw new IrFormatException("unsupported z-index '" + raw + "' on node '" + child.Id + "'");
+                    var position = Get(child, Base, "position");
+                    if (position != "absolute" && position != "relative" && value != 0)
+                        throw new IrFormatException("z-index on in-flow node '" + child.Id + "' cannot be lowered");
                     BaseLayer(child).Remove("z-index");
                 }
                 z[child] = value;
             }
 
-            var order = node.Children.ToList();
-            var abs = order.Where(IsAbsolute).ToList();
-            var inflow = order.Where(c => !IsAbsolute(c)).ToList();
-            var neg = abs.Where(c => z[c] < 0).OrderBy(c => z[c]).ToList();
-            var zero = abs.Where(c => z[c] == 0).ToList();
-            var pos = abs.Where(c => z[c] > 0).OrderBy(c => z[c]).ToList();
-
+            var dom = node.Children.ToList();
+            var abs = dom.Where(IsAbsolute).ToList();
+            var inflow = dom.Where(c => !IsAbsolute(c)).ToList();
             bool Relative(IrNode c) => Get(c, Base, "position") == "relative";
-            var result = new List<IrNode>(inflow);
-            var insertAt = new List<(int index, IrNode node)>();
-            foreach (var a in zero)
-            {
-                int domIndex = order.IndexOf(a);
-                int idx = inflow.Count;
-                for (int k = 0; k < inflow.Count; k++)
-                    if (order.IndexOf(inflow[k]) > domIndex && Relative(inflow[k])) { idx = k; break; }
-                for (int k = idx; k < inflow.Count; k++)
-                    if (!Relative(inflow[k]))
-                        throw new IrFormatException("absolute '" + a.Id + "' paints between positioned siblings and below the static sibling '" + inflow[k].Id + "' in CSS; UI Toolkit's sibling order cannot reproduce that");
-                insertAt.Add((idx, a));
-            }
-            // insert from the back so earlier indexes stay valid; equal indexes keep tree order
-            foreach (var group in insertAt.GroupBy(t => t.index).OrderByDescending(g => g.Key))
-                result.InsertRange(group.Key, group.Select(t => t.node));
 
-            node.Children = neg.Concat(result).Concat(pos).ToArray();
+            // relative siblings with an explicit non-zero z-index must already be in CSS order
+            for (int k = 0; k < inflow.Count; k++)
+            {
+                var c = inflow[k];
+                if (!Relative(c) || z[c] == 0) continue;
+                bool ok = true;
+                if (z[c] < 0) { for (int j = 0; j < k; j++) ok &= Relative(inflow[j]) && z[inflow[j]] < 0 && z[inflow[j]] <= z[c]; }
+                else { for (int j = k + 1; j < inflow.Count; j++) ok &= Relative(inflow[j]) && z[inflow[j]] > 0 && z[inflow[j]] >= z[c]; }
+                if (!ok)
+                    throw new IrFormatException("z-index " + z[c] + " on in-flow '" + c.Id + "' needs its siblings in a different order; UI Toolkit lays out in sibling order");
+            }
+
+            var slots = new List<(int index, int cls, int z, int dom, IrNode node)>();
+            foreach (var a in abs)
+            {
+                int domA = dom.IndexOf(a), zA = z[a], idx;
+                if (zA < 0)
+                {
+                    idx = 0;
+                    while (idx < inflow.Count && Relative(inflow[idx]) && z[inflow[idx]] < 0 &&
+                           (z[inflow[idx]] < zA || (z[inflow[idx]] == zA && dom.IndexOf(inflow[idx]) < domA))) idx++;
+                    slots.Add((idx, 0, zA, domA, a));
+                }
+                else if (zA == 0)
+                {
+                    idx = inflow.Count;
+                    for (int k = 0; k < inflow.Count; k++)
+                        if (dom.IndexOf(inflow[k]) > domA && Relative(inflow[k]) && z[inflow[k]] >= 0) { idx = k; break; }
+                    for (int k = idx; k < inflow.Count; k++)
+                        if (!Relative(inflow[k]))
+                            throw new IrFormatException("absolute '" + a.Id + "' paints between positioned siblings and below the static sibling '" + inflow[k].Id + "' in CSS; UI Toolkit's sibling order cannot reproduce that");
+                    slots.Add((idx, 1, 0, domA, a));
+                }
+                else
+                {
+                    idx = inflow.Count;
+                    for (int k = 0; k < inflow.Count; k++)
+                        if (Relative(inflow[k]) && (z[inflow[k]] > zA || (z[inflow[k]] == zA && dom.IndexOf(inflow[k]) > domA))) { idx = k; break; }
+                    slots.Add((idx, 2, zA, domA, a));
+                }
+            }
+
+            var result = new List<IrNode>(inflow);
+            foreach (var group in slots.GroupBy(t => t.index).OrderByDescending(g => g.Key))
+                result.InsertRange(group.Key, group.OrderBy(t => t.cls).ThenBy(t => t.z).ThenBy(t => t.dom).Select(t => t.node));
+
+            node.Children = result.ToArray();
             foreach (var child in node.Children)
                 if (Get(child, Base, "position") == "static") BaseLayer(child)["position"] = "relative";
         }

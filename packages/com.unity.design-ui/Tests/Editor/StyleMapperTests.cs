@@ -36,14 +36,14 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void FontStyle_HoverWeight_KeepsBaseItalic()
         {
-            var r = StyleMapper.Map(D(("font-weight", "700")), D(("font-style", "italic")), true);
+            var r = StyleMapper.Map(D(("font-weight", "700")), D(("font-style", "italic")), true, false);
             Assert.AreEqual("bold-and-italic", Get(r, "-unity-font-style"));
         }
 
         [Test]
         public void FontStyle_LayerOverridesBase()
         {
-            var r = StyleMapper.Map(D(("font-weight", "400")), D(("font-weight", "700"), ("font-style", "italic")), true);
+            var r = StyleMapper.Map(D(("font-weight", "400")), D(("font-weight", "700"), ("font-style", "italic")), true, false);
             Assert.AreEqual("italic", Get(r, "-unity-font-style"));
         }
 
@@ -64,7 +64,7 @@ namespace DesignUi.Editor.Tests
 
         // ---- text alignment --------------------------------------------------------------------------------
 
-        static string Align(bool text, params (string k, string v)[] css) => Get(StyleMapper.Map(D(css), D(css), text), "-unity-text-align");
+        static string Align(bool text, params (string k, string v)[] css) => Get(StyleMapper.Map(D(css), D(css), text, true), "-unity-text-align");
 
         [Test]
         public void TextAlign_FlexRow_VerticalFromAlignItems()
@@ -108,7 +108,7 @@ namespace DesignUi.Editor.Tests
         public void TextAlign_LayerChangesHorizontal_KeepsBaseVertical()
         {
             var baseCss = D(("display", "flex"), ("flex-direction", "row"), ("align-items", "center"), ("text-align", "center"));
-            var r = StyleMapper.Map(D(("text-align", "left")), baseCss, true);
+            var r = StyleMapper.Map(D(("text-align", "left")), baseCss, true, false);
             Assert.AreEqual("middle-left", Get(r, "-unity-text-align"));
         }
 
@@ -116,7 +116,7 @@ namespace DesignUi.Editor.Tests
         public void TextAlign_LayerChangesAlignItemsOnly_StillEmits()
         {
             var baseCss = D(("display", "flex"), ("flex-direction", "row"), ("text-align", "center"));
-            var r = StyleMapper.Map(D(("align-items", "flex-end")), baseCss, true);
+            var r = StyleMapper.Map(D(("align-items", "flex-end")), baseCss, true, false);
             Assert.AreEqual("lower-center", Get(r, "-unity-text-align"));
         }
 
@@ -128,7 +128,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("center", Get(r, "align-items"));
         }
 
-        static IReadOnlyList<UssDeclaration> Map2(bool text, params (string k, string v)[] css) => StyleMapper.Map(D(css), D(css), text);
+        static IReadOnlyList<UssDeclaration> Map2(bool text, params (string k, string v)[] css) => StyleMapper.Map(D(css), D(css), text, true);
 
         [TestCase("justify")]
         [TestCase("match-parent")]
@@ -323,10 +323,10 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void TextShadow_NoneIsDropped_LayerNoneResetsBaseShadow()
+        public void TextShadow_NoneBecomesInitial_BecauseUssInheritsIt()
         {
-            Assert.IsEmpty(Map(("text-shadow", "none")));
-            Assert.AreEqual("initial", Get(StyleMapper.Map(D(("text-shadow", "none")), D(("text-shadow", "1px 1px 2px #000000")), true), "text-shadow"));
+            Assert.AreEqual("initial", Get(Map(("text-shadow", "none")), "text-shadow"));
+            Assert.AreEqual("initial", Get(StyleMapper.Map(D(("text-shadow", "none")), D(("text-shadow", "1px 1px 2px #000000")), true, false), "text-shadow"));
             Assert.AreEqual("1px 1px 2px #000000", Get(Map(("text-shadow", "1px 1px 2px #000000")), "text-shadow"));
         }
 
@@ -338,7 +338,40 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("3px", Get(r, "border-left-width"));
             var all = Map(("border-style", "none"), ("border-width", "2px"));
             foreach (var side in new[] { "top", "right", "bottom", "left" }) Assert.AreEqual("0", Get(all, "border-" + side + "-width"));
-            Assert.IsNull(Get(all, "border-width"));
+        }
+
+        [Test]
+        public void BorderStyle_MixedShorthand_ResolvesPerSide()
+        {
+            var r = Map(("border-style", "none solid"), ("border-width", "2px"));
+            Assert.AreEqual("0", Get(r, "border-top-width"));
+            Assert.IsNull(Get(r, "border-right-width"));
+            Assert.AreEqual("0", Get(r, "border-bottom-width"));
+            Assert.AreEqual("2px", Get(r, "border-width"));
+        }
+
+        [Test]
+        public void BorderStyle_LayerTurnsABorderOn_RestoresTheBaseWidth()
+        {
+            var baseCss = D(("border-top-style", "none"), ("border-top-width", "2px"));
+            var r = StyleMapper.Map(D(("border-top-style", "solid")), baseCss, false, false);
+            Assert.AreEqual("2px", Get(r, "border-top-width"));
+        }
+
+        [Test]
+        public void BorderStyle_LayerWidthOverHiddenBase_StaysZero()
+        {
+            var baseCss = D(("border-style", "none"));
+            var r = StyleMapper.Map(D(("border-width", "2px")), baseCss, false, false);
+            foreach (var side in new[] { "top", "right", "bottom", "left" }) Assert.AreEqual("0", Get(r, "border-" + side + "-width"));
+        }
+
+        [Test]
+        public void BaseCopy_IsStillTheBaseLayer_WhenFlagged()
+        {
+            var copy = D(("min-width", "auto"));
+            Assert.DoesNotThrow(() => StyleMapper.Map(copy, D(("min-width", "auto")), false, true));
+            Assert.Throws<UnsupportedStyleException>(() => StyleMapper.Map(copy, D(("min-width", "auto")), false, false));
         }
 
         [Test]
@@ -348,8 +381,8 @@ namespace DesignUi.Editor.Tests
         public void LayerOnlyMinAuto_AndLayerGradient_Throw()
         {
             var baseCss = D(("min-width", "100px"));
-            Assert.Throws<UnsupportedStyleException>(() => StyleMapper.Map(D(("min-width", "auto")), baseCss, false));
-            Assert.Throws<UnsupportedStyleException>(() => StyleMapper.Map(D(("background-image", "linear-gradient(red, blue)")), baseCss, false));
+            Assert.Throws<UnsupportedStyleException>(() => StyleMapper.Map(D(("min-width", "auto")), baseCss, false, false));
+            Assert.Throws<UnsupportedStyleException>(() => StyleMapper.Map(D(("background-image", "linear-gradient(red, blue)")), baseCss, false, false));
         }
 
         [Test]
