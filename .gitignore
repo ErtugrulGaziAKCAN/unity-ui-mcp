@@ -1,3 +1,14 @@
 .superpowers/
 node_modules/
 .DS_Store
+dist/
+coverage/
+test-results/
+playwright-report/
+samples/FidelityProject/Library/
+samples/FidelityProject/Temp/
+samples/FidelityProject/Logs/
+samples/FidelityProject/obj/
+samples/FidelityProject/UserSettings/
+samples/FidelityProject/*.csproj
+samples/FidelityProject/*.sln
