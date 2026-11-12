@@ -5,7 +5,7 @@ import type { KitConfig } from "./kit.js";
 import { logicalViewport } from "./viewport.js";
 
 export interface DcDynamic {
-  kind: "hole" | "sc-for" | "sc-if" | "dc-import" | "x-import" | "script-ui" | "data-props" | "outside-x-dc";
+  kind: "hole" | "sc-for" | "sc-if" | "dc-import" | "x-import" | "script-ui" | "data-props" | "outside-x-dc" | "no-x-dc";
   detail: string;
 }
 
@@ -55,6 +55,7 @@ export function unwrapDcHtml(source: string, blobs: Record<string, string>): { h
   let helmet = "";
   inner = inner.replace(/<helmet\b[^>]*>([\s\S]*?)<\/helmet>/gi, (_m, h: string) => { helmet += h; return ""; });
 
+  if (!xdc) dynamic.push({ kind: "no-x-dc", detail: "no <x-dc> element: the artboard would render empty" });
   // content outside <x-dc> is not part of the artboard: report it instead of dropping it silently
   const rest = xdc ? source.replace(xdc[0], "") : source;
   if (/<helmet\b/i.test(rest)) dynamic.push({ kind: "outside-x-dc", detail: "<helmet> outside <x-dc>" });
@@ -120,15 +121,27 @@ export async function declaredFontFaces(page: Page, kit?: KitConfig): Promise<De
     const walk = (sheet: CSSStyleSheet) => {
       let rules: CSSRuleList;
       try { rules = sheet.cssRules; } catch { return; }
+      walkRules(rules, sheet);
+    };
+    const walkRules = (rules: CSSRuleList, sheet: CSSStyleSheet) => {
       for (const r of Array.from(rules)) {
         if (r instanceof CSSFontFaceRule) {
           out.push({ family: strip(r.style.getPropertyValue("font-family")), src: r.style.getPropertyValue("src"), sheet: sheet.href, fromKit: sheet.href === kitSheetUrl });
-        } else if (r instanceof CSSImportRule && r.styleSheet) walk(r.styleSheet);
+        } else if (r instanceof CSSImportRule) { if (r.styleSheet) walk(r.styleSheet); }
+        else if ("cssRules" in r) walkRules((r as CSSGroupingRule).cssRules, sheet); // @media, @supports, @layer
       }
     };
     for (const s of Array.from(document.styleSheets)) walk(s);
+    // Faces in document.fonts beyond the @font-face rules of the same family were added by script: report each one
+    // (never dedup by name; a script face called like a kit family is still not from the kit).
+    const ruleCount = new Map<string, number>();
+    for (const o of out) ruleCount.set(o.family, (ruleCount.get(o.family) ?? 0) + 1);
+    const docCount = new Map<string, number>();
     for (const f of Array.from(document.fonts)) {
-      if (!out.some((o) => o.family === strip(f.family))) out.push({ family: strip(f.family), src: null, sheet: null, fromKit: false });
+      const fam = strip(f.family);
+      const n = (docCount.get(fam) ?? 0) + 1;
+      docCount.set(fam, n);
+      if (n > (ruleCount.get(fam) ?? 0)) out.push({ family: fam, src: null, sheet: null, fromKit: false });
     }
     return out;
   }, kitSheet);
@@ -141,7 +154,8 @@ const MIME: Record<string, string> = {
 };
 
 const STATIC_STYLE =
-  "<style>*,*::before,*::after{animation:none !important;transition:none !important;caret-color:transparent !important}</style>";
+  "<style>*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;" +
+  "animation-fill-mode:both!important;transition-duration:0s!important;transition-delay:0s!important;caret-color:transparent!important}</style>";
 
 function inject(html: string, kit: KitConfig): string {
   const links =

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -54,6 +54,9 @@ describe("unwrapDcHtml", () => {
     expect(h).toEqual([{ kind: "hole", detail: "{{x}}" }]);
     const out = unwrapDcHtml(src.replace("<x-dc>", "<p>stray</p><x-dc>"), blobs).dynamic;
     expect(out.map((d) => d.kind)).toEqual(["outside-x-dc"]);
+  });
+  it("reports a canvas without x-dc", () => {
+    expect(unwrapDcHtml("<html><head></head></html>", {}).dynamic.map((d) => d.kind)).toEqual(["no-x-dc"]);
   });
   const wrap = (inner: string, props = '{"$preview":{"width":1,"height":1}}', script = "class Component extends DCLogic{}") =>
     `<html><head></head><body><x-dc><helmet><style></style></helmet>${inner}</x-dc><script type="text/x-dc" data-dc-script data-props='${props}'>${script}</script></body></html>`;
@@ -230,5 +233,41 @@ describe("openDesign", () => {
       expect(own[0].src).toContain("local(");
       await d.close();
     } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
+  it("freezes animations at their end state", async () => {
+    const dir = tmpDir();
+    try {
+      fs.writeFileSync(path.join(dir, "a.html"), `<html><head><style>@keyframes f{from{opacity:0}to{opacity:1}}
+        #t{opacity:0;animation:f 1s forwards}</style></head><body><p id="t">x</p></body></html>`);
+      const d = await openDesign(path.join(dir, "a.html"), kit, [2560, 1440], shared);
+      expect(await d.page.evaluate(() => getComputedStyle(document.getElementById("t")!).opacity)).toBe("1");
+      await d.close();
+    } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
+  it("font faces: nested at-rules and same-named script faces are not from the kit", async () => {
+    const dir = tmpDir();
+    try {
+      fs.writeFileSync(path.join(dir, "f.html"), `<html><head><style>@media all{@font-face{font-family:"Nested";src:local("Arial")}}
+        @layer x{@font-face{font-family:"Layered";src:local("Arial")}}</style></head><body><p>a</p></body></html>`);
+      const d = await openDesign(path.join(dir, "f.html"), kit, [2560, 1440], shared);
+      await d.page.evaluate(() => { document.fonts.add(new FontFace("Inter UI", 'local("Arial")')); });
+      const faces = await declaredFontFaces(d.page, kit);
+      expect(faces.filter((f) => !f.fromKit).map((f) => f.family).sort()).toEqual(["Inter UI", "Layered", "Nested"]);
+      expect(faces.filter((f) => f.fromKit).length).toBe(2);
+      await d.close();
+    } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
+  it("closes its own browser when opening fails", async () => {
+    let launched: Browser | undefined;
+    const orig = chromium.launch.bind(chromium);
+    const spy = vi.spyOn(chromium, "launch").mockImplementation(async (o) => (launched = await orig(o)));
+    try {
+      await expect(openDesign(fx("plain.html"), { ...kit, allowedScriptOrigins: ["not a url"] }, [2560, 1440])).rejects.toThrow();
+      expect(launched).toBeDefined();
+      expect(launched!.isConnected()).toBe(false);
+    } finally { spy.mockRestore(); }
   });
 });
