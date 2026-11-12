@@ -184,6 +184,17 @@ Lint runs on the live DOM and CSSOM in Chromium. Each finding has a stable rule 
 path, the offending declaration or attribute, and a fix hint. Errors block export; warnings are reported (e.g. a
 font weight with no real face in a non-reference locale's font, a layout property animated by a transition).
 
+Lint is a whitelist. Which CSS properties, keywords, units and value functions the pipeline handles, and how
+(direct, lowered, dropped or rejected with a rule id and fix), is recorded once in
+`packages/com.unity.design-ui/Editor/Data/css-support.json`; the exporter's lint and the Unity style mapper both read
+it, so a property the mapper cannot reproduce can never pass lint. Anything not listed is an error (U-CSS-023 for
+properties, U-CSS-024 for value functions). Missing assets (U-NET-002), font faces not from the kit (U-FONT-002),
+glyphs rendered by a platform fallback font (U-FONT-003) and markup outside `<x-dc>` (U-DC-005) are errors too.
+
+The compiler makes every CSS default that differs from UI Toolkit explicit before mapping: flex rows, block children
+that do not shrink, gap only on flex containers, insets ignored on static elements, border-box sizing, and CSS paint
+order (negative z-index, then in-flow siblings, then positioned siblings).
+
 ### 5.5 Claude Design canvases
 
 Claude Design runs inside Claude as the Design artifact type. A canvas holds `project/canvas.json` (one entry per
@@ -339,10 +350,20 @@ public sealed partial class ClubOverviewView
 
 ## 11. Animation
 
-- CSS transitions compile to USS transitions with the five shared easing names.
-- `@keyframes` compile to keyframe data played by `KeyframePlayer`, which writes only transform, opacity and color
-  styles (no layout passes). Triggers come from where the design declares the animation: screen show, state
-  change, or a class becoming active.
+Animations follow the same rule as static styling: one-to-one, or rejected by lint with a fix.
+
+- **Export.** Every transition (property, duration, delay, timing function) and every `@keyframes` use (offsets,
+  values, per-segment timing function, iterations, direction, fill mode, delay) is recorded in the IR with its
+  trigger: `show` (the screen opens), `state:<name>`, `pseudo:<hover|active|focus|checked|disabled>` or
+  `class:<is-*>`.
+- **Runtime.** `DesignUiAnimationPlayer` plays all of them with an injectable clock. It evaluates CSS timing functions
+  exactly: the five keywords as their CSS `cubic-bezier()` definitions, any `cubic-bezier()`, and `steps()`. A
+  pseudo-state or class transition animates from the current value to the target layer's value and then hands the
+  value back to the USS rule. The player writes transform, opacity and colour properties without layout passes and
+  allocates nothing per frame in steady state; a layout property is allowed only with warning W-CSS-001.
+- **Verification.** The exporter pauses animations through the CDP `Animation` domain and captures each animation at
+  `delay` and at 0, ¼, ½, ¾ and 1 of its duration. The Unity verifier steps the player's clock to the same times.
+  Every sample is compared with the static thresholds (§15).
 
 ## 12. Responsive behavior
 
@@ -397,6 +418,16 @@ open updates text and font; every text-size option.
 - The verification report records element count, time to first render, state-switch time and steady-state GC
   allocations per screen.
 
+**Integration speed.** The loop from a revised design to the screen in the open Editor is part of the product:
+
+- The compiler is incremental: it hashes every output and rewrites only files whose content changed; the view class
+  is rewritten only when its text changes, so a style-only revision causes no script compilation or domain reload.
+- Imports run in one asset-editing batch over the changed paths only, with no project-wide refresh or save.
+- The MCP server keeps one warm Chromium and the parsed kit for its lifetime, skips export when the design and kit
+  hashes are unchanged, and skips the Unity call when the IR hash is unchanged.
+- Every tool result and report carries per-step timings. Budgets: lint and export of one screen at three viewports
+  ≤ 15 s with a warm browser; an import through the Editor bridge without a view-class change ≤ 5 s.
+
 ## 15. Verification and acceptance
 
 **Unity capture.** A verification entry point loads the compiled screen into a PanelSettings rendering to a
@@ -412,7 +443,9 @@ The route and setup measured in M0 (`docs/findings/m0.md`):
   `scripts/unity-check.sh --warm --editmode "<capture test>" --wait` (a reused batch clone); elsewhere
   `-batchmode -runTests -testPlatform EditMode -testFilter <capture test>` on a copy of the project. Metal renders
   in batchmode; no window and no Play mode are needed.
-- **Panel.** `UIDocument` with `PanelSettings`: no theme style sheet, Scale With Screen Size at the profile's
+- **Panel.** `UIDocument` with `PanelSettings`: the package's minimal `DesignUiRuntimeTheme` (functional defaults
+  only, no Unity default theme), the same theme the game's design-screen PanelSettings uses, so verification and game
+  share every inherited rule. Scale With Screen Size at the profile's
   reference resolution and match, `forceGammaRendering = true`, clear to a sentinel colour (pixels left in it mean
   "not covered"), `targetTexture` = an `R8G8B8A8_UNorm` RenderTexture with a `D24_UNorm_S8_UInt` depth-stencil. The
   document root is stretched to the panel (`position: absolute`, insets 0), which a theme would otherwise do.
@@ -441,6 +474,8 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`), calibrated in M0:
 | Non-text color at sampled points (`deltaE2000`) | ΔE2000 ≤ 1 | ≤ 0.72 for opaque and alpha colours, ≤ 0.89 for gradients |
 | SSIM, non-text, whole capture (`ssimNonText`) | ≥ 0.99 | Clean fixtures ≥ 0.99998; gradient banding lowers it to about 0.998 for a full-screen gradient. Too coarse for element-sized defects |
 | SSIM, non-text, per element ≥ 16×16 px, over the element box joined with its baked-shadow rect (`ssimElement`) | ≥ 0.99 | Elements without defects ≥ 0.9956; a pill drawn as an ellipse 0.72, a missing glow 0.87, a missing hard shadow 0.955, a missing large soft shadow 0.985, a dashed border drawn solid 0.97 |
+| Shadow band: mean colour of each baked shadow's band (shadow rect minus element box) | ΔE2000 ≤ 1 | Catches faint missing shadows that SSIM dilutes |
+| Animation samples (§11): every sample of every animation | Same thresholds as static captures | — |
 
 SSIM is the mean over non-overlapping 8×8 blocks of BT.601 luma with `C1 = (0.01·255)²`, `C2 = (0.03·255)²`
 (reference implementation: `spike/m0-metrics.ts`). For an element it is the mean over the blocks that overlap the
