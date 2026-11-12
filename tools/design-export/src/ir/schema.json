@@ -1,0 +1,466 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unity-ui-mcp/schemas/ir.schema.json",
+  "title": "IrScreen",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "irVersion",
+    "screen",
+    "source",
+    "referenceViewport",
+    "viewports",
+    "screenMatch",
+    "states",
+    "breakpoints",
+    "tokens",
+    "fonts",
+    "root"
+  ],
+  "properties": {
+    "irVersion": {
+      "const": 1
+    },
+    "screen": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A .dc.html Claude canvas artboard or a plain .html file."
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "referenceViewport": {
+      "$ref": "#/$defs/size"
+    },
+    "viewports": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/size"
+      },
+      "minItems": 1
+    },
+    "screenMatch": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "states": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "breakpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minWidth": {
+            "type": "number"
+          },
+          "maxWidth": {
+            "type": "number"
+          },
+          "minAspect": {
+            "type": "number"
+          },
+          "maxAspect": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "fonts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "locale",
+          "family",
+          "file",
+          "sha256",
+          "weight"
+        ],
+        "properties": {
+          "locale": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      }
+    },
+    "root": {
+      "$ref": "#/$defs/node"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "size": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "integer",
+          "minimum": 1
+        }
+      ],
+      "items": false,
+      "minItems": 2
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "w": {
+          "type": "number"
+        },
+        "h": {
+          "type": "number"
+        }
+      }
+    },
+    "styleMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "file",
+        "sha256",
+        "width",
+        "height",
+        "slice"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "image",
+            "svg",
+            "shadow9"
+          ]
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "slice": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          ]
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "external",
+        "classes",
+        "style",
+        "text",
+        "asset",
+        "background",
+        "shadow",
+        "bind",
+        "action",
+        "repeat",
+        "anims",
+        "children"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "container",
+            "text",
+            "image",
+            "vector",
+            "button",
+            "toggle",
+            "input",
+            "dropdown",
+            "scroll",
+            "list"
+          ]
+        },
+        "external": {
+          "type": "boolean"
+        },
+        "classes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "style": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(base|hover|active|focus|disabled|checked|bp:.+|state:.+)$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/styleMap"
+          }
+        },
+        "text": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "key",
+                "tr",
+                "en",
+                "args",
+                "rich"
+              ],
+              "properties": {
+                "key": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tr": {
+                  "type": "string"
+                },
+                "en": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "rich": {
+                  "type": "boolean"
+                }
+              }
+            }
+          ]
+        },
+        "asset": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/asset"
+            }
+          ]
+        },
+        "background": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/asset"
+            }
+          ]
+        },
+        "shadow": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/shadow"
+            }
+          ]
+        },
+        "bind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repeat": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "mode"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "mode": {
+                  "enum": [
+                    "list",
+                    "inline"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "anims": {
+          "type": "array"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      }
+    },
+    "shadow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "file",
+        "sha256",
+        "width",
+        "height",
+        "slice",
+        "offset"
+      ],
+      "properties": {
+        "kind": {
+          "const": "shadow9"
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "slice": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "offset": {
+          "$ref": "#/$defs/rect"
+        }
+      }
+    }
+  }
+}

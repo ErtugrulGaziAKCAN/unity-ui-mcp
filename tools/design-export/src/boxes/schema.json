@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unity-ui-mcp/schemas/boxes.schema.json",
+  "title": "CaptureBoxes",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["capture", "viewport", "scale", "elements", "external"],
+  "properties": {
+    "capture": { "type": "string" },
+    "viewport": { "$ref": "#/$defs/size" },
+    "scale": { "type": "number", "exclusiveMinimum": 0 },
+    "elements": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["x", "y", "w", "h", "visible", "text", "lines"],
+        "properties": {
+          "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" },
+          "visible": { "type": "boolean" },
+          "text": { "type": "boolean" },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["x", "y", "w", "h", "baseline"],
+              "properties": {
+                "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" },
+                "baseline": { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "external": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "size": { "type": "array", "prefixItems": [{ "type": "integer", "minimum": 1 }, { "type": "integer", "minimum": 1 }], "items": false, "minItems": 2 }
+  }
+}
