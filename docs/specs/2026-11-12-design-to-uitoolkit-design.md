@@ -1,0 +1,552 @@
+# Design-to-UI Toolkit pipeline (unity-ui-mcp) — design spec
+
+| | |
+|---|---|
+| Date | 2026-11-12 |
+| Status | Draft for review |
+| First consumer | A Unity 6000.3 game project (URP, Linear color space, Unity Localization) |
+| Target | Any Unity project on **Unity 6.3 LTS (6000.3) or later** |
+
+## 1. Purpose and success criteria
+
+AI agents currently build game UI by *interpreting* approved design images and HTML, then hand-assembling uGUI
+prefabs. The result drifts from the design in size, spacing, typography and states. The team is not satisfied.
+
+This project replaces interpretation with a **deterministic pipeline**: a design made in Claude Design under a
+defined contract is exported from a real browser into a versioned intermediate representation (IR), compiled
+into UI Toolkit assets and a typed C# view, and then **measured** against the browser rendering.
+
+The pipeline is a success when:
+
+1. A screen designed under the contract compiles into UI Toolkit without manual layout work.
+2. The Unity rendering passes the fidelity thresholds in §15 at every declared viewport, state and interaction state.
+3. Text is localizable end to end through Unity Localization, with per-language fonts, RTL and live language
+   switching verified for every active locale.
+4. Re-importing a changed design regenerates only generated files and never touches hand-written code.
+5. The same package installs into any Unity 6.3+ project through a project profile, with no project
+   specifics in the core.
+6. Any MCP-capable AI client (Claude Code, Claude Desktop, Cursor, Codex and others) can drive the whole loop
+   through one standalone MCP server: read the design rules, lint a design, import it into Unity, verify it and
+   read the report. The intended workflow is: pick and revise designs in Claude Design (or any AI that produces
+   HTML under the kit rules), export the chosen version, and let the AI client apply it to Unity through the MCP.
+
+## 2. Decisions taken in brainstorming
+
+| Topic | Decision | By |
+|---|---|---|
+| Runtime | Unity **UI Toolkit** (UXML + USS) | User |
+| Design input | **Rule-bound** designs with a lint gate. Unsupported CSS fails at export; nothing is silently approximated | User |
+| Transfer scope | Static appearance **plus** interaction states, transitions/animations, dynamic content and responsive rules | User |
+| Text | Every visible text carries a **key + Turkish + English**. Design shows Turkish; English stays source/fallback | User |
+| Extraction approach | **A — browser-measured compilation** (Playwright + Chrome DevTools Protocol) | User |
+| Fonts | Fonts come **from the Unity project**, never from the design: TMP Settings default font plus the project's **per-language font mapping** | User |
+| Minimum Unity version | 6.3 LTS: USS `filter`, core SVG → VectorImage import, `-unity-text-generator: advanced` | Proposed, accepted with section 1 |
+
+## 3. Scope and non-goals
+
+In scope: design kit and rules for Claude Design, lint, exporter, IR, compiler, runtime helpers, font twin
+generation, localization writer and binding, generated view classes, verification and reports, UPM package,
+the standalone MCP server with its Unity Editor bridge, the `/unity-ui-mcp` skill, the first consumer's profile and one pilot
+screen.
+
+Not in scope:
+
+- Gameplay, data providers or commands. Presenters connect views to existing game services and are written per
+  project; the pipeline never invents providers, values or success outcomes.
+- Migrating existing uGUI screens. Which screens move to UI Toolkit, and when, is a separate decision.
+- Arbitrary HTML import. Designs outside the contract fail lint.
+- Player builds and packaged-Player verification (owned by the project's developers).
+- World-space UI.
+
+## 4. Architecture overview
+
+```
+Claude Design (HTML/CSS/JS, built with the design kit)
+        │  local folder or ZIP (a Claude Design artifact is downloaded to a folder first)
+        ▼
+design-export (Node 20+, Playwright, pinned Chromium)
+  1. load with kit fonts only → 2. lint → 3. capture matrix (viewport × state × pseudo-state)
+  4. extract specified + computed styles → 5. bake shadows/gradients → 6. write IR, goldens, fixtures
+        │  <screen>/screen.ir.json, goldens/, assets/, fixtures/, lint-report.json
+        ▼
+Unity package (Editor)
+  compiler: IR → UXML, USS, VectorImage/sprites, String Table entries, <Screen>View.g.cs, manifest
+  font twin: TMP font assets → UI Toolkit FontAssets
+        ▼
+Verification
+  Unity render (RenderTexture, fixture data, simulated pointer states) → boxes + PNG
+  design-export compare → HTML report (overlay, heatmap, box deltas, locale checks, perf)
+```
+
+Units and their single responsibility:
+
+| Unit | Responsibility | Depends on |
+|---|---|---|
+| Design kit | Tokens, components, rules text and synced fonts that Claude Design builds with | Font sync output |
+| `design-export lint` | Rejects designs outside the contract with actionable errors | Kit rules |
+| `design-export export` | Produces IR, goldens, baked assets, fixtures | Pinned Chromium |
+| IR schema | Versioned contract between browser and Unity | — |
+| Compiler (Editor) | IR → Unity assets and view code, deterministic | IR schema, profile |
+| Font twin generator (Editor) | Mirrors the project's TMP fonts as UI Toolkit FontAssets | Font resolver |
+| Localization writer (Editor) | Writes key/EN/TR entries into String Tables safely | Localization adapter |
+| Runtime helpers | Breakpoints, locale fonts/RTL/text size, keyframe playback | UI Toolkit |
+| Unity verifier (Editor/PlayMode) | Renders a screen with fixtures and records boxes and pixels | Compiler output |
+| `design-export compare` | Applies thresholds, writes the report | Goldens, Unity capture |
+| Project profile | All project-specific settings and adapters | — |
+| `design-ui-mcp` server | Client-agnostic MCP front door: rules, list, lint, import, verify, status, kit sync | Exporter, compare, Unity runner |
+| Editor bridge | Loopback endpoint inside the open Editor; runs import and kit sync in place | Editor entry points |
+| `/unity-ui-mcp` skill | Chat entry point: checks server, bridge, `designRoot` and kit, then drives the loop | MCP server |
+| Menu / batch entry points | Thin wrappers over the same Editor API, used by the Unity runner | Above |
+
+## 5. Design contract
+
+### 5.1 Design kit
+
+The kit is uploaded to Claude as a design system. It contains:
+
+- `tokens.css`: colors, type scale, spacing, radii and shadows as CSS custom properties. This file is the single
+  token source: the exporter records the tokens a design uses in the IR, and the compiler emits them as
+  `DesignTokens.uss`.
+- `fonts/`: font files and `@font-face` rules produced by font sync (§6). Designs may not declare other fonts.
+- Component library: buttons, toggles, text fields, dropdowns, tabs, lists, scroll areas, cards and dialogs, each
+  mapped to a Unity control (§10).
+- `RULES.md`: the contract below, written for Claude Design, with allowed patterns and examples.
+
+### 5.2 Markup attributes
+
+| Attribute | Meaning | Required |
+|---|---|---|
+| `data-u-screen` | Screen id on the root, e.g. `club.overview` | Yes, once |
+| `data-u-id` | Stable element name exposed to code | On every interactive or bound element |
+| `data-l10n` | Localization key, meaningful English, e.g. `club.overview.title` | On every visible static text |
+| `data-en` | English source text for that key | With `data-l10n` |
+| `data-l10n-args` | Smart String argument names, e.g. `amount,currency` | When the text has variables |
+| `data-u-bind` | Dynamic, non-translated value (player name, number) | For runtime values |
+| `data-u-action` | Command raised on activation, e.g. `openInbox` | On actionable elements |
+| `data-u-repeat` | Repeated item template, e.g. `players` | On the first sample item |
+| `data-u-repeat-mode` | `list` (virtualized, default inside scroll) or `inline` | Optional |
+| `data-u-state` | Screen state variant, e.g. `loading`, `empty`, `error` | On state roots |
+| `data-u-external` | Region drawn by the host (e.g. an existing uGUI shell); excluded from compilation and masked in comparison | Optional |
+
+Visible Turkish text is the element's text content. Elements without `data-u-id` receive structural names
+(e.g. `header__0__1`); code never references them, so renaming them breaks nothing.
+
+### 5.3 CSS to UI Toolkit mapping
+
+Checked against the Unity 6.3 USS property reference.
+
+| CSS | UI Toolkit | Rule |
+|---|---|---|
+| flex layout, `%`, `px`, `auto`, min/max sizes, margin, padding, `position: absolute`, top/right/bottom/left, overflow, border widths/colors/radii, opacity, `rotate`/`scale`/`translate`/`transform-origin`, `aspect-ratio`, `filter` (built-in functions), `text-shadow`, `letter-spacing`, `word-spacing`, `white-space`, `text-overflow`, transitions | Direct USS | Allowed |
+| `:hover`, `:active`, `:focus`, `:disabled`, `:checked` | USS pseudo-classes | Allowed |
+| Custom states (selected, active tab) | Class toggled by the view, e.g. `.is-selected` | Allowed via `is-*` classes |
+| `gap`, `row-gap`, `column-gap` | Not in USS → lowered to child margins | Only on non-wrapping flex containers |
+| `box-shadow` | Not in USS → baked to a 9-slice image by Chromium, placed behind the element | Allowed; no `inset` |
+| `linear-gradient`, `radial-gradient` | Not in USS → SVG gradient → VectorImage background | Allowed |
+| `@media` | Not in USS → breakpoint classes on the root | Only `min/max-width`, `min/max-aspect-ratio` |
+| `@keyframes` / `animation` | Not in USS → generated keyframe data + runtime player | Only transform, opacity and color properties |
+| Inline emphasis inside a paragraph | TextCore rich text tags | Only `b`, `i`, `color`, `size` |
+| `rem` | Resolved to px at export | Allowed |
+| Transition easing | USS timing functions | Only `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` |
+| `display: grid`, `::before`/`::after`, `:nth-child` and structural pseudo-classes, `z-index` on in-flow elements, `calc()`, `vw`/`vh`, `backdrop-filter`, `cubic-bezier()`, `inline`/`inline-block` text flow, `font-family` outside the kit | No equivalent | **Lint error** |
+| `line-height` | Not in USS | Constrained by the kit; see §21 risk R2 |
+
+`z-index` on absolutely positioned siblings is allowed and compiled by reordering siblings, since UI Toolkit
+draws in hierarchy order.
+
+### 5.4 Lint
+
+Lint runs on the live DOM and CSSOM in Chromium. Each finding has a stable rule id (e.g. `U-CSS-012`), the element
+path, the offending declaration or attribute, and a fix hint. Errors block export; warnings are reported (e.g. a
+font weight not present in the project font, a layout property animated by a transition).
+
+## 6. Fonts
+
+**Source of truth is the Unity project.** A pluggable **font resolver** answers "which TMP font asset renders
+locale X", including its fallback chain and weight table.
+
+- Default resolver: TMP Settings default font asset (read through `TMP_Settings.instance`, not a file path) and
+  its global fallbacks, for every locale.
+- Project resolvers can add a per-locale mapping. For example, a project can map locales through its own localized-fonts asset (§17).
+
+**Font sync** (`design_ui_kit_sync`) reads the resolved fonts' source font files (`m_SourceFontFile_EditorRef`)
+and writes them with `@font-face` rules into the kit, keyed by locale. Claude Design and the exporter's Chromium
+therefore render with the same files Unity uses. Lint rejects any other `font-family`. Sync warns when more than
+one `TMP Settings` asset is reachable through `Resources`.
+
+**Font twins.** UI Toolkit text needs TextCore `FontAsset`; `TMP_FontAsset` derives from `TMP_Asset` and cannot be
+referenced from USS. The twin generator creates one UI Toolkit FontAsset per resolved TMP font asset from the same
+source file, matching sampling point size, padding, atlas size and render mode, and reproducing the fallback order
+and weight table. Twins are always **dynamic**, because the advanced text generator (needed for Arabic shaping and
+bidirectional text) does not accept static font assets. Twins regenerate when TMP Settings or the per-locale mapping
+change. The project keeps one font configuration: its TMP setup.
+
+**Weights.** If the resolved font has no real face for a weight, both Chromium and Unity synthesize bold, and they
+do it differently. Lint warns on such weights; adding the real face to the TMP weight table is the recommended fix.
+
+## 7. Exporter and IR
+
+`design-export` is a Node 20+ CLI using Playwright with a pinned Chromium build.
+
+1. **Load.** Only kit fonts are available; wait for `document.fonts.ready`; freeze animations for static captures.
+2. **Lint** (§5.4).
+3. **Capture matrix.** For each declared viewport (reference 2560×1440 plus profile viewports) × each
+   `data-u-state` × each pseudo-state used by the design (forced through CDP `CSS.forcePseudoState`), capture a
+   golden PNG, every element's box, and every text node's line boxes (to compare line breaks).
+4. **Styles.** Per element, record **specified** values from matched rules (`CSS.getMatchedStylesForNode`), which
+   keep `%`, `auto` and flex intent and drive compilation, and **computed** values, which are used only for
+   verification. Record pseudo-state, breakpoint and state deltas, transitions and keyframes.
+5. **Bake.** Render each `box-shadow` alone in Chromium and cut it into a 9-slice PNG; convert gradients to SVG;
+   name every asset by content hash.
+6. **Fixtures.** Sample values inside `data-u-bind` and repeated items are written to `fixtures/sample-data.json`.
+   They are used only by verification, never by game data or saves.
+
+Output per screen:
+
+```
+<screen-id>/
+  screen.ir.json
+  goldens/<state>@<w>x<h>[.<pseudo>.<element-id>].png
+  goldens/boxes.json
+  assets/
+  fixtures/sample-data.json
+  lint-report.json
+```
+
+IR outline (`irVersion: 1`, validated with a JSON Schema shipped in the repo):
+
+```json
+{
+  "irVersion": 1,
+  "screen": "club.overview",
+  "source": { "path": "club-overview.html", "sha256": "…" },
+  "referenceViewport": [2560, 1440],
+  "viewports": [[2560, 1440], [1920, 1080], [1280, 720]],
+  "states": ["default", "loading", "empty", "error"],
+  "breakpoints": [{ "name": "narrow", "maxWidth": 1600 }],
+  "tokens": { "color.surface": "#0b1f26" },
+  "fonts": [{ "locale": "tr", "family": "Inter", "file": "fonts/Inter-Regular.ttf", "sha256": "…" }],
+  "root": {
+    "id": "root", "kind": "container",
+    "style": { "base": {}, "hover": {}, "active": {}, "focus": {}, "disabled": {}, "checked": {},
+               "bp:narrow": {}, "state:loading": {} },
+    "text": { "key": "club.overview.title", "tr": "Genel Bakış", "en": "Overview", "args": [], "rich": false },
+    "bind": null, "action": null, "repeat": null, "anims": [], "children": []
+  }
+}
+```
+
+`kind` is one of `container`, `text`, `image`, `vector`, `button`, `toggle`, `input`, `dropdown`, `scroll`, `list`.
+Export is deterministic: the same input and Chromium build produce a byte-identical IR (sorted keys, stable ids,
+hashed assets). A determinism test enforces this.
+
+## 8. Compiler output
+
+Per screen, into the folder named by the profile:
+
+| File | Content |
+|---|---|
+| `<Screen>.uxml` | Element tree; every element has a `name` (`data-u-id` or its structural name) so verification can compare every box; only `data-u-id` elements are exposed by the view; no inline styles |
+| `<Screen>.uss` | Deduplicated style classes, pseudo-class, state and breakpoint rules |
+| `DesignTokens.uss` (shared) | Tokens as USS custom properties |
+| `assets/` | VectorImages (icons, gradients), 9-slice shadow sprites with `-unity-slice-*`, images with UI import settings |
+| `<Screen>View.g.cs` | Generated view class (§9) |
+| `<Screen>.anim.asset` | Keyframe data, when the design has keyframes |
+| `.design-ui.json` | Source, IR and generator hashes plus output file hashes |
+
+Selector policy: one class per selector, optionally preceded by one state or breakpoint class on the root
+(`.bp-narrow .s-3f2a`) and followed by one pseudo-class. Wrappers with no visual or layout effect are removed.
+
+## 9. Generated view and binding
+
+```csharp
+public sealed partial class ClubOverviewView
+{
+    public ClubOverviewView(VisualElement root);                          // queries elements once
+    public void SetClubName(string value);                                // data-u-bind
+    public void SetBudget(long amount);                                   // Smart String variable
+    public event Action OpenInbox;                                        // data-u-action
+    public void SetState(ClubOverviewState state);                        // root class swap
+    public void SetPlayers(int count, Action<PlayerRowView, int> bind);   // repeat → ListView
+    public void SetSelected(string elementId, bool selected);             // is-selected
+}
+```
+
+- Setters skip unchanged values and allocate nothing in steady state.
+- The project writes a presenter that calls the view with real game data. The generator never writes or edits
+  presenters.
+- Removing a `data-u-id` the presenter uses causes a C# compile error, so breakage is explicit.
+
+## 10. Dynamic content, controls and interaction states
+
+- `data-u-repeat`: the first sample item becomes a template (`PlayerRow.uxml` + `PlayerRowView`). Export checks
+  that the other samples share its structure. Inside scroll areas it compiles to a virtualized `ListView`
+  (fixed-height mode when items are uniform); `inline` mode uses a pooled repeat for small fixed lists.
+- Kit components compile to Unity controls (`Button`, `Toggle`, `TextField` with placeholder, `DropdownField`,
+  `ScrollView`, `ListView`), so focus, keyboard and gamepad navigation come from Unity.
+- Pseudo-classes map one to one; custom states use `is-*` classes switched by the view.
+- Text overflow follows the design (`ellipsis` or wrap); anything else counts as overflow in verification.
+
+## 11. Animation
+
+- CSS transitions compile to USS transitions with the five shared easing names.
+- `@keyframes` compile to keyframe data played by `KeyframePlayer`, which writes only transform, opacity and color
+  styles (no layout passes). Triggers come from where the design declares the animation: screen show, state
+  change, or a class becoming active.
+
+## 12. Responsive behavior
+
+- PanelSettings: Scale With Screen Size, reference 2560×1440, screen match mode from the profile. One design px
+  equals one reference px.
+- The exporter reproduces that scaling: for a viewport W×H it renders the page at the panel's logical size
+  (W/scale × H/scale) with `deviceScaleFactor = scale`, using the same scale formula as Unity
+  (`scale = 2^lerp(log2(W/refW), log2(H/refH), match)`). Boxes are compared in device pixels.
+- `BreakpointController` listens to geometry changes on the root and toggles `.bp-*` classes only when the
+  active set changes.
+- Every declared viewport is compiled from the same IR and verified separately.
+
+## 13. Localization
+
+**At design time (lint).** Every visible static text has `data-l10n` and `data-en`; keys are meaningful English
+and follow `<screen>.<element>[.<detail>]`; each screen maps to a String Table collection through the profile;
+texts with variables are Smart Strings with declared `data-l10n-args`; runtime values use `data-u-bind` and carry
+no key.
+
+**At import (localization writer).**
+
+- Writes only this screen's keys: English source and Turkish entry.
+- Never overwrites an existing different value. Conflicts are reported and left for a human.
+- Saves only the touched table assets (asset-specific save; no project-wide save).
+- Other active locales fall back to English and are reported as "translation pending"; fallback is not counted as
+  translated.
+- New collections follow the profile's naming, Addressables address, labels and preload rules.
+
+**In Unity.**
+
+- Text uses Unity Localization `LocalizedString` data binding in UXML, so language changes refresh text without
+  reopening the screen. Smart String variables are set by the generated view.
+- `LocaleFontController` sets the locale's font twin on the screen root (`-unity-font-definition` inherits) and
+  sets `locale-*`, `rtl` and text-size classes.
+- Arabic and bidirectional text use `-unity-text-generator: advanced`.
+- RTL alignment follows the project rule supplied by the profile (for example: start-aligned text flips to the
+  right; layout is not mirrored).
+- Text-size options map to root classes whose scale values come from the project's existing setting.
+
+**Verification per active locale.** No missing glyphs; no keys, enum names or debug text on screen; no overflow
+beyond what the design allows; correct direction and alignment for RTL; live language switch with the screen
+open updates text and font; every text-size option.
+
+## 14. Performance rules
+
+- All static styling in USS; no inline styles in generated UXML.
+- Simple selectors (§8); state changes are class swaps; hidden states use `display: none` instead of destroying
+  elements.
+- Lists inside scroll areas are virtualized.
+- Icons and gradients are vector; raster images use the UI Toolkit dynamic atlas settings from the profile.
+- Keyframes never animate layout properties.
+- The verification report records element count, time to first render, state-switch time and steady-state GC
+  allocations per screen.
+
+## 15. Verification and acceptance
+
+**Unity capture.** A verification entry point loads the compiled screen into a PanelSettings rendering to a
+RenderTexture of the viewport size, fills it from `fixtures/sample-data.json` through the generated view, sets
+each state, and produces hover/active/focus by dispatching real pointer and focus events, so the real
+pseudo-class rules are exercised. It records the PNG, every element's `worldBound`, and text line information.
+In a project whose Editor stays open it runs on an isolated copy of the project, never in the user's open Editor.
+
+**Comparison.** `design-export compare` aligns Unity output with the goldens and writes one HTML report: side by
+side, overlay slider, difference heatmap, per-element box deltas, locale checks and performance numbers.
+
+Initial thresholds, calibrated in M0:
+
+| Measure | Threshold |
+|---|---|
+| Element boxes | ±1 px at 2560×1440 (and ±1 px at other viewports) |
+| Text | Same line count and break positions; baseline ±1 px |
+| Non-text color at sampled points | ΔE2000 ≤ 1 |
+| Structural similarity, non-text regions | SSIM ≥ 0.99 |
+
+Glyph rasterization differences are tolerated only inside text boxes. Regions marked `data-u-external` are masked.
+A screen is **verified** only when every viewport × state × pseudo-state capture passes, and the locale checks
+pass for every active locale. Pixel fidelity is measured in Turkish; other locales are checked structurally.
+
+Verification is deterministic and can run as a regression test per screen. Where design sources and goldens are
+stored is a profile setting (§21, D2).
+
+## 16. Packaging, installation and tools
+
+Repository `unity-ui-mcp` (public):
+
+```
+packages/com.unity.design-ui/        UPM package
+  Runtime/   BreakpointController, LocaleFontController, KeyframePlayer, view helpers
+  Editor/    compiler, font resolver + twin generator, localization writer, Unity verifier,
+             DesignUiProfile asset, menu and batchmode entry points
+  Tests/
+tools/design-export/                 Node CLI: lint, export, compare, report
+tools/design-ui-mcp/                 standalone MCP server (stdio; HTTP in M4) for any MCP client
+design-kit/                          RULES.md, tokens template, components, font sync target
+skills/unity-ui-mcp/                 /unity-ui-mcp skill for Claude Code, Codex and Cursor
+samples/FidelityProject/             Unity 6.3 test project with the fidelity fixture screens
+docs/
+```
+
+Install into a project:
+
+1. Add the package by git URL in Package Manager.
+2. Create a `DesignUiProfile` from the menu and fill project settings and adapters.
+3. Run font sync; upload the generated kit to Claude as a design system.
+4. Install the CLI (`npx design-export` or a global install); Playwright downloads its pinned Chromium once.
+
+Shortcut: give any AI client the repository URL and ask it to add the repo as a skill for a Unity project. The
+agent-facing `INSTALL.md` makes it clone the repo with git, ask for the Unity project path and
+`designRoot`, show `scripts/setup.sh --dry-run`, and run `setup.sh` after the user agrees. `setup.sh` is idempotent
+and does steps 1, 4 and the MCP and skill registration; it never commits or pushes.
+
+**MCP server (`tools/design-ui-mcp`).** A standalone Node MCP server, independent of any Unity-side MCP
+package, so every MCP client can use it. Transport: stdio (supported by Claude Code, Claude Desktop, Cursor and
+Codex); streamable HTTP is added in M4. It is started per Unity project:
+`npx design-ui-mcp --project <UnityProjectDir>` and reads `<UnityProjectDir>/design-ui.config.json`
+(`designRoot`, `kitDir`, `profileAsset`, `unityRunner`).
+
+| Tool | Does |
+|---|---|
+| `design_ui_rules` | Returns the kit rules (`RULES.md`), allowed CSS, attributes, text styles and font families, so any AI producing HTML can follow the contract (also exposed as an MCP resource) |
+| `design_ui_list` | Lists screens under `designRoot` with status: new, design changed since import, imported, verified, failed; also reports the Unity connection (bridge found or not, project path) |
+| `design_ui_lint` | Lints one design folder or ZIP; returns findings with rule id, element path and fix |
+| `design_ui_import` | Exports the design (IR, goldens) and compiles it into the Unity project through the Unity runner |
+| `design_ui_verify` | Captures in Unity, compares, returns verdict, report path and the top issues |
+| `design_ui_status` | Detailed status of one screen: hashes, last import, last verdict, manual edits, pending translations |
+| `design_ui_kit_sync` | Re-syncs fonts and settings from Unity into the kit and regenerates font twins |
+
+**Unity runner.** The MCP server never embeds Unity logic; it calls the package's Editor entry points through a
+configurable runner:
+
+- `editor` (M1, default for import and kit sync): a small bridge in the package's Editor assembly. It listens on
+  127.0.0.1 only, on a free port, and writes the port, a random token and the project path to
+  `Library/DesignUi/bridge.json`; the server reads that file and sends the token with every request. The open
+  Editor imports, compiles and refreshes in place, so the user sees the screen without a manual refresh. Work runs
+  on the main thread, one request at a time. The bridge restarts after every domain reload, and the server waits
+  until compilation finishes. When `editor` is preferred and no bridge answers for the configured project, the tool
+  fails with that reason; it never falls back silently to another route.
+- `command` (M1, used for capture and when no Editor is open, e.g. CI): command templates for import, capture and
+  kit sync, e.g. Unity batchmode `-executeMethod DesignUi.Editor.DesignUiBatch.Import …`, or an
+  isolated-clone tool. Verification captures always use this route, so the user's open Editor is never put into a
+  capture or Play state.
+
+Neither route needs a Unity-side MCP package.
+
+The same operations stay available from the Editor menu and `-executeMethod` for CI and manual use.
+
+**Design UI window (`Window/Design UI/Status`).** The bridge starts by itself when the Editor loads; no button is
+needed to start it. The MCP server is started by the AI client, never from Unity, so the window has no "start
+server" button. The window shows and controls the Unity side:
+
+- Bridge: listening (127.0.0.1 and port), stopped, or restarting after a domain reload; an on/off switch stored per
+  project in `UserSettings/DesignUi.json` (off = no listener and no `bridge.json`); a Restart button.
+- Last request: time, operation (import, kit sync) and result.
+- Project setup: profile asset (with Create Profile when missing), `design-ui.config.json` path, `designRoot`
+  with an Open button, and the last report with an Open button.
+- AI client setup: copy buttons for the Claude Code, Cursor, Codex and Claude Desktop snippets, filled with this
+  project's path.
+- Manual actions: Kit Sync and Import Screen…, the same operations the menu and the bridge run.
+
+It is an Editor tool, not player-facing UI, so its labels are English and are not localized.
+
+**Client setup** (documented in the README): Claude Code `claude mcp add design-ui -- npx design-ui-mcp --project
+<dir>`; Cursor `.cursor/mcp.json`; Codex `~/.codex/config.toml` `[mcp_servers.design-ui]`; Claude Desktop
+`claude_desktop_config.json`. Registration happens once per client and project; every later chat has the tools.
+
+**Entry skill `/unity-ui-mcp`.** Installed once per machine into the Claude Code, Codex and Cursor skill folders
+(one link per client skill folder). It is the chat entry point; it does not create the connection. When
+invoked it checks that the MCP tools are present (otherwise it shows the setup for the current client), that the
+bridge answers for the configured project, and that `designRoot` and the kit exist. It then reads
+`design_ui_rules` and drives the loop: list → lint → import → verify → report. It never edits generated files and
+sends design-side fixes back to the design tool.
+
+**Project profile** holds: reference resolution and viewports, screen match mode, output folders, `designRoot`
+(design sources, IR and goldens), font resolver, localization adapter (table per screen, naming, Addressables address/labels),
+RTL alignment rule, text-size scales, uGUI coexistence (panel sort order, input priority), atlas settings.
+
+## 17. Project profiles
+
+Each consuming project keeps its own facts and choices outside this repository: its per-locale font mapping, String
+Table layout and naming, RTL alignment rule, text-size scales, uGUI coexistence and repository rules. The core and
+this spec stay free of project specifics; the profile asset (§16) carries the settings.
+
+The first consumer is a Unity 6000.3 game project (URP, Linear color space, Unity Localization with 11 locales
+including right-to-left and CJK languages). It sets the M2 localization scope and hosts the pilot screen.
+
+## 18. Error handling
+
+| Situation | Behavior |
+|---|---|
+| Lint error | Export stops; report lists rule id, element path, declaration and fix hint |
+| Non-deterministic export (two runs differ) | Export fails; usually an unpinned font or animation not frozen |
+| Font not resolvable for a locale | Font sync and import fail for that locale with the locale and font named |
+| Missing glyph in a locale | Verification fails for that locale with the characters listed |
+| Existing different translation | Not overwritten; listed as conflict; import completes with status "conflicts pending" |
+| Generated file edited by hand | Import refuses to overwrite and lists files; `--discard-manual-edits` proceeds explicitly |
+| `data-u-id` removed but used by presenter | Surfaces as a C# compile error after import |
+| Unity capture unavailable (no GPU, Editor busy) | Verify reports "not run" with the reason; never reports a pass |
+| Threshold exceeded | Verdict "fail" with the failing captures and elements; nothing is auto-adjusted |
+
+## 19. Testing the pipeline itself
+
+- Lint: fixture HTML per rule id, expected findings.
+- Exporter: determinism test; IR JSON Schema validation; capture matrix completeness.
+- Compiler: snapshot tests IR → UXML/USS/C#; generated C# compiles.
+- Runtime helpers: EditMode tests for breakpoints, locale font/RTL/text-size classes, keyframe playback.
+- Localization writer: tests on a temporary table collection, including conflict and no-overwrite cases.
+- **Fidelity suite:** fixture screens in `samples/FidelityProject` exercising every allowed CSS feature, state,
+  pseudo-state, repeat mode, animation and breakpoint; each must pass §15 thresholds. This is the regression net
+  for every change to the pipeline.
+
+## 20. Roadmap
+
+| Milestone | Content | Done when |
+|---|---|---|
+| **M0 Spike** (throwaway code) | One representative screen; measure risks R1–R8 | Calibrated rules and thresholds written back into this spec |
+| **M1 Static core** | Kit, lint, exporter, IR, compiler (states + pseudo-states), font twins, verifier, report, MCP server (stdio, `editor` bridge + `command` runner), `/unity-ui-mcp` skill | Installed in the first consumer project and connected; the user applies and verifies the pilot screen through `/unity-ui-mcp` |
+| **M2 Localization and binding** | Localization writer, `LocalizedString` binding, locale fonts, RTL, text size, view generation, actions | All 11 locale checks pass on the pilot |
+| **M3 Dynamic content and motion** | Repeat/ListView, transitions, keyframes | Lists and animated states pass §15 |
+| **M4 Responsive and distribution** | Breakpoints, UPM release, MCP HTTP transport, client setup docs, first consumer pilot with a real presenter | Pilot works in game with real data, driven from at least two MCP clients |
+
+The first implementation plan covers M0 and M1.
+
+## 21. Open decisions and risks
+
+Decisions (resolved by the user on 2026-11-12):
+
+- **D1 Pilot screen:** Inbox.
+- **D2 Design sources and goldens:** stored in a folder the user specifies, set as `designRoot` in the project
+  profile (each screen under `<designRoot>/<screen-id>/`). Never inside the product repository by default.
+- **D3 Package id:** `com.unity.design-ui`; C# root namespace `DesignUi`. Note: the `com.unity.` prefix is used by
+  Unity's own packages; a future official package with the same id would conflict.
+- **D4 GitHub repository:** `unity-ui-mcp` under the user's account; public since 2026-11-12, with project-specific
+  notes kept outside the repository.
+
+Risks measured in M0:
+
+- **R1** Chromium flexbox vs UI Toolkit layout engine differences (flex-basis, min-size, percentages in auto
+  parents, absolute children in flex). Differences become lint rules or compiler lowerings.
+- **R2** No `line-height` in USS. Options: kit text styles pin line-height to the font twin's metrics, or the twin
+  generator produces line-spacing variants. Choose by measurement.
+- **R3** Synthetic bold differs between Chromium and TextCore.
+- **R4** Font twin metric parity (ascent, descent, line gap, sampling) with Chromium; dynamic twins under the
+  advanced text generator.
+- **R5** Capture route: RenderTexture capture from a PlayMode test on an isolated clone, including GPU availability.
+- **R6** Pointer and focus event simulation for pseudo-states.
+- **R7** Reading text line breaks from UI Toolkit for comparison.
+- **R8** Color parity in a Linear-color-space URP project, including SVG gradient interpolation vs CSS gradients.
+
+## 22. Sources
+
+- [Unity 6.3 USS properties reference](https://docs.unity.com/en-us/engine/6000.3/manual/uitoolkits/uielements/uie-uss/properties/reference)
+- [Unity 6.3 built-in filters](https://docs.unity3d.com/Manual/ui-systems/built-in-filters.html)
+- [Unity 6.3 UI Shader Graph](https://docs.unity3d.com/Manual/ui-systems/get-started-with-ui-shader-graph.html)
+- [Unity 6.6 backdrop-filter](https://docs.unity3d.com/Manual/ui-systems/backdrop-filter.html)
+- [Vector Graphics 3.0 (SVG in core since 6.3)](https://docs.unity3d.com/Packages/com.unity.vectorgraphics@3.0/manual/index.html)
+- [UI Toolkit font asset](https://docs.unity3d.com/Manual/UIE-font-asset.html)
+- [Unity 6.5 static font asset migration (advanced text generator)](https://docs.unity3d.com/6000.5/Documentation/Manual/ui-systems/migrate-static-font-assets.html)
