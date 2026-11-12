@@ -12,6 +12,8 @@ export interface KitConfig {
   screenMatch: number;
   filterFunctions: string[];
   locales: string[];
+  /** Locale whose text the design shows and whose font pixels are compared; defaults to `locales[0]`. */
+  referenceLocale?: string;
 }
 
 export function readKit(kitDir: string): KitConfig {

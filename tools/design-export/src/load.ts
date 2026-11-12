@@ -24,8 +24,10 @@ export interface LoadedDesign {
   close(): Promise<void>;
 }
 
-const ORIGIN = "http://design.local";
-const KIT_PREFIX = "/__kit/";
+/** Synthetic origin the design is served from; kit files live under KIT_PREFIX. */
+export const DESIGN_ORIGIN = "http://design.local";
+export const KIT_PREFIX = "/__kit/";
+const ORIGIN = DESIGN_ORIGIN;
 
 const decodeEntities = (s: string) =>
   s.replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
@@ -110,13 +112,14 @@ export async function usedFamilies(page: Page): Promise<string[]> {
   });
 }
 
-export interface DeclaredFontFace { family: string; src: string | null; sheet: string | null; fromKit: boolean }
+/** `weight` and `style` are the face descriptors as declared ("" when absent: normal). */
+export interface DeclaredFontFace { family: string; src: string | null; sheet: string | null; fromKit: boolean; weight: string; style: string }
 
 /** Every font face the page declares (stylesheet @font-face rules, including @import-ed sheets, and script-added FontFace objects). */
 export async function declaredFontFaces(page: Page, kit?: KitConfig): Promise<DeclaredFontFace[]> {
   const kitSheet = `${ORIGIN}${KIT_PREFIX}${kit?.fontsCss ?? "fonts/fonts.css"}`;
   return page.evaluate((kitSheetUrl) => {
-    const out: { family: string; src: string | null; sheet: string | null; fromKit: boolean }[] = [];
+    const out: { family: string; src: string | null; sheet: string | null; fromKit: boolean; weight: string; style: string }[] = [];
     const strip = (v: string) => v.trim().replace(/^["']|["']$/g, "");
     const walk = (sheet: CSSStyleSheet) => {
       let rules: CSSRuleList;
@@ -126,7 +129,10 @@ export async function declaredFontFaces(page: Page, kit?: KitConfig): Promise<De
     const walkRules = (rules: CSSRuleList, sheet: CSSStyleSheet) => {
       for (const r of Array.from(rules)) {
         if (r instanceof CSSFontFaceRule) {
-          out.push({ family: strip(r.style.getPropertyValue("font-family")), src: r.style.getPropertyValue("src"), sheet: sheet.href, fromKit: sheet.href === kitSheetUrl });
+          out.push({
+            family: strip(r.style.getPropertyValue("font-family")), src: r.style.getPropertyValue("src"), sheet: sheet.href, fromKit: sheet.href === kitSheetUrl,
+            weight: r.style.getPropertyValue("font-weight"), style: r.style.getPropertyValue("font-style"),
+          });
         } else if (r instanceof CSSImportRule) { if (r.styleSheet) walk(r.styleSheet); }
         else if ("cssRules" in r) walkRules((r as CSSGroupingRule).cssRules, sheet); // @media, @supports, @layer
       }
@@ -141,7 +147,7 @@ export async function declaredFontFaces(page: Page, kit?: KitConfig): Promise<De
       const fam = strip(f.family);
       const n = (docCount.get(fam) ?? 0) + 1;
       docCount.set(fam, n);
-      if (n > (ruleCount.get(fam) ?? 0)) out.push({ family: fam, src: null, sheet: null, fromKit: false });
+      if (n > (ruleCount.get(fam) ?? 0)) out.push({ family: fam, src: null, sheet: null, fromKit: false, weight: f.weight, style: f.style });
     }
     return out;
   }, kitSheet);
@@ -153,9 +159,11 @@ const MIME: Record<string, string> = {
   ".svg": "image/svg+xml", ".ttf": "font/ttf", ".otf": "font/otf", ".woff": "font/woff", ".woff2": "font/woff2",
 };
 
-const STATIC_STYLE =
-  "<style>*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;" +
-  "animation-fill-mode:both!important;transition-duration:0s!important;transition-delay:0s!important;caret-color:transparent!important}</style>";
+/** The static-capture freeze rule the loader adds twice (served head and addStyleTag); lint skips these sheets. */
+export const STATIC_CSS =
+  "*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;" +
+  "animation-fill-mode:both!important;transition-duration:0s!important;transition-delay:0s!important;caret-color:transparent!important}";
+const STATIC_STYLE = `<style>${STATIC_CSS}</style>`;
 
 function inject(html: string, kit: KitConfig): string {
   const links =
@@ -232,7 +240,11 @@ export async function openDesign(
             : within(designDir, url.pathname.slice(1));
         }
         if (target && fs.existsSync(target) && fs.statSync(target).isFile()) {
-          return route.fulfill({ status: 200, contentType: MIME[path.extname(target).toLowerCase()] ?? "application/octet-stream", body: fs.readFileSync(target) });
+          // cacheable: without it CDP CSS.enable (lint) re-requests every linked stylesheet and stalls 5 s per page
+          return route.fulfill({
+            status: 200, contentType: MIME[path.extname(target).toLowerCase()] ?? "application/octet-stream",
+            headers: { "cache-control": "max-age=3600" }, body: fs.readFileSync(target),
+          });
         }
         if (url.pathname !== "/favicon.ico") missing.push(decoded ?? url.pathname);
         return route.fulfill({ status: 404, body: "not found" });
@@ -255,7 +267,7 @@ export async function openDesign(
     await page.goto(`${ORIGIN}/${encodeURIComponent(name)}`, { waitUntil: "load" });
     await page.evaluate(() => document.fonts.ready);
     // static capture: finish anything already running, keep the no-animation style last in head
-    await page.addStyleTag({ content: STATIC_STYLE.replace(/<\/?style>/g, "") });
+    await page.addStyleTag({ content: STATIC_CSS });
     await page.evaluate(() => document.getAnimations().forEach((a) => { try { a.finish(); } catch { /* infinite */ } }));
 
     const ctx = context;
