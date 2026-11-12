@@ -12,10 +12,22 @@
    - #f09-40 line-height: normal -- USS has no line-height (R2)
    - #f09-48 line-height: normal -- USS has no line-height (R2)
 */
+/* The panel must run with NO theme stylesheet, or with these resets winning: the HTML applies
+   `* { margin: 0; padding: 0 }` and a root text colour, so the twin must not pick up theme label margins/padding. */
+* {
+  margin: 0;
+  padding: 0;
+}
+Label,
+.unity-label {
+  margin: 0;
+  padding: 0;
+}
 #root {
   width: 100%;
   height: 100%;
   background-color: #0b1f26;
+  color: #e8f1f2;
 }
 #root {
   padding: 40px;
