@@ -160,6 +160,29 @@ Lint runs on the live DOM and CSSOM in Chromium. Each finding has a stable rule 
 path, the offending declaration or attribute, and a fix hint. Errors block export; warnings are reported (e.g. a
 font weight not present in the project font, a layout property animated by a transition).
 
+### 5.5 Claude Design canvases
+
+Claude Design runs inside Claude as the Design artifact type. A canvas holds `project/canvas.json` (one entry per
+artboard with its frame size) and one Design Component page per artboard, `project/<name>.dc.html`: markup inside
+`<x-dc>`, page styles inside `<helmet><style>`, a `DCLogic` script block, the `./support.js` runtime, and images and
+fonts as `/_blob/<id>` uploads. The design kit is published to Claude as a Design System artifact
+(`project/README.md`, `project/tokens.json`, fonts, component previews), so every design attaches it.
+
+- **Fetch.** An AI client with the Artifact tool reads `project/canvas.json`, the chosen artboard and every
+  `/_blob/<id>` it uses, and saves them under `<designRoot>/<screen-id>/` together with `blobs.json` (blob id →
+  local file). Clients without that tool use the canvas's own export into the same folder.
+- **Load.** The exporter unwraps an artboard locally: `<helmet>` contents go to `<head>`, `<x-dc>` children to
+  `<body>`, the DC script block and `support.js` are dropped, and `/_blob/<id>` URLs point at the local files. The
+  result is a static page rendered in the pinned Chromium. Plain `.html` input keeps working.
+- **Lint.** Dynamic Design Component features have no static meaning, so they fail lint with a fix: `{{…}}` holes
+  (U-DC-001), `<sc-for>`, `<sc-if>`, `<dc-import>` and `x-import` (U-DC-002; repeated rows are written out with
+  `data-u-repeat` on the first), UI built by script (U-DC-003), and `data-props` other than `$preview` (U-DC-004).
+- **Artboard.** One artboard per screen, a fixed 2560×1440 root, titled with the screen id; states stay
+  `data-u-state` roots inside it (§5.2). Inline styles are allowed; they compile like rules.
+- **Kit sync** also writes the kit as a Design System artifact folder (`README.md` from `RULES.md`, list-shaped
+  `tokens.json` from `tokens.css` and `text-styles.json`, the synced font files, component previews and a cover);
+  the `/unity-ui-mcp` skill publishes or updates that design system with the Artifact tool.
+
 ## 6. Fonts
 
 **Source of truth is the Unity project.** A pluggable **font resolver** answers "which TMP font asset renders
