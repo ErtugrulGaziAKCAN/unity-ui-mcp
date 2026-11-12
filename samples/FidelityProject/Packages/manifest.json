@@ -1,4 +1,5 @@
 {
+  "testables": ["com.unity.design-ui"],
   "dependencies": {
     "com.unity.design-ui": "file:../../../packages/com.unity.design-ui",
     "com.unity.test-framework": "1.6.0",
