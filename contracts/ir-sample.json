@@ -23,12 +23,14 @@
     "action": null,
     "anims": [],
     "asset": null,
+    "attrTexts": {},
     "background": {
       "file": "assets/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.svg",
       "height": 1440,
       "kind": "svg",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "slice": null,
+      "tint": false,
       "width": 2560
     },
     "bind": null,
@@ -37,12 +39,14 @@
         "action": null,
         "anims": [],
         "asset": null,
+        "attrTexts": {},
         "background": null,
-        "bind": "playerName",
+        "bind": null,
         "children": [],
         "classes": [],
         "external": false,
         "id": "title",
+        "initial": null,
         "kind": "text",
         "repeat": null,
         "shadow": null,
@@ -57,11 +61,11 @@
           "args": [
             "name"
           ],
-          "en": "Welcome {0}",
+          "en": "Welcome {name}",
           "key": "sample.title",
           "rich": false,
           "style": "title",
-          "tr": "Hoş geldin {0}"
+          "tr": "Hoş geldin {name}"
         }
       },
       {
@@ -103,6 +107,7 @@
             "properties": [
               "opacity"
             ],
+            "restart": true,
             "timing": "ease-in-out",
             "trigger": "show"
           }
@@ -113,14 +118,17 @@
           "kind": "image",
           "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "slice": null,
+          "tint": false,
           "width": 600
         },
+        "attrTexts": {},
         "background": null,
         "bind": null,
         "children": [],
         "classes": [],
         "external": false,
         "id": "card",
+        "initial": null,
         "kind": "container",
         "repeat": null,
         "shadow": {
@@ -140,6 +148,7 @@
             40,
             40
           ],
+          "tint": false,
           "width": 96
         },
         "style": {
@@ -169,8 +178,9 @@
             "properties": [
               "background-color"
             ],
+            "restart": true,
             "timing": "cubic-bezier(0.4, 0, 0.2, 1)",
-            "trigger": "pseudo:hover"
+            "trigger": "hover"
           },
           {
             "delay": 0,
@@ -186,11 +196,22 @@
             "properties": [
               "background-color"
             ],
+            "restart": true,
             "timing": "cubic-bezier(0.4, 0, 0.2, 1)",
-            "trigger": "pseudo:hover"
+            "trigger": "hover"
           }
         ],
         "asset": null,
+        "attrTexts": {
+          "title": {
+            "args": [],
+            "en": "Start the match",
+            "key": "sample.play.title",
+            "rich": false,
+            "style": null,
+            "tr": "Maçı başlat"
+          }
+        },
         "background": null,
         "bind": null,
         "children": [
@@ -198,12 +219,14 @@
             "action": null,
             "anims": [],
             "asset": null,
+            "attrTexts": {},
             "background": null,
             "bind": null,
             "children": [],
             "classes": [],
             "external": false,
             "id": "play-label",
+            "initial": null,
             "kind": "text",
             "repeat": null,
             "shadow": null,
@@ -225,6 +248,10 @@
         "classes": [],
         "external": false,
         "id": "play",
+        "initial": {
+          "checked": false,
+          "disabled": false
+        },
         "kind": "button",
         "repeat": null,
         "shadow": null,
@@ -241,6 +268,9 @@
           },
           "hover": {
             "background-color": "#5fe3d8"
+          },
+          "state:loading+hover": {
+            "background-color": "#2fd1c5"
           }
         },
         "text": null
@@ -249,6 +279,7 @@
         "action": null,
         "anims": [],
         "asset": null,
+        "attrTexts": {},
         "background": null,
         "bind": null,
         "children": [
@@ -256,14 +287,50 @@
             "action": null,
             "anims": [],
             "asset": null,
+            "attrTexts": {},
             "background": null,
             "bind": null,
-            "children": [],
+            "children": [
+              {
+                "action": null,
+                "anims": [],
+                "asset": null,
+                "attrTexts": {},
+                "background": null,
+                "bind": "player-name",
+                "children": [],
+                "classes": [],
+                "external": false,
+                "id": "row-name",
+                "initial": null,
+                "kind": "text",
+                "repeat": null,
+                "shadow": null,
+                "style": {
+                  "anc(row):class:is-selected": {
+                    "color": "#0b1f26"
+                  },
+                  "base": {
+                    "color": "#ffffff",
+                    "display": "block"
+                  }
+                },
+                "text": {
+                  "args": [],
+                  "en": null,
+                  "key": null,
+                  "rich": false,
+                  "style": "label",
+                  "tr": "Ali"
+                }
+              }
+            ],
             "classes": [
               "row"
             ],
             "external": false,
             "id": "row",
+            "initial": null,
             "kind": "container",
             "repeat": null,
             "shadow": null,
@@ -282,6 +349,7 @@
         "classes": [],
         "external": false,
         "id": "rows",
+        "initial": null,
         "kind": "list",
         "repeat": {
           "count": 3,
@@ -303,6 +371,7 @@
     ],
     "external": false,
     "id": "root",
+    "initial": null,
     "kind": "container",
     "repeat": null,
     "shadow": null,

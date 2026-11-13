@@ -45,6 +45,27 @@ describe("IR contract", () => {
     const anims = flat.flatMap((n) => n.anims);
     expect(anims.some((a) => a.kind === "transition" && a.phase === "leave" && a.timing.startsWith("cubic-bezier("))).toBe(true);
     expect(anims.some((a) => a.kind === "keyframes" && a.trigger === "show" && a.iterations === "infinite" && a.keyframes.some((k: any) => k.easing))).toBe(true);
+    expect(flat.some((n) => Object.keys(n.style).some((k) => k.includes("+")))).toBe(true);
+    expect(flat.some((n) => Object.keys(n.style).some((k) => k.startsWith("anc(")))).toBe(true);
+    expect(flat.some((n) => Object.keys(n.attrTexts).length)).toBe(true);
+    expect(flat.some((n) => n.initial)).toBe(true);
+  });
+  it("accepts the layer-key grammar and rejects malformed keys and per-kind animation fields", () => {
+    const ir = contract("ir-sample.json");
+    for (const k of ["bp:narrow+state:loading+class:is-a+anc(card):hover+active", "anc(row__2):class:is-selected", "state:x+focus"]) ir.root.style[k] = {};
+    expect(validateIr(ir)).toEqual([]);
+    for (const bad of ["hover+", "anc(card)hover", "pseudo:hover", "anc(card):visited"]) {
+      const x = contract("ir-sample.json");
+      x.root.style[bad] = {};
+      expect(validateIr(x).length, bad).toBeGreaterThan(0);
+    }
+    const t = contract("ir-sample.json");
+    const tr = t.root.children[2].anims[0];
+    t.root.children[2].anims[0] = { ...tr, keyframes: [{ offset: 0, values: {}, easing: null }] };
+    expect(validateIr(t).length).toBeGreaterThan(0);
+    const k = contract("ir-sample.json");
+    k.root.children[1].anims[0].name = null;
+    expect(validateIr(k).length).toBeGreaterThan(0);
   });
   it("rejects untyped anims, unknown triggers and layers", () => {
     const ir = contract("ir-sample.json");
@@ -52,7 +73,7 @@ describe("IR contract", () => {
     expect(validateIr(ir).length).toBeGreaterThan(0);
     const ir2 = contract("ir-sample.json");
     const anim = ir2.root.children.flatMap((c: any) => c.anims)[0];
-    ir2.root.anims = [{ ...anim, trigger: "pseudo:focus-within" }];
+    ir2.root.anims = [{ ...anim, trigger: "focus-within" }];
     expect(validateIr(ir2).join("\n")).toContain("trigger");
     const ir3 = contract("ir-sample.json");
     ir3.root.style["sibling:x"] = {};
@@ -66,6 +87,9 @@ describe("IR contract", () => {
     const list = ir2.root.children.find((c: any) => c.repeat);
     delete list.repeat.count;
     expect(validateIr(ir2).join("\n")).toContain("count");
+    const ir3 = contract("ir-sample.json");
+    delete ir3.root.children[1].shadow.tint;
+    expect(validateIr(ir3).join("\n")).toContain("tint");
   });
 });
 

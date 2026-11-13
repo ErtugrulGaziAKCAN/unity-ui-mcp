@@ -1,15 +1,18 @@
 import type { IrText } from "../ir/types.js";
 import { px } from "../lint/css-values.js";
+import { TEXT_ATTRS } from "../lint/rules/U-MRK-007.js";
 import type { DomSnapshot, SnapElement } from "../lint/snapshot.js";
+import { argSpans, isArg, isRichInline } from "../lint/text-runs.js";
 import type { TextStyle } from "../lint/text-styles.js";
-import { isRichInline } from "./kind.js";
 import { fmt } from "./naming.js";
 import { normalizeColor } from "./styles.js";
 
 /** An element's child nodes in order: text, or an element by snapshot index. */
 export type ChildSeq = ({ t: string } | { e: number })[];
+/** Rendered text (innerText) per element, measured where the element renders; null when it never does. */
+export type Rendered = Map<number, string | null>;
 
-type Tok = { text: string } | { tag: string } | { br: true };
+type Tok = { text: string } | { tag: string; open: boolean } | { br: true } | { arg: string; inner: Tok[] };
 
 const weight = (e: SnapElement) => Number(e.computed["font-weight"]) || 400;
 const italic = (e: SnapElement) => /italic|oblique/.test(e.computed["font-style"] ?? "");
@@ -27,6 +30,12 @@ export function sequencesNeeded(s: DomSnapshot, roots: number[]): number[] {
   return Array.from(out).sort((a, b) => a - b);
 }
 
+function rgbaHex(rgba: string): string {
+  const m = /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(rgba);
+  if (!m) return rgba;
+  return "#" + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("") + Math.round(Number(m[4]) * 255).toString(16).padStart(2, "0");
+}
+
 /** TextCore tags for a rich child against its parent: colour, size, bold, italic (spec 5.3). */
 function tagsFor(c: SnapElement, p: SnapElement, styles: TextStyle[]): [string, string][] {
   const out: [string, string][] = [];
@@ -42,13 +51,8 @@ function tagsFor(c: SnapElement, p: SnapElement, styles: TextStyle[]): [string, 
   return out;
 }
 
-function rgbaHex(rgba: string): string {
-  const m = /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(rgba);
-  if (!m) return rgba;
-  return "#" + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("") + Math.round(Number(m[4]) * 255).toString(16).padStart(2, "0");
-}
-
-function tokens(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>, styles: TextStyle[], rich: boolean, deep: boolean): Tok[] {
+/** `rich`: rich-text tags and {arg} placeholders (a text node); else plain sample text of any subtree. */
+function tokens(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>, styles: TextStyle[], rich: boolean): Tok[] {
   const e = s.elements[i];
   const seq: ChildSeq = seqs.get(i) ?? e.texts.map((t) => ({ t }));
   const out: Tok[] = [];
@@ -57,70 +61,114 @@ function tokens(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>, styles: 
     const c = s.elements[item.e];
     if (!c) continue;
     if (c.ns === "html" && c.tag === "br") { out.push({ br: true }); continue; }
-    if (!deep && !isRichInline(s, c)) continue;
     const tags = rich && isRichInline(s, c) ? tagsFor(c, e, styles) : [];
-    for (const [open] of tags) out.push({ tag: open });
-    out.push(...tokens(s, item.e, seqs, styles, rich, deep));
-    for (const [, close] of tags.reverse()) out.push({ tag: close });
+    for (const [open] of tags) out.push({ tag: open, open: true });
+    if (rich && isArg(c)) out.push({ arg: c.attrs["data-u-arg"], inner: tokens(s, item.e, seqs, styles, false) });
+    else if (rich && !isRichInline(s, c)) continue;
+    else out.push(...tokens(s, item.e, seqs, styles, rich));
+    for (const [, close] of tags.reverse()) out.push({ tag: close, open: false });
   }
   return out;
 }
 
-/** Joins tokens the way CSS lays the text out: whitespace collapsed (unless preserved), trimmed at line edges. */
-function render(toks: Tok[], preserve: boolean): string {
-  if (preserve) return toks.map((t) => ("text" in t ? t.text : "tag" in t ? t.tag : "\n")).join("");
-  let out = "", space = false, start = true;
-  for (const t of toks) {
-    if ("br" in t) { out += "\n"; space = false; start = true; continue; }
-    if ("tag" in t) {
-      if (space) { out += " "; space = false; }
-      out += t.tag;
-      continue;
+const WS = /[ \t\n\r\f]/;
+
+/** Joins the tokens as the browser rendered them: each raw character kept or collapsed as in `rendered`; null on mismatch. */
+function align(toks: Tok[], rendered: string): string | null {
+  let p = 0, out = "", ok = true;
+  const text = (t: string, emit: boolean) => {
+    for (const ch of t) {
+      if (!ok) return;
+      const r = rendered[p];
+      if (ch === " ") {
+        if (r === " " || r === " ") { if (emit) out += ch; p++; } else ok = false;
+      } else if (WS.test(ch)) {
+        if (r !== undefined && WS.test(r)) { if (emit) out += r; p++; }
+      } else if (r === ch) { if (emit) out += ch; p++; } else ok = false;
     }
-    for (const ch of t.text.replace(/[ \t\n\r\f]+/g, " ")) {
-      if (ch === " ") { if (!start) space = true; continue; }
-      if (space) { out += " "; space = false; }
-      out += ch;
-      start = false;
+  };
+  const walk = (list: Tok[], emit: boolean) => {
+    for (const t of list) {
+      if (!ok) return;
+      if ("text" in t) text(t.text, emit);
+      else if ("tag" in t) { if (emit) out += t.tag; }
+      else if ("br" in t) { if (rendered[p] === "\n") { if (emit) out += "\n"; p++; } }
+      else { walk(t.inner, false); if (emit) out += `{${t.arg}}`; }
     }
-  }
+  };
+  walk(toks, true);
+  return ok && p === rendered.length ? out : null;
+}
+
+/** CSS whitespace collapse without a rendering: first collapsible space of a run kept, across inline tags. */
+function collapse(toks: Tok[], preserve: boolean): string {
+  let out = "", space = false, lastSpace = false, start = true;
+  const glyph = (g: string) => { if (space) { out += " "; space = false; } out += g; start = false; lastSpace = false; };
+  const walk = (list: Tok[]) => {
+    for (const t of list) {
+      if ("br" in t) { out += "\n"; space = false; start = true; lastSpace = false; continue; }
+      if ("tag" in t) {
+        if (t.open && space) { out += " "; space = false; lastSpace = true; }
+        out += t.tag;
+        continue;
+      }
+      if ("arg" in t) { glyph(`{${t.arg}}`); continue; }
+      if (preserve) { out += t.text; start = false; continue; }
+      for (const ch of t.text.replace(/[ \t\n\r\f]+/g, " ")) {
+        if (ch === " ") { if (!start && !lastSpace) space = true; continue; }
+        glyph(ch);
+      }
+    }
+  };
+  walk(toks);
   return out;
 }
 
 const preserves = (e: SnapElement) => (e.computed["white-space-collapse"] ?? "collapse") !== "collapse";
 
-/** Rendered text of a text element with rich-text tags; `rich` when a tag was written. */
-export function richText(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>, styles: TextStyle[]): { text: string; rich: boolean } {
-  const toks = tokens(s, i, seqs, styles, true, false);
-  return { text: render(toks, preserves(s.elements[i])), rich: toks.some((t) => "tag" in t) };
+const render = (toks: Tok[], e: SnapElement, rendered: string | null | undefined) =>
+  (rendered != null ? align(toks, rendered) : null) ?? collapse(toks, preserves(e));
+
+/** Text of a text node: rich-text tags, {arg} placeholders; `rich` when a tag was written. */
+export function richText(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>, styles: TextStyle[], rendered: Rendered): { text: string; rich: boolean } {
+  const toks = tokens(s, i, seqs, styles, true);
+  const hasTag = (l: Tok[]): boolean => l.some((t) => "tag" in t);
+  return { text: render(toks, s.elements[i], rendered.get(i)), rich: hasTag(toks) };
 }
 
 /** Rendered text of any subtree without tags (sample values for fixtures). */
-export function plainText(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>): string {
+export function plainText(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>, rendered: Rendered): string {
   const e = s.elements[i];
-  if (e.ns === "html" && (e.tag === "input" || e.tag === "textarea")) return e.attrs.value ?? "";
-  return render(tokens(s, i, seqs, [], false, true), preserves(e));
+  if (e.ns === "html" && e.tag === "input") return e.attrs.value ?? "";
+  return render(tokens(s, i, seqs, [], false), e, rendered.get(i));
 }
 
-const args = (e: SnapElement) => (e.attrs["data-l10n-args"] ?? "").split(",").map((a) => a.trim()).filter(Boolean);
-
-/** IrText of a text node, a text-only button or label, a text field (value, else placeholder) or a dropdown (selected option). */
-export function irText(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>, styles: TextStyle[]): IrText | null {
+/** IrText of a text node, a text-only button, a text field (its value) or a dropdown (selected option). */
+export function irText(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>, styles: TextStyle[], rendered: Rendered): IrText | null {
   const e = s.elements[i];
   const style = e.textStyle ?? null;
   if (e.ns === "html" && (e.tag === "input" || e.tag === "textarea")) {
-    const value = e.tag === "textarea" ? plainText(s, i, seqs) : e.attrs.value ?? "";
-    if (value) return { key: null, tr: value, en: null, args: [], rich: false, style };
-    const ph = e.attrs.placeholder;
-    if (ph === undefined) return null;
-    return { key: e.attrs["data-l10n-placeholder"] ?? null, tr: ph, en: e.attrs["data-en-placeholder"] ?? null, args: [], rich: false, style };
+    const value = plainText(s, i, seqs, rendered);
+    return value ? { key: null, tr: value, en: null, args: [], rich: false, style } : null;
   }
   if (e.ns === "html" && e.tag === "select") {
     const opts = e.children.map((k) => s.elements[k]).filter((o) => o.tag === "option");
     const o = opts.find((x) => x.attrs.selected !== undefined) ?? opts[0];
     if (!o) return null;
-    return { key: o.attrs["data-l10n"] ?? null, tr: plainText(s, o.index, seqs), en: o.attrs["data-en"] ?? null, args: args(o), rich: false, style };
+    return { key: o.attrs["data-l10n"] ?? null, tr: plainText(s, o.index, seqs, rendered), en: o.attrs["data-en"] ?? null, args: [], rich: false, style };
   }
-  const t = richText(s, i, seqs, styles);
-  return { key: e.attrs["data-l10n"] ?? null, tr: t.text, en: e.attrs["data-en"] ?? null, args: args(e), rich: t.rich, style };
+  const t = richText(s, i, seqs, styles, rendered);
+  const args = argSpans(s, i).map((k) => s.elements[k].attrs["data-u-arg"]);
+  return { key: e.attrs["data-l10n"] ?? null, tr: t.text, en: e.attrs["data-en"] ?? null, args, rich: t.rich, style };
+}
+
+/** Attribute texts (I-4): placeholder (drawn with the field's text style), title, alt, aria-label. */
+export function attrTexts(e: SnapElement): Record<string, IrText> {
+  const out: Record<string, IrText> = {};
+  for (const a of TEXT_ATTRS) {
+    const v = e.attrs[a];
+    if (v === undefined || v.trim() === "") continue;
+    out[a] = { key: e.attrs[`data-l10n-${a}`] ?? null, tr: v, en: e.attrs[`data-en-${a}`] ?? null, args: [], rich: false, style: a === "placeholder" ? e.textStyle ?? null : null };
+  }
+  return out;
 }

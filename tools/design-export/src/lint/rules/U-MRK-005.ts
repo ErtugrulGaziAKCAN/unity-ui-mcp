@@ -3,7 +3,7 @@ import { isExternal, make } from "./util.js";
 import { TEXT_ATTRS } from "./U-MRK-007.js";
 
 export const ID_PATTERN = /^[a-z0-9]+([._-][a-z0-9]+)*$/;
-const ATTRS = ["data-u-screen", "data-u-id", "data-l10n", "data-u-repeat", "data-u-state", "data-u-bind", "data-u-action",
+const ATTRS = ["data-u-screen", "data-u-id", "data-l10n", "data-u-repeat", "data-u-state", "data-u-bind", "data-u-action", "data-u-arg",
   ...TEXT_ATTRS.map((a) => `data-l10n-${a}`)];
 
 /** Ids, keys and code-facing names are lowercase ASCII (never case-folded: Turkish İ/ı must not reach an identifier). */

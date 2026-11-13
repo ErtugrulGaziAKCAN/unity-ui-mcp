@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}.screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16.515625px;line-height:20px;color:#ffffff;background-color:#0b1f26}p{margin:0}
+.card{display:flex;flex-direction:column;width:200px;flex-shrink:0}
+.t{transition:color 0.2s ease}
+.card:hover .t{color:#16c2d5}
+.x{width:10px;height:10px;flex-shrink:0;background-color:#ffffff}
+.state-loading .x:hover{opacity:0.5}
+.b{width:10px;height:10px;flex-shrink:0;background-color:#123c47}
+.b:hover{background-color:#ff0000}
+.state-loading .b{background-color:#0000ff}
+.r{width:10px;height:10px;flex-shrink:0}
+@media (max-width: 1919px){.r:hover{opacity:0.5}}
+@media (max-width: 1919px), (min-aspect-ratio: 3/1){.r{background-color:#ffffff}}
+.rows{display:flex;flex-direction:column;flex-shrink:0}
+.row{display:flex;height:24px;flex-shrink:0}
+.row.is-selected .name{color:#16c2d5}
+.pill{height:40px;width:200px;flex-shrink:0;border-radius:9999px;background-color:#123c47}
+.pill:hover{height:60px}
+@media (max-width: 1919px){.pill{height:20px}}
+.m{display:none;width:10px;height:10px}
+.state-loading .m{display:inline-flex}
+.k{width:10px;height:10px;flex-shrink:0;background-color:#ffffff;animation:pulse 1s ease-in 0.5s infinite alternate}
+.k:hover{animation-play-state:paused}
+@keyframes pulse{50%{opacity:0.5}}
+.rv{margin:revert}
+.pl{white-space:pre-line}
+</style></head><body><div class="screen" data-u-screen="compound">
+<div class="card" data-u-id="card"><p class="t" data-u-id="t" data-l10n="c.t" data-en="T">Başlık</p></div>
+<div class="x" data-u-id="x"></div>
+<div class="b" data-u-id="b"></div>
+<div class="r" data-u-id="r"></div>
+<div class="rows" data-u-id="rows"><div class="row" data-u-repeat="items" data-u-id="row"><p class="name" data-u-id="name" data-u-bind="name">Ali</p></div><div class="row is-selected" data-u-id="row"><p class="name" data-u-id="name" data-u-bind="name">Veli</p></div></div>
+<div class="pill" data-u-id="pill"></div>
+<div class="m" data-u-id="m"></div>
+<div class="k" data-u-id="k"></div>
+<p class="rv" data-u-id="rv" data-l10n="c.rv" data-en="Revert">Geri</p>
+<p class="pl" data-u-id="pl" data-l10n="c.pl" data-en="Pre line">  a   b
+   c  </p>
+<div data-u-id="list" style="display:flex;flex-direction:column;flex-shrink:0"><div style="height:2px;flex-shrink:0"></div><div style="height:2px;flex-shrink:0"></div><div style="height:2px;flex-shrink:0"></div></div>
+<div data-u-id="list__2" style="width:1px;height:1px;flex-shrink:0"></div>
+</div></body></html>

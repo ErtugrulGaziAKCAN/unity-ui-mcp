@@ -118,6 +118,11 @@ export const CSS_SUPPORT_DATA: CssSupportData = {
     "color": ty("direct", ["color"]),
     "background-color": ty("direct", ["color"]),
     "background-image": { handling: "dropped", keywords: ["none"], list: true, rule: "U-CSS-022" },
+    // url() backgrounds become IR background assets; their size, repeat and position stay in the style layers
+    "background-size": kw("direct", ["auto", "cover", "contain"], { types: LEN, list: true }),
+    "background-repeat": kw("direct", ["repeat", "no-repeat", "repeat-x", "repeat-y", "space", "round"], { list: true }),
+    "background-position-x": kw("direct", ["left", "center", "right"], { types: LEN, list: true }),
+    "background-position-y": kw("direct", ["top", "center", "bottom"], { types: LEN, list: true }),
     "border-top-color": ty("direct", ["color"]), "border-right-color": ty("direct", ["color"]),
     "border-bottom-color": ty("direct", ["color"]), "border-left-color": ty("direct", ["color"]),
     "border-top-width": ty("direct", ["length"]), "border-right-width": ty("direct", ["length"]),
@@ -202,7 +207,8 @@ export const CSS_SUPPORT_DATA: CssSupportData = {
   elements: ["body", "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "button", "input", "textarea", "select", "option",
     "label", "img", "svg", "br", "ul", "ol", "li", "a", "section", "header", "footer", "nav", "main", "aside", "article",
     "b", "strong", "i", "em"],
-  inputTypes: ["text", "search", "password", "number", "checkbox", "radio", "range"],
+  // text fields (TextField), toggles (Toggle); range has no compiled control
+  inputTypes: ["text", "search", "password", "number", "email", "tel", "url", "checkbox", "radio"],
   browserDefaults: {
     inherited: ["color", "text-align", "text-indent", "text-transform", "text-shadow", "letter-spacing", "word-spacing",
       "white-space-collapse", "text-wrap-mode", "overflow-wrap", "word-break", "line-break", "visibility", "tab-size",

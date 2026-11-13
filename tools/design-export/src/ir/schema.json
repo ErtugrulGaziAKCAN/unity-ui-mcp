@@ -194,7 +194,8 @@
         "sha256",
         "width",
         "height",
-        "slice"
+        "slice",
+        "tint"
       ],
       "properties": {
         "kind": {
@@ -234,6 +235,10 @@
               "maxItems": 4
             }
           ]
+        },
+        "tint": {
+          "type": "boolean",
+          "description": "SVG painted with currentColor, written white: tinted with the node's color per layer."
         }
       }
     },
@@ -250,6 +255,8 @@
         "asset",
         "background",
         "shadow",
+        "attrTexts",
+        "initial",
         "bind",
         "action",
         "repeat",
@@ -287,7 +294,7 @@
         "style": {
           "type": "object",
           "propertyNames": {
-            "pattern": "^(base|hover|active|focus|disabled|checked|bp:.+|state:.+|class:.+)$"
+            "pattern": "^(base|(bp:[^+()]+|state:[^+()]+|class:[^+()]+|anc\\([^()+]+\\):(hover|active|focus|disabled|checked|class:[^+()]+)|hover|active|focus|disabled|checked)(\\+(bp:[^+()]+|state:[^+()]+|class:[^+()]+|anc\\([^()+]+\\):(hover|active|focus|disabled|checked|class:[^+()]+)|hover|active|focus|disabled|checked))*)$"
           },
           "additionalProperties": {
             "$ref": "#/$defs/styleMap"
@@ -299,49 +306,7 @@
               "type": "null"
             },
             {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "key",
-                "tr",
-                "en",
-                "args",
-                "rich",
-                "style"
-              ],
-              "properties": {
-                "key": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "tr": {
-                  "type": "string"
-                },
-                "en": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "args": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "rich": {
-                  "type": "boolean"
-                },
-                "style": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "description": "Kit text style (text-styles.json name) the text matches, or null."
-                }
-              }
+              "$ref": "#/$defs/text"
             }
           ]
         },
@@ -431,6 +396,43 @@
           "items": {
             "$ref": "#/$defs/node"
           }
+        },
+        "attrTexts": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "placeholder",
+              "title",
+              "alt",
+              "aria-label"
+            ]
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/text"
+          }
+        },
+        "initial": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "disabled",
+                "checked"
+              ],
+              "properties": {
+                "disabled": {
+                  "type": "boolean"
+                },
+                "checked": {
+                  "type": "boolean"
+                }
+              }
+            }
+          ]
         }
       }
     },
@@ -444,7 +446,8 @@
         "width",
         "height",
         "slice",
-        "offset"
+        "offset",
+        "tint"
       ],
       "properties": {
         "kind": {
@@ -476,6 +479,9 @@
         },
         "offset": {
           "$ref": "#/$defs/rect"
+        },
+        "tint": {
+          "const": false
         }
       }
     },
@@ -495,6 +501,7 @@
         "direction",
         "fillMode",
         "playState",
+        "restart",
         "keyframes"
       ],
       "properties": {
@@ -506,7 +513,8 @@
         },
         "trigger": {
           "type": "string",
-          "pattern": "^(show|state:.+|bp:.+|pseudo:(hover|active|focus|checked|disabled)|class:.+)$"
+          "pattern": "^(show|(bp:[^+()]+|state:[^+()]+|class:[^+()]+|anc\\([^()+]+\\):(hover|active|focus|disabled|checked|class:[^+()]+)|hover|active|focus|disabled|checked)(\\+(bp:[^+()]+|state:[^+()]+|class:[^+()]+|anc\\([^()+]+\\):(hover|active|focus|disabled|checked|class:[^+()]+)|hover|active|focus|disabled|checked))*)$",
+          "description": "show, or the layer key whose start runs the animation"
         },
         "phase": {
           "enum": [
@@ -580,8 +588,81 @@
           "items": {
             "$ref": "#/$defs/keyframe"
           }
+        },
+        "restart": {
+          "type": "boolean",
+          "description": "keyframes: false when the layer only changes play state or timing of the running animation"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "transition"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "type": "null"
+              },
+              "iterations": {
+                "type": "number",
+                "const": 1
+              },
+              "direction": {
+                "type": "string",
+                "const": "normal"
+              },
+              "fillMode": {
+                "type": "string",
+                "const": "none"
+              },
+              "playState": {
+                "type": "string",
+                "const": "running"
+              },
+              "restart": {
+                "type": "boolean",
+                "const": true
+              },
+              "keyframes": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "keyframes"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "phase": {
+                "type": "string",
+                "const": "enter"
+              },
+              "keyframes": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
     },
     "keyframe": {
       "type": "object",
@@ -605,6 +686,51 @@
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "tr",
+        "en",
+        "args",
+        "rich",
+        "style"
+      ],
+      "properties": {
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tr": {
+          "type": "string"
+        },
+        "en": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rich": {
+          "type": "boolean"
+        },
+        "style": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Kit text style (text-styles.json name) the text matches, or null."
         }
       }
     }

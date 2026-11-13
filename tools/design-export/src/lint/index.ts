@@ -34,6 +34,7 @@ import { rule as U_CSS_027 } from "./rules/U-CSS-027.js";
 import { rule as U_CSS_028 } from "./rules/U-CSS-028.js";
 import { rule as U_CSS_029 } from "./rules/U-CSS-029.js";
 import { rule as U_CSS_030 } from "./rules/U-CSS-030.js";
+import { rule as U_CSS_031 } from "./rules/U-CSS-031.js";
 import { rule as U_DC_001 } from "./rules/U-DC-001.js";
 import { rule as U_DC_002 } from "./rules/U-DC-002.js";
 import { rule as U_DC_003 } from "./rules/U-DC-003.js";
@@ -49,6 +50,9 @@ import { rule as U_MRK_004 } from "./rules/U-MRK-004.js";
 import { rule as U_MRK_005 } from "./rules/U-MRK-005.js";
 import { rule as U_MRK_006 } from "./rules/U-MRK-006.js";
 import { rule as U_MRK_007 } from "./rules/U-MRK-007.js";
+import { rule as U_MRK_008 } from "./rules/U-MRK-008.js";
+import { rule as U_MRK_009 } from "./rules/U-MRK-009.js";
+import { rule as U_MRK_010 } from "./rules/U-MRK-010.js";
 import { rule as U_NET_001 } from "./rules/U-NET-001.js";
 import { rule as U_NET_002 } from "./rules/U-NET-002.js";
 import { rule as W_CSS_001 } from "./rules/W-CSS-001.js";
@@ -90,6 +94,7 @@ export const RULES: readonly Rule[] = [
   U_CSS_028,
   U_CSS_029,
   U_CSS_030,
+  U_CSS_031,
   U_DC_001,
   U_DC_002,
   U_DC_003,
@@ -105,6 +110,9 @@ export const RULES: readonly Rule[] = [
   U_MRK_005,
   U_MRK_006,
   U_MRK_007,
+  U_MRK_008,
+  U_MRK_009,
+  U_MRK_010,
   U_NET_001,
   U_NET_002,
   W_CSS_001,

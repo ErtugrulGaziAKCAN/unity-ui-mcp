@@ -149,13 +149,13 @@ describe("buildIr: styles", () => {
     expect(note.children).toEqual([]);
   });
 
-  it("records inherited text properties on text nodes, except those an ancestor's pseudo-state changes", () => {
+  it("records inherited text properties on text nodes, with the ancestor layers that change them (R32, I-8)", () => {
     const t = byId(r.ir.root, "title").style.base;
     expect(t).toMatchObject({ color: "#ffffff", "font-family": '"Inter UI"', "font-weight": "400" });
     expect(t["font-size"]).toMatch(/^16\.51\d*px$/);
     const label = byId(r.ir.root, "play").children[0];
-    expect(label.style.base["text-align"]).toBe("center");
-    expect(label.style.base.color).toBeUndefined(); // .btn:hover changes it: inherited in USS too
+    expect(label.style.base).toMatchObject({ "text-align": "center", color: "#ffffff" });
+    expect(label.style["anc(play):hover"]).toEqual({ color: "#16c2d5" });
     expect(byId(r.ir.root, "play").style.hover).toEqual({ color: "#16c2d5" });
   });
 
@@ -188,7 +188,7 @@ describe("buildIr: kinds, assets and external regions", () => {
     const logo = byId(r.ir.root, "logo");
     const sha = crypto.createHash("sha256").update(fs.readFileSync(fx("assets/logo.png"))).digest("hex");
     expect(logo.kind).toBe("image");
-    expect(logo.asset).toEqual({ kind: "image", file: `assets/${sha}.png`, sha256: sha, width: 1, height: 1, slice: null });
+    expect(logo.asset).toEqual({ kind: "image", file: `assets/${sha}.png`, sha256: sha, width: 1, height: 1, slice: null, tint: false });
     expect(fs.readFileSync(path.join(r.outDir, logo.asset!.file))).toEqual(fs.readFileSync(fx("assets/logo.png")));
     expect(logo.style.base).toMatchObject({ width: "64px", height: "32px", "overflow-x": "clip", "overflow-y": "clip" });
     const bg = byId(r.ir.root, "bg");
@@ -196,18 +196,20 @@ describe("buildIr: kinds, assets and external regions", () => {
     expect(bg.asset!.file).toBe(`assets/${sha}.png`);
   });
 
-  it("serialises inline svg with currentColor resolved", () => {
+  it("serialises an inline svg painted with currentColor white and marks it tintable with its colour (I-3c)", () => {
     const icon = byId(r.ir.root, "icon");
     expect(icon.kind).toBe("vector");
     expect(icon.children).toEqual([]);
     expect(icon.asset!.kind).toBe("svg");
+    expect(icon.asset!.tint).toBe(true);
     expect([icon.asset!.width, icon.asset!.height]).toEqual([24, 24]);
     const svg = fs.readFileSync(path.join(r.outDir, icon.asset!.file), "utf8");
     expect(icon.asset!.file).toBe(`assets/${crypto.createHash("sha256").update(svg).digest("hex")}.svg`);
     expect(svg).not.toMatch(/currentcolor/i);
-    expect(svg).toContain("rgb(22, 194, 213)");
+    expect(svg).toContain("stroke: rgb(255, 255, 255)");
     expect(svg).toContain("stroke-width: 2");
     expect(svg).toMatch(/^<svg xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+    expect(icon.style.base.color).toBe("#16c2d5");
   });
 
   it("keeps a data-u-external region as one node without children", () => {
@@ -265,10 +267,10 @@ describe("buildIr: animations", () => {
     for (const layer of Object.values(btn.style)) expect(Object.keys(layer).filter((k) => /^(transition|animation)/.test(k))).toEqual([]);
     const t = (trigger: string, phase: string) => btn.anims.filter((a) => a.trigger === trigger && a.phase === phase)
       .map((a) => [a.kind, a.properties.join(","), a.duration, a.delay, a.timing]);
-    expect(t("pseudo:hover", "enter")).toEqual([["transition", "background-color", 200, 50, "cubic-bezier(0.4, 0, 0.2, 1)"]]);
-    expect(t("pseudo:hover", "leave")).toEqual([["transition", "background-color", 200, 50, "cubic-bezier(0.4, 0, 0.2, 1)"]]);
-    expect(t("pseudo:active", "enter")).toEqual([["transition", "opacity", 100, 0, "linear"]]);
-    expect(t("pseudo:active", "leave")).toEqual([["transition", "opacity", 300, 0, "steps(4)"]]);
+    expect(t("hover", "enter")).toEqual([["transition", "background-color", 200, 50, "cubic-bezier(0.4, 0, 0.2, 1)"]]);
+    expect(t("hover", "leave")).toEqual([["transition", "background-color", 200, 50, "cubic-bezier(0.4, 0, 0.2, 1)"]]);
+    expect(t("active", "enter")).toEqual([["transition", "opacity", 100, 0, "linear"]]);
+    expect(t("active", "leave")).toEqual([["transition", "opacity", 300, 0, "steps(4)"]]);
     expect(btn.anims.every((a) => a.name === null && a.iterations === 1 && a.keyframes.length === 0)).toBe(true);
   });
 
@@ -277,7 +279,7 @@ describe("buildIr: animations", () => {
     const show = spin.anims.filter((a) => a.trigger === "show");
     expect(show).toEqual([{
       kind: "keyframes", trigger: "show", phase: "enter", name: "spin", properties: ["rotate"], duration: 1000, delay: 200,
-      timing: "ease-in", iterations: "infinite", direction: "alternate", fillMode: "both", playState: "running",
+      timing: "ease-in", iterations: "infinite", direction: "alternate", fillMode: "both", playState: "running", restart: true,
       keyframes: [
         { offset: 0, values: { rotate: "0deg" }, easing: null },
         { offset: 0.5, values: { rotate: "180deg" }, easing: "linear" },
@@ -290,20 +292,166 @@ describe("buildIr: animations", () => {
   });
 });
 
-describe("buildIr: rejections", () => {
+describe("buildIr: review fixes", () => {
   const write = (css: string, body: string) => {
-    const dir = tmp();
-    const p = path.join(dir, "s.html");
+    const p = path.join(tmp(), "s.html");
     fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}
-      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;font-family:"Inter UI";font-size:16.515625px;line-height:20px;color:#ffffff}
+      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16.515625px;line-height:20px;color:#ffffff;background-color:#0b1f26}
       p{margin:0}${css}</style></head><body><div class="screen" data-u-screen="s">${body}</div></body></html>`);
     return p;
   };
-  it("rejects a pseudo-class on an ancestor and combined layers, naming the rule", async () => {
-    await expect(build(write(".card:hover .t{color:#16c2d5}", '<div class="card" data-u-id="card"><p class="t" data-l10n="s.t" data-en="T">T</p></div>')))
-      .rejects.toThrow(/\.card:hover \.t/);
-    await expect(build(write(".state-loading .x:hover{opacity:0.5}", '<div class="x" data-u-id="x"></div>')))
-      .rejects.toThrow(/state:loading.*hover|hover.*state:loading/);
+  const lintIds = async (file: string) => {
+    const d = await openDesign(file, kit, [2560, 1440], browser);
+    try { return Array.from(new Set((await lint(d, kit)).filter((f) => f.severity === "error").map((f) => f.ruleId))).sort(); } finally { await d.close(); }
+  };
+
+  it("R39: compound, ancestor and breakpoint layers with unions of co-active layers", async () => {
+    const r = await build(fx("compound.html"));
+    expect(validateIr(r.ir)).toEqual([]);
+    const n = (id: string) => byId(r.ir.root, id);
+    expect(n("t").style["anc(card):hover"]).toEqual({ color: "#16c2d5" });
+    expect(n("t").anims.map((a) => [a.trigger, a.phase, a.properties, a.duration])).toEqual([["anc(card):hover", "enter", ["color"], 200], ["anc(card):hover", "leave", ["color"], 200]]);
+    expect(n("x").style).toEqual({ base: expect.any(Object), "state:loading+hover": { opacity: "0.5" } });
+    // hover and state:loading both set the background: their union records the cascade winner (the later rule)
+    expect(n("b").style["state:loading+hover"]).toEqual({ "background-color": "#0000ff" });
+    expect(n("r").style["bp:max-width-1919+hover"]).toEqual({ opacity: "0.5" });
+    expect(n("name").style["anc(row):class:is-selected"]).toEqual({ color: "#16c2d5" });
+    expect(r.ir.states).toEqual(["default", "loading"]);
+  });
+
+  it("R39: a media query list becomes one breakpoint per query, and lint accepts it", async () => {
+    const r = await build(fx("compound.html"));
+    expect(r.ir.breakpoints).toEqual([{ name: "max-width-1919", maxWidth: 1919 }, { name: "min-aspect-ratio-3-1", minAspect: 3 }]);
+    const st = byId(r.ir.root, "r").style;
+    expect(st["bp:max-width-1919"]).toEqual({ "background-color": "#ffffff" });
+    expect(st["bp:min-aspect-ratio-3-1"]).toEqual({ "background-color": "#ffffff" });
+    expect(await lintIds(write("@media (max-width: 1919px), (min-aspect-ratio: 3/1){.q{opacity:0.5}} .q{width:10px;height:10px;flex-shrink:0}", '<div class="q" data-u-id="q"></div>'))).toEqual([]);
+  });
+
+  it("R39: an ancestor state matching several ancestors is rejected by lint and export alike", async () => {
+    const p = write(".card{display:flex;flex-direction:column;flex-shrink:0} .card:hover .t{color:#16c2d5}",
+      '<div class="card" data-u-id="outer"><div class="card" data-u-id="inner"><p class="t" data-u-id="t" data-l10n="s.t" data-en="T">T</p></div></div>');
+    expect(await lintIds(p)).toEqual(["U-CSS-027"]);
+    await expect(build(p)).rejects.toThrow(/matches 2 ancestors/);
+  });
+
+  it("I-7: radii are resolved against the box measured in each layer (state, breakpoint, pseudo, union)", async () => {
+    const st = byId((await build(fx("compound.html"))).ir.root, "pill").style;
+    expect(st.base["border-top-left-radius"]).toBe("20px");
+    expect(st.hover["border-top-left-radius"]).toBe("30px");
+    expect(st["bp:max-width-1919"]["border-top-left-radius"]).toBe("10px");
+    expect(st["bp:max-width-1919+hover"]["border-top-left-radius"]).toBe("30px");
+  });
+
+  it("C-1: keyed inline texts become text nodes; a wrapper becomes their container or row", async () => {
+    const r = await build(fx("review-text.html"));
+    const n = (id: string) => byId(r.ir.root, id);
+    expect(n("wrap").kind).toBe("container");
+    expect(n("wrap").children.map((c) => [c.kind, c.text?.key, c.text?.style, c.style.base.display])).toEqual([["text", "probe.title", "label", "block"]]);
+    expect(n("save").kind).toBe("button");
+    expect(n("save").children[0].text?.key).toBe("probe.save");
+    expect(n("who").kind).toBe("container");
+    expect(n("nm")).toMatchObject({ kind: "text", bind: "player-name", text: { tr: "Ali", key: null } });
+    expect(r.fixtures["player-name"]).toBe("Ali");
+    expect(n("pair").style.base).toMatchObject({ display: "flex", "flex-direction": "row", "justify-content": "flex-start" });
+    expect(n("pair").children.map((c) => c.text?.key)).toEqual(["probe.a", "probe.b"]);
+    expect(await lintIds(fx("review-text.html"))).toEqual([]);
+  });
+
+  it("C-1: keyed texts that a row would not reproduce are rejected by lint and export alike", async () => {
+    expect(await lintIds(fx("review-text-two.html"))).toEqual(["U-MRK-009"]);
+    await expect(build(fx("review-text-two.html"))).rejects.toThrow(/space between them/);
+  });
+
+  it("R40: Smart String arguments are {name} in tr with their sample in fixtures", async () => {
+    const r = await build(fx("review-ctl.html"));
+    expect(byId(r.ir.root, "greet").text).toEqual({ key: "probe.greet", tr: "Selam {name}", en: "Hi {name}", args: ["name"], rich: false, style: "label" });
+    expect(r.fixtures.name).toBe("Ali");
+    expect(await lintIds(fx("review-ctl.html"))).toEqual([]);
+    expect(await lintIds(write("", '<p data-l10n="s.g" data-en="Hi {name}" data-l10n-args="name">Selam <span data-u-id="nm" data-u-bind="name">Ali</span></p>'))).toEqual(["U-MRK-008", "U-MRK-009"]);
+  });
+
+  it("I-2: whitespace collapses as rendered across inline tags; pre-line is exact", async () => {
+    expect(byId((await build(fx("review-text.html"))).ir.root, "ws").text?.tr).toBe("Merhaba <b>dünya</b>");
+    expect(byId((await build(fx("compound.html"))).ir.root, "pl").text?.tr).toBe("a b\nc");
+  });
+
+  it("I-3a: url() backgrounds are assets; size, repeat and position stay in the layers", async () => {
+    const r = await build(fx("review-bg.html"));
+    const sha = crypto.createHash("sha256").update(fs.readFileSync(fx("assets/logo.png"))).digest("hex");
+    const hero = byId(r.ir.root, "hero");
+    expect(hero.background).toMatchObject({ kind: "image", file: `assets/${sha}.png`, tint: false });
+    expect(hero.style.base["background-image"]).toBe(`url("assets/${sha}.png")`);
+    expect(hero.style.hover["background-image"]).toBe(`url("assets/${sha}.png")`);
+    expect(byId(r.ir.root, "bg2").style.base).toMatchObject({ "background-size": "cover", "background-repeat": "no-repeat" });
+    expect(fs.existsSync(path.join(r.outDir, `assets/${sha}.png`))).toBe(true);
+    expect(await lintIds(fx("review-bg.html"))).toEqual([]);
+  });
+
+  it("I-3b/c/d: custom properties per layer, tinted icons per layer, concrete initial values", async () => {
+    const r = await build(fx("review-style.html"));
+    expect(byId(r.ir.root, "panel").style["state:dark"]).toEqual({ "background-color": "#000000" });
+    const icon = byId(r.ir.root, "icon");
+    expect(icon.asset!.tint).toBe(true);
+    expect(icon.style.base.color).toBe("#ffffff");
+    expect(icon.style["anc(ib):hover"]).toEqual({ color: "#16c2d5" });
+    expect(byId(r.ir.root, "reset").style.base.color).toBe("#000000");
+  });
+
+  it("I-3e/I-4: initial disabled/checked and attribute texts", async () => {
+    const r = await build(fx("review-ctl.html"));
+    expect(byId(r.ir.root, "go").initial).toEqual({ disabled: true, checked: false });
+    expect(byId(r.ir.root, "go").style.disabled).toEqual({ "background-color": "#333333" });
+    expect(byId(r.ir.root, "chk").initial).toEqual({ disabled: false, checked: true });
+    const mail = byId(r.ir.root, "mail");
+    expect(mail.kind).toBe("input");
+    expect(mail.text).toBeNull();
+    expect(mail.attrTexts).toEqual({ placeholder: { key: "probe.mail", tr: "E-posta", en: "Email", args: [], rich: false, style: "label" } });
+    expect(byId((await build(fx("assets.html"))).ir.root, "logo").attrTexts.alt).toMatchObject({ key: "assets.logo", tr: "Logo", en: "Logo", style: null });
+  });
+
+  it("I-5: CSS initial values that render differently in USS are explicit", async () => {
+    const r = await build(fx("review-init.html"));
+    expect(byId(r.ir.root, "f").style.base).toMatchObject({ "flex-direction": "row", "align-content": "stretch" });
+    expect(byId(r.ir.root, "off").style.base.position).toBe("static");
+  });
+
+  it("I-6: is-* classes neither stop sampling nor stay on the template; they become item state", async () => {
+    const r = await build(fx("review-ctl.html"));
+    const rows = byId(r.ir.root, "rows");
+    expect(rows.repeat).toEqual({ name: "items", mode: "inline", count: 3 });
+    expect(rows.children[0].classes).toEqual(["row"]);
+    expect(r.fixtures.items).toEqual([{ label: "One", $classes: { rows__0: ["is-selected"] } }, { label: "Two" }, { label: "Three", $classes: { rows__0: ["is-selected"] } }]);
+  });
+
+  it("I-8: an ancestor's transition of an inherited colour is copied to the text", async () => {
+    const stl = byId((await build(fx("review-style.html"))).ir.root, "stl");
+    expect(stl.style["state:dark"]).toEqual({ color: "#16c2d5" });
+    expect(stl.anims.map((a) => [a.trigger, a.phase, a.properties, a.duration, a.timing])).toEqual([["state:dark", "enter", ["color"], 200, "ease"], ["state:dark", "leave", ["color"], 200, "ease"]]);
+  });
+
+  it("leaves the page as it was (svg probes, tint, layer boxes: viewport, classes, forced states)", async () => {
+    for (const f of ["review-style.html", "compound.html", "review-ctl.html"]) {
+      const d = await openDesign(fx(f), kit, [2560, 1440], browser);
+      try {
+        const html = await d.page.evaluate(() => document.documentElement.outerHTML);
+        const vp = d.page.viewportSize();
+        const s = await collectSnapshot(d.page, d.cdp, kit);
+        await buildIr(d, s, kit, tmp(), fx(f));
+        expect(await d.page.evaluate(() => document.documentElement.outerHTML), f).toBe(html);
+        expect(d.page.viewportSize()).toEqual(vp);
+      } finally { await d.close(); }
+    }
+  });
+
+  it("minors: revert, per-layer blockification, text inputs, play-state modifiers, id collisions", async () => {
+    const r = await build(fx("compound.html"));
+    expect(byId(r.ir.root, "rv").style.base["margin-top"]).toBe("16.5156px");
+    expect(byId(r.ir.root, "m").style["state:loading"]).toEqual({ display: "flex" });
+    expect(byId(r.ir.root, "k").anims.map((a) => [a.trigger, a.restart, a.playState])).toEqual([["show", true, "running"], ["hover", false, "paused"]]);
+    expect(byId(r.ir.root, "list").children.map((c) => c.id)).toEqual(["list__0", "list__1", "list__2_1"]);
+    const a = byId((await build(fx("review-anim.html"))).ir.root, "a");
+    expect(a.anims.filter((x) => x.phase === "enter").map((x) => [x.properties.join(), x.duration, x.timing])).toEqual([["background-color", 100, "linear"], ["scale", 200, "ease"]]);
   });
 });
 

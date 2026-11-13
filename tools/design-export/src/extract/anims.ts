@@ -1,19 +1,18 @@
 import type { IrAnim, IrKeyframe } from "../ir/types.js";
-import { CSS_WIDE } from "../lint/css-values.js";
+import { CSS_WIDE, splitTopLevel } from "../lint/css-values.js";
 import { splitTransform } from "../lint/resolve/transform.js";
 import { physicalNames, type DomSnapshot } from "../lint/snapshot.js";
+import { dimsOf, triggerOf } from "./layers.js";
 import { fmt } from "./naming.js";
-import { listOf, normalizeColor, PSEUDO_STATES, resolveValue, transformValues, type Layers } from "./styles.js";
+import { normalizeColor, resolveValue, transformValues, type Layers, type StyleExtractor } from "./styles.js";
 
 const COLOR = /^(color|background-color|border-(top|right|bottom|left)-color)$/;
 const DIRECTIONS = new Set(["normal", "reverse", "alternate", "alternate-reverse"]);
 const FILLS = new Set(["none", "forwards", "backwards", "both"]);
+const ANIMATION = ["animation-name", "animation-duration", "animation-delay", "animation-timing-function", "animation-iteration-count",
+  "animation-direction", "animation-fill-mode", "animation-play-state"];
 
-/** Layer → animation trigger: base → show, hover → pseudo:hover, state:/bp:/class: unchanged. */
-export function triggerOf(layer: string): string {
-  if (layer === "base") return "show";
-  return PSEUDO_STATES.has(layer) ? `pseudo:${layer}` : layer;
-}
+export { triggerOf };
 
 /** CSS time → ms (null for anything else). */
 export function timeMs(v: string): number | null {
@@ -29,22 +28,18 @@ function covers(name: string): string[] | "all" {
   return physicalNames(n);
 }
 
-/** Effective value of a longhand in `layer` (the layer over base), CSS-wide keywords as the fallback. */
-function effective(raw: Layers, layer: string, p: string, fallback: string): string {
-  const v = raw.get(layer)?.get(p)?.value ?? raw.get("base")?.get(p)?.value;
-  return v === undefined || CSS_WIDE.has(v.trim().toLowerCase()) ? fallback : v;
-}
+const list = (v: string | undefined, fallback: string) =>
+  splitTopLevel(v === undefined || CSS_WIDE.has(v.trim().toLowerCase()) ? fallback : v, ",").map((x) => x.trim());
 
-function transitionAnims(raw: Layers, layer: string, changed: string[], trigger: string, phase: "enter" | "leave"): IrAnim[] {
-  const names = listOf(effective(raw, layer, "transition-property", "all"), "all");
-  const durs = listOf(effective(raw, layer, "transition-duration", "0s"), "0s");
-  const delays = listOf(effective(raw, layer, "transition-delay", "0s"), "0s");
-  const timings = listOf(effective(raw, layer, "transition-timing-function", "ease"), "ease");
+function transitionAnims(ex: StyleExtractor, i: number, at: string, changed: string[], trigger: string, phase: "enter" | "leave"): IrAnim[] {
+  const v = (p: string) => ex.effective(i, dimsOf(at), p)?.entry.value;
+  const names = list(v("transition-property"), "all"), durs = list(v("transition-duration"), "0s");
+  const delays = list(v("transition-delay"), "0s"), timings = list(v("transition-timing-function"), "ease");
   const per = new Map<string, { duration: number; delay: number; timing: string }>();
   names.forEach((n, j) => {
-    if (n.trim().toLowerCase() === "none") return;
+    if (n.toLowerCase() === "none") return;
     const c = covers(n);
-    const t = { duration: timeMs(durs[j % durs.length]) ?? 0, delay: timeMs(delays[j % delays.length]) ?? 0, timing: timings[j % timings.length].trim() };
+    const t = { duration: timeMs(durs[j % durs.length]) ?? 0, delay: timeMs(delays[j % delays.length]) ?? 0, timing: timings[j % timings.length] };
     // CSS: the last entry naming a property wins
     for (const p of c === "all" ? changed : changed.filter((x) => c.includes(x))) per.set(p, t);
   });
@@ -60,7 +55,7 @@ function transitionAnims(raw: Layers, layer: string, changed: string[], trigger:
     .sort((a, b) => (a.props[0] < b.props[0] ? -1 : 1))
     .map((g) => ({
       kind: "transition", trigger, phase, name: null, properties: g.props, duration: g.t.duration, delay: g.t.delay, timing: g.t.timing,
-      iterations: 1, direction: "normal", fillMode: "none", playState: "running", keyframes: [],
+      iterations: 1, direction: "normal", fillMode: "none", playState: "running", restart: true, keyframes: [],
     }));
 }
 
@@ -101,48 +96,73 @@ function framesOf(s: DomSnapshot, i: number, name: string, refs: Set<string>): I
     .map(([offset, f]) => ({ offset: Number(fmt(offset)), values: Object.fromEntries(f.values), easing: f.easing }));
 }
 
-const ANIMATION = ["animation-name", "animation-duration", "animation-delay", "animation-timing-function", "animation-iteration-count",
-  "animation-direction", "animation-fill-mode", "animation-play-state"];
-
 /**
- * Every transition and keyframe animation of element `i` (spec §11, R27/R34). `raw` holds the cascaded layers with
- * transition-* and animation-*; `layers` the IR style layers (what each trigger changes). Transitions: per non-base
- * layer, `enter` with the layer's effective transition and `leave` with the base's (CSS uses the destination style's).
- * Keyframes: base animations start on show, a layer that declares animation-* starts its effective ones.
+ * Every transition and keyframe animation of element `i` (spec §11, R27/R34), triggered by layer keys (`show` for
+ * base). Transitions: per non-base layer, `enter` with the transition in effect in that layer and `leave` with the
+ * base's (CSS uses the destination style's). Keyframes: base animations start on show; a layer that declares
+ * animation-* starts its animations (`restart`) when it changes animation-name, else it modifies the running ones
+ * (play state, timing) without restarting them.
  */
-export function animsOf(s: DomSnapshot, i: number, raw: Layers, layers: Layers, refs: Set<string>): IrAnim[] {
+export function animsOf(ex: StyleExtractor, i: number, raw: Layers, layers: Layers, refs: Set<string>): IrAnim[] {
+  const s = ex.s;
   const out: IrAnim[] = [];
-  const names = Array.from(layers.keys()).filter((n) => n !== "base").sort();
-  for (const layer of names) {
+  for (const layer of Array.from(layers.keys()).filter((n) => n !== "base").sort()) {
     const changed = Array.from(layers.get(layer)!.keys()).filter((p) => p !== "display");
     if (!changed.length) continue;
-    const trigger = triggerOf(layer);
-    out.push(...transitionAnims(raw, layer, changed, trigger, "enter"), ...transitionAnims(raw, "base", changed, trigger, "leave"));
+    out.push(...transitionAnims(ex, i, layer, changed, triggerOf(layer), "enter"), ...transitionAnims(ex, i, "base", changed, triggerOf(layer), "leave"));
   }
+  const baseNames = list(ex.effective(i, [], "animation-name")?.entry.value, "none").join(",");
   for (const layer of ["base", ...Array.from(raw.keys()).filter((n) => n !== "base").sort()]) {
     const own = raw.get(layer);
     if (!own || (layer !== "base" && !ANIMATION.some((p) => own.has(p)))) continue;
-    const list = (p: string, fb: string) => listOf(effective(raw, layer, p, fb), fb).map((x) => x.trim());
-    const anames = list("animation-name", "none"), durs = list("animation-duration", "0s"), delays = list("animation-delay", "0s");
-    const timings = list("animation-timing-function", "ease"), counts = list("animation-iteration-count", "1");
-    const dirs = list("animation-direction", "normal"), fills = list("animation-fill-mode", "none"), plays = list("animation-play-state", "running");
+    const v = (p: string, fb: string) => list(ex.effective(i, dimsOf(layer), p)?.entry.value, fb);
+    const anames = v("animation-name", "none"), durs = v("animation-duration", "0s"), delays = v("animation-delay", "0s");
+    const timings = v("animation-timing-function", "ease"), counts = v("animation-iteration-count", "1");
+    const dirs = v("animation-direction", "normal"), fills = v("animation-fill-mode", "none"), plays = v("animation-play-state", "running");
+    const restart = layer === "base" || anames.join(",") !== baseNames;
     anames.forEach((name, j) => {
       if (name === "none") return;
       const frames = framesOf(s, i, name, refs);
       if (!frames) return;
       const at = <T>(a: T[]) => a[j % a.length];
       const count = at(counts);
-      const iterations = count === "infinite" ? "infinite" : Number.isFinite(Number(count)) && Number(count) >= 0 ? Number(count) : 1;
       out.push({
         kind: "keyframes", trigger: triggerOf(layer), phase: "enter", name,
         properties: Array.from(new Set(frames.flatMap((f) => Object.keys(f.values)))).sort(),
-        duration: timeMs(at(durs)) ?? 0, delay: timeMs(at(delays)) ?? 0, timing: at(timings), iterations,
+        duration: timeMs(at(durs)) ?? 0, delay: timeMs(at(delays)) ?? 0, timing: at(timings),
+        iterations: count === "infinite" ? "infinite" : Number.isFinite(Number(count)) && Number(count) >= 0 ? Number(count) : 1,
         direction: (DIRECTIONS.has(at(dirs)) ? at(dirs) : "normal") as IrAnim["direction"],
         fillMode: (FILLS.has(at(fills)) ? at(fills) : "none") as IrAnim["fillMode"],
         playState: at(plays) === "paused" ? "paused" : "running",
+        restart,
         keyframes: frames,
       });
     });
   }
   return out;
+}
+
+/** An ancestor's animations of an inherited property, re-triggered by the layer the descendant sees (I-8). */
+export function inheritedAnims(anims: IrAnim[], prop: string, fromKey: string, key: string): IrAnim[] {
+  const out: IrAnim[] = [];
+  for (const a of anims) {
+    if (a.trigger !== triggerOf(fromKey) || !a.properties.includes(prop)) continue;
+    if (a.kind === "transition") { if (fromKey !== "base") out.push({ ...a, trigger: triggerOf(key), properties: [prop] }); continue; }
+    const keyframes = a.keyframes.filter((k) => prop in k.values).map((k) => ({ ...k, values: { [prop]: k.values[prop] } }));
+    if (keyframes.length) out.push({ ...a, trigger: triggerOf(key), properties: [prop], keyframes });
+  }
+  return out;
+}
+
+/** Merges animations that differ only in their property lists. */
+export function mergeAnims(list: IrAnim[]): IrAnim[] {
+  const out = new Map<string, IrAnim>();
+  for (const a of list) {
+    const k = JSON.stringify({ ...a, properties: [], keyframes: a.kind === "keyframes" ? a.keyframes.map((f) => [f.offset, f.easing]) : [] });
+    const prev = out.get(k);
+    if (!prev) { out.set(k, { ...a, properties: [...a.properties], keyframes: a.keyframes.map((f) => ({ ...f, values: { ...f.values } })) }); continue; }
+    prev.properties = Array.from(new Set([...prev.properties, ...a.properties])).sort();
+    a.keyframes.forEach((f, n) => Object.assign(prev.keyframes[n].values, f.values));
+  }
+  return Array.from(out.values());
 }

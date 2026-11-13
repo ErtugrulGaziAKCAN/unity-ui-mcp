@@ -1,3 +1,4 @@
+import { repeatSamples } from "../repeat.js";
 import type { Rule } from "../types.js";
 import { isExternal, make } from "./util.js";
 
@@ -11,13 +12,7 @@ export const rule: Rule = {
     const item = new Set<number>();
     for (const r of s.elements) {
       if (r.attrs["data-u-repeat"] === undefined || r.parent < 0) continue;
-      const sibs = s.elements[r.parent].children;
-      item.add(r.index);
-      for (const i of sibs.slice(sibs.indexOf(r.index) + 1)) {
-        const x = s.elements[i];
-        if (x.tag !== r.tag || (x.attrs.class ?? "") !== (r.attrs.class ?? "") || x.attrs["data-u-repeat"] !== undefined) break;
-        item.add(i);
-      }
+      for (const i of repeatSamples(s, r.index)) item.add(i);
     }
     const scope = s.elements.map(() => -1);
     for (const e of s.elements) scope[e.index] = item.has(e.index) ? e.index : e.parent >= 0 ? scope[e.parent] : -1;

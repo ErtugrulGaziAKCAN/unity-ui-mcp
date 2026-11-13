@@ -1,11 +1,13 @@
 import { px } from "../css-values.js";
 import { individualTransformProblem, splitTransform } from "../resolve/transform.js";
 import type { Rule } from "../types.js";
-import { declRule, declText } from "./util.js";
+import { declRule, declText, inSvg, make, resolved, sourcesOf } from "./util.js";
+
+const INDIVIDUAL = ["translate", "rotate", "scale"];
 
 export const rule: Rule = {
   id: "U-CSS-025", severity: "error",
-  check: (s) => declRule(s, rule,
+  check: (s) => [...combined(s), ...declRule(s, rule,
     "Use only translate()/translateX()/translateY(), rotate() and scale()/scaleX()/scaleY() in the order translate → rotate → scale (or the translate, rotate and scale properties); no matrix, skew, perspective or 3D functions.",
     (d, v, _src, t) => {
       if (d.name === "transform") {
@@ -20,5 +22,23 @@ export const rule: Rule = {
         return why ? `${declText(d, v)}: ${why}` : null;
       }
       return null;
-    }, { pseudo: true, keyframes: true }),
+    }, { pseudo: true, keyframes: true })],
 };
+
+/** transform together with translate/rotate/scale on one element: CSS composes both, the IR has one split. */
+function combined(s: Parameters<typeof sourcesOf>[0]) {
+  const out = [];
+  for (const e of s.elements) {
+    if (inSvg(s)[e.index]) continue;
+    const names = new Set<string>();
+    for (const src of sourcesOf(s)[e.index]) for (const d of src.decls) {
+      if ((d.name === "transform" || INDIVIDUAL.includes(d.name)) && resolved(s, d.value, e.index).trim() !== "none") names.add(d.name);
+    }
+    const ind = INDIVIDUAL.filter((n) => names.has(n));
+    if (names.has("transform") && ind.length) {
+      out.push(make(rule, e.path, `transform and ${ind.join(", ")} on one element`,
+        "Use either transform (translate → rotate → scale) or the translate, rotate and scale properties on an element, not both."));
+    }
+  }
+  return out;
+}

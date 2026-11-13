@@ -18,7 +18,7 @@ export const rule: Rule = {
       let k = e.index, problem: string | null = null;
       for (;;) {
         const x = s.elements[k], a = x.attrs;
-        if (a["data-u-bind"] !== undefined) break;
+        if (a["data-u-bind"] !== undefined || a["data-u-arg"] !== undefined) break; // runtime values
         if (a["data-l10n"] !== undefined) {
           if ((a["data-en"] ?? "").trim() === "") problem = `data-l10n="${a["data-l10n"]}" on ${x.path} has no data-en`;
           break;

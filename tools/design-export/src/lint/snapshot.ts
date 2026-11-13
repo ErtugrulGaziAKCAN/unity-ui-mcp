@@ -4,6 +4,8 @@ import { declaredFontFaces, DESIGN_ORIGIN, KIT_PREFIX, STATIC_CSS, type Declared
 import { cssSupport } from "./allowed-css.js";
 import { declsOf, px, resolveVars, type SnapDecl } from "./css-values.js";
 import { parseSelectorList, pseudoElement, reachSelector, specificity, structural, pseudoClasses, type ParsedSelector } from "./selectors.js";
+import { promotedRuns } from "./text-runs.js";
+import { DYNAMIC_PSEUDO_CLASSES } from "./selectors.js";
 import { matchRichStyle, matchTextStyle, readTextStyles } from "./text-styles.js";
 
 export type { SnapDecl } from "./css-values.js";
@@ -54,6 +56,11 @@ export interface SnapElement {
   ua: Record<string, { value: string; parent: string }>;
   /** Kit text style the element's text matches (set when collectSnapshot gets the kit); null = no match, undefined = no text. */
   textStyle?: string | null;
+  /**
+   * Inline <svg> roots: how its shapes paint. `current` = every fill/stroke/stop follows currentColor (tintable),
+   * `fixed` = none does, `mixed` = both, `none` = nothing painted.
+   */
+  svgPaint?: "current" | "fixed" | "mixed" | "none";
 }
 
 export interface SnapSelector {
@@ -67,6 +74,11 @@ export interface SnapSelector {
   structural: string[];
   /** Indices of the elements `reach` matches (null when it is not a valid selector for the browser). */
   elements: number[] | null;
+  /**
+   * Compounds before the subject that carry an interaction pseudo-class or an is-* class, with the ancestors of each
+   * reached element that can match them (CSS: the rule applies while such an ancestor is in that state).
+   */
+  dynamicAncestors: { compound: number; matches: Record<number, number[]> }[];
 }
 
 export interface SnapRule {
@@ -138,6 +150,7 @@ interface RawPage {
   sheets: SnapSheet[]; rules: RawRule[]; media: Omit<SnapMedia, "path">[]; atRules: Omit<SnapAtRule, "path">[];
   keyframes: { sheet: string; kit: boolean; name: string; frames: { key: string; longhands: SnapDecl[] }[] }[];
   elements: RawElement[]; rootVars: Record<string, string>; rootFontSize: string;
+  svgPaint: Record<number, "current" | "fixed" | "mixed" | "none">;
 }
 
 /** Runs in the page: sheets (adopted ones too), rules, at-rules, keyframes, elements, and the U-CSS-019 relayout. */
@@ -146,7 +159,7 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
   const styleEls = Array.from(document.querySelectorAll("style")).filter((s) => !isFreeze(s));
   const out: RawPage = {
     viewport: { width: innerWidth, height: innerHeight, scale: devicePixelRatio },
-    sheets: [], rules: [], media: [], atRules: [], keyframes: [], elements: [], rootVars: {},
+    sheets: [], rules: [], media: [], atRules: [], keyframes: [], elements: [], rootVars: {}, svgPaint: {},
     rootFontSize: getComputedStyle(document.documentElement).fontSize,
   };
   const label = (sheet: CSSStyleSheet): string => {
@@ -271,6 +284,26 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
     });
   });
 
+  // inline <svg> paints: shapes painted with currentColor take a sentinel colour (the style attribute is restored)
+  const SENTINEL = "rgb(1, 2, 3)";
+  els.forEach((el, i) => {
+    if (el.namespaceURI !== "http://www.w3.org/2000/svg" || el.localName !== "svg" || el.parentElement?.namespaceURI === "http://www.w3.org/2000/svg") return;
+    const saved = el.getAttribute("style");
+    (el as SVGElement).style.setProperty("color", SENTINEL, "important");
+    let cur = false, fixed = false;
+    const check = (v: string) => { if (!v || v === "none") return; if (v === SENTINEL) cur = true; else fixed = true; };
+    for (const sh of Array.from(el.querySelectorAll("path, circle, rect, line, polyline, polygon, ellipse, text, tspan, textPath, use"))) {
+      const cs = getComputedStyle(sh);
+      if (cs.display === "none") continue;
+      check(cs.fill); check(cs.stroke);
+    }
+    for (const st of Array.from(el.querySelectorAll("stop"))) check(getComputedStyle(st).stopColor);
+    // reading the attribute flushes the pending CSSOM write, so removing it leaves no style=""
+    el.getAttribute("style");
+    if (saved === null) el.removeAttribute("style"); else el.setAttribute("style", saved);
+    out.svgPaint[i] = cur && fixed ? "mixed" : cur ? "current" : fixed ? "fixed" : "none";
+  });
+
   // U-CSS-019: one relayout with the main-axis min size of every `auto` flex item set to 0
   const cands: { i: number; el: Element; axis: "row" | "column"; before: Box; attr: string }[] = [];
   els.forEach((el, i) => {
@@ -310,6 +343,22 @@ function pageMatch(selectors: string[]): (number[] | null)[] {
       return r;
     } catch { return null; }
   });
+}
+
+/** Runs in the page: for each (prefix, rest) pair, the ancestors of each element that match `prefix` and reach it through `rest`. */
+function pageAncestors(items: { prefix: string; rest: string; els: number[] }[]): number[][][] {
+  const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
+  const idx = new Map<Element, number>(els.map((e, i) => [e, i]));
+  return items.map(({ prefix, rest, els: list }) => list.map((i) => {
+    const out: number[] = [];
+    try {
+      for (let a = els[i].parentElement; a; a = a.parentElement) {
+        if (!a.matches(prefix)) continue;
+        if (Array.from(a.querySelectorAll(`:scope ${rest}`)).includes(els[i])) out.push(idx.get(a) ?? -1);
+      }
+    } catch { /* invalid selector: no ancestor */ }
+    return out;
+  }));
 }
 
 /** Runs in the page: CSSOM longhand expansion of shorthands whose var() references were substituted. */
@@ -424,6 +473,19 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
   }));
   const matched = await evaluate(page, pageMatch, Array.from(reach.keys()));
   const reached = raw.rules.map((_, k) => Array.from(new Set(reachOf[k].flatMap((s) => matched[reach.get(s)!] ?? []))).sort((a, b) => a - b));
+  // ancestors matching compounds with interaction pseudo-classes or is-* classes (one page call)
+  const dynamicOf = (sel: ParsedSelector) => sel.compounds.slice(0, -1).flatMap((c, k) =>
+    c.simples.some((x) => (x.kind === "pseudo-class" && DYNAMIC_PSEUDO_CLASSES.has(x.name)) || (x.kind === "class" && /^is-/.test(x.name))) ? [k] : []);
+  const ancItems: { prefix: string; rest: string; els: number[] }[] = [];
+  const ancSlots = parsed.map((list, k) => list.map((p, j) => dynamicOf(p).map((c) => {
+    const els = matched[reach.get(reachOf[k][j])!] ?? [];
+    ancItems.push({
+      prefix: reachSelector({ text: p.text, compounds: p.compounds.slice(0, c + 1) }),
+      rest: reachSelector({ text: p.text, compounds: p.compounds.slice(c + 1) }), els,
+    });
+    return { compound: c, slot: ancItems.length - 1, els };
+  })));
+  const ancFound = ancItems.length ? await evaluate(page, pageAncestors, ancItems) : [];
   lap("match");
 
   // var() lookup per element (walks up to the root)
@@ -502,13 +564,19 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
   })));
   const uaIdx = raw.elements.map((e, i) => i).filter((i) => raw.elements[i].ns === "html" && !inSvg[i] && !UA_SKIP_TAGS.has(raw.elements[i].tag));
   const uaJobs = uaIdx.map((i) => cdp.send("CSS.getMatchedStylesForNode", { nodeId: cdpEls[i].node.nodeId }).then((r) => {
+    // an author `revert` hands the property back to the browser default: it does not override it
+    const reverts = (p: CdpProp) => /^\s*revert(-layer)?\s*(!important)?\s*$/i.test(p.value);
     const names = (rules: CdpRule[] | undefined, ua: boolean) => (rules ?? []).filter((m) => (m.rule.origin === "user-agent") === ua)
-      .flatMap((m) => m.rule.style.cssProperties.filter((p) => !p.disabled).flatMap((p) => physicalNames(p.name)));
+      .flatMap((m) => m.rule.style.cssProperties.filter((p) => !p.disabled && (ua || !reverts(p))).flatMap((p) => physicalNames(p.name)));
+    const reverted = new Set([
+      ...((r.matchedCSSRules ?? []) as CdpRule[]).filter((m) => m.rule.origin !== "user-agent").flatMap((m) => m.rule.style.cssProperties),
+      ...((r.inlineStyle?.cssProperties ?? []) as CdpProp[]),
+    ].filter((p) => !p.disabled && reverts(p)).flatMap((p) => physicalNames(p.name)));
     const author = new Set([
       ...names(r.matchedCSSRules as CdpRule[], false),
-      ...((r.inlineStyle?.cssProperties ?? []) as CdpProp[]).flatMap((p) => physicalNames(p.name)),
+      ...((r.inlineStyle?.cssProperties ?? []) as CdpProp[]).filter((p) => !reverts(p)).flatMap((p) => physicalNames(p.name)),
       ...((r.attributesStyle?.cssProperties ?? []) as CdpProp[]).flatMap((p) => physicalNames(p.name)),
-    ]);
+    ].filter((n) => !reverted.has(n)));
     const ignored = new Set(cssSupport.browserDefaults.ignored);
     return Array.from(new Set(names(r.matchedCSSRules as CdpRule[], true)))
       .filter((n) => !author.has(n) && !ignored.has(n) && !/^-(webkit|internal)-/.test(n) && !n.startsWith("font") && n !== "line-height");
@@ -530,6 +598,7 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
     rendered: e.rendered, box: e.box, size: e.size, computed: e.computed, pseudo: e.pseudo,
     inline: inlinePlans[i] ? finish(inlinePlans[i]!) : null, vars: e.vars, minAuto: e.minAuto,
     shadowRoot: e.shadow ? "open" : cdpEls[i].shadow, ua: ua[i] ?? {},
+    ...(raw.svgPaint[i] ? { svgPaint: raw.svgPaint[i] } : {}),
   }));
   const rules: SnapRule[] = raw.rules.map((r, k) => ({
     index: r.index, sheet: r.sheet, kit: r.kit, selectorText: r.selectorText, media: r.media, conditions: r.conditions,
@@ -538,6 +607,7 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
     selectors: parsed[k].map((p, j) => ({
       text: p.text, parsed: p, reach: reachOf[k][j], specificity: specificity(p), pseudoClasses: pseudoClasses(p), pseudoElement: pseudoElement(p),
       structural: structural(p), elements: matched[reach.get(reachOf[k][j])!],
+      dynamicAncestors: ancSlots[k][j].map((a) => ({ compound: a.compound, matches: Object.fromEntries(a.els.map((i, n) => [i, ancFound[a.slot][n]])) })),
     })),
   }));
   const s: DomSnapshot = {
@@ -566,11 +636,13 @@ export const isInlineLevel = (e: SnapElement) => e.computed.display.startsWith("
 /** Sets `textStyle` on text elements: the full text style for blocks and controls, size + weight for inline rich text. */
 export function annotateTextStyles(s: DomSnapshot, kit: KitConfig): void {
   const styles = readTextStyles(kit);
+  const promoted = promotedRuns(s);
   for (const e of s.elements) {
     if (!rendersText(e)) continue;
     const size = px(e.computed["font-size"]), weight = Number(e.computed["font-weight"]);
     if (size === null) { e.textStyle = null; continue; }
-    const m = isInlineLevel(e) && e.ns === "html" && e.texts.length > 0
+    // a keyed inline run is a text node of its own: it needs a full kit style
+    const m = isInlineLevel(e) && e.ns === "html" && e.texts.length > 0 && !promoted.has(e.index)
       ? matchRichStyle(styles, size, weight)
       : matchTextStyle(styles, size, px(e.computed["line-height"]), weight);
     e.textStyle = m ? m.name : null;

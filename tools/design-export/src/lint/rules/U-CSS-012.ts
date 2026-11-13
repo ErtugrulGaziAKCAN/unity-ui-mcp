@@ -1,5 +1,6 @@
 import { splitTopLevel } from "../css-values.js";
 import { cssSupport } from "../allowed-css.js";
+import { breakpointsOf, MediaError } from "../resolve/media.js";
 import type { Rule } from "../types.js";
 import { make } from "./util.js";
 
@@ -33,6 +34,10 @@ export const rule: Rule = {
   check(s) {
     return s.media.flatMap((m) => {
       const bad = Array.from(new Set([...mediaTypeProblems(m.condition), ...mediaFeatures(m.condition).filter((f) => !cssSupport.isMediaFeature(f)).map((f) => `feature ${f}`)]));
+      // the exporter turns each query into a breakpoint class: its values must parse the same way
+      if (!bad.length) {
+        try { breakpointsOf([m.condition]); } catch (e) { if (e instanceof MediaError) bad.push(e.message.replace(/^@media [^:]*: /, "")); else throw e; }
+      }
       return bad.length ? [make(rule, m.path, `@media ${m.condition}: ${bad.join(", ")}${m.source !== "rule" ? ` (${m.source} media)` : ""}`,
         `Use only ${cssSupport.mediaFeatures.join(", ")} in @media, with no media type other than screen or all and no "not" (they compile to breakpoint classes); write range syntax as min-/max-width.`)] : [];
     });
