@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.states</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 48px; background-color: var(--color-surface-900); }
+.title { margin-bottom: 32px; }
+.content { display: flex; flex-direction: row; align-items: flex-start; }
+.list { display: flex; flex-direction: column; width: 960px; padding: 24px; margin-right: 48px; border-radius: 16px; background-color: var(--color-surface-800); }
+.item { display: flex; flex-direction: row; align-items: center; height: 72px; padding: 0 24px; margin-bottom: 8px; border-radius: 8px; background-color: var(--color-surface-700); }
+.item:hover { background-color: var(--color-surface-600); }
+.state-error .item { background-color: #3a1f24; }
+.state-error .item:hover { background-color: #4c2830; }
+.loading { display: none; flex-direction: row; align-items: center; justify-content: center; width: 960px; height: 240px; margin-right: 48px; border-radius: 16px; background-color: var(--color-surface-800); color: var(--color-text-secondary); }
+.state-loading .loading { display: flex; }
+.state-loading .list { display: none; }
+.empty { display: none; flex-direction: column; align-items: center; justify-content: center; width: 960px; height: 240px; margin-right: 48px; border: 2px solid var(--color-line); border-radius: 16px; }
+.state-empty .empty { display: flex; }
+.state-empty .list { display: none; }
+.empty-hint { margin-top: 8px; color: var(--color-text-muted); }
+.error-banner { display: none; flex-direction: row; align-items: center; width: 960px; height: 72px; padding: 0 24px; margin-bottom: 16px; border-radius: 8px; background-color: #f0605d; color: #06171c; }
+.state-error .error-banner { display: flex; }
+.side { display: flex; flex-direction: column; width: 640px; }
+.status { display: flex; flex-direction: row; align-items: center; height: 64px; padding: 0 24px; margin-bottom: 16px; border-radius: 8px; background-color: var(--color-surface-700); }
+.state-loading .status { background-color: #19505d; }
+.state-empty .status { background-color: #2b3a3f; }
+.state-error .status { background-color: #f0605d; color: #06171c; }
+.panel { display: flex; flex-direction: column; padding: 24px; border-radius: 16px; background-color: var(--color-surface-700); }
+.panel-body { display: none; margin-top: 16px; color: var(--color-text-secondary); }
+.panel.is-open .panel-body { display: flex; }
+.panel.is-open .panel-head { color: var(--color-accent); }
+.panel-toggle { display: flex; flex-direction: row; align-items: center; justify-content: center; height: 48px; margin-top: 16px; padding: 0 24px; border-radius: 8px; background-color: var(--color-surface-600); align-self: flex-start; }
+.panel-toggle:hover { background-color: var(--color-surface-500); }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.states">
+  <h1 class="title text-title-bold" data-l10n="fidelity.states.title" data-en="Screen states">Ekran durumları</h1>
+  <div class="error-banner text-body-bold" data-u-state="error" data-l10n="fidelity.states.error" data-en="The list could not be loaded.">Liste yüklenemedi.</div>
+  <div class="content">
+    <div class="list" data-u-id="list">
+      <div class="item" data-u-repeat="rows" data-u-id="row"><span class="text-body" data-u-id="label" data-u-bind="row.label">Birinci satır</span></div>
+      <div class="item" data-u-id="row"><span class="text-body" data-u-id="label" data-u-bind="row.label">İkinci satır</span></div>
+      <div class="item" data-u-id="row"><span class="text-body" data-u-id="label" data-u-bind="row.label">Üçüncü satır</span></div>
+    </div>
+    <div class="loading text-body" data-u-state="loading" data-l10n="fidelity.states.loading" data-en="Loading…">Yükleniyor…</div>
+    <div class="empty" data-u-state="empty">
+      <p class="text-title-bold" data-l10n="fidelity.states.empty" data-en="Nothing here yet">Burada henüz bir şey yok</p>
+      <p class="empty-hint text-body" data-l10n="fidelity.states.empty-hint" data-en="New messages appear here.">Yeni mesajlar burada görünür.</p>
+    </div>
+    <div class="side">
+      <div class="status text-body-bold" data-l10n="fidelity.states.status" data-en="Status">Durum</div>
+      <div class="panel" data-u-id="panel">
+        <p class="panel-head text-body-bold" data-l10n="fidelity.states.panel" data-en="Details">Ayrıntılar</p>
+        <p class="panel-body text-body" data-l10n="fidelity.states.panel-body" data-en="Shown while the panel is open.">Panel açıkken görünür.</p>
+        <button class="panel-toggle text-label-bold" data-u-id="panel-toggle" data-u-action="toggle-panel" data-l10n="fidelity.states.toggle" data-en="Open or close">Aç veya kapat</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

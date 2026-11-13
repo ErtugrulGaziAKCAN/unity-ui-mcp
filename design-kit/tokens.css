@@ -1,1 +1,45 @@
-:root {}
+/*
+ * Design kit tokens: the single token source (spec 5.1). Designs use them as var(--name); the exporter records the
+ * ones a screen uses and the compiler writes them to DesignTokens.uss.
+ *
+ * One declaration per line, a usage note as its trailing comment. The name prefix sets the family the Claude Design
+ * System export lists it under: color-, space-, radius-, shadow-, font-. Values are literals (no var(), no named
+ * colours), so the same names and values work in the exporter, in Unity and in the design system's tokens.json.
+ */
+:root {
+  --color-surface-900: #0b1f26; /* Screen background. */
+  --color-surface-800: #0f2a33; /* Panels and sidebars on the screen background. */
+  --color-surface-700: #123c47; /* Raised surfaces: cards, controls, list rows. */
+  --color-surface-600: #19505d; /* Hover on raised surfaces. */
+  --color-surface-500: #216372; /* Pressed raised surfaces, selected rows. */
+  --color-line: #2b6573; /* Borders and dividers. */
+  --color-text-primary: #ffffff; /* Primary text on every surface. */
+  --color-text-secondary: #b9d0d6; /* Secondary text, captions. */
+  --color-text-muted: #86a7b0; /* Placeholders and disabled text. */
+  --color-accent: #16c2d5; /* Primary actions, the checked toggle, the selected tab. */
+  --color-accent-hover: #3fd3e3; /* Hover on accent surfaces. */
+  --color-accent-pressed: #0f9fb0; /* Pressed accent surfaces. */
+  --color-on-accent: #06171c; /* Text and icons on accent surfaces. */
+  --color-focus: #9be9f2; /* Focus rings (a border, UI Toolkit has no outline). */
+  --color-positive: #3ccf7a; /* Positive values and success states. */
+  --color-warning: #f2b544; /* Warnings. */
+  --color-negative: #f0605d; /* Errors, destructive actions, negative values. */
+  --color-negative-hover: #f47d7a; /* Hover on destructive actions. */
+  --color-negative-pressed: #d94a47; /* Pressed destructive actions. */
+  --color-scrim: rgba(3, 12, 15, 0.72); /* Backdrop behind dialogs. */
+  --space-1: 4px; /* Icon gaps, hairline insets. */
+  --space-2: 8px; /* Gaps inside controls. */
+  --space-3: 12px; /* Control padding. */
+  --space-4: 16px; /* Gaps between controls, card padding. */
+  --space-6: 24px; /* Section gaps, dialog padding. */
+  --space-8: 32px; /* Screen padding. */
+  --space-12: 48px; /* Large section gaps. */
+  --radius-sm: 4px; /* Small controls: checkboxes, tags. */
+  --radius-md: 8px; /* Buttons, fields, list rows. */
+  --radius-lg: 16px; /* Cards and dialogs. */
+  --shadow-raised: 0 2px 4px rgba(0, 0, 0, 0.3); /* Controls that sit above the surface. */
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.4); /* Cards. */
+  --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.5); /* Dialogs above the scrim. */
+  --shadow-well: inset 0 2px 4px rgba(0, 0, 0, 0.4); /* Sunken wells (never on an element with its own text). */
+  --font-ui: "Inter UI"; /* The kit font family (font files come from the Unity project through kit sync). */
+}

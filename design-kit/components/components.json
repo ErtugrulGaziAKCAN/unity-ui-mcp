@@ -1,0 +1,13 @@
+{
+  "components": [
+    { "name": "Button", "file": "button.html", "group": "Controls" },
+    { "name": "Toggle", "file": "toggle.html", "group": "Controls" },
+    { "name": "TextField", "file": "text-field.html", "group": "Controls" },
+    { "name": "Dropdown", "file": "dropdown.html", "group": "Controls" },
+    { "name": "Tabs", "file": "tabs.html", "group": "Navigation" },
+    { "name": "Card", "file": "card.html", "group": "Containers" },
+    { "name": "ListRow", "file": "list-row.html", "group": "Lists" },
+    { "name": "ScrollArea", "file": "scroll-area.html", "group": "Lists" },
+    { "name": "Dialog", "file": "dialog.html", "group": "Containers" }
+  ]
+}

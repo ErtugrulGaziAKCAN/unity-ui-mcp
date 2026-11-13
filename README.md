@@ -4,16 +4,19 @@ Turns Claude Design HTML screens into Unity UI Toolkit screens, one to one, and 
 design. Any MCP-capable AI client (Claude Code, Codex, Cursor, Claude Desktop) drives the loop: lint the design,
 import it into the open Unity Editor, verify it, read the report.
 
-**Status:** in development. The design spec is in `docs/specs/`. The Unity package currently contains the Editor
-bridge and the `Window → Design UI → Status` window. The MCP server is available as an early version: rules, list,
-lint and status work, and import runs the export; the Unity compile step, verify and kit sync answer "not available yet"
-until the compiler and verifier land.
+**Status:** in development. The design spec is in `docs/specs/`. The exporter lints, exports and compares; the Unity
+package compiles an export into UI Toolkit (UXML, USS, a generated view class and font twins), captures compiled screens
+for verification and syncs the kit's fonts from the project. In the MCP server, rules, list, lint and status are live;
+import, verify and kit sync are live when their Unity route works (the open Editor's bridge answers, or a command
+template is configured; captures for verify always run as a command). Animations compile but are not verified yet:
+until the animation player lands, their samples are reported as not captured, so a screen with animations does not
+pass verification yet.
 
-- `tools/design-export` - Node/TypeScript CLI (`lint`, `export`, `compare`)
+- `tools/design-export` - Node/TypeScript CLI (`lint`, `export`, `compare`, `kit build`, `kit claude`)
 - `tools/design-ui-mcp` - MCP server (stdio) for any MCP client
 - `packages/com.unity.design-ui` - Unity UPM package (Unity 6000.3 or later)
 - `samples/FidelityProject` - Unity 6000.3.6f1 test project
-- `design-kit` - design kit config, tokens and rules
+- `design-kit` - the design kit: rules, tokens, base stylesheet, text styles, components and fidelity fixtures
 
 ## Install with an AI
 
@@ -90,9 +93,9 @@ use the command runner with projects whose `design-ui.config.json` you trust.
 | `design_ui_list` | Screens under `designRoot` with their state, and the Unity bridge state | live |
 | `design_ui_lint` | Lints a design folder, `.html`, `.dc.html` or `.zip` in Chromium with the kit fonts | live |
 | `design_ui_status` | Server capabilities, or one screen's hashes, last import and verdict | live |
-| `design_ui_import` | Exports a screen and compiles it into the Unity project | export live; Unity compile not available yet |
-| `design_ui_verify` | Captures in Unity, compares, returns verdict and report | not available yet |
-| `design_ui_kit_sync` | Syncs fonts and settings from Unity into the kit | forwarded; Unity answers "not available yet" |
+| `design_ui_import` | Exports a screen and compiles it into the Unity project | live when its route works: the Editor bridge answers (`prefer: "editor"`) or `command.import` is set |
+| `design_ui_verify` | Captures in Unity, compares, returns verdict and report | live when `command.capture` is set; animation samples are not captured yet |
+| `design_ui_kit_sync` | Syncs fonts and settings from Unity into the kit | live when its route works, like import |
 
 Every result has a short text summary, the same data as JSON (with per-step `timings`), and `isError` with the
 reason when a step fails or is not available. `node tools/design-ui-mcp/scripts/smoke.mjs --project <dir>` checks the
@@ -122,8 +125,8 @@ delete the `com.unity.design-ui` entry from `packages-lock.json`.
 
 ## Running Unity checks (maintainers)
 
-Unity verification runs on an isolated copy of the sample project made by the maintainer's local clone tool
-(`~/unity-clone-test`, not part of this repository). Because the copy lives outside this repo, use the wrapper,
+Unity verification runs on an isolated copy of the sample project made by the maintainer's local clone tool (not
+part of this repository). Because the copy lives outside this repo, use the wrapper,
 which temporarily makes the package reference in `samples/FidelityProject/Packages/manifest.json` absolute and
 restores it on exit: `scripts/unity-check.sh --warm --editmode "DesignUi"`. When the task
 is finished run `scripts/unity-check.sh --done`. Never edit the manifest entry by hand; the wrapper refuses to start
@@ -167,6 +170,27 @@ with animations does not pass yet. Maintainers run the capture with `scripts/uni
 The compiler writes `<Screen>View.g.cs` next to each screen. Its assembly must reference `DesignUi.Runtime`: in
 Assembly-CSharp this is automatic; when the output folder is under an assembly definition, add `DesignUi.Runtime` to
 its Assembly Definition References (the compiler stops with an error naming the asmdef otherwise).
+
+## Design kit and Claude Design
+
+`design-kit/` is what a design is checked against and what a design AI is given:
+
+- `RULES.md`: the design contract (generated: markup attributes, text styles, tokens, allowed CSS, every lint rule with
+  its fix, an example screen). `base.css`: the base stylesheet every screen starts with. `tokens.css` and
+  `text-styles.json`: the tokens and the kit text styles. `kit.config.json`: reference size, viewports, locales.
+- `components/`: button, toggle, text field, dropdown, tabs, card, list row, scroll area and dialog, each a lint-clean
+  screen with its guidelines (`<name>.md`); `components.json` names and groups them.
+- `fixtures/fidelity/`: one screen per feature group (layout, text styles, colours and gradients, shadows, radii and
+  borders, filters, states, pseudo-states, controls, text shadow, object fit, icons, transitions, keyframes) for the
+  fidelity suite. The filters screen lints clean only once `filterFunctions` lists the functions it uses.
+- `fonts/` is written by kit sync from the Unity project; the kit has no fonts until a sync ran.
+
+`design-export kit build design-kit` regenerates `base.css`, `RULES.md` and the base block of every kit page after a
+change to the tokens, text styles, components or lint (`--check` only reports). `design-export kit claude design-kit
+<outDir>` writes the kit as a Claude Design System folder (`<outDir>/project/`: `README.md`, list-shaped `tokens.json`,
+the synced fonts, a card per component and a cover, `design-system.json` last), ready to be published as a Claude
+design system with an AI client's Artifact tool so every Claude Design canvas can attach it. The skill does not publish
+it on its own in this version.
 
 ## Fonts
 

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.transitions</title>
+<!-- Transitions on every trigger kind (hover, active, focus, disabled, checked, screen state, is-* class), one column
+     per timing function. The animation player plays them; until it lands their samples are not captured. -->
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 48px; background-color: var(--color-surface-900); }
+.title { margin-bottom: 32px; }
+.head { display: flex; flex-direction: row; align-items: center; margin-bottom: 16px; }
+.head-gap { width: 320px; flex-shrink: 0; }
+.head-cell { width: 200px; flex-shrink: 0; margin-right: 48px; color: var(--color-text-secondary); }
+.row { display: flex; flex-direction: row; align-items: center; margin-bottom: 40px; }
+.row-label { width: 320px; flex-shrink: 0; }
+.cell { width: 200px; height: 96px; flex-shrink: 0; margin-right: 48px; border: 4px solid var(--color-line); border-radius: 16px; background-color: var(--color-surface-700); transition-property: background-color, border-color, opacity, translate, rotate, scale; transition-duration: 400ms; }
+.tf-linear { transition-timing-function: linear; }
+.tf-ease { transition-timing-function: ease; }
+.tf-ease-in { transition-timing-function: ease-in; }
+.tf-ease-out { transition-timing-function: ease-out; }
+.tf-ease-in-out { transition-timing-function: ease-in-out; }
+.t-hover:hover { background-color: #16c2d5; scale: 1.05; }
+.t-active:active { background-color: #f2b544; translate: 0 6px; }
+.t-focus:focus { border-color: #9be9f2; }
+.t-disabled:disabled { opacity: 0.3; }
+.t-checked:checked { background-color: #3ccf7a; border-color: #3ccf7a; }
+.state-go .t-state { background-color: #f0605d; translate: 24px 0; }
+.t-class.is-on { background-color: #f2b544; rotate: 8deg; }
+.t-delay { transition-delay: 150ms; }
+.go-note { display: none; }
+.state-go .go-note { display: flex; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.transitions">
+  <h1 class="title text-title-bold" data-l10n="fidelity.transitions.title" data-en="Transitions">Geçişler</h1>
+  <div class="head">
+    <span class="head-gap"></span>
+    <span class="head-cell text-label-bold" data-l10n="fidelity.transitions.tf-linear" data-en="linear">linear</span>
+    <span class="head-cell text-label-bold" data-l10n="fidelity.transitions.tf-ease" data-en="ease">ease</span>
+    <span class="head-cell text-label-bold" data-l10n="fidelity.transitions.tf-ease-in" data-en="ease-in">ease-in</span>
+    <span class="head-cell text-label-bold" data-l10n="fidelity.transitions.tf-ease-out" data-en="ease-out">ease-out</span>
+    <span class="head-cell text-label-bold" data-l10n="fidelity.transitions.tf-ease-in-out" data-en="ease-in-out">ease-in-out</span>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.transitions.hover" data-en="Hover">Üzerine gelme</p>
+    <div class="cell t-hover tf-linear" data-u-id="hover-linear"></div><div class="cell t-hover tf-ease" data-u-id="hover-ease"></div><div class="cell t-hover tf-ease-in" data-u-id="hover-ease-in"></div><div class="cell t-hover tf-ease-out" data-u-id="hover-ease-out"></div><div class="cell t-hover tf-ease-in-out" data-u-id="hover-ease-in-out"></div>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.transitions.active" data-en="Press">Basma</p>
+    <button class="cell t-active tf-linear" data-u-id="active-linear" data-u-action="active-linear"></button><button class="cell t-active tf-ease" data-u-id="active-ease" data-u-action="active-ease"></button><button class="cell t-active tf-ease-in" data-u-id="active-ease-in" data-u-action="active-ease-in"></button><button class="cell t-active tf-ease-out" data-u-id="active-ease-out" data-u-action="active-ease-out"></button><button class="cell t-active tf-ease-in-out" data-u-id="active-ease-in-out" data-u-action="active-ease-in-out"></button>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.transitions.focus" data-en="Focus">Odak</p>
+    <button class="cell t-focus tf-linear" data-u-id="focus-linear" data-u-action="focus-linear"></button><button class="cell t-focus tf-ease" data-u-id="focus-ease" data-u-action="focus-ease"></button><button class="cell t-focus tf-ease-in" data-u-id="focus-ease-in" data-u-action="focus-ease-in"></button><button class="cell t-focus tf-ease-out" data-u-id="focus-ease-out" data-u-action="focus-ease-out"></button><button class="cell t-focus tf-ease-in-out" data-u-id="focus-ease-in-out" data-u-action="focus-ease-in-out"></button>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.transitions.disabled" data-en="Disabled">Devre dışı</p>
+    <button class="cell t-disabled tf-linear" data-u-id="disabled-linear" data-u-action="disabled-linear"></button><button class="cell t-disabled tf-ease" data-u-id="disabled-ease" data-u-action="disabled-ease"></button><button class="cell t-disabled tf-ease-in" data-u-id="disabled-ease-in" data-u-action="disabled-ease-in"></button><button class="cell t-disabled tf-ease-out" data-u-id="disabled-ease-out" data-u-action="disabled-ease-out"></button><button class="cell t-disabled tf-ease-in-out" data-u-id="disabled-ease-in-out" data-u-action="disabled-ease-in-out"></button>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.transitions.checked" data-en="Checked">İşaretli</p>
+    <input type="checkbox" class="cell t-checked tf-linear" data-u-id="checked-linear"><input type="checkbox" class="cell t-checked tf-ease" data-u-id="checked-ease"><input type="checkbox" class="cell t-checked tf-ease-in" data-u-id="checked-ease-in"><input type="checkbox" class="cell t-checked tf-ease-out" data-u-id="checked-ease-out"><input type="checkbox" class="cell t-checked tf-ease-in-out" data-u-id="checked-ease-in-out">
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.transitions.state" data-en="Screen state">Ekran durumu</p>
+    <div class="cell t-state tf-linear" data-u-id="state-linear"></div><div class="cell t-state tf-ease" data-u-id="state-ease"></div><div class="cell t-state tf-ease-in" data-u-id="state-ease-in"></div><div class="cell t-state tf-ease-out" data-u-id="state-ease-out"></div><div class="cell t-state tf-ease-in-out" data-u-id="state-ease-in-out"></div>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.transitions.class" data-en="Class">Sınıf</p>
+    <div class="cell t-class tf-linear" data-u-id="class-linear"></div><div class="cell t-class tf-ease" data-u-id="class-ease"></div><div class="cell t-class tf-ease-in" data-u-id="class-ease-in"></div><div class="cell t-class tf-ease-out" data-u-id="class-ease-out"></div><div class="cell t-class tf-ease-in-out" data-u-id="class-ease-in-out"></div>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.transitions.delay" data-en="Hover after a delay">Gecikmeli üzerine gelme</p>
+    <div class="cell t-hover tf-ease t-delay" data-u-id="hover-delay"></div>
+    <p class="go-note text-body" data-u-state="go" data-l10n="fidelity.transitions.go" data-en="State go">Durum: başla</p>
+  </div>
+</div>
+</body>
+</html>

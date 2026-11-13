@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.object-fit</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 48px; background-color: var(--color-surface-900); }
+.title { margin-bottom: 40px; }
+.row { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 48px; }
+.pic { flex-shrink: 0; margin-right: 48px; background-color: var(--color-surface-700); }
+.wide { width: 640px; height: 180px; }
+.tall { width: 200px; height: 360px; }
+.square { width: 300px; height: 300px; }
+.fit-fill { object-fit: fill; }
+.fit-contain { object-fit: contain; }
+.fit-cover { object-fit: cover; }
+.centered { object-position: center; }
+.rounded { border-radius: 24px; }
+.natural { width: 320px; height: 180px; flex-shrink: 0; margin-right: 48px; }
+.state-swap .swap { object-fit: contain; }
+.swap-note { display: none; }
+.state-swap .swap-note { display: flex; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.object-fit">
+  <h1 class="title text-title-bold" data-l10n="fidelity.object-fit.title" data-en="Object fit">Görsel sığdırma</h1>
+  <div class="row">
+    <img class="natural" src="assets/quadrants-16x9.png">
+    <img class="pic wide fit-fill" src="assets/quadrants-16x9.png">
+    <img class="pic wide fit-contain" src="assets/quadrants-16x9.png">
+    <img class="pic wide fit-cover centered" src="assets/quadrants-16x9.png">
+  </div>
+  <div class="row">
+    <img class="pic tall fit-fill" src="assets/quadrants-16x9.png">
+    <img class="pic tall fit-contain" src="assets/quadrants-16x9.png">
+    <img class="pic tall fit-cover" src="assets/quadrants-16x9.png">
+    <img class="pic square fit-fill" src="assets/quadrants-16x9.png">
+    <img class="pic square fit-contain" src="assets/quadrants-16x9.png">
+    <img class="pic square fit-cover" src="assets/quadrants-16x9.png">
+  </div>
+  <div class="row">
+    <img class="pic square fit-cover rounded" src="assets/quadrants-16x9.png">
+    <img class="pic square fit-contain rounded" src="assets/quadrants-16x9.png">
+    <img class="pic square fit-cover swap" data-u-id="swap" src="assets/quadrants-16x9.png">
+    <p class="swap-note text-body" data-u-state="swap" data-l10n="fidelity.object-fit.swap" data-en="Contain in this state">Bu durumda sığdır</p>
+  </div>
+</div>
+</body>
+</html>

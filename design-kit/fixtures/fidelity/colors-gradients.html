@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.colors-gradients</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 32px; background-color: var(--color-surface-900); }
+.title { margin-bottom: 24px; }
+.row { display: flex; flex-direction: row; flex-wrap: wrap; align-items: flex-start; margin-bottom: 24px; }
+.swatch { width: 192px; height: 128px; flex-shrink: 0; margin: 0 16px 16px 0; }
+.wide { width: 400px; }
+.c-hex { background-color: #16c2d5; }
+.c-hex-short { background-color: #f80; }
+.c-hex-alpha { background-color: #ffffff80; }
+.c-rgb { background-color: rgb(60, 207, 122); }
+.c-rgba { background-color: rgba(240, 96, 93, 0.5); }
+.c-hsl { background-color: hsl(40, 87%, 61%); }
+.c-hsla { background-color: hsla(190, 80%, 46%, 0.35); }
+.c-token { background-color: var(--color-surface-600); }
+.c-transparent { background-color: transparent; border: 4px solid var(--color-line); }
+.c-opacity { background-color: #16c2d5; opacity: 0.4; }
+.c-nested { display: flex; flex-direction: column; justify-content: center; align-items: center; background-color: #f0605d; opacity: 0.6; }
+.c-nested-inner { width: 96px; height: 64px; background-color: #ffffff; opacity: 0.5; }
+.t-colors { display: flex; flex-direction: column; justify-content: center; padding: 0 16px; background-color: var(--color-surface-800); }
+.t-accent { color: var(--color-accent); }
+.t-rgba { color: rgba(255, 255, 255, 0.6); }
+.t-positive { color: #3ccf7a; }
+.g-linear { background-image: linear-gradient(90deg, #16c2d5, #0b1f26); }
+.g-linear-angle { background-image: linear-gradient(135deg, #f2b544 0%, #f0605d 100%); }
+.g-linear-to { background-image: linear-gradient(to bottom, #ffffff, #16c2d5); }
+.g-linear-stops { background-image: linear-gradient(90deg, #f0605d 0%, #f2b544 30%, #3ccf7a 60%, #16c2d5 100%); }
+.g-linear-alpha { background-color: #3ccf7a; background-image: linear-gradient(180deg, rgba(11, 31, 38, 0) 0%, rgba(11, 31, 38, 0.9) 100%); }
+.g-radial-circle { background-image: radial-gradient(circle at 50% 50%, #ffffff 0%, #16c2d5 50%, #0b1f26 100%); }
+.g-radial-ellipse { background-image: radial-gradient(ellipse at 30% 40%, #f2b544 0%, #123c47 80%); }
+.g-radial-size { background-image: radial-gradient(circle 48px at 96px 64px, #3ccf7a 0%, rgba(60, 207, 122, 0) 100%); background-color: var(--color-surface-700); }
+.g-multi { background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0)), linear-gradient(180deg, #16c2d5, #123c47); }
+.g-radius { border-radius: 24px; background-image: linear-gradient(45deg, #16c2d5, #3ccf7a); }
+.g-border { border: 6px solid #f2b544; border-radius: 16px; background-image: linear-gradient(90deg, #123c47, #216372); }
+.g-pill { width: 320px; height: 64px; border-radius: 32px; background-image: linear-gradient(90deg, #16c2d5, #9be9f2); }
+.state-alt .g-state { background-image: linear-gradient(90deg, #f0605d, #f2b544); }
+.g-state { background-image: linear-gradient(90deg, #3ccf7a, #16c2d5); }
+.g-hover { background-image: linear-gradient(180deg, #123c47, #19505d); }
+.g-hover:hover { background-image: linear-gradient(180deg, #19505d, #16c2d5); }
+.b-colors { border-width: 8px; border-style: solid; border-color: #f0605d #f2b544 #3ccf7a #16c2d5; background-color: var(--color-surface-700); }
+.alt-flag { display: none; }
+.state-alt .alt-flag { display: flex; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.colors-gradients">
+  <h1 class="title text-title-bold" data-l10n="fidelity.colors-gradients.title" data-en="Colours and gradients">Renkler ve geçişler</h1>
+  <div class="row">
+    <div class="swatch c-hex"></div>
+    <div class="swatch c-hex-short"></div>
+    <div class="swatch c-hex-alpha"></div>
+    <div class="swatch c-rgb"></div>
+    <div class="swatch c-rgba"></div>
+    <div class="swatch c-hsl"></div>
+    <div class="swatch c-hsla"></div>
+    <div class="swatch c-token"></div>
+    <div class="swatch c-transparent"></div>
+    <div class="swatch c-opacity"></div>
+    <div class="swatch c-nested"><div class="c-nested-inner"></div></div>
+    <div class="swatch b-colors"></div>
+  </div>
+  <div class="row">
+    <div class="swatch wide t-colors">
+      <p class="t-accent text-body-bold" data-l10n="fidelity.colors-gradients.accent" data-en="Accent text">Vurgu yazısı</p>
+      <p class="t-rgba text-body" data-l10n="fidelity.colors-gradients.faded" data-en="Faded text">Soluk yazı</p>
+      <p class="t-positive text-body" data-l10n="fidelity.colors-gradients.positive" data-en="Positive text">Olumlu yazı</p>
+    </div>
+    <div class="swatch g-linear"></div>
+    <div class="swatch g-linear-angle"></div>
+    <div class="swatch g-linear-to"></div>
+    <div class="swatch wide g-linear-stops"></div>
+    <div class="swatch g-linear-alpha"></div>
+    <div class="swatch g-radial-circle"></div>
+  </div>
+  <div class="row">
+    <div class="swatch g-radial-ellipse"></div>
+    <div class="swatch g-radial-size"></div>
+    <div class="swatch g-multi"></div>
+    <div class="swatch g-radius"></div>
+    <div class="swatch g-border"></div>
+    <div class="swatch g-pill"></div>
+    <div class="swatch g-state" data-u-id="state-gradient"></div>
+    <div class="swatch g-hover" data-u-id="hover-gradient"></div>
+    <p class="alt-flag text-label" data-u-state="alt" data-l10n="fidelity.colors-gradients.alt" data-en="Alternative state">Diğer durum</p>
+  </div>
+</div>
+</body>
+</html>

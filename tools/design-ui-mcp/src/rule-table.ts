@@ -1,57 +1,6 @@
 /**
- * One line per lint rule for design_ui_rules: when it fails and how to fix the design. The rules themselves live in
- * the exporter (tools/design-export/src/lint/rules); each finding carries its own detailed fix. A rule without an
- * entry here is still listed (by id and severity) and its findings still explain the fix.
+ * One line per lint rule for design_ui_rules: when it fails and how to fix the design. The table lives next to the
+ * rules in the exporter (tools/design-export/src/lint/rule-table.ts), where a test keeps it in step with the rule
+ * registry; each finding carries its own detailed fix.
  */
-export const RULE_SUMMARIES: Record<string, { when: string; fix: string }> = {
-  "U-CSS-001": { when: "`display: grid` or `inline-grid`", fix: "nested flex rows and columns (`flex-wrap` for tiles)" },
-  "U-CSS-002": { when: "`::before` / `::after` with content, or list markers", fix: "a real element; `list-style: none`" },
-  "U-CSS-003": { when: "structural selectors (`:nth-*`, `:first/last/only-child`, `:*-of-type`, `:empty`)", fix: "a class per element" },
-  "U-CSS-004": { when: "`z-index` on an element that is not `position: absolute`", fix: "absolute positioning, or markup order" },
-  "U-CSS-005": { when: "`calc()`", fix: "a literal value" },
-  "U-CSS-006": { when: "viewport units (`vw`, `vh`, `vmin`, `vmax`, …)", fix: "px or %" },
-  "U-CSS-007": { when: "`backdrop-filter`", fix: "a solid or translucent colour, or a baked image" },
-  "U-CSS-008": { when: "transition or animation timing other than `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`", fix: "one of those keywords" },
-  "U-CSS-009": { when: "inline elements in text flow other than `b`, `strong`, `i`, `em`, `span`, or rich tags with effects beyond colour, size, bold, italic", fix: "flex items, or split the text" },
-  "U-CSS-010": { when: "a first font family that is not a kit family", fix: "a kit family first" },
-  "U-CSS-011": { when: "`gap` on a wrapping flex container", fix: "margins on the items" },
-  "U-CSS-012": { when: "`@media` features other than min/max-width and min/max-aspect-ratio, media types other than screen/all, `not`", fix: "the allowed features only" },
-  "U-CSS-013": { when: "`@keyframes` animating properties other than transform, translate, rotate, scale, opacity and colours", fix: "animate allowed properties" },
-  "U-CSS-014": { when: "a transition of `box-shadow` or `background-image`, a url() image beside another image, a gradient that does not fill the element or uses a colour space", fix: "transition opacity or transform; one image per element; gradients over the whole element in sRGB stops" },
-  "U-CSS-015": { when: "a `filter` function not enabled in the kit (`filterFunctions`)", fix: "remove the filter" },
-  "U-CSS-016": { when: "text size, line height or weight that is not a kit text style", fix: "the nearest kit text style (see Text styles)" },
-  "U-CSS-017": { when: "`position: fixed/sticky`, `float`", fix: "absolute positioning or flex" },
-  "U-CSS-018": { when: "`baseline` in align-items/align-self/align-content", fix: "flex-start, center or flex-end (top margin to line up baselines)" },
-  "U-CSS-019": { when: "a flex item's layout depends on `min-width/min-height: auto`", fix: "an explicit min size in px, or `flex-shrink: 0`" },
-  "U-CSS-020": { when: "elliptical corner radii (`/` syntax, % on a non-square box)", fix: "one px radius per corner; a pill uses half the height" },
-  "U-CSS-021": { when: "border style other than solid or none", fix: "solid; draw dashed or dotted lines as SVG" },
-  "U-CSS-022": { when: "gradient colour stops closer than 1/64 of the gradient line (hard stops), colour hints", fix: "split the area at the hard edge, or spread the transition" },
-  "U-CSS-023": { when: "a property, keyword, colour keyword or unit outside the allowed CSS", fix: "remove it or use the allowed CSS listed above" },
-  "U-CSS-024": { when: "a value function other than var, rgb(a), hsl(a), linear-/radial-gradient, url", fix: "a literal value" },
-  "U-CSS-025": { when: "a transform not expressible as translate → rotate → scale (matrix, skew, perspective, 3D)", fix: "2D functions in that order" },
-  "U-CSS-026": { when: "a browser default style the design did not write (margins, paddings, borders, link colour, `appearance: auto`, text-align, …)", fix: "write the property explicitly (`margin: 0`, `appearance: none`, …)" },
-  "U-CSS-027": { when: "pseudo-classes other than hover/active/focus/disabled/checked, `+` / `~`, `:is/:where/:has/:not`", fix: "style the element itself, or `is-*` classes" },
-  "U-CSS-028": { when: "at-rules other than `@media` and `@keyframes`", fix: "no @layer/@supports/@container/@starting-style/@property/@page/@import" },
-  "U-CSS-029": { when: "an element outside the whitelist, an unsupported input type, a shadow root, `<foreignObject>`", fix: "the listed elements and inline `<svg>`, light DOM only" },
-  "U-CSS-030": { when: "collapsing vertical margins, or text next to element children", fix: "flex column with gap or padding; wrap text in its own element" },
-  "U-DC-001": { when: "`{{…}}` holes in a Claude Design artboard", fix: "static sample text" },
-  "U-DC-002": { when: "`<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import`", fix: "write rows out, `data-u-repeat` on the first" },
-  "U-DC-003": { when: "UI built by script", fix: "static markup" },
-  "U-DC-004": { when: "`data-props` other than `$preview`", fix: "static values" },
-  "U-DC-005": { when: "markup outside `<x-dc>`, or no `<x-dc>`", fix: "everything inside `<x-dc>`" },
-  "U-FONT-001": { when: "a weight or italic without a real face in the reference locale's font", fix: "weight 400 or 700 (or add the real face in Unity and kit sync)" },
-  "U-FONT-002": { when: "`@font-face` or FontFace not from the kit", fix: "remove it; use the kit fonts" },
-  "U-FONT-003": { when: "glyphs drawn by a platform or non-kit font (character missing in the kit font)", fix: "characters the kit font covers" },
-  "U-MRK-001": { when: "not exactly one `data-u-screen`", fix: "one screen root with `data-u-screen`" },
-  "U-MRK-002": { when: "duplicate `data-u-id`", fix: "unique ids (each repeat item is its own scope)" },
-  "U-MRK-003": { when: "interactive, bound or action elements without `data-u-id`", fix: "add `data-u-id`" },
-  "U-MRK-004": { when: "visible text without `data-l10n` + `data-en` on the element holding it (or `data-u-bind`)", fix: "add the key and English text" },
-  "U-MRK-005": { when: "ids, keys, actions or names outside `^[a-z0-9]+([._-][a-z0-9]+)*$`", fix: "ASCII transliteration (no İ, ı, ş, …)" },
-  "U-MRK-006": { when: "the screen root is not the kit reference size at (0, 0)", fix: "root `width/height` = reference in px, `body { margin: 0 }`" },
-  "U-MRK-007": { when: "placeholder, title, alt or aria-label text without `data-l10n-<attr>` + `data-en-<attr>`", fix: "add the key and English text per attribute" },
-  "U-NET-001": { when: "any remote resource (fonts, stylesheets, images) except scripts from allowed origins", fix: "no remote resources; local files" },
-  "U-NET-002": { when: "a local file or Claude Design blob that is missing", fix: "add the file, or map the blob in blobs.json" },
-  "W-CSS-001": { when: "a transition on a layout property or `all` (warning)", fix: "transition transform, opacity or colours" },
-  "W-FONT-001": { when: "a weight or italic without a real face in another active locale's font (warning)", fix: "add the face or avoid the weight" },
-  "W-FONT-002": { when: "a kit font file that cannot be read (WOFF2, `local()`) (warning)", fix: "TTF/OTF/WOFF via `url()`" },
-};
+export { RULE_SUMMARIES, type RuleSummary } from "../../design-export/src/lint/rule-table.js";

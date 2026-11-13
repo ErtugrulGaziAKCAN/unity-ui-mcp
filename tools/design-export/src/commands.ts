@@ -3,6 +3,9 @@ import path from "node:path";
 import { compareScreen, readThresholds, summarizeIssues } from "./compare/compare.js";
 import { writeReport, writeVerdict } from "./compare/report.js";
 import { exportScreen, lintScreen } from "./export.js";
+import { buildKit } from "./kit/build.js";
+import { writeClaudeDesignSystem } from "./kit/claudeDesignSystem.js";
+import { DEFAULT_TITLE } from "./kit/rulesDoc.js";
 import type { Finding } from "./lint/index.js";
 
 export interface CliIo { out(s: string): void; err(s: string): void }
@@ -14,9 +17,12 @@ Commands:
   export <designDir> --kit <kitDir> --out <dir>  Export a screen: IR, goldens, assets, sample data
   compare <exportDir> --unity <captureDir> --report <file.html>
                                                  Compare Unity captures with the goldens; write the report and verdict.json
+  kit build <kitDir> [--check]                   Regenerate base.css, RULES.md and the base block of kit pages
+  kit claude <kitDir> <outDir> [--title <name>] [--force]
+                                                 Write the kit as a Claude Design System folder (<outDir>/project)
 
-Exit codes: 0 ok (compare: every capture passes), 1 lint errors (compare: a capture fails or is not run),
-2 usage or internal error.
+Exit codes: 0 ok (compare: every capture passes), 1 lint errors (compare: a capture fails or is not run;
+kit build --check: generated files are stale), 2 usage or internal error.
 `;
 
 const line = (f: Finding) => `${f.severity.padEnd(7)} ${f.ruleId} ${f.path}: ${f.detail}${f.fix ? `\n        fix: ${f.fix}` : ""}`;
@@ -80,6 +86,27 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       for (const line of summarizeIssues(v, 10, { notRun: false })) io.out(`- ${line}\n`);
       io.out(`report: ${report}\nverdict: ${verdictFile}\n`);
       return v.pass ? 0 : 1;
+    }) as never);
+
+  const kitCmd = program.command("kit").description("Kit maintenance: generated kit files and the Claude Design System export");
+
+  kitCmd.command("build").allowExcessArguments(false).argument("<kitDir>").option("--check", "only report stale generated files (exit 1)")
+    .description("Regenerate base.css, RULES.md and the base block of every kit component and fixture")
+    .action(guard(async (dir: string, o: { check?: boolean }) => {
+      const r = buildKit(path.resolve(dir), { check: o.check });
+      for (const f of r.changed) io.out(`${o.check ? "stale" : "wrote"} ${f}\n`);
+      if (!r.changed.length) io.out("kit is current\n");
+      return o.check && r.changed.length ? 1 : 0;
+    }) as never);
+
+  kitCmd.command("claude").allowExcessArguments(false).argument("<kitDir>").argument("<outDir>")
+    .option("--title <title>", "design system name", DEFAULT_TITLE).option("--by <name>", "lastChange.by of the index", "design-export")
+    .option("--force", "replace an existing <outDir>/project")
+    .description("Write the kit as a Claude Design System artifact folder (<outDir>/project)")
+    .action(guard(async (kitDir: string, outDir: string, o: { title: string; by: string; force?: boolean }) => {
+      const r = writeClaudeDesignSystem(path.resolve(kitDir), path.resolve(outDir), { title: o.title, by: o.by, force: o.force });
+      io.out(`wrote ${r.files.length} files to ${r.projectDir} (design-system.json last)\n`);
+      return 0;
     }) as never);
 
   if (argv.length === 0) { io.err(USAGE); return 2; }

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.icons</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 48px; background-color: var(--color-surface-900); }
+.title { margin-bottom: 40px; }
+.row { display: flex; flex-direction: row; align-items: center; margin-bottom: 56px; }
+.icon { flex-shrink: 0; margin-right: 48px; }
+.s24 { width: 24px; height: 24px; }
+.s48 { width: 48px; height: 48px; }
+.s96 { width: 96px; height: 96px; }
+.c-accent { color: #16c2d5; }
+.c-positive { color: #3ccf7a; }
+.c-negative { color: #f0605d; }
+.c-text { color: #ffffff; }
+.icon-btn { display: flex; flex-direction: row; align-items: center; height: 72px; padding: 0 24px; margin-right: 48px; border-radius: 12px; background-color: var(--color-surface-700); color: var(--color-text-secondary); }
+.icon-btn:hover { color: #16c2d5; background-color: var(--color-surface-600); }
+.icon-btn:active { color: #f2b544; }
+.icon-btn-label { margin-left: 16px; }
+.badge { display: flex; flex-direction: row; align-items: center; justify-content: center; width: 120px; height: 120px; flex-shrink: 0; margin-right: 48px; border-radius: 60px; background-color: var(--color-surface-700); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); color: #f2b544; }
+.tile { display: flex; flex-direction: row; align-items: center; justify-content: center; width: 160px; height: 120px; flex-shrink: 0; margin-right: 48px; border-radius: 16px; background-color: var(--color-surface-700); }
+.tile.is-selected { color: #16c2d5; }
+.tile-icon { width: 64px; height: 64px; color: var(--color-text-muted); }
+.tile.is-selected .tile-icon { color: #16c2d5; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.icons">
+  <h1 class="title text-title-bold" data-l10n="fidelity.icons.title" data-en="Icons">Simgeler</h1>
+  <div class="row">
+    <svg class="icon s24 c-accent" viewBox="0 0 24 24"><path d="M3 11 L12 3 L21 11 L21 21 L14 21 L14 14 L10 14 L10 21 L3 21 Z" fill="currentColor"/></svg>
+    <svg class="icon s48 c-accent" viewBox="0 0 24 24"><path d="M3 11 L12 3 L21 11 L21 21 L14 21 L14 14 L10 14 L10 21 L3 21 Z" fill="currentColor"/></svg>
+    <svg class="icon s96 c-accent" viewBox="0 0 24 24"><path d="M3 11 L12 3 L21 11 L21 21 L14 21 L14 14 L10 14 L10 21 L3 21 Z" fill="currentColor"/></svg>
+    <svg class="icon s48 c-positive" viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <svg class="icon s48 c-negative" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M8 8 L16 16 M16 8 L8 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+    <svg class="icon s96 c-text" viewBox="0 0 24 24"><path d="M12 2 L14.9 8.6 L22 9.3 L16.6 14 L18.2 21 L12 17.3 L5.8 21 L7.4 14 L2 9.3 L9.1 8.6 Z" fill="currentColor"/></svg>
+    <svg class="icon s96" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5" fill="#123c47"/><circle cx="12" cy="12" r="6" fill="#f2b544"/><path d="M12 8 L12 16 M8 12 L16 12" stroke="#06171c" stroke-width="2"/></svg>
+  </div>
+  <div class="row">
+    <button class="icon-btn" data-u-id="inbox" data-u-action="open-inbox">
+      <svg class="s48" viewBox="0 0 24 24"><path d="M3 5 L21 5 L21 19 L3 19 Z M3 5 L12 13 L21 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      <span class="icon-btn-label text-body-bold" data-l10n="fidelity.icons.inbox" data-en="Inbox">Gelen kutusu</span>
+    </button>
+    <div class="badge"><svg class="s48" viewBox="0 0 24 24"><path d="M12 2 L14.9 8.6 L22 9.3 L16.6 14 L18.2 21 L12 17.3 L5.8 21 L7.4 14 L2 9.3 L9.1 8.6 Z" fill="currentColor"/></svg></div>
+    <div class="tile is-selected" data-u-id="tile-a"><svg class="tile-icon" viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="tile" data-u-id="tile-b"><svg class="tile-icon" viewBox="0 0 24 24"><path d="M4 12 L10 18 L20 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  </div>
+</div>
+</body>
+</html>

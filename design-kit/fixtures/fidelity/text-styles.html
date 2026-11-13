@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.text-styles</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: row; width: 2560px; height: 1440px; position: relative; padding: 16px; background-color: var(--color-surface-900); }
+.column { display: flex; flex-direction: column; width: 1256px; margin-right: 16px; }
+.style-row { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 6px; }
+.sample { width: 400px; flex-shrink: 0; margin-right: 16px; white-space: nowrap; background-color: var(--color-surface-800); }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.text-styles">
+  <!-- every kit text style at 1, 2 and 5 lines; regular on the left, bold on the right -->
+    <div class="column">
+      <div class="style-row"><p class="sample text-caption" data-u-id="caption-l1" data-l10n="fidelity.text-styles.caption.l1" data-en="Champion">Şampiyon</p><p class="sample text-caption" data-u-id="caption-l2" data-l10n="fidelity.text-styles.caption.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-caption" data-u-id="caption-l5" data-l10n="fidelity.text-styles.caption.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-label" data-u-id="label-l1" data-l10n="fidelity.text-styles.label.l1" data-en="Champion">Şampiyon</p><p class="sample text-label" data-u-id="label-l2" data-l10n="fidelity.text-styles.label.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-label" data-u-id="label-l5" data-l10n="fidelity.text-styles.label.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-body" data-u-id="body-l1" data-l10n="fidelity.text-styles.body.l1" data-en="Champion">Şampiyon</p><p class="sample text-body" data-u-id="body-l2" data-l10n="fidelity.text-styles.body.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-body" data-u-id="body-l5" data-l10n="fidelity.text-styles.body.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-subtitle" data-u-id="subtitle-l1" data-l10n="fidelity.text-styles.subtitle.l1" data-en="Champion">Şampiyon</p><p class="sample text-subtitle" data-u-id="subtitle-l2" data-l10n="fidelity.text-styles.subtitle.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-subtitle" data-u-id="subtitle-l5" data-l10n="fidelity.text-styles.subtitle.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-title" data-u-id="title-l1" data-l10n="fidelity.text-styles.title.l1" data-en="Champion">Şampiyon</p><p class="sample text-title" data-u-id="title-l2" data-l10n="fidelity.text-styles.title.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-title" data-u-id="title-l5" data-l10n="fidelity.text-styles.title.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-headline" data-u-id="headline-l1" data-l10n="fidelity.text-styles.headline.l1" data-en="Champion">Şampiyon</p><p class="sample text-headline" data-u-id="headline-l2" data-l10n="fidelity.text-styles.headline.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-headline" data-u-id="headline-l5" data-l10n="fidelity.text-styles.headline.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-display" data-u-id="display-l1" data-l10n="fidelity.text-styles.display.l1" data-en="Champion">Şampiyon</p><p class="sample text-display" data-u-id="display-l2" data-l10n="fidelity.text-styles.display.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-display" data-u-id="display-l5" data-l10n="fidelity.text-styles.display.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+    </div>
+    <div class="column">
+      <div class="style-row"><p class="sample text-caption-bold" data-u-id="caption-bold-l1" data-l10n="fidelity.text-styles.caption-bold.l1" data-en="Champion">Şampiyon</p><p class="sample text-caption-bold" data-u-id="caption-bold-l2" data-l10n="fidelity.text-styles.caption-bold.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-caption-bold" data-u-id="caption-bold-l5" data-l10n="fidelity.text-styles.caption-bold.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-label-bold" data-u-id="label-bold-l1" data-l10n="fidelity.text-styles.label-bold.l1" data-en="Champion">Şampiyon</p><p class="sample text-label-bold" data-u-id="label-bold-l2" data-l10n="fidelity.text-styles.label-bold.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-label-bold" data-u-id="label-bold-l5" data-l10n="fidelity.text-styles.label-bold.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-body-bold" data-u-id="body-bold-l1" data-l10n="fidelity.text-styles.body-bold.l1" data-en="Champion">Şampiyon</p><p class="sample text-body-bold" data-u-id="body-bold-l2" data-l10n="fidelity.text-styles.body-bold.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-body-bold" data-u-id="body-bold-l5" data-l10n="fidelity.text-styles.body-bold.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-subtitle-bold" data-u-id="subtitle-bold-l1" data-l10n="fidelity.text-styles.subtitle-bold.l1" data-en="Champion">Şampiyon</p><p class="sample text-subtitle-bold" data-u-id="subtitle-bold-l2" data-l10n="fidelity.text-styles.subtitle-bold.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-subtitle-bold" data-u-id="subtitle-bold-l5" data-l10n="fidelity.text-styles.subtitle-bold.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-title-bold" data-u-id="title-bold-l1" data-l10n="fidelity.text-styles.title-bold.l1" data-en="Champion">Şampiyon</p><p class="sample text-title-bold" data-u-id="title-bold-l2" data-l10n="fidelity.text-styles.title-bold.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-title-bold" data-u-id="title-bold-l5" data-l10n="fidelity.text-styles.title-bold.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-headline-bold" data-u-id="headline-bold-l1" data-l10n="fidelity.text-styles.headline-bold.l1" data-en="Champion">Şampiyon</p><p class="sample text-headline-bold" data-u-id="headline-bold-l2" data-l10n="fidelity.text-styles.headline-bold.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-headline-bold" data-u-id="headline-bold-l5" data-l10n="fidelity.text-styles.headline-bold.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+      <div class="style-row"><p class="sample text-display-bold" data-u-id="display-bold-l1" data-l10n="fidelity.text-styles.display-bold.l1" data-en="Champion">Şampiyon</p><p class="sample text-display-bold" data-u-id="display-bold-l2" data-l10n="fidelity.text-styles.display-bold.l2" data-en="Champion&#10;Noon match">Şampiyon<br>Öğle maçı</p><p class="sample text-display-bold" data-u-id="display-bold-l5" data-l10n="fidelity.text-styles.display-bold.l5" data-en="Champion&#10;Noon match&#10;Like a flood&#10;Lights&#10;Nice goal">Şampiyon<br>Öğle maçı<br>Çığ gibi<br>Işıklar<br>Güzel gol</p></div>
+    </div>
+</div>
+</body>
+</html>

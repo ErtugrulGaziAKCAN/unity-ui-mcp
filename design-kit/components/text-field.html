@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>kit.text-field</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 64px; background-color: var(--color-surface-900); }
+.heading { margin-bottom: 48px; }
+.field { display: flex; flex-direction: column; width: 640px; margin-bottom: 32px; }
+.field-label { margin-bottom: 8px; color: var(--color-text-secondary); }
+.input { width: 640px; height: 64px; padding: 0 16px; border: 2px solid var(--color-line); border-radius: var(--radius-md); background-color: var(--color-surface-700); }
+.input:hover { background-color: var(--color-surface-600); }
+.input:focus { border-color: var(--color-focus); }
+.input:disabled { opacity: 0.4; }
+.area { width: 640px; height: 160px; padding: 16px; border: 2px solid var(--color-line); border-radius: var(--radius-md); background-color: var(--color-surface-700); }
+.area:hover { background-color: var(--color-surface-600); }
+.area:focus { border-color: var(--color-focus); }
+.hint { margin-top: 8px; color: var(--color-text-muted); }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="kit.text-field">
+  <h1 class="heading text-headline-bold" data-l10n="kit.text-field.heading" data-en="Text fields">Metin alanları</h1>
+  <label class="field">
+    <span class="field-label text-label-bold" data-l10n="kit.text-field.club-name" data-en="Club name">Kulüp adı</span>
+    <input type="text" class="input text-body" data-u-id="club-name" placeholder="Kulüp adını yazın" data-l10n-placeholder="kit.text-field.club-name-placeholder" data-en-placeholder="Type the club name">
+    <span class="hint text-caption" data-l10n="kit.text-field.club-name-hint" data-en="Up to 24 characters">En çok 24 karakter</span>
+  </label>
+  <label class="field">
+    <span class="field-label text-label-bold" data-l10n="kit.text-field.manager" data-en="Manager">Menajer</span>
+    <input type="text" class="input text-body" data-u-id="manager" value="Deniz Yılmaz" data-u-bind="manager-name">
+  </label>
+  <label class="field">
+    <span class="field-label text-label-bold" data-l10n="kit.text-field.search" data-en="Search">Ara</span>
+    <input type="search" class="input text-body" data-u-id="search" placeholder="Oyuncu ara" data-l10n-placeholder="kit.text-field.search-placeholder" data-en-placeholder="Search players">
+  </label>
+  <label class="field">
+    <span class="field-label text-label-bold" data-l10n="kit.text-field.notes" data-en="Notes">Notlar</span>
+    <textarea class="area text-body" data-u-id="notes" placeholder="Maç öncesi notlar" data-l10n-placeholder="kit.text-field.notes-placeholder" data-en-placeholder="Notes before the match"></textarea>
+  </label>
+</div>
+</body>
+</html>

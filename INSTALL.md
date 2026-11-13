@@ -109,13 +109,13 @@ Then tell the user:
 
 | Tool | State |
 |---|---|
-| `design_ui_rules` | live: the design contract for any AI that writes the HTML (the kit's `RULES.md` is still a stub; allowed CSS, attributes, text styles and lint rules are complete) |
+| `design_ui_rules` | live: the design contract for any AI that writes the HTML (the kit's `RULES.md`: attributes, text styles, tokens, allowed CSS and every lint rule with its fix) |
 | `design_ui_list` | live: screens under `designRoot` and the Unity bridge state |
 | `design_ui_lint` | live: real lint in a headless Chromium with the kit fonts; folder, `.html`, `.dc.html` or `.zip` |
 | `design_ui_status` | live: what this version supports; per-screen hashes and history |
-| `design_ui_import` | export is live (lint, IR, goldens, assets, sample data); the Unity compile step is not available yet, so the import stops with the Editor's "Not available yet" answer |
-| `design_ui_verify` | not available yet (capture and comparison are being built) |
-| `design_ui_kit_sync` | forwarded to Unity; the current package answers "Not available yet" |
+| `design_ui_import` | live when its Unity route works: export (lint, IR, goldens, assets, sample data), then the compile in the open Editor (its bridge must answer) or through `unityRunner.command.import` |
+| `design_ui_verify` | live when `unityRunner.command.capture` is configured: Unity capture, comparison and report; animation samples are reported as not captured until the animation player lands, so screens with animations do not pass yet |
+| `design_ui_kit_sync` | live when its Unity route works, like import: copies the project's fonts into the kit and checks the text styles |
 
 Do not work around a tool that is not available yet (for example by writing UXML or USS by hand). Tell the user.
 

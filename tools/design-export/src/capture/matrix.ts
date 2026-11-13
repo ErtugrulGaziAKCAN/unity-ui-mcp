@@ -2,8 +2,8 @@
  * Capture matrix (spec §7 step 3, §11, §12, §15): every capture the Unity verifier must reproduce.
  *
  * - Every state × every declared viewport (the state baselines).
- * - Every layer key of every IR node, applied as its dimensions say: `state:<n>` is class `state-<n>` on the screen
- *   root; own pseudo-states and `anc(<id>):<pseudo>` apply to that element (hover/active/focus forced through CDP,
+ * - Every layer key of every IR node (its style layers and the layers of its baked shadows and backgrounds), applied
+ *   as its dimensions say: `state:<n>` is class `state-<n>` on the screen root; own pseudo-states and `anc(<id>):<pseudo>` apply to that element (hover/active/focus forced through CDP,
  *   disabled/checked set as the control's property); `class:<is-x>` and `anc(<id>):class:<is-x>` add the class. A key without breakpoints is captured at every declared viewport; with
  *   breakpoints at the declared viewports where they hold, else at one added viewport just inside them (`coverage`).
  *   Keys that differ only in state/breakpoint dimensions share the state baselines.
@@ -142,6 +142,16 @@ function treeOf(ir: IrScreen): Tree {
   walk(ir.root, null);
   return { nodes, parent, order };
 }
+/**
+ * A node's layer keys besides `base`, sorted: its style layers and the layers of its baked effects. A layer that only
+ * lifts a shadow, adds an inset shadow or switches a gradient has no style entry, yet changes the pixels.
+ */
+export function layerKeys(n: Pick<IrNode, "style" | "shadowLayers" | "insetShadowLayers" | "backgroundLayers">): string[] {
+  const keys = new Set([...Object.keys(n.style), ...Object.keys(n.shadowLayers), ...Object.keys(n.insetShadowLayers), ...Object.keys(n.backgroundLayers)]);
+  keys.delete("base");
+  return Array.from(keys).sort();
+}
+
 const isAncestorOrSelf = (t: Tree, a: string, b: string) => { for (let x: string | undefined = b; x !== undefined; x = t.parent.get(x)) if (x === a) return true; return false; };
 
 /** What a layer key (or trigger) of node `id` means for the whole screen: breakpoints, state, applied items. */
@@ -257,10 +267,9 @@ export function buildMatrix(ir: IrScreen): CaptureJob[] {
   // state baselines at every declared viewport
   for (const vp of declared) for (const st of ir.states) addJob(job(st, vp, []));
 
-  // every layer key
+  // every layer key, including layers that change only baked effects (shadow, inset shadow, background image)
   for (const id of t.order) {
-    for (const key of Object.keys(t.nodes.get(id)!.style).sort()) {
-      if (key === "base") continue;
+    for (const key of layerKeys(t.nodes.get(id)!)) {
       const s = setupOfKey(t, ir, id, key);
       for (const vp of viewportsFor(s.bps, `${id}: layer ${key}`)) addJob(job(s.state, vp, s.apply));
     }

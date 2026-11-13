@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>kit.tabs</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 64px; background-color: var(--color-surface-900); }
+.heading { margin-bottom: 48px; }
+.tab-bar { display: flex; flex-direction: row; width: 1280px; border-bottom: 2px solid var(--color-line); }
+.tab { display: flex; flex-direction: row; align-items: center; justify-content: center; height: 64px; padding: 0 32px; margin-bottom: -2px; border-bottom: 4px solid transparent; color: var(--color-text-secondary); }
+.tab:hover { color: var(--color-text-primary); }
+.tab:active { background-color: var(--color-surface-800); }
+.tab:focus { background-color: var(--color-surface-700); }
+.tab.is-selected { color: var(--color-text-primary); border-bottom-color: var(--color-accent); }
+.tab-panel { display: none; flex-direction: column; width: 1280px; height: 480px; padding: 32px; background-color: var(--color-surface-800); }
+.tab-panel.is-active { display: flex; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="kit.tabs">
+  <h1 class="heading text-headline-bold" data-l10n="kit.tabs.heading" data-en="Tabs">Sekmeler</h1>
+  <div class="tab-bar" data-u-id="tab-bar">
+    <button class="tab text-body-bold is-selected" data-u-id="tab-squad" data-u-action="show-squad" data-l10n="kit.tabs.squad" data-en="Squad">Kadro</button>
+    <button class="tab text-body-bold" data-u-id="tab-tactics" data-u-action="show-tactics" data-l10n="kit.tabs.tactics" data-en="Tactics">Taktik</button>
+    <button class="tab text-body-bold" data-u-id="tab-training" data-u-action="show-training" data-l10n="kit.tabs.training" data-en="Training">Antrenman</button>
+    <button class="tab text-body-bold" data-u-id="tab-finance" data-u-action="show-finance" data-l10n="kit.tabs.finance" data-en="Finance">Finans</button>
+  </div>
+  <div class="tab-panel is-active" data-u-id="panel-squad">
+    <p class="text-body" data-l10n="kit.tabs.squad-body" data-en="Squad content goes here.">Kadro içeriği burada.</p>
+  </div>
+  <div class="tab-panel" data-u-id="panel-tactics">
+    <p class="text-body" data-l10n="kit.tabs.tactics-body" data-en="Tactics content goes here.">Taktik içeriği burada.</p>
+  </div>
+</div>
+</body>
+</html>

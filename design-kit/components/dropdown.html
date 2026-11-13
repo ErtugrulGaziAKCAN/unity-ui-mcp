@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>kit.dropdown</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 64px; background-color: var(--color-surface-900); }
+.heading { margin-bottom: 48px; }
+.field { display: flex; flex-direction: column; width: 480px; margin-bottom: 32px; }
+.field-label { margin-bottom: 8px; color: var(--color-text-secondary); }
+.select-box { display: flex; flex-direction: row; width: 480px; height: 64px; position: relative; }
+.select { width: 480px; height: 64px; padding: 0 64px 0 16px; border: 2px solid var(--color-line); border-radius: var(--radius-md); background-color: var(--color-surface-700); }
+.select:hover { background-color: var(--color-surface-600); }
+.select:focus { border-color: var(--color-focus); }
+.select:disabled { opacity: 0.4; }
+.chevron { position: absolute; top: 20px; right: 20px; width: 24px; height: 24px; color: var(--color-text-secondary); pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="kit.dropdown">
+  <h1 class="heading text-headline-bold" data-l10n="kit.dropdown.heading" data-en="Dropdowns">Açılır listeler</h1>
+  <label class="field">
+    <span class="field-label text-label-bold" data-l10n="kit.dropdown.formation" data-en="Formation">Diziliş</span>
+    <span class="select-box">
+      <select class="select text-body" data-u-id="formation">
+        <option data-l10n="kit.dropdown.formation-442" data-en="4-4-2">4-4-2</option>
+        <option data-l10n="kit.dropdown.formation-433" data-en="4-3-3" selected>4-3-3</option>
+        <option data-l10n="kit.dropdown.formation-352" data-en="3-5-2">3-5-2</option>
+      </select>
+      <svg class="chevron" viewBox="0 0 24 24"><path d="M5 9 L12 16 L19 9" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </span>
+  </label>
+  <label class="field">
+    <span class="field-label text-label-bold" data-l10n="kit.dropdown.difficulty" data-en="Difficulty">Zorluk</span>
+    <span class="select-box">
+      <select class="select text-body" data-u-id="difficulty">
+        <option data-l10n="kit.dropdown.difficulty-easy" data-en="Easy">Kolay</option>
+        <option data-l10n="kit.dropdown.difficulty-normal" data-en="Normal" selected>Normal</option>
+        <option data-l10n="kit.dropdown.difficulty-hard" data-en="Hard">Zor</option>
+      </select>
+      <svg class="chevron" viewBox="0 0 24 24"><path d="M5 9 L12 16 L19 9" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </span>
+  </label>
+</div>
+</body>
+</html>

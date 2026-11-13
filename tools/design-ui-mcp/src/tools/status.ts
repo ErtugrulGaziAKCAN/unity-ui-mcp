@@ -25,7 +25,7 @@ export function availability(ctx: ServerContext, bridge?: BridgeStatus | null): 
   const unprobed = (r: { needsEditor?: boolean }) => !!r.needsEditor && !bridge;
   const whileEditor = "while the Unity Editor bridge answers (design_ui_status shows whether it answers)";
   return {
-    design_ui_rules: { available: true, note: "live (kit RULES.md is still a stub; allowed CSS, attributes, text styles and the lint rule table are complete)" },
+    design_ui_rules: { available: true, note: "live (kit RULES.md, attributes, text styles, allowed CSS and every lint rule with its fix)" },
     design_ui_list: { available: true, note: "live" },
     design_ui_lint: { available: true, note: "live (real lint in Chromium with the kit fonts)" },
     design_ui_status: { available: true, note: "live" },

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>kit.scroll-area</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 64px; background-color: var(--color-surface-900); }
+.heading { margin-bottom: 48px; }
+.row { display: flex; flex-direction: row; align-items: flex-start; }
+.scroll { display: flex; flex-direction: column; width: 720px; height: 480px; margin-right: 48px; padding: 24px; overflow-y: auto; border-radius: var(--radius-lg); background-color: var(--color-surface-800); }
+.paragraph { margin-bottom: 16px; color: var(--color-text-secondary); }
+.feed { display: flex; flex-direction: column; width: 720px; height: 480px; overflow-y: auto; border-radius: var(--radius-lg); background-color: var(--color-surface-800); }
+.feed-item { display: flex; flex-direction: row; align-items: center; height: 72px; flex-shrink: 0; padding: 0 24px; border-bottom: 2px solid var(--color-surface-900); }
+.feed-item:hover { background-color: var(--color-surface-700); }
+.feed-item.is-unread { color: var(--color-accent); }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="kit.scroll-area">
+  <h1 class="heading text-headline-bold" data-l10n="kit.scroll-area.heading" data-en="Scroll areas">Kaydırma alanları</h1>
+  <div class="row">
+    <div class="scroll" data-u-id="report">
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p1" data-en="The board expects a place in the top half of the table this season.">Yönetim bu sezon tablonun üst yarısında bir yer bekliyor.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p2" data-en="Two young players from the academy are ready for the first team.">Akademiden iki genç oyuncu A takıma hazır.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p3" data-en="Ticket sales rose after the last home win.">Son iç saha galibiyetinden sonra bilet satışları arttı.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p4" data-en="The training ground needs new pitches before winter.">Antrenman tesisinin kıştan önce yeni sahalara ihtiyacı var.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p5" data-en="Supporters ask for a stronger defence in away matches.">Taraftarlar deplasman maçlarında daha güçlü bir savunma istiyor.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p6" data-en="The sponsor offers a bonus for every cup round won.">Sponsor kazanılan her kupa turu için prim öneriyor.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p7" data-en="Scouts report a promising goalkeeper in the second league.">Gözlemciler ikinci ligde umut vadeden bir kaleci bildiriyor.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p8" data-en="The medical team clears the captain for Saturday.">Sağlık ekibi kaptanın cumartesi oynamasına izin verdi.</p>
+    </div>
+    <div class="feed" data-u-id="inbox">
+      <div class="feed-item is-unread" data-u-repeat="messages" data-u-id="message" data-u-action="open-message">
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Yönetim kurulu toplantısı</span>
+      </div>
+      <div class="feed-item" data-u-id="message" data-u-action="open-message">
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Transfer teklifi geldi</span>
+      </div>
+      <div class="feed-item" data-u-id="message" data-u-action="open-message">
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Antrenman raporu</span>
+      </div>
+      <div class="feed-item" data-u-id="message" data-u-action="open-message">
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Bilet satışları</span>
+      </div>
+      <div class="feed-item" data-u-id="message" data-u-action="open-message">
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Sponsor görüşmesi</span>
+      </div>
+      <div class="feed-item" data-u-id="message" data-u-action="open-message">
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Sağlık raporu</span>
+      </div>
+      <div class="feed-item" data-u-id="message" data-u-action="open-message">
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Gözlemci notları</span>
+      </div>
+      <div class="feed-item" data-u-id="message" data-u-action="open-message">
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Taraftar anketi</span>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

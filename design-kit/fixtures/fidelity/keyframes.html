@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.keyframes</title>
+<!-- @keyframes animations: iteration counts, directions, fill modes, delays and per-keyframe easing, started on
+     show and by a screen state, a hover, a focus and an is-* class. The animation player plays them; until it lands
+     their samples are not captured. -->
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 48px; background-color: var(--color-surface-900); }
+.title { margin-bottom: 32px; }
+.row { display: flex; flex-direction: row; align-items: center; margin-bottom: 40px; }
+.row-label { width: 360px; flex-shrink: 0; }
+.cell { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 200px; height: 120px; flex-shrink: 0; margin-right: 48px; border-radius: 16px; background-color: var(--color-surface-700); }
+.dot { width: 48px; height: 48px; border-radius: 24px; background-color: #16c2d5; }
+@keyframes slide { from { translate: -60px 0; } to { translate: 60px 0; } }
+@keyframes fade { 0% { opacity: 1; } 50% { opacity: 0.2; animation-timing-function: ease-in; } 100% { opacity: 1; } }
+@keyframes spin { from { rotate: 0deg; } to { rotate: 360deg; } }
+@keyframes pulse { 0% { scale: 1; background-color: #16c2d5; } 50% { scale: 1.4; background-color: #f2b544; } 100% { scale: 1; background-color: #16c2d5; } }
+@keyframes tint { from { color: #ffffff; } to { color: #f0605d; } }
+@keyframes wobble { 0% { transform: translate(0, 0) rotate(0deg); } 25% { transform: translate(-12px, 0) rotate(-10deg); } 75% { transform: translate(12px, 0) rotate(10deg); } 100% { transform: translate(0, 0) rotate(0deg); } }
+.it-1 { animation: slide 800ms ease 0ms 1 normal both; }
+.it-3 { animation: slide 400ms linear 0ms 3 normal both; }
+.it-inf { animation: spin 1200ms linear infinite; }
+.dir-normal { animation: slide 800ms ease-in-out 0ms 2 normal both; }
+.dir-reverse { animation: slide 800ms ease-in-out 0ms 2 reverse both; }
+.dir-alt { animation: slide 800ms ease-in-out 0ms 2 alternate both; }
+.dir-alt-rev { animation: slide 800ms ease-in-out 0ms 2 alternate-reverse both; }
+.fill-none { animation: slide 600ms ease-out 300ms 1 normal none; }
+.fill-fwd { animation: slide 600ms ease-out 300ms 1 normal forwards; }
+.fill-back { animation: slide 600ms ease-out 300ms 1 normal backwards; }
+.fill-both { animation: slide 600ms ease-out 300ms 1 normal both; }
+.ease-steps { animation: fade 1000ms linear infinite; }
+.colors { animation: pulse 1000ms ease-in-out infinite; }
+.text-tint { animation: tint 800ms ease 0ms infinite alternate; }
+.wobble { animation: wobble 900ms ease-in-out infinite; }
+.state-run .on-state { animation: spin 1000ms ease-in-out 1 normal both; }
+.on-hover:hover .dot { animation: pulse 600ms ease 0ms 2 normal both; }
+.on-focus:focus .dot { animation: slide 500ms ease-out 0ms 1 alternate both; }
+.on-class.is-live .dot { animation: fade 700ms linear infinite; }
+.run-note { display: none; }
+.state-run .run-note { display: flex; }
+.trigger { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 200px; height: 120px; flex-shrink: 0; margin-right: 48px; border-radius: 16px; background-color: var(--color-surface-700); }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.keyframes">
+  <h1 class="title text-title-bold" data-l10n="fidelity.keyframes.title" data-en="Keyframe animations">Anahtar kare animasyonları</h1>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.keyframes.iterations" data-en="Iterations 1, 3, infinite">Tekrar 1, 3, sonsuz</p>
+    <div class="cell"><div class="dot it-1" data-u-id="it-1"></div></div>
+    <div class="cell"><div class="dot it-3" data-u-id="it-3"></div></div>
+    <div class="cell"><div class="dot it-inf" data-u-id="it-inf"></div></div>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.keyframes.directions" data-en="Directions">Yönler</p>
+    <div class="cell"><div class="dot dir-normal" data-u-id="dir-normal"></div></div>
+    <div class="cell"><div class="dot dir-reverse" data-u-id="dir-reverse"></div></div>
+    <div class="cell"><div class="dot dir-alt" data-u-id="dir-alt"></div></div>
+    <div class="cell"><div class="dot dir-alt-rev" data-u-id="dir-alt-rev"></div></div>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.keyframes.fill" data-en="Fill modes with a delay">Gecikmeli dolgu kipleri</p>
+    <div class="cell"><div class="dot fill-none" data-u-id="fill-none"></div></div>
+    <div class="cell"><div class="dot fill-fwd" data-u-id="fill-fwd"></div></div>
+    <div class="cell"><div class="dot fill-back" data-u-id="fill-back"></div></div>
+    <div class="cell"><div class="dot fill-both" data-u-id="fill-both"></div></div>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.keyframes.properties" data-en="Easing per keyframe, colour, transform">Kare başına yumuşatma, renk, dönüşüm</p>
+    <div class="cell"><div class="dot ease-steps" data-u-id="ease-steps"></div></div>
+    <div class="cell"><div class="dot colors" data-u-id="colors"></div></div>
+    <div class="cell"><p class="text-title-bold text-tint" data-u-id="text-tint" data-l10n="fidelity.keyframes.tint" data-en="Colour">Renk</p></div>
+    <div class="cell"><div class="dot wobble" data-u-id="wobble"></div></div>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.keyframes.triggers" data-en="State, hover, focus, class">Durum, üzerine gelme, odak, sınıf</p>
+    <div class="cell"><div class="dot on-state" data-u-id="on-state"></div></div>
+    <div class="trigger on-hover" data-u-id="on-hover"><div class="dot"></div></div>
+    <button class="trigger on-focus" data-u-id="on-focus" data-u-action="on-focus"><span class="dot"></span></button>
+    <div class="trigger on-class" data-u-id="on-class"><div class="dot"></div></div>
+    <p class="run-note text-body" data-u-state="run" data-l10n="fidelity.keyframes.run" data-en="State run">Durum: çalış</p>
+  </div>
+</div>
+</body>
+</html>

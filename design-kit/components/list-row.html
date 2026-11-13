@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>kit.list-row</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 64px; background-color: var(--color-surface-900); }
+.heading { margin-bottom: 48px; }
+.list-head { display: flex; flex-direction: row; align-items: center; width: 1280px; height: 48px; padding: 0 24px; color: var(--color-text-secondary); }
+.list { display: flex; flex-direction: column; width: 1280px; }
+.list-row { display: flex; flex-direction: row; align-items: center; width: 1280px; height: 80px; padding: 0 24px; margin-bottom: 8px; border-radius: var(--radius-md); background-color: var(--color-surface-700); }
+.list-row:hover { background-color: var(--color-surface-600); }
+.list-row:active { background-color: var(--color-surface-500); }
+.list-row.is-selected { background-color: var(--color-surface-500); }
+.avatar { width: 48px; height: 48px; flex-shrink: 0; margin-right: 24px; border-radius: 24px; background-color: var(--color-accent); }
+.cell-name { width: 640px; flex-shrink: 0; }
+.cell-position { width: 240px; flex-shrink: 0; color: var(--color-text-secondary); }
+.cell-rating { width: 120px; flex-shrink: 0; text-align: right; color: var(--color-positive); }
+.col-name { width: 712px; flex-shrink: 0; }
+.col-position { width: 240px; flex-shrink: 0; }
+.col-rating { width: 120px; flex-shrink: 0; text-align: right; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="kit.list-row">
+  <h1 class="heading text-headline-bold" data-l10n="kit.list-row.heading" data-en="List rows">Liste satırları</h1>
+  <div class="list-head">
+    <span class="col-name text-label-bold" data-l10n="kit.list-row.col-name" data-en="Player">Oyuncu</span>
+    <span class="col-position text-label-bold" data-l10n="kit.list-row.col-position" data-en="Position">Mevki</span>
+    <span class="col-rating text-label-bold" data-l10n="kit.list-row.col-rating" data-en="Rating">Puan</span>
+  </div>
+  <ul class="list" data-u-id="players">
+    <li class="list-row is-selected" data-u-repeat="players" data-u-id="player" data-u-action="open-player">
+      <div class="avatar"></div>
+      <span class="cell-name text-body-bold" data-u-id="name" data-u-bind="player.name">Ahmet Çelik</span>
+      <span class="cell-position text-body" data-u-id="position" data-u-bind="player.position">Orta saha</span>
+      <span class="cell-rating text-body-bold" data-u-id="rating" data-u-bind="player.rating">8.4</span>
+    </li>
+    <li class="list-row" data-u-id="player" data-u-action="open-player">
+      <div class="avatar"></div>
+      <span class="cell-name text-body-bold" data-u-id="name" data-u-bind="player.name">İsmail Şahin</span>
+      <span class="cell-position text-body" data-u-id="position" data-u-bind="player.position">Defans</span>
+      <span class="cell-rating text-body-bold" data-u-id="rating" data-u-bind="player.rating">7.9</span>
+    </li>
+    <li class="list-row" data-u-id="player" data-u-action="open-player">
+      <div class="avatar"></div>
+      <span class="cell-name text-body-bold" data-u-id="name" data-u-bind="player.name">Gökhan Öztürk</span>
+      <span class="cell-position text-body" data-u-id="position" data-u-bind="player.position">Forvet</span>
+      <span class="cell-rating text-body-bold" data-u-id="rating" data-u-bind="player.rating">7.2</span>
+    </li>
+    <li class="list-row" data-u-id="player" data-u-action="open-player">
+      <div class="avatar"></div>
+      <span class="cell-name text-body-bold" data-u-id="name" data-u-bind="player.name">Ufuk Kılıç</span>
+      <span class="cell-position text-body" data-u-id="position" data-u-bind="player.position">Kaleci</span>
+      <span class="cell-rating text-body-bold" data-u-id="rating" data-u-bind="player.rating">6.8</span>
+    </li>
+  </ul>
+</div>
+</body>
+</html>

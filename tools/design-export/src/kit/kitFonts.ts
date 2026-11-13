@@ -1,0 +1,33 @@
+import fs from "node:fs";
+import path from "node:path";
+import type { KitConfig } from "../kit.js";
+
+/** One @font-face of the kit's fonts CSS (written by kit sync): the family, its descriptors and the file it loads. */
+export interface KitFontFile { family: string; weight: string; style: string; file: string }
+
+/** Licence files kit sync copies next to the fonts (OFL.txt, LICENSE, …). */
+export const LICENCE_FILE = /^(ofl|licen[cs]e|copying|notice)([._ -].*)?$|^.+[._ -](ofl|licen[cs]e|copying|notice)([._ -].*)?$/i;
+
+/** The kit's synced font faces, with each file path relative to the kit folder; null when kit sync has not written the fonts CSS. */
+export function readKitFontFiles(kit: KitConfig): KitFontFile[] | null {
+  const css = path.join(kit.dir, kit.fontsCss);
+  if (!fs.existsSync(css)) return null;
+  const base = path.dirname(kit.fontsCss);
+  const out: KitFontFile[] = [];
+  for (const m of fs.readFileSync(css, "utf8").matchAll(/@font-face\s*\{([^}]*)\}/gi)) {
+    const block = m[1];
+    const family = /font-family\s*:\s*(["']?)([^;"']+)\1/i.exec(block)?.[2]?.trim();
+    const url = /url\(\s*["']?([^"')]+)["']?\s*\)/i.exec(block)?.[1];
+    if (!family || !url || /^[a-z]+:/i.test(url)) continue;
+    const weight = /font-weight\s*:\s*([^;]+)/i.exec(block)?.[1]?.trim() ?? "400";
+    const style = /font-style\s*:\s*([^;]+)/i.exec(block)?.[1]?.trim() ?? "normal";
+    out.push({ family, weight, style, file: path.posix.join(base.split(path.sep).join("/"), decodeURIComponent(url)) });
+  }
+  return out;
+}
+
+/** Locale → families written by kit sync (fonts.json next to the fonts CSS); null when absent. */
+export function readKitLocaleFonts(kit: KitConfig): Record<string, string[]> | null {
+  const file = path.join(kit.dir, kit.fontsCss.replace(/\.css$/i, ".json"));
+  return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, string[]>) : null;
+}

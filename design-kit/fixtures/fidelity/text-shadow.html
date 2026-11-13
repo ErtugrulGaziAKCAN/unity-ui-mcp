@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.text-shadow</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 48px; background-color: var(--color-surface-900); }
+.title { margin-bottom: 40px; }
+.row { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 40px; }
+.sample { width: 560px; flex-shrink: 0; margin-right: 48px; padding: 24px; border-radius: 16px; background-color: var(--color-surface-800); }
+.light { background-color: #e9f3f5; color: #06171c; }
+.ts-soft { text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6); }
+.ts-hard { text-shadow: 3px 3px 0 #f0605d; }
+.ts-glow { text-shadow: 0 0 12px rgba(22, 194, 213, 0.9); }
+.ts-down { text-shadow: 0 6px 8px #000000; }
+.ts-left { text-shadow: -4px 0 2px rgba(242, 181, 68, 0.8); }
+.ts-light { text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9); }
+.ts-hover { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+.ts-hover:hover { text-shadow: 0 4px 12px rgba(22, 194, 213, 0.9); }
+.state-glow .ts-state { text-shadow: 0 0 16px rgba(60, 207, 122, 0.9); }
+.glow-note { display: none; }
+.state-glow .glow-note { display: flex; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.text-shadow">
+  <h1 class="title text-title-bold ts-soft" data-l10n="fidelity.text-shadow.title" data-en="Text shadow">Yazı gölgesi</h1>
+  <div class="row">
+    <p class="sample text-display-bold ts-soft" data-l10n="fidelity.text-shadow.soft" data-en="Soft shadow">Yumuşak gölge</p>
+    <p class="sample text-display-bold ts-hard" data-l10n="fidelity.text-shadow.hard" data-en="Hard shadow">Sert gölge</p>
+    <p class="sample text-display-bold ts-glow" data-l10n="fidelity.text-shadow.glow" data-en="Glow">Parıltı</p>
+    <p class="sample text-display-bold ts-down" data-l10n="fidelity.text-shadow.down" data-en="Deep shadow">Derin gölge</p>
+  </div>
+  <div class="row">
+    <p class="sample text-headline ts-left" data-l10n="fidelity.text-shadow.left" data-en="To the left">Sola doğru</p>
+    <p class="sample light text-headline-bold ts-light" data-l10n="fidelity.text-shadow.light" data-en="Light edge">Açık kenar</p>
+    <p class="sample text-body ts-soft" data-l10n="fidelity.text-shadow.body" data-en="Body text with a soft shadow over two lines of text">İki satıra yayılan yumuşak gölgeli gövde metni burada duruyor</p>
+    <p class="sample text-caption-bold ts-hard" data-l10n="fidelity.text-shadow.caption" data-en="Small text with a hard shadow">Sert gölgeli küçük yazı</p>
+  </div>
+  <div class="row">
+    <p class="sample text-title-bold ts-hover" data-u-id="hover" data-l10n="fidelity.text-shadow.hover" data-en="Shadow on hover">Üzerine gelince gölge</p>
+    <p class="sample text-title-bold ts-state" data-u-id="state" data-l10n="fidelity.text-shadow.state" data-en="Shadow in a state">Durumda gölge</p>
+    <p class="glow-note text-body" data-u-state="glow" data-l10n="fidelity.text-shadow.glow-note" data-en="Glow state">Parıltı durumu</p>
+  </div>
+</div>
+</body>
+</html>

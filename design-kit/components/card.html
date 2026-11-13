@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>kit.card</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 64px; background-color: var(--color-surface-900); }
+.heading { margin-bottom: 48px; }
+.row { display: flex; flex-direction: row; align-items: flex-start; }
+.card { display: flex; flex-direction: column; width: 560px; margin-right: 48px; border-radius: var(--radius-lg); background-color: var(--color-surface-700); box-shadow: var(--shadow-card); }
+.card-hero { height: 160px; border-radius: 16px 16px 0 0; background-image: linear-gradient(135deg, #16c2d5 0%, #123c47 100%); }
+.card-body { display: flex; flex-direction: column; padding: 24px; }
+.card-title { margin-bottom: 8px; }
+.card-text { margin-bottom: 24px; color: var(--color-text-secondary); }
+.card-action { display: flex; flex-direction: row; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border-radius: var(--radius-md); background-color: var(--color-accent); color: var(--color-on-accent); align-self: flex-start; }
+.card-action:hover { background-color: var(--color-accent-hover); }
+.card-action:active { background-color: var(--color-accent-pressed); }
+.card-link:hover { box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5); translate: 0 -4px; }
+.card-link.is-selected { box-shadow: 0 0 0 4px #16c2d5, 0 8px 24px rgba(0, 0, 0, 0.4); }
+.well { display: flex; flex-direction: column; width: 560px; padding: 24px; border-radius: var(--radius-lg); background-color: var(--color-surface-800); box-shadow: var(--shadow-well); }
+.stat { display: flex; flex-direction: row; justify-content: space-between; margin-bottom: 8px; }
+.stat-value { color: var(--color-positive); }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="kit.card">
+  <h1 class="heading text-headline-bold" data-l10n="kit.card.heading" data-en="Cards">Kartlar</h1>
+  <div class="row">
+    <div class="card">
+      <div class="card-hero"></div>
+      <div class="card-body">
+        <h2 class="card-title text-title-bold" data-l10n="kit.card.match-title" data-en="Next match">Sıradaki maç</h2>
+        <p class="card-text text-body" data-l10n="kit.card.match-text" data-en="Saturday, 19:00 at home">Cumartesi, 19:00 iç saha</p>
+        <button class="card-action text-label-bold" data-u-id="match-details" data-u-action="open-match" data-l10n="kit.card.match-action" data-en="Details">Ayrıntılar</button>
+      </div>
+    </div>
+    <div class="card card-link" data-u-id="club-card" data-u-action="open-club">
+      <div class="card-body">
+        <h2 class="card-title text-title-bold" data-l10n="kit.card.club-title" data-en="Club">Kulüp</h2>
+        <p class="card-text text-body" data-l10n="kit.card.club-text" data-en="Open the club overview">Kulüp özetini aç</p>
+      </div>
+    </div>
+    <div class="well" data-u-id="stats">
+      <div class="stat">
+        <span class="text-body" data-l10n="kit.card.wins" data-en="Wins">Galibiyet</span>
+        <span class="stat-value text-body-bold" data-u-id="wins" data-u-bind="wins">12</span>
+      </div>
+      <div class="stat">
+        <span class="text-body" data-l10n="kit.card.goals" data-en="Goals">Gol</span>
+        <span class="stat-value text-body-bold" data-u-id="goals" data-u-bind="goals">38</span>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.pseudo-states</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
+.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
+.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
+.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
+.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
+.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
+.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 48px; background-color: var(--color-surface-900); }
+.title { margin-bottom: 32px; }
+.row { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 48px; }
+.btn { display: flex; flex-direction: row; align-items: center; justify-content: center; width: 280px; height: 72px; margin-right: 32px; border: 3px solid var(--color-line); border-radius: 12px; background-color: var(--color-surface-700); }
+.btn-hover:hover { background-color: #16c2d5; color: #06171c; }
+.btn-active:active { background-color: #0f9fb0; translate: 0 2px; }
+.btn-focus:focus { border-color: #9be9f2; }
+.btn-disabled:disabled { background-color: #2b3a3f; color: #86a7b0; }
+.btn-all:hover { background-color: #19505d; }
+.btn-all:active { background-color: #216372; }
+.btn-all:focus { border-color: #9be9f2; }
+.btn-all:disabled { opacity: 0.4; }
+.box { width: 72px; height: 72px; flex-shrink: 0; margin-right: 32px; border: 3px solid var(--color-line); border-radius: 12px; background-color: var(--color-surface-700); }
+.box:checked { background-color: #3ccf7a; border-color: #3ccf7a; }
+.box:hover { border-color: #ffffff; }
+.box:disabled { opacity: 0.3; }
+.dot { width: 72px; height: 72px; flex-shrink: 0; margin-right: 32px; border: 3px solid var(--color-line); border-radius: 36px; background-color: var(--color-surface-700); }
+.dot:checked { border-width: 18px; border-color: #f2b544; }
+.field { width: 480px; height: 72px; margin-right: 32px; padding: 0 16px; border: 3px solid var(--color-line); border-radius: 12px; background-color: var(--color-surface-700); }
+.field:focus { border-color: #9be9f2; background-color: var(--color-surface-600); }
+.field:hover { background-color: var(--color-surface-600); }
+.card { display: flex; flex-direction: column; width: 400px; padding: 24px; margin-right: 32px; border-radius: 16px; background-color: var(--color-surface-700); }
+.card-title { color: var(--color-text-secondary); }
+.card-bar { width: 120px; height: 8px; margin-top: 16px; border-radius: 4px; background-color: var(--color-line); }
+.card:hover .card-title { color: #ffffff; }
+.card:hover .card-bar { background-color: #16c2d5; width: 240px; }
+.press { display: flex; flex-direction: column; width: 400px; padding: 24px; margin-right: 32px; border-radius: 16px; background-color: var(--color-surface-700); }
+.press:active .card-title { color: #f2b544; }
+.press:focus .card-bar { background-color: #9be9f2; }
+.tag { display: flex; flex-direction: row; align-items: center; height: 56px; padding: 0 24px; margin-right: 16px; border-radius: 28px; background-color: var(--color-surface-700); color: var(--color-text-secondary); }
+.tag.is-selected { background-color: #16c2d5; color: #06171c; }
+.tag.is-warning { background-color: #f2b544; color: #06171c; }
+.tag.is-selected:hover { background-color: #3fd3e3; }
+.group { display: flex; flex-direction: row; padding: 16px; border-radius: 16px; background-color: var(--color-surface-800); }
+.group.is-dimmed .tag { opacity: 0.4; }
+.state-busy .btn-all { background-color: #2b3a3f; }
+.state-busy .btn-all:hover { background-color: #3a4c52; }
+.busy-note { display: none; color: var(--color-text-secondary); }
+.state-busy .busy-note { display: flex; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.pseudo-states">
+  <h1 class="title text-title-bold" data-l10n="fidelity.pseudo-states.title" data-en="Pseudo-states and classes">Etkileşim durumları ve sınıflar</h1>
+  <div class="row">
+    <button class="btn btn-hover text-body-bold" data-u-id="hover" data-u-action="hover" data-l10n="fidelity.pseudo-states.hover" data-en="Hover">Üzerine gel</button>
+    <button class="btn btn-active text-body-bold" data-u-id="active" data-u-action="active" data-l10n="fidelity.pseudo-states.active" data-en="Press">Bas</button>
+    <button class="btn btn-focus text-body-bold" data-u-id="focus" data-u-action="focus" data-l10n="fidelity.pseudo-states.focus" data-en="Focus">Odak</button>
+    <button class="btn btn-disabled text-body-bold" data-u-id="disabled" data-u-action="disabled" data-l10n="fidelity.pseudo-states.disabled" data-en="Disabled">Devre dışı</button>
+    <button class="btn btn-all text-body-bold" data-u-id="all" data-u-action="all" data-l10n="fidelity.pseudo-states.all" data-en="All states">Tüm durumlar</button>
+    <p class="busy-note text-body" data-u-state="busy" data-l10n="fidelity.pseudo-states.busy" data-en="Busy">Meşgul</p>
+  </div>
+  <div class="row">
+    <input type="checkbox" class="box" data-u-id="check">
+    <input type="checkbox" class="box" data-u-id="check-on" checked>
+    <input type="radio" class="dot" name="pick" data-u-id="radio-a">
+    <input type="radio" class="dot" name="pick" data-u-id="radio-b" checked>
+    <input type="text" class="field text-body" data-u-id="field" placeholder="Odaklanınca kenarlık" data-l10n-placeholder="fidelity.pseudo-states.field" data-en-placeholder="Border on focus">
+  </div>
+  <div class="row">
+    <div class="card" data-u-id="card">
+      <p class="card-title text-body-bold" data-l10n="fidelity.pseudo-states.card" data-en="Ancestor hover">Üst öğe üzerine gelme</p>
+      <div class="card-bar"></div>
+    </div>
+    <button class="press" data-u-id="press" data-u-action="press">
+      <span class="card-title text-body-bold" data-l10n="fidelity.pseudo-states.press" data-en="Ancestor press and focus">Üst öğe basma ve odak</span>
+      <span class="card-bar"></span>
+    </button>
+  </div>
+  <div class="row">
+    <div class="group" data-u-id="group">
+      <span class="tag text-body-bold is-selected" data-u-id="tag-a" data-l10n="fidelity.pseudo-states.tag-a" data-en="Selected">Seçili</span>
+      <span class="tag text-body-bold" data-u-id="tag-b" data-l10n="fidelity.pseudo-states.tag-b" data-en="Plain">Düz</span>
+      <span class="tag text-body-bold is-warning" data-u-id="tag-c" data-l10n="fidelity.pseudo-states.tag-c" data-en="Warning">Uyarı</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>
