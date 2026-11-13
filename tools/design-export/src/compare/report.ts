@@ -32,6 +32,8 @@ function thresholdRows(t: Thresholds): string {
     ["deltaE2000", `≤ ${t.deltaE2000}`, "colour samples of painted backgrounds; edge, border and corner samples of elements that carry text; mean colour of each baked shadow's band (each sample against the closest Unity colour within 1 px)"],
     ["ssimNonText", `≥ ${t.ssimNonText}`, "SSIM of the whole capture, text element boxes and external regions copied from the design"],
     ["ssimElement", `≥ ${t.ssimElement}`, "SSIM per visible element of at least 16×16 px over its box joined with its baked shadow (an element that carries text: only its lines copied); when it fails, each block may use the Unity image offset by up to 1 px"],
+    ["ssimElementSmall", t.ssimElementSmall.map(([area, v]) => `< ${area} px²: ≥ ${v}`).join(", ") || "—", "element SSIM of a small element whose box, colour, ring, ink and shadow checks all pass (SSIM over a few 8-px blocks is dominated by anti-aliased edges); measured on identical geometry"],
+    ["ssimPicture", `≥ ${t.ssimPicture}`, "element SSIM of a raster picture drawn at another size than its own whose other checks all pass (UI Toolkit filters it in linear light, Chromium in sRGB); measured"],
     ["textInkDeltaE", `≤ ${t.textInkDeltaE}`, `text colour per line, from ${t.textInkFullPx} device px font size: median of the 10 % ink pixels most different from the background`],
     ["textInkDeltaESmall", t.textInkDeltaESmall.map(([px, de]) => `≥ ${px} px: ≤ ${de}`).join(", "), `text colour per line below ${t.textInkFullPx} device px, where no stem pixel is fully covered and the two renderers' anti-aliasing differs most; measured limits by font size`],
     ["textInkRatio", `${t.textInkRatio}`, "Unity's text ink amount relative to the design's for correct text (measured with smoothing-off designs)"],
@@ -76,7 +78,7 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     : '<p class="muted">No issues.</p>';
   const rows = c.elements.map((r) => `<tr class="st-${r.status}"><td><code>${esc(r.id)}</code></td><td>${esc(r.status)}</td>` +
     `<td class="num">${r.box ? r.box.map((d) => (d >= 0 ? "+" : "") + d.toFixed(2)).join(" ") : "—"}</td>` +
-    `<td class="num">${num(r.ssim, 5)}</td><td class="num">${num(r.ssimShifted, 5)}</td>` +
+    `<td class="num">${num(r.ssim, 5)}</td><td class="num">${num(r.ssimShifted, 5)}${r.ssimLimit !== null && r.ssimLimit !== undefined ? ` <span class="muted">(≥ ${r.ssimLimit})</span>` : ""}</td>` +
     `<td class="num">${r.samples === 0 ? '<span class="warn-text">not sampled</span>' : `${num(r.deltaE, 2)}${r.samples ? ` <span class="muted">(${r.samples})</span>` : ""}`}</td>` +
     `<td class="num">${num(r.edge, 2)}</td><td class="num">${num(r.band, 2)}</td><td class="num">${num(r.ink, 2)}</td><td class="num">${r.inkRatio === null ? "—" : `${r.inkRatio.toFixed(2)}×`}</td>` +
     `<td>${esc(r.lines ?? "—")}</td></tr>`).join("");

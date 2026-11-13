@@ -11,7 +11,11 @@
  *   golden box joined with its active baked-shadow rect. Non-text elements use the pinned copy-mask (text element boxes
  *   copied from the design); an element that carries text uses a mask of its text lines only, so its background,
  *   border and corners count. When the plain value fails, each block may take its best value with the Unity image
- *   offset by up to 1 px, so the ±1 px box allowance (a move or a 1-px size change) cannot fail the element;
+ *   offset by up to 1 px, so the ±1 px box allowance (a move or a 1-px size change) cannot fail the element. An element
+ *   whose box, baseline, colour, ring, ink and shadow checks all pass may instead meet a measured lower limit: a raster
+ *   picture drawn scaled `ssimPicture` (UI Toolkit filters it in linear light, Chromium in sRGB), and an element whose SSIM
+ *   region is smaller than an area of `ssimElementSmall` that pair's limit (SSIM over a few 8-px blocks is dominated by
+ *   anti-aliased edges); both measured on identical geometry (docs/findings/ssim-small-elements.md), never below 0.97;
  * - colour (samples.ts): elements that paint a background get a 5×3 grid of 3×3 means inside both boxes (inset 6 px;
  *   one centre sample under 16 px), skipping points under later elements that paint or on text lines; when every
  *   grid point is covered, samples just inside the border take over; an element left without any sample is listed
@@ -26,7 +30,9 @@
  *   `-webkit-font-smoothing: antialiased` (docs/findings/text-ink.md): exact from 9 device px, wider only below;
  * - shadow band: the mean colour of each active outer shadow's band (shadow rect minus element box), ΔE2000 ≤
  *   `deltaE2000`, so a faint missing shadow fails although SSIM dilutes it.
- * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows.
+ * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows. The
+ * pixel row or column of a painted edge the design draws off the device grid (Chromium snaps boxes to whole CSS px, UI
+ * Toolkit to whole device px) is copied from the design too; the box check measures where that edge is.
  * Colours are compared premultiplied (a translucent Unity pixel counts as its colour over black). Line widths are not
  * compared (findings §4: the caret route's line rects differ from Chromium's by more than a pixel at the same break).
  */
@@ -41,7 +47,7 @@ import type { CaptureApply, CaptureJob } from "../capture/matrix.js";
 import { deltaE2000, hex } from "./color.js";
 import { captureContext, indexIr, type CaptureContext, type IrIndex } from "./context.js";
 import { decodePngAsync, encodePngAsync } from "./png.js";
-import { bestDeltaE, flatAt, inkIn, nearCurve, ringPoints, type RingPoint } from "./samples.js";
+import { bestDeltaE, flatAt, inkIn, nearCurve, paintedRect, ringPoints, type RingPoint } from "./samples.js";
 import { blockSsimMap, maskRects, regionSsim, regionSsimShifted, unionRect, wholeSsim, type Rect } from "./ssim.js";
 
 export type { CaptureContext } from "./context.js";
@@ -63,12 +69,30 @@ export interface Thresholds {
   textInkDeltaESmall: [number, number][];
   /** Allowed deviation of a line's ink amount from the capture's median ratio of text of the same polarity. */
   textInkMedianTolerance: number;
+  /**
+   * Element SSIM limits for small elements: `[area in device px², limit]` pairs by growing area; an element whose SSIM
+   * region is smaller than a pair's area (the first that is larger) takes its limit instead of `ssimElement`, but only when
+   * every other check of the element passes. Limits between 0.97 and `ssimElement`, growing with the area.
+   */
+  ssimElementSmall: [number, number][];
+  /** Element SSIM limit for a raster picture drawn at another size than its own (same conditions; 0.97 … ssimElement). */
+  ssimPicture: number;
+  /**
+   * Lines after the first of text under `textInkLaterBelowPx` device px: `[device px, ΔE2000]` pairs from the largest size
+   * down (the first the text reaches; a smaller text keeps its usual limit), never below the usual limit, and the ink
+   * amount band `textInkCoverageLater` instead of `textInkCoverage` (measured residual, docs/findings/text-baselines.md).
+   */
+  textInkDeltaELater: [number, number][];
+  textInkLaterBelowPx: number;
+  textInkCoverageLater: number;
 }
 
 /** `tools/design-export/fidelity-thresholds.json`, the only place the thresholds live (keys starting with `$` are comments). */
 export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.json", import.meta.url));
 const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage",
-  "textInkFullPx", "textInkMedianTolerance"] as const;
+  "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater"] as const;
+/** No measured policy may accept an element SSIM below this. */
+export const SSIM_FLOOR = 0.97;
 
 export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
   const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
@@ -80,16 +104,47 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
   const small = table as number[][];
   if (small[0][0] >= (raw.textInkFullPx as number) || small.some(([, de]) => de < (raw.textInkDeltaE as number)))
     throw new Error(`${file}: "textInkDeltaESmall" must start below textInkFullPx with limits of at least textInkDeltaE`);
+  const elementSsim = raw.ssimElement as number;
+  const areas = raw.ssimElementSmall;
+  const areaPairs = Array.isArray(areas) && areas.every((p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v)));
+  const areaOrdered = areaPairs && (areas as number[][]).every((p, i, a) => p[0] > 0 && (i === 0 || (p[0] > a[i - 1][0] && p[1] >= a[i - 1][1])));
+  if (!areaOrdered) throw new Error(`${file}: "ssimElementSmall" must be [area in device px², SSIM] pairs by growing area and limit`);
+  const inRange = (v: number) => v >= SSIM_FLOOR && v <= elementSsim;
+  if (!(areas as number[][]).every(([, v]) => inRange(v)) || !inRange(raw.ssimPicture as number))
+    throw new Error(`${file}: "ssimElementSmall" and "ssimPicture" limits must lie between ${SSIM_FLOOR} and ssimElement`);
+  const later = raw.textInkDeltaELater;
+  const laterOk = Array.isArray(later) && later.every((p, i, a) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0)
+    && (i === 0 || p[0] < a[i - 1][0]) && p[0] < (raw.textInkLaterBelowPx as number));
+  if (!laterOk) throw new Error(`${file}: "textInkDeltaELater" must be [device px, ΔE2000] pairs from the largest size down, below textInkLaterBelowPx`);
+  if ((raw.textInkCoverageLater as number) < (raw.textInkCoverage as number)) throw new Error(`${file}: "textInkCoverageLater" must be at least textInkCoverage`);
   return {
-    ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall">),
+    ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater">),
     textInkDeltaESmall: (table as number[][]).map(([px, de]) => [px, de] as [number, number]),
+    ssimElementSmall: (areas as number[][]).map(([a, v]) => [a, v] as [number, number]),
+    textInkDeltaELater: (later as number[][]).map(([px, de]) => [px, de] as [number, number]),
   };
 }
 
-/** The ink colour limit for text of `px` device px (font size). */
-export function inkColourLimit(t: Thresholds, px: number): number {
-  if (px >= t.textInkFullPx) return t.textInkDeltaE;
-  return (t.textInkDeltaESmall.find(([min]) => px >= min) ?? t.textInkDeltaESmall[t.textInkDeltaESmall.length - 1])[1];
+/**
+ * The measured lower element SSIM limit an element may meet when all its other checks pass: `ssimPicture` for a scaled
+ * raster picture, else the `ssimElementSmall` limit of its region's area; null when only `ssimElement` applies.
+ */
+export function relaxedSsimLimit(t: Thresholds, areaPx2: number, picture: boolean): { limit: number; why: string } | null {
+  const small = t.ssimElementSmall.find(([area]) => areaPx2 < area);
+  const options = [
+    ...(picture ? [{ limit: t.ssimPicture, why: "a raster picture drawn scaled" }] : []),
+    ...(small ? [{ limit: small[1], why: `an element under ${small[0]} device px²` }] : []),
+  ].filter((o) => o.limit < t.ssimElement);
+  return options.length ? options.reduce((a, b) => (b.limit < a.limit ? b : a)) : null;
+}
+
+/** The ink colour limit for text of `px` device px (font size); `line` counts from 0 (later lines of small text: textInkDeltaELater). */
+export function inkColourLimit(t: Thresholds, px: number, line = 0): number {
+  const usual = px >= t.textInkFullPx ? t.textInkDeltaE
+    : (t.textInkDeltaESmall.find(([min]) => px >= min) ?? t.textInkDeltaESmall[t.textInkDeltaESmall.length - 1])[1];
+  if (line < 1 || px >= t.textInkLaterBelowPx) return usual;
+  const later = t.textInkDeltaELater.find(([min]) => px >= min);
+  return later ? Math.max(usual, later[1]) : usual;
 }
 
 export type IssueKind = "size" | "missing" | "extra" | "visibility" | "lines" | "box" | "baseline" | "ssim" | "edge" | "color" | "ink" | "inkCoverage" | "shadow";
@@ -114,6 +169,8 @@ export interface ElementRow {
   ssim: number | null;
   /** Element SSIM with each block's best offset of up to 1 px; computed only when the plain value fails. */
   ssimShifted: number | null;
+  /** The measured lower limit the element met instead of ssimElement (a scaled picture or a small element), else null. */
+  ssimLimit: number | null;
   /** Largest background sample ΔE2000. */
   deltaE: number | null;
   /** Background samples taken: null when the element paints no background; 0 = not sampled. */
@@ -160,6 +217,10 @@ export interface CaptureVerdict {
   translucent: number;
   /** Regions copied from the design before the pinned SSIM (text element boxes, external; inflated by 2 px). */
   masked: Rect[];
+  /** Painted edge rows or columns the design draws off the device grid, copied from the design before SSIM (offGridEdges). */
+  offGridEdges: number;
+  /** The capture reaches past the screen root (a coverage viewport of another aspect); that area is not compared. */
+  outsideScreen: boolean;
   elements: ElementRow[];
   /** Set by compareScreen. */
   info?: CaptureInfo | null;
@@ -238,6 +299,25 @@ function opaque(img: Rgba): { img: Rgba; translucent: number } {
   return { img: { w: img.w, h: img.h, data }, translucent };
 }
 
+/**
+ * The one-pixel rows and columns where an element's painted edge falls between device pixels in the design: Chromium
+ * paints a box at its layout rect snapped to whole CSS px (paintedRect), so its edge pixel is partly covered there while
+ * UI Toolkit snaps the edge to a whole device pixel.
+ */
+export function offGridEdges(boxes: readonly Box[], scale: number): Rect[] {
+  const out: Rect[] = [];
+  const frac = (v: number) => { const f = v - Math.floor(v); return f > 1e-3 && f < 1 - 1e-3; };
+  for (const b of boxes) {
+    if (!b?.visible || b.w <= 0 || b.h <= 0) continue;
+    const p = paintedRect(b, scale);
+    if (frac(p.x)) out.push({ x: Math.floor(p.x), y: p.y, w: 1, h: p.h });
+    if (frac(p.x + p.w)) out.push({ x: Math.floor(p.x + p.w), y: p.y, w: 1, h: p.h });
+    if (frac(p.y)) out.push({ x: p.x, y: Math.floor(p.y), w: p.w, h: 1 });
+    if (frac(p.y + p.h)) out.push({ x: p.x, y: Math.floor(p.y + p.h), w: p.w, h: 1 });
+  }
+  return out;
+}
+
 /** Mean colour of the pixels whose centre is in `outer` but not in `inner`; null when there are none. */
 function bandMean(img: Rgba, outer: Rect, inner: Rect, from?: { a: Rgba; mask: Uint8Array }): [number, number, number] | null {
   const x0 = Math.max(0, Math.ceil(outer.x - 0.5)), x1 = Math.min(img.w, Math.ceil(outer.x + outer.w - 0.5));
@@ -290,7 +370,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   const removedSet = new Set(removed);
   const issue = (id: string, kind: IssueKind, detail: string, at?: Rect) => issues.push(at ? { id, kind, detail, at } : { id, kind, detail });
   const newRow = (id: string, status: ElementRow["status"] = "ok"): ElementRow =>
-    ({ id, status, box: null, ssim: null, ssimShifted: null, deltaE: null, samples: null, edge: null, band: null, ink: null, inkRatio: null, lines: null });
+    ({ id, status, box: null, ssim: null, ssimShifted: null, ssimLimit: null, deltaE: null, samples: null, edge: null, band: null, ink: null, inkRatio: null, lines: null });
 
   // ---- image size (HiDPI captures are an error, never rescaled)
   const sameSize = gp.w === up.w && gp.h === up.h;
@@ -359,7 +439,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
 
   // ---- masks (both sides, inflated by 2 px); Unity's text is masked only where the design shows the same element
   const w = gp.w, h = gp.h;
-  let ssim: number | null = null, pixelsOff: number | null = null, heat: Rgba | null = null, masked: Rect[] = [];
+  let ssim: number | null = null, pixelsOff: number | null = null, heat: Rgba | null = null, masked: Rect[] = [], edgeMasked = 0, outsideScreen = false;
   let worst: { id: string; ssim: number } | null = null, maxDE: { id: string; deltaE: number } | null = null;
   if (sameSize) {
     const shown = (id: string) => !!g.elements[id]?.visible && !!u.elements[id]?.visible;
@@ -374,6 +454,26 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const externalBoxes = g.external.flatMap((id) => [g.elements[id], u.external.includes(id) ? u.elements[id] : undefined]).filter((e): e is Box => !!e);
     const mask = maskRects(w, h, [...textBoxes, ...externalBoxes], 2);
     const lineMask = maskRects(w, h, [...textLines, ...externalBoxes], 2);
+    // the anti-aliased pixel row or column of a painted edge Chromium draws off the device grid: it snaps a box to whole
+    // CSS px, so at scale 0.75 an edge can fall at x.25, x.5 or x.75 device px, where UI Toolkit puts it on a whole pixel
+    // (Yoga); the box check measures where the edge is (findings: pixel grid)
+    const offGrid = offGridEdges(compared.filter((id) => !ctx.painters || ctx.painters.has(id)).map((id) => g.elements[id]), g.scale);
+    maskRects(w, h, offGrid, 0, mask);
+    maskRects(w, h, offGrid, 0, lineMask);
+    edgeMasked = offGrid.length;
+    // outside the screen root nothing is designed: a breakpoint's coverage viewport of another aspect shows the page's
+    // own background in the golden and the panel's clear colour in Unity there
+    const rootBox = ctx.root ? g.elements[ctx.root] : undefined;
+    if (rootBox?.visible) {
+      const r0 = rootBox, outside: Rect[] = [];
+      if (r0.x > 0) outside.push({ x: 0, y: 0, w: r0.x, h });
+      if (r0.x + r0.w < w) outside.push({ x: r0.x + r0.w, y: 0, w: w - r0.x - r0.w, h });
+      if (r0.y > 0) outside.push({ x: 0, y: 0, w, h: r0.y });
+      if (r0.y + r0.h < h) outside.push({ x: 0, y: r0.y + r0.h, w, h: h - r0.y - r0.h });
+      maskRects(w, h, outside, 0, mask);
+      maskRects(w, h, outside, 0, lineMask);
+      outsideScreen = outside.length > 0;
+    }
     masked = [...textBoxes, ...externalBoxes].filter((r) => r.w > 0 && r.h > 0).map((r) => ({ x: r6(r.x - 2), y: r6(r.y - 2), w: r6(r.w + 4), h: r6(r.h + 4) }));
     const external = new Set(g.external);
     const fullViewport = (e: Box) => e.x <= 0 && e.y <= 0 && e.x + e.w >= w && e.y + e.h >= h;
@@ -401,11 +501,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return false;
     };
     /** `light`: the design's ink is lighter than its background (font smoothing thickens such text most). */
-    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean }
+    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean; later: boolean }
     const inkLines: InkLine[] = [];
     const usable = (p: RingPoint, cover: Rect[]) => p.gx >= 0 && p.gy >= 0 && p.gx < w && p.gy < h && p.ux >= 0 && p.uy >= 0 && p.ux < w && p.uy < h
       && !cover.some((l) => inside(l, p.gx, p.gy, 1)) && !onText(p.gx, p.gy) && !onText(p.ux, p.uy);
 
+    /** Elements below ssimElement, judged after every other check (a measured lower limit needs those to pass). */
+    const lowSsim: { id: string; s0: number; best: number; region: Rect; carriesText: boolean; shadow: boolean }[] = [];
     for (const id of compared) {
       const ge = g.elements[id], ue = u.elements[id], row = rowOf.get(id)!;
       if (external.has(id)) continue;
@@ -422,13 +524,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           let best = s0;
           if (s0 < t.ssimElement - EPS) { const s1 = regionSsimShifted(gp, up, m0, region, 1); row.ssimShifted = r6(s1); best = Math.max(s0, s1); }
           if (!worst || best < worst.ssim) worst = { id, ssim: r6(best) };
-          if (best < t.ssimElement - EPS) {
-            issue(id, "ssim", `element SSIM ${s0.toFixed(5)} (${row.ssimShifted!.toFixed(5)} with offsets up to 1 px) over the ${carriesText ? "box with its text lines copied from the design" : "box"}${shadow ? " and baked shadow" : ""} (limit ${t.ssimElement})`, region);
-          }
+          if (best < t.ssimElement - EPS) lowSsim.push({ id, s0, best, region, carriesText, shadow: !!shadow });
         }
       }
 
       const cover = covering(id);
+      // the golden's painted rect (Chromium snaps a box to whole CSS px) places the ring samples and the corner curves
+      const gPaint = paintedRect(ge, g.scale);
       // background colour: the grid, then the ring inside the border, never silently nothing
       if (!ctx.backgrounds || ctx.backgrounds.has(id)) {
         const ix0 = Math.max(ge.x, ue.x), iy0 = Math.max(ge.y, ue.y), ix1 = Math.min(ge.x + ge.w, ue.x + ue.w), iy1 = Math.min(ge.y + ge.h, ue.y + ue.h);
@@ -441,10 +543,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           for (const [x, y] of grid) pts.push({ where: `(${x}, ${y})`, kind: "edge", gx: x, gy: y, ux: x, uy: y, win: 3 });
         }
         // grid points off the rounded corners' anti-aliased curves (outer, and inner inside a border)
-        const curve = (p: RingPoint) => nearCurve(ge, ctx.borders?.[id], ctx.radii?.[id], p.gx, p.gy) || nearCurve(ue, ctx.borders?.[id], ctx.radii?.[id], p.ux, p.uy);
+        const curve = (p: RingPoint) => nearCurve(gPaint, ctx.borders?.[id], ctx.radii?.[id], p.gx, p.gy) || nearCurve(ue, ctx.borders?.[id], ctx.radii?.[id], p.ux, p.uy);
         // and where the design is flat (a picture's detail or an edge is measured by SSIM)
         let use = pts.filter((p) => usable(p, cover) && !curve(p) && flatAt(gp, p.gx, p.gy));
-        if (!use.length) use = ringPoints(ge, ue, ctx.borders?.[id], ["edge"], ctx.radii?.[id]).filter((p) => usable(p, cover));
+        if (!use.length) use = ringPoints(gPaint, ue, ctx.borders?.[id], ["edge"], ctx.radii?.[id]).filter((p) => usable(p, cover));
         row.samples = use.length;
         if (!use.length) notSampled.push(id);
         let bestS: { de: number; p: RingPoint; a: number[]; b: number[] } | null = null;
@@ -465,7 +567,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       // an element that carries text and paints: background, border and corner shape around the text
       if (carriesText && paints(id)) {
         let bestR: { de: number; p: RingPoint; a: number[]; b: number[] } | null = null;
-        for (const p of ringPoints(ge, ue, ctx.borders?.[id], ["edge", "border", "corner"], ctx.radii?.[id])) {
+        for (const p of ringPoints(gPaint, ue, ctx.borders?.[id], ["edge", "border", "corner"], ctx.radii?.[id])) {
           if (!usable(p, cover)) continue;
           const r = bestDeltaE(gp, p.gx, p.gy, up, p.ux, p.uy, p.win);
           if (!bestR || r.de > bestR.de) bestR = { de: r.de, p, a: r.a, b: r.b };
@@ -483,21 +585,24 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       if (carriesText && ue.lines.length === ge.lines.length) {
         // the font size in device px: the IR's, else the line box over the kit's largest ratio (4/3), never more than the real size
         const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
-        const limit = inkColourLimit(t, px);
-        let wDe: { de: number; i: number; a: number[]; b: number[] } | null = null;
+        let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number } | null = null, maxDe = 0;
         ge.lines.forEach((gl, i) => {
           const win = grow(unionRect(gl, ue.lines[i]), 1);
           const a = inkIn(gp, win);
           if (!a) return;
           const b = inkIn(up, win);
-          inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg) });
-          if (b) { const de = deltaE2000(a.ink, b.ink); if (!wDe || de > wDe.de) wDe = { de, i, a: a.ink, b: b.ink }; }
+          inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx });
+          if (b) {
+            const de = deltaE2000(a.ink, b.ink), limit = inkColourLimit(t, px, i);
+            maxDe = Math.max(maxDe, de);
+            if (!wDe || de - limit > wDe.de - wDe.limit) wDe = { de, i, a: a.ink, b: b.ink, limit };
+          }
         });
         if (wDe) {
-          const x = wDe as { de: number; i: number; a: number[]; b: number[] };
-          row.ink = r6(x.de);
-          if (x.de > limit + EPS) {
-            issue(id, "ink", `line ${x.i + 1} of ${ge.lines.length}: text colour ΔE2000 ${x.de.toFixed(2)}, design ${hex(x.a)}, Unity ${hex(x.b)} (limit ${limit} at ${Number(px.toFixed(2))} px)`, ge.lines[x.i]);
+          const x = wDe as { de: number; i: number; a: number[]; b: number[]; limit: number };
+          row.ink = r6(maxDe);
+          if (x.de > x.limit + EPS) {
+            issue(id, "ink", `line ${x.i + 1} of ${ge.lines.length}: text colour ΔE2000 ${x.de.toFixed(2)}, design ${hex(x.a)}, Unity ${hex(x.b)} (limit ${x.limit} at ${Number(px.toFixed(2))} px${x.i >= 1 && px < t.textInkLaterBelowPx ? ", a later line" : ""})`, ge.lines[x.i]);
           }
         }
       }
@@ -523,9 +628,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return ratios.length >= 3 ? ratios[(ratios.length - 1) >> 1] / 2 + ratios[ratios.length >> 1] / 2 : null;
     };
     const medians = { light: medianOf(true), dark: medianOf(false) };
-    const lo = t.textInkRatio * (1 - t.textInkCoverage), hi = 1 + t.textInkCoverage;
+    const band = (l: InkLine) => { const c = l.later ? t.textInkCoverageLater : t.textInkCoverage; return { lo: t.textInkRatio * (1 - c), hi: 1 + c }; };
     const worstInk = new Map<string, { l: InkLine; score: number }>();
     for (const l of inkLines) {
+      const { lo, hi } = band(l);
       const median = l.light ? medians.light : medians.dark;
       const score = l.ratio === null ? Infinity : Math.max(lo - l.ratio, l.ratio - hi, median === null ? -Infinity : Math.abs(l.ratio / median - 1) - t.textInkMedianTolerance);
       const prev = worstInk.get(l.id);
@@ -535,6 +641,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       rowOf.get(id)!.inkRatio = l.ratio === null ? 0 : r6(l.ratio);
       if (score <= EPS) continue;
       const head = `line ${l.i + 1} of ${l.n}`, tail = "weight, size or glyphs differ";
+      const { lo, hi } = band(l);
       if (l.ratio === null) issue(id, "inkCoverage", `${head}: no text ink in Unity`, l.at);
       else if (l.ratio < lo - EPS || l.ratio > hi + EPS) {
         issue(id, "inkCoverage", `${head}: Unity draws ${l.ratio.toFixed(2)}× the design's text ink (expected ${lo.toFixed(2)}–${hi.toFixed(2)}×): ${tail}`, l.at);
@@ -542,6 +649,16 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         const median = (l.light ? medians.light : medians.dark)!;
         issue(id, "inkCoverage", `${head}: text ink ${l.ratio.toFixed(2)}× the design's, ${pct(l.ratio / median - 1)} against the median ${median.toFixed(2)}× of this capture's ${l.light ? "light" : "dark"} text (limit ±${Math.round(t.textInkMedianTolerance * 100)} %): ${tail}`, l.at);
       }
+    }
+
+    // element SSIM below ssimElement: a measured lower limit when the element's every other check passed
+    const otherIssue = new Set(issues.filter((i) => i.kind !== "ssim").map((i) => i.id));
+    for (const l of lowSsim) {
+      const row = rowOf.get(l.id)!;
+      const relaxed = relaxedSsimLimit(t, l.region.w * l.region.h, !!ctx.pictures?.has(l.id));
+      if (relaxed && !otherIssue.has(l.id) && l.best >= relaxed.limit - EPS) { row.ssimLimit = relaxed.limit; continue; }
+      const why = relaxed ? (otherIssue.has(l.id) ? `; the limit ${relaxed.limit} for ${relaxed.why} needs its other checks to pass` : `; ${relaxed.limit} for ${relaxed.why}`) : "";
+      issue(l.id, "ssim", `element SSIM ${l.s0.toFixed(5)} (${row.ssimShifted!.toFixed(5)} with offsets up to 1 px) over the ${l.carriesText ? "box with its text lines copied from the design" : "box"}${l.shadow ? " and baked shadow" : ""} (limit ${t.ssimElement}${why})`, l.region);
     }
 
     const diff = difference(gp, up, mask, wantHeat);
@@ -554,7 +671,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   return {
     verdict: {
       capture: g.capture, pass: issues.length === 0, ssim: ssim === null ? null : r6(ssim), issues, size: [gp.w, gp.h],
-      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, notSampled, translucent, masked, elements: rows,
+      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
     },
     heat,
   };
