@@ -137,7 +137,7 @@ export const rule: Rule = {
 
     for (const e of els) {
       if (!L.inScreen(e.index) || !e.box || L.visibleDisplay(e.index) === "none" || !paints(e)) continue;
-      const above: string[] = [], hits: string[] = [];
+      const above: string[] = [], hits: string[] = [], via: string[] = [];
       const up = chain(e.index), upSet = new Set(up);
       const layers = layersOf(L, e.index), base = layers[0];
       for (const v of layers) {
@@ -157,7 +157,8 @@ export const rule: Rule = {
           const a = up[up.indexOf(lca) - 1], bb = fUp[fUp.indexOf(lca) - 1];
           // the closest common stacking context (or positioned ancestor) holds both participants
           const sc = up.slice(up.indexOf(lca)).find((x) => context(x, null) || positioned(x, null)) ?? -1;
-          const css = cssPaintsAbove(participant(e.index, sc, v), participant(f.index, sc, null));
+          const pe = participant(e.index, sc, v);
+          const css = cssPaintsAbove(pe, participant(f.index, sc, null));
           const order = unityAt(lca);
           if (!order || !order.has(a) || !order.has(bb)) continue;
           const unity = order.get(a)! > order.get(bb)!;
@@ -165,12 +166,14 @@ export const rule: Rule = {
           // boxes that overlap in the base style where the siblings already differ: U-CSS-032 reports them
           if (v.key === "" && conflicts.has(`${Math.min(a, bb)},${Math.max(a, bb)}`) && overlaps(own, f.box)) continue;
           if (!above.includes(v.key)) above.push(v.key);
+          if (pe.index !== e.index && !via.includes(pe.name)) via.push(pe.name);
           if (!hits.includes(L.name(f.index)) && hits.length < 3) hits.push(L.name(f.index));
         }
       }
       if (hits.length) {
-        c.add(e.path, `${L.name(e.index)} paints after the in-flow elements in CSS in ${above.map((k) => k || "the base style").join(", ")} (it is positioned or a stacking context there), ` +
-          `and what it paints (its box, translate or shadow) reaches ${hits.join(", ")}, which come later in the markup: UI Toolkit paints ${hits.length > 1 ? "them" : "it"} on top`);
+        const why = via.length ? `inside ${via.join(", ")}, which ${via.length > 1 ? "are" : "is"} positioned or a stacking context` : "it is positioned or a stacking context there";
+        c.add(e.path, `${L.name(e.index)} paints after the in-flow elements in CSS in ${above.map((k) => k || "the base style").join(", ")} (${why}), ` +
+          `and what it paints (its box, translate or shadow) reaches ${hits.join(", ")}, which ${hits.length > 1 ? "come" : "comes"} later in the markup: UI Toolkit paints ${hits.length > 1 ? "them" : "it"} on top`);
       }
     }
     return c.findings(rule,

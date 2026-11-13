@@ -265,6 +265,9 @@ describe("device grid, group opacity and stacking rules", () => {
     const fail = await ids(`<div class="row"><div class="card rel" data-u-id="a"></div></div><div class="panel"></div>`, css, "U-CSS-041");
     expect(fail.map((x) => x.detail)).toEqual([expect.stringMatching(/'a'.*the base style.*div:1/)]);
     expect(await ids(`<div class="row"><div class="card rel" data-u-id="a"></div></div><div class="panel rel"></div>`, css, "U-CSS-041")).toEqual([]);
+    // a static card inside a relative wrapper paints with the wrapper, after the later static panel
+    const nested = await ids(`<div class="outer"><div class="row rel"><div class="card" data-u-id="a"></div></div></div><div class="panel"></div>`, css, "U-CSS-041");
+    expect(nested.map((x) => x.detail)).toEqual([expect.stringMatching(/^'a' paints .* \(inside div:0, which is positioned or a stacking context\).*reaches div:1, which comes later/)]);
     // a transform's translate counts like the translate property
     const moved = await ids(`<div class="row"><div class="card lift" data-u-id="a"></div></div><div class="panel" style="margin-top:40px"></div>`,
       `${css} .card{box-shadow:none} .lift:hover{transform:translateY(48px)}`, "U-CSS-041");
