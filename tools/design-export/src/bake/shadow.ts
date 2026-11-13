@@ -7,8 +7,8 @@
  * A probe render, large enough for every corner band to end, measures where columns and rows stop changing (the
  * insets keep one uniform texel inside each band, so bilinear sampling has no seam). The shadow is then drawn at the
  * smallest element size whose image is exactly the probe's 9-slice — Chromium blurs small boxes another way than large
- * ones — so the 9-slice stretched to any element at least that large reproduces Chromium and many sizes share one file.
- * A smaller element is drawn at its own size (exact at that size). The image rect is the union of the shadow and the
+ * ones — and each element size is checked once against Chromium's own rendering at that size: the shared 9-slice when it
+ * is exact there (many sizes share one file), else the element's own bake (also for elements below the shared size). The image rect is the union of the shadow and the
  * border box for outer shadows, and the padding box for inset ones, so its offset does not depend on the size.
  *
  * One page per run, warm; renders are serialised on it and cached by their inputs, and the asset file is written once
@@ -51,8 +51,16 @@ export function splitShadows(value: string): { outer: string[]; inset: string[] 
   return out;
 }
 
+/** Why a box-shadow value cannot be baked (empty when it can be); bakeShadow throws the same text. Shared with lint U-CSS-014. */
+export function shadowIssues(value: string, opts: Pick<ShadowOptions, "fontSize" | "rootFontSize"> = {}): string[] {
+  const { outer, inset } = splitShadows(value);
+  const out: string[] = [];
+  for (const item of [...outer, ...inset]) { try { parseShadow(item, opts); } catch (e) { out.push((e as Error).message); } }
+  return out;
+}
+
 interface Parsed { inset: boolean; ox: number; oy: number; blur: number; spread: number; colorless: boolean }
-function parseShadow(item: string, o: ShadowOptions): Parsed {
+function parseShadow(item: string, o: Pick<ShadowOptions, "fontSize" | "rootFontSize">): Parsed {
   const toks = splitTopLevel(item, " ");
   const lens: number[] = [];
   let colorless = true, inset = false;
@@ -75,7 +83,7 @@ const BAKE_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>html,
   `<body><div id="bake"></div></body></html>`;
 
 interface Spec { shadow: string; radius: string; borders: [number, number, number, number]; color: string; opaque: boolean; fontSize: number; rootFontSize: number }
-interface Probe { slice: [number, number, number, number]; off: BoxRect; min: { w: number; h: number }; bytes: Buffer; size: [number, number] }
+interface Probe { slice: [number, number, number, number]; off: BoxRect; min: { w: number; h: number }; bytes: Buffer; size: [number, number]; pad: number }
 interface Final { bytes: Buffer; w: number; h: number; slice: [number, number, number, number]; offset: BoxRect }
 
 class PageBaker {
@@ -109,7 +117,7 @@ class PageBaker {
         document.documentElement.style.fontSize = `${a.rootFontSize}px`;
         const el = document.getElementById("bake") as HTMLElement;
         // an opaque background colour painted into an empty content box: Chromium treats the box as opaque, nothing shows
-        const opaque = a.opaque ? `background-color:#000000;background-clip:content-box;padding:${Math.ceil(a.h / 2)}px ${Math.ceil(a.w / 2)}px;` : "";
+        const opaque = a.opaque ? `background-color:#000000;background-clip:content-box;padding:${a.h / 2}px ${a.w / 2}px;` : "";
         el.style.cssText = `left:${a.pad}px;top:${a.pad}px;width:${a.w}px;height:${a.h}px;border-width:${a.borders.map((b) => `${b}px`).join(" ")};` +
           `border-radius:${a.radius};color:${a.color};font-size:${a.fontSize}px;box-shadow:${a.shadow};${opaque}`;
         void el.offsetWidth;
@@ -129,6 +137,18 @@ export async function openBakePage(browser: Browser): Promise<{ page: Page; clos
   const context = await browser.newContext({ viewport: { width: 640, height: 640 }, deviceScaleFactor: 1, reducedMotion: "reduce" });
   const page = await context.newPage();
   return { page, close: () => context.close() };
+}
+
+const shared = new WeakMap<Browser, Promise<Page>>();
+/** The bake page of a browser, opened on first use and kept until the browser closes: every screen of a run shares its cache. */
+export function sharedBakePage(browser: Browser): Promise<Page> {
+  let p = shared.get(browser);
+  if (!p) {
+    p = openBakePage(browser).then((b) => b.page);
+    p.catch(() => shared.delete(browser));
+    shared.set(browser, p);
+  }
+  return p;
 }
 
 /** First and last index of the run of columns (or rows) equal to `mid`, inside [lo, hi). */
@@ -241,11 +261,11 @@ export async function bakeShadow(page: Page, boxShadow: string, borderRadius: st
           const { w, h } = at(c);
           const rect = { x: m.pad + m.off.x, y: m.pad + m.off.y, w: w + m.off.w, h: h + m.off.h };
           const bytes = await baker.render(spec, w, h, m.pad, rect);
-          return sameNineSlice(decodePng(bytes), m.img, slice) ? { slice, off: m.off, min: { w, h }, bytes, size: [rect.w, rect.h] as [number, number] } : null;
+          return sameNineSlice(decodePng(bytes), m.img, slice) ? { slice, off: m.off, min: { w, h }, bytes, size: [rect.w, rect.h] as [number, number], pad: m.pad } : null;
         };
         for (let c = Math.max(1, 48 - (l + r - m.off.w), 48 - (t + b - m.off.h)); ; c *= 2) {
           const { w, h } = at(c);
-          if (w >= size && h >= size) return { slice, off: m.off, min: { w: size, h: size }, bytes: await baker.render(spec, size, size, m.pad, m.rect), size: [m.rect.w, m.rect.h] };
+          if (w >= size && h >= size) return { slice, off: m.off, min: { w: size, h: size }, bytes: await baker.render(spec, size, size, m.pad, m.rect), size: [m.rect.w, m.rect.h], pad: m.pad };
           const found = await tryC(c);
           if (found) return found;
         }
@@ -257,16 +277,21 @@ export async function bakeShadow(page: Page, boxShadow: string, borderRadius: st
   const p = await probe;
   if (!p) return null;
 
-  // ---- an element at least that large uses the shared 9-slice; a smaller one is baked at its own size ------------
+  // ---- each element size once: the shared 9-slice when Chromium draws exactly that at this size, else its own bake --
   const box = opts.box;
-  let f: Final | null;
-  if (!box || (box.w >= p.min.w && box.h >= p.min.h)) f = { bytes: p.bytes, w: p.size[0], h: p.size[1], slice: p.slice, offset: p.off };
-  else {
+  const sharedFinal: Final = { bytes: p.bytes, w: p.size[0], h: p.size[1], slice: p.slice, offset: p.off };
+  let f: Final | null = sharedFinal;
+  if (box) {
     const w = Math.max(1, Math.round(box.w)), h = Math.max(1, Math.round(box.h));
     const fkey = `${key}\u0000${w}\u0000${h}`;
     let fin = baker.finals.get(fkey);
     if (!fin) {
       fin = (async (): Promise<Final | null> => {
+        if (w >= p.min.w && h >= p.min.h) {
+          const rect = { x: p.pad + p.off.x, y: p.pad + p.off.y, w: w + p.off.w, h: h + p.off.h };
+          const here = decodePng(await baker.render(spec, w, h, p.pad, rect));
+          if (sameNineSlice(here, decodePng(p.bytes), p.slice)) return sharedFinal;
+        }
         const m = await measure(w, h, reach + 2);
         if (!m) return null;
         const [l, r] = insets(m.cols, m.rect.x, m.rect.w), [t, b] = insets(m.rows, m.rect.y, m.rect.h);

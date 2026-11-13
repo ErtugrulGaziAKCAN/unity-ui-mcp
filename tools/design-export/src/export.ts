@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { chromium, type Browser } from "playwright";
+import { CHROMIUM_ARGS, launchChromium } from "./browser.js";
 import { captureMatrix } from "./capture/capture.js";
 import { buildIr } from "./extract/tree.js";
 import { stableStringify } from "./ir/stableStringify.js";
@@ -165,7 +166,7 @@ export function toolHash(): string {
   const schema = fs.readFileSync(new URL("./ir/schema.json", import.meta.url));
   let chromiumBuild = "unknown";
   try { chromiumBuild = chromium.executablePath(); } catch { /* not installed: the export fails later with a clear error */ }
-  return sha256([pkg.version, sha256(schema), chromiumBuild, process.platform, process.arch].join("\n"));
+  return sha256([pkg.version, sha256(schema), chromiumBuild, CHROMIUM_ARGS.join(" "), process.platform, process.arch].join("\n"));
 }
 
 // ---- output folder safety ----------------------------------------------------------------------------------------
@@ -273,7 +274,7 @@ const resolveKit = (kit: string | KitConfig): KitConfig => {
 async function withBrowser<T>(given: Browser | (() => Promise<Browser>) | undefined, fn: (b: Browser) => Promise<T>): Promise<T> {
   if (typeof given === "function") return fn(await given());
   if (given) return fn(given);
-  const b = await chromium.launch();
+  const b = await launchChromium();
   try { return await fn(b); } finally { await b.close().catch(() => {}); }
 }
 

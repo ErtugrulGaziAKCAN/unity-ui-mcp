@@ -3,9 +3,10 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { chromium, type Browser, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { launchChromium } from "../src/browser.js";
 import { decodePng, pixel, type Rgba } from "../src/bake/png.js";
-import { bakeShadow, openBakePage, splitShadows } from "../src/bake/shadow.js";
+import { bakeShadow, openBakePage, sharedBakePage, splitShadows } from "../src/bake/shadow.js";
 import { gradientStopGap, gradientToSvg } from "../src/bake/gradient.js";
 import { readKit, type KitConfig } from "../src/kit.js";
 import { openDesign } from "../src/load.js";
@@ -13,6 +14,7 @@ import { collectSnapshot, lint } from "../src/lint/index.js";
 import { buildIr, type IrBuild } from "../src/extract/tree.js";
 import type { IrNode } from "../src/ir/types.js";
 import { stableStringify } from "../src/ir/stableStringify.js";
+import { validateIr as validateIrLoose } from "../src/ir/validate.js";
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const fx = (n: string) => path.join(here, "fixtures", "extract", n);
@@ -25,7 +27,7 @@ let ref: Page;
 const tmpDirs: string[] = [];
 const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), "bake-")); tmpDirs.push(d); return d; };
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchChromium();
   bake = await openBakePage(browser);
   ref = await (await browser.newContext({ viewport: { width: 1400, height: 900 }, deviceScaleFactor: 1 })).newPage();
 });
@@ -161,6 +163,9 @@ describe("bakeShadow", () => {
     { name: "uneven corners", shadow: "0 4px 16px rgba(0,0,0,0.5)", radius: "24px 4px 16px 0px", w: 400, h: 200, bg: "rgba(255,255,255,0.05)" },
     { name: "inset under a translucent border", shadow: "inset 0 2px 6px rgba(0,0,0,0.5)", radius: "12px", w: 300, h: 140, border: 3, borderColor: "rgba(22,194,213,0.5)", bg: "rgba(255,255,255,0.08)" },
     { name: "two inset shadows", shadow: "inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -12px 24px -6px rgba(0,0,0,0.6)", radius: "16px", w: 260, h: 120, bg: "#123c47" },
+    { name: "odd size 71×33, opaque", shadow: "0 8px 24px rgba(0,0,0,0.4)", radius: "8px", w: 71, h: 33, bg: "#16c2d5" },
+    { name: "odd size 51×41, opaque", shadow: "0 8px 24px rgba(0,0,0,0.4)", radius: "12px", w: 51, h: 41, bg: "#123c47" },
+    { name: "odd size 301×121, opaque, hard", shadow: "6px 6px 0 #000000", radius: "10px", w: 301, h: 121, bg: "#123c47" },
   ];
   for (const c of cases) {
     it(`composited bake matches Chromium: ${c.name}`, async () => {
@@ -201,6 +206,53 @@ describe("bakeShadow", () => {
   }
 });
 
+describe("bake against Chromium at the golden viewport", () => {
+  /** A 2560×1440 page like the golden captures: the shadow alone, at many positions, against the bake drawn as a 9-slice. */
+  const worstAt = async (shadow: string, radius: string, w: number, h: number, positions: [number, number][]) => {
+    const out = tmp();
+    const s = (await bakeShadow(bake.page, shadow, radius, out, { box: { w, h } }))!;
+    const img = decodePng(fs.readFileSync(path.join(out, s.file)));
+    const [t, r, b, l] = s.slice!;
+    const map = (d: number, size: number, lo: number, hi: number, src: number) => (d < lo ? d : d >= size - hi ? src - (size - d) : lo);
+    const page = await (await browser.newContext({ viewport: { width: 2560, height: 1440 }, deviceScaleFactor: 1 })).newPage();
+    // the bake against Chromium at each position, and Chromium at each position against itself at the first one
+    let worst = 0, where = "";
+    try {
+      let first: Rgba | null = null;
+      for (const [X, Y] of positions) {
+        await page.setContent(doc(`<div style="left:${X}px;top:${Y}px;width:${w}px;height:${h}px;border-radius:${radius};box-shadow:${shadow}"></div>`));
+        const rect = { x: X + s.offset.x, y: Y + s.offset.y, width: w + s.offset.w, height: h + s.offset.h };
+        const alone = decodePng(await page.screenshot({ clip: rect, omitBackground: true }));
+        first ??= alone;
+        let bake = 0, self = 0;
+        for (let y = 0; y < alone.h; y++) for (let x = 0; x < alone.w; x++) {
+          const a = pixel(alone, x, y), c = pixel(img, map(x, alone.w, l, r, img.w), map(y, alone.h, t, b, img.h)), f = pixel(first, x, y);
+          bake = Math.max(bake, ...a.map((v, k) => Math.abs(v - c[k])));
+          self = Math.max(self, ...a.map((v, k) => Math.abs(v - f[k])));
+        }
+        // beyond one code value, the bake may differ only where Chromium differs from itself between positions
+        const excess = bake - Math.max(1, self);
+        if (excess > worst) { worst = excess; where = `(${X},${Y}) bake ${bake}, Chromium against itself ${self}`; }
+      }
+    } finally { await page.context().close(); }
+    return { worst, where };
+  };
+  it("matches at 20 page positions (one raster tile per page)", async () => {
+    const positions: [number, number][] = Array.from({ length: 20 }, (_, k) => [120 + ((k * 397) % 1700), 90 + ((k * 211) % 900)]);
+    const r = await worstAt("0 12px 40px 8px rgba(0,0,0,0.5)", "24px", 640, 360, [[150, 140], ...positions]);
+    expect(r.worst, r.where).toBe(0);
+  }, 60000);
+  it("matches far above the shared size (each size checked against a direct bake)", async () => {
+    for (const [w, h] of [[900, 560], [2100, 1100]] as const) {
+      const r = await worstAt("0 12px 40px 8px rgba(0,0,0,0.5)", "24px", w, h, [[150, 140]]);
+      expect(r.worst, `${w}×${h} ${r.where}`).toBe(0);
+    }
+  }, 60000);
+  it("one bake page per browser, shared by every screen", async () => {
+    expect(await sharedBakePage(browser)).toBe(await sharedBakePage(browser));
+  });
+});
+
 // ---- gradients ----------------------------------------------------------------------------------------------------------
 describe("gradientToSvg", () => {
   it("writes a linear gradient in user space over the element box", () => {
@@ -231,6 +283,10 @@ describe("gradientToSvg", () => {
     expect(gradientStopGap("linear-gradient(90deg, red 0px, blue 100px)", 400, 100)).toBeCloseTo(0.25, 9);
     expect(gradientStopGap("linear-gradient(red, red)", 400, 100)).toBeNull();
     expect(gradientStopGap("linear-gradient(90deg, red, blue), radial-gradient(#000 0%, #fff 10%)", 400, 100)).toBeCloseTo(0.1, 9);
+    // stops outside the line extend the SVG vector: the gap is a fraction of what the ramp spans
+    expect(gradientStopGap("linear-gradient(90deg, red -50%, blue 150%)", 400, 100)).toBeCloseTo(1, 9);
+    expect(gradientStopGap("linear-gradient(90deg, red 0%, red 40%, blue 60%, blue 200%)", 400, 100)).toBeCloseTo(0.1, 9);
+    expect(gradientStopGap("radial-gradient(circle 100px, red 0px, blue 50px, green 200px)", 400, 100)).toBeCloseTo(0.25, 9);
   });
 
   it("is deterministic and rejects syntax it cannot reproduce", () => {
@@ -241,8 +297,12 @@ describe("gradientToSvg", () => {
     expect(() => gradientToSvg("conic-gradient(red, blue)", 10, 10)).toThrow(/conic/);
   });
 
-  /** Chromium's CSS gradient against Chromium's rendering of the SVG at the same size: every 3rd pixel within ΔE2000 1. */
-  const grads: { g: string; w: number; h: number; border?: number }[] = [
+  /**
+   * Chromium's CSS gradient against Chromium's rendering of the SVG at the same size, with the border drawn over it as UI
+   * Toolkit does: every border pixel and every 3rd inner pixel within ΔE2000 1, or (unless `strict`) one code value per
+   * channel (repeated tiles and stacked translucent gradients round differently; one code exceeds ΔE 1 on dark colours).
+   */
+  const grads: { g: string; w: number; h: number; border?: number; borderColor?: string; repeat?: string; strict?: boolean }[] = [
     { g: "linear-gradient(90deg, #1f8a70, #2c6fbb)", w: 400, h: 200 },
     { g: "linear-gradient(180deg, #00e5ff, #0b1f26)", w: 400, h: 200 },
     { g: "linear-gradient(45deg, #c0572b, #d4a017)", w: 400, h: 200 },
@@ -262,19 +322,38 @@ describe("gradientToSvg", () => {
     { g: "radial-gradient(80px 40px at 50% 50%, #ffffff, #000000)", w: 240, h: 140 },
     { g: "linear-gradient(180deg, rgba(0,0,0,0.6), transparent), linear-gradient(90deg, #1f8a70, #2c6fbb)", w: 300, h: 150 },
     { g: "linear-gradient(90deg, #1f8a70, #2c6fbb)", w: 300, h: 150, border: 6 },
+    // under a translucent border CSS repeats the padding-box tile (glass card)
+    { g: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))", w: 300, h: 150, border: 1, borderColor: "rgba(255,255,255,0.08)", strict: true },
+    { g: "linear-gradient(180deg, #16c2d5, #0b1f26)", w: 300, h: 150, border: 1, borderColor: "rgba(255,255,255,0.08)", strict: true },
+    { g: "linear-gradient(180deg, #16c2d5, #0b1f26)", w: 300, h: 150, border: 2, borderColor: "rgba(255,255,255,0.3)", repeat: "no-repeat" },
+    { g: "linear-gradient(135deg, #16c2d5, #0b1f26 60%, #8e44ad)", w: 280, h: 140, border: 9, repeat: "repeat-x" },
+    { g: "linear-gradient(135deg, #16c2d5, #0b1f26 60%, #8e44ad)", w: 280, h: 140, border: 9, repeat: "repeat-y" },
+    { g: "radial-gradient(circle at 30% 40%, #ffffff, #16c2d5 50%, #0b1f26)", w: 240, h: 140, border: 12, repeat: "round" },
+    { g: "radial-gradient(circle at 30% 40%, #ffffff, #16c2d5 50%, #0b1f26)", w: 240, h: 140, border: 12, repeat: "space" },
+    { g: "linear-gradient(90deg, #ff0000, #0000ff)", w: 200, h: 100, border: 7, repeat: "repeat no-repeat" },
+    { g: "linear-gradient(rgba(0,0,0,0.5), transparent), linear-gradient(90deg, #1f8a70, #2c6fbb)", w: 260, h: 120, border: 5, repeat: "no-repeat, repeat" },
+    // positions with offsets and degenerate shapes (CSS Images 3 §3.2.4)
+    { g: "radial-gradient(circle at right 10px top 20px, #ffffff, #000000)", w: 240, h: 140 },
+    { g: "radial-gradient(ellipse at left 20px bottom 10%, #ffffff, #16c2d5 60%, #0b1f26)", w: 240, h: 140 },
+    { g: "radial-gradient(closest-side at 0% 50%, #ffffff, #000000)", w: 240, h: 140 },
+    { g: "radial-gradient(0px 40px at 40% 50%, #ff0000, #0000ff 60px)", w: 240, h: 140 },
+    { g: "radial-gradient(closest-side at 50% 0%, #ffffff, #16c2d5)", w: 240, h: 140 },
+    { g: "radial-gradient(circle closest-side at 0 0, #ffffff, #000000)", w: 240, h: 140 },
   ];
   for (const c of grads) {
-    it(`SVG renders like the CSS gradient: ${c.g}${c.border ? ` (border ${c.border}px)` : ""}`, async () => {
-      const b = c.border ?? 0;
-      const svg = gradientToSvg(c.g, c.w, c.h, { borders: [b, b, b, b] });
+    it(`SVG renders like the CSS gradient: ${c.g}${c.border ? ` (border ${c.border}px${c.borderColor ? ` ${c.borderColor}` : ""})` : ""}${c.repeat ? ` ${c.repeat}` : ""}`, async () => {
+      const b = c.border ?? 0, border = `border:${b}px solid ${c.borderColor ?? "transparent"};`;
+      const svg = gradientToSvg(c.g, c.w, c.h, { borders: [b, b, b, b], repeat: c.repeat });
       const clip = { x: 0, y: 0, width: c.w, height: c.h };
-      const css = await shot(ref, doc(`<div style="left:0;top:0;width:${c.w}px;height:${c.h}px;background-image:${c.g};${b ? `border:${b}px solid transparent;` : ""}"></div>`, PAGE), clip, false);
-      const img = await shot(ref, doc(`<img style="position:absolute;left:0;top:0;width:${c.w}px;height:${c.h}px" src="data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}">`, PAGE), clip, false);
+      const css = await shot(ref, doc(`<div style="left:0;top:0;width:${c.w}px;height:${c.h}px;background-image:${c.g};${b ? border : ""}${c.repeat ? `background-repeat:${c.repeat};` : ""}"></div>`, PAGE), clip, false);
+      const over = b ? `<div style="left:0;top:0;width:${c.w}px;height:${c.h}px;${border}"></div>` : "";
+      const img = await shot(ref, doc(`<img style="position:absolute;left:0;top:0;width:${c.w}px;height:${c.h}px" src="data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}">${over}`, PAGE), clip, false);
       let worst = 0, where = "";
-      // a border shows the repeated tile in CSS; under an opaque border it is covered, so only the padding box is compared
-      for (let y = b; y < c.h - b; y += 3) for (let x = b; x < c.w - b; x += 3) {
-        const d = de2000(pixel(css, x, y), pixel(img, x, y));
-        if (d > worst) { worst = d; where = `${x},${y}`; }
+      for (let y = 0; y < c.h; y += (y < b + 1 || y >= c.h - b - 1 ? 1 : 3)) for (let x = 0; x < c.w; x += (x < b + 1 || x >= c.w - b - 1 ? 1 : 3)) {
+        const a = pixel(css, x, y), k = pixel(img, x, y);
+        const d = de2000(a, k);
+        if (!c.strict && a.every((v, i) => Math.abs(v - k[i]) <= 1)) continue;
+        if (d > worst) { worst = d; where = `${x},${y}: ${a} vs ${k}`; }
       }
       expect(worst, `worst ΔE2000 at ${where}`).toBeLessThanOrEqual(1);
     });
@@ -371,7 +450,7 @@ describe("buildIr: baked effects per layer", () => {
 });
 
 describe("lint and export agree on effects", () => {
-  const cases: { name: string; css: string; body: string; rule: string | null; error: RegExp | null }[] = [
+  const cases: { name: string; css: string; body: string; rule: string | null; error: RegExp | null; others?: string[] }[] = [
     { name: "a box-shadow transition", css: ".c{width:100px;height:60px;flex-shrink:0;box-shadow:0 2px 4px #000000;transition:box-shadow 0.2s ease}.c:hover{box-shadow:0 8px 16px #000000}",
       body: '<div class="c" data-u-id="c"></div>', rule: "U-CSS-014", error: /box-shadow changes in layer hover with a 200ms transition/ },
     { name: "transition: all over a hover shadow", css: ".c{width:100px;height:60px;flex-shrink:0;box-shadow:0 2px 4px #000000;transition:all 0.2s ease}.c:hover{box-shadow:0 8px 16px #000000}",
@@ -388,6 +467,18 @@ describe("lint and export agree on effects", () => {
       body: '<div class="c" data-u-id="c"></div>', rule: "U-CSS-024", error: /conic/ },
     { name: "a repeating gradient (a function U-CSS-024 owns)", css: ".c{width:100px;height:60px;flex-shrink:0;background-image:repeating-linear-gradient(#ff0000 0px,#0000ff 10px)}",
       body: '<div class="c" data-u-id="c"></div>', rule: "U-CSS-024", error: /repeating/ },
+    { name: "a radius transition on a shadowed element", css: ".c{width:100px;height:60px;flex-shrink:0;border-radius:8px;box-shadow:0 2px 4px #000000;transition:border-radius 0.2s ease}.c:hover{border-radius:16px}",
+      body: '<div class="c" data-u-id="c"></div>', rule: "U-CSS-014", error: /border-top-left-radius changes in layer hover with a 200ms transition \(entering\), which changes the baked shadow/ },
+    { name: "an opaque-to-translucent background transition under a shadow", css: ".c{width:100px;height:60px;flex-shrink:0;background-color:#123c47;box-shadow:0 2px 4px #000000;transition:background-color 0.2s ease}.c:hover{background-color:rgba(18,60,71,0.5)}",
+      body: '<div class="c" data-u-id="c"></div>', rule: "U-CSS-014", error: /background-color changes in layer hover .*opaque and translucent/ },
+    { name: "an opaque background colour transition under a shadow (same bake)", css: ".c{width:100px;height:60px;flex-shrink:0;background-color:#123c47;box-shadow:0 2px 4px #000000;transition:background-color 0.2s ease}.c:hover{background-color:#16505e}",
+      body: '<div class="c" data-u-id="c"></div>', rule: null, error: null },
+    { name: "a stop the bake cannot place", css: ".c{width:100px;height:60px;flex-shrink:0;background-image:linear-gradient(#ff0000 1vw,#0000ff)}",
+      body: '<div class="c" data-u-id="c"></div>', rule: "U-CSS-014", error: /a stop position cannot be resolved/, others: ["U-CSS-006"] },
+    { name: "a radial position with offsets (supported)", css: ".c{width:100px;height:60px;flex-shrink:0;background-image:radial-gradient(circle at right 10px top 20px,#ffffff,#000000)}",
+      body: '<div class="c" data-u-id="c"></div>', rule: null, error: null },
+    { name: "a zero-radius radial gradient (supported)", css: ".c{width:100px;height:60px;flex-shrink:0;background-image:radial-gradient(closest-side at 0% 50%,#ffffff,#000000)}",
+      body: '<div class="c" data-u-id="c"></div>', rule: null, error: null },
     { name: "an inset shadow (supported)", css: ".c{width:100px;height:60px;flex-shrink:0;box-shadow:inset 0 2px 4px #000000}",
       body: '<div class="c" data-u-id="c"></div>', rule: null, error: null },
     { name: "two text shadows", css: ".g{text-shadow:0 1px 0 #000000,0 2px 0 #ff0000}", body: '<p class="g" data-u-id="g" data-l10n="probe.g" data-en="G">Gölge</p>',
@@ -401,16 +492,68 @@ describe("lint and export agree on effects", () => {
       const f = page(c.css, c.body);
       fs.mkdirSync(path.join(path.dirname(f), "assets"), { recursive: true });
       fs.copyFileSync(fx("assets/logo.png"), path.join(path.dirname(f), "assets", "logo.png"));
-      const found = (await lintIds(f)).filter((x) => !x.startsWith("W-")); // warnings (layout transitions) aside
+      // warnings (layout transitions) and the rules named in `others` aside
+      const found = (await lintIds(f)).filter((x) => !x.startsWith("W-") && !(c.others ?? []).some((o) => x.startsWith(o)));
       if (c.rule) expect(found, found.join("\n")).toHaveLength(1);
       if (c.rule) expect(found[0].startsWith(c.rule)).toBe(true);
       else expect(found).toEqual([]);
       if (c.error) {
         expect(found.find((x) => x.startsWith(c.rule!))).toMatch(c.error);
         await expect(build(f)).rejects.toThrow(c.error);
+      } else if (!c.rule) {
+        const r = await build(f);
+        expect(validateIrLoose(r.ir)).toEqual([]);
       }
     });
   }
+});
+
+describe("buildIr: effect details", () => {
+  it("an <img> keeps a gradient background beside its content image", async () => {
+    const f = page(".i{width:120px;height:80px;flex-shrink:0;background-image:linear-gradient(90deg,#16c2d5,#0b1f26)}", '<img class="i" data-u-id="i" src="assets/logo.png">');
+    fs.mkdirSync(path.join(path.dirname(f), "assets"), { recursive: true });
+    fs.copyFileSync(fx("assets/logo.png"), path.join(path.dirname(f), "assets", "logo.png"));
+    expect(await lintIds(f)).toEqual([]);
+    const i = byId((await build(f)).ir.root, "i");
+    expect(i.kind).toBe("image");
+    expect(i.asset).toMatchObject({ kind: "image" });
+    expect(i.background).toMatchObject({ kind: "svg", width: 120, height: 80 });
+    expect(i.style.base["background-image"]).toBeUndefined();
+  });
+
+  it("a text shadow without a colour follows the colour of each layer and of the text that inherits it", async () => {
+    const f = page(".g{color:#ffffff;text-shadow:0 1px 2px}.g:hover{color:#ff0000}.w{display:flex;flex-direction:column;flex-shrink:0;color:#ffffff;text-shadow:0 2px 0 currentcolor}.w .t{color:#16c2d5}",
+      '<p class="g" data-u-id="g" data-l10n="probe.g" data-en="G">Gölge</p><div class="w" data-u-id="w"><p class="t" data-u-id="t" data-l10n="probe.u" data-en="U">Alt</p></div>');
+    const r = await build(f);
+    expect(byId(r.ir.root, "g").style.base["text-shadow"]).toBe("0px 1px 2px #ffffff");
+    expect(byId(r.ir.root, "g").style.hover).toMatchObject({ color: "#ff0000", "text-shadow": "0px 1px 2px #ff0000" });
+    // CSS keeps currentcolor in the computed value, so the inheriting text uses its own colour
+    const d = await openDesign(f, kit, [2560, 1440], browser);
+    try { expect(await d.page.evaluate(() => getComputedStyle(document.querySelector("[data-u-id=t]")!).textShadow)).toContain("rgb(22, 194, 213)"); } finally { await d.close(); }
+    expect(byId(r.ir.root, "t").style.base["text-shadow"]).toBe("0px 2px 0px #16c2d5");
+    expect(byId(r.ir.root, "w").style.base["text-shadow"]).toBe("0px 2px 0px #ffffff");
+  });
+
+  it("an em shadow is baked again where the font size changes", async () => {
+    const f = page(".c{width:200px;height:120px;flex-shrink:0;font-size:16px;box-shadow:0 0.5em 1em rgba(0,0,0,0.4)}.c:hover{font-size:24px}", '<div class="c" data-u-id="c"></div>');
+    const c = byId((await build(f)).ir.root, "c");
+    expect(c.shadow).not.toBeNull();
+    expect(c.shadowLayers.hover!.offset.h).toBeGreaterThan(c.shadow!.offset.h);
+  });
+
+  it("odd-sized opaque elements are baked at their exact size", async () => {
+    const f = page(".c{width:51px;height:41px;flex-shrink:0;background-color:#123c47;box-shadow:0 8px 24px rgba(0,0,0,0.4)}", '<div class="c" data-u-id="c"></div>');
+    const c = byId((await build(f)).ir.root, "c");
+    expect(c.shadow!.offset).toMatchObject({ w: 54, h: 54 });
+    expect([c.shadow!.width, c.shadow!.height]).toEqual([51 + 54, 41 + 54]);
+  });
+
+  it("every screen of a run shares the browser's bake page and its cache", async () => {
+    const f = page(".c{width:200px;height:120px;flex-shrink:0;box-shadow:0 3px 9px rgba(0,0,0,0.37)}", '<div class="c" data-u-id="c"></div>');
+    const first = await build(f), second = await build(f);
+    expect(second.ir.root.children[1].shadow).toEqual(first.ir.root.children[1].shadow);
+    expect(second.timings.bake).toBeLessThan(Math.max(5, first.timings.bake / 4));
+  });
 });
 
 describe("bake speed", () => {

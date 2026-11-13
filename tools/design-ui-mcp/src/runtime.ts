@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { chromium, type Browser } from "playwright";
+import type { Browser } from "playwright";
+import { launchChromium } from "../../design-export/src/browser.js";
 import { sha256 } from "./design.js";
 import { readKit, type KitConfig } from "./exporter.js";
 
@@ -40,7 +41,7 @@ export class Runtime {
     if (this.closed) throw new Error("server is shutting down");
     if (!this.browserPromise) {
       this.browserLaunches++;
-      const p = chromium.launch().then((b) => {
+      const p = launchChromium().then((b) => {
         b.on("disconnected", () => { if (this.browserPromise === p) this.browserPromise = null; });
         return b;
       }, (e: Error) => {

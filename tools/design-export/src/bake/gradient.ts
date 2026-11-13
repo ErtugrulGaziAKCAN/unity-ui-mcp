@@ -2,8 +2,8 @@
  * CSS linear/radial gradients → SVG (spec §5.3, findings R8): the SVG importer turns it into a VectorImage background
  * (`SVGType.VectorImage`, 64-step ramp). The SVG is the element's border box in user space; each gradient is laid out
  * for the padding box (the CSS background positioning area) with the geometry and colour stops of CSS Images 3 as
- * Chromium resolves them (stop fix-up, sRGB colours), extended with `pad` beyond it. Several gradients become rects
- * painted in CSS order (the first on top).
+ * Chromium resolves them (stop fix-up, sRGB colours, a degenerate radial shape as its last colour) and repeated into the border area per
+ * `background-repeat`, as CSS paints it. Several gradients are painted in CSS order (the first on top).
  *
  * SVG interpolates colour and opacity separately; CSS interpolates premultiplied. Stops are rewritten so both agree: a
  * transparent stop takes its neighbour's colour (split in two when its neighbours differ), and a segment between two
@@ -22,11 +22,16 @@ export interface GradientOptions {
   color?: string;
   fontSize?: number;
   rootFontSize?: number;
+  /** `background-repeat` (a list for several gradients): how the image repeats into the border area. Default repeat. */
+  repeat?: string;
 }
 
 type Rgba = [number, number, number, number];
 interface Stop { offset: number; color: Rgba }
-interface Laid { kind: "linear" | "radial"; stops: Stop[]; attrs: string; gap: number | null }
+/** One painted part of a gradient: a rect relative to the padding box and the gradient over it, placed at (ox, oy). */
+interface Piece { kind: "linear" | "radial"; rect: { x: number; y: number; w: number; h: number }; stops: Stop[]; attrs: (ox: number, oy: number) => string }
+/** `gap`: smallest stop spacing as a fraction of the SVG gradient vector (the importer's ramp). */
+interface Laid { pieces: Piece[]; gap: number | null }
 
 /**
  * Problems that keep a background-image value from being baked (empty when it can be). Shared with lint U-CSS-014;
@@ -59,6 +64,12 @@ function rgbaOf(css: string, current: string): Rgba | null {
   if (hex) return [0, 2, 4].map((o) => parseInt(hex[1].slice(o, o + 2), 16)).concat(1) as Rgba;
   const m = /^rgba\((\d+), (\d+), (\d+), ([\d.e-]+)\)$/.exec(v);
   return m ? [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])] : null;
+}
+
+/** The value has colour hints or image functions other than linear/radial gradients and url() (lint U-CSS-022 / U-CSS-024 report them). */
+export function reportedElsewhere(value: string): boolean {
+  if (findGradients(value).some((g) => g.hints.length)) return true;
+  return splitTopLevel(value.trim(), ",").some((item) => { const n = /^([\w-]+)\(/.exec(item)?.[1].toLowerCase(); return !!n && n !== "url" && n !== "linear-gradient" && n !== "radial-gradient"; });
 }
 
 function gradientsOf(value: string): ParsedGradient[] {
@@ -114,22 +125,28 @@ function lay(g: ParsedGradient, w: number, h: number, o: GradientOptions): Laid 
   const [bt, br, bb, bl] = o.borders ?? [0, 0, 0, 0];
   const pw = Math.max(0, w - bl - br), ph = Math.max(0, h - bt - bb);
   const box = { w: pw, h: ph };
+  const full = { x: 0, y: 0, w: pw, h: ph };
   const ctx: LengthContext = { fontSize: o.fontSize, rootFontSize: o.rootFontSize };
   const colors = g.stops.map((s) => rgbaOf(s.color, o.color ?? "#000000")!);
+  const resolve = (len: number) => {
+    const offs = resolveStopOffsets(g, len, ctx);
+    if (offs.some((x) => x === null)) throw new Error(`cannot bake ${g.text}: a stop position cannot be resolved`);
+    return offs.map((x, k) => ({ offset: x!, color: colors[k] }));
+  };
   if (g.type === "linear") {
     const a = linearAngle(g.prelude, box);
     if (a === null) throw new Error(`cannot bake ${g.text}: direction "${g.prelude}"`);
     const rad = (a * Math.PI) / 180, dx = Math.sin(rad), dy = -Math.cos(rad);
     const len = Math.abs(pw * dx) + Math.abs(ph * dy);
-    const offs = resolveStopOffsets(g, len, ctx);
-    if (offs.some((x) => x === null)) throw new Error(`cannot bake ${g.text}: a stop position cannot be resolved`);
-    const raw = offs.map((x, k) => ({ offset: x!, color: colors[k] }));
+    const raw = resolve(len);
     const lo = Math.min(0, raw[0].offset), hi = Math.max(1, raw[raw.length - 1].offset);
-    const cx = bl + pw / 2, cy = bt + ph / 2, sx = cx - (dx * len) / 2, sy = cy - (dy * len) / 2;
+    const sx = pw / 2 - (dx * len) / 2, sy = ph / 2 - (dy * len) / 2;
     const p = (t: number) => [sx + dx * len * t, sy + dy * len * t];
     const [x1, y1] = p(lo), [x2, y2] = p(hi);
     const stops = raw.map((s) => ({ offset: hi > lo ? (s.offset - lo) / (hi - lo) : 0, color: s.color }));
-    return { kind: "linear", stops, attrs: `x1="${fmt(x1)}" y1="${fmt(y1)}" x2="${fmt(x2)}" y2="${fmt(y2)}"`, gap: gapOf(raw) };
+    const attrs = (ox: number, oy: number) => `x1="${fmt(ox + x1)}" y1="${fmt(oy + y1)}" x2="${fmt(ox + x2)}" y2="${fmt(oy + y2)}"`;
+    const gap = gapOf(raw);
+    return { pieces: [{ kind: "linear", rect: full, stops, attrs }], gap: gap === null ? null : gap / (hi - lo) };
   }
   // radial: centre, then the ending shape's radii (CSS Images 3 §3.2.1)
   const c = radialCenter(g.prelude, box, ctx);
@@ -152,11 +169,14 @@ function lay(g: ParsedGradient, w: number, h: number, o: GradientOptions): Laid 
     rx = lengthPx(lens[0], pw, ctx) ?? NaN; ry = lengthPx(lens[1], ph, ctx) ?? NaN;
   } else if (size.endsWith("side")) { rx = sx; ry = sy; }
   else { rx = sx * Math.SQRT2; ry = sy * Math.SQRT2; }
-  if (!(rx > 0) || !(ry > 0)) throw new Error(`cannot bake ${g.text}: its ending shape is degenerate (radii ${rx} × ${ry})`);
-  const offs = resolveStopOffsets(g, rx, ctx);
-  if (offs.some((x) => x === null)) throw new Error(`cannot bake ${g.text}: a stop position cannot be resolved`);
-  let raw = offs.map((x, k) => ({ offset: x!, color: colors[k] }));
-  const gap = gapOf(raw);
+  if (!(rx >= 0) || !(ry >= 0)) throw new Error(`cannot bake ${g.text}: its ending shape cannot be resolved`);
+  // a degenerate shape (a zero radius: centre on an edge with closest-side, or an explicit 0) — Chromium paints the last colour
+  if (rx === 0 || ry === 0) {
+    const last = colors[colors.length - 1];
+    return { pieces: [{ kind: "linear", rect: full, stops: [{ offset: 0, color: last }, { offset: 1, color: last }], attrs: (ox, oy) => `x1="${fmt(ox)}" y1="${fmt(oy)}" x2="${fmt(ox + 1)}" y2="${fmt(oy)}"` }], gap: null };
+  }
+  let raw = resolve(rx);
+  const gap0 = gapOf(raw);
   // a negative stop: the colour at 0 is interpolated (CSS), the gradient starts there
   if (raw[0].offset < 0) {
     const k = raw.findIndex((s) => s.offset >= 0);
@@ -168,9 +188,13 @@ function lay(g: ParsedGradient, w: number, h: number, o: GradientOptions): Laid 
   }
   const hi = Math.max(1, raw[raw.length - 1].offset);
   const stops = raw.map((s) => ({ offset: s.offset / hi, color: s.color }));
-  const cx = bl + c.x, cy = bt + c.y, r = rx * hi;
-  const tf = Math.abs(ry - rx) > 1e-9 ? ` gradientTransform="translate(${fmt(cx)} ${fmt(cy)}) scale(1 ${fmt(ry / rx)}) translate(${fmt(-cx)} ${fmt(-cy)})"` : "";
-  return { kind: "radial", stops, attrs: `cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(r)}"${tf}`, gap };
+  const r = rx * hi, gap = gap0 === null ? null : gap0 / hi;
+  const attrs = (ox: number, oy: number) => {
+    const cx = ox + c.x, cy = oy + c.y;
+    const tf = Math.abs(ry - rx) > 1e-9 ? ` gradientTransform="translate(${fmt(cx)} ${fmt(cy)}) scale(1 ${fmt(ry / rx)}) translate(${fmt(-cx)} ${fmt(-cy)})"` : "";
+    return `cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(r)}"${tf}`;
+  };
+  return { pieces: [{ kind: "radial", rect: full, stops, attrs }], gap };
 }
 
 /** Smallest offset distance between consecutive stops whose (premultiplied) colours differ; null when none differ. */
@@ -192,18 +216,61 @@ const stopXml = (s: Stop) => {
 };
 
 /**
- * The SVG of a background-image made of CSS linear/radial gradients (one, or a comma list), for an element whose border
- * box is width × height px. Deterministic text; throws on anything the bake cannot reproduce (see backgroundIssues).
+ * Whether the image repeats into the border area horizontally and vertically, for one `background-repeat` value. The
+ * image fills the positioning area, so `round` repeats like `repeat` and `space` (one image fits) draws it once.
  */
-export function gradientToSvg(value: string, width: number, height: number, opts: GradientOptions = {}): string {
-  const laid = gradientsOf(value).map((g) => lay(g, width, height, opts));
-  const W = fmt(width), H = fmt(height);
-  const defs = laid.map((l, k) => `<${l.kind}Gradient id="g${k}" gradientUnits="userSpaceOnUse" ${l.attrs}>${svgStops(l.stops).map(stopXml).join("")}</${l.kind}Gradient>`);
-  const rects = laid.map((_, k) => `<rect x="0" y="0" width="${W}" height="${H}" fill="url(#g${k})"/>`).reverse();
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs>${defs.join("")}</defs>${rects.join("")}</svg>`;
+function repeatAxes(v: string): [boolean, boolean] {
+  const t = splitTopLevel(v.trim().toLowerCase(), " ");
+  const on = (k: string) => k === "repeat" || k === "round";
+  if (t.length === 2) return [on(t[0]), on(t[1])];
+  if (t[0] === "repeat-x") return [true, false];
+  if (t[0] === "repeat-y") return [false, true];
+  return [on(t[0]), on(t[0])];
 }
 
-/** Smallest stop spacing of the gradients of a background-image (fraction of each gradient line), see IrAsset.stopGap. */
+/**
+ * The SVG of a background-image made of CSS linear/radial gradients (one, or a comma list), for an element whose border
+ * box is width × height px. As CSS paints it: each gradient is the padding box's image, repeated per `background-repeat`
+ * into the border area (the background is painted under the border); rects are cut to the border box. Deterministic text;
+ * throws on anything the bake cannot reproduce (see backgroundIssues).
+ */
+export function gradientToSvg(value: string, width: number, height: number, opts: GradientOptions = {}): string {
+  const [bt, br, bb, bl] = opts.borders ?? [0, 0, 0, 0];
+  const pw = width - bl - br, ph = height - bt - bb;
+  const repeats = splitTopLevel(opts.repeat?.trim() || "repeat", ",");
+  const tiles = (on: boolean, before: number, after: number, size: number) => {
+    if (!on || size <= 0) return [0];
+    const out: number[] = [];
+    for (let k = -Math.ceil(before / size); k <= Math.ceil(after / size); k++) out.push(k);
+    return out;
+  };
+  const defs: string[] = [], layers: string[][] = [];
+  let covered = false;
+  gradientsOf(value).forEach((g, k) => {
+    const laid = lay(g, width, height, opts);
+    const [rx, ry] = repeatAxes(repeats[k % repeats.length]);
+    const rects: string[] = [];
+    let n = 0;
+    for (const ty of tiles(ry, bt, bb, ph)) for (const tx of tiles(rx, bl, br, pw)) for (const piece of laid.pieces) {
+      const ox = bl + tx * pw, oy = bt + ty * ph;
+      const x0 = Math.max(0, ox + piece.rect.x), y0 = Math.max(0, oy + piece.rect.y);
+      const x1 = Math.min(width, ox + piece.rect.x + piece.rect.w), y1 = Math.min(height, oy + piece.rect.y + piece.rect.h);
+      if (x1 <= x0 || y1 <= y0) continue;
+      const id = n === 0 ? `g${k}` : `g${k}_${n}`;
+      n++;
+      defs.push(`<${piece.kind}Gradient id="${id}" gradientUnits="userSpaceOnUse" ${piece.attrs(ox, oy)}>${svgStops(piece.stops).map(stopXml).join("")}</${piece.kind}Gradient>`);
+      rects.push(`<rect x="${fmt(x0)}" y="${fmt(y0)}" width="${fmt(x1 - x0)}" height="${fmt(y1 - y0)}" fill="url(#${id})"/>`);
+    }
+    if (pw > 0 && ph > 0 && (rx || (bl <= 0 && br <= 0)) && (ry || (bt <= 0 && bb <= 0))) covered = true;
+    layers.push(rects);
+  });
+  const W = fmt(width), H = fmt(height);
+  // an image that leaves part of the box empty keeps the box as its bounds (the importer sizes a VectorImage by its geometry)
+  const pin = covered ? "" : `<rect x="0" y="0" width="${W}" height="${H}" fill="#000000" fill-opacity="0"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs>${defs.join("")}</defs>${pin}${layers.reverse().flat().join("")}</svg>`;
+}
+
+/** Smallest stop spacing of the gradients of a background-image (fraction of each SVG gradient vector), see IrAsset.stopGap. */
 export function gradientStopGap(value: string, width: number, height: number, opts: GradientOptions = {}): number | null {
   let gap: number | null = null;
   for (const g of gradientsOf(value)) {

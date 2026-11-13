@@ -11,12 +11,13 @@ import type { IrAsset, IrNode, IrShadow } from "../ir/types.js";
 import { splitTopLevel } from "../lint/css-values.js";
 import { CORNERS, cornerProperty, resolveRadii } from "../lint/resolve/radius.js";
 import type { Size } from "../lint/snapshot.js";
-import { backgroundIssues, gradientStopGap, gradientToSvg } from "../bake/gradient.js";
-import { bakeShadow, splitShadows } from "../bake/shadow.js";
+import { backgroundIssues, gradientStopGap, gradientToSvg, reportedElsewhere } from "../bake/gradient.js";
+import { bakeShadow, shadowIssues, splitShadows } from "../bake/shadow.js";
 import { transitionsAt } from "./anims.js";
 import { writeAsset } from "./assets.js";
 import { dimsOf, keyOf, subset } from "./layers.js";
 import { fmt } from "./naming.js";
+import { px } from "../lint/css-values.js";
 import { normalizeColor, unions, type StyleExtractor } from "./styles.js";
 
 export type NodeEffects = Pick<IrNode, "shadow" | "shadowLayers" | "insetShadow" | "insetShadowLayers" | "background" | "backgroundLayers">;
@@ -37,28 +38,65 @@ export function hasEffects(ex: StyleExtractor, i: number): boolean {
   return false;
 }
 
+/** Border widths in px (a side without a visible style has none). */
+function borderWidths(eff: (p: string) => string | undefined): [number, number, number, number] {
+  return SIDES.map((s) => {
+    const st = eff(`border-${s}-style`);
+    if (!st || /^(none|hidden)$/i.test(st)) return 0;
+    const w = eff(`border-${s}-width`) ?? "medium";
+    return WIDTH_KEYWORDS[w] ?? (parseFloat(w) || 0);
+  }) as [number, number, number, number];
+}
+const opaque = (c: string | undefined) => /^#[0-9a-f]{6}$/.test(normalizeColor(c ?? "rgba(0, 0, 0, 0)"));
+const usesEm = (v: string | undefined) => !!v && /\d(em)\b/i.test(v);
+const usesCurrent = (v: string | undefined) => !!v && /currentcolor/i.test(v);
+const colourless = (v: string | undefined) => !!v && splitTopLevel(v, ",").some((item) => !splitTopLevel(item, " ").some((t) => !/^inset$/i.test(t) && !/^[-+.\d]/.test(t) && !/^currentcolor$/i.test(t)));
+
 /**
- * Why the element's shadows or background images cannot be baked, for every layer (empty when they can): a transition
- * of box-shadow or background-image (UI Toolkit swaps the image; the animation player cannot interpolate it), images
- * UI Toolkit cannot draw as one background, gradients laid out other than over the whole padding box.
+ * Why the element's shadows or background images cannot be baked, for every layer (empty when they can): what the bake
+ * itself rejects (the same conversion runs on the element's box), a transition of box-shadow or background-image or of
+ * a property that changes the baked image in that layer (UI Toolkit swaps the image; nothing interpolates it), images UI
+ * Toolkit cannot draw as one background, gradients laid out other than over the whole padding box. Shared by lint
+ * U-CSS-014 and the export, which throws it.
  */
 export function effectProblems(ex: StyleExtractor, i: number): string[] {
   const out = new Set<string>();
+  const box = ex.baseBox(i) ?? { w: 100, h: 100 };
+  const baseEff = (p: string) => ex.effective(i, [], p)?.entry.value;
   for (const [key, m] of ex.raw(i)) {
     const dims = dimsOf(key);
     const eff = (p: string) => ex.effective(i, dims, p)?.entry.value;
-    const changed = ["box-shadow", "background-image"].filter((p) => m.has(p));
-    if (key !== "base" && changed.length) {
-      for (const [at, phase] of [[key, "entering"], ["base", "leaving"]] as const) {
-        for (const [p, t] of transitionsAt(ex, i, at, changed)) {
-          if (t.duration > 0 || t.delay > 0) out.add(`${p} changes in layer ${key} with a ${t.duration}ms transition (${phase})`);
+    const where = key === "base" ? "" : `layer ${key}: `;
+    const shadow = eff("box-shadow"), bg = eff("background-image");
+    const fontSize = px(eff("font-size")) ?? undefined, rootFontSize = ex.s.rootFontSize;
+    if (key !== "base") {
+      // a transition of the effect, or of what the baked image depends on in this layer
+      const why = new Map<string, string>();
+      for (const p of ["box-shadow", "background-image"]) if (m.has(p)) why.set(p, "");
+      const sh = splitShadows(shadow ?? "none"), shBase = splitShadows(baseEff("box-shadow") ?? "none");
+      const outer = sh.outer.length + shBase.outer.length > 0, inset = sh.inset.length + shBase.inset.length > 0;
+      const gradient = isGradient(bg) || isGradient(baseEff("background-image"));
+      if (outer || inset) for (const r of RADII) if (m.has(r)) why.set(r, ", which changes the baked shadow");
+      if ((inset || gradient) && SIDES.some((sd) => m.has(`border-${sd}-width`) || m.has(`border-${sd}-style`))) {
+        for (const sd of SIDES) for (const p of [`border-${sd}-width`, `border-${sd}-style`]) if (m.has(p)) why.set(p, `, which changes the baked ${gradient ? "gradient" : "shadow"}`);
+      }
+      if (outer && m.has("background-color") && opaque(eff("background-color")) !== opaque(baseEff("background-color"))) why.set("background-color", ", which changes the baked shadow (opaque and translucent backgrounds clip it differently)");
+      if (m.has("color") && ((colourless(shadow) || colourless(baseEff("box-shadow"))) || usesCurrent(bg) || usesCurrent(baseEff("background-image")))) why.set("color", ", which colours the baked image");
+      if (m.has("font-size") && (usesEm(shadow) || usesEm(baseEff("box-shadow")) || usesEm(bg))) why.set("font-size", ", which sizes the baked image");
+      if (why.size) {
+        for (const [at, phase] of [[key, "entering"], ["base", "leaving"]] as const) {
+          for (const [p, t] of transitionsAt(ex, i, at, Array.from(why.keys()))) {
+            if (t.duration > 0 || t.delay > 0) out.add(`${p} changes in layer ${key} with a ${t.duration}ms transition (${phase})${why.get(p)}`);
+          }
         }
       }
     }
-    if (key !== "base" && !["background-image", "background-size", "background-position-x", "background-position-y"].some((p) => m.has(p))) continue;
-    const bg = eff("background-image");
+    if (shadow && (key === "base" || m.has("box-shadow") || m.has("font-size"))) for (const x of shadowIssues(shadow, { fontSize, rootFontSize })) out.add(`${where}${x}`);
+    if (key !== "base" && !["background-image", "background-size", "background-position-x", "background-position-y", "background-repeat", "font-size", "color"].some((p) => m.has(p)) &&
+      !SIDES.some((sd) => m.has(`border-${sd}-width`) || m.has(`border-${sd}-style`))) continue;
     if (!bg) continue;
-    for (const issue of backgroundIssues(bg)) out.add(`${key === "base" ? "" : `layer ${key}: `}${issue}`);
+    const issues = backgroundIssues(bg);
+    for (const issue of issues) out.add(`${where}${issue}`);
     if (!isGradient(bg)) continue;
     // a gradient image is the positioning area: no smaller tile, no length offset (they would tile or shift it)
     const items = splitTopLevel(bg, ",");
@@ -68,13 +106,18 @@ export function effectProblems(ex: StyleExtractor, i: number): string[] {
       const size = nth(eff("background-size"), k, "auto");
       const parts = splitTopLevel(size, " ");
       const fills = /^(cover|contain)$/i.test(size) || (parts.length <= 2 && parts.every((x) => /^(auto|100%)$/i.test(x)));
-      if (!fills) out.add(`${key === "base" ? "" : `layer ${key}: `}a gradient with background-size ${size} (it must fill the element: auto or 100%)`);
+      if (!fills) out.add(`${where}a gradient with background-size ${size} (it must fill the element: auto or 100%)`);
       for (const axis of ["x", "y"] as const) {
         const pos = nth(eff(`background-position-${axis}`), k, "0%");
         const offset = splitTopLevel(pos, " ").filter((x) => /^-?[\d.]/.test(x) && !/%$/.test(x) && !/^-?0(px)?$/.test(x));
-        if (offset.length) out.add(`${key === "base" ? "" : `layer ${key}: `}a gradient with background-position-${axis} ${pos} (only percentages and keywords keep it in place)`);
+        if (offset.length) out.add(`${where}a gradient with background-position-${axis} ${pos} (only percentages and keywords keep it in place)`);
       }
     });
+    // the conversion itself, on the element's box: whatever the export would reject
+    if (!issues.length && !reportedElsewhere(bg)) {
+      try { gradientToSvg(bg, box.w, box.h, { borders: borderWidths(eff), color: eff("color") ?? "#000000", fontSize, rootFontSize, repeat: eff("background-repeat") }); }
+      catch (e) { out.add(`${where}${(e as Error).message}`); }
+    }
   }
   return Array.from(out);
 }
@@ -106,7 +149,7 @@ export async function nodeEffects(i: number, c: EffectContext, where: string): P
 
   // layers that can change an effect: the effect properties, the box (radii, size, borders), colours they read
   const raw = ex.raw(i);
-  const watched = ["box-shadow", "background-image", "background-color", "color", ...RADII, ...BORDER];
+  const watched = ["box-shadow", "background-image", "background-color", "background-repeat", "color", "font-size", ...RADII, ...BORDER];
   const sets = new Map<string, string[]>();
   for (const [key, m] of raw) if (key !== "base" && watched.some((p) => m.has(p))) sets.set(key, dimsOf(key));
   for (const [key, els] of c.boxes ?? []) if (key !== "base" && els.has(i)) sets.set(key, dimsOf(key));
@@ -124,23 +167,18 @@ export async function nodeEffects(i: number, c: EffectContext, where: string): P
   const ats: At[] = [{ key: "base", dims: [], box: baseBox }, ...Array.from(sets, ([key, dims]) => ({ key, dims, box: boxAt(dims) }))]
     .sort((a, b) => a.dims.length - b.dims.length || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 
-  const lctx = { fontSize: c.fontSize, rootFontSize: c.rootFontSize };
   const values = new Map<string, { shadow: IrShadow | null; inset: IrShadow | null; background: IrAsset | null }>();
   for (const at of ats) {
     const eff = (p: string) => ex.effective(i, at.dims, p)?.entry;
     const color = eff("color")?.value ?? normalizeColor(c.computedColor);
+    const lctx = { fontSize: px(eff("font-size")?.value) ?? c.fontSize, rootFontSize: c.rootFontSize };
     const box = at.box;
     const corners: Record<string, string> = {};
     for (const k of CORNERS) { const v = eff(cornerProperty(k))?.value; if (v !== undefined) corners[k] = v; }
     const radii = resolveRadii(corners, box ?? { w: 1e6, h: 1e6 }, lctx);
     if (!radii) throw new Error(`${where}: border radius cannot be resolved for the shadow bake`);
     const radius = `${CORNERS.map((k) => `${fmt(radii[k].x)}px`).join(" ")} / ${CORNERS.map((k) => `${fmt(radii[k].y)}px`).join(" ")}`;
-    const borders = SIDES.map((s) => {
-      const st = eff(`border-${s}-style`)?.value;
-      if (!st || /^(none|hidden)$/i.test(st)) return 0;
-      const w = eff(`border-${s}-width`)?.value ?? "medium";
-      return WIDTH_KEYWORDS[w] ?? (parseFloat(w) || 0);
-    }) as [number, number, number, number];
+    const borders = borderWidths((p) => eff(p)?.value);
     const bgColor = normalizeColor(eff("background-color")?.value ?? "rgba(0, 0, 0, 0)");
     const sh = splitShadows(eff("box-shadow")?.value ?? "none");
     const opts = { box: box ?? undefined, borders, color, opaqueBackground: /^#[0-9a-f]{6}$/.test(bgColor), ...lctx };
@@ -153,7 +191,7 @@ export async function nodeEffects(i: number, c: EffectContext, where: string): P
       // one url() is an asset; anything else is baked as gradients (the bake rejects what it cannot reproduce)
       if (!/^url\(/i.test(bg.value.trim()) || splitTopLevel(bg.value, ",").length > 1) {
         const b = box ?? { w: 1, h: 1 };
-        const gopts = { borders, color, ...lctx };
+        const gopts = { borders, color, ...lctx, repeat: eff("background-repeat")?.value };
         const svg = gradientToSvg(bg.value, b.w, b.h, gopts);
         background = writeAsset(c.outDir, Buffer.from(svg, "utf8"), "svg", "svg", b.w, b.h, false, gradientStopGap(bg.value, b.w, b.h, gopts));
       } else {

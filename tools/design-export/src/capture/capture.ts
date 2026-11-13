@@ -17,7 +17,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { chromium, type Browser, type CDPSession } from "playwright";
+import type { Browser, CDPSession } from "playwright";
+import { launchChromium } from "../browser.js";
 import type { CaptureBoxes } from "../boxes/types.js";
 import type { IrAnim, IrNode, IrScreen } from "../ir/types.js";
 import { stableStringify } from "../ir/stableStringify.js";
@@ -539,7 +540,7 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
   const jobs = opts.jobs ?? buildMatrix(ir);
   const groups = new Map<string, CaptureJob[]>();
   for (const j of jobs) { const k = vpName(j.viewport); groups.set(k, [...(groups.get(k) ?? []), j]); }
-  const browser = opts.browser ?? opts.open?.[0]?.browser ?? (await chromium.launch());
+  const browser = opts.browser ?? opts.open?.[0]?.browser ?? (await launchChromium());
   const ownBrowser = !opts.browser && !opts.open?.length;
   const timings: MatrixTimings = { totalMs: 0, viewports: {}, jobs: {} };
   const boxes: Record<string, CaptureBoxes> = {};

@@ -67,7 +67,7 @@ export const INITIAL: Record<string, string> = {
 };
 
 /** Inherited text properties written on every text node; the first five always (computed if nobody declares them). */
-export const TEXT_INHERITED = ["color", "font-family", "font-size", "font-weight", "font-style", "letter-spacing", "text-align", "white-space-collapse", "text-wrap-mode"];
+export const TEXT_INHERITED = ["color", "font-family", "font-size", "font-weight", "font-style", "letter-spacing", "text-align", "white-space-collapse", "text-wrap-mode", "text-shadow"];
 const ALWAYS = new Set(TEXT_INHERITED.slice(0, 5));
 
 /** Whether a browser-default property renders, judged like lint U-CSS-026 (which the extraction must agree with). */
@@ -158,10 +158,12 @@ function sheetUrl(label: string, docUrl: string | undefined): string | undefined
 }
 
 /**
- * One text shadow as `<x>px <y>px <blur>px <colour>` (USS order; blur 0 and the element's colour when omitted, colours
- * #rrggbb or rgba()); `none` stays. Throws on a list (UI Toolkit draws one text shadow; lint U-CSS-023).
+ * One text shadow as `<x>px <y>px <blur>px <colour>` (USS order; blur 0 when omitted, colours #rrggbb or rgba()); `none`
+ * stays. Without a colour (or with currentcolor) the colour is `color`, or the word currentcolor when `color` is null (each
+ * element resolves it with its own colour, as CSS does: see resolveTextShadowColour). Throws on a list (UI Toolkit draws
+ * one text shadow; lint U-CSS-023).
  */
-export function normalizeTextShadow(value: string, color: string, ctx: { fontSize?: number; rootFontSize?: number } = {}, where = "text-shadow"): string {
+export function normalizeTextShadow(value: string, color: string | null, ctx: { fontSize?: number; rootFontSize?: number } = {}, where = "text-shadow"): string {
   const v = value.trim();
   if (/^none$/i.test(v)) return "none";
   const items = splitTopLevel(v, ",");
@@ -177,8 +179,33 @@ export function normalizeTextShadow(value: string, color: string, ctx: { fontSiz
   }
   if (lens.length < 2 || lens.length > 3) throw new Error(`${where}: text-shadow ${v} is not one shadow`);
   const c = rest.join(" ");
-  const col = !c || /^currentcolor$/i.test(c) ? color : normalizeColor(c);
+  const col = !c || /^currentcolor$/i.test(c) ? color ?? "currentcolor" : normalizeColor(c);
   return `${fmt(lens[0])}px ${fmt(lens[1])}px ${fmt(lens[2] ?? 0)}px ${col}`;
+}
+
+/**
+ * Gives a text shadow written with currentcolor the node's colour in every layer: where the shadow is set, and where only
+ * the colour changes (CSS resolves currentcolor per element and per state; USS needs the colour itself).
+ */
+export function resolveTextShadowColour(layers: Layers, baseColor: string): void {
+  const at = (key: string, prop: string): Entry | undefined => {
+    const dims = dimsOf(key);
+    let best: { n: number; key: string; v: Entry } | null = null;
+    for (const [k, m] of layers) {
+      const v = m.get(prop), kd = dimsOf(k);
+      if (!v || !subset(kd, dims)) continue;
+      if (!best || kd.length > best.n || (kd.length === best.n && k < best.key)) best = { n: kd.length, key: k, v };
+    }
+    return best?.v;
+  };
+  const updates: [Layer, Entry][] = [];
+  for (const [key, m] of layers) {
+    const ts = at(key, "text-shadow");
+    if (!ts || !/ currentcolor$/.test(ts.value)) continue;
+    if (key !== "base" && !m.has("text-shadow") && !m.has("color")) continue;
+    updates.push([m, { ...ts, value: ts.value.replace(/currentcolor$/, at(key, "color")?.value ?? baseColor) }]);
+  }
+  for (const [m, en] of updates) m.set("text-shadow", en);
 }
 
 // ---- cascade ------------------------------------------------------------------------------------------------
@@ -571,7 +598,7 @@ export class StyleExtractor {
     // text-shadow: the one shadow USS draws, as "x y blur colour" (lint U-CSS-023 rejects a list)
     for (const [name, layer] of out) {
       const en = layer.get("text-shadow");
-      if (en) layer.set("text-shadow", { ...en, value: normalizeTextShadow(en.value, colorAt(dimsOf(name)), { fontSize: px(e.computed["font-size"]) ?? undefined, rootFontSize: s.rootFontSize }, e.path) });
+      if (en) layer.set("text-shadow", { ...en, value: normalizeTextShadow(en.value, null, { fontSize: px(e.computed["font-size"]) ?? undefined, rootFontSize: s.rootFontSize }, e.path) });
     }
 
     // transform → translate / rotate / scale, against the layer's box

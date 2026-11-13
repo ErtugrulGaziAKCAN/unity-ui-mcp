@@ -21,9 +21,11 @@ export interface IrAsset { kind: 'image' | 'svg' | 'shadow9'; file: string; sha2
 export interface BoxRect { x: number; y: number; w: number; h: number }
 /**
  * A baked box-shadow: a 9-slice PNG (`slice` always set) drawn into the rect (x + offset.x, y + offset.y, w + offset.w,
- * h + offset.h) of the element's border box (x, y, w, h), in CSS px. Outer shadows are drawn behind the element and are
- * transparent under its border box (CSS clips them there); inset shadows are drawn inside the element, above its
- * background and below its border and content, and their rect is the padding box.
+ * h + offset.h) of the element's border box (x, y, w, h), in CSS px — the drawn rect, which is often larger than the PNG.
+ * Outer shadows are drawn behind the element and are transparent under its border box (CSS clips them there; 1px inside
+ * it under an opaque background colour). Inset shadows cover the padding box: drawn as the element's first child they
+ * come after its background and border (CSS paints the border after them; the two differ only on the anti-aliased inner
+ * edge of a curved border) and before its content.
  */
 export type IrShadow = IrAsset & { offset: BoxRect };
 /** One keyframe: offset 0..1, the values it sets, and the easing of the segment that starts here (null: the animation's). */

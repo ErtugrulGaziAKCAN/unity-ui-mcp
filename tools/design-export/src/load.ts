@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from "playwright";
+import type { Browser, BrowserContext, CDPSession, Page } from "playwright";
+import { launchChromium } from "./browser.js";
 import type { KitConfig } from "./kit.js";
 import { logicalViewport } from "./viewport.js";
 
@@ -223,7 +224,7 @@ export async function openDesign(
   const lv = logicalViewport(viewport, kit.reference, kit.screenMatch);
 
   const ownBrowser = !existingBrowser;
-  const browser = existingBrowser ?? (await chromium.launch());
+  const browser = existingBrowser ?? (await launchChromium());
   let context: BrowserContext | undefined;
   try {
     context = await browser.newContext({

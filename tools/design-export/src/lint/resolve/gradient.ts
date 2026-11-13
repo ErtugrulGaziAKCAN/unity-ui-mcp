@@ -87,6 +87,23 @@ export function radialCenter(prelude: string | null, box: Box, ctx: LengthContex
     if ((a in kwY && !(a in kwX)) || (b in kwX && !(b in kwY))) [a, b] = [b, a];
     x = a in kwX ? kwX[a] * box.w : lengthPx(a, box.w, ctx);
     y = b in kwY ? kwY[b] * box.h : lengthPx(b, box.h, ctx);
+  } else if (t.length === 3 || t.length === 4) {
+    // keyword offsets: `right 10px top 20px`, `left top 20%`, `center bottom 8px`
+    const pairs: [string, string | null][] = [];
+    for (let i = 0; i < t.length; i++) {
+      const next = t[i + 1];
+      if (next !== undefined && !(next in kwX) && !(next in kwY)) { pairs.push([t[i], next]); i++; } else pairs.push([t[i], null]);
+    }
+    if (pairs.length !== 2) return null;
+    for (const [kw, off] of pairs) {
+      const along: "x" | "y" | null = kw === "left" || kw === "right" ? "x" : kw === "top" || kw === "bottom" ? "y" : kw === "center" ? (x === null ? "x" : "y") : null;
+      if (!along || (kw === "center" && off !== null)) return null;
+      const size: number = along === "x" ? box.w : box.h;
+      const o = off === null ? (kw === "center" ? size / 2 : 0) : lengthPx(off, size, ctx);
+      if (o === null) return null;
+      const v: number = kw === "right" || kw === "bottom" ? size - o : o;
+      if (along === "x") { if (x !== null) return null; x = v; } else { if (y !== null) return null; y = v; }
+    }
   }
   return x === null || y === null ? null : { x, y };
 }
@@ -156,16 +173,30 @@ export function resolveStopOffsets(g: ParsedGradient, length: number | null, ctx
 
 export interface CloseStops { a: GradientStop; b: GradientStop; gap: number }
 
-/** Consecutive stops with different colours closer than `minFraction` of the gradient line (hard stops included). */
+/**
+ * Part of the gradient line the SVG gradient (and the importer's ramp) spans, in line fractions: stops before 0 or
+ * after 1 extend a linear gradient's vector, a radial gradient's radius (it starts at 0).
+ */
+export function rampSpan(g: ParsedGradient, offsets: (number | null)[]): number {
+  const known = offsets.filter((x): x is number => x !== null);
+  if (!known.length) return 1;
+  return Math.max(1, ...known) - (g.type === "linear" ? Math.min(0, ...known) : 0);
+}
+
+/**
+ * Consecutive stops with different colours closer than `minFraction` of the ramp (the gradient line, extended when stops lie
+ * outside it; hard stops included). `gap` is that fraction.
+ */
 export function closeStops(g: ParsedGradient, box: Box | null, minFraction = 1 / 64, ctx: LengthContext = {}): CloseStops[] {
   const len = box ? gradientLineLength(g, box, ctx) : null;
   const off = resolveStopOffsets(g, len, ctx);
+  const span = rampSpan(g, off);
   const out: CloseStops[] = [];
   for (let i = 0; i + 1 < g.stops.length; i++) {
     const a = off[i], b = off[i + 1];
     if (a === null || b === null) continue;
     if (normColor(g.stops[i].color) === normColor(g.stops[i + 1].color)) continue;
-    if (b - a < minFraction - 1e-9) out.push({ a: g.stops[i], b: g.stops[i + 1], gap: b - a });
+    if ((b - a) / span < minFraction - 1e-9) out.push({ a: g.stops[i], b: g.stops[i + 1], gap: (b - a) / span });
   }
   return out;
 }

@@ -18,7 +18,7 @@
  */
 import path from "node:path";
 import type { Page } from "playwright";
-import { openBakePage } from "../bake/shadow.js";
+import { sharedBakePage } from "../bake/shadow.js";
 import type { IrAnim, IrAsset, IrNode, IrScreen, NodeKind } from "../ir/types.js";
 import { validateIr } from "../ir/validate.js";
 import type { KitConfig } from "../kit.js";
@@ -36,7 +36,7 @@ import { hasEffects, nodeEffects } from "./effects.js";
 import { classifyKind, isScroll } from "./kind.js";
 import { dimsOf } from "./layers.js";
 import { structuralId, tokenKey, uniqueId } from "./naming.js";
-import { StyleExtractor, TEXT_INHERITED, toStyleLayers, type Layers, type StyleContext } from "./styles.js";
+import { normalizeColor, resolveTextShadowColour, StyleExtractor, TEXT_INHERITED, toStyleLayers, type Layers, type StyleContext } from "./styles.js";
 import { attrTexts, irText, plainText, sequencesNeeded } from "./text.js";
 
 export { repeatSamples };
@@ -61,14 +61,12 @@ const URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)/gi;
 const paintOnly = (p: string) => /^(color|opacity|visibility|cursor|pointer-events|z-index|box-shadow|text-shadow|transform|translate|rotate|scale|transform-origin|background-.+|border-.+-(color|radius)|outline-.+|text-decoration-.+|transition-.+|animation-.+|-webkit-.+)$/.test(p);
 
 export interface BuildOptions {
-  /** A bake page (openBakePage) to share between screens of one run; without it one is opened and closed here. */
+  /** The bake page (openBakePage); default: the design browser's shared bake page, so every screen of a run shares its cache. */
   bakePage?: Page;
 }
 
 export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: string, htmlPath: string, opts: BuildOptions = {}): Promise<IrBuild> {
-  const bake: { open: { page: Page; close(): Promise<void> } | null } = { open: null };
-  try { return await build(d, s, kit, outDir, htmlPath, async () => opts.bakePage ?? (bake.open ??= await openBakePage(d.browser)).page); }
-  finally { await bake.open?.close(); }
+  return build(d, s, kit, outDir, htmlPath, async () => opts.bakePage ?? sharedBakePage(d.browser));
 }
 
 async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: string, htmlPath: string, bakePage: () => Promise<Page>): Promise<IrBuild> {
@@ -232,6 +230,7 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     const text = textual(p) ? irText(s, p.i, page.seqs, styles, page.rendered) : null;
     const tint = p.kind === "vector" && e.svgPaint === "current";
     const copies = text ? ex.addInherited(p.i, layers, TEXT_INHERITED) : tint ? ex.addInherited(p.i, layers, ["color"]) : [];
+    resolveTextShadowColour(layers, normalizeColor(e.computed.color ?? "#000000"));
     // url() backgrounds → assets (the layers keep them, with their size, repeat and position)
     for (const layer of layers.values()) {
       const en = layer.get("background-image");
@@ -246,7 +245,8 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
       fontSize: px(e.computed["font-size"]) ?? undefined, rootFontSize: s.rootFontSize,
     }, describeAt(s, p.i));
     bakeMs += performance.now() - tb;
-    if (p.kind === "image") { fx.background = null; fx.backgroundLayers = {}; }
+    // an element painted only by a url() image: that image is its content asset (an <img> keeps its background)
+    if (p.kind === "image" && e.tag !== "img") { fx.background = null; fx.backgroundLayers = {}; }
     const gradient = Array.from(layers.values()).some((m) => /gradient\(/i.test(m.get("background-image")?.value ?? ""));
     for (const [key, m] of layers) {
       m.delete("box-shadow");
