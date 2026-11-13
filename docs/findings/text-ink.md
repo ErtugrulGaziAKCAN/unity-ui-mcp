@@ -216,8 +216,23 @@ line counts of the same texts pass at 1 px.
   for bold (0.74× the ink) or a size one style off stays below 0.80×.
 - The median check of section 4 (±15 %) applies to text above 12 device px unchanged. For small text a line with a text
   shadow lay up to 19 % from the median of its capture, so it takes the wider tolerance above.
-- The cost: a colour error of up to ΔE 4.5 on text of 12 device px or less passes (at 1280 wide that is any kit style up
-  to 24 px). The same text at 2560 wide is 14 device px or more for the kit's larger styles and keeps the ΔE 2 limit there.
+- What 12 device px covers in the kit's table, per viewport:
+
+  | Viewport (scale) | Kit styles at 12 device px or less |
+  |---|---|
+  | 2560×1440 (1) | caption (12 px → 12) |
+  | 1920×1080 (0.75) | caption (9), label (16 px → 12) |
+  | 1280×720 (0.5) | caption (6), label (8), body (24 px → 12) |
+
+  Subtitle (32 px) and larger stay above 12 device px everywhere, the label is 16 device px at 2560 and the body 18 at
+  1920; those keep ΔE 2 and the usual band.
+- The cost: on the styles in that table a colour error up to ΔE 4.5, an ink amount between 0.80 and 1.25 of the design's
+  and a line up to ±25 % from its capture's median pass. For the caption that holds at all three viewports, so a caption
+  colour error of up to ΔE 4.5 passes everywhere; a label error up to 4.5 passes at 1920 and 1280 and fails only at
+  2560; a body error fails at 2560 and 1920. A one-step colour error (ΔE 5 or more) still fails on all of them.
+- Two of these limits rest on text-shadow lines: the band's top (1.17, a hard-shadowed 6 device px caption) and the median
+  tolerance (+19 %, the same caption against its capture's light text). They are kept as measured; without that line the
+  suite's small text spans 0.84–1.11 of the design's ink.
 
 **Readability warning.** Text this small is also hard to read, and no renderer measures it exactly. Kit build and kit
 sync warn once about the kit's text styles under 10 device px at the smallest viewport the kit declares (at 1280 wide:
