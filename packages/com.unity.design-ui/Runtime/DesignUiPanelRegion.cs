@@ -14,7 +14,9 @@ namespace DesignUi
     /// different sort order renders the document on a runtime copy of its PanelSettings, so the shared asset never
     /// changes. Hosts that route pointer input themselves (and block uGUI raycasts over the screen) ask
     /// <see cref="IsPointerOverPanel"/>; focus entering and leaving the screen and a cancel (Escape) inside it are events.
-    /// The region also hands the screens' font set to <see cref="DesignText"/> on attach. It reads no input itself.
+    /// The region also hands the screens' font set to <see cref="DesignText"/> on attach and runs a
+    /// <see cref="LocaleFontController"/> on the document root (the locale from <see cref="LocaleSource"/>, by default Unity
+    /// Localization's selected locale; the game's text size from <see cref="TextSizes"/>). It reads no input itself.
     /// Runs in Play mode and in players; nothing is applied in Edit mode.
     /// </summary>
     [AddComponentMenu("Design UI/Panel Region")]
@@ -27,6 +29,11 @@ namespace DesignUi
         [SerializeField] DesignUiHostSettings m_Settings = new DesignUiHostSettings();
         [Tooltip("The screens' font set (DesignFonts.asset next to the generated screens). Filled in by the Editor when the component is added.")]
         [SerializeField] DesignFontSet m_Fonts;
+        [SerializeField] DesignLocaleRules m_LocaleRules = new DesignLocaleRules();
+        [Tooltip("Panel scales of the profile's viewports, filled in by the Editor: a text-size step is checked at each (whole device pixels).")]
+        [SerializeField] float[] m_ViewportScales = { 1f };
+        [Tooltip("Optional: the game's component that implements IDesignTextSizeSource (its text-size setting).")]
+        [SerializeField] MonoBehaviour m_TextSizeSource;
 
         static readonly Vector3[] s_Corners = new Vector3[4];
 
@@ -35,6 +42,9 @@ namespace DesignUi
         PanelSettings m_Source, m_Copy;
         Canvas m_Canvas;
         bool m_IsAttached;
+        IDesignLocaleSource m_LocaleSource, m_OwnedLocaleSource;
+        IDesignTextSizeSource m_TextSizes;
+        LocaleFontController m_LocaleFonts;
 
         /// <summary>The framed document (see the field's tooltip for the default).</summary>
         public UIDocument Document
@@ -64,6 +74,48 @@ namespace DesignUi
             set => m_Fonts = value;
         }
 
+        /// <summary>Right-to-left and shaping locales and the RTL alignment rule; a change applies on the next attach.</summary>
+        public DesignLocaleRules LocaleRules
+        {
+            get => m_LocaleRules;
+            set => m_LocaleRules = value ?? new DesignLocaleRules();
+        }
+
+        /// <summary>Panel scales of the declared viewports a text-size step is checked at; a change applies on the next attach.</summary>
+        public float[] ViewportScales
+        {
+            get => m_ViewportScales;
+            set => m_ViewportScales = value;
+        }
+
+        /// <summary>
+        /// The locale the screen follows. Null (the default) uses <see cref="DesignLocaleSources.Default"/>: Unity
+        /// Localization's selected locale when the package is installed.
+        /// </summary>
+        public IDesignLocaleSource LocaleSource
+        {
+            get => m_LocaleSource;
+            set
+            {
+                m_LocaleSource = value;
+                Restart();
+            }
+        }
+
+        /// <summary>The game's text-size setting: set in code, else the component in the Text Size Source field, else none.</summary>
+        public IDesignTextSizeSource TextSizes
+        {
+            get => m_TextSizes ?? m_TextSizeSource as IDesignTextSizeSource;
+            set
+            {
+                m_TextSizes = value;
+                Restart();
+            }
+        }
+
+        /// <summary>The controller that keeps the screen root on the locale and text size while attached, or null.</summary>
+        public LocaleFontController LocaleFonts => m_LocaleFonts;
+
         /// <summary>The root's rect in panel points, as last applied.</summary>
         public Rect PanelRect { get; private set; }
 
@@ -89,6 +141,15 @@ namespace DesignUi
         internal static Action<DesignUiPanelRegion> EditorDefaults;
 
         void Reset() => EditorDefaults?.Invoke(this);
+
+        void OnValidate()
+        {
+            if (m_TextSizeSource != null && !(m_TextSizeSource is IDesignTextSizeSource))
+            {
+                Debug.LogWarning(m_TextSizeSource.GetType().Name + " does not implement IDesignTextSizeSource; the region's Text Size Source is cleared.", this);
+                m_TextSizeSource = null;
+            }
+        }
 #endif
 
         void OnEnable() => Attach();
@@ -126,6 +187,8 @@ namespace DesignUi
             m_IsAttached = false;
             Canvas.willRenderCanvases -= Refresh;
             Bind(null);
+            (m_OwnedLocaleSource as IDisposable)?.Dispose();
+            m_OwnedLocaleSource = null;
             if (m_Copy != null || m_Source != null)
             {
                 if (m_Attached != null && m_Attached.panelSettings == m_Copy) m_Attached.panelSettings = m_Source;
@@ -207,6 +270,8 @@ namespace DesignUi
 
         void Bind(VisualElement root)
         {
+            m_LocaleFonts?.Dispose();
+            m_LocaleFonts = null;
             if (m_Root != null)
             {
                 m_Root.UnregisterCallback<NavigationCancelEvent>(OnCancel);
@@ -219,7 +284,33 @@ namespace DesignUi
                 m_Root.RegisterCallback<NavigationCancelEvent>(OnCancel);
                 m_Root.RegisterCallback<FocusInEvent>(OnFocusIn);
                 m_Root.RegisterCallback<FocusOutEvent>(OnFocusOut);
+                m_LocaleFonts = CreateLocaleFonts(m_Root);
             }
+        }
+
+        /// <summary>
+        /// The screen root's locale and text-size controller: the game's locale source, else the default one (owned by
+        /// the region until it detaches); none when there is neither a locale source nor a text size.
+        /// </summary>
+        LocaleFontController CreateLocaleFonts(VisualElement root)
+        {
+            var locales = m_LocaleSource;
+            if (locales == null)
+            {
+                if (m_OwnedLocaleSource == null) m_OwnedLocaleSource = DesignLocaleSources.Default?.Invoke();
+                locales = m_OwnedLocaleSource;
+            }
+            var sizes = TextSizes;
+            if (locales == null && sizes == null) return null;
+            return new LocaleFontController(root, m_Fonts, m_LocaleRules, locales, sizes, m_ViewportScales);
+        }
+
+        /// <summary>A new locale source or text size while attached: a new controller for the root.</summary>
+        void Restart()
+        {
+            if (!m_IsAttached || m_Root == null) return;
+            m_LocaleFonts?.Dispose();
+            m_LocaleFonts = CreateLocaleFonts(m_Root);
         }
 
         void OnCancel(NavigationCancelEvent e) => EscapePressed?.Invoke();

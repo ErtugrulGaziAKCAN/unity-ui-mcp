@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using NUnit.Framework;
@@ -24,9 +25,21 @@ namespace DesignUi.Editor.Tests
         PanelSettings _settings;
         DesignUiPanelRegion _region;
 
+        Func<IDesignLocaleSource> _defaultLocales;
+
+        [SetUp]
+        public void NoDefaultLocaleSource()
+        {
+            // the Unity Localization adapter registers itself as the default when the package is installed; these tests
+            // choose their own source
+            _defaultLocales = DesignLocaleSources.Default;
+            DesignLocaleSources.Default = null;
+        }
+
         [TearDown]
         public void Cleanup()
         {
+            DesignLocaleSources.Default = _defaultLocales;
             if (_region != null) _region.Detach();
             DesignText.Fonts = null;
             if (_camera != null) _camera.targetTexture = null; // before the textures go
@@ -296,17 +309,72 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Attach_RunsALocaleFontController_OnTheDocumentRoot()
+        {
+            Shell(640, 360);
+            var locales = new LocaleFontControllerTests.Locales("en");
+            var sizes = new LocaleFontControllerTests.Sizes("large", 1.25f);
+            _region.Fonts = null; // Reset may have found the project's set, whose locales decide the class
+            _region.LocaleSource = locales;
+            _region.TextSizes = sizes;
+            _region.Attach();
+            var root = _doc.rootVisualElement;
+            Assert.IsNotNull(_region.LocaleFonts);
+            Assert.IsTrue(root.ClassListContains("locale-en"));
+            Assert.IsTrue(root.ClassListContains("text-size-large"));
+
+            locales.Set("he");
+            Assert.IsTrue(root.ClassListContains("locale-he"), "the open screen follows the locale");
+            Assert.IsTrue(root.ClassListContains(LocaleFontController.RtlClass));
+
+            _region.Detach();
+            Assert.IsNull(_region.LocaleFonts);
+            Assert.IsFalse(locales.HasListeners, "detaching ends the controller");
+            Assert.IsFalse(sizes.HasListeners);
+            Assert.IsFalse(locales.Disposed, "a source the game set is the game's");
+        }
+
+        [Test]
+        public void Attach_UsesTheDefaultLocaleSource_AndDisposesItOnDetach()
+        {
+            Shell(640, 360);
+            LocaleFontControllerTests.Locales created = null;
+            DesignLocaleSources.Default = () => created = new LocaleFontControllerTests.Locales("tr");
+            _region.Fonts = null;
+            _region.Attach();
+            Assert.IsNotNull(created, "the default source (Unity Localization's selected locale when installed)");
+            Assert.IsTrue(_doc.rootVisualElement.ClassListContains("locale-tr"));
+            _region.Detach();
+            Assert.IsTrue(created.Disposed, "the region owns the default source it created");
+        }
+
+        [Test]
+        public void Attach_WithoutLocaleSourceOrTextSize_RunsNoController()
+        {
+            Shell(640, 360);
+            _region.Attach();
+            Assert.IsNull(_region.LocaleFonts);
+        }
+
+        [Test]
         public void EditorDefaults_CopyTheProfilesHostSettingsAndFindTheFontSet()
         {
             Shell(640, 360);
             var profile = Track(ScriptableObject.CreateInstance<DesignUiProfile>());
             profile.host = new DesignUiHostSettings { sortingOrder = 12, documentOrder = 2 };
+            profile.localeRules = new DesignLocaleRules { rtlAlignment = RtlTextAlignment.Mirror, rightToLeft = new[] { "ar" } };
+            profile.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720), new Vector2Int(1920, 1200) };
             var fonts = Track(ScriptableObject.CreateInstance<DesignFontSet>());
             _region.Fonts = null; // Reset may have found the project's own set already
             DesignUiHostDefaults.Apply(_region, profile, fonts);
             Assert.AreEqual(12f, _region.Settings.sortingOrder);
             Assert.AreEqual(2f, _region.Settings.documentOrder);
             Assert.AreNotSame(profile.host, _region.Settings, "a copy: the region keeps its own values");
+            Assert.AreEqual(RtlTextAlignment.Mirror, _region.LocaleRules.rtlAlignment);
+            CollectionAssert.AreEqual(new[] { "ar" }, _region.LocaleRules.rightToLeft);
+            Assert.AreNotSame(profile.localeRules, _region.LocaleRules);
+            Assert.AreEqual(new[] { 1f, 0.75f, 0.5f, Mathf.Lerp(0.75f, 1200f / 1440f, 0.5f) }, _region.ViewportScales,
+                "the viewports' panel scales (linear blend at match 0.5)");
             Assert.AreSame(fonts, _region.Fonts);
             var other = Track(ScriptableObject.CreateInstance<DesignFontSet>());
             DesignUiHostDefaults.Apply(_region, profile, other);
