@@ -110,7 +110,7 @@ namespace DesignUi.Editor.Tests
             }
         }
 
-        /// <summary>The panel scale Unity resolves for a texture (linear blend, spec 12 / R49).</summary>
+        /// <summary>The panel scale Unity resolves for a texture (PanelSettings' linear blend of width and height, spec §12).</summary>
         static float Scale(int w, int h) => Mathf.Lerp(w / 2560f, h / 1440f, 0.5f);
 
         static void AreClose(Rect expected, Rect actual, string what)
@@ -143,7 +143,8 @@ namespace DesignUi.Editor.Tests
                 Assert.AreEqual(h, canvasRect.height, 0.01f, "precondition: the shell canvas takes the texture size");
                 Assert.AreEqual(Scale(w, h), _doc.rootVisualElement.panel.scaledPixelsPerPoint, 1e-4f, "precondition: the panel scale");
 
-                _region.Refresh();
+                // no explicit Refresh: the region follows the frame after uGUI's canvas update (Canvas.willRenderCanvases)
+                Canvas.ForceUpdateCanvases();
                 yield return null;
                 var expected = Expected(w, h);
                 AreClose(expected, _region.PanelRect, w + "x" + h + " region rect");
@@ -193,6 +194,7 @@ namespace DesignUi.Editor.Tests
 
             _region.Detach();
             Assert.AreSame(source, _doc.panelSettings, "detaching restores the document's PanelSettings");
+            Assert.AreEqual(0f, _doc.sortingOrder, "and its order on the panel");
             Assert.IsTrue(applied != null, "still used by the other region");
             otherRegion.Detach();
             Assert.AreSame(source, other.panelSettings);
@@ -296,6 +298,18 @@ namespace DesignUi.Editor.Tests
             _region.Detach();
             using (var e = NavigationCancelEvent.GetPooled(EventModifiers.None)) a.SendEvent(e);
             Assert.AreEqual(1, escapes, "no events after detaching");
+        }
+
+        [Test]
+        public void Attach_WithoutAFontSet_Warns()
+        {
+            Shell(640, 360);
+            _region.Fonts = null;
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("no DesignFontSet"));
+            _region.Attach();
+            _region.Detach();
+            _region.Attach(); // once per region
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]

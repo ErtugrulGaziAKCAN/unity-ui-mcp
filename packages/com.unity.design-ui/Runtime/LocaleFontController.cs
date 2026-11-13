@@ -8,6 +8,9 @@ using FontAsset = UnityEngine.TextCore.Text.FontAsset;
 
 namespace DesignUi
 {
+    /// <summary>Whether a panel can use the advanced text generator: Unity's answer, or Unknown when this version gives none.</summary>
+    internal enum AdvancedTextState { On, Off, Unknown }
+
     /// <summary>
     /// Keeps a design screen's root on the selected locale and the game's text size (spec 13).
     /// <list type="bullet">
@@ -20,15 +23,20 @@ namespace DesignUi
     /// rule's alignment flip of start-aligned text (inline, per text element, from its design alignment; the layout is
     /// not mirrored).</item>
     /// <item>Shaping: <c>-unity-text-generator: advanced</c> on the root for right-to-left and complex-script locales only
-    /// (the standard generator stays for the rest, where it measured exact), when the project has Enable Advanced Text;
-    /// otherwise the locale is reported in <see cref="Issues"/> and the generator is not requested.</item>
+    /// (the standard generator stays for the rest, where it measured exact). Unity's own check decides: on — requested;
+    /// off (Project Settings > UI Toolkit > Enable Advanced Text unchecked) — not requested, the locale is reported in
+    /// <see cref="Issues"/>; unknown (a Unity version whose check this package does not know) — requested, and a warning
+    /// to verify the setting is reported once per session. Unity 6000.3 answers through an internal method
+    /// (<c>TextUtilities.IsAdvancedTextEnabledForPanel</c>: the project setting in the Editor, the PanelSettings' ICU data
+    /// in a player); there is no public or Editor API for it. Unity 6000.6 has no switch (the generator is always
+    /// available), which the check knows.</item>
     /// <item>Text size (<see cref="IDesignTextSizeSource"/>): the root's <c>text-size-&lt;key&gt;</c> class, and every
     /// text's design size times the scale, applied exactly (inline). A step that leaves a size or a kit line box off
     /// whole device pixels at a declared viewport scale is reported, never rounded.</item>
     /// </list>
     /// Text added later is handled at its first layout, a screen added directly below the root on the next frame; the
-    /// per-frame pass allocates nothing in steady state. Disposing
-    /// unsubscribes and gives every text its own alignment and size back; the root keeps its last locale.
+    /// per-frame pass allocates nothing in steady state. Disposing unsubscribes, gives every text its own alignment and
+    /// size back and removes the text-size class; the root keeps its last locale.
     /// Never blocks on a locale: a source that does not know it yet (null) keeps the screen as it is.
     /// </summary>
     public sealed class LocaleFontController : IDisposable
@@ -37,7 +45,24 @@ namespace DesignUi
         public const string TextSizeClassPrefix = "text-size-";
 
         /// <summary>Whether the panel can use the advanced text generator (Project Settings > UI Toolkit > Enable Advanced Text).</summary>
-        internal static Func<IPanel, bool> AdvancedTextCheck = UnityAdvancedTextEnabled;
+        internal static Func<IPanel, AdvancedTextState> AdvancedTextCheck = UnityAdvancedText;
+
+        /// <summary>How this Unity version answers the Advanced Text check, or null when it cannot tell (every answer is Unknown).</summary>
+        internal static string AdvancedTextLookup
+        {
+            get
+            {
+                LookUpAdvancedText();
+                return s_AdvancedTextLookup;
+            }
+        }
+
+        /// <summary>Lets the next Unknown answer log its warning again (tests).</summary>
+        internal static void ResetAdvancedTextReport() => s_UnknownReported = false;
+
+        const string UnknownAdvancedText =
+            "Design UI cannot tell whether this Unity version has the advanced text generator enabled, so it requests it for right-to-left and complex-script locales: " +
+            "verify Project Settings > UI Toolkit > Enable Advanced Text (where the setting exists), or their text renders unshaped.";
 
         sealed class Saved
         {
@@ -196,6 +221,7 @@ namespace DesignUi
             m_Saved.Clear();
             m_Disposed = true;
             m_Tick.Pause();
+            if (m_SizeClass != null) m_Root.RemoveFromClassList(m_SizeClass); // the sizes went back to the design's
             m_Root.UnregisterCallback<AttachToPanelEvent>(OnAttach);
             foreach (var t in m_AwaitingLayout) t.UnregisterCallback(m_OnLaidOut);
             m_AwaitingLayout.Clear();
@@ -230,7 +256,10 @@ namespace DesignUi
 
         // ---- locale ---------------------------------------------------------------------------------------------------
 
-        /// <summary>The font set's locale for <paramref name="code"/>: the same code, else the same language, else the reference locale.</summary>
+        /// <summary>
+        /// The font set's locale for <paramref name="code"/>: the same code, else the same language in the same script (when
+        /// both name one: <c>zh-Hant</c> never gets <c>zh-Hans</c> twins), else the reference locale.
+        /// </summary>
         string FontLocale(string code)
         {
             var locales = m_Fonts != null ? m_Fonts.locales : null;
@@ -240,9 +269,18 @@ namespace DesignUi
             {
                 if (string.IsNullOrEmpty(l?.locale)) continue;
                 if (string.Equals(l.locale, code, StringComparison.OrdinalIgnoreCase)) return l.locale;
-                if (sameLanguage == null && string.Equals(Language(l.locale), language, StringComparison.OrdinalIgnoreCase)) sameLanguage = l.locale;
+                if (sameLanguage == null && string.Equals(Language(l.locale), language, StringComparison.OrdinalIgnoreCase) &&
+                    (Script(code) == null || Script(l.locale) == null || string.Equals(Script(code), Script(l.locale), StringComparison.OrdinalIgnoreCase)))
+                    sameLanguage = l.locale;
             }
             return sameLanguage ?? (string.IsNullOrEmpty(m_Fonts.referenceLocale) ? code : m_Fonts.referenceLocale);
+        }
+
+        /// <summary>The script subtag (four letters, as in <c>zh-Hant</c>), or null.</summary>
+        static string Script(string code)
+        {
+            foreach (var part in code.Split('-', '_')) if (part.Length == 4 && char.IsLetter(part[0])) return part;
+            return null;
         }
 
         static string Language(string code)
@@ -308,12 +346,13 @@ namespace DesignUi
             m_LocaleIssues.Clear();
             bool use = false;
             var code = RequestedLocale;
-            if (code != null && m_Rules.NeedsShaping(code))
+            var panel = m_Root.panel; // without a panel it is decided when the root is attached (OnAttach)
+            if (code != null && m_Rules.NeedsShaping(code) && panel != null)
             {
-                var panel = m_Root.panel;
-                if (panel == null) use = false; // decided when the root is attached (OnAttach)
-                else if (AdvancedTextCheck(panel)) use = true;
-                else
+                var state = AdvancedTextCheck(panel);
+                use = state != AdvancedTextState.Off;
+                if (state == AdvancedTextState.Unknown) m_LocaleIssues.Add(UnknownAdvancedText);
+                else if (state == AdvancedTextState.Off)
                     m_LocaleIssues.Add("locale '" + code + "' needs the advanced text generator (" + (IsRightToLeft ? "bidirectional text and shaping" : "shaping") +
                                        ") but the project has it off: enable Project Settings > UI Toolkit > Enable Advanced Text. Its text renders unshaped.");
             }
@@ -322,24 +361,40 @@ namespace DesignUi
             UpdateIssues();
         }
 
-        static MethodInfo s_UnityCheck;
-        static bool s_LookedUp;
+        static Func<IPanel, bool> s_PanelGate;
+        static string s_AdvancedTextLookup;
+        static bool s_LookedUp, s_UnknownReported;
 
-        /// <summary>
-        /// Unity's own check (6000.3: <c>TextUtilities.IsAdvancedTextEnabledForPanel</c>, internal): the UI Toolkit project
-        /// setting in the Editor, the PanelSettings' ICU data in a player. A Unity version without it is asked for the
-        /// generator anyway (and reports a disabled one itself).
-        /// </summary>
-        static bool UnityAdvancedTextEnabled(IPanel panel)
+        /// <summary>Unity's answer for a panel (see the class summary): On, Off, or Unknown on a version this package does not know.</summary>
+        static AdvancedTextState UnityAdvancedText(IPanel panel)
         {
-            if (!s_LookedUp)
+            LookUpAdvancedText();
+            if (s_PanelGate != null) return s_PanelGate(panel) ? AdvancedTextState.On : AdvancedTextState.Off;
+            return s_AdvancedTextLookup != null ? AdvancedTextState.On : AdvancedTextState.Unknown;
+        }
+
+        static void LookUpAdvancedText()
+        {
+            if (s_LookedUp) return;
+            s_LookedUp = true;
+            const BindingFlags any = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
+            var utilities = typeof(VisualElement).Assembly.GetType("UnityEngine.UIElements.TextUtilities");
+            var gate = utilities?.GetMethod("IsAdvancedTextEnabledForPanel", any, null, new[] { typeof(IPanel) }, null);
+            if (gate != null && gate.ReturnType == typeof(bool))
             {
-                s_LookedUp = true;
-                var m = typeof(VisualElement).Assembly.GetType("UnityEngine.UIElements.TextUtilities")
-                    ?.GetMethod("IsAdvancedTextEnabledForPanel", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public, null, new[] { typeof(IPanel) }, null);
-                s_UnityCheck = m != null && m.ReturnType == typeof(bool) ? m : null;
+                s_PanelGate = (Func<IPanel, bool>)Delegate.CreateDelegate(typeof(Func<IPanel, bool>), gate);
+                s_AdvancedTextLookup = "TextUtilities.IsAdvancedTextEnabledForPanel (internal; Unity 6000.3)";
             }
-            return s_UnityCheck == null || (bool)s_UnityCheck.Invoke(null, new object[] { panel });
+            // 6000.6 (read on 6000.6.8f1): the switch, its delegate and the panel gate are gone; the element check reads only
+            // -unity-text-generator, so a requested generator is used
+            else if (utilities != null && utilities.GetField("IsAdvancedTextEnabled", any) == null && AtLeast(6000, 6))
+                s_AdvancedTextLookup = "no Advanced Text switch (Unity 6000.6 and newer: always available)";
+        }
+
+        static bool AtLeast(int major, int minor)
+        {
+            var parts = Application.unityVersion.Split('.');
+            return parts.Length > 1 && int.TryParse(parts[0], out var a) && int.TryParse(parts[1], out var b) && (a > major || a == major && b >= minor);
         }
 
         // ---- alignment and size, per text element -------------------------------------------------------------------
@@ -477,7 +532,15 @@ namespace DesignUi
             m_Issues.AddRange(m_LocaleIssues);
             m_Issues.AddRange(m_SizeIssues);
             foreach (var issue in m_Issues)
-                if (m_Logged.Add(issue)) Debug.LogWarning("Design UI: " + issue);
+            {
+                if (!m_Logged.Add(issue)) continue;
+                if (issue == UnknownAdvancedText)
+                {
+                    if (s_UnknownReported) continue; // a fact of the Unity version: once per session
+                    s_UnknownReported = true;
+                }
+                Debug.LogWarning("Design UI: " + issue);
+            }
         }
 
         static bool ValidKey(string key)

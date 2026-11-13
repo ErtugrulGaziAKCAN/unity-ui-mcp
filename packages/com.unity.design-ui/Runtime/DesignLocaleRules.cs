@@ -19,12 +19,13 @@ namespace DesignUi
     /// text generator for shaping, and the RTL alignment rule. The DesignUiProfile holds them; a DesignUiPanelRegion added
     /// in the Editor copies them. A code matches an entry when it equals it or starts with it and a '-' or '_' (case
     /// ignored), so <c>ar</c> covers <c>ar-SA</c>; a code whose script subtag is a right-to-left script (<c>pa-Arab</c>)
-    /// is right to left too.
+    /// is right to left too, and one whose script needs shaping (<c>sat-Deva</c>) uses the advanced generator.
     /// </summary>
     [Serializable]
     public sealed class DesignLocaleRules
     {
         static readonly string[] RtlScripts = { "arab", "hebr", "thaa", "syrc", "nkoo", "adlm", "rohg", "samr", "mand" };
+        static readonly string[] ShapedScripts = { "deva", "beng", "guru", "gujr", "orya", "taml", "telu", "knda", "mlym", "sinh", "thai", "laoo", "khmr", "mymr", "tibt" };
 
         [Tooltip("Locales that read right to left: the screen root gets the 'rtl' class and an RTL language direction, start-aligned text follows the alignment rule, and their text uses the advanced text generator (bidirectional text, shaping).")]
         public string[] rightToLeft = { "ar", "fa", "he", "ur", "ps", "sd", "ug", "yi", "dv", "ckb", "syr" };
@@ -35,10 +36,10 @@ namespace DesignUi
         [Tooltip("What happens to start-aligned text in a right-to-left locale. The layout is never mirrored.")]
         public RtlTextAlignment rtlAlignment = RtlTextAlignment.StartToEnd;
 
-        public bool IsRightToLeft(string code) => Matches(code, rightToLeft) || HasRtlScript(code);
+        public bool IsRightToLeft(string code) => Matches(code, rightToLeft) || HasScript(code, RtlScripts);
 
         /// <summary>Whether text in <paramref name="code"/> needs the advanced text generator: right to left or a complex script.</summary>
-        public bool NeedsShaping(string code) => IsRightToLeft(code) || Matches(code, complexScripts);
+        public bool NeedsShaping(string code) => IsRightToLeft(code) || Matches(code, complexScripts) || HasScript(code, ShapedScripts);
 
         public DesignLocaleRules Clone()
         {
@@ -61,12 +62,12 @@ namespace DesignUi
             return false;
         }
 
-        static bool HasRtlScript(string code)
+        static bool HasScript(string code, string[] scripts)
         {
             if (string.IsNullOrEmpty(code)) return false;
             foreach (var part in code.Split('-', '_'))
                 if (part.Length == 4)
-                    foreach (var script in RtlScripts)
+                    foreach (var script in scripts)
                         if (string.Equals(part, script, StringComparison.OrdinalIgnoreCase)) return true;
             return false;
         }

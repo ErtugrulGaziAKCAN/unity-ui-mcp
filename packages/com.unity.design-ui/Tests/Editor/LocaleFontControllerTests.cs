@@ -59,30 +59,38 @@ namespace DesignUi.Editor.Tests
         GameObject _go;
         PanelSettings _settings;
         RenderTexture _rt;
-        Func<IPanel, bool> _advancedCheck;
+        Func<IPanel, AdvancedTextState> _advancedCheck;
         IDisposable _advancedText;
 
         [SetUp]
-        public void Remember()
-        {
-            _advancedCheck = LocaleFontController.AdvancedTextCheck;
-            _advancedText = new AdvancedTextScope(true); // Unity's own check (the controller's default) says "on" in these tests
-        }
+        public void Remember() => _advancedCheck = LocaleFontController.AdvancedTextCheck;
+
+        /// <summary>
+        /// The answer of the Advanced Text check for this test. Tests that render text in a shaping locale say Off, so the
+        /// generator is not requested on an Editor whose project setting is off (Unity would log an error).
+        /// </summary>
+        static void AdvancedText(AdvancedTextState state) => LocaleFontController.AdvancedTextCheck = _ => state;
 
         [TearDown]
         public void Cleanup()
         {
-            _controller?.Dispose();
-            _controller = null;
-            LocaleFontController.AdvancedTextCheck = _advancedCheck;
-            if (_go != null) Object.DestroyImmediate(_go);
-            if (_settings != null) Object.DestroyImmediate(_settings);
-            if (_rt != null) Object.DestroyImmediate(_rt);
-            foreach (var o in _objects) if (o != null) Object.DestroyImmediate(o);
-            _objects.Clear();
-            _advancedText?.Dispose(); // after the panel's text is gone: its handles ask for the generator while they are released
-            _advancedText = null;
-            if (AssetDatabase.IsValidFolder(ArabicFolder)) AssetDatabase.DeleteAsset(ArabicFolder);
+            try
+            {
+                _controller?.Dispose();
+                _controller = null;
+                if (_go != null) Object.DestroyImmediate(_go);
+                if (_settings != null) Object.DestroyImmediate(_settings);
+                if (_rt != null) Object.DestroyImmediate(_rt);
+                foreach (var o in _objects) if (o != null) Object.DestroyImmediate(o);
+                _objects.Clear();
+                if (AssetDatabase.IsValidFolder(ArabicFolder)) AssetDatabase.DeleteAsset(ArabicFolder);
+            }
+            finally
+            {
+                LocaleFontController.AdvancedTextCheck = _advancedCheck;
+                _advancedText?.Dispose(); // after the panel's text is gone: its handles ask for the generator while they are released
+                _advancedText = null;
+            }
         }
 
         T Track<T>(T o) where T : Object
@@ -147,6 +155,7 @@ namespace DesignUi.Editor.Tests
             FontAsset tr = Inter("tr twin"), en = Inter("en twin"), ar = Inter("ar twin"), trBox = LineBox("tr r125", 1.25f);
             var fonts = Set(("tr", new[] { tr, trBox }), ("en", new[] { en }), ("ar", new[] { ar }));
             var locales = new Locales("tr");
+            AdvancedText(AdvancedTextState.Off);
             _controller = new LocaleFontController(root, fonts, new DesignLocaleRules(), locales);
 
             CollectionAssert.AreEqual(new[] { "locale-tr" }, LocaleClasses(root));
@@ -187,6 +196,7 @@ namespace DesignUi.Editor.Tests
         public void Locale_WithoutAFontSet_StillSetsClassesAndDirection()
         {
             var root = Root();
+            AdvancedText(AdvancedTextState.On);
             _controller = new LocaleFontController(root, null, new DesignLocaleRules(), new Locales("he"));
             CollectionAssert.AreEqual(new[] { "locale-he" }, LocaleClasses(root));
             Assert.IsTrue(root.ClassListContains(LocaleFontController.RtlClass));
@@ -203,6 +213,9 @@ namespace DesignUi.Editor.Tests
         [TestCase("en", false, false)]
         [TestCase("tr", false, false)]
         [TestCase("zh-Hans", false, false)]
+        [TestCase("sat-Deva", false, true)]
+        [TestCase("ks-Arab", true, true)]
+        [TestCase("sr-Latn", false, false)]
         [TestCase("ja", false, false)]
         public void Rules_KnowRightToLeftAndShapingLocales(string code, bool rtl, bool shaping)
         {
@@ -216,6 +229,7 @@ namespace DesignUi.Editor.Tests
         {
             var root = Root();
             var locales = new Locales("ar");
+            AdvancedText(AdvancedTextState.On);
             _controller = new LocaleFontController(root, null, new DesignLocaleRules(), locales);
             Assert.AreEqual(TextGeneratorType.Advanced, root.style.unityTextGenerator.value, "Arabic: shaping and bidi");
             Assert.IsTrue(_controller.UsesAdvancedText);
@@ -229,10 +243,10 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void AdvancedGenerator_Missing_IsReported_AndNotRequested()
+        public void AdvancedGenerator_Off_IsReported_AndNotRequested()
         {
             var root = Root();
-            LocaleFontController.AdvancedTextCheck = _ => false;
+            AdvancedText(AdvancedTextState.Off);
             LogAssert.Expect(LogType.Warning, new Regex("ar.*Enable Advanced Text"));
             _controller = new LocaleFontController(root, null, new DesignLocaleRules(), new Locales("ar"));
             Assert.AreEqual(StyleKeyword.Null, root.style.unityTextGenerator.keyword,
@@ -241,6 +255,76 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(root.ClassListContains(LocaleFontController.RtlClass), "direction and alignment still follow the locale");
             Assert.AreEqual(1, _controller.Issues.Count);
             StringAssert.Contains("Enable Advanced Text", _controller.Issues[0]);
+        }
+
+        [Test]
+        public void AdvancedGenerator_Unknown_IsRequested_AndReportedOnce()
+        {
+            var root = Root();
+            AdvancedText(AdvancedTextState.Unknown);
+            LocaleFontController.ResetAdvancedTextReport();
+            LogAssert.Expect(LogType.Warning, new Regex("cannot tell whether.*Project Settings > UI Toolkit > Enable Advanced Text"));
+            var locales = new Locales("ar");
+            _controller = new LocaleFontController(root, null, new DesignLocaleRules(), locales);
+            Assert.AreEqual(TextGeneratorType.Advanced, root.style.unityTextGenerator.value, "requested: shaping needs it");
+            Assert.IsTrue(_controller.UsesAdvancedText);
+            Assert.AreEqual(1, _controller.Issues.Count);
+            StringAssert.Contains("Enable Advanced Text", _controller.Issues[0]);
+
+            locales.Set("th");
+            _controller.Dispose();
+            _controller = new LocaleFontController(root, null, new DesignLocaleRules(), new Locales("fa"));
+            Assert.AreEqual(1, _controller.Issues.Count, "every controller lists it");
+            LogAssert.NoUnexpectedReceived(); // logged once per session, not per locale or screen
+        }
+
+        [Test]
+        public void AdvancedTextLookup_KnowsThisEditorVersion()
+        {
+            Assert.IsNotNull(LocaleFontController.AdvancedTextLookup,
+                "Unity " + Application.unityVersion + ": LocaleFontController cannot find how this version enables the advanced text " +
+                "generator, so it reports 'unknown' for every shaping locale. Find the version's switch (6000.3: the internal " +
+                "UnityEngine.UIElements.TextUtilities.IsAdvancedTextEnabledForPanel; 6000.6: none, always on) and extend UnityAdvancedText.");
+        }
+
+        [Test]
+        public void DefaultCheck_FollowsUnitysAdvancedTextSwitch()
+        {
+            if (!AdvancedTextScope.Available)
+                Assert.Ignore("Unity " + Application.unityVersion + " has no Advanced Text switch to turn (lookup: " + LocaleFontController.AdvancedTextLookup + ")");
+            var root = Root();
+            using (new AdvancedTextScope(false))
+            {
+                LogAssert.Expect(LogType.Warning, new Regex("ar.*Enable Advanced Text"));
+                _controller = new LocaleFontController(root, null, new DesignLocaleRules(), new Locales("ar"));
+                Assert.IsFalse(_controller.UsesAdvancedText, "off in the project: not requested");
+                Assert.AreEqual(StyleKeyword.Null, root.style.unityTextGenerator.keyword);
+                Assert.AreEqual(1, _controller.Issues.Count, "and reported");
+                _controller.Dispose();
+            }
+            using (new AdvancedTextScope(true))
+            {
+                _controller = new LocaleFontController(root, null, new DesignLocaleRules(), new Locales("ar"));
+                Assert.IsTrue(_controller.UsesAdvancedText, "on in the project: requested");
+                CollectionAssert.IsEmpty(_controller.Issues);
+                _controller.Dispose();
+                _controller = null;
+            }
+        }
+
+        [Test]
+        public void Locale_OfTheSameLanguageInAnotherScript_UsesTheReferenceFonts()
+        {
+            FontFixture.RequireInter();
+            var root = Root();
+            var fonts = Set(("en", new[] { Inter("en twin") }), ("zh-Hans", new[] { Inter("zh-Hans twin") }));
+            var locales = new Locales("zh-Hans");
+            _controller = new LocaleFontController(root, fonts, new DesignLocaleRules(), locales);
+            CollectionAssert.AreEqual(new[] { "locale-zh-Hans" }, LocaleClasses(root));
+            locales.Set("zh-Hant");
+            CollectionAssert.AreEqual(new[] { "locale-en" }, LocaleClasses(root), "another script's twins could lack its glyphs");
+            locales.Set("zh");
+            CollectionAssert.AreEqual(new[] { "locale-zh-Hans" }, LocaleClasses(root), "no script given: the language's fonts");
         }
 
         /// <summary>Labels with every kind of horizontal alignment and a row whose order must not change.</summary>
@@ -283,6 +367,7 @@ namespace DesignUi.Editor.Tests
             yield return null;
             Assert.AreEqual(TextAnchor.UpperLeft, t.inherited.resolvedStyle.unityTextAlign, "precondition: the runtime theme starts text at the left");
             var locales = new Locales("en");
+            AdvancedText(AdvancedTextState.Off);
             _controller = new LocaleFontController(root, null, new DesignLocaleRules(), locales);
 
             locales.Set("ar");
@@ -323,6 +408,7 @@ namespace DesignUi.Editor.Tests
             yield return null;
             yield return null;
             var locales = new Locales("ar");
+            AdvancedText(AdvancedTextState.Off);
             _controller = new LocaleFontController(root, null, new DesignLocaleRules { rtlAlignment = RtlTextAlignment.Mirror }, locales);
             yield return null;
             Assert.AreEqual(TextAnchor.UpperRight, t.inherited.resolvedStyle.unityTextAlign);
@@ -374,6 +460,42 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(24f, body.style.fontSize.value.value, 1e-4f, "the inline size it had comes back");
             Assert.AreEqual(12f, caption.resolvedStyle.fontSize, 1e-4f);
             Assert.AreEqual(16f, late.resolvedStyle.fontSize, 1e-4f);
+        }
+
+        [UnityTest]
+        public IEnumerator NewController_InTheSameFrame_KeepsTheDesignValues()
+        {
+            var root = Root();
+            // size and alignment come from the cascade (no inline value), as from a stylesheet: clearing an inline
+            // override takes effect only at the next style pass
+            var container = new VisualElement();
+            container.style.fontSize = 24;
+            container.style.unityTextAlign = TextAnchor.UpperRight;
+            var body = new Label("body");
+            var right = new Label("right");
+            container.Add(body);
+            container.Add(right);
+            root.Add(container);
+            yield return null;
+            yield return null;
+            AdvancedText(AdvancedTextState.Off);
+            var rules = new DesignLocaleRules { rtlAlignment = RtlTextAlignment.Mirror };
+            _controller = new LocaleFontController(root, null, rules, new Locales("ar"), new Sizes("large", 1.5f));
+            yield return null;
+            Assert.AreEqual(36f, body.resolvedStyle.fontSize, 1e-4f);
+            Assert.AreEqual(TextAnchor.UpperLeft, right.resolvedStyle.unityTextAlign);
+
+            // replaced before a style pass (a host restarting its controller): the styles still show the old one's values
+            _controller.Dispose();
+            _controller = new LocaleFontController(root, null, rules, new Locales("ar"), new Sizes("large", 1.5f));
+            yield return null;
+            Assert.AreEqual(36f, body.resolvedStyle.fontSize, 1e-4f, "1.5 × the design size, not 1.5 × the scaled one");
+            Assert.AreEqual(TextAnchor.UpperLeft, right.resolvedStyle.unityTextAlign, "mirrored once, not back");
+            _controller.Dispose();
+            _controller = null;
+            yield return null;
+            Assert.AreEqual(24f, body.resolvedStyle.fontSize, 1e-4f);
+            Assert.AreEqual(TextAnchor.UpperRight, right.resolvedStyle.unityTextAlign);
         }
 
         [UnityTest]
@@ -448,6 +570,7 @@ namespace DesignUi.Editor.Tests
             root.Add(body);
             yield return null;
             yield return null;
+            AdvancedText(AdvancedTextState.Off);
             _controller = new LocaleFontController(root, null, new DesignLocaleRules(), new Locales("ar"), new Sizes("large", 1.5f));
             yield return null;
             _controller.Tick();
@@ -485,20 +608,27 @@ namespace DesignUi.Editor.Tests
                 ?.GetField("IsAdvancedTextEnabled", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
             readonly object _previous;
 
+            /// <summary>Whether this Unity version has the switch (6000.3 does; 6000.6 has none: the generator is always available).</summary>
+            public static bool Available => Field != null && Field.FieldType == typeof(Func<bool>);
+
             public AdvancedTextScope(bool enabled)
             {
-                if (Field == null) Assert.Inconclusive("UnityEngine.UIElements.TextUtilities.IsAdvancedTextEnabled not found in this Unity version");
+                if (!Available) return;
                 _previous = Field.GetValue(null);
                 Field.SetValue(null, (Func<bool>)(() => enabled));
             }
 
-            public void Dispose() => Field.SetValue(null, _previous);
+            public void Dispose()
+            {
+                if (Available) Field.SetValue(null, _previous);
+            }
         }
 
         [UnityTest]
         public IEnumerator Arabic_IsShapedByTheAdvancedGenerator()
         {
             var arabic = ArabicFont();
+            _advancedText = new AdvancedTextScope(true); // a no-op where Unity has no switch
             {
                 var root = Root();
                 yield return null;

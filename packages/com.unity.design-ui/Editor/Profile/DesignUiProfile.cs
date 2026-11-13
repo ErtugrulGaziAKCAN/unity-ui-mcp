@@ -58,6 +58,7 @@ namespace DesignUi.Editor
         void Reset()
         {
             panelSettings = LoadDefaultPanelSettings();
+            if (panelSettings != null) host.sortingOrder = panelSettings.sortingOrder; // a region keeps the asset's order until changed here
         }
     }
 

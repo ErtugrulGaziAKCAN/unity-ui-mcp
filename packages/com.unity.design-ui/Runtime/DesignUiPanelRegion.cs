@@ -41,7 +41,8 @@ namespace DesignUi
         VisualElement m_Root;
         PanelSettings m_Source, m_Copy;
         Canvas m_Canvas;
-        bool m_IsAttached;
+        bool m_IsAttached, m_WarnedNoFonts;
+        float m_PreviousDocumentOrder;
         IDesignLocaleSource m_LocaleSource, m_OwnedLocaleSource;
         IDesignTextSizeSource m_TextSizes;
         LocaleFontController m_LocaleFonts;
@@ -90,7 +91,9 @@ namespace DesignUi
 
         /// <summary>
         /// The locale the screen follows. Null (the default) uses <see cref="DesignLocaleSources.Default"/>: Unity
-        /// Localization's selected locale when the package is installed.
+        /// Localization's selected locale when the package is installed. The default source is created when the region is
+        /// enabled (and starts Unity Localization's initialization), so a game with its own source sets this before the
+        /// region is enabled, or replaces <see cref="DesignLocaleSources.Default"/>.
         /// </summary>
         public IDesignLocaleSource LocaleSource
         {
@@ -167,6 +170,12 @@ namespace DesignUi
             m_IsAttached = true;
             m_Attached = doc;
             if (m_Fonts != null) DesignText.Fonts = m_Fonts;
+            else if (!m_WarnedNoFonts)
+            {
+                m_WarnedNoFonts = true;
+                Debug.LogWarning("DesignUiPanelRegion '" + name + "' has no DesignFontSet: bound text is prepared only in its resolved font, so its first layout " +
+                                 "may be unkerned. Assign the generated DesignFonts.asset (the region's Reset fills it in once the asset exists).", this);
+            }
             var settings = m_Settings ?? new DesignUiHostSettings();
             var source = doc.panelSettings;
             if (source != null && !Mathf.Approximately(source.sortingOrder, settings.sortingOrder))
@@ -175,6 +184,7 @@ namespace DesignUi
                 m_Copy = SortedPanelSettings.Acquire(source, settings.sortingOrder);
                 doc.panelSettings = m_Copy;
             }
+            m_PreviousDocumentOrder = doc.sortingOrder;
             doc.sortingOrder = settings.documentOrder;
             Canvas.willRenderCanvases += Refresh;
             Refresh();
@@ -189,6 +199,7 @@ namespace DesignUi
             Bind(null);
             (m_OwnedLocaleSource as IDisposable)?.Dispose();
             m_OwnedLocaleSource = null;
+            if (m_Attached != null) m_Attached.sortingOrder = m_PreviousDocumentOrder;
             if (m_Copy != null || m_Source != null)
             {
                 if (m_Attached != null && m_Attached.panelSettings == m_Copy) m_Attached.panelSettings = m_Source;
@@ -334,7 +345,11 @@ namespace DesignUi
             return doc != null ? doc : GetComponentInChildren<UIDocument>(true);
         }
 
-        /// <summary>This RectTransform's rect in screen pixels (origin bottom-left) through its root canvas's camera.</summary>
+        /// <summary>
+        /// This RectTransform's rect in screen pixels (origin bottom-left) through its root canvas's camera: none for Screen
+        /// Space - Overlay, the canvas camera otherwise. A World Space canvas is not supported (the panel cannot follow a
+        /// perspective, and without a camera its world coordinates would be read as pixels).
+        /// </summary>
         Rect ScreenRect()
         {
             if (m_Canvas == null) m_Canvas = GetComponentInParent<Canvas>();
@@ -384,7 +399,7 @@ namespace DesignUi
 
             public static PanelSettings Acquire(PanelSettings source, float order)
             {
-                s_Entries.RemoveAll(x => x.Copy == null || x.Source == null);
+                s_Entries.RemoveAll(x => x.Copy == null); // a copy whose source is gone stays until its users release it
                 foreach (var x in s_Entries)
                     if (x.Source == source && x.Order == order)
                     {
