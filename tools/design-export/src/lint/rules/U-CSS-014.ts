@@ -25,7 +25,7 @@ export const rule: Rule = {
       if (problems.length) c.add(e.path, problems.join("; "));
     }
     return c.findings(rule,
-      "Transition opacity or transform instead of box-shadow or background-image (the baked shadow or gradient is swapped per state); " +
+      "Transition a transform (or the opacity of an element that paints one thing, U-CSS-039) instead of box-shadow or background-image (the baked shadow or gradient is swapped per state); " +
       "use one url() image per element (put others in child elements); let a gradient fill the element (background-size auto or 100%, " +
       "background-position in % or keywords); write gradient colours as sRGB colour stops (no colour space, no hints).");
   },

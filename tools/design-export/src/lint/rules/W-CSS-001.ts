@@ -21,6 +21,6 @@ export const rule: Rule = {
       const bad = list.filter((p, i) => cssSupport.isLayoutTransitionProperty(p.trim()) && (dl.length === 0 || !(seconds(dl[i % dl.length]) === 0)));
       if (bad.length) c.add(t.path, `transition on ${bad.join(", ")}${bad.includes("all") ? " (all includes layout properties)" : ""}${at(src, t)}`);
     }
-    return c.findings(rule, "Transition only transform, translate, rotate, scale, opacity and colours; a layout property transition re-runs layout every frame.");
+    return c.findings(rule, "Transition only transform, translate, rotate, scale and colours (opacity on an element that paints one thing, U-CSS-039); a layout property transition re-runs layout every frame.");
   },
 };

@@ -246,6 +246,19 @@ describe("device grid, group opacity and stacking rules", () => {
     expect(f[0].fix).toMatch(/4px/);
     expect(f[0].fix).not.toMatch(/draw a thinner line/);
   });
+
+  it("U-CSS-039: rejects a fade through (0, 1) on overlapping parts: keyframes, a transition, an inline style, a child", async () => {
+    const card = `.card{width:200px;height:80px;background-color:#123c47;border:4px solid #2b6573}`;
+    expect(await ids(`<div class="card fade"></div>`, `${card} .fade{animation:appear 200ms linear} @keyframes appear{from{opacity:0}to{opacity:1}}`, "U-CSS-039")).toHaveLength(1);
+    expect(await ids(`<div class="card fade"></div>`, `${card} .fade{opacity:0;transition:opacity 200ms linear} .fade:hover{opacity:1}`, "U-CSS-039")).toHaveLength(1);
+    expect(await ids(`<div class="card" style="opacity:0.5"></div>`, card, "U-CSS-039")).toHaveLength(1);
+    const child = await ids(`<div class="box"><div class="dot"></div></div>`, `.box{width:200px;height:80px;background-color:#123c47;opacity:0.5} .dot{width:40px;height:40px;background-color:#16c2d5}`, "U-CSS-039");
+    expect(child.map((x) => x.detail)).toEqual([expect.stringMatching(/background of div:0.*background of div:0 > div:0|background of .*dot/)]);
+    // one painted part fades the same in both; an opacity that never changes or changes without a transition never shows a fraction
+    expect(await ids(`<div class="one fade"></div>`, `.one{width:200px;height:80px;background-color:#123c47} .fade{animation:appear 200ms linear} @keyframes appear{from{opacity:0}to{opacity:1}}`, "U-CSS-039")).toEqual([]);
+    expect(await ids(`<div class="card fade"></div>`, `${card} .fade{transition:opacity 200ms linear}`, "U-CSS-039")).toEqual([]);
+    expect(await ids(`<div class="card fade"></div>`, `${card} .fade{opacity:0} .fade.is-open{opacity:1}`, "U-CSS-039")).toEqual([]);
+  });
 });
 
 describe("collectSnapshot", () => {

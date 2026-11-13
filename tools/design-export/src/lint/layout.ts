@@ -12,6 +12,8 @@ import { inSvg, isExternal, nonDesign } from "./rules/util.js";
  */
 export interface Layout {
   readonly s: DomSnapshot;
+  /** The IR extraction's cascade over the snapshot (layers, effective values, transitions). */
+  readonly ex: StyleExtractor;
   /** Elements of the compiled screen: inside the screen root, not external, not script/style, not inside an inline SVG. */
   inScreen(i: number): boolean;
   /** Design children of an element that compile to nodes (no line breaks, inline SVG roots included). */
@@ -57,7 +59,7 @@ export function layoutOf(s: DomSnapshot): Layout {
   };
   const el = (i: number): SnapElement => s.elements[i];
   const layout: Layout = {
-    s,
+    s, ex,
     inScreen: (i) => inside[i] && !isExternal(s, i) && !nonDesign(s)[i] && !(inSvg(s)[i] && el(i).tag !== "svg"),
     children: (i) => designChildren(s, el(i)),
     position: (i) => el(i).computed.position || "static",

@@ -1,13 +1,16 @@
+import { transitionsAt } from "../../extract/anims.js";
+import { layoutOf } from "../layout.js";
 import type { DomSnapshot, SnapElement } from "../snapshot.js";
 import type { Rule } from "../types.js";
 import { Collector, at, declsAt, inSvg, isExternal, nonDesign, resolved, sources, targetOf } from "./util.js";
 
 const FIX = "Give the element and its children the colours they show at that opacity instead: for disabled or dimmed controls " +
   "the kit's -disabled colour tokens (--color-disabled-surface, --color-disabled-line, --color-disabled-text, " +
-  "--color-disabled-accent, …; each is its colour at 40 % over the screen background). Keep opacity only on an element that " +
-  "paints one thing (a background, a border, a text or an image) and has no painted children: CSS fades the element and its " +
+  "--color-disabled-accent, …; each is its colour at 40 % over the screen background). Keep opacity, and fades of it, only on " +
+  "an element that paints one thing (a background, a border, a text or an image) and has no painted children; let a panel or " +
+  "dialog appear by a transform (translate, scale) or a colour change instead of a fade. CSS fades the element and its " +
   "children as one composited group, UI Toolkit fades each painted part on its own, so overlapping parts (a background under " +
-  "a border, text or a child) show through each other in Unity.";
+  "a border, text or a child) show through each other in Unity, in every frame of a fade between 0 and 1.";
 
 interface Rect { x0: number; y0: number; x1: number; y1: number }
 /** A painted part: `outer` minus `inner` (a ring) or all of `outer`. */
@@ -96,27 +99,34 @@ export function overlappingParts(s: DomSnapshot, i: number): [Part, Part] | null
 
 /** An opacity strictly between 0 and 1 (0 and 1 look the same for a group and for each part). */
 function fractional(value: string): number | null {
+  const n = opacityOf(value);
+  return n !== null && n > 0 && n < 1 ? n : null;
+}
+/** An opacity value as a number (percentages too); null when it is not one. */
+function opacityOf(value: string): number | null {
   const v = value.trim();
   const n = v.endsWith("%") ? parseFloat(v) / 100 : parseFloat(v);
-  return Number.isFinite(n) && n > 0 && n < 1 ? n : null;
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
  * Group opacity: CSS `opacity` below 1 fades the element with everything it paints as one composited group, UI Toolkit
  * multiplies it into each painted part (measured: a disabled button's text ΔE2000 13.7–23.8 against Chromium; UI Toolkit's
- * own group filter `opacity()` is off by ΔE 1.1–2.1, docs/findings/opacity.md). An opacity in (0, 1) — in a rule, an inline
- * style or a keyframe of an animation an element runs — is an error on an element whose subtree paints two parts that
- * overlap (background and border, text or a child); one painted part fades the same in both.
+ * own group filter `opacity()` is off by ΔE 1.1–2.1, docs/findings/opacity.md). An error on an element whose subtree paints
+ * two parts that overlap (background and border, text or a child), for an opacity in (0, 1) in a rule or an inline style,
+ * and for every fade that passes through (0, 1): a keyframe animation the element runs whose frames give opacity two
+ * values (a frame without opacity holds the element's own), or opacity that differs between the element's layers (hover,
+ * a class, a screen state) with a transition of it in either direction. One painted part fades the same in both.
  */
 export const rule: Rule = {
   id: "U-CSS-039", severity: "error",
   check(s) {
     const c = new Collector();
-    const report = (i: number, value: string, where: string) => {
+    const report = (i: number, what: string, where: string) => {
       if (isExternal(s, i) || nonDesign(s)[i]) return;
       const hit = overlappingParts(s, i);
       if (!hit) return;
-      c.add(s.elements[i].path, `opacity: ${value.trim()} fades the ${hit[0].what} and the ${hit[1].what}, which overlap, as one group in CSS but each on its own in UI Toolkit${where}`);
+      c.add(s.elements[i].path, `${what} fades the ${hit[0].what} and the ${hit[1].what}, which overlap, as one group in CSS but each on its own in UI Toolkit${where}`);
     };
     for (const src of sources(s)) {
       const t = targetOf(s, src);
@@ -126,11 +136,11 @@ export const rule: Rule = {
         for (const d of declsAt(src, i)) {
           if (d.name !== "opacity") continue;
           const v = resolved(s, d.value, i);
-          if (fractional(v) !== null) report(i, v, at(src, { path: s.elements[i].path, element: s.elements[i], more: 0 }));
+          if (fractional(v) !== null) report(i, `opacity: ${v.trim()}`, at(src, { path: s.elements[i].path, element: s.elements[i], more: 0 }));
         }
       }
     }
-    // keyframes: an animation whose frames fade the element
+    // keyframes: an animation whose frames fade the element (a fractional frame, or two values it passes between)
     const animated = new Map<string, number[]>();
     for (const src of sources(s)) for (const i of src.elements) for (const d of declsAt(src, i)) {
       if (d.name !== "animation-name") continue;
@@ -140,10 +150,32 @@ export const rule: Rule = {
     }
     for (const k of s.keyframes) {
       const targets = Array.from(new Set(animated.get(k.name) ?? []));
-      const frame = k.frames.find((f) => f.decls.some((d) => d.name === "opacity" && fractional(d.value) !== null));
-      if (!targets.length || !frame) continue;
-      const v = frame.decls.find((d) => d.name === "opacity")!.value;
-      for (const i of targets) report(i, v, ` [${k.path} ${frame.key}]`);
+      const frames = k.frames.filter((f) => f.decls.some((d) => d.name === "opacity"));
+      if (!targets.length || !frames.length) continue;
+      const offsets = (f: (typeof frames)[number]) => f.key.split(",").map((x) => x.trim().toLowerCase()).map((x) => (x === "from" ? "0%" : x === "to" ? "100%" : x));
+      for (const i of targets) {
+        const value = (f: (typeof frames)[number]) => resolved(s, f.decls.filter((d) => d.name === "opacity").pop()!.value, i);
+        const own = opacityOf(s.elements[i].computed.opacity ?? "1") ?? 1;
+        const values = frames.map((f) => opacityOf(value(f))).filter((n): n is number => n !== null);
+        // a 0% or 100% frame that does not set opacity animates from or to the element's own value
+        if (["0%", "100%"].some((end) => !frames.some((f) => offsets(f).includes(end)))) values.push(own);
+        const frac = frames.find((f) => fractional(value(f)) !== null);
+        if (frac) { report(i, `opacity: ${value(frac).trim()}`, ` [${k.path} ${frac.key}]`); continue; }
+        const distinct = Array.from(new Set(values.map((n) => Math.min(1, Math.max(0, n))))).sort((a, b) => a - b);
+        if (distinct.length > 1) report(i, `the animation ${k.name}, which fades opacity between ${distinct[0]} and ${distinct[distinct.length - 1]},`, ` [${k.path}]`);
+      }
+    }
+    // transitions: opacity that differs between layers, with a transition of it in the layer or in the base style
+    const L = layoutOf(s);
+    for (const e of s.elements) {
+      if (!L.inScreen(e.index)) continue;
+      const own = opacityOf(e.computed.opacity ?? "1") ?? 1;
+      for (const cand of L.layerCands(e.index, "opacity")) {
+        const v = opacityOf(resolved(s, cand.entry.value, e.index));
+        if (v === null || Math.abs(Math.min(1, Math.max(0, v)) - Math.min(1, Math.max(0, own))) < 1e-6) continue;
+        const moving = [cand.key, "base"].some((key) => (transitionsAt(L.ex, e.index, key, ["opacity"]).get("opacity")?.duration ?? 0) > 0);
+        if (moving) report(e.index, `a transition of opacity between ${own} and ${v} (${cand.key})`, "");
+      }
     }
     return c.findings(rule, FIX);
   },

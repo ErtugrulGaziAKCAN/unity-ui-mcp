@@ -28,7 +28,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-CSS-013": { when: "`@keyframes` animating properties other than transform, translate, rotate, scale, opacity and colours", fix: "animate allowed properties" },
   "U-CSS-014": {
     when: "a transition of `box-shadow` or `background-image`, a url() image beside another image, a gradient that does not fill the element or sets a colour space",
-    fix: "transition opacity or transform; one image per element; whole-element sRGB gradients",
+    fix: "transition a transform; one image per element; whole-element sRGB gradients",
   },
   "U-CSS-015": { when: "a `filter` function css-support.json does not enable (one is enabled once its fidelity fixture passes in Unity)", fix: "remove the filter" },
   "U-CSS-016": { when: "text size, line height or weight that is not a kit text style", fix: "the nearest kit text style (a `.text-<style>` class)" },
@@ -64,8 +64,8 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   },
   "U-CSS-038": { when: "text that renders without `-webkit-font-smoothing: antialiased` (macOS browsers then thicken glyph stems, which UI Toolkit does not)", fix: "the kit base stylesheet (it sets the smoothing on `:root`); never override it on text" },
   "U-CSS-039": {
-    when: "`opacity` < 1 on overlapping parts",
-    fix: "`--color-disabled-*` colours",
+    when: "`opacity` < 1, or a fade of it, on overlapping parts",
+    fix: "`--color-disabled-*` colours; a transform instead of a fade",
   },
   "U-CSS-040": {
     when: "a border width, a hard shadow edge or a painted line under 8px that is not whole device px at every viewport",
@@ -93,7 +93,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-MRK-011": { when: "a `data-u-id` that gives a member the generated view class already has (`state`, `set-state`, `find`, `screen-root`, …)", fix: "another id, e.g. `state-label`" },
   "U-NET-001": { when: "any remote resource (fonts, stylesheets, images) except scripts from allowed origins", fix: "no remote resources; local files" },
   "U-NET-002": { when: "a local file or Claude Design blob that is missing", fix: "add the file, or map the blob in blobs.json" },
-  "W-CSS-001": { when: "a transition on a layout property or `all` (warning)", fix: "transition transform, opacity or colours" },
+  "W-CSS-001": { when: "a transition on a layout property or `all` (warning)", fix: "transition transforms or colours" },
   "W-FONT-001": { when: "a weight or italic without a real face in another active locale's font (warning)", fix: "add the face or avoid the weight" },
   "W-FONT-002": { when: "a kit font file that cannot be read (WOFF2, `local()`) (warning)", fix: "TTF/OTF/WOFF via `url()`" },
   "W-TXT-001": { when: "a kit text style under 10 device px at the kit's smallest viewport (warning)", fix: "a larger kit text style (20px and up at 1280 wide)" },

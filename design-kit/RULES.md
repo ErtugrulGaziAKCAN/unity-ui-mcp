@@ -205,7 +205,7 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 ## Animation
 
 - Transitions and `@keyframes` are recorded with their trigger (the screen opening, a screen state, a pseudo-state or an `is-*` class) and played by the package's animation player, never as USS transitions.
-- Timing functions `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` only (U-CSS-008). Keyframes animate only `transform`, `translate`, `rotate`, `scale`, `opacity`, `color`, `background-color`, `border-color`, `border-top-color`, `border-right-color`, `border-bottom-color`, `border-left-color` (U-CSS-013). Transition colours, opacity or transforms: a transition of a layout property warns (W-CSS-001), one of `box-shadow` or `background-image` fails (U-CSS-014).
+- Timing functions `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` only (U-CSS-008). Keyframes animate only `transform`, `translate`, `rotate`, `scale`, `opacity`, `color`, `background-color`, `border-color`, `border-top-color`, `border-right-color`, `border-bottom-color`, `border-left-color` (U-CSS-013). Transition colours or transforms (fade opacity only on an element that paints one thing, U-CSS-039): a transition of a layout property warns (W-CSS-001), one of `box-shadow` or `background-image` fails (U-CSS-014).
 - Status: animations compile, but until the animation player lands their samples are reported as not captured in verification; static captures freeze them.
 
 ## Allowed CSS
@@ -369,7 +369,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-011 | error | `gap` on a wrapping flex container | margins on the items |
 | U-CSS-012 | error | `@media` features other than min/max-width and min/max-aspect-ratio, media types other than screen/all, `not` | the allowed features only |
 | U-CSS-013 | error | `@keyframes` animating properties other than transform, translate, rotate, scale, opacity and colours | animate allowed properties |
-| U-CSS-014 | error | a transition of `box-shadow` or `background-image`, a url() image beside another image, a gradient that does not fill the element or sets a colour space | transition opacity or transform; one image per element; whole-element sRGB gradients |
+| U-CSS-014 | error | a transition of `box-shadow` or `background-image`, a url() image beside another image, a gradient that does not fill the element or sets a colour space | transition a transform; one image per element; whole-element sRGB gradients |
 | U-CSS-015 | error | a `filter` function css-support.json does not enable (one is enabled once its fidelity fixture passes in Unity) | remove the filter |
 | U-CSS-016 | error | text size, line height or weight that is not a kit text style | the nearest kit text style (a `.text-<style>` class) |
 | U-CSS-017 | error | `position: fixed/sticky`, `float` | absolute positioning or flex |
@@ -394,7 +394,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-036 | error | `box-sizing: content-box` on an element with a width or height and padding or border | `box-sizing: border-box` (the kit base stylesheet sets it everywhere) |
 | U-CSS-037 | error | baked effects that cannot share one element: an inset shadow under its own text, on a form control or a scroll area; a url() image beside a gradient or only in a layer; a background image or inset shadow on a tintable icon | move the text, image, gradient or icon into a child, or the shadow onto a wrapper |
 | U-CSS-038 | error | text that renders without `-webkit-font-smoothing: antialiased` (macOS browsers then thicken glyph stems, which UI Toolkit does not) | the kit base stylesheet (it sets the smoothing on `:root`); never override it on text |
-| U-CSS-039 | error | `opacity` < 1 on overlapping parts | `--color-disabled-*` colours |
+| U-CSS-039 | error | `opacity` < 1, or a fade of it, on overlapping parts | `--color-disabled-*` colours; a transform instead of a fade |
 | U-CSS-040 | error | a border width, a hard shadow edge or a painted line under 8px that is not whole device px at every viewport | the lengths the finding lists |
 | U-CSS-041 | error | a moved state's shadow over later elements | room for the shadow |
 | U-DC-001 | error | `{{…}}` holes in a Claude Design artboard | static sample text |
@@ -418,7 +418,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-MRK-011 | error | a `data-u-id` that gives a member the generated view class already has (`state`, `set-state`, `find`, `screen-root`, …) | another id, e.g. `state-label` |
 | U-NET-001 | error | any remote resource (fonts, stylesheets, images) except scripts from allowed origins | no remote resources; local files |
 | U-NET-002 | error | a local file or Claude Design blob that is missing | add the file, or map the blob in blobs.json |
-| W-CSS-001 | warning | a transition on a layout property or `all` (warning) | transition transform, opacity or colours |
+| W-CSS-001 | warning | a transition on a layout property or `all` (warning) | transition transforms or colours |
 | W-FONT-001 | warning | a weight or italic without a real face in another active locale's font (warning) | add the face or avoid the weight |
 | W-FONT-002 | warning | a kit font file that cannot be read (WOFF2, `local()`) (warning) | TTF/OTF/WOFF via `url()` |
 | W-TXT-001 | warning | a kit text style under 10 device px at the kit's smallest viewport (warning) | a larger kit text style (20px and up at 1280 wide) |

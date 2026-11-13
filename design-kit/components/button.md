@@ -6,6 +6,6 @@ A button runs one command when it is pressed: primary, secondary, ghost and dest
 
 **States:** `:hover` and `:active` change the background colour, `:focus` the border colour (a 4px border, transparent at rest: UI Toolkit has no outline), `:disabled` the colours (`--color-disabled-*`, U-CSS-039).
 
-**Do:** use the colour tokens (`--color-accent`, `--color-surface-700`, …) and `--radius-md`; give a fixed `height` and horizontal padding. The kit pages have no transitions, because animations are not verified yet; a transition of colours or opacity compiles and is played by the animation player.
+**Do:** use the colour tokens (`--color-accent`, `--color-surface-700`, …) and `--radius-md`; give a fixed `height` and horizontal padding. The kit pages have no transitions, because animations are not verified yet; a transition of colours compiles and is played by the animation player; a fade of opacity does not (U-CSS-039: a button paints a background and a label).
 
 **Don't:** put the label in a nested element when it is plain text, transition `box-shadow`, or use `outline`.

@@ -318,7 +318,7 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
   h("Animation");
   L.push(
     "- Transitions and `@keyframes` are recorded with their trigger (the screen opening, a screen state, a pseudo-state or an `is-*` class) and played by the package's animation player, never as USS transitions.",
-    `- Timing functions ${code(CSS_SUPPORT_DATA.timingKeywords)} only (U-CSS-008). Keyframes animate only ${code(CSS_SUPPORT_DATA.keyframeProperties.filter((p) => p !== "animation-timing-function"))} (U-CSS-013). Transition colours, opacity or transforms: a transition of a layout property warns (W-CSS-001), one of \`box-shadow\` or \`background-image\` fails (U-CSS-014).`,
+    `- Timing functions ${code(CSS_SUPPORT_DATA.timingKeywords)} only (U-CSS-008). Keyframes animate only ${code(CSS_SUPPORT_DATA.keyframeProperties.filter((p) => p !== "animation-timing-function"))} (U-CSS-013). Transition colours or transforms (fade opacity only on an element that paints one thing, U-CSS-039): a transition of a layout property warns (W-CSS-001), one of \`box-shadow\` or \`background-image\` fails (U-CSS-014).`,
     "- Status: animations compile, but until the animation player lands their samples are reported as not captured in verification; static captures freeze them.",
   );
 

@@ -8,4 +8,4 @@ Cards group related content on a raised surface: a card with a gradient header a
 
 **Do:** use the shadow tokens; give the top child of a rounded card matching top corner radii; keep inset shadows on boxes whose text sits in child elements.
 
-**Don't:** transition `box-shadow` (U-CSS-014: transition transform or opacity), or put an inset shadow on an element with its own text (U-CSS-037).
+**Don't:** transition `box-shadow` (U-CSS-014: transition the transform), fade the card with opacity (U-CSS-039: it paints a background and children), or put an inset shadow on an element with its own text (U-CSS-037).

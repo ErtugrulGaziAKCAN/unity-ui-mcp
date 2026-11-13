@@ -47,6 +47,14 @@ Neither UI Toolkit route is within the thresholds, so group opacity is a design 
   pixel as the faded group (both are linear in sRGB bytes), so the design keeps its look. The fidelity fixtures' other
   faded cases (0.3 on checkboxes and transition cells, 0.4 on tags over `--color-surface-800`) use their literal blends.
 - `filter: opacity()` stays outside `filter.functions` (U-CSS-015).
+- **Fades too.** A fade through (0, 1) shows the mismatch in every frame between its ends, so U-CSS-039 also rejects, on
+  the same elements, a keyframe animation whose frames give opacity two values (a frame without opacity holds the
+  element's own; `from {opacity: 0} to {opacity: 1}` is one) and opacity that differs between the element's layers with
+  a transition of it in either direction. An opacity that changes without a transition jumps from end to end and stays
+  allowed. Panels and dialogs appear by a transform (`translate`, `scale`) or a colour change; the kit texts no longer
+  suggest transitioning opacity on such elements.
+- Open: animation samples are not captured yet. When the animation player lands, group fades through `filter: opacity()`
+  get measured with an in-between-frame tolerance, and this rule may be relaxed for them then.
 
 ## Reproduction
 
