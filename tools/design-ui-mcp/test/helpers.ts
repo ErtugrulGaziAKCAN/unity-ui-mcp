@@ -73,9 +73,13 @@ export interface StubBridge {
   token: string;
   requests: { method: string; path: string; auth: string | undefined; body: unknown }[];
   /** Answers of POST /import and /kit-sync. */
-  answer: { code: number; log: string };
-  /** Number of GET /status answers that still report isCompiling = true. */
+  answer: Record<string, unknown> & { code: number; log: string };
+  /** Number of GET /status answers that still report isCompiling (and compiling) = true. */
   compilingPolls: number;
+  /** Number of GET /status requests answered by dropping the connection (a domain reload), after the compiling ones. */
+  downPolls: number;
+  /** `lastCompile` of GET /status. */
+  lastCompile: unknown;
   close(): Promise<void>;
 }
 
@@ -83,7 +87,7 @@ export interface StubBridge {
 export async function startStubBridge(projectDir: string, opts: { tokenInFile?: string; projectPath?: string } = {}): Promise<StubBridge> {
   const token = "a".repeat(64);
   const state: StubBridge = {
-    port: 0, token, requests: [], answer: { code: 0, log: "imported" }, compilingPolls: 0,
+    port: 0, token, requests: [], answer: { code: 0, log: "imported" }, compilingPolls: 0, downPolls: 0, lastCompile: null,
     close: async () => {},
   };
   const server = http.createServer((req, res) => {
@@ -101,7 +105,10 @@ export async function startStubBridge(projectDir: string, opts: { tokenInFile?: 
       if (req.url === "/status" && req.method === "GET") {
         const compiling = state.compilingPolls > 0;
         if (compiling) state.compilingPolls--;
-        return send(200, { projectPath: opts.projectPath ?? projectDir, isCompiling: compiling, busy: false, last: null });
+        else if (state.downPolls > 0) { state.downPolls--; req.socket.destroy(); return; }
+        return send(200, {
+          projectPath: opts.projectPath ?? projectDir, isCompiling: compiling, compiling, lastCompile: compiling ? null : state.lastCompile, busy: false, last: null,
+        });
       }
       if ((req.url === "/import" || req.url === "/kit-sync") && req.method === "POST") return send(200, state.answer);
       return send(404, { error: "not found" });

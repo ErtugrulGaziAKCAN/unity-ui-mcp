@@ -358,6 +358,58 @@ describe("design_ui_import", () => {
     expect(p.runnerCalls()).toEqual([]);
   });
 
+  it("on the editor route reports what changed, waits for the script compile and records the import", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = {
+      code: 0, log: "Imported clean-screen into Assets/UI/Generated/CleanScreen: 3 files written (55 ms).",
+      changed: ["a.uss", "a.uxml", "AView.g.cs"], imported: ["Assets/a.uss", "Assets/a.uxml", "Assets/AView.g.cs"], compiled: ["Assets/AView.g.cs"],
+      compiling: true, compileId: 9, ms: 55,
+    };
+    bridge.compilingPolls = 2;
+    bridge.lastCompile = { id: 9, state: "reloaded", ok: true, errors: [] };
+    const r = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBeFalsy();
+    expect(r.data).toMatchObject({
+      via: "editor", code: 0, unity: { changed: ["a.uss", "a.uxml", "AView.g.cs"], imported: ["Assets/a.uss", "Assets/a.uxml", "Assets/AView.g.cs"], compiled: ["Assets/AView.g.cs"], compiling: true, compileId: 9, ms: 55 },
+      compile: { id: 9, state: "reloaded", ok: true },
+    });
+    expect(r.data.unityTimings).toHaveProperty("compileWait");
+    expect(r.text).toMatch(/3 files changed/);
+    expect(r.text).toMatch(/scripts compiled/);
+    const rec = JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8"));
+    expect(rec.timings).toHaveProperty("compile");
+  });
+
+  it("on the editor route is an error, and records nothing, when the generated scripts do not compile", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = { code: 0, log: "Imported.", changed: ["AView.g.cs"], imported: ["Assets/AView.g.cs"], compiled: ["Assets/AView.g.cs"], compiling: true, compileId: 2, ms: 9 };
+    bridge.lastCompile = { id: 2, state: "failed", ok: false, errors: ["Assets/AView.g.cs(3,1): error CS0101: duplicate type"] };
+    const r = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("CS0101");
+    expect(r.data.compile).toMatchObject({ state: "failed" });
+    expect(fs.existsSync(path.join(dir, ".design-ui", "last-import.json"))).toBe(false);
+  });
+
+  it("on the editor route reports the real failure when the Editor closed after a cached 'connected'", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    const client = await serverFor(p.dir, stubPipeline());
+    expect((await call(client, "design_ui_status")).data.unity.bridge).toBe("connected");
+    await bridge.close(); // a crash: bridge.json stays, nothing listens
+    bridge = null;
+    expect((await call(client, "design_ui_status")).data.unity.bridge).toBe("connected"); // the probe's short cache
+    const r = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/Editor not reachable: Unity Editor bridge on 127\.0\.0\.1:\d+ did not answer POST \/import/);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "last-import.json"))).toBe(false);
+  });
+
   it("stops at lint errors", async () => {
     const p = tempProject({ prefer: "command" });
     p.addScreen("grid-screen", "grid-screen");

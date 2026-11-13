@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using UnityEditor;
 
@@ -9,11 +10,16 @@ namespace DesignUi.Editor
     {
         public readonly int Code;
         public readonly string Log;
+        /// <summary>Files the operation wrote because their content changed (an import's generated files and assets); may be null.</summary>
+        public readonly IReadOnlyList<string> Changed;
 
-        public OpResult(int code, string log)
+        public OpResult(int code, string log) : this(code, log, null) { }
+
+        public OpResult(int code, string log, IReadOnlyList<string> changed)
         {
             Code = code;
             Log = log;
+            Changed = changed;
         }
     }
 
@@ -92,7 +98,7 @@ namespace DesignUi.Editor
             if (r.Written.Count > 0) log.Append("written: ").Append(string.Join(", ", r.Written)).Append('\n');
             foreach (var o in r.Orphans) log.Append("orphan screen folder (not deleted): ").Append(o).Append('\n');
             foreach (var a in r.StaleAssets) log.Append("asset no screen uses (not deleted): ").Append(a).Append('\n');
-            return new OpResult(r.Ok ? 0 : 1, log.ToString().TrimEnd('\n'));
+            return new OpResult(r.Ok ? 0 : 1, log.ToString().TrimEnd('\n'), r.Written);
         }
     }
 }

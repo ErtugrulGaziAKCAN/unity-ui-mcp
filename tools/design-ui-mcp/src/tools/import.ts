@@ -82,16 +82,33 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         }, true);
       }
 
+      const unity = { ...(run.answer ? { unity: run.answer } : {}), ...(run.compile ? { compile: run.compile } : {}) };
+      const base = { screen, exported, unityCalled: true, via: run.via, code: 0, irSha, sourceSha: src, exportDir, logTail: run.logTail, ...unity };
+      if (run.compile && run.compile.state !== "reloaded" && run.compile.state !== "unknown") {
+        const why = run.compile.state === "failed" ? "the generated scripts did not compile" : "Unity did not start compiling the changed scripts";
+        return toolResult([
+          `Imported the files of ${screen} into Unity via ${run.via}, but ${why}; the import is not recorded. Fix the cause and import again.`,
+          ...run.compile.errors.map((e) => `- ${e}`),
+        ].join("\n"), { ...base, unityTimings: run.timings, timings: t.done() }, true);
+      }
+
       const steps: Record<string, number> = { export: t.steps.export };
       if (run.via === "editor") { steps.import = run.timings.request; if (run.timings.compileWait !== undefined) steps.compile = run.timings.compileWait; }
       else steps.import = run.timings.total;
       writeLastImport(dir, {
         screen, sourceSha: src, kitSha: kit.sha, irSha, importedAt: new Date().toISOString(), via: run.via, discardManualEdits: discard, timings: steps,
       });
-      return toolResult(`Imported ${screen} into Unity via ${run.via}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${screen}" }.`, {
-        screen, exported, unityCalled: true, via: run.via, code: 0, irSha, sourceSha: src, exportDir, logTail: run.logTail,
-        unityTimings: run.timings, timings: t.done(),
+      const a = run.answer;
+      const what = a
+        ? `: ${a.changed.length} file${a.changed.length === 1 ? "" : "s"} changed, ${a.imported.length} imported` +
+          (a.compiled.length
+            ? `, scripts compiled${run.compile?.state === "reloaded" ? ` and reloaded (${Math.round((run.timings.compileWait ?? 0) / 100) / 10} s)` : " (Unity did not report the compile result)"}`
+            : ", no script change")
+        : "";
+      return toolResult(`Imported ${screen} into Unity via ${run.via}${what}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${screen}" }.`, {
+        ...base, unityTimings: run.timings, timings: t.done(),
       });
     });
   });
 }
+

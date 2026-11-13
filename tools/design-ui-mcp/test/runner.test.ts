@@ -54,6 +54,73 @@ describe("runUnity: editor route", () => {
     expect(bridge.requests.filter((q) => q.path === "/status").length).toBeGreaterThanOrEqual(4);
   });
 
+  const answer = (extra: Record<string, unknown>) => ({
+    code: 0, log: "Imported a into Assets/UI/Generated/A: 2 files written (40 ms).", changed: ["/p/Assets/UI/Generated/A/A.uss"],
+    imported: ["Assets/UI/Generated/A/A.uss"], compiled: [], compiling: false, compileId: null, ms: 40, ...extra,
+  });
+
+  it("returns as soon as the bridge answers when no script changed, with the bridge's fields", async () => {
+    const p = tempProject({ prefer: "editor" });
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = answer({});
+    bridge.compilingPolls = 5; // would be waited for by an older bridge's protocol
+    const r = await runUnity(readConfig(p.dir), "import", { exportDir: "/x" }, fast);
+    expect(r).toMatchObject({ code: 0, via: "editor" });
+    expect(r.answer).toEqual({
+      changed: ["/p/Assets/UI/Generated/A/A.uss"], imported: ["Assets/UI/Generated/A/A.uss"], compiled: [], compiling: false, compileId: null, ms: 40,
+    });
+    expect(r.compile).toBeUndefined();
+    expect(bridge.requests.filter((q) => q.path === "/status")).toHaveLength(0);
+    expect(r.timings.compileWait).toBeUndefined();
+  });
+
+  it("after a script change waits until /status stops compiling, across the reload, and reports how the compile ended", async () => {
+    const p = tempProject({ prefer: "editor" });
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = answer({ compiled: ["Assets/UI/Generated/A/AView.g.cs"], compiling: true, compileId: 7 });
+    bridge.compilingPolls = 2;
+    bridge.downPolls = 2;
+    bridge.lastCompile = { id: 7, state: "reloaded", ok: true, errors: [] };
+    const r = await runUnity(readConfig(p.dir), "import", { exportDir: "/x" }, fast);
+    expect(r.code).toBe(0);
+    expect(r.answer?.compiled).toEqual(["Assets/UI/Generated/A/AView.g.cs"]);
+    expect(r.compile).toEqual({ id: 7, state: "reloaded", ok: true, errors: [] });
+    expect(bridge.compilingPolls).toBe(0);
+    expect(bridge.downPolls).toBe(0);
+    expect(typeof r.timings.compileWait).toBe("number");
+  });
+
+  it("reports a compile that failed with its errors", async () => {
+    const p = tempProject({ prefer: "editor" });
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = answer({ compiled: ["Assets/A/AView.g.cs"], compiling: true, compileId: 3 });
+    bridge.compilingPolls = 1;
+    bridge.lastCompile = { id: 3, state: "failed", ok: false, errors: ["Assets/A/AView.g.cs(3,1): error CS1002: ; expected"] };
+    const r = await runUnity(readConfig(p.dir), "import", { exportDir: "/x" }, fast);
+    expect(r.code).toBe(0);
+    expect(r.compile).toMatchObject({ state: "failed", ok: false });
+    expect(r.compile?.errors[0]).toContain("CS1002");
+  });
+
+  it("names a compile result it cannot tie to its import as unknown", async () => {
+    const p = tempProject({ prefer: "editor" });
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = answer({ compiled: ["Assets/A/AView.g.cs"], compiling: true, compileId: 4 });
+    bridge.lastCompile = { id: 2, state: "reloaded", ok: true, errors: [] };
+    const r = await runUnity(readConfig(p.dir), "import", { exportDir: "/x" }, fast);
+    expect(r.compile).toMatchObject({ id: 4, state: "unknown" });
+  });
+
+  it("stops waiting for the compile after the limit", async () => {
+    const p = tempProject({ prefer: "editor" });
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = answer({ compiled: ["Assets/A/AView.g.cs"], compiling: true, compileId: 5 });
+    bridge.compilingPolls = 1_000_000;
+    const err = await runUnity(readConfig(p.dir), "import", { exportDir: "/x" }, { ...fast, compileTimeoutMs: 100 }).catch((e) => e);
+    expect(err).toBeInstanceOf(UnityRunnerError);
+    expect(String(err.message)).toMatch(/still compiling/);
+  });
+
   it("POSTs kit sync with the kit folder", async () => {
     const p = tempProject({ prefer: "editor" });
     bridge = await startStubBridge(p.dir);
@@ -106,6 +173,7 @@ describe("runUnity: command route", () => {
     expect(r.logTail).toContain("stub-runner: done");
     expect(p.runnerCalls()).toEqual([`import|${p.dir}|${cfg.profileAsset}|/x/export| env=/x/export`]);
   });
+
 
   it("returns the exit code of a failing command", async () => {
     const p = tempProject({ prefer: "command", exit: 3 });
