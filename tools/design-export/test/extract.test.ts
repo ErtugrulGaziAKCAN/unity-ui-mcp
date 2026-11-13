@@ -58,7 +58,7 @@ describe("fixtures", () => {
       // inbox keeps CSS's initial content-box on sized elements with padding or border, so the IR records it (below);
       // lint rejects exactly those (U-CSS-036), because the compiler cannot size them
       const expected = f === "inbox.html" ? ["card", "half"].map((id) => `${f} U-CSS-036 [data-u-screen=inbox] > div[data-u-id=${id}]`) : [];
-      try { expect((await lint(d, kit)).filter((x) => x.ruleId !== "W-TXT-001").map((x) => `${f} ${x.ruleId} ${x.path}`)).toEqual(expected); } finally { await d.close(); }
+      try { expect((await lint(d, kit)).map((x) => `${f} ${x.ruleId} ${x.path}`)).toEqual(expected); } finally { await d.close(); }
     }
   });
 });
@@ -528,7 +528,7 @@ describe("buildIr: speed", () => {
     const d = await openDesign(p, kit, [2560, 1440], browser);
     try {
       const s = await collectSnapshot(d.page, d.cdp, kit);
-      expect((await lint(d, kit, s)).filter((x) => x.ruleId !== "W-TXT-001")).toEqual([]);
+      expect(await lint(d, kit, s)).toEqual([]);
       const t0 = performance.now();
       const r = await buildIr(d, s, kit, tmp(), p);
       const ms = performance.now() - t0;

@@ -158,6 +158,19 @@ describe("kit build", () => {
     expect(buildKit(KIT_DIR, { check: true }).changed).not.toContain("kit.config.json");
   });
 
+  it("warns once about the kit text styles under 10 device px at the smallest viewport (not per design)", async () => {
+    const w = buildKit(KIT_DIR, { check: true }).warnings;
+    expect(w).toEqual([expect.stringMatching(/^text styles under 10 device px at 1280×720 \(scale 0\.5\): caption, caption-bold \(12px: 6 device px\), label, label-bold \(16px: 8 device px\)/)]);
+    const r = io();
+    expect(await runCli(["kit", "build", KIT_DIR, "--check"], r.io)).toBe(0);
+    expect(r.out.join("").match(/^warning: text styles under 10 device px/gm)).toHaveLength(1);
+    // a kit whose smallest viewport keeps every style readable
+    const dir = kitCopy();
+    const file = path.join(dir, "kit.config.json");
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, "utf8")), viewports: [[2560, 1440]] }));
+    expect(buildKit(dir, { check: true }).warnings).toEqual([]);
+  });
+
   it("CLI: kit build --check exits 0 when current and 1 when stale", async () => {
     const ok = io();
     expect(await runCli(["kit", "build", KIT_DIR, "--check"], ok.io)).toBe(0);
@@ -185,6 +198,7 @@ describe("RULES.md", () => {
     expect(md).toContain(fs.readFileSync(path.join(KIT_DIR, "base.css"), "utf8").trim());
     expect(md).toContain("2560×1440");
     expect(md).toContain("grayscale font smoothing on the root");
+    expect(md).toMatch(/Readability: caption and label are under 10 device px at 1280×720/);
   });
 });
 

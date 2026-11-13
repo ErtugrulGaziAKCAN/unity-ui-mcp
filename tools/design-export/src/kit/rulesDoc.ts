@@ -6,6 +6,7 @@ import { readTextStyles, type TextStyle } from "../lint/text-styles.js";
 import { renderBaseCss } from "./baseCss.js";
 import { readKitComponents, type KitComponent } from "./components.js";
 import { readKitFontFiles } from "./kitFonts.js";
+import { MIN_READABLE_DEVICE_PX, smallTextStyles } from "./textStyles.js";
 import { readKitTokens, type KitToken, type TokenFamily } from "./tokens.js";
 
 /**
@@ -99,8 +100,11 @@ function tokensMarkdown(tokens: readonly KitToken[]): string {
   return out.join("\n").trimEnd();
 }
 
-function textStylesMarkdown(styles: readonly TextStyle[]): string {
+function textStylesMarkdown(styles: readonly TextStyle[], kit: KitConfig): string {
   const weights = Array.from(new Set(styles.map((s) => s.weight))).sort((a, b) => a - b);
+  const small = smallTextStyles(styles, kit);
+  const roles = Array.from(new Set(small.styles.map((s) => s.name.replace(/-bold$/, ""))));
+  const join = (l: string[]) => (l.length > 1 ? `${l.slice(0, -1).join(", ")} and ${l[l.length - 1]}` : l[0] ?? "");
   return [
     "Every text uses exactly one of these size / line-height / weight combinations (U-CSS-016). Use the class: it sets all three.",
     "",
@@ -113,6 +117,8 @@ function textStylesMarkdown(styles: readonly TextStyle[]): string {
     "each with a real face in the reference locale's font (U-FONT-001); no italic unless the kit font has an italic face. Inside one line of text, " +
     "`<b>`/`<strong>` and `<span>` with another colour or kit size are rich text; `<br>` breaks the line. The table is `text-styles.json`; " +
     "every listing of it (this table, the base stylesheet's classes, the design system's type styles) is generated from that file.",
+    ...(roles.length ? ["", `Readability: ${join(roles)} ${roles.length > 1 ? "are" : "is"} under ${MIN_READABLE_DEVICE_PX} device px at ${small.viewport[0]}×${small.viewport[1]}: ` +
+      "keep them for secondary text (kit build and kit sync warn once; designs are not linted for it)."] : []),
   ].join("\n");
 }
 
@@ -267,7 +273,7 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
     "A variable inside localized text is `<span data-u-arg=\"name\">sample</span>`, written `{name}` in `data-en`.");
 
   h("Text styles");
-  L.push(textStylesMarkdown(styles));
+  L.push(textStylesMarkdown(styles, kit));
 
   h("Fonts");
   if (claude) {
@@ -318,7 +324,7 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
   h("Animation");
   L.push(
     "- Transitions and `@keyframes` are recorded with their trigger (the screen opening, a screen state, a pseudo-state or an `is-*` class) and played by the package's animation player, never as USS transitions.",
-    `- Timing functions ${code(CSS_SUPPORT_DATA.timingKeywords)} only (U-CSS-008). Keyframes animate only ${code(CSS_SUPPORT_DATA.keyframeProperties.filter((p) => p !== "animation-timing-function"))} (U-CSS-013). Transition colours or transforms (fade opacity only on an element that paints one thing, U-CSS-039): a transition of a layout property warns (W-CSS-001), one of \`box-shadow\` or \`background-image\` fails (U-CSS-014).`,
+    `- Timing functions ${code(CSS_SUPPORT_DATA.timingKeywords)} only (U-CSS-008). Keyframes animate only ${code(CSS_SUPPORT_DATA.keyframeProperties.filter((p) => p !== "animation-timing-function"))} (U-CSS-013). Transition colours or transforms (opacity only on one-part elements, U-CSS-039): a transition of a layout property warns (W-CSS-001), one of \`box-shadow\` or \`background-image\` fails (U-CSS-014).`,
     "- Status: animations compile, but until the animation player lands their samples are reported as not captured in verification; static captures freeze them.",
   );
 

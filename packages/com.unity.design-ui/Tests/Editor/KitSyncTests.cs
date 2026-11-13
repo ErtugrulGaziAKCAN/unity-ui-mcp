@@ -214,6 +214,21 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Run_WarnsOnceAboutTheTextStylesUnder10DevicePxAtTheSmallestViewport()
+        {
+            var profile = Profile();
+            var r = KitSync.Run(profile, Kit(), Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            var small = r.Warnings.Where(w => w.StartsWith("text styles under 10 device px", StringComparison.Ordinal)).ToList();
+            Assert.AreEqual(1, small.Count, string.Join("\n", r.Warnings));
+            StringAssert.StartsWith("text styles under 10 device px at 1280×720 (scale 0.5): caption (12px: 6 device px), label-bold (16px: 8 device px). ", small[0]);
+            StringAssert.Contains("use body (24px) or larger", small[0]);
+            // a profile whose smallest viewport keeps every style readable
+            profile.viewports = new[] { new Vector2Int(2560, 1440) };
+            Assert.IsFalse(KitSync.Run(profile, Kit(), Resolver(profile)).Warnings.Any(w => w.StartsWith("text styles under", StringComparison.Ordinal)));
+        }
+
+        [Test]
         public void Run_AnyStyleThatIsWholeAtEveryScale_GetsItsOwnLineBoxTwin()
         {
             var kit = Kit("{ \"x\": { \"fontSize\": 16, \"lineHeight\": 24, \"weight\": 400 } }"); // ratio 1.5

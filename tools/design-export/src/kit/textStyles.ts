@@ -1,6 +1,7 @@
 import type { KitConfig } from "../kit.js";
 import type { TextStyle } from "../lint/text-styles.js";
 import { declaredViewports } from "../capture/matrix.js";
+import { kitScales } from "../lint/rules/U-CSS-040.js";
 import { logicalViewport } from "../viewport.js";
 
 /**
@@ -77,4 +78,29 @@ export function textStyleScaleProblems(styles: readonly TextStyle[], kit: Pick<K
 export function assertWholeDevicePixels(styles: readonly TextStyle[], kit: Pick<KitConfig, "reference" | "viewports" | "screenMatch" | "textStyles">): void {
   const problems = textStyleScaleProblems(styles, kit);
   if (problems.length) throw new Error(`${kit.textStyles}: text styles must be whole device px at every declared viewport scale: ${problems.join("; ")}`);
+}
+
+/** Text under this many device px at the kit's smallest viewport is hard to read, and the renderers differ most there. */
+export const MIN_READABLE_DEVICE_PX = 10;
+
+/** The kit's text styles under MIN_READABLE_DEVICE_PX device px at its smallest declared viewport (by panel scale). */
+export function smallTextStyles(styles: readonly TextStyle[], kit: Pick<KitConfig, "reference" | "viewports" | "screenMatch">): { viewport: [number, number]; scale: number; styles: TextStyle[] } {
+  const smallest = kitScales(kit).reduce((a, b) => (b.scale < a.scale ? b : a));
+  return { ...smallest, styles: styles.filter((s) => s.fontSize * smallest.scale < MIN_READABLE_DEVICE_PX - 1e-9) };
+}
+
+/**
+ * One readability warning for kit build and kit sync, naming every kit text style under MIN_READABLE_DEVICE_PX device px
+ * at the smallest declared viewport, or null. It judges the kit's table once; designs are not linted for it (a kit's
+ * own core styles would warn on every screen).
+ */
+export function readabilityWarning(styles: readonly TextStyle[], kit: Pick<KitConfig, "reference" | "viewports" | "screenMatch">): string | null {
+  const { viewport, scale, styles: small } = smallTextStyles(styles, kit);
+  if (!small.length) return null;
+  const sizes = Array.from(new Set(small.map((s) => s.fontSize))).sort((a, b) => a - b);
+  const larger = styles.filter((s) => s.fontSize * scale >= MIN_READABLE_DEVICE_PX - 1e-9).sort((a, b) => a.fontSize - b.fontSize)[0];
+  return `text styles under ${MIN_READABLE_DEVICE_PX} device px at ${viewport[0]}×${viewport[1]} (scale ${scale}): ` +
+    sizes.map((f) => `${small.filter((s) => s.fontSize === f).map((s) => s.name).join(", ")} (${f}px: ${round6(f * scale)} device px)`).join(", ") +
+    `. Such text is hard to read and the renderers differ most there (the fidelity check holds it to wider measured ink limits); ` +
+    `keep it for secondary text and use ${larger ? `${larger.name} (${larger.fontSize}px) or larger` : "larger styles"} where the design allows it.`;
 }

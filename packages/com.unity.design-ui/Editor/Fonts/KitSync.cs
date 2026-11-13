@@ -108,6 +108,8 @@ namespace DesignUi.Editor
             var scales = (profile.viewports ?? new UnityEngine.Vector2Int[0]).Where(v => v.x > 0 && v.y > 0)
                 .Select(v => (v, BoxesWriter.Scale(v, profile.referenceResolution, profile.screenMatch))).ToList();
             errors.AddRange(ValidateTextStyles(kitDir + "/" + textStyles, plan.Fonts[plan.ReferenceLocale].Primary, scales));
+            var readability = errors.Count == 0 ? ReadabilityWarning(kitDir + "/" + textStyles, scales) : null;
+            if (readability != null) warnings.Add(readability);
             if (errors.Count == 0) plan.LineBoxes = KitTextStyles.LineBoxesOf(kitDir + "/" + textStyles);
             var copies = errors.Count == 0 ? FontFiles(faces, errors) : null;
             if (errors.Count > 0) return Failed(errors, warnings, notes, kitDir);
@@ -254,6 +256,38 @@ namespace DesignUi.Editor
                 }
             }
             return errors;
+        }
+
+        /// <summary>Text under this many device px at the smallest viewport is hard to read, and the renderers differ most there.</summary>
+        public const double MinReadableDevicePx = 10;
+
+        /// <summary>
+        /// One warning naming every kit text style under <see cref="MinReadableDevicePx"/> device px at the profile's smallest
+        /// viewport (by panel scale), grouped by font size; null when there is none or the table cannot be read. Kit sync (and
+        /// the exporter's kit build, with the same text) says it once for the kit; designs are not linted for it.
+        /// </summary>
+        internal static string ReadabilityWarning(string path, IReadOnlyList<(UnityEngine.Vector2Int viewport, double scale)> scales)
+        {
+            if (scales == null || scales.Count == 0) return null;
+            JObject styles;
+            try { styles = JObject.Parse(File.ReadAllText(path)); }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is JsonException) { return null; }
+            var smallest = scales.OrderBy(s => s.scale).First();
+            var sizes = new List<(string name, double size)>();
+            foreach (var p in styles.Properties())
+            {
+                var t = (p.Value as JObject)?["fontSize"];
+                if (t != null && (t.Type == JTokenType.Integer || t.Type == JTokenType.Float)) sizes.Add((p.Name, t.Value<double>()));
+            }
+            var small = sizes.Where(s => s.size * smallest.scale < MinReadableDevicePx - 1e-9).ToList();
+            if (small.Count == 0) return null;
+            var larger = sizes.Where(s => s.size * smallest.scale >= MinReadableDevicePx - 1e-9).OrderBy(s => s.size).ToList();
+            var groups = small.Select(s => s.size).Distinct().OrderBy(v => v)
+                .Select(f => string.Join(", ", small.Where(s => s.size == f).Select(s => s.name)) + " (" + Fmt(f) + "px: " + Fmt(f * smallest.scale) + " device px)");
+            return "text styles under " + Fmt(MinReadableDevicePx) + " device px at " + smallest.viewport.x + "×" + smallest.viewport.y + " (scale " + Fmt(smallest.scale) + "): " +
+                   string.Join(", ", groups) + ". Such text is hard to read and the renderers differ most there (the fidelity check holds it to wider measured ink limits); " +
+                   "keep it for secondary text and use " + (larger.Count > 0 ? larger[0].name + " (" + Fmt(larger[0].size) + "px) or larger" : "larger styles") +
+                   " where the design allows it.";
         }
 
         static TMP_FontAsset RealFace(TMP_FontAsset font, int weight)

@@ -219,12 +219,12 @@ line counts of the same texts pass at 1 px.
 - The cost: a colour error of up to ΔE 4.5 on text of 12 device px or less passes (at 1280 wide that is any kit style up
   to 24 px). The same text at 2560 wide is 14 device px or more for the kit's larger styles and keeps the ΔE 2 limit there.
 
-**Readability warning W-TXT-001.** Text this small is also hard to read, and no renderer measures it exactly, so lint
-warns (a warning, never an error) for every kit text style a design uses that comes out under 10 device px at the
-smallest viewport the kit declares: at 1280 wide, the 12 px caption (6 device px) and the 16 px label (8). It names the
-style, how many elements use it and the device size, and its fix points to the smallest kit styles that stay readable.
-The rule judges the kit's table, so it does not ask for another font size than the kit has; it is a prompt to choose
-larger styles where the design allows it.
+**Readability warning.** Text this small is also hard to read, and no renderer measures it exactly. Kit build and kit
+sync warn once about the kit's text styles under 10 device px at the smallest viewport the kit declares (at 1280 wide:
+caption, 12 px → 6 device px, and label, 16 px → 8), naming each style, its device size and the smallest style that stays
+readable, and RULES.md notes them under the text styles. It is a prompt to keep such styles for secondary text, never an
+error. A first version warned per design (lint W-TXT-001): the kit's own label is under the line, so it fired on nearly
+every screen and taught users to ignore warnings; it is no longer a lint rule.
 
 ## 8. Text with a blurred shadow
 

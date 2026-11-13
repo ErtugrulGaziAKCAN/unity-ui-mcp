@@ -5,14 +5,15 @@ import { enabledFilterFunctions } from "../lint/allowed-css.js";
 import { readTextStyles } from "../lint/text-styles.js";
 import { renderBaseCss, withBaseBlock } from "./baseCss.js";
 import { renderRules } from "./rulesDoc.js";
-import { assertWholeDevicePixels } from "./textStyles.js";
+import { assertWholeDevicePixels, readabilityWarning } from "./textStyles.js";
 
 /**
  * Kit build: regenerates what the kit derives from its sources and the lint's data, so nothing drifts:
  * `base.css` (from text-styles.json), `RULES.md` (from the tokens, text styles, components, css-support.json and the
  * rule table) and the kit base block in every component and fixture page. `check` writes nothing and only reports.
+ * `warnings` holds what the kit should know once (text styles too small to read at the smallest viewport).
  */
-export interface KitBuildResult { changed: string[] }
+export interface KitBuildResult { changed: string[]; warnings: string[] }
 
 /** HTML pages under a folder (recursive), sorted. */
 function pages(dir: string): string[] {
@@ -51,5 +52,6 @@ export function buildKit(kitDir: string, opts: { check?: boolean } = {}): KitBui
     changed.push(rel);
     if (!opts.check) fs.writeFileSync(file, text);
   }
-  return { changed: changed.sort() };
+  const readability = readabilityWarning(styles, kit);
+  return { changed: changed.sort(), warnings: readability ? [readability] : [] };
 }

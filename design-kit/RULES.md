@@ -103,6 +103,8 @@ Every text uses exactly one of these size / line-height / weight combinations (U
 
 UI Toolkit cannot set a line height, so the kit's Unity font twins carry each style's CSS line box (whole pixels at every supported viewport): a text block is exactly lines × line height tall on both sides. Weights are 400 and 700 only, each with a real face in the reference locale's font (U-FONT-001); no italic unless the kit font has an italic face. Inside one line of text, `<b>`/`<strong>` and `<span>` with another colour or kit size are rich text; `<br>` breaks the line. The table is `text-styles.json`; every listing of it (this table, the base stylesheet's classes, the design system's type styles) is generated from that file.
 
+Readability: caption and label are under 10 device px at 1280×720: keep them for secondary text (kit build and kit sync warn once; designs are not linted for it).
+
 ## Fonts
 
 The fonts come from the Unity project: kit sync copies the font files the project's TMP setup renders each locale with into `fonts/` and writes `fonts/fonts.css` and `fonts/fonts.json`. The exporter loads only those. Use `font-family: var(--font-ui)` (the base stylesheet sets it on the page); never declare `@font-face` (U-FONT-002) and never name another family (U-CSS-010). A character the kit font lacks fails lint (U-FONT-003) instead of falling back to another font.
@@ -205,7 +207,7 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 ## Animation
 
 - Transitions and `@keyframes` are recorded with their trigger (the screen opening, a screen state, a pseudo-state or an `is-*` class) and played by the package's animation player, never as USS transitions.
-- Timing functions `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` only (U-CSS-008). Keyframes animate only `transform`, `translate`, `rotate`, `scale`, `opacity`, `color`, `background-color`, `border-color`, `border-top-color`, `border-right-color`, `border-bottom-color`, `border-left-color` (U-CSS-013). Transition colours or transforms (fade opacity only on an element that paints one thing, U-CSS-039): a transition of a layout property warns (W-CSS-001), one of `box-shadow` or `background-image` fails (U-CSS-014).
+- Timing functions `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` only (U-CSS-008). Keyframes animate only `transform`, `translate`, `rotate`, `scale`, `opacity`, `color`, `background-color`, `border-color`, `border-top-color`, `border-right-color`, `border-bottom-color`, `border-left-color` (U-CSS-013). Transition colours or transforms (opacity only on one-part elements, U-CSS-039): a transition of a layout property warns (W-CSS-001), one of `box-shadow` or `background-image` fails (U-CSS-014).
 - Status: animations compile, but until the animation player lands their samples are reported as not captured in verification; static captures freeze them.
 
 ## Allowed CSS
@@ -393,10 +395,10 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-035 | error | an absolute element whose parent is static, or that changes position between layers | `position: relative` on the parent; one position in every layer |
 | U-CSS-036 | error | `box-sizing: content-box` on an element with a width or height and padding or border | `box-sizing: border-box` (the kit base stylesheet sets it everywhere) |
 | U-CSS-037 | error | baked effects that cannot share one element: an inset shadow under its own text, on a form control or a scroll area; a url() image beside a gradient or only in a layer; a background image or inset shadow on a tintable icon | move the text, image, gradient or icon into a child, or the shadow onto a wrapper |
-| U-CSS-038 | error | text that renders without `-webkit-font-smoothing: antialiased` (macOS browsers then thicken glyph stems, which UI Toolkit does not) | the kit base stylesheet (it sets the smoothing on `:root`); never override it on text |
-| U-CSS-039 | error | `opacity` < 1, or a fade of it, on overlapping parts | `--color-disabled-*` colours; a transform instead of a fade |
-| U-CSS-040 | error | a border width, a hard shadow edge or a painted line under 8px that is not whole device px at every viewport | the lengths the finding lists |
-| U-CSS-041 | error | a positioned or moved element's box or shadow over later elements | room, or `position: relative` on the later ones |
+| U-CSS-038 | error | text without `-webkit-font-smoothing: antialiased` (macOS browsers thicken its stems, UI Toolkit does not) | the kit base stylesheet (it sets it on `:root`); never override it |
+| U-CSS-039 | error | `opacity` < 1, or a fade of it, on overlapping parts | `--color-disabled-*` colours; no fade |
+| U-CSS-040 | error | a border, hard shadow edge or painted line under 8px off the device grid | the listed lengths |
+| U-CSS-041 | error | a positioned or moved box or shadow over later elements | room, or `position: relative` on later ones |
 | U-DC-001 | error | `{{…}}` holes in a Claude Design artboard | static sample text |
 | U-DC-002 | error | `<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import` | write rows out, `data-u-repeat` on the first |
 | U-DC-003 | error | UI built by script | static markup |
@@ -421,8 +423,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | W-CSS-001 | warning | a transition on a layout property or `all` (warning) | transition transforms or colours |
 | W-FONT-001 | warning | a weight or italic without a real face in another active locale's font (warning) | add the face or avoid the weight |
 | W-FONT-002 | warning | a kit font file that cannot be read (WOFF2, `local()`) (warning) | TTF/OTF/WOFF via `url()` |
-| W-TXT-001 | warning | a kit text style under 10 device px at the kit's smallest viewport (warning) | a larger kit text style (20px and up at 1280 wide) |
-| I-MRK-001 | info | a `title` attribute: it becomes a tooltip, which UI Toolkit shows only in Editor panels (info) | nothing for an Editor-only hint; show hints players need with a visible element |
+| I-MRK-001 | info | a `title` attribute: a tooltip, which UI Toolkit shows only in Editor panels (info) | nothing for an Editor-only hint; show hints players need with a visible element |
 
 ## Components
 

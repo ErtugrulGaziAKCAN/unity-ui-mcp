@@ -95,6 +95,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     .action(guard(async (dir: string, o: { check?: boolean }) => {
       const r = buildKit(path.resolve(dir), { check: o.check });
       for (const f of r.changed) io.out(`${o.check ? "stale" : "wrote"} ${f}\n`);
+      for (const w of r.warnings) io.out(`warning: ${w}\n`);
       if (!r.changed.length) io.out("kit is current\n");
       return o.check && r.changed.length ? 1 : 0;
     }) as never);
