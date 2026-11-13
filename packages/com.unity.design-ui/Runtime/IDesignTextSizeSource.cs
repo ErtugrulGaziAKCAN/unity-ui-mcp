@@ -4,8 +4,9 @@ namespace DesignUi
 {
     /// <summary>
     /// The game's text-size setting, which design screens follow (spec 13): the game decides the options and their
-    /// scales. A screen root carries the class <c>text-size-&lt;TextSize&gt;</c> and its text renders at the design's size
-    /// times <see cref="TextScale"/>.
+    /// scales, and the DesignUiProfile lists the same steps, whose rules the compiler writes. A screen root carries the
+    /// class <c>text-size-&lt;TextSize&gt;</c> and its text renders at the design's size times the compiled step's scale; a
+    /// <see cref="TextScale"/> that differs from it is reported.
     /// </summary>
     public interface IDesignTextSizeSource
     {

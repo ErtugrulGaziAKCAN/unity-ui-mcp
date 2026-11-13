@@ -27,12 +27,27 @@ namespace DesignUi
         public static void SetText(TextElement element, string text, DesignFontSet fonts = null)
         {
             if (element == null) throw new ArgumentNullException(nameof(element));
+            Prepare(element, text, fonts);
+            element.text = text;
+        }
+
+        /// <summary>
+        /// Adds the characters of <paramref name="text"/> to the fonts <paramref name="element"/> will render it with, as
+        /// <see cref="SetText"/> does, without assigning it: for controls whose text is not a TextElement's own (a Toggle's
+        /// label, a TextField's value, a DropdownField's value).
+        /// </summary>
+        public static void Prepare(VisualElement element, string text, DesignFontSet fonts = null)
+        {
+            if (element == null) throw new ArgumentNullException(nameof(element));
+            if (string.IsNullOrEmpty(text)) return;
             var set = fonts != null ? fonts : Fonts;
-            if (set != null && !string.IsNullOrEmpty(text))
-                foreach (var font in set.FontsFor(DesignFontSet.LocaleOf(element))) Prepare(font, text);
+            if (set != null)
+            {
+                var list = set.FontsFor(DesignFontSet.LocaleOf(element));
+                for (int i = 0; i < list.Count; i++) Prepare(list[i], text);
+            }
             var resolved = element.panel != null ? element.resolvedStyle.unityFontDefinition.fontAsset : null;
             if (resolved != null) Prepare(resolved, text);
-            element.text = text;
         }
 
         /// <summary>

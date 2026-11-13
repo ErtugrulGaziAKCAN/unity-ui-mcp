@@ -17,10 +17,10 @@ using Object = UnityEngine.Object;
 namespace DesignUi.Editor.Tests
 {
     /// <summary>
-    /// <see cref="LocaleFontController"/>: the screen root follows the selected locale (font twin, <c>locale-*</c> and
-    /// <c>rtl</c> classes, advanced text generator for scripts that need shaping, start-aligned text flipped for RTL
-    /// without mirroring the layout) and the game's text size (class and exact scaled sizes, with a report when a step
-    /// leaves kit line boxes off whole device pixels at a declared viewport).
+    /// <see cref="LocaleFontController"/>: the screen roots follow the selected locale (font twin, <c>locale-*</c> and
+    /// <c>rtl</c> classes, advanced text generator for scripts that need shaping; the layout is not mirrored) and the game's
+    /// text size (its class, with a report when the screens have no compiled rules for it). The compiled rules the classes
+    /// select are tested with compiled screens (TextSizeAndRtlRulesTests).
     /// </summary>
     public class LocaleFontControllerTests
     {
@@ -327,23 +327,23 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.AreEqual(new[] { "locale-zh-Hans" }, LocaleClasses(root), "no script given: the language's fonts");
         }
 
-        /// <summary>Labels with every kind of horizontal alignment and a row whose order must not change.</summary>
-        static (Label inherited, Label middleLeft, Label center, Label right, Label gameInline, VisualElement a, VisualElement b) Texts(VisualElement root)
+        /// <summary>A compiled screen root below the root: it carries its reference locale's class, inside a TemplateContainer.</summary>
+        static VisualElement CompiledScreen(VisualElement root)
         {
-            var inherited = new Label("inherited");          // the theme's upper-left, inherited
-            var middleLeft = new Label("middle-left");
-            middleLeft.style.unityTextAlign = TextAnchor.MiddleLeft;
-            var center = new Label("center");
-            center.style.unityTextAlign = TextAnchor.UpperCenter;
-            var right = new Label("right");
-            right.style.unityTextAlign = TextAnchor.UpperRight;
-            var gameInline = new Label("game inline");
-            gameInline.style.unityTextAlign = TextAnchor.LowerLeft;
-            foreach (var l in new[] { inherited, middleLeft, center, right, gameInline })
-            {
-                l.style.width = 300;
-                root.Add(l);
-            }
+            var container = new TemplateContainer();
+            var screen = new VisualElement();
+            screen.AddToClassList("locale-tr");
+            screen.Add(new Label("text"));
+            container.Add(screen);
+            root.Add(container);
+            return screen;
+        }
+
+        [UnityTest]
+        public IEnumerator Rtl_IsAClassOnEveryScreenRoot_TheLayoutIsNotMirrored()
+        {
+            var root = Root();
+            var screen = CompiledScreen(root);
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
             var a = new VisualElement { name = "a" };
@@ -354,182 +354,77 @@ namespace DesignUi.Editor.Tests
                 x.style.height = 20;
                 row.Add(x);
             }
-            root.Add(row);
-            return (inherited, middleLeft, center, right, gameInline, a, b);
-        }
-
-        [UnityTest]
-        public IEnumerator Rtl_FlipsStartAlignedText_KeepsCenteredAndEndAligned_DoesNotMirrorLayout()
-        {
-            var root = Root();
-            var t = Texts(root);
+            screen.Add(row);
             yield return null;
-            yield return null;
-            Assert.AreEqual(TextAnchor.UpperLeft, t.inherited.resolvedStyle.unityTextAlign, "precondition: the runtime theme starts text at the left");
             var locales = new Locales("en");
             AdvancedText(AdvancedTextState.Off);
             _controller = new LocaleFontController(root, null, new DesignLocaleRules(), locales);
+            Assert.IsFalse(root.ClassListContains(LocaleFontController.RtlClass));
 
             locales.Set("ar");
-            yield return null;
-            Assert.AreEqual(TextAnchor.UpperRight, t.inherited.resolvedStyle.unityTextAlign);
-            Assert.AreEqual(TextAnchor.MiddleRight, t.middleLeft.resolvedStyle.unityTextAlign);
-            Assert.AreEqual(TextAnchor.UpperCenter, t.center.resolvedStyle.unityTextAlign);
-            Assert.AreEqual(TextAnchor.UpperRight, t.right.resolvedStyle.unityTextAlign, "start-aligned flips; end-aligned stays (profile rule)");
-            Assert.AreEqual(TextAnchor.LowerRight, t.gameInline.resolvedStyle.unityTextAlign);
-            Assert.Less(t.a.layout.x, t.b.layout.x, "layout is not mirrored");
-
-            var late = new Label("added later");
-            root.Add(late);
-            for (int i = 0; i < 30 && late.resolvedStyle.unityTextAlign != TextAnchor.UpperRight; i++) yield return null;
-            Assert.AreEqual(TextAnchor.UpperRight, late.resolvedStyle.unityTextAlign, "text added while RTL is shown flips too (within frames)");
-
-            locales.Set("en");
-            yield return null;
-            Assert.AreEqual(TextAnchor.UpperLeft, t.inherited.resolvedStyle.unityTextAlign);
-            Assert.AreEqual(StyleKeyword.Null, t.inherited.style.unityTextAlign.keyword, "the inline value it had (none) comes back");
-            Assert.AreEqual(TextAnchor.MiddleLeft, t.middleLeft.resolvedStyle.unityTextAlign);
-            Assert.AreEqual(TextAnchor.LowerLeft, t.gameInline.style.unityTextAlign.value, "a game's own inline alignment comes back");
-            Assert.AreEqual(TextAnchor.UpperLeft, late.resolvedStyle.unityTextAlign);
-
-            locales.Set("ar");
-            locales.Set("en");
-            locales.Set("he"); // several switches before a style pass: the design alignment is remembered, never re-read from a flip
-            yield return null;
-            Assert.AreEqual(TextAnchor.UpperRight, t.inherited.resolvedStyle.unityTextAlign);
-            Assert.AreEqual(TextAnchor.UpperCenter, t.center.resolvedStyle.unityTextAlign);
-        }
-
-        [UnityTest]
-        public IEnumerator Rtl_AlignmentRules_MirrorAndKeep()
-        {
-            var root = Root();
-            var t = Texts(root);
-            yield return null;
-            yield return null;
-            var locales = new Locales("ar");
-            AdvancedText(AdvancedTextState.Off);
-            _controller = new LocaleFontController(root, null, new DesignLocaleRules { rtlAlignment = RtlTextAlignment.Mirror }, locales);
-            yield return null;
-            Assert.AreEqual(TextAnchor.UpperRight, t.inherited.resolvedStyle.unityTextAlign);
-            Assert.AreEqual(TextAnchor.UpperLeft, t.right.resolvedStyle.unityTextAlign, "mirror: end-aligned goes to the left");
-            Assert.AreEqual(TextAnchor.UpperCenter, t.center.resolvedStyle.unityTextAlign);
-            _controller.Dispose();
-            yield return null;
-            Assert.AreEqual(TextAnchor.UpperLeft, t.inherited.resolvedStyle.unityTextAlign, "disposing restores the design alignment");
-
-            _controller = new LocaleFontController(root, null, new DesignLocaleRules { rtlAlignment = RtlTextAlignment.Keep }, locales);
-            yield return null;
-            Assert.AreEqual(TextAnchor.UpperLeft, t.inherited.resolvedStyle.unityTextAlign, "keep: nothing flips");
             Assert.IsTrue(root.ClassListContains(LocaleFontController.RtlClass));
+            Assert.IsTrue(screen.ClassListContains(LocaleFontController.RtlClass), "the compiled .rtl rules sit on the screen root's class");
+            Assert.AreEqual(LanguageDirection.RTL, root.languageDirection);
+            yield return null;
+            Assert.Less(a.layout.x, b.layout.x, "layout is not mirrored");
+
+            locales.Set("en");
+            Assert.IsFalse(root.ClassListContains(LocaleFontController.RtlClass));
+            Assert.IsFalse(screen.ClassListContains(LocaleFontController.RtlClass));
         }
 
-        [UnityTest]
-        public IEnumerator TextSize_SetsTheClass_AndScalesTextExactly()
+        [Test]
+        public void TextSize_IsAClassOnEveryScreenRoot_OneAtATime_RemovedOnDispose()
         {
             var root = Root();
-            var body = new Label("body");
-            body.style.fontSize = 24;
-            var caption = new Label("caption");
-            caption.style.fontSize = 12;
-            root.Add(body);
-            root.Add(caption);
-            yield return null;
-            yield return null;
+            var screen = CompiledScreen(root);
             var sizes = new Sizes("normal", 1f);
             _controller = new LocaleFontController(root, null, new DesignLocaleRules(), new Locales("en"), sizes);
             Assert.IsTrue(root.ClassListContains("text-size-normal"));
+            Assert.IsTrue(screen.ClassListContains("text-size-normal"), "a compiled screen's step rules need the class on its root");
 
             sizes.Set("large", 1.5f);
-            yield return null;
-            Assert.IsTrue(root.ClassListContains("text-size-large"));
-            Assert.IsFalse(root.ClassListContains("text-size-normal"), "one text-size class at a time");
-            Assert.AreEqual(36f, body.resolvedStyle.fontSize, 1e-4f);
-            Assert.AreEqual(18f, caption.resolvedStyle.fontSize, 1e-4f);
+            Assert.IsTrue(screen.ClassListContains("text-size-large"));
+            Assert.IsFalse(screen.ClassListContains("text-size-normal"), "one text-size class at a time");
+            Assert.IsFalse(root.ClassListContains("text-size-normal"));
+            Assert.AreEqual("large", _controller.TextSize);
             Assert.AreEqual(1.5f, _controller.TextScale);
 
-            var late = new Label("added later");
-            late.style.fontSize = 16;
-            root.Add(late);
-            for (int i = 0; i < 30 && Math.Abs(late.resolvedStyle.fontSize - 24f) > 1e-4f; i++) yield return null;
-            Assert.AreEqual(24f, late.resolvedStyle.fontSize, 1e-4f, "text added later scales too (within frames)");
+            var later = CompiledScreen(root);
+            _controller.Refresh();
+            Assert.IsTrue(later.ClassListContains("text-size-large"));
 
-            sizes.Set("normal", 1f);
-            yield return null;
-            Assert.AreEqual(24f, body.resolvedStyle.fontSize, 1e-4f, "back to the design size");
-            Assert.AreEqual(24f, body.style.fontSize.value.value, 1e-4f, "the inline size it had comes back");
-            Assert.AreEqual(12f, caption.resolvedStyle.fontSize, 1e-4f);
-            Assert.AreEqual(16f, late.resolvedStyle.fontSize, 1e-4f);
-        }
-
-        [UnityTest]
-        public IEnumerator NewController_InTheSameFrame_KeepsTheDesignValues()
-        {
-            var root = Root();
-            // size and alignment come from the cascade (no inline value), as from a stylesheet: clearing an inline
-            // override takes effect only at the next style pass
-            var container = new VisualElement();
-            container.style.fontSize = 24;
-            container.style.unityTextAlign = TextAnchor.UpperRight;
-            var body = new Label("body");
-            var right = new Label("right");
-            container.Add(body);
-            container.Add(right);
-            root.Add(container);
-            yield return null;
-            yield return null;
-            AdvancedText(AdvancedTextState.Off);
-            var rules = new DesignLocaleRules { rtlAlignment = RtlTextAlignment.Mirror };
-            _controller = new LocaleFontController(root, null, rules, new Locales("ar"), new Sizes("large", 1.5f));
-            yield return null;
-            Assert.AreEqual(36f, body.resolvedStyle.fontSize, 1e-4f);
-            Assert.AreEqual(TextAnchor.UpperLeft, right.resolvedStyle.unityTextAlign);
-
-            // replaced before a style pass (a host restarting its controller): the styles still show the old one's values
-            _controller.Dispose();
-            _controller = new LocaleFontController(root, null, rules, new Locales("ar"), new Sizes("large", 1.5f));
-            yield return null;
-            Assert.AreEqual(36f, body.resolvedStyle.fontSize, 1e-4f, "1.5 × the design size, not 1.5 × the scaled one");
-            Assert.AreEqual(TextAnchor.UpperLeft, right.resolvedStyle.unityTextAlign, "mirrored once, not back");
             _controller.Dispose();
             _controller = null;
-            yield return null;
-            Assert.AreEqual(24f, body.resolvedStyle.fontSize, 1e-4f);
-            Assert.AreEqual(TextAnchor.UpperRight, right.resolvedStyle.unityTextAlign);
+            Assert.IsFalse(screen.ClassListContains("text-size-large"), "disposing gives the design's sizes back");
+            Assert.IsFalse(root.ClassListContains("text-size-large"));
+            Assert.IsFalse(sizes.HasListeners);
         }
 
-        [UnityTest]
-        public IEnumerator TextSize_ThatLeavesKitLineBoxesOffWholeDevicePixels_IsReported_NotRounded()
+        [Test]
+        public void TextSize_ThatTheScreensHaveNoRulesFor_IsReported()
         {
-            FontFixture.RequireInter();
-            var root = Root();
-            FontAsset plain = Inter("en twin"), box = LineBox("en r125", 1.25f);
-            var fonts = Set(("en", new[] { plain, box }));
-            var label = new Label("label 16/20");
-            label.style.fontSize = 16;
-            label.style.unityFontDefinition = FontDefinition.FromSDFFont(box);
-            root.Add(label);
-            yield return null;
-            yield return null;
+            var fonts = Set(("en", new FontAsset[0]));
+            fonts.textSizes = new[] { new DesignTextSize { key = "large", scale = 1.25f } };
             var sizes = new Sizes("normal", 1f);
-            _controller = new LocaleFontController(root, fonts, new DesignLocaleRules(), new Locales("en"), sizes, new[] { 1f, 0.75f, 0.5f });
-
-            sizes.Set("x2", 2f); // 32/40: 24/30 and 16/20 device px — whole everywhere
-            yield return null;
+            _controller = new LocaleFontController(Root(), fonts, new DesignLocaleRules(), new Locales("en"), sizes);
             CollectionAssert.IsEmpty(_controller.Issues, string.Join("\n", _controller.Issues));
 
-            LogAssert.Expect(LogType.Warning, new Regex("text size 'large'"));
-            sizes.Set("large", 1.25f); // 20/25: line 18.75 device px at 0.75, 12.5 at 0.5
-            yield return null;
-            Assert.AreEqual(20f, label.resolvedStyle.fontSize, 1e-4f, "applied exactly, not rounded");
+            LogAssert.Expect(LogType.Warning, new Regex("text size 'huge'"));
+            sizes.Set("huge", 2f);
             Assert.AreEqual(1, _controller.Issues.Count, string.Join("\n", _controller.Issues));
-            StringAssert.Contains("text size 'large'", _controller.Issues[0]);
-            StringAssert.Contains("0.75", _controller.Issues[0]);
-            StringAssert.Contains("18.75", _controller.Issues[0]);
+            StringAssert.Contains("'huge'", _controller.Issues[0]);
+            StringAssert.Contains("large (x1.25)", _controller.Issues[0], "names the compiled steps");
 
+            LogAssert.Expect(LogType.Warning, new Regex("text size 'large' is x1.5"));
+            sizes.Set("large", 1.5f);
+            Assert.AreEqual(1, _controller.Issues.Count);
+            StringAssert.Contains("compiled as x1.25", _controller.Issues[0]);
+
+            sizes.Set("large", 1.25f);
+            CollectionAssert.IsEmpty(_controller.Issues);
             sizes.Set("normal", 1f);
-            yield return null;
-            CollectionAssert.IsEmpty(_controller.Issues, "the design sizes are whole by the kit's table");
+            CollectionAssert.IsEmpty(_controller.Issues, "the design's sizes need no rules");
         }
 
         [UnityTest]
@@ -561,20 +456,17 @@ namespace DesignUi.Editor.Tests
         }
 
         [UnityTest]
-        public IEnumerator PerFramePass_InSteadyState_AllocatesNothing()
+        public IEnumerator PerFrameTick_InSteadyState_AllocatesNothing()
         {
             var root = Root();
-            Texts(root);
-            var body = new Label("body");
-            body.style.fontSize = 24;
-            root.Add(body);
-            yield return null;
+            CompiledScreen(root);
+            root.Add(new Label("body"));
             yield return null;
             AdvancedText(AdvancedTextState.Off);
             _controller = new LocaleFontController(root, null, new DesignLocaleRules(), new Locales("ar"), new Sizes("large", 1.5f));
             yield return null;
             _controller.Tick();
-            Assert.That(() => _controller.Tick(), UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory(), "the per-frame pass while RTL and a text size are active");
+            Assert.That(() => _controller.Tick(), UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory(), "the per-frame check while RTL and a text size are active");
         }
 
         // ---- Arabic shaping on the real advanced generator --------------------------------------------------------

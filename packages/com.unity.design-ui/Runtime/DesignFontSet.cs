@@ -27,17 +27,27 @@ namespace DesignUi
         public string referenceLocale;
         public LocaleFonts[] locales = new LocaleFonts[0];
 
-        /// <summary>The twins of <paramref name="locale"/>, else the reference locale's, else none.</summary>
+        /// <summary>
+        /// The text-size steps the compiled screens have rules for (the profile's, when the set was written); empty when the
+        /// profile declares none. The locale controller reports a game text size that is not one of them.
+        /// </summary>
+        public DesignTextSize[] textSizes = new DesignTextSize[0];
+
+        static readonly FontAsset[] None = new FontAsset[0];
+
+        /// <summary>The twins of <paramref name="locale"/>, else the reference locale's, else none. Allocates nothing.</summary>
         public IReadOnlyList<FontAsset> FontsFor(string locale)
         {
             LocaleFonts reference = null;
-            foreach (var l in locales ?? new LocaleFonts[0])
+            var all = locales ?? new LocaleFonts[0];
+            for (int i = 0; i < all.Length; i++)
             {
+                var l = all[i];
                 if (l == null) continue;
-                if (l.locale == locale) return l.fonts ?? new FontAsset[0];
+                if (l.locale == locale) return l.fonts ?? None;
                 if (l.locale == referenceLocale) reference = l;
             }
-            return reference?.fonts ?? new FontAsset[0];
+            return reference?.fonts ?? None;
         }
 
         /// <summary>The locale of the nearest element at or above <paramref name="element"/> that carries a locale class, or null.</summary>
@@ -46,6 +56,15 @@ namespace DesignUi
             for (var e = element; e != null; e = e.hierarchy.parent)
                 foreach (var c in e.GetClasses())
                     if (c.StartsWith(LocaleClassPrefix, StringComparison.Ordinal) && c.Length > LocaleClassPrefix.Length) return c.Substring(LocaleClassPrefix.Length);
+            return null;
+        }
+
+        /// <summary>The compiled step for a text-size key, or null.</summary>
+        public DesignTextSize TextSizeFor(string key)
+        {
+            if (textSizes == null || key == null) return null;
+            foreach (var s in textSizes)
+                if (s != null && s.key == key) return s;
             return null;
         }
     }

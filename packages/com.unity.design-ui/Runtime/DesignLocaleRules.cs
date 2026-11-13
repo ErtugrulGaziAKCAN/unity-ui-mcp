@@ -16,10 +16,11 @@ namespace DesignUi
 
     /// <summary>
     /// The project's locale rules for design screens (spec 13): which locales read right to left, which need the advanced
-    /// text generator for shaping, and the RTL alignment rule. The DesignUiProfile holds them; a DesignUiPanelRegion added
-    /// in the Editor copies them. A code matches an entry when it equals it or starts with it and a '-' or '_' (case
-    /// ignored), so <c>ar</c> covers <c>ar-SA</c>; a code whose script subtag is a right-to-left script (<c>pa-Arab</c>)
-    /// is right to left too, and one whose script needs shaping (<c>sat-Deva</c>) uses the advanced generator.
+    /// text generator for shaping, and the RTL alignment rule (compiled into the screens' <c>.rtl</c> rules). The
+    /// DesignUiProfile holds them; a DesignUiPanelRegion added in the Editor copies them. A code matches an entry when it
+    /// equals it or starts with it and a '-' or '_' (case ignored), so <c>ar</c> covers <c>ar-SA</c>; a code whose script
+    /// subtag is a right-to-left script (<c>pa-Arab</c>) is right to left too, and one whose script needs shaping
+    /// (<c>sat-Deva</c>) uses the advanced generator.
     /// </summary>
     [Serializable]
     public sealed class DesignLocaleRules
@@ -33,7 +34,7 @@ namespace DesignUi
         [Tooltip("Left-to-right locales whose scripts need shaping (the advanced text generator): Brahmic and Southeast Asian scripts.")]
         public string[] complexScripts = { "th", "lo", "km", "my", "hi", "mr", "ne", "sa", "bn", "as", "pa", "gu", "or", "ta", "te", "kn", "ml", "si", "bo" };
 
-        [Tooltip("What happens to start-aligned text in a right-to-left locale. The layout is never mirrored.")]
+        [Tooltip("What happens to start-aligned text in a right-to-left locale. The compiler writes it into the screens' .rtl rules (recompile after changing it). The layout is never mirrored.")]
         public RtlTextAlignment rtlAlignment = RtlTextAlignment.StartToEnd;
 
         public bool IsRightToLeft(string code) => Matches(code, rightToLeft) || HasScript(code, RtlScripts);
