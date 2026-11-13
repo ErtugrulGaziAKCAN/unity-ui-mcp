@@ -122,7 +122,7 @@ The kit is uploaded to Claude as a design system. It contains:
 | `data-en` | English source text for that key | With `data-l10n` |
 | `data-l10n-args` | Smart String argument names, e.g. `amount,currency` | When the text has variables |
 | `data-u-bind` | Dynamic, non-translated value (player name, number) | For runtime values |
-| `data-u-action` | Command raised on activation, e.g. `openInbox` | On actionable elements |
+| `data-u-action` | Command raised on activation, e.g. `open-inbox` | On actionable elements |
 | `data-u-repeat` | Repeated item template, e.g. `players` | On the first sample item |
 | `data-u-repeat-mode` | `list` (virtualized, default inside scroll) or `inline` | Optional |
 | `data-u-state` | Screen state variant, e.g. `loading`, `empty`, `error` | On state roots |
