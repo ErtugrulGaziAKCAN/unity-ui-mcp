@@ -19,18 +19,43 @@ export interface ImportAnswer {
   compileId: number | null;
   /** Milliseconds of the import on the Editor's main thread. */
   ms: number | null;
+  /** The project's scripts do not compile (Unity's last compilation failed); null from a bridge that does not say. */
+  scriptsFailed: boolean | null;
 }
 
-/** How the script compile after an import ended: reloaded (ok), failed (errors), not-started, or unknown (no result for this import). */
+/**
+ * How the script compile after an import ended: reloaded (ok), failed (errors), not-started, or unknown (no result for this
+ * import: the Editor restarted or another import's compile superseded it). An unknown result is ok only when the bridge
+ * shows that the project's scripts compile (not compiling, scripts not failed).
+ */
 export interface CompileOutcome { id: number | null; state: "reloaded" | "failed" | "not-started" | "unknown"; ok: boolean; errors: string[] }
+
+/** Thrown when the import ran (files written) but Unity was still compiling at the limit. */
+export class CompileWaitTimeout extends UnityRunnerError {
+  constructor(message: string, readonly answer: ImportAnswer) { super(message); }
+}
 
 export interface RunResult {
   code: number; logTail: string; via: RunnerRoute; timings: Record<string, number>;
   /** Editor route, a bridge that reports them: the import's changed files and compile state. */
   answer?: ImportAnswer;
-  /** Editor route, after a script change: how the compile ended (the runner waited for it). */
+  /** Editor route, after a script change: how the compile ended (waited for, or already ended inside the import). */
   compile?: CompileOutcome;
+  /** Editor route: whether the project's scripts failed to compile when the result was decided (null: not reported). */
+  scriptsFailed?: boolean | null;
+  /** Editor route: the errors of the bridge's last compile when it failed (they explain scriptsFailed). */
+  scriptErrors?: string[];
 }
+
+/** The outcome of compile `id` from the bridge's lastCompile, else unknown (ok only when the scripts demonstrably compile). */
+function outcomeOf(last: any, id: number | null, scriptsFailed: boolean | null): CompileOutcome {
+  if (last && last.id === id && ["reloaded", "failed", "not-started"].includes(last.state)) {
+    return { id, state: last.state, ok: last.state === "reloaded", errors: strings(last.errors) };
+  }
+  return { id, state: "unknown", ok: scriptsFailed === false, errors: [] };
+}
+
+const failedErrors = (last: any): string[] => (last?.state === "failed" ? strings(last.errors) : []);
 
 export interface RunnerOptions {
   /** Poll interval while waiting for the Editor to finish compiling. */
@@ -49,6 +74,7 @@ function importAnswer(res: any): ImportAnswer | null {
   return {
     changed: strings(res.changed), imported: strings(res.imported), compiled: strings(res.compiled), compiling: res.compiling,
     compileId: typeof res.compileId === "number" ? res.compileId : null, ms: typeof res.ms === "number" ? res.ms : null,
+    scriptsFailed: typeof res.scriptsFailed === "boolean" ? res.scriptsFailed : null,
   };
 }
 
@@ -117,15 +143,25 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
   const log = typeof res?.log === "string" ? res.log : "";
   const answer = importAnswer(res);
   let compile: CompileOutcome | undefined;
+  let scriptsFailed: boolean | null = answer?.scriptsFailed ?? null;
+  let scriptErrors = failedErrors(res?.lastCompile);
   if (code === 0 && step !== "capture" && (!answer || answer.compiling)) {
     const t1 = performance.now();
-    // a bridge without the compile fields: wait for "not compiling" to settle, as before
-    if (answer) compile = await waitForCompileEnd(cfg.projectDir, info, answer, opts);
-    else await waitForCompile(cfg.projectDir, info, opts);
+    if (answer) {
+      const end = await waitForCompileEnd(cfg.projectDir, info, answer, opts);
+      ({ compile, scriptsFailed } = end);
+      scriptErrors = failedErrors(end.last);
+    } else await waitForCompile(cfg.projectDir, info, opts); // a bridge without the compile fields: wait for "not compiling" to settle, as before
     timings.compileWait = Math.round(performance.now() - t1);
+  } else if (answer && answer.compileId !== null) {
+    // the compile already ended inside the import (failed, typically): its outcome is in the answer
+    compile = outcomeOf(res.lastCompile, answer.compileId, answer.scriptsFailed);
   }
   timings.total = Math.round(performance.now() - t0);
-  return { code, logTail: tail(log), via: "editor", timings, ...(answer && step === "import" ? { answer } : {}), ...(compile ? { compile } : {}) };
+  return {
+    code, logTail: tail(log), via: "editor", timings,
+    ...(answer && step === "import" ? { answer, scriptsFailed, scriptErrors } : {}), ...(compile ? { compile } : {}),
+  };
 }
 
 /**
@@ -133,7 +169,8 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
  * domain reload, a failed compile or a compile that never starts). The bridge is down during the reload and may come back
  * on another port (re-read from bridge.json). `lastCompile` with this import's compileId says how it ended.
  */
-async function waitForCompileEnd(projectDir: string, first: BridgeInfo, answer: ImportAnswer, opts: RunnerOptions): Promise<CompileOutcome> {
+async function waitForCompileEnd(projectDir: string, first: BridgeInfo, answer: ImportAnswer, opts: RunnerOptions):
+  Promise<{ compile: CompileOutcome; scriptsFailed: boolean | null; last: unknown }> {
   const interval = opts.pollIntervalMs ?? 250;
   const limit = opts.compileTimeoutMs ?? 300_000;
   const deadline = Date.now() + limit;
@@ -142,18 +179,15 @@ async function waitForCompileEnd(projectDir: string, first: BridgeInfo, answer: 
     try {
       const s = await bridgeRequest(info, "GET", "/status", undefined, Math.max(1000, interval * 4));
       if (s?.compiling === false) {
-        const last = s.lastCompile;
-        if (last && last.id === answer.compileId && ["reloaded", "failed", "not-started"].includes(last.state)) {
-          return { id: answer.compileId, state: last.state, ok: last.state === "reloaded", errors: strings(last.errors) };
-        }
-        return { id: answer.compileId, state: "unknown", ok: false, errors: [] };
+        const scriptsFailed = typeof s.scriptsFailed === "boolean" ? s.scriptsFailed : null;
+        return { compile: outcomeOf(s.lastCompile, answer.compileId, scriptsFailed), scriptsFailed, last: s.lastCompile };
       }
     } catch {
       info = findBridge(projectDir) ?? info; // reloading: the bridge restarts and rewrites bridge.json
     }
     if (Date.now() > deadline) {
-      throw new UnityRunnerError(`the import wrote ${answer.changed.length} files, but Unity was still compiling the changed scripts ` +
-        `(${answer.compiled.join(", ")}) after ${Math.round(limit / 1000)} s; check the Unity console`);
+      throw new CompileWaitTimeout(`the import wrote ${answer.changed.length} files, but Unity was still compiling the changed scripts ` +
+        `(${answer.compiled.join(", ")}) after ${Math.round(limit / 1000)} s; check the Unity console`, answer);
     }
     await sleep(interval);
   }

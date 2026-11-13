@@ -83,6 +83,8 @@ export interface StubBridge {
   downPolls: number;
   /** `lastCompile` of GET /status. */
   lastCompile: unknown;
+  /** `scriptsFailed` of GET /status (omitted while undefined, like an older bridge). */
+  scriptsFailed: boolean | undefined;
   close(): Promise<void>;
 }
 
@@ -90,7 +92,7 @@ export interface StubBridge {
 export async function startStubBridge(projectDir: string, opts: { tokenInFile?: string; projectPath?: string } = {}): Promise<StubBridge> {
   const token = "a".repeat(64);
   const state: StubBridge = {
-    port: 0, token, requests: [], answer: { code: 0, log: "imported" }, compilingPolls: 0, downPolls: 0, lastCompile: null,
+    port: 0, token, requests: [], answer: { code: 0, log: "imported" }, compilingPolls: 0, downPolls: 0, lastCompile: null, scriptsFailed: undefined,
     close: async () => {},
   };
   const server = http.createServer((req, res) => {
@@ -111,6 +113,7 @@ export async function startStubBridge(projectDir: string, opts: { tokenInFile?: 
         else if (state.downPolls > 0) { state.downPolls--; req.socket.destroy(); return; }
         return send(200, {
           projectPath: opts.projectPath ?? projectDir, isCompiling: compiling, compiling, lastCompile: compiling ? null : state.lastCompile, busy: false, last: null,
+          ...(state.scriptsFailed === undefined ? {} : { scriptsFailed: compiling ? false : state.scriptsFailed }),
         });
       }
       if ((req.url === "/import" || req.url === "/kit-sync") && req.method === "POST") return send(200, state.answer);

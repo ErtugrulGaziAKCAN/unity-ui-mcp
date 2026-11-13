@@ -22,7 +22,7 @@ namespace DesignUi.Editor
         public string Op;
         public int Code;
         /// <summary>An import that changed scripts: the compile it waits for (the bridge's lastCompile id); else 0.</summary>
-        public int CompileId;
+        internal int CompileId;
     }
 
     /// <summary>
@@ -44,6 +44,9 @@ namespace DesignUi.Editor
         const string LastOperationKey = "DesignUi.Bridge.LastOperation";
         const int MaxBodyBytes = 1024 * 1024;
         const int MaxCompileErrors = 20;
+
+        /// <summary>Whether the project's last script compilation failed (Unity keeps the old assemblies then).</summary>
+        internal static Func<bool> ScriptsFailedProbe = () => EditorUtility.scriptCompilationFailed;
 
         /// <summary>How long an import's script change may wait for Unity to start compiling before it counts as not started.</summary>
         internal static TimeSpan CompileStartTimeout = TimeSpan.FromSeconds(60);
@@ -74,6 +77,7 @@ namespace DesignUi.Editor
         static BridgeRequestInfo? s_LastRequest;
         static BridgeRequestInfo? s_LastOperation;
         static volatile bool s_IsCompiling;
+        static volatile bool s_ScriptsFailed;
         static volatile bool s_AutoStartPending;
         static int s_Generation;
 
@@ -162,6 +166,7 @@ namespace DesignUi.Editor
             s_LastCompile = "";
             s_CompileErrors.Clear();
             CompileStartTimeout = TimeSpan.FromSeconds(60);
+            ScriptsFailedProbe = () => EditorUtility.scriptCompilationFailed;
         }
 
         // ---- the script compile after an import -----------------------------------------------------------------
@@ -236,13 +241,15 @@ namespace DesignUi.Editor
         /// <summary>The import answer's fields about what changed, and the compile wait when a C# file changed.</summary>
         static JObject ImportAnswer(OpResult r, int compilesBefore)
         {
-            var changed = (r.Changed ?? new string[0]).Where(p => !string.IsNullOrEmpty(p)).ToList();
+            var changed = (r.Written ?? new string[0]).Where(p => !string.IsNullOrEmpty(p)).ToList();
             var imported = changed.Select(ScreenCompiler.ProjectPath).Where(p => p != null).ToList();
             var compiled = imported.Where(p => p.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)).ToList();
             int id = 0;
             if (r.Code == 0 && compiled.Count > 0)
             {
-                id = BeginCompile();
+                // an import while another's compile is pending shares its outcome (one compile and reload serve both)
+                if (s_PendingCompile != 0) { id = s_PendingCompile; s_PendingSince = DateTime.UtcNow; }
+                else id = BeginCompile();
                 // a compile that already ran inside the import (it happens synchronously in some Editor states)
                 if (s_CompilesFinished != compilesBefore)
                 {
@@ -250,6 +257,7 @@ namespace DesignUi.Editor
                     if (s_FinishedErrors.Count > 0) EndCompile(id, "failed", s_FinishedErrors);
                 }
             }
+            s_ScriptsFailed = ScriptsFailedProbe();
             return new JObject
             {
                 ["changed"] = new JArray(changed.Cast<object>().ToArray()),
@@ -257,6 +265,10 @@ namespace DesignUi.Editor
                 ["compiled"] = new JArray(compiled.Cast<object>().ToArray()),
                 ["compiling"] = id != 0 && s_PendingCompile == id,
                 ["compileId"] = id != 0 ? (JToken)id : JValue.CreateNull(),
+                // whether the project's scripts compile now, and the last compile's outcome (with this import's id when it
+                // already ended inside the import): an import is not usable while scripts fail, even without a script change
+                ["scriptsFailed"] = s_ScriptsFailed || EndedFailed(id),
+                ["lastCompile"] = string.IsNullOrEmpty(s_LastCompile) ? JValue.CreateNull() : JToken.Parse(s_LastCompile),
             };
         }
 
@@ -284,6 +296,14 @@ namespace DesignUi.Editor
             catch (Exception e) when (e is Newtonsoft.Json.JsonException || e is FormatException || e is InvalidCastException) { return text; }
         }
 
+        /// <summary>Whether the compile of <paramref name="id"/> has already ended as failed.</summary>
+        static bool EndedFailed(int id)
+        {
+            if (id == 0 || s_PendingCompile == id || string.IsNullOrEmpty(s_LastCompile)) return false;
+            var last = JObject.Parse(s_LastCompile);
+            return last.Value<int>("id") == id && last.Value<string>("state") == "failed";
+        }
+
         /// <summary>A client that went away before its answer was written: not an error of the bridge.</summary>
         internal static bool IsClientDisconnect(Exception e)
         {
@@ -307,6 +327,7 @@ namespace DesignUi.Editor
         static void Update()
         {
             s_IsCompiling = EditorApplication.isCompiling;
+            s_ScriptsFailed = ScriptsFailedProbe();
             if (s_PendingCompile != 0)
             {
                 if (s_IsCompiling) s_CompileSeen = true;
@@ -480,7 +501,12 @@ namespace DesignUi.Editor
                 item.Done.TrySetResult(new OpResult(1, "Bridge stopped."));
             // an answer being written (e.g. an import right before the reload it caused) goes out before the listener closes
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            while (l != null && IsBusy && sw.ElapsedMilliseconds < 2000) Thread.Sleep(5);
+            while (l != null && IsBusy && sw.ElapsedMilliseconds < 2000)
+            {
+                // a request that queued its work after the drain above is answered too (Update cannot run now)
+                while (s_Work.TryDequeue(out var late)) late.Done.TrySetResult(new OpResult(1, "Bridge stopped."));
+                Thread.Sleep(5);
+            }
             if (l != null)
             {
                 try { l.Stop(); } catch (Exception) { }
@@ -534,11 +560,17 @@ namespace DesignUi.Editor
             try { await Handle(ctx).ConfigureAwait(false); }
             catch (Exception e)
             {
-                if (IsClientDisconnect(e))
-                    s_MainActions.Enqueue(() => Debug.Log("DesignUi: a bridge client closed the connection before its answer was sent (" + e.GetType().Name + ": " + e.Message + ")."));
-                else s_MainActions.Enqueue(() => Debug.LogException(e));
+                ReportHandlerException(e);
                 try { ctx.Response.Abort(); } catch (Exception) { }
             }
+        }
+
+        /// <summary>Logs a request handler's exception on the main thread: a client that went away as info, anything else as an error.</summary>
+        internal static void ReportHandlerException(Exception e)
+        {
+            if (IsClientDisconnect(e))
+                s_MainActions.Enqueue(() => Debug.Log("DesignUi: a bridge client closed the connection before its answer was sent (" + e.GetType().Name + ": " + e.Message + ")."));
+            else s_MainActions.Enqueue(() => Debug.LogException(e));
         }
 
         static void Respond(HttpListenerContext ctx, int status, JObject body)
@@ -614,6 +646,7 @@ namespace DesignUi.Editor
                     ["projectPath"] = s_ProjectPath,
                     ["isCompiling"] = s_IsCompiling,
                     ["compiling"] = s_IsCompiling || s_PendingCompile != 0,
+                    ["scriptsFailed"] = s_ScriptsFailed,
                     ["lastCompile"] = string.IsNullOrEmpty(lastCompile) ? JValue.CreateNull() : JToken.Parse(lastCompile),
                     ["busy"] = IsBusy,
                     ["last"] = last.HasValue

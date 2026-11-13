@@ -27,6 +27,8 @@ namespace DesignUi.Editor
         public string DesignRoot;
         /// <summary>Absolute <c>kitDir</c>, or null.</summary>
         public string KitDir;
+        /// <summary><c>designRoot</c> and <c>kitDir</c> as written in the file, or null.</summary>
+        public string DesignRootAsWritten, KitDirAsWritten;
         /// <summary><c>profileAsset</c> as written (an Assets/… path), or null.</summary>
         public string ProfileAsset;
         /// <summary>Absolute <c>mcpServer</c> (the MCP server's dist/server.js, written by the setup script), or null.</summary>
@@ -47,8 +49,10 @@ namespace DesignUi.Editor
                 c.Error = FileName + " cannot be read: " + e.Message;
                 return c;
             }
-            c.DesignRoot = c.Resolve(Str(o, "designRoot"));
-            c.KitDir = c.Resolve(Str(o, "kitDir"));
+            c.DesignRootAsWritten = Str(o, "designRoot");
+            c.KitDirAsWritten = Str(o, "kitDir");
+            c.DesignRoot = c.Resolve(c.DesignRootAsWritten);
+            c.KitDir = c.Resolve(c.KitDirAsWritten);
             c.ProfileAsset = Str(o, "profileAsset");
             c.ServerPath = c.Resolve(Str(o, "mcpServer"));
             return c;

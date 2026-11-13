@@ -33,8 +33,11 @@ namespace DesignUi.Editor
         public static string Where(McpClient c) =>
             c == McpClient.ClaudeCode ? "run it in the folder you start Claude Code from"
             : c == McpClient.Cursor ? "merge it into .cursor/mcp.json (project) or ~/.cursor/mcp.json"
-            : c == McpClient.Codex ? "add it to ~/.codex/config.toml"
-            : "merge it into claude_desktop_config.json (Settings > Developer > Edit Config)";
+            : c == McpClient.Codex ? "add it to ~/.codex/config.toml" + OneEntryPerProject
+            : "merge it into claude_desktop_config.json (Settings > Developer > Edit Config)" + OneEntryPerProject;
+
+        // Codex and Claude Desktop keep one config for every project (TOML refuses a second [mcp_servers.design-ui] table)
+        const string OneEntryPerProject = "; if it already has a " + ServerName + " entry for another project, rename this one (e.g. " + ServerName + "-<project>)";
 
         /// <summary>The client's configuration for <paramref name="projectPath"/>; <paramref name="serverPath"/> may be null.</summary>
         public static string For(McpClient client, string projectPath, string serverPath)

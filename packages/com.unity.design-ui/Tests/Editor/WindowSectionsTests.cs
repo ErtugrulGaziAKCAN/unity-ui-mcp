@@ -219,8 +219,9 @@ namespace DesignUi.Editor.Tests
             var profile = w.CreateProfile();
             Assert.IsNotNull(profile);
             Assert.AreEqual(ProfilePath, AssetDatabase.GetAssetPath(profile));
-            Assert.AreEqual(Full("Designs"), profile.designRoot);
-            Assert.AreEqual(Full("Kit"), profile.kitDir);
+            // as written in the config (relative to the project), never one machine's absolute paths
+            Assert.AreEqual("Designs", profile.designRoot);
+            Assert.AreEqual("Kit", profile.kitDir);
             Assert.IsNotNull(profile.panelSettings, "the package's design PanelSettings");
             w.RefreshProject();
             Assert.IsFalse(Shown(create));

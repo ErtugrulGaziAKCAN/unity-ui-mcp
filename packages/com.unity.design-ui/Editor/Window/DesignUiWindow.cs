@@ -140,7 +140,7 @@ namespace DesignUi.Editor
 
             DesignUiBridge.StateChanged -= Refresh;
             DesignUiBridge.StateChanged += Refresh;
-            rootVisualElement.schedule.Execute(Refresh).Every(1000);
+            rootVisualElement.schedule.Execute(() => { if (++m_Ticks % 5 == 0) RefreshProject(); Refresh(); }).Every(1000);
             m_SeenOperation = DesignUiBridge.LastOperation?.Utc ?? default;
             RefreshProject(); // checks the Text row too
             Refresh();
@@ -209,7 +209,7 @@ namespace DesignUi.Editor
                 RefreshProject();
                 RefreshText();
             }
-            else if (++m_Ticks % 5 == 0) RefreshProject();
+
             if (!DesignUiBridgeSettings.Enabled) m_Status.text = "Disabled";
             else if (DesignUiBridge.IsListening) m_Status.text = "Listening on 127.0.0.1:" + DesignUiBridge.Port;
             else m_Status.text = "Stopped";
@@ -296,8 +296,9 @@ namespace DesignUi.Editor
             EnsureFolder(path.Substring(0, path.LastIndexOf('/')));
             var profile = CreateInstance<DesignUiProfile>();
             profile.panelSettings = DesignUiProfile.LoadDefaultPanelSettings();
-            profile.designRoot = m_Config.DesignRoot;
-            profile.kitDir = m_Config.KitDir;
+            // as written in the config (relative paths resolve against the project root), never one machine's absolute paths
+            profile.designRoot = m_Config.DesignRootAsWritten;
+            profile.kitDir = m_Config.KitDirAsWritten;
             AssetDatabase.CreateAsset(profile, path);
             m_ProfileOverride = null;
             RefreshProject();
@@ -342,7 +343,7 @@ namespace DesignUi.Editor
             }
             var profile = ProfilePathForOps;
             var r = ImportOp(profile, export, false);
-            if (r.Code != 0 && (r.Log ?? "").Contains("edited by hand: ") && Confirm(DesignUiMenu.DialogText(r) + "\n\nDiscard the hand edits and import again?"))
+            if (DesignUiOps.HasManualEdits(r) && Confirm(DesignUiMenu.DialogText(r) + "\n\nDiscard the hand edits and import again?"))
                 r = ImportOp(profile, export, true);
             Finish("Import", r);
         }

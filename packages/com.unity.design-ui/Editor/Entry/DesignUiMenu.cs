@@ -39,7 +39,7 @@ namespace DesignUi.Editor
             var export = EditorUtility.OpenFolderPanel("Design UI: export folder to import (screen.ir.json)", "", "");
             if (string.IsNullOrEmpty(export)) return;
             var r = DesignUiOps.Import(profile, export, false);
-            if (r.Code != 0 && r.Log.Contains("edited by hand: ")
+            if (DesignUiOps.HasManualEdits(r)
                 && EditorUtility.DisplayDialog(Title, DialogText(r) + "\n\nDiscard the hand edits and import again?", "Discard and import", "Keep my edits"))
                 r = DesignUiOps.Import(profile, export, true);
             Report("Import", r);

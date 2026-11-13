@@ -60,7 +60,7 @@ namespace DesignUi.Editor
         public static OpResult Run(string command, string[] args) => Run(command, args, null);
 
         /// <summary><see cref="Run(string, string[])"/>; an import writes <paramref name="importDone"/> (see <see cref="ImportEach"/>).</summary>
-        public static OpResult Run(string command, string[] args, string importDone)
+        static OpResult Run(string command, string[] args, string importDone)
         {
             try { return RunUnguarded(command, args, importDone); }
             catch (Exception e) { return new OpResult(1, "Design UI " + command + " stopped: " + e.GetType().Name + ": " + e.Message); }
