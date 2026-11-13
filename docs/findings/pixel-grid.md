@@ -53,15 +53,61 @@ Imports that failed, each fixed where the decision belongs:
 
 Ruled out: mipmaps for scaled-down pictures (UI Toolkit samples the top level; identical captures with and without).
 
+## Second round
+
+**Chromium paints boxes on whole CSS px.** Blink snaps a box to whole CSS px in layout space and applies the device
+scale when rastering. At scale 0.75 a box laid out at 180.996 device px (241.33 CSS px, after a content-sized button)
+paints from 241 CSS px, 180.75 device px: its first column is a quarter covered, while UI Toolkit (Yoga) puts the edge on
+181. Measured on the kit buttons at 1920: the left border's pixels are `18,48,57` (a quarter of the border colour) and
+`36,91,103` (three quarters) in the golden, full in Unity. Any element whose CSS edge is not a multiple of 4 px paints
+such an anti-aliased row or column at 1920 or 1280. The comparison now uses Chromium's painted rect (`paintedRect`):
+
+- a border's colour is sampled on the pixels both renderers cover fully (one pixel, or a 3×3 mean where three or more
+  are), and corner samples whose 3×3 mean straddles a border's inner edge are left out — the sample measures the border
+  colour, the box check its position;
+- the one-pixel row or column of a painted edge the design draws off the device grid is copied from the design before
+  SSIM, like text (`offGridEdges` in the verdict); the box check measures where that edge is.
+
+Before, 99 captures failed only on such samples at 1920 (button, dialog, tabs, pseudo-states); after, none.
+
+**Baked shadows on the grid.** A baked outer shadow's image reached out from the box by its own extent (27 and 19 px for
+`0 8px 24px`), so at 0.5 its texels started half a device pixel off the box and a hard ring (the kit card's selected
+`0 0 0 4px` ring) came out a pixel thinner. The bake now pads the image with transparent margin to multiples of the step
+that is whole at every declared viewport (4 px for 1, 0.75 and 0.5; `scaleStep`/`wholeBorderWidths`), so its texels
+start on the device grid wherever the box does. Hard edges (a shadow without blur) whose offset or spread is not whole
+device px at every viewport (a 6 px spread ring is 4.5 px at 1920) are U-CSS-040 errors like border widths.
+
+**Stacking contexts in states.** A layer that gives a static element a transform (or opacity, or a position) makes CSS
+paint it — with its shadow — after every in-flow element of the screen; UI Toolkit keeps hierarchy order. The exporter's
+effects screen showed it: on `:hover` a card's `translateY(-4px)` and its larger shadow painted over the next card and the
+panel below in the golden, under them in Unity (shadow band ΔE 1.72, panel colour ΔE 1.07 at every viewport). Lint
+U-CSS-041 rejects a static element that becomes a stacking context in some layer while its box, translate or outer
+shadow reaches a later in-flow element; the fix is room for the shadow (the effects screen now has 48 and 64 px gaps).
+
+**Breakpoints in the Unity capture.** Nothing put the `bp-<name>` classes on the compiled screen root, so a breakpoint
+layer never applied in the capture (the effects screen's `@media (max-width: 1600px)` hero was 43 px too tall). The capture
+now adds the breakpoints that hold at the capture's viewport (`DesignCapture.ActiveBreakpoints`, the exporter's rule:
+logical size under Scale With Screen Size, rounded, against min/max width and aspect). The runtime controller that
+toggles them in a game is still to come (spec: `BreakpointController`).
+
+**Coverage viewports on the scale step.** The viewport added for a breakpoint no declared viewport reaches was the width
+nearest the declared one with a near-whole logical size: 853×1080 for `max-width: 1600px`, scale 0.5417, where a 16 px
+font is 8.67 device px (UI Toolkit rounds it to 9) and every box drifts. It is now the nearest width whose scale is a
+multiple of the declared scales' step (0.25): 640×1080 at 0.5, where the design's lengths are as whole as at 1280×720.
+The near-whole fallback stays for steps that do not exist. Such a viewport has another aspect than the 2560×1440 screen
+(640×1080 is 1280×2160 logical px): below the screen the golden shows the page's background and Unity the panel's clear
+colour, so the comparison leaves the area outside the screen root out (`outsideScreen` in the verdict); every element of
+the effects screen passes there.
+
+**Disabled and focused.** Unions of `:disabled` with `:focus` or `:active` on the same element are not captured: no
+browser and no UI Toolkit panel focuses or presses a disabled control (the capture said so for every such job).
+
 ## Open
 
-1. **Group opacity.** CSS applies `opacity` to the composited element; UI Toolkit multiplies it into each part, so a
-   translucent element's background shows through its border, text and children. A disabled button at 0.4: text ink
-   ΔE 13.7–23.8, border ΔE 1.34; a nested swatch ΔE 6.89. Reproducing it needs a lint rule and kit disabled styles
-   without opacity.
-2. **Fractional borders at 1920.** 2px and 3px borders paint differently (above); element SSIM 0.93–0.97 on bordered
-   tabs, buttons and fields at 1920.
-3. **Anti-aliasing and resampling inside small or picture elements.** Element SSIM 0.984–0.989 on 72 px radios, round
-   checks and pictures drawn scaled (identical shapes; the limit 0.99 comes from M0's flat fixtures).
-4. **Small text.** Later lines of multi-line text sit at fractional baselines in Unity (+0.36 px at 12 px); ink colour
-   ΔE up to 3.09 at 12 px, 6.13 at 8 px, coverage 0.86× at 8 px. The step-A measurement covered single lines.
+Resolved in the second round: group opacity (U-CSS-039 and the kit's disabled colours, [opacity.md](opacity.md)),
+fractional borders (U-CSS-040, [borders.md](borders.md)), small elements and pictures
+([ssim-small-elements.md](ssim-small-elements.md)), later-line baselines ([text-baselines.md](text-baselines.md)).
+
+Still open: single lines of text at 6 to 12 device px whose ink colour or amount misses the limits calibrated on one
+30-character line per style (the suite's short labels: ΔE up to 3.67 at 8 px and 2.37 at 12 px, ink 0.84–0.90× at 6–8
+px), and text shadows whose ink amount is 1.11–1.17× the design's.

@@ -123,7 +123,7 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 | `--color-line` | `#2b6573` | Borders and dividers. |
 | `--color-text-primary` | `#ffffff` | Primary text on every surface. |
 | `--color-text-secondary` | `#b9d0d6` | Secondary text, captions. |
-| `--color-text-muted` | `#86a7b0` | Placeholders and disabled text. |
+| `--color-text-muted` | `#86a7b0` | Placeholders and hints. |
 | `--color-accent` | `#16c2d5` | Primary actions, the checked toggle, the selected tab. |
 | `--color-accent-hover` | `#3fd3e3` | Hover on accent surfaces. |
 | `--color-accent-pressed` | `#0f9fb0` | Pressed accent surfaces. |
@@ -135,6 +135,12 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 | `--color-negative-hover` | `#f47d7a` | Hover on destructive actions. |
 | `--color-negative-pressed` | `#d94a47` | Pressed destructive actions. |
 | `--color-scrim` | `rgba(3, 12, 15, 0.72)` | Backdrop behind dialogs. |
+| `--color-disabled-surface` | `#0e2b33` | Disabled (all: 40 % on surface-900) |
+| `--color-disabled-line` | `#183b45` | Disabled lines. |
+| `--color-disabled-text` | `#6d797d` | Disabled text. |
+| `--color-disabled-accent` | `#0f606c` | Disabled accent. |
+| `--color-disabled-on-accent` | `#091c22` | On it. |
+| `--color-disabled-negative` | `#67393c` | Disabled danger. |
 
 **Spacing**
 
@@ -353,17 +359,17 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-001 | error | `display: grid` or `inline-grid` | nested flex rows and columns (`flex-wrap` for tiles) |
 | U-CSS-002 | error | `::before` / `::after` with content, or list markers | a real element; `list-style: none` |
 | U-CSS-003 | error | structural selectors (`:nth-*`, `:first/last/only-child`, `:*-of-type`, `:empty`) | a class per element |
-| U-CSS-004 | error | a `z-index` or sibling order UI Toolkit's hierarchy order cannot reproduce: a z-index outside the base layer, on a static element that is not a flex item, against the markup order of in-flow siblings, or an absolute sibling with no place among the in-flow siblings where CSS paints it | z-index in the base style only, on absolute or relative elements or flex items that already follow the markup order; otherwise reorder the markup, or give the in-flow siblings the same position |
+| U-CSS-004 | error | a `z-index` or sibling order UI Toolkit's hierarchy order cannot reproduce: a z-index outside the base layer, on a static non-flex-item, against the markup order of in-flow siblings, or an absolute sibling with no place among them where CSS paints it | z-index in the base style only, on absolute or relative elements or flex items that follow the markup order; otherwise reorder the markup, or give the in-flow siblings the same position |
 | U-CSS-005 | error | `calc()` | a literal value |
 | U-CSS-006 | error | viewport units (`vw`, `vh`, `vmin`, `vmax`, …) | px or % |
 | U-CSS-007 | error | `backdrop-filter` | a solid or translucent colour, or a baked image |
 | U-CSS-008 | error | transition or animation timing other than `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` (`cubic-bezier()`, `steps()`) | one of those keywords |
-| U-CSS-009 | error | an inline element in text flow other than `b`, `strong`, `i`, `em`, `span`, `br`, a rich tag with effects beyond colour, size, bold and italic, or an inline element in a block container that cannot be written as a block | `display: block` on the child or `display: flex` on the parent; inside a line only the rich tags |
+| U-CSS-009 | error | an inline element in text flow other than `b`, `strong`, `i`, `em`, `span`, `br`, a rich tag with effects beyond colour, size, bold and italic, or one in a block container that cannot be a block | `display: block` on the child or `display: flex` on the parent; inside a line only the rich tags |
 | U-CSS-010 | error | a first font family that is not a kit family | a kit family first (`var(--font-ui)`) |
 | U-CSS-011 | error | `gap` on a wrapping flex container | margins on the items |
 | U-CSS-012 | error | `@media` features other than min/max-width and min/max-aspect-ratio, media types other than screen/all, `not` | the allowed features only |
 | U-CSS-013 | error | `@keyframes` animating properties other than transform, translate, rotate, scale, opacity and colours | animate allowed properties |
-| U-CSS-014 | error | a transition of `box-shadow` or `background-image`, a url() image beside another image, a gradient that does not fill the element or uses a colour space | transition opacity or transform; one image per element; gradients over the whole element in sRGB stops |
+| U-CSS-014 | error | a transition of `box-shadow` or `background-image`, a url() image beside another image, a gradient that does not fill the element or sets a colour space | transition opacity or transform; one image per element; whole-element sRGB gradients |
 | U-CSS-015 | error | a `filter` function css-support.json does not enable (one is enabled once its fidelity fixture passes in Unity) | remove the filter |
 | U-CSS-016 | error | text size, line height or weight that is not a kit text style | the nearest kit text style (a `.text-<style>` class) |
 | U-CSS-017 | error | `position: fixed/sticky`, `float` | absolute positioning or flex |
@@ -375,19 +381,22 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-023 | error | a property, keyword, colour keyword or unit outside the allowed CSS | remove it or use the allowed CSS |
 | U-CSS-024 | error | a value function other than var, rgb(a), hsl(a), linear-/radial-gradient, url | a literal value |
 | U-CSS-025 | error | a transform not expressible as translate → rotate → scale (matrix, skew, perspective, 3D) | 2D functions in that order, or the `translate`, `rotate`, `scale` properties |
-| U-CSS-026 | error | a browser default style the design did not write (margins, paddings, borders, link colour, `appearance: auto`, placeholder colour, …) | include the kit base stylesheet, or write the property explicitly (`margin: 0`, `appearance: none`, …) |
+| U-CSS-026 | error | a browser default style the design did not write (margins, paddings, borders, link colour, `appearance: auto`, …) | include the kit base stylesheet, or write the property (`margin: 0`, `appearance: none`, …) |
 | U-CSS-027 | error | pseudo-classes other than hover/active/focus/disabled/checked, `+` / `~`, `:is/:where/:has/:not` | style the element itself, or `is-*` classes |
 | U-CSS-028 | error | at-rules other than `@media` and `@keyframes` | no @layer/@supports/@container/@starting-style/@property/@page/@import |
 | U-CSS-029 | error | an element outside the whitelist, an unsupported input type, a shadow root, `<foreignObject>` | the listed elements and inline `<svg>`, light DOM only |
 | U-CSS-030 | error | collapsing vertical margins, or text next to element children | flex column with gap or padding; wrap text in its own element |
 | U-CSS-031 | error | an inline SVG that paints some shapes with currentColor and others with fixed colours | currentColor on every shape (the icon follows its element's colour) or fixed colours on every shape |
-| U-CSS-032 | error | overlapping siblings UI Toolkit paints in another order than CSS (a relative sibling before a static one, a faded or transformed static sibling after an absolute one) | the same paint level for the overlapping siblings (position: relative), or the sibling on top later in the markup, or move them apart |
+| U-CSS-032 | error | overlapping siblings UI Toolkit paints in another order than CSS (a relative sibling before a static one, a faded or transformed static one after an absolute one) | the same paint level for the siblings (position: relative), the top one later in the markup, or move them apart |
 | U-CSS-033 | error | pseudo-states a pointer or focus cannot produce together: `:active` on an ancestor and on the element, two focused elements | style one press or focus per element; an `is-*` class set by code for a combined look |
-| U-CSS-034 | error | a `gap` container whose earlier child shows or hides itself by its own pseudo-state or `is-*` class | hide or show it with a screen state or an ancestor's class, keep an always-visible child first, or margins instead of gap |
+| U-CSS-034 | error | a `gap` container whose earlier child shows or hides by its own pseudo-state or `is-*` class | use a screen state or an ancestor's class, keep an always-visible child first, or margins instead of gap |
 | U-CSS-035 | error | an absolute element whose parent is static, or that changes position between layers | `position: relative` on the parent; one position in every layer |
 | U-CSS-036 | error | `box-sizing: content-box` on an element with a width or height and padding or border | `box-sizing: border-box` (the kit base stylesheet sets it everywhere) |
-| U-CSS-037 | error | baked effects that cannot share one element: an inset shadow under the element's own text, on a form control or a scroll area; a url() image beside a gradient or only in a layer; a background image or inset shadow on a tintable icon | move the text, image, gradient or icon into a child element, or the shadow onto a wrapper |
+| U-CSS-037 | error | baked effects that cannot share one element: an inset shadow under its own text, on a form control or a scroll area; a url() image beside a gradient or only in a layer; a background image or inset shadow on a tintable icon | move the text, image, gradient or icon into a child, or the shadow onto a wrapper |
 | U-CSS-038 | error | text that renders without `-webkit-font-smoothing: antialiased` (macOS browsers then thicken glyph stems, which UI Toolkit does not) | the kit base stylesheet (it sets the smoothing on `:root`); never override it on text |
+| U-CSS-039 | error | `opacity` < 1 on overlapping parts | `--color-disabled-*` colours |
+| U-CSS-040 | error | a border width off the device grid | 4px, 8px, 12px … |
+| U-CSS-041 | error | a moved state's shadow over later elements | room for the shadow |
 | U-DC-001 | error | `{{…}}` holes in a Claude Design artboard | static sample text |
 | U-DC-002 | error | `<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import` | write rows out, `data-u-repeat` on the first |
 | U-DC-003 | error | UI built by script | static markup |
@@ -404,7 +413,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-MRK-006 | error | the screen root is not the kit reference size at (0, 0) | root `width/height` = reference in px, `body { margin: 0 }` |
 | U-MRK-007 | error | placeholder, title, alt or aria-label text without `data-l10n-<attr>` + `data-en-<attr>` | add the key and English text per attribute |
 | U-MRK-008 | error | a variable inside localized text not marked as `<span data-u-arg="name">` with one `{name}` in `data-en` | one `data-u-arg` span per `{name}` placeholder; `data-l10n-args` (optional) lists the same names |
-| U-MRK-009 | error | a keyed, bound, id'd or action inline element sharing a line with other text, tags or spaces, or changing font size or line height inside the line | its own block element (or a flex row of them); `data-u-arg` for a variable inside one text |
+| U-MRK-009 | error | a keyed, bound, id'd or action inline element sharing a line with other text, tags or spaces, or changing font size or line height in the line | its own block element (or a flex row of them); `data-u-arg` for a variable inside one text |
 | U-MRK-010 | error | a `data-u-repeat` container with other children, a sample whose structure differs from the template, or a mode other than list/inline | only the items in the container, samples with the template's elements, ids, keys and binds |
 | U-MRK-011 | error | a `data-u-id` that gives a member the generated view class already has (`state`, `set-state`, `find`, `screen-root`, …) | another id, e.g. `state-label` |
 | U-NET-001 | error | any remote resource (fonts, stylesheets, images) except scripts from allowed origins | no remote resources; local files |
@@ -412,6 +421,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | W-CSS-001 | warning | a transition on a layout property or `all` (warning) | transition transform, opacity or colours |
 | W-FONT-001 | warning | a weight or italic without a real face in another active locale's font (warning) | add the face or avoid the weight |
 | W-FONT-002 | warning | a kit font file that cannot be read (WOFF2, `local()`) (warning) | TTF/OTF/WOFF via `url()` |
+| W-TXT-001 | warning | a kit text style under 10 device px at the kit's smallest viewport (warning) | a larger kit text style (20px and up at 1280 wide) |
 | I-MRK-001 | info | a `title` attribute: it becomes a tooltip, which UI Toolkit shows only in Editor panels (info) | nothing for an Editor-only hint; show hints players need with a visible element |
 
 ## Components

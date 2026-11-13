@@ -37,6 +37,12 @@ export interface ShadowOptions {
   /** Font sizes for em / rem lengths in the shadow. */
   fontSize?: number;
   rootFontSize?: number;
+  /**
+   * The CSS px step whose multiples are whole device px at every viewport scale (4 for 1, 0.75 and 0.5): an outer
+   * shadow's image reaches out from the border box by multiples of it (transparent margin), so at every scale the image
+   * and its texels start on the device grid where the box does, and a hard edge lands where Chromium draws it. 1: none.
+   */
+  grid?: number;
 }
 
 /** A box-shadow list split into outer and inset shadows (each in its own order); `none` is empty. */
@@ -59,8 +65,8 @@ export function shadowIssues(value: string, opts: Pick<ShadowOptions, "fontSize"
   return out;
 }
 
-interface Parsed { inset: boolean; ox: number; oy: number; blur: number; spread: number; colorless: boolean }
-function parseShadow(item: string, o: Pick<ShadowOptions, "fontSize" | "rootFontSize">): Parsed {
+export interface Parsed { inset: boolean; ox: number; oy: number; blur: number; spread: number; colorless: boolean }
+export function parseShadow(item: string, o: Pick<ShadowOptions, "fontSize" | "rootFontSize">): Parsed {
   const toks = splitTopLevel(item, " ");
   const lens: number[] = [];
   let colorless = true, inset = false;
@@ -82,7 +88,7 @@ const BAKE_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>html,
   `#bake{position:absolute;box-sizing:border-box;background:transparent;border-style:solid;border-color:transparent}</style></head>` +
   `<body><div id="bake"></div></body></html>`;
 
-interface Spec { shadow: string; radius: string; borders: [number, number, number, number]; color: string; opaque: boolean; fontSize: number; rootFontSize: number }
+interface Spec { shadow: string; radius: string; borders: [number, number, number, number]; color: string; opaque: boolean; fontSize: number; rootFontSize: number; grid: number }
 interface Probe { slice: [number, number, number, number]; off: BoxRect; min: { w: number; h: number }; bytes: Buffer; size: [number, number]; pad: number }
 interface Final { bytes: Buffer; w: number; h: number; slice: [number, number, number, number]; offset: BoxRect }
 
@@ -193,11 +199,16 @@ function radiusSums(value: string): { x: number; y: number } {
   };
 }
 
-/** The image rect of a render: the union of the drawn pixels and the border box (outer), or the padding box (inset). */
-function imageRect(bb: BoxRect, pad: number, w: number, h: number, inset: boolean, [bt, br, bb2, bl]: number[]): BoxRect {
+/**
+ * The image rect of a render: the union of the drawn pixels and the border box (outer, reaching out from the box by
+ * multiples of `grid` px), or the padding box (inset).
+ */
+function imageRect(bb: BoxRect, pad: number, w: number, h: number, inset: boolean, [bt, br, bb2, bl]: number[], grid = 1): BoxRect {
   if (inset) return { x: pad + bl, y: pad + bt, w: w - bl - br, h: h - bt - bb2 };
-  const x0 = Math.min(bb.x, pad), y0 = Math.min(bb.y, pad);
-  return { x: x0, y: y0, w: Math.max(bb.x + bb.w, pad + w) - x0, h: Math.max(bb.y + bb.h, pad + h) - y0 };
+  const out = (d: number) => Math.ceil(d / grid - 1e-9) * grid;
+  const x0 = pad - out(pad - Math.min(bb.x, pad)), y0 = pad - out(pad - Math.min(bb.y, pad));
+  const x1 = pad + w + out(Math.max(bb.x + bb.w, pad + w) - (pad + w)), y1 = pad + h + out(Math.max(bb.y + bb.h, pad + h) - (pad + h));
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 /** Insets of one axis: the band plus one uniform texel when the render has a uniform middle, else split in the middle. */
@@ -221,6 +232,7 @@ export async function bakeShadow(page: Page, boxShadow: string, borderRadius: st
     borders: inset ? (opts.borders ?? [0, 0, 0, 0]).map((b) => Math.max(0, b)) as Spec["borders"] : [0, 0, 0, 0],
     color: parsed.some((p) => p.colorless) ? opts.color ?? "#000000" : "#000000", opaque: !inset && !!opts.opaqueBackground,
     fontSize: em ? opts.fontSize ?? 16 : 16, rootFontSize: em ? opts.rootFontSize ?? 16 : 16,
+    grid: inset ? 1 : Math.max(1, Math.round(opts.grid ?? 1)),
   };
   const baker = bakerOf(page);
   const key = JSON.stringify(spec);
@@ -235,8 +247,9 @@ export async function bakeShadow(page: Page, boxShadow: string, borderRadius: st
       const bb = opaqueBounds(img);
       if (!bb) return null;
       if ((bb.x === 0 || bb.y === 0 || bb.x + bb.w === img.w || bb.y + bb.h === img.h) && pad < 4096) continue;
-      const rect = imageRect(bb, pad, w, h, inset, spec.borders);
+      const rect = imageRect(bb, pad, w, h, inset, spec.borders, spec.grid);
       if (rect.w <= 0 || rect.h <= 0) return null;
+      if ((rect.x < 0 || rect.y < 0 || rect.x + rect.w > img.w || rect.y + rect.h > img.h) && pad < 4096) continue;
       const cols = run(img, pad + Math.floor(w / 2), rect.x, rect.x + rect.w, sameColumn);
       const rows = run(img, pad + Math.floor(h / 2), rect.y, rect.y + rect.h, sameRow);
       return { img: crop(img, rect), pad, rect, off: { x: rect.x - pad, y: rect.y - pad, w: rect.w - w, h: rect.h - h }, cols, rows };

@@ -136,6 +136,8 @@ export interface EffectContext {
   computedColor: string;
   fontSize: number | undefined;
   rootFontSize: number;
+  /** The kit's device-grid step in CSS px (whole device px at every viewport scale): outer shadow images snap to it. */
+  grid?: number;
 }
 
 interface At { key: string; dims: string[]; box: Size | null }
@@ -181,7 +183,7 @@ export async function nodeEffects(i: number, c: EffectContext, where: string): P
     const borders = borderWidths((p) => eff(p)?.value);
     const bgColor = normalizeColor(eff("background-color")?.value ?? "rgba(0, 0, 0, 0)");
     const sh = splitShadows(eff("box-shadow")?.value ?? "none");
-    const opts = { box: box ?? undefined, borders, color, opaqueBackground: /^#[0-9a-f]{6}$/.test(bgColor), ...lctx };
+    const opts = { box: box ?? undefined, borders, color, opaqueBackground: /^#[0-9a-f]{6}$/.test(bgColor), grid: c.grid, ...lctx };
     const page = sh.outer.length || sh.inset.length ? await c.page() : null;
     const shadow = sh.outer.length ? await bakeShadow(page!, sh.outer.join(", "), radius, c.outDir, opts) : null;
     const inset = sh.inset.length ? await bakeShadow(page!, sh.inset.join(", "), radius, c.outDir, opts) : null;

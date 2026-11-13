@@ -4,7 +4,7 @@ A dropdown picks one value from a short list: a select box with a chevron icon d
 
 **Markup:** `<select data-u-id="…"><option data-l10n="…" data-en="…" selected>Seçenek</option>…</select>` inside a `position: relative` box, with an inline `<svg>` chevron positioned absolutely on the right and `pointer-events: none`.
 
-**States:** `:hover` changes the background, `:focus` the border colour, `:disabled` the opacity.
+**States:** `:hover` changes the background, `:focus` the border colour, `:disabled` the colours (`--color-disabled-*`, U-CSS-039).
 
 **Do:** leave room for the chevron with right padding; paint the chevron with `currentColor` so it follows the text colour.
 

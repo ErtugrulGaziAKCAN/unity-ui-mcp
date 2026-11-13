@@ -4,7 +4,7 @@ A button runs one command when it is pressed: primary, secondary, ghost and dest
 
 **Markup:** `<button data-u-id="…" data-u-action="…" data-l10n="…" data-en="…">Etiket</button>` with a text style class (`text-body-bold`, `text-label-bold`).
 
-**States:** `:hover` and `:active` change the background colour, `:focus` the border colour (a 2px border that is transparent at rest: UI Toolkit has no outline), `:disabled` the opacity. Keep `:hover` and `:disabled` on different properties.
+**States:** `:hover` and `:active` change the background colour, `:focus` the border colour (a 4px border, transparent at rest: UI Toolkit has no outline), `:disabled` the colours (`--color-disabled-*`, U-CSS-039).
 
 **Do:** use the colour tokens (`--color-accent`, `--color-surface-700`, …) and `--radius-md`; give a fixed `height` and horizontal padding. The kit pages have no transitions, because animations are not verified yet; a transition of colours or opacity compiles and is played by the animation player.
 

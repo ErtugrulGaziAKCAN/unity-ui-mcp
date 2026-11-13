@@ -176,7 +176,7 @@ namespace DesignUi.Editor
         /// face (the TMP weight table, 400 = the font itself) whose font loads; <c>fontSize × scale</c> and
         /// <c>lineHeight × scale</c> are whole device pixels at every viewport scale (<paramref name="scales"/>: UI Toolkit
         /// sets text at whole device pixels and rounds a text element's height up to them, so anything else drifts from
-        /// Chromium, most visibly in stacked text). Every ratio <c>lineHeight / fontSize</c> gets its own line-box twin
+        /// Chromium, most visibly in stacked text). Every font size and line height gets its own line-box twin
         /// (<see cref="FontTwinGenerator.LineBox"/>). Errors name the viewport and the nearest sizes that fit.
         /// </summary>
         internal static List<string> ValidateTextStyles(string path, TMP_FontAsset reference, IReadOnlyList<(UnityEngine.Vector2Int viewport, double scale)> scales)

@@ -13947,7 +13947,7 @@
     {
       "context": "flex-item",
       "export": "ok",
-      "id": "flex-item--border--2px-solid-ffffff",
+      "id": "flex-item--border--4px-solid-ffffff",
       "ir": {
         "breakpoints": [],
         "fonts": [],
@@ -14000,16 +14000,16 @@
                       "background-color": "#16c2d5",
                       "border-bottom-color": "#ffffff",
                       "border-bottom-style": "solid",
-                      "border-bottom-width": "2px",
+                      "border-bottom-width": "4px",
                       "border-left-color": "#ffffff",
                       "border-left-style": "solid",
-                      "border-left-width": "2px",
+                      "border-left-width": "4px",
                       "border-right-color": "#ffffff",
                       "border-right-style": "solid",
-                      "border-right-width": "2px",
+                      "border-right-width": "4px",
                       "border-top-color": "#ffffff",
                       "border-top-style": "solid",
-                      "border-top-width": "2px",
+                      "border-top-width": "4px",
                       "display": "block",
                       "flex-shrink": "0",
                       "height": "50px",
@@ -14075,8 +14075,8 @@
         "screen": "cases",
         "screenMatch": 0.5,
         "source": {
-          "path": "flex-item--border--2px-solid-ffffff.html",
-          "sha256": "3526046b58299b9becbeba568ee9f9df786340ddaa0272b54ab62e7780748976"
+          "path": "flex-item--border--4px-solid-ffffff.html",
+          "sha256": "512952f2a26a223243fcffe6e05c17151b33363c871cc6ee07169c55b81dd0e4"
         },
         "states": [
           "default"
@@ -14100,7 +14100,7 @@
       "lint": [],
       "property": "border",
       "unity": "compile",
-      "value": "2px solid #ffffff"
+      "value": "4px solid #ffffff"
     },
     {
       "context": "flex-item",
@@ -14255,7 +14255,9 @@
           ]
         ]
       },
-      "lint": [],
+      "lint": [
+        "U-CSS-040"
+      ],
       "property": "border",
       "unity": "compile",
       "value": "medium solid #ffffff"
@@ -14912,25 +14914,25 @@
                   "kind": "container",
                   "repeat": null,
                   "shadow": {
-                    "file": "assets/1cadbc7a83b8e306143724ce3aa53b42254a75b330eeb0b0dfad5ff6a7d58aa9.png",
+                    "file": "assets/c1d77133d84f67edfa47e49f6af63739d4d1f21e5fdcd6aad3e6af13aad5603c.png",
                     "height": 60,
                     "kind": "shadow9",
                     "offset": {
                       "h": 12,
-                      "w": 12,
-                      "x": -6,
+                      "w": 16,
+                      "x": -8,
                       "y": -4
                     },
-                    "sha256": "1cadbc7a83b8e306143724ce3aa53b42254a75b330eeb0b0dfad5ff6a7d58aa9",
+                    "sha256": "c1d77133d84f67edfa47e49f6af63739d4d1f21e5fdcd6aad3e6af13aad5603c",
                     "slice": [
                       12,
+                      14,
                       12,
-                      12,
-                      12
+                      14
                     ],
                     "stopGap": null,
                     "tint": false,
-                    "width": 60
+                    "width": 64
                   },
                   "shadowLayers": {},
                   "style": {
@@ -15080,25 +15082,25 @@
                   "shadow": null,
                   "shadowLayers": {
                     "hover": {
-                      "file": "assets/46ef4dd5364d357565dc527b11749a5d61cfbbff1e55b5fc720d7f694687c687.png",
-                      "height": 88,
+                      "file": "assets/d33401b9866a36e3913a70039915080eeeddd5d3f7976bdf2a582a5507f14145.png",
+                      "height": 90,
                       "kind": "shadow9",
                       "offset": {
-                        "h": 38,
-                        "w": 38,
-                        "x": -19,
-                        "y": -11
+                        "h": 40,
+                        "w": 40,
+                        "x": -20,
+                        "y": -12
                       },
-                      "sha256": "46ef4dd5364d357565dc527b11749a5d61cfbbff1e55b5fc720d7f694687c687",
+                      "sha256": "d33401b9866a36e3913a70039915080eeeddd5d3f7976bdf2a582a5507f14145",
                       "slice": [
-                        43,
-                        39,
                         44,
-                        39
+                        40,
+                        45,
+                        40
                       ],
                       "stopGap": null,
                       "tint": false,
-                      "width": 138
+                      "width": 140
                     }
                   },
                   "style": {
@@ -29666,7 +29668,8 @@
     "U-CSS-026": "browser default styles never reach the IR",
     "U-CSS-030": "collapsing margins and anonymous flex items need the rendered layout",
     "U-CSS-032": "overlap of siblings needs the rendered boxes; the compiler keeps in-flow siblings in layout order",
-    "U-CSS-033": "which elements a press or focus reaches is runtime behaviour, not a value"
+    "U-CSS-033": "which elements a press or focus reaches is runtime behaviour, not a value",
+    "U-CSS-040": "border widths on the device grid need the kit's viewport scales; the compiler writes the width the design gives"
   },
   "note": [
     "Shared verdicts of css-support.json for the exporter's lint and the Unity compiler.",

@@ -28,45 +28,58 @@ namespace DesignUi.Editor
     /// atlas settings or source font rebuild it in place, keeping its GUID, so every reference to it survives. Tables are
     /// written through SerializedObject, so the font asset refreshes its lookup and native data (OnValidate). Writes use
     /// asset-specific saves only.</para>
-    /// <para>Line-box variants (<see cref="LineBox"/>): CSS sets a line box of <c>line-height</c> and centres the font's
-    /// ascent + descent in it (half-leading); UI Toolkit has no line height and lays a line out at the face's line height
-    /// with the baseline at its ascent. The variant twin of a ratio r is the same font with
-    /// <c>faceInfo.lineHeight = r × pointSize</c> and the ascent and descent lines moved apart by the half-leading
-    /// <c>h = (r × pointSize − (ascentLine − descentLine)) / 2</c>, so a line of size s is exactly <c>r × s</c> tall in
-    /// UI Toolkit, with its baseline where CSS puts it. Glyph metrics are untouched. A variant falls back to the same
-    /// ratio's variants of the fallbacks, and its weight table holds the same ratio's variants of the weight faces.</para>
+    /// <para>Line-box variants (<see cref="LineBox"/>), one per font size and line height of the kit's text styles: CSS
+    /// sets a line box of <c>line-height</c> and centres the font's ascent + descent in it (half-leading); UI Toolkit has no
+    /// line height and lays a line out at the face's line height with the baseline at its ascent. The variant twin of a style
+    /// is the same font with <c>faceInfo.lineHeight = (lineHeight / fontSize) × pointSize</c> and its ascent line where
+    /// Chromium lays out that style's baseline (<see cref="LineBox.Baseline"/>), the descent line one line height below, so a
+    /// line of that size is exactly <c>lineHeight</c> tall in UI Toolkit with every baseline where Chromium puts it. Glyph
+    /// metrics are untouched. A variant falls back to the same size's variants of the fallbacks, and its weight table holds
+    /// the same size's variants of the weight faces.</para>
     /// </summary>
     public static class FontTwinGenerator
     {
         public const string Suffix = " UITK";
 
         /// <summary>
-        /// A CSS line-height ratio (<c>lineHeight / fontSize</c>) of the kit's text styles, with its key (twin name and USS
-        /// variable suffix): <c>r</c> and the ratio's digits to 4 decimals (1.25 → <c>r125</c>, 4/3 → <c>r13333</c>). The ratios
-        /// are whatever the text-style table holds (<see cref="Of(IEnumerable{double})"/>); kit sync checks that every style is
-        /// whole device pixels at every viewport scale.
+        /// The line box of a kit text style: its CSS font size and line height (px), with its key (twin name and USS variable
+        /// suffix): <c>r</c>, the ratio <c>lineHeight / fontSize</c> to 4 decimals without the point, <c>s</c> and the font
+        /// size with a decimal point written <c>p</c> (16/20 → <c>r125s16</c>, 12/16 → <c>r13333s12</c>). Sizes are whatever the
+        /// text-style table holds (<see cref="Of"/>); kit sync checks that every style is whole device pixels at every viewport
+        /// scale. One variant per size, not per ratio: where Chromium puts the baseline depends on the font's ascent and
+        /// descent rounded at the font size (<see cref="Baseline"/>), so two sizes of one ratio need different ascents.
         /// </summary>
         public sealed class LineBox
         {
             public readonly string Key;
+            /// <summary><c>lineHeight / fontSize</c>.</summary>
             public readonly double Ratio;
+            /// <summary>CSS font size and line height of the style (px).</summary>
+            public readonly double FontSize, LineHeight;
 
-            LineBox(double ratio)
+            LineBox(double fontSize, double lineHeight)
             {
-                Ratio = ratio;
-                Key = KeyOf(ratio);
+                FontSize = fontSize;
+                LineHeight = lineHeight;
+                Ratio = lineHeight / fontSize;
+                Key = KeyOf(fontSize, lineHeight);
             }
 
-            /// <summary>The key of a ratio: <c>r</c> and its digits to 4 decimals without the point.</summary>
-            public static string KeyOf(double ratio) =>
-                "r" + Math.Round(ratio, 4).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture).Replace(".", "");
+            static string Digits(double v) => Math.Round(v, 4).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
 
-            /// <summary>The line box of a line height over a font size, or null for a ratio that is not positive and finite.</summary>
-            public static LineBox ForRatio(double ratio) => ratio > 0 && !double.IsInfinity(ratio) && !double.IsNaN(ratio) ? new LineBox(ratio) : null;
+            /// <summary>The key of a font size and line height: <c>r</c> + ratio digits, <c>s</c> + the size (decimal point as <c>p</c>).</summary>
+            public static string KeyOf(double fontSize, double lineHeight) =>
+                "r" + Digits(lineHeight / fontSize).Replace(".", "") + "s" + Digits(fontSize).Replace(".", "p");
 
-            /// <summary>One line box per distinct key of <paramref name="ratios"/>, ordered by key.</summary>
-            public static IReadOnlyList<LineBox> Of(IEnumerable<double> ratios) =>
-                (ratios ?? Enumerable.Empty<double>()).Select(ForRatio).Where(b => b != null)
+            /// <summary>The line box of a font size and line height (CSS px), or null unless both are positive and finite.</summary>
+            public static LineBox For(double fontSize, double lineHeight) =>
+                fontSize > 0 && lineHeight > 0 && !double.IsInfinity(fontSize) && !double.IsInfinity(lineHeight) && !double.IsNaN(fontSize) && !double.IsNaN(lineHeight)
+                    ? new LineBox(fontSize, lineHeight)
+                    : null;
+
+            /// <summary>One line box per distinct key of <paramref name="styles"/> (font size, line height), ordered by key.</summary>
+            public static IReadOnlyList<LineBox> Of(IEnumerable<(double fontSize, double lineHeight)> styles) =>
+                (styles ?? Enumerable.Empty<(double, double)>()).Select(s => For(s.fontSize, s.lineHeight)).Where(b => b != null)
                     .GroupBy(b => b.Key).Select(g => g.First()).OrderBy(b => b.Key, StringComparer.Ordinal).ToList();
 
             /// <summary>
@@ -76,14 +89,27 @@ namespace DesignUi.Editor
             /// </summary>
             public const double Shrink = 1e-5;
 
-            /// <summary>The face of a variant: line height r × pointSize, ascent and descent lines moved apart by the half-leading.</summary>
+            /// <summary>
+            /// Chromium's first baseline below the line box top, in CSS px, for a font with <paramref name="face"/>'s ascent and
+            /// descent (LayoutNG: the ascent and descent rounded at the font size, the half-leading floored;
+            /// <c>floor((L − round(a·s) − round(d·s)) / 2) + round(a·s)</c>; measured on 396 Inter sizes and line heights,
+            /// docs/findings/text-baselines.md). Further lines are one line height lower.
+            /// </summary>
+            public double Baseline(FaceInfo face)
+            {
+                double ascent = Math.Floor(face.ascentLine / face.pointSize * FontSize + 0.5);
+                double descent = Math.Floor(-face.descentLine / face.pointSize * FontSize + 0.5);
+                return Math.Floor((LineHeight - (ascent + descent)) / 2) + ascent;
+            }
+
+            /// <summary>The face of a variant: line height r × pointSize, ascent at Chromium's baseline, descent one line height below.</summary>
             public FaceInfo Face(FaceInfo face)
             {
                 double target = Ratio * face.pointSize * (1 - Shrink);
-                double h = (target - ((double)face.ascentLine - face.descentLine)) / 2;
+                double ascent = Baseline(face) / FontSize * face.pointSize;
                 face.lineHeight = (float)target;
-                face.ascentLine = (float)(face.ascentLine + h);
-                face.descentLine = (float)(face.descentLine - h);
+                face.ascentLine = (float)ascent;
+                face.descentLine = (float)(ascent - target);
                 return face;
             }
         }
@@ -96,7 +122,7 @@ namespace DesignUi.Editor
         internal static FontAsset GetOrCreateTwin(TMP_FontAsset tmp, string folder, IEnumerable<TMP_FontAsset> globals) =>
             GetOrCreateTwin(tmp, folder, new TwinRun(globals));
 
-        /// <summary>The line-box variant twin of <paramref name="tmp"/> for a kit ratio, with TMP Settings' global fallbacks.</summary>
+        /// <summary>The line-box variant twin of <paramref name="tmp"/> for a kit text style size, with TMP Settings' global fallbacks.</summary>
         public static FontAsset GetOrCreateTwin(TMP_FontAsset tmp, string folder, LineBox lineBox) =>
             GetOrCreateTwin(tmp, folder, new TwinRun(TmpSettingsFontResolver.GlobalFallbacks()), lineBox);
 

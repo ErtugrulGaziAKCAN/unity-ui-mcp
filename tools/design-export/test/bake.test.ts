@@ -383,7 +383,7 @@ async function build(file: string, outDir = tmp()): Promise<IrBuild & { outDir: 
 }
 async function lintIds(file: string): Promise<string[]> {
   const d = await openDesign(file, kit, [2560, 1440], browser);
-  try { return (await lint(d, kit)).map((f) => `${f.ruleId} ${f.path}: ${f.detail}`); } finally { await d.close(); }
+  try { return (await lint(d, kit)).filter((f) => f.ruleId !== "W-TXT-001").map((f) => `${f.ruleId} ${f.path}: ${f.detail}`); } finally { await d.close(); }
 }
 const flat = (n: IrNode): IrNode[] => [n, ...n.children.flatMap(flat)];
 const byId = (root: IrNode, id: string) => flat(root).find((x) => x.id === id)!;
@@ -405,7 +405,11 @@ describe("buildIr: baked effects per layer", () => {
 
   it("bakes the base shadow and a hover lift; box-shadow leaves the style layers", () => {
     const card = byId(r.ir.root, "card");
-    expect(card.shadow).toMatchObject({ kind: "shadow9", slice: [59, 62, 59, 62], offset: { x: -27, y: -19, w: 54, h: 54 }, tint: false, stopGap: null });
+    // the image reaches out from the box by multiples of 4 px (whole device px at 1, 0.75 and 0.5): 27 → 28, 19 → 20,
+    // 27 → 28 and 35 → 36 px of transparent margin, so the 9-slice texels start on the device grid at every viewport
+    expect(card.shadow).toMatchObject({ kind: "shadow9", slice: [60, 63, 60, 63], offset: { x: -28, y: -20, w: 56, h: 56 }, tint: false, stopGap: null });
+    const o = card.shadow!.offset;
+    for (const v of [o.x, o.y, o.x + o.w, o.y + o.h]) expect(Math.abs(v % 4)).toBe(0);
     expect(Object.keys(card.shadowLayers)).toEqual(["hover"]);
     expect(card.shadowLayers.hover!.sha256).not.toBe(card.shadow!.sha256);
     expect(card.shadowLayers.hover!.offset.w).toBeGreaterThan(card.shadow!.offset.w);
@@ -423,7 +427,7 @@ describe("buildIr: baked effects per layer", () => {
   it("bakes outer and inset shadows of one declaration into two images; the inset one covers the padding box", () => {
     const panel = byId(r.ir.root, "panel");
     expect(panel.shadow).toMatchObject({ kind: "shadow9" });
-    expect(panel.insetShadow).toMatchObject({ kind: "shadow9", offset: { x: 2, y: 2, w: -4, h: -4 } });
+    expect(panel.insetShadow).toMatchObject({ kind: "shadow9", offset: { x: 4, y: 4, w: -8, h: -8 } });
     expect(panel.insetShadowLayers).toEqual({});
   });
 
@@ -560,8 +564,8 @@ describe("buildIr: effect details", () => {
   it("odd-sized opaque elements are baked at their exact size", async () => {
     const f = page(".c{width:51px;height:41px;flex-shrink:0;background-color:#123c47;box-shadow:0 8px 24px rgba(0,0,0,0.4)}", '<div class="c" data-u-id="c"></div>');
     const c = byId((await build(f)).ir.root, "c");
-    expect(c.shadow!.offset).toMatchObject({ w: 54, h: 54 });
-    expect([c.shadow!.width, c.shadow!.height]).toEqual([51 + 54, 41 + 54]);
+    expect(c.shadow!.offset).toMatchObject({ w: 56, h: 56 });
+    expect([c.shadow!.width, c.shadow!.height]).toEqual([51 + 56, 41 + 56]);
   });
 
   it("every screen of a run shares the browser's bake page and its cache", async () => {
@@ -575,7 +579,7 @@ describe("buildIr: effect details", () => {
 describe("bake speed", () => {
   it("bakes a screen with 20 shadowed elements (8 distinct shadows, hover lifts) on one warm page", async () => {
     const shadows = ["0 1px 2px rgba(0,0,0,0.3)", "0 2px 4px rgba(0,0,0,0.3)", "0 4px 8px rgba(0,0,0,0.35)", "0 8px 24px rgba(0,0,0,0.4)",
-      "0 12px 40px 8px rgba(0,0,0,0.5)", "0 0 16px 2px rgba(22,194,213,0.5)", "inset 0 1px 0 rgba(255,255,255,0.1)", "10px 10px 0 #000000"];
+      "0 12px 40px 8px rgba(0,0,0,0.5)", "0 0 16px 2px rgba(22,194,213,0.5)", "inset 0 4px 0 rgba(255,255,255,0.1)", "12px 12px 0 #000000"];
     const css = shadows.map((v, k) => `.s${k}{box-shadow:${v}}.s${k}.lift:hover{box-shadow:${shadows[(k + 3) % shadows.length]}}`).join("") +
       ".b{width:200px;height:120px;flex-shrink:0;margin:8px;border-radius:12px;background-color:#123c47}.row{display:flex;flex-direction:row;flex-wrap:wrap;flex-shrink:0}";
     const body = `<div class="row" data-u-id="row">${Array.from({ length: 20 }, (_, k) => `<div class="b s${k % shadows.length}${k % 3 === 0 ? " lift" : ""}" data-u-id="b${k}" style="width:${160 + k * 8}px"></div>`).join("")}</div>`;

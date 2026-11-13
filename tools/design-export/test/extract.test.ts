@@ -58,7 +58,7 @@ describe("fixtures", () => {
       // inbox keeps CSS's initial content-box on sized elements with padding or border, so the IR records it (below);
       // lint rejects exactly those (U-CSS-036), because the compiler cannot size them
       const expected = f === "inbox.html" ? ["card", "half"].map((id) => `${f} U-CSS-036 [data-u-screen=inbox] > div[data-u-id=${id}]`) : [];
-      try { expect((await lint(d, kit)).map((x) => `${f} ${x.ruleId} ${x.path}`)).toEqual(expected); } finally { await d.close(); }
+      try { expect((await lint(d, kit)).filter((x) => x.ruleId !== "W-TXT-001").map((x) => `${f} ${x.ruleId} ${x.path}`)).toEqual(expected); } finally { await d.close(); }
     }
   });
 });
@@ -111,9 +111,9 @@ describe("buildIr: styles", () => {
   });
 
   it("resolves border radii per layer with the overlapping-curves rule", () => {
-    // 9999px on the 302×82 border box (300×80 content-box plus a 1px border): a pill of radius 41
+    // 9999px on the 308×88 border box (300×80 content-box plus a 4px border): a pill of radius 44
     const card = byId(r.ir.root, "card");
-    for (const c of ["top-left", "top-right", "bottom-right", "bottom-left"]) expect(card.style.base[`border-${c}-radius`]).toBe("41px");
+    for (const c of ["top-left", "top-right", "bottom-right", "bottom-left"]) expect(card.style.base[`border-${c}-radius`]).toBe("44px");
     // hidden in the default state: resolved against its box in the loading state
     expect(byId(r.ir.root, "spinner").style.base["border-top-left-radius"]).toBe("16px");
   });
@@ -132,7 +132,7 @@ describe("buildIr: styles", () => {
   });
 
   it("writes borders as they render", () => {
-    expect(byId(r.ir.root, "card").style.base).toMatchObject({ "border-top-width": "1px", "border-top-style": "solid", "border-top-color": "#16c2d5" });
+    expect(byId(r.ir.root, "card").style.base).toMatchObject({ "border-top-width": "4px", "border-top-style": "solid", "border-top-color": "#16c2d5" });
     const plain = byId(r.ir.root, "plain").style.base;
     expect(Object.keys(plain).filter((k) => k.startsWith("border"))).toEqual([]);
   });
@@ -372,8 +372,8 @@ describe("buildIr: layers, text runs and lossless values", () => {
 
   it("custom properties redefined in a layer re-resolve shorthand users too", async () => {
     const p = write(`.b{display:flex;flex-direction:column;flex-shrink:0;--c:#00ff00;--p:4px} .b:hover{--c:#ff0000;--p:8px}
-      .k{box-sizing:border-box;width:10px;height:10px;flex-shrink:0} .k1{border:1px solid var(--c)} .k2{background:var(--c)} .k3{padding:var(--p)}
-      .k4{border-width:1px;border-style:solid;border-color:var(--c)}`,
+      .k{box-sizing:border-box;width:10px;height:10px;flex-shrink:0} .k1{border:4px solid var(--c)} .k2{background:var(--c)} .k3{padding:var(--p)}
+      .k4{border-width:4px;border-style:solid;border-color:var(--c)}`,
       '<div class="b" data-u-id="b"><div class="k k1" data-u-id="k1"></div><div class="k k2" data-u-id="k2"></div><div class="k k3" data-u-id="k3"></div><div class="k k4" data-u-id="k4"></div></div>');
     expect(await lintIds(p)).toEqual([]);
     const r = await build(p);
@@ -521,14 +521,14 @@ describe("buildIr: speed", () => {
     const p = path.join(tmp(), "big.html");
     fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
       .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
-      .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:1px solid #16c2d5;transition:background-color 150ms ease}
+      .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:4px solid #16c2d5;transition:background-color 150ms ease}
       .row:hover{background-color:#123c47} p{margin:0;flex-shrink:0} .dot{width:8px;height:8px;border-radius:4px;background-color:#16c2d5}
       .state-loading .dot{opacity:0.5} @media (max-width: 1919px){.row{height:20px}}</style></head>
       <body><div class="screen" data-u-screen="big"><p data-l10n="big.title" data-en="Players">Oyuncular</p><div class="list" data-u-id="list">${rows}</div></div></body></html>`);
     const d = await openDesign(p, kit, [2560, 1440], browser);
     try {
       const s = await collectSnapshot(d.page, d.cdp, kit);
-      expect(await lint(d, kit, s)).toEqual([]);
+      expect((await lint(d, kit, s)).filter((x) => x.ruleId !== "W-TXT-001")).toEqual([]);
       const t0 = performance.now();
       const r = await buildIr(d, s, kit, tmp(), p);
       const ms = performance.now() - t0;

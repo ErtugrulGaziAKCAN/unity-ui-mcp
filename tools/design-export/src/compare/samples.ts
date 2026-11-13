@@ -36,6 +36,32 @@ export function bestDeltaE(gp: Rgba, gx: number, gy: number, up: Rgba, ux: numbe
   return best;
 }
 
+/**
+ * Where Chromium paints a box laid out at `b` (device px) at a device scale: its layout rect snapped to whole CSS px
+ * (Blink snaps boxes in layout space; the device scale is applied when rastering), so at scale 0.75 a box laid out at
+ * 180.996 device px (241.33 CSS px) paints from 180.75 (241 CSS px), a quarter-covered first column. UI Toolkit snaps
+ * the box to whole device px instead (findings: pixel grid).
+ */
+export function paintedRect(b: Rect, scale: number): Rect {
+  if (!(scale > 0)) return b;
+  const snap = (v: number) => Math.round(Math.round(v / scale) * scale * 1e6) / 1e6;
+  const x0 = snap(b.x), y0 = snap(b.y), x1 = snap(b.x + b.w), y1 = snap(b.y + b.h);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/**
+ * The pixels of a border side that both renderers cover fully: Chromium paints the side from the painted rect's edge
+ * at its exact device width (anti-aliased where that is fractional), UI Toolkit from its whole-pixel edge at the width
+ * rounded (half up, at least 1). Returns the first and last such pixel across the side (inclusive), or null.
+ */
+function fullBand(gEdge: number, uEdge: number, w: number, inward: 1 | -1): [number, number] | null {
+  const uw = Math.max(1, Math.round(w)), ue = Math.round(uEdge);
+  const [g0, g1] = inward > 0 ? [Math.ceil(gEdge - 1e-6), Math.floor(gEdge + w + 1e-6) - 1] : [Math.ceil(gEdge - w - 1e-6), Math.floor(gEdge + 1e-6) - 1];
+  const [u0, u1] = inward > 0 ? [ue, ue + uw - 1] : [ue - uw, ue - 1];
+  const lo = Math.max(g0, u0), hi = Math.min(g1, u1);
+  return lo <= hi ? [lo, hi] : null;
+}
+
 export type RingKind = "edge" | "border" | "corner";
 /** A ring sample: where on the element (for the report), its pixel on each side and the window size. */
 export interface RingPoint { where: string; kind: RingKind; gx: number; gy: number; ux: number; uy: number; win: number }
@@ -46,9 +72,10 @@ const CORNER_DEPTHS = [2, 4, 7, 11, 16];
 /**
  * Ring points of an element whose design box is `g` and Unity box `u`, each placed relative to its own box:
  * - `edge`: the background just inside the border (inset border + 3 px) at ¼, ½ and ¾ of each side, 3×3 means;
- * - `border`: the middle of each painted border side, at half its width (single pixels under 3 px);
+ * - `border`: the middle of each painted border side, on the pixels both renderers cover fully (`g` is Chromium's painted
+ *   rect, see paintedRect): one pixel, or a 3×3 mean where three or more are; a side neither covers fully is not sampled;
  * - `corner`: along each corner's diagonal at 2, 4, 7, 11 and 16 px (within half the smaller side), 3×3 means, which
- *   tell a pill from a rounded rectangle or a square corner.
+ *   tell a pill from a rounded rectangle or a square corner; none whose mean straddles a border's inner edge.
  * With the corner radii (device px, top-left, top-right, bottom-right, bottom-left), no sample sits on a rounded
  * corner's anti-aliased edge, where Chromium's and UI Toolkit's anti-aliasing differ by a few ΔE although the shapes
  * agree: an edge point that would is moved inside the curve, and a corner point within 2 px of the curve is left out.
@@ -84,10 +111,11 @@ export function ringPoints(g: Rect, u: Rect, border: readonly number[] | undefin
     SIDES.forEach((side, i) => {
       const w = bw[i];
       if (w < 1) return;
-      const half = Math.floor(w / 2), win = w >= 3 ? 3 : 1;
-      add(`${side} border`, "border", win, (b) => side === "top" ? [Math.floor(b.x + b.w / 2), T(b) + half]
-        : side === "bottom" ? [Math.floor(b.x + b.w / 2), B(b) - half]
-        : side === "left" ? [L(b) + half, Math.floor(b.y + b.h / 2)] : [R(b) - half, Math.floor(b.y + b.h / 2)]);
+      const band = side === "top" ? fullBand(g.y, u.y, w, 1) : side === "bottom" ? fullBand(g.y + g.h, u.y + u.h, w, -1)
+        : side === "left" ? fullBand(g.x, u.x, w, 1) : fullBand(g.x + g.w, u.x + u.w, w, -1);
+      if (!band) return;
+      const across = (band[0] + band[1]) >> 1, win = band[1] - band[0] + 1 >= 3 ? 3 : 1;
+      add(`${side} border`, "border", win, (b) => side === "top" || side === "bottom" ? [Math.floor(b.x + b.w / 2), across] : [across, Math.floor(b.y + b.h / 2)]);
     });
   }
   if (kinds.includes("corner")) {
@@ -96,10 +124,13 @@ export function ringPoints(g: Rect, u: Rect, border: readonly number[] | undefin
     for (const d of CORNER_DEPTHS) {
       if (d + 2 >= minSide / 2) break;
       const near = (k: number) => rr[k] > 0 && Math.abs(d - cross[k]) < 2;
-      if (!near(0)) add(`top-left corner, ${d} px in`, "corner", 3, (b) => [L(b) + d, T(b) + d]);
-      if (!near(1)) add(`top-right corner, ${d} px in`, "corner", 3, (b) => [R(b) - d, T(b) + d]);
-      if (!near(3)) add(`bottom-left corner, ${d} px in`, "corner", 3, (b) => [L(b) + d, B(b) - d]);
-      if (!near(2)) add(`bottom-right corner, ${d} px in`, "corner", 3, (b) => [R(b) - d, B(b) - d]);
+      // nor where the 3×3 mean straddles the inner edge of a border side the corner joins: a box painted on whole CSS px
+      // (Chromium) and one on whole device px (UI Toolkit) anti-alias that edge in different columns
+      const inner = (...sides: number[]) => sides.some((k) => bw[k] > 0 && Math.abs(d + 0.5 - bw[k]) < 2);
+      if (!near(0) && !inner(3, 0)) add(`top-left corner, ${d} px in`, "corner", 3, (b) => [L(b) + d, T(b) + d]);
+      if (!near(1) && !inner(1, 0)) add(`top-right corner, ${d} px in`, "corner", 3, (b) => [R(b) - d, T(b) + d]);
+      if (!near(3) && !inner(3, 2)) add(`bottom-left corner, ${d} px in`, "corner", 3, (b) => [L(b) + d, B(b) - d]);
+      if (!near(2) && !inner(1, 2)) add(`bottom-right corner, ${d} px in`, "corner", 3, (b) => [R(b) - d, B(b) - d]);
     }
   }
   return out;

@@ -15,8 +15,8 @@ namespace DesignUi.Editor
     /// font family of the project's locales to that locale's twin (bold comes from the twin's weight table through
     /// <c>-unity-font-style</c>). Screens import it, and the compiled screen root carries the reference locale's class, so
     /// swapping that class on the root switches the font of every text below it. Each family also has one variable per
-    /// kit line-height ratio, <c>--font-&lt;family&gt;-&lt;key&gt;</c> (<c>r125</c>, <c>r1125</c>), pointing at the twin's
-    /// line-box variant (<see cref="FontTwinGenerator.LineBox"/>); text in a kit text style uses its ratio's variable.
+    /// kit text style size, <c>--font-&lt;family&gt;-&lt;key&gt;</c> (<c>r125s16</c>, <c>r13333s12</c>), pointing at the twin's
+    /// line-box variant (<see cref="FontTwinGenerator.LineBox"/>); text in a kit text style uses its size's variable.
     /// </summary>
     public static class FontMap
     {
@@ -174,9 +174,9 @@ namespace DesignUi.Editor
             return errors;
         }
 
-        static readonly Regex LineBoxSuffix = new Regex(@"-r\d+$", RegexOptions.CultureInvariant);
+        static readonly Regex LineBoxSuffix = new Regex(@"-r\d+s\d+(p\d+)?$", RegexOptions.CultureInvariant);
 
-        /// <summary>The family slug of a font variable name: <c>inter-r125</c> → <c>inter</c> (a line-box key is dropped).</summary>
+        /// <summary>The family slug of a font variable name: <c>inter-r125s16</c> → <c>inter</c> (a line-box key is dropped).</summary>
         internal static string FamilySlugOf(string variable) => LineBoxSuffix.Replace(variable, "");
 
         /// <summary>

@@ -29,9 +29,10 @@ let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch(); });
 afterAll(async () => { await browser.close(); });
 
-async function lintFile(file: string, k: KitConfig = kit): Promise<Finding[]> {
+/** W-TXT-001 (text under 10 device px at 1280 wide: every 16px label) is left out except where a test asks for it. */
+async function lintFile(file: string, k: KitConfig = kit, readability = false): Promise<Finding[]> {
   const d = await openDesign(file, k, [2560, 1440], browser);
-  try { return await lint(d, k); } finally { await d.close(); }
+  try { return (await lint(d, k)).filter((f) => readability || f.ruleId !== "W-TXT-001"); } finally { await d.close(); }
 }
 
 const show = (f: Finding[]) => f.map((x) => `${x.ruleId} ${x.path}: ${x.detail}`);
@@ -39,11 +40,11 @@ const show = (f: Finding[]) => f.map((x) => `${x.ruleId} ${x.path}: ${x.detail}`
 describe("lint rules: one pass and one fail fixture per rule", () => {
   for (const r of RULES) {
     it(`${r.id}: pass fixture has no findings`, async () => {
-      const f = await lintFile(fx(fixture(r.id, "pass")), KIT_FOR[r.id]?.pass ?? kit);
+      const f = await lintFile(fx(fixture(r.id, "pass")), KIT_FOR[r.id]?.pass ?? kit, r.id === "W-TXT-001");
       expect(show(f)).toEqual([]);
     });
     it(`${r.id}: fail fixture has exactly one ${r.id} finding with a fix, and nothing else`, async () => {
-      const f = await lintFile(fx(fixture(r.id, "fail")), KIT_FOR[r.id]?.fail ?? kit);
+      const f = await lintFile(fx(fixture(r.id, "fail")), KIT_FOR[r.id]?.fail ?? kit, r.id === "W-TXT-001");
       const mine = f.filter((x) => x.ruleId === r.id);
       expect(show(mine)).toHaveLength(1);
       expect(mine[0].severity).toBe(r.severity);
@@ -124,7 +125,7 @@ describe("lint engine", () => {
     try {
       const p = write(dir, `<div class="state-root"><div class="spinner" style="width:10px;height:10px"></div></div>
         <div class="card" style="width:10px;height:10px"></div><div class="tok" style="width:10px;height:10px"></div>`,
-        `.state-loading .spinner{display:grid} .card:hover{border:1px dashed var(--line)} :root{--line:#ffffff;--d:grid} .tok{display:var(--d)}`);
+        `.state-loading .spinner{display:grid} .card:hover{border:4px dashed var(--line)} :root{--line:#ffffff;--d:grid} .tok{display:var(--d)}`);
       const f = await lintFile(p);
       expect(f.map((x) => [x.ruleId, x.path])).toEqual([
         ["U-CSS-001", "[data-u-screen=s] > div:0 > div:0"],
@@ -248,7 +249,7 @@ describe("collectSnapshot", () => {
       const p = path.join(dir, "big.html");
       fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
         .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
-        .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:1px solid #16c2d5}
+        .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:4px solid #16c2d5}
         .row:hover{background-color:#123c47} p{margin:0;flex-shrink:0} .dot{width:8px;height:8px;border-radius:4px;background-color:#16c2d5}
         @media (max-width: 1919px){.row{height:20px}}</style></head>
         <body><div class="screen" data-u-screen="big"><p data-l10n="big.title" data-en="Players">Oyuncular</p><div class="list">${rows}</div></div></body></html>`);
@@ -260,7 +261,7 @@ describe("collectSnapshot", () => {
         const f = await lint(d, kit, s);
         const ms = performance.now() - t0;
         console.log(`[lint timing] ${s.elements.length} elements, ${s.rules.length} rules: ${ms.toFixed(0)} ms`, s.timings);
-        expect(show(f)).toEqual([]);
+        expect(show(f.filter((x) => x.ruleId !== "W-TXT-001"))).toEqual([]);
         expect(ms).toBeLessThan(5000);
       } finally { await d.close(); }
     } finally { fs.rmSync(dir, { recursive: true }); }
