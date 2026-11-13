@@ -123,7 +123,7 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 | `--color-line` | `#2b6573` | Borders and dividers. |
 | `--color-text-primary` | `#ffffff` | Primary text on every surface. |
 | `--color-text-secondary` | `#b9d0d6` | Secondary text, captions. |
-| `--color-text-muted` | `#86a7b0` | Placeholders and disabled text. |
+| `--color-text-muted` | `#86a7b0` | Placeholders and hints. |
 | `--color-accent` | `#16c2d5` | Primary actions, the checked toggle, the selected tab. |
 | `--color-accent-hover` | `#3fd3e3` | Hover on accent surfaces. |
 | `--color-accent-pressed` | `#0f9fb0` | Pressed accent surfaces. |
@@ -135,6 +135,12 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 | `--color-negative-hover` | `#f47d7a` | Hover on destructive actions. |
 | `--color-negative-pressed` | `#d94a47` | Pressed destructive actions. |
 | `--color-scrim` | `rgba(3, 12, 15, 0.72)` | Backdrop behind dialogs. |
+| `--color-disabled-surface` | `#0e2b33` | Disabled (all: 40 % on surface-900) |
+| `--color-disabled-line` | `#183b45` | Disabled lines. |
+| `--color-disabled-text` | `#6d797d` | Disabled text. |
+| `--color-disabled-accent` | `#0f606c` | Disabled accent. |
+| `--color-disabled-on-accent` | `#091c22` | On it. |
+| `--color-disabled-negative` | `#67393c` | Disabled danger. |
 
 **Spacing**
 
@@ -388,6 +394,9 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-036 | error | `box-sizing: content-box` on an element with a width or height and padding or border | `box-sizing: border-box` (the kit base stylesheet sets it everywhere) |
 | U-CSS-037 | error | baked effects that cannot share one element: an inset shadow under the element's own text, on a form control or a scroll area; a url() image beside a gradient or only in a layer; a background image or inset shadow on a tintable icon | move the text, image, gradient or icon into a child element, or the shadow onto a wrapper |
 | U-CSS-038 | error | text that renders without `-webkit-font-smoothing: antialiased` (macOS browsers then thicken glyph stems, which UI Toolkit does not) | the kit base stylesheet (it sets the smoothing on `:root`); never override it on text |
+| U-CSS-039 | error | `opacity` < 1 on overlapping parts | `--color-disabled-*` colours |
+| U-CSS-040 | error | a border width off the device grid | 4px, 8px, 12px … |
+| U-CSS-041 | error | a moved state's shadow over later elements | room for the shadow |
 | U-DC-001 | error | `{{…}}` holes in a Claude Design artboard | static sample text |
 | U-DC-002 | error | `<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import` | write rows out, `data-u-repeat` on the first |
 | U-DC-003 | error | UI built by script | static markup |

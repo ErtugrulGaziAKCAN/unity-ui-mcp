@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><title>borders</title><style>
+/* measurement input for docs/findings/borders.md: border widths and the layout after them */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, p { margin: 0; padding: 0; border: 0; }
+body { font-family: "Inter UI"; font-size: 16px; line-height: 20px; font-weight: 400; color: #ffffff; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; background-color: #000000; }
+.box { position: absolute; display: flex; flex-direction: column; width: 120px; height: 48px; border-style: solid; border-color: #ffffff; background-color: #0000ff; }
+.round { border-radius: 12px; }
+.fill { flex-grow: 1; background-color: #ff0000; }
+.stack { position: absolute; display: flex; flex-direction: column; width: 360px; }
+.bar { height: 40px; border-bottom-style: solid; border-bottom-color: #ffffff; background-color: #0000ff; }
+</style></head><body>
+<div class="screen" data-u-screen="m.borders">
+<div class="box" style="left:32px;top:32px;border-width:1px" data-u-id="w0"><div class="fill" data-u-id="w0-c"></div></div>
+<div class="box" style="left:192px;top:32px;border-width:2px" data-u-id="w1"><div class="fill" data-u-id="w1-c"></div></div>
+<div class="box" style="left:352px;top:32px;border-width:3px" data-u-id="w2"><div class="fill" data-u-id="w2-c"></div></div>
+<div class="box" style="left:512px;top:32px;border-width:4px" data-u-id="w3"><div class="fill" data-u-id="w3-c"></div></div>
+<div class="box" style="left:672px;top:32px;border-width:5px" data-u-id="w4"><div class="fill" data-u-id="w4-c"></div></div>
+<div class="box" style="left:832px;top:32px;border-width:6px" data-u-id="w5"><div class="fill" data-u-id="w5-c"></div></div>
+<div class="box" style="left:32px;top:128px;border-width:8px" data-u-id="w6"><div class="fill" data-u-id="w6-c"></div></div>
+<div class="box" style="left:192px;top:128px;border-width:12px" data-u-id="w7"><div class="fill" data-u-id="w7-c"></div></div>
+<div class="box" style="left:352px;top:128px;border-width:1px" data-u-id="w8"><div class="fill" data-u-id="w8-c"></div></div>
+<div class="box" style="left:512px;top:128px;border-width:2px" data-u-id="w9"><div class="fill" data-u-id="w9-c"></div></div>
+<div class="box" style="left:672px;top:128px;border-width:3px" data-u-id="w10"><div class="fill" data-u-id="w10-c"></div></div>
+<div class="box" style="left:832px;top:128px;border-width:4px" data-u-id="w11"><div class="fill" data-u-id="w11-c"></div></div>
+<div class="box" style="left:32px;top:224px;border-width:5px" data-u-id="w12"><div class="fill" data-u-id="w12-c"></div></div>
+<div class="box" style="left:192px;top:224px;border-width:6px" data-u-id="w13"><div class="fill" data-u-id="w13-c"></div></div>
+<div class="box" style="left:352px;top:224px;border-width:8px" data-u-id="w14"><div class="fill" data-u-id="w14-c"></div></div>
+<div class="box" style="left:512px;top:224px;border-width:12px" data-u-id="w15"><div class="fill" data-u-id="w15-c"></div></div>
+<div class="box" style="left:672px;top:224px;border-width:2px" data-u-id="w16"><div class="fill" data-u-id="w16-c"></div></div>
+<div class="box" style="left:832px;top:224px;border-width:3px" data-u-id="w17"><div class="fill" data-u-id="w17-c"></div></div>
+<div class="box round" style="left:1032px;top:32px;border-width:1px" data-u-id="r0"><div class="fill" data-u-id="r0-c"></div></div>
+<div class="box round" style="left:1192px;top:32px;border-width:2px" data-u-id="r1"><div class="fill" data-u-id="r1-c"></div></div>
+<div class="box round" style="left:1352px;top:32px;border-width:3px" data-u-id="r2"><div class="fill" data-u-id="r2-c"></div></div>
+<div class="box round" style="left:1512px;top:32px;border-width:4px" data-u-id="r3"><div class="fill" data-u-id="r3-c"></div></div>
+<div class="box round" style="left:1672px;top:32px;border-width:5px" data-u-id="r4"><div class="fill" data-u-id="r4-c"></div></div>
+<div class="box round" style="left:1832px;top:32px;border-width:6px" data-u-id="r5"><div class="fill" data-u-id="r5-c"></div></div>
+<div class="box round" style="left:1032px;top:128px;border-width:8px" data-u-id="r6"><div class="fill" data-u-id="r6-c"></div></div>
+<div class="box round" style="left:1192px;top:128px;border-width:12px" data-u-id="r7"><div class="fill" data-u-id="r7-c"></div></div>
+<div class="box round" style="left:1352px;top:128px;border-width:1px" data-u-id="r8"><div class="fill" data-u-id="r8-c"></div></div>
+<div class="box round" style="left:1512px;top:128px;border-width:2px" data-u-id="r9"><div class="fill" data-u-id="r9-c"></div></div>
+<div class="box round" style="left:1672px;top:128px;border-width:3px" data-u-id="r10"><div class="fill" data-u-id="r10-c"></div></div>
+<div class="box round" style="left:1832px;top:128px;border-width:4px" data-u-id="r11"><div class="fill" data-u-id="r11-c"></div></div>
+<div class="box round" style="left:1032px;top:224px;border-width:5px" data-u-id="r12"><div class="fill" data-u-id="r12-c"></div></div>
+<div class="box round" style="left:1192px;top:224px;border-width:6px" data-u-id="r13"><div class="fill" data-u-id="r13-c"></div></div>
+<div class="box round" style="left:1352px;top:224px;border-width:8px" data-u-id="r14"><div class="fill" data-u-id="r14-c"></div></div>
+<div class="box round" style="left:1512px;top:224px;border-width:12px" data-u-id="r15"><div class="fill" data-u-id="r15-c"></div></div>
+<div class="box round" style="left:1672px;top:224px;border-width:2px" data-u-id="r16"><div class="fill" data-u-id="r16-c"></div></div>
+<div class="box round" style="left:1832px;top:224px;border-width:3px" data-u-id="r17"><div class="fill" data-u-id="r17-c"></div></div>
+<div class="stack" style="left:32px;top:400px" data-u-id="s0"><div class="bar" style="border-bottom-width:1px" data-u-id="s0-bar"></div><p class="text-body" data-u-id="s0-t" data-l10n="borders.after-0" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:432px;top:400px" data-u-id="s1"><div class="bar" style="border-bottom-width:2px" data-u-id="s1-bar"></div><p class="text-body" data-u-id="s1-t" data-l10n="borders.after-1" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:832px;top:400px" data-u-id="s2"><div class="bar" style="border-bottom-width:3px" data-u-id="s2-bar"></div><p class="text-body" data-u-id="s2-t" data-l10n="borders.after-2" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:1232px;top:400px" data-u-id="s3"><div class="bar" style="border-bottom-width:4px" data-u-id="s3-bar"></div><p class="text-body" data-u-id="s3-t" data-l10n="borders.after-3" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:1632px;top:400px" data-u-id="s4"><div class="bar" style="border-bottom-width:5px" data-u-id="s4-bar"></div><p class="text-body" data-u-id="s4-t" data-l10n="borders.after-4" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:2032px;top:400px" data-u-id="s5"><div class="bar" style="border-bottom-width:6px" data-u-id="s5-bar"></div><p class="text-body" data-u-id="s5-t" data-l10n="borders.after-5" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:32px;top:560px" data-u-id="s6"><div class="bar" style="border-bottom-width:8px" data-u-id="s6-bar"></div><p class="text-body" data-u-id="s6-t" data-l10n="borders.after-6" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:432px;top:560px" data-u-id="s7"><div class="bar" style="border-bottom-width:12px" data-u-id="s7-bar"></div><p class="text-body" data-u-id="s7-t" data-l10n="borders.after-7" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:832px;top:560px" data-u-id="s8"><div class="bar" style="border-bottom-width:1px" data-u-id="s8-bar"></div><p class="text-body" data-u-id="s8-t" data-l10n="borders.after-8" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:1232px;top:560px" data-u-id="s9"><div class="bar" style="border-bottom-width:2px" data-u-id="s9-bar"></div><p class="text-body" data-u-id="s9-t" data-l10n="borders.after-9" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:1632px;top:560px" data-u-id="s10"><div class="bar" style="border-bottom-width:3px" data-u-id="s10-bar"></div><p class="text-body" data-u-id="s10-t" data-l10n="borders.after-10" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:2032px;top:560px" data-u-id="s11"><div class="bar" style="border-bottom-width:4px" data-u-id="s11-bar"></div><p class="text-body" data-u-id="s11-t" data-l10n="borders.after-11" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:32px;top:720px" data-u-id="s12"><div class="bar" style="border-bottom-width:5px" data-u-id="s12-bar"></div><p class="text-body" data-u-id="s12-t" data-l10n="borders.after-12" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:432px;top:720px" data-u-id="s13"><div class="bar" style="border-bottom-width:6px" data-u-id="s13-bar"></div><p class="text-body" data-u-id="s13-t" data-l10n="borders.after-13" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:832px;top:720px" data-u-id="s14"><div class="bar" style="border-bottom-width:8px" data-u-id="s14-bar"></div><p class="text-body" data-u-id="s14-t" data-l10n="borders.after-14" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:1232px;top:720px" data-u-id="s15"><div class="bar" style="border-bottom-width:12px" data-u-id="s15-bar"></div><p class="text-body" data-u-id="s15-t" data-l10n="borders.after-15" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:1632px;top:720px" data-u-id="s16"><div class="bar" style="border-bottom-width:2px" data-u-id="s16-bar"></div><p class="text-body" data-u-id="s16-t" data-l10n="borders.after-16" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+<div class="stack" style="left:2032px;top:720px" data-u-id="s17"><div class="bar" style="border-bottom-width:3px" data-u-id="s17-bar"></div><p class="text-body" data-u-id="s17-t" data-l10n="borders.after-17" data-en="Text after the border">Kenarlıktan sonra metin</p></div>
+</div>
+</body></html>

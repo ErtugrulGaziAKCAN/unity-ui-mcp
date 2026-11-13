@@ -63,6 +63,15 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
     fix: "move the text, image, gradient or icon into a child element, or the shadow onto a wrapper",
   },
   "U-CSS-038": { when: "text that renders without `-webkit-font-smoothing: antialiased` (macOS browsers then thicken glyph stems, which UI Toolkit does not)", fix: "the kit base stylesheet (it sets the smoothing on `:root`); never override it on text" },
+  "U-CSS-039": {
+    when: "`opacity` < 1 on overlapping parts",
+    fix: "`--color-disabled-*` colours",
+  },
+  "U-CSS-040": {
+    when: "a border width off the device grid",
+    fix: "4px, 8px, 12px …",
+  },
+  "U-CSS-041": { when: "a moved state's shadow over later elements", fix: "room for the shadow" },
   "U-DC-001": { when: "`{{…}}` holes in a Claude Design artboard", fix: "static sample text" },
   "U-DC-002": { when: "`<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import`", fix: "write rows out, `data-u-repeat` on the first" },
   "U-DC-003": { when: "UI built by script", fix: "static markup" },

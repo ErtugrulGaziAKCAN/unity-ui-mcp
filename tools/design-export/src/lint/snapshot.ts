@@ -133,6 +133,7 @@ export const SNAP_COMPUTED = [
   "backdrop-filter", "transform", "translate", "rotate", "scale", "outline-style",
   "border-top-style", "border-right-style", "border-bottom-style", "border-left-style",
   "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
+  "border-top-color", "border-right-color", "border-bottom-color", "border-left-color",
   "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius",
   "padding-top", "padding-right", "padding-bottom", "padding-left", "margin-top", "margin-right", "margin-bottom", "margin-left",
   "-webkit-font-smoothing",

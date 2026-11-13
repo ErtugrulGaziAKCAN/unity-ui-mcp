@@ -22,6 +22,7 @@ import { sharedBakePage } from "../bake/shadow.js";
 import type { IrAnim, IrAsset, IrNode, IrScreen, NodeKind } from "../ir/types.js";
 import { validateIr } from "../ir/validate.js";
 import type { KitConfig } from "../kit.js";
+import { kitScales, wholeBorderWidths } from "../lint/rules/U-CSS-040.js";
 import { DESIGN_ORIGIN, type LoadedDesign } from "../load.js";
 import { firstFamily, px } from "../lint/css-values.js";
 import { kitFonts, realFaces } from "../lint/fonts.js";
@@ -76,6 +77,8 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
   const lap = (k: string) => { const n = performance.now(); timings[k] = Math.round((n - t) * 10) / 10; t = n; };
 
   if (!s.elements.some((e) => e.textStyle !== undefined) && s.elements.some(rendersText)) annotateTextStyles(s, kit);
+  // outer shadow images reach out from their box by multiples of the step that is whole at every viewport scale
+  const grid = wholeBorderWidths(kitScales(kit).map((x) => x.scale), 1)[0] ?? 1;
   const root = s.elements.findIndex((e) => e.attrs["data-u-screen"] !== undefined);
   if (root < 0) throw new Error("no element with data-u-screen");
   const el = (i: number) => s.elements[i];
@@ -245,7 +248,7 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     const tb = performance.now();
     const fx = await nodeEffects(p.i, {
       ex, page: bakePage, outDir, boxes: ctx.boxes, urlAsset, urls: urlsOf, computedColor: e.computed.color ?? "#000000",
-      fontSize: px(e.computed["font-size"]) ?? undefined, rootFontSize: s.rootFontSize,
+      fontSize: px(e.computed["font-size"]) ?? undefined, rootFontSize: s.rootFontSize, grid,
     }, describeAt(s, p.i));
     bakeMs += performance.now() - tb;
     // an element painted only by a url() image: that image is its content asset (an <img> keeps its background)

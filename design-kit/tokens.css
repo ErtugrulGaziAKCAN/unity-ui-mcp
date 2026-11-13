@@ -15,7 +15,7 @@
   --color-line: #2b6573; /* Borders and dividers. */
   --color-text-primary: #ffffff; /* Primary text on every surface. */
   --color-text-secondary: #b9d0d6; /* Secondary text, captions. */
-  --color-text-muted: #86a7b0; /* Placeholders and disabled text. */
+  --color-text-muted: #86a7b0; /* Placeholders and hints. */
   --color-accent: #16c2d5; /* Primary actions, the checked toggle, the selected tab. */
   --color-accent-hover: #3fd3e3; /* Hover on accent surfaces. */
   --color-accent-pressed: #0f9fb0; /* Pressed accent surfaces. */
@@ -27,6 +27,12 @@
   --color-negative-hover: #f47d7a; /* Hover on destructive actions. */
   --color-negative-pressed: #d94a47; /* Pressed destructive actions. */
   --color-scrim: rgba(3, 12, 15, 0.72); /* Backdrop behind dialogs. */
+  --color-disabled-surface: #0e2b33; /* Disabled (all: 40 % on surface-900) */
+  --color-disabled-line: #183b45; /* Disabled lines. */
+  --color-disabled-text: #6d797d; /* Disabled text. */
+  --color-disabled-accent: #0f606c; /* Disabled accent. */
+  --color-disabled-on-accent: #091c22; /* On it. */
+  --color-disabled-negative: #67393c; /* Disabled danger. */
   --space-1: 4px; /* Icon gaps, hairline insets. */
   --space-2: 8px; /* Gaps inside controls. */
   --space-3: 12px; /* Control padding. */

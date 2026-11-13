@@ -124,7 +124,7 @@ describe("lint engine", () => {
     try {
       const p = write(dir, `<div class="state-root"><div class="spinner" style="width:10px;height:10px"></div></div>
         <div class="card" style="width:10px;height:10px"></div><div class="tok" style="width:10px;height:10px"></div>`,
-        `.state-loading .spinner{display:grid} .card:hover{border:1px dashed var(--line)} :root{--line:#ffffff;--d:grid} .tok{display:var(--d)}`);
+        `.state-loading .spinner{display:grid} .card:hover{border:4px dashed var(--line)} :root{--line:#ffffff;--d:grid} .tok{display:var(--d)}`);
       const f = await lintFile(p);
       expect(f.map((x) => [x.ruleId, x.path])).toEqual([
         ["U-CSS-001", "[data-u-screen=s] > div:0 > div:0"],
@@ -248,7 +248,7 @@ describe("collectSnapshot", () => {
       const p = path.join(dir, "big.html");
       fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
         .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
-        .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:1px solid #16c2d5}
+        .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:4px solid #16c2d5}
         .row:hover{background-color:#123c47} p{margin:0;flex-shrink:0} .dot{width:8px;height:8px;border-radius:4px;background-color:#16c2d5}
         @media (max-width: 1919px){.row{height:20px}}</style></head>
         <body><div class="screen" data-u-screen="big"><p data-l10n="big.title" data-en="Players">Oyuncular</p><div class="list">${rows}</div></div></body></html>`);

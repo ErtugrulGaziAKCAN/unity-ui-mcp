@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+*{box-sizing:border-box}
+body{margin:0}
+button{appearance:none;margin:0;padding:0;border:0;font:inherit;color:inherit;background-color:transparent}
+.screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+p{margin:0}
+.btn{display:flex;align-items:center;justify-content:center;width:200px;height:48px;background-color:#16c2d5;color:#06171c}
+.btn:disabled{background-color:#0f606c;color:#091c22}
+.swatch{width:96px;height:64px;background-color:#16c2d5;opacity:0.4}
+.label{opacity:0.6}
+.ring{width:96px;height:64px;border:4px solid #2b6573;opacity:0.5}
+.row{display:flex;flex-direction:row;opacity:0.5}
+.tile{width:64px;height:64px;margin-right:16px;background-color:#f0605d}
+.card{display:flex;width:300px;height:100px;background-color:#123c47}
+.fadein{opacity:0}
+.card:hover .fadein{opacity:1}
+</style></head>
+<body><div class="screen" data-u-screen="lint.sample">
+<button class="btn" data-u-id="go" data-u-action="go" disabled data-l10n="lint.sample.go" data-en="Go">Git</button>
+<div class="swatch"></div>
+<p class="label" data-l10n="lint.sample.hint" data-en="Hint">İpucu</p>
+<div class="ring"></div>
+<div class="row"><div class="tile"></div><div class="tile"></div></div>
+<div class="card" data-u-id="card"><p class="fadein" data-l10n="lint.sample.more" data-en="More">Daha fazla</p></div>
+</div></body></html>
