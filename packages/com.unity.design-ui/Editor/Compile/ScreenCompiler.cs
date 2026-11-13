@@ -38,13 +38,19 @@ namespace DesignUi.Editor
         public Func<string, string> FontDefinition;
         /// <summary>Text of <c>&lt;Screen&gt;View.g.cs</c>; default: no view is written and an existing one is kept.</summary>
         public Func<CompiledScreen, string> ViewCode;
+        /// <summary>Which TMP font renders each locale; default: <see cref="FontMap.DefaultResolver"/> (profile mapping over TMP Settings).</summary>
+        public IFontResolver Fonts;
     }
 
     /// <summary>
     /// Compiles an export folder (<c>screen.ir.json</c>, assets, optional <c>text-styles.json</c>) into
     /// <c>&lt;outputFolder&gt;/&lt;Screen&gt;/</c>: <c>&lt;Screen&gt;.uxml</c>, <c>&lt;Screen&gt;.uss</c>, list item
     /// templates, assets, <c>.gitattributes</c> and <c>.design-ui.json</c>, plus the shared
-    /// <c>&lt;outputFolder&gt;/DesignTokens.uss</c> (spec 8).
+    /// <c>&lt;outputFolder&gt;/DesignTokens.uss</c> (spec 8) and <c>&lt;outputFolder&gt;/DesignFonts.uss</c>: the font
+    /// variables per locale (<see cref="FontMap"/>), which the screen's style sheet imports; the screen root carries the
+    /// reference locale's class. A screen that names a font family fails when a locale has no font or the family is not
+    /// a font of the locales (spec 18). The locales' UI Toolkit font twins are created or updated after the manual-edit
+    /// guard, before the write batch (asset-specific saves).
     /// Incremental (spec 14): every output is compared with the file on disk (text with CRLF read as LF) and written only
     /// when it differs; folder creation, writes, deletes and the imports of the written project paths run in one
     /// asset-editing batch (no refresh, no save). A generated file whose content matches neither its recorded hash nor
@@ -93,6 +99,7 @@ namespace DesignUi.Editor
             IrScreen ir;
             CompiledScreen compiled;
             AssetPlan plan;
+            FontMap.FontsPlan fonts;
             string screenDir, folderName;
             try
             {
@@ -113,14 +120,20 @@ namespace DesignUi.Editor
                 var assetPath = hooks?.AssetPath ?? plan.Add;
                 compiled = ScreenBuilder.Build(ir, assetPath, hooks?.FontDefinition, textStyles);
 
+                // fonts per locale: element rules keep var(--font-…); DesignFonts.uss defines them per .locale-<code>
+                fonts = FontMap.Plan(profile, hooks?.Fonts ?? FontMap.DefaultResolver(profile));
+                var fontErrors = fonts.Errors.Concat(FontMap.ScreenErrors(fonts, compiled)).ToList();
+                if (fontErrors.Count > 0) return new CompileResult { Ok = false, Errors = fontErrors };
+                compiled.Root.Classes.Add(FontMap.LocaleClass(fonts.ReferenceLocale));
+
                 Add(outputs, folderName + ".uxml", UxmlWriter.Write(compiled, folderName + ".uss"));
-                Add(outputs, folderName + ".uss", UssWriter.Write(compiled));
+                Add(outputs, folderName + ".uss", UssWriter.Write(compiled, new[] { "../" + FontMap.FileName }));
                 foreach (var repeat in compiled.Repeats)
                     if (repeat.TemplateFile != null) Add(outputs, repeat.TemplateFile, UxmlWriter.WriteItemTemplate(repeat));
                 if (hooks?.ViewCode != null) Add(outputs, ViewFileName(folderName), hooks.ViewCode(compiled));
                 Add(outputs, GitAttributesFileName, GitAttributes);
             }
-            catch (Exception e) when (e is IrFormatException || e is UnsupportedStyleException || e is IOException || e is UnauthorizedAccessException)
+            catch (Exception e) when (e is IrFormatException || e is UnsupportedStyleException || e is FontSetupException || e is IOException || e is UnauthorizedAccessException)
             {
                 return Fail(e.Message);
             }
@@ -150,9 +163,10 @@ namespace DesignUi.Editor
             {
                 foreach (var kv in TokensUssWriter.Normalized(ir.Tokens)) tokens[kv.Key] = kv.Value;
                 Add(sharedOutputs, TokensFileName, TokensUssWriter.Write(tokens));
+                Add(sharedOutputs, FontMap.FileName, FontMap.WriteUss(fonts));
                 Add(sharedOutputs, GitAttributesFileName, GitAttributes);
             }
-            catch (IrFormatException e) { return Fail(e.Message); }
+            catch (Exception e) when (e is IrFormatException || e is FontSetupException) { return Fail(e.Message); }
 
             // a view this run did not produce stays as it is, with its recorded hash
             var carried = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -171,7 +185,10 @@ namespace DesignUi.Editor
                                      ". Move the change into the design, or compile with discardManualEdits to overwrite them." },
                 };
 
-            // ---- write what changed, in one asset-editing batch ---------------------------------------------------
+            // ---- the locales' font twins (assets DesignFonts.uss references), then what changed in one batch ------
+            try { FontMap.EnsureTwins(fonts, outFolder); }
+            catch (FontSetupException e) { return Fail(e.Message); }
+
             var writes = new List<KeyValuePair<string, byte[]>>();
             Plan(screenDir, outputs, writes);
             Plan(outFolder, sharedOutputs, writes);
@@ -363,7 +380,10 @@ namespace DesignUi.Editor
         /// <summary>Queues the new folders, then the written project files (assets, style sheets, templates, code) in the open batch.</summary>
         static void QueueImports(List<string> folders, IEnumerable<string> written)
         {
-            int Rank(string p) => p.EndsWith(".uss", StringComparison.Ordinal) ? 1 : p.EndsWith(".uxml", StringComparison.Ordinal) ? 2 : p.EndsWith(".cs", StringComparison.Ordinal) ? 3 : 0;
+            // shared style sheets (tokens, fonts) before the screen sheets that import them
+            int Rank(string p) => p.EndsWith(".uss", StringComparison.Ordinal) ? (IsShared(p) ? 1 : 2)
+                : p.EndsWith(".uxml", StringComparison.Ordinal) ? 3 : p.EndsWith(".cs", StringComparison.Ordinal) ? 4 : 0;
+            bool IsShared(string p) => Path.GetFileName(p) == TokensFileName || Path.GetFileName(p) == FontMap.FileName;
             foreach (var folder in folders) AssetDatabase.ImportAsset(folder);
             foreach (var p in written.Select(ProjectPath).Where(p => p != null && !Path.GetFileName(p).StartsWith(".", StringComparison.Ordinal)).OrderBy(Rank))
                 AssetDatabase.ImportAsset(p, ImportAssetOptions.ForceUpdate);

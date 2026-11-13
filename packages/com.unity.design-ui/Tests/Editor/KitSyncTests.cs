@@ -1,0 +1,299 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Newtonsoft.Json.Linq;
+using NUnit.Framework;
+using TMPro;
+using UnityEditor;
+using UnityEngine;
+
+namespace DesignUi.Editor.Tests
+{
+    public class KitSyncTests
+    {
+        const string ProjectRoot = "Assets/DesignUiKitSyncTests";
+
+        /// <summary>The repository kit's config as committed (key order and values).</summary>
+        const string KitConfig =
+            "{\"fontsCss\":\"fonts/fonts.css\",\"tokensCss\":\"tokens.css\",\"textStyles\":\"text-styles.json\"," +
+            "\"allowedScriptOrigins\":[\"https://unpkg.com\",\"https://cdn.jsdelivr.net\"],\"reference\":[2560,1440]," +
+            "\"viewports\":[[2560,1440],[1920,1080],[1280,720]],\"screenMatch\":0.5,\"filterFunctions\":[],\"locales\":[\"tr\"]}\n";
+
+        /// <summary>The 1/64 px text styles of docs/findings/m0.md (Inter, 400 and 700).</summary>
+        const string FractionalStyles = @"{
+  ""caption"": { ""fontSize"": 13.21875, ""lineHeight"": 16, ""weight"": 400 },
+  ""label-bold"": { ""fontSize"": 16.515625, ""lineHeight"": 20, ""weight"": 700 },
+  ""body"": { ""fontSize"": 23.125, ""lineHeight"": 28, ""weight"": 400 },
+  ""subtitle"": { ""fontSize"": 26.4375, ""lineHeight"": 32, ""weight"": 400 },
+  ""title-bold"": { ""fontSize"": 33.046875, ""lineHeight"": 40, ""weight"": 700 },
+  ""headline"": { ""fontSize"": 46.28125, ""lineHeight"": 56, ""weight"": 400 },
+  ""display"": { ""fontSize"": 56.1875, ""lineHeight"": 68, ""weight"": 400 }
+}
+";
+
+        /// <summary>The integer fallback table of docs/findings/m0.md: valid too (every line fits, with more slack).</summary>
+        const string IntegerStyles = @"{
+  ""caption"": { ""fontSize"": 13, ""lineHeight"": 16, ""weight"": 400 },
+  ""label"": { ""fontSize"": 16, ""lineHeight"": 20, ""weight"": 400 },
+  ""body-bold"": { ""fontSize"": 23, ""lineHeight"": 28, ""weight"": 700 },
+  ""display"": { ""fontSize"": 56, ""lineHeight"": 68, ""weight"": 400 }
+}
+";
+
+        readonly List<string> _temp = new List<string>();
+        readonly List<UnityEngine.Object> _objects = new List<UnityEngine.Object>();
+        TMP_FontAsset _regular, _bold, _fallback, _arabic;
+
+        [SetUp]
+        public void Setup()
+        {
+            _bold = FontFixture.CreateTmp(FontFixture.BoldTtf, "Kit Bold");
+            _regular = FontFixture.CreateTmp(FontFixture.RegularTtf, "Kit Regular");
+            FontFixture.SetWeight(_regular, 700, _bold);
+            _fallback = FontFixture.CreateTmp(FontFixture.BoldTtf, "Kit Fallback", family: "Kit Fallback Sans");
+            FontFixture.SetFallbacks(_regular, _fallback);
+            _arabic = FontFixture.CreateTmp(FontFixture.RegularTtf, "Kit Arabic", family: "Kit Arabic Sans");
+        }
+
+        [TearDown]
+        public void Cleanup()
+        {
+            foreach (var o in _objects) if (o != null && !EditorUtility.IsPersistent(o)) UnityEngine.Object.DestroyImmediate(o);
+            _objects.Clear();
+            foreach (var dir in _temp) if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            _temp.Clear();
+            if (AssetDatabase.IsValidFolder(ProjectRoot)) AssetDatabase.DeleteAsset(ProjectRoot);
+            FontFixture.Delete();
+        }
+
+        string Kit(string styles = FractionalStyles)
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "design-ui-kit-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
+            Directory.CreateDirectory(dir);
+            _temp.Add(dir);
+            File.WriteAllText(dir + "/kit.config.json", KitConfig);
+            File.WriteAllText(dir + "/text-styles.json", styles);
+            return dir;
+        }
+
+        DesignUiProfile Profile()
+        {
+            var p = ScriptableObject.CreateInstance<DesignUiProfile>();
+            _objects.Add(p);
+            p.referenceLocale = "tr";
+            p.locales = new[] { "tr", "ar" };
+            p.localeFonts = new[] { new LocaleFont { locale = "tr", font = _regular }, new LocaleFont { locale = "ar", font = _arabic } };
+            p.fontTwinFolder = FontFixture.TwinFolder;
+            p.referenceResolution = new Vector2Int(2560, 1440);
+            p.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1600, 900) };
+            p.screenMatch = 0.25f;
+            return p;
+        }
+
+        static IFontResolver Resolver(DesignUiProfile p) => new ProfileLocaleFontResolver(p, null);
+
+        static string Errors(KitSyncResult r) => string.Join("\n", r.Errors);
+
+        [Test]
+        public void Run_WritesFontFilesFaceRulesLocaleFamiliesAndTheProfileSettings()
+        {
+            var kit = Kit();
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            var family = _regular.faceInfo.familyName;
+
+            var css = File.ReadAllText(kit + "/fonts/fonts.css");
+            StringAssert.StartsWith("/* auto-generated by com.unity.design-ui", css);
+            StringAssert.Contains("@font-face { font-family: \"" + family + "\"; font-weight: 400; src: url(\"Inter_18pt-Regular.ttf\") format(\"truetype\"); }\n", css);
+            StringAssert.Contains("@font-face { font-family: \"" + family + "\"; font-weight: 700; src: url(\"Inter_18pt-Bold.ttf\") format(\"truetype\"); }\n", css);
+            StringAssert.Contains("@font-face { font-family: \"Kit Fallback Sans\"; font-weight: 400; src: url(\"Inter_18pt-Bold.ttf\") format(\"truetype\"); }\n", css);
+            StringAssert.Contains("@font-face { font-family: \"Kit Arabic Sans\"; font-weight: 400; src: url(\"Inter_18pt-Regular.ttf\") format(\"truetype\"); }\n", css);
+            Assert.IsFalse(css.Contains("\r"));
+
+            Assert.AreEqual(File.ReadAllBytes(FontFixture.RegularTtf), File.ReadAllBytes(kit + "/fonts/Inter_18pt-Regular.ttf"));
+            Assert.AreEqual(File.ReadAllBytes(FontFixture.BoldTtf), File.ReadAllBytes(kit + "/fonts/Inter_18pt-Bold.ttf"));
+            Assert.AreEqual(File.ReadAllBytes(FontFixture.Licence), File.ReadAllBytes(kit + "/fonts/OFL.txt"), "the licence next to the source font");
+
+            var json = File.ReadAllText(kit + "/fonts/fonts.json");
+            Assert.IsTrue(JToken.DeepEquals(JObject.Parse("{ \"ar\": [\"Kit Arabic Sans\"], \"tr\": [\"" + family + "\", \"Kit Fallback Sans\"] }"), JObject.Parse(json)), json);
+            StringAssert.IsMatch("^\\{\\n  \"ar\"", json, "sorted keys, LF");
+
+            var config = JObject.Parse(File.ReadAllText(kit + "/kit.config.json"));
+            Assert.IsTrue(JToken.DeepEquals(JArray.Parse("[[2560,1440],[1600,900]]"), config["viewports"]), config.ToString());
+            Assert.IsTrue(JToken.DeepEquals(JArray.Parse("[2560,1440]"), config["reference"]));
+            Assert.AreEqual(0.25, config.Value<double>("screenMatch"));
+            Assert.IsTrue(JToken.DeepEquals(JArray.Parse("[\"tr\",\"ar\"]"), config["locales"]), "reference locale first");
+            Assert.IsTrue(JToken.DeepEquals(JArray.Parse("[\"https://unpkg.com\",\"https://cdn.jsdelivr.net\"]"), config["allowedScriptOrigins"]), "other keys kept");
+            CollectionAssert.AreEqual(new[] { "fontsCss", "tokensCss", "textStyles", "allowedScriptOrigins", "reference", "viewports", "screenMatch", "filterFunctions", "locales" },
+                config.Properties().Select(p => p.Name).ToArray(), "key order kept");
+
+            CollectionAssert.IsSubsetOf(new[] { "fonts/fonts.css", "fonts/fonts.json", "fonts/Inter_18pt-Regular.ttf", "fonts/Inter_18pt-Bold.ttf", "fonts/OFL.txt", "kit.config.json" },
+                r.Files.ToArray());
+            CollectionAssert.Contains(r.Twins.ToArray(), FontFixture.TwinFolder + "/Kit Regular UITK.asset");
+            CollectionAssert.Contains(r.Twins.ToArray(), FontFixture.TwinFolder + "/Kit Arabic UITK.asset");
+            Assert.IsNotNull(AssetDatabase.LoadAssetAtPath<UnityEngine.TextCore.Text.FontAsset>(FontFixture.TwinFolder + "/Kit Regular UITK.asset"));
+        }
+
+        [Test]
+        public void Run_Twice_SecondRunWritesNothing()
+        {
+            var kit = Kit();
+            var profile = Profile();
+            var first = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(first.Ok, Errors(first));
+            CollectionAssert.IsNotEmpty(first.Written);
+            var times = Directory.GetFiles(kit, "*", SearchOption.AllDirectories).ToDictionary(f => f, File.GetLastWriteTimeUtc);
+
+            var second = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(second.Ok, Errors(second));
+            CollectionAssert.IsEmpty(second.Written);
+            CollectionAssert.AreEquivalent(first.Files, second.Files);
+            foreach (var kv in times) Assert.AreEqual(kv.Value, File.GetLastWriteTimeUtc(kv.Key), kv.Key);
+        }
+
+        [Test]
+        public void Run_TwoTmpSettingsUnderResources_Warns()
+        {
+            var paths = new[] { ProjectRoot + "/A/Resources/TMP Settings.asset", ProjectRoot + "/B/Resources/TMP Settings.asset" };
+            foreach (var path in paths)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                AssetDatabase.ImportAsset(ProjectRoot, ImportAssetOptions.ImportRecursive);
+                AssetDatabase.CreateAsset(ScriptableObject.CreateInstance<TMP_Settings>(), path);
+            }
+            CollectionAssert.IsSubsetOf(paths, KitSync.FindTmpSettingsAssets().ToArray());
+
+            var profile = Profile();
+            var r = KitSync.Run(profile, Kit(), Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            var warning = r.Warnings.SingleOrDefault(w => w.StartsWith("Multiple TMP Settings assets under Resources: ", StringComparison.Ordinal));
+            Assert.IsNotNull(warning, string.Join("\n", r.Warnings));
+            foreach (var path in paths) StringAssert.Contains(path, warning);
+        }
+
+        [Test]
+        public void Run_OneTmpSettingsAsset_DoesNotWarn()
+        {
+            var path = ProjectRoot + "/A/Resources/TMP Settings.asset";
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            AssetDatabase.ImportAsset(ProjectRoot, ImportAssetOptions.ImportRecursive);
+            AssetDatabase.CreateAsset(ScriptableObject.CreateInstance<TMP_Settings>(), path);
+            // another settings asset that Resources.Load("TMP Settings") cannot reach
+            AssetDatabase.CreateAsset(ScriptableObject.CreateInstance<TMP_Settings>(), ProjectRoot + "/A/Other Settings.asset");
+            if (KitSync.FindTmpSettingsAssets().Count != 1) Assert.Ignore("the project has its own TMP Settings under Resources");
+            var profile = Profile();
+            var r = KitSync.Run(profile, Kit(), Resolver(profile));
+            Assert.IsFalse(r.Warnings.Any(w => w.StartsWith("Multiple TMP Settings", StringComparison.Ordinal)));
+        }
+
+        [TestCase(13.25, 16, "13.21875")]   // pitch 16.0317 does not fit a 16 px line
+        [TestCase(13.2, 16, "13.21875")]    // not on the 1/64 px grid
+        [TestCase(10, 16, "13.21875")]      // pitch 12.0996: a line is 13 px tall, not 16
+        [TestCase(23.140625, 28, "23.125")] // fits by 0.00075 px only: below the 0.001 px margin
+        public void Run_TextStyleThatDoesNotFitItsLine_FailsWithTheComputedSize(double size, int line, string fix)
+        {
+            var kit = Kit("{ \"x\": { \"fontSize\": " + size.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ", \"lineHeight\": " + line + ", \"weight\": 400 } }");
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsFalse(r.Ok);
+            var error = r.Errors.Single();
+            StringAssert.Contains("text style 'x'", error);
+            StringAssert.Contains("use fontSize " + fix, error);
+            Assert.IsFalse(File.Exists(kit + "/fonts/fonts.css"), "nothing is written when the kit is invalid");
+            Assert.AreEqual(KitConfig, File.ReadAllText(kit + "/kit.config.json"));
+        }
+
+        [Test]
+        public void Run_LineHeightNotAMultipleOf4_FailsWithTheComputedFix()
+        {
+            var kit = Kit("{ \"odd\": { \"fontSize\": 14.875, \"lineHeight\": 18, \"weight\": 400 } }");
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsFalse(r.Ok);
+            var error = r.Errors.Single();
+            StringAssert.Contains("lineHeight 18", error);
+            StringAssert.Contains("multiple of 4", error);
+            StringAssert.Contains("lineHeight 20 with fontSize 16.515625", error);
+        }
+
+        [Test]
+        public void Run_TheMeasuredTablesAreValid()
+        {
+            var profile = Profile();
+            foreach (var styles in new[] { FractionalStyles, IntegerStyles })
+            {
+                var r = KitSync.Run(profile, Kit(styles), Resolver(profile));
+                Assert.IsTrue(r.Ok, Errors(r));
+            }
+        }
+
+        [Test]
+        public void Run_WeightWithoutARealFace_Fails()
+        {
+            FontFixture.SetWeight(_regular, 700, null);
+            var profile = Profile();
+            var r = KitSync.Run(profile, Kit(), Resolver(profile));
+            Assert.IsFalse(r.Ok);
+            Assert.AreEqual(2, r.Errors.Count, Errors(r)); // label-bold and title-bold
+            StringAssert.Contains("weight 700", r.Errors[0]);
+            StringAssert.Contains("no real face", r.Errors[0]);
+            StringAssert.Contains("Kit Regular", r.Errors[0]);
+        }
+
+        [Test]
+        public void Run_LocaleWithoutAFont_FailsNamingTheLocale()
+        {
+            var profile = Profile();
+            profile.locales = new[] { "tr", "ja" };
+            var kit = Kit();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsFalse(r.Ok);
+            StringAssert.Contains("'ja'", Errors(r));
+            Assert.IsFalse(File.Exists(kit + "/fonts/fonts.css"));
+        }
+
+        [Test]
+        public void Run_TwoLocalesGiveOneFamilyWeightDifferentFiles_Fails()
+        {
+            var profile = Profile();
+            var other = FontFixture.CreateTmp(FontFixture.BoldTtf, "Kit Same Family"); // Inter's family name, Bold file, weight 400
+            profile.localeFonts = new[] { new LocaleFont { locale = "tr", font = _regular }, new LocaleFont { locale = "ar", font = other } };
+            var r = KitSync.Run(profile, Kit(), Resolver(profile));
+            Assert.IsFalse(r.Ok);
+            StringAssert.Contains(_regular.faceInfo.familyName, Errors(r));
+            StringAssert.Contains("400", Errors(r));
+        }
+
+        [Test]
+        public void Run_UnknownFileInTheFontsFolder_IsReportedAndKept()
+        {
+            var kit = Kit();
+            Directory.CreateDirectory(kit + "/fonts");
+            File.WriteAllText(kit + "/fonts/Old.ttf", "old");
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            Assert.IsTrue(r.Warnings.Any(w => w.Contains("Old.ttf")), string.Join("\n", r.Warnings));
+            Assert.IsTrue(File.Exists(kit + "/fonts/Old.ttf"));
+        }
+
+        [Test]
+        public void Ops_KitSync_RunsForAProfileAsset()
+        {
+            var profile = Profile();
+            var path = FontFixture.Folder + "/Kit Profile.asset";
+            AssetDatabase.CreateAsset(profile, path);
+            var kit = Kit();
+            var result = DesignUiOps.KitSync(path, kit);
+            Assert.AreEqual(0, result.Code, result.Log);
+            Assert.IsTrue(File.Exists(kit + "/fonts/fonts.css"));
+            StringAssert.Contains("fonts/fonts.css", result.Log);
+
+            var missing = DesignUiOps.KitSync("Assets/Nope.asset", kit);
+            Assert.AreEqual(1, missing.Code);
+            StringAssert.Contains("Assets/Nope.asset", missing.Log);
+        }
+    }
+}

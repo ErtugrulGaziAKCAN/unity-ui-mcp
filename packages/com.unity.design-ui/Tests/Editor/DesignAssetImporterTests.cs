@@ -28,7 +28,11 @@ namespace DesignUi.Editor.Tests
         {
             _profile = ScriptableObject.CreateInstance<DesignUiProfile>();
             _profile.outputFolder = OutRoot;
+            FontFixture.Use(_profile); // the Showcase names a font family
         }
+
+        [OneTimeTearDown]
+        public void DeleteFonts() => FontFixture.Delete();
 
         [TearDown]
         public void Cleanup()

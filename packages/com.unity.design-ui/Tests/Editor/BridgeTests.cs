@@ -225,14 +225,44 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void Ops_AreNotAvailableYet()
+        public void Ops_ImportIsNotAvailableYet_KitSyncRuns()
         {
             var i = DesignUiOps.Import("p", "e", false);
             Assert.AreEqual(2, i.Code);
             Assert.AreEqual("Not available yet: import arrives with the import pipeline.", i.Log);
             var k = DesignUiOps.KitSync("p", "k");
-            Assert.AreEqual(2, k.Code);
-            Assert.AreEqual("Not available yet: kit sync arrives with the import pipeline.", k.Log);
+            Assert.AreEqual(1, k.Code, "kit sync runs: a missing profile is a failure, not 'not available'");
+            StringAssert.Contains("No DesignUiProfile at 'p'", k.Log);
+        }
+
+        [UnityTest]
+        public IEnumerator KitSync_RunsTheRealOperation()
+        {
+            var profile = ScriptableObject.CreateInstance<DesignUiProfile>();
+            FontFixture.Use(profile);
+            var profilePath = FontFixture.Folder + "/Bridge Profile.asset";
+            UnityEditor.AssetDatabase.CreateAsset(profile, profilePath);
+            var kit = Path.Combine(Path.GetTempPath(), "design-ui-bridge-kit-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(kit);
+            try
+            {
+                File.WriteAllText(Path.Combine(kit, "kit.config.json"), "{\"fontsCss\":\"fonts/fonts.css\",\"textStyles\":\"text-styles.json\",\"locales\":[]}\n");
+                File.WriteAllText(Path.Combine(kit, "text-styles.json"), "{ \"label\": { \"fontSize\": 16.515625, \"lineHeight\": 20, \"weight\": 400 } }");
+                DesignUiBridge.KitSyncHandler = DesignUiOps.KitSync;
+                var body = new JObject { ["profile"] = profilePath, ["kitDir"] = kit }.ToString();
+                var t = Send("POST", "/kit-sync", Token(), body);
+                yield return Wait(t);
+                Assert.AreEqual(200, t.Result.status);
+                Assert.AreEqual(0, t.Result.body.Value<int>("code"), t.Result.body.Value<string>("log"));
+                Assert.IsTrue(File.Exists(Path.Combine(kit, "fonts", "fonts.css")));
+                Assert.AreEqual("kit-sync", DesignUiBridge.LastRequest.Value.Op);
+                Assert.AreEqual(0, DesignUiBridge.LastRequest.Value.Code);
+            }
+            finally
+            {
+                Directory.Delete(kit, true);
+                FontFixture.Delete();
+            }
         }
 
         [Test]

@@ -241,6 +241,14 @@ namespace DesignUi.Editor
             return slug;
         }
 
+        /// <summary>The <c>--font-&lt;slug&gt;</c> variable of one font family name, as element rules name it (invariant lower case).</summary>
+        internal static string FamilyNameSlug(string family)
+        {
+            var slug = Slug.Replace((family ?? "").Trim().ToLowerInvariant(), "-").Trim('-');
+            if (slug.Length == 0) throw new UnsupportedStyleException("font-family", family ?? "");
+            return slug;
+        }
+
         /// <summary>
         /// <c>auto &amp;&amp; &lt;ratio&gt;</c> uses the ratio for every element the compiler writes (none is a replaced element
         /// with its own natural ratio: images are backgrounds), so <c>auto 16 / 9</c> and <c>16 / 9 auto</c> are the ratio.

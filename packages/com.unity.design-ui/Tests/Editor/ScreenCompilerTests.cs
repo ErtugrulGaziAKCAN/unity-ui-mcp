@@ -81,12 +81,17 @@ namespace DesignUi.Editor.Tests
         static void WriteIr(string exportDir, IrScreen ir) =>
             File.WriteAllText(Path.Combine(exportDir, ScreenCompiler.IrFileName), JsonConvert.SerializeObject(ir, Formatting.Indented));
 
+        /// <summary>A profile whose reference locale renders with the Inter fixture font (the Showcase names a font family).</summary>
         static DesignUiProfile Profile(string outputFolder)
         {
             var p = ScriptableObject.CreateInstance<DesignUiProfile>();
             p.outputFolder = outputFolder;
+            FontFixture.Use(p);
             return p;
         }
+
+        [OneTimeTearDown]
+        public void DeleteFonts() => FontFixture.Delete();
 
         /// <summary>The Showcase with its kit text style table next to the IR, as an export folder.</summary>
         string ShowcaseExport(IrScreen ir = null) => Export(ir ?? Showcase(), textStyles: true);
@@ -571,6 +576,8 @@ namespace DesignUi.Editor.Tests
             Assert.IsInstanceOf<Button>(tree.Q("go"));
             Assert.AreEqual("Giriş", label.text);
             Assert.AreEqual(16.515625f, label.resolvedStyle.fontSize, 1e-4f);
+            Assert.AreSame(AssetDatabase.LoadAssetAtPath<UnityEngine.TextCore.Text.FontAsset>(FontFixture.TwinFolder + "/Inter Fixture UITK.asset"),
+                label.resolvedStyle.unityFontDefinition.fontAsset, "the label's var(--font-inter) resolves through DesignFonts.uss to the reference locale's twin");
             AssertColor("#111111", panel.resolvedStyle.backgroundColor);
             Assert.AreEqual(0f, tree.Q("item-a").resolvedStyle.marginTop, "__first restores the first item's margin");
             Assert.AreEqual(8f, tree.Q("item-b").resolvedStyle.marginTop);

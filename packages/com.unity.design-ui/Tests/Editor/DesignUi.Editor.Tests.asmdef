@@ -1,7 +1,7 @@
 {
   "name": "DesignUi.Editor.Tests",
   "rootNamespace": "DesignUi",
-  "references": ["DesignUi.Editor", "DesignUi.Runtime", "UnityEngine.TestRunner", "UnityEditor.TestRunner"],
+  "references": ["DesignUi.Editor", "DesignUi.Runtime", "Unity.TextMeshPro", "UnityEngine.TestRunner", "UnityEditor.TestRunner"],
   "includePlatforms": ["Editor"],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
