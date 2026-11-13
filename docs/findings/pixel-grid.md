@@ -130,6 +130,15 @@ Lint U-CSS-040 keeps such lines reproducible: a painted box thinner than 8 CSS p
 declared viewport (4 px with 1, 0.75 and 0.5), because UI Toolkit rounds both of its edges to whole device px and a
 thinner line can vanish.
 
+**Stacking, positioned elements too.** U-CSS-041 skipped an element positioned in its base style, yet a `position:
+relative` card paints with its shadow after every in-flow element of its stacking context, so its base or hover shadow
+lay over a later static panel in Chromium and under it in UI Toolkit, and the rule's own fix applied halfway passed. It
+now asks the shared paint-order module for both orders, for every element and layer (base included) against each later
+painting element its box, translate (also from a `transform`) or outer shadow reaches: CSS's between the two elements'
+participants in their closest common stacking context, UI Toolkit's as the compiler orders the siblings under their
+closest common parent. Box overlaps in the base style that U-CSS-032 already reports are left to it. The layout fixture's
+rotated and scaled square reached 2 px into the next panel and got the room.
+
 ## Open
 
 Resolved in the second round: group opacity (U-CSS-039 and the kit's disabled colours, [opacity.md](opacity.md)),

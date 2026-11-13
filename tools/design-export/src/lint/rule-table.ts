@@ -71,7 +71,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
     when: "a border width, a hard shadow edge or a painted line under 8px that is not whole device px at every viewport",
     fix: "the lengths the finding lists",
   },
-  "U-CSS-041": { when: "a moved state's shadow over later elements", fix: "room for the shadow" },
+  "U-CSS-041": { when: "a positioned or moved element's box or shadow over later elements", fix: "room, or `position: relative` on the later ones" },
   "U-DC-001": { when: "`{{…}}` holes in a Claude Design artboard", fix: "static sample text" },
   "U-DC-002": { when: "`<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import`", fix: "write rows out, `data-u-repeat` on the first" },
   "U-DC-003": { when: "UI built by script", fix: "static markup" },

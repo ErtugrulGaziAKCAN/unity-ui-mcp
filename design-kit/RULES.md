@@ -396,7 +396,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-038 | error | text that renders without `-webkit-font-smoothing: antialiased` (macOS browsers then thicken glyph stems, which UI Toolkit does not) | the kit base stylesheet (it sets the smoothing on `:root`); never override it on text |
 | U-CSS-039 | error | `opacity` < 1, or a fade of it, on overlapping parts | `--color-disabled-*` colours; a transform instead of a fade |
 | U-CSS-040 | error | a border width, a hard shadow edge or a painted line under 8px that is not whole device px at every viewport | the lengths the finding lists |
-| U-CSS-041 | error | a moved state's shadow over later elements | room for the shadow |
+| U-CSS-041 | error | a positioned or moved element's box or shadow over later elements | room, or `position: relative` on the later ones |
 | U-DC-001 | error | `{{…}}` holes in a Claude Design artboard | static sample text |
 | U-DC-002 | error | `<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import` | write rows out, `data-u-repeat` on the first |
 | U-DC-003 | error | UI built by script | static markup |

@@ -259,6 +259,18 @@ describe("device grid, group opacity and stacking rules", () => {
     expect(await ids(`<div class="card fade"></div>`, `${card} .fade{transition:opacity 200ms linear}`, "U-CSS-039")).toEqual([]);
     expect(await ids(`<div class="card fade"></div>`, `${card} .fade{opacity:0} .fade.is-open{opacity:1}`, "U-CSS-039")).toEqual([]);
   });
+
+  it("U-CSS-041: judges positioned elements too, against later plain elements, in the base style", async () => {
+    const css = `.row{display:flex;flex-direction:row} .card{width:320px;height:180px;flex-shrink:0;background-color:#123c47;box-shadow:0 8px 24px rgba(0,0,0,0.4)}
+      .panel{width:400px;height:120px;background-color:#0f2a33} .rel{position:relative}`;
+    const fail = await ids(`<div class="row"><div class="card rel" data-u-id="a"></div></div><div class="panel"></div>`, css, "U-CSS-041");
+    expect(fail.map((x) => x.detail)).toEqual([expect.stringMatching(/'a'.*the base style.*div:1/)]);
+    expect(await ids(`<div class="row"><div class="card rel" data-u-id="a"></div></div><div class="panel rel"></div>`, css, "U-CSS-041")).toEqual([]);
+    // a transform's translate counts like the translate property
+    const moved = await ids(`<div class="row"><div class="card lift" data-u-id="a"></div></div><div class="panel" style="margin-top:40px"></div>`,
+      `${css} .card{box-shadow:none} .lift:hover{transform:translateY(48px)}`, "U-CSS-041");
+    expect(moved).toHaveLength(1);
+  });
 });
 
 describe("collectSnapshot", () => {

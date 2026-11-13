@@ -86,3 +86,11 @@ export function cssPaintOrder(sibs: PaintSibling[], flexContainer: boolean): num
   });
   return keyed.sort((a, b) => cmpKey(a[1], b[1])).map(([c]) => c.index);
 }
+
+/**
+ * Whether CSS paints `earlier` above `later`: two participants of one stacking context, `earlier` first in tree order
+ * (cssPaintOrder; a flex item with a z-index other than auto is passed as relative).
+ */
+export function cssPaintsAbove(earlier: PaintSibling, later: PaintSibling): boolean {
+  return cssPaintOrder([earlier, later], false)[1] === earlier.index;
+}
