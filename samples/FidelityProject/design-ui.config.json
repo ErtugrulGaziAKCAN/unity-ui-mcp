@@ -1,0 +1,14 @@
+{
+  "designRoot": "Designs",
+  "kitDir": "../../design-kit",
+  "profileAsset": "Assets/DesignUi/DesignUiProfile.asset",
+  "unityRunner": {
+    "prefer": "command",
+    "captureVia": "command",
+    "command": {
+      "import": ["../../scripts/unity-check.sh", "--warm", "--wait", "--call", "DesignUi.Editor.DesignUiBatch.Import"],
+      "capture": ["../../scripts/unity-check.sh", "--warm", "--wait", "--editmode", "DesignCaptureTests", "--assembly", "DesignUi.Editor.Tests"],
+      "kitSync": ["../../scripts/unity-check.sh", "--warm", "--wait", "--call", "DesignUi.Editor.DesignUiBatch.KitSync"]
+    }
+  }
+}
