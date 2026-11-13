@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { bridgeStatus } from "../bridge.js";
+import { probeBridge, type BridgeStatus } from "../bridge.js";
 import type { ServerContext } from "../context.js";
 import { requireConfig } from "../context.js";
 import { findEntry, resolveScreen } from "../design.js";
@@ -11,12 +11,19 @@ import { guarded, Timings, toolResult } from "../result.js";
 import { exportDirOf, readLastImport, readLastVerify, screenStatus } from "../status.js";
 import { VERSION } from "../version.js";
 
-export interface ToolAvailability { available: boolean; note: string }
+/** `needsEditor`: live only while the open Unity Editor's bridge answers (`available` is the last probe's answer). */
+export interface ToolAvailability { available: boolean; note: string; needsEditor?: boolean }
 
-/** What each tool can do in this build; shared by design_ui_status and the server instructions. */
-export function availability(ctx: ServerContext): Record<string, ToolAvailability> {
+/**
+ * What each tool can do in this build; shared by design_ui_status and the server instructions. `bridge` is a probe of
+ * the Editor bridge (probeBridge); without one (the instructions, written once at start) a step on the Editor route is
+ * described as live while the bridge answers.
+ */
+export function availability(ctx: ServerContext, bridge?: BridgeStatus | null): Record<string, ToolAvailability> {
   const exp = !!ctx.pipeline.exportScreen, cmp = !!ctx.pipeline.compareScreen, cap = !!ctx.pipeline.unityCapture;
-  const compile = unityStep(ctx.cfg, "import"), capture = unityStep(ctx.cfg, "capture"), kit = unityStep(ctx.cfg, "kitSync");
+  const compile = unityStep(ctx.cfg, "import", bridge), capture = unityStep(ctx.cfg, "capture", bridge), kit = unityStep(ctx.cfg, "kitSync", bridge);
+  const unprobed = (r: { needsEditor?: boolean }) => !!r.needsEditor && !bridge;
+  const whileEditor = "while the Unity Editor bridge answers (design_ui_status shows whether it answers)";
   return {
     design_ui_rules: { available: true, note: "live (kit RULES.md is still a stub; allowed CSS, attributes, text styles and the lint rule table are complete)" },
     design_ui_list: { available: true, note: "live" },
@@ -24,9 +31,13 @@ export function availability(ctx: ServerContext): Record<string, ToolAvailabilit
     design_ui_status: { available: true, note: "live" },
     design_ui_import: !exp
       ? { available: false, note: `not available yet: ${MISSING.export}; ${MISSING.compile}` }
-      : compile.ready
-        ? { available: true, note: `live: export (lint, IR, goldens, assets), then the Unity compile ${compile.how}` }
-        : { available: false, note: `the export is live, but the Unity compile cannot run: ${compile.how}` },
+      : unprobed(compile)
+        ? { available: false, needsEditor: true, note: `live ${whileEditor}: export (lint, IR, goldens, assets), then the Unity compile ${compile.how}` }
+        : compile.ready
+          ? { available: true, needsEditor: compile.needsEditor, note: `live: export (lint, IR, goldens, assets), then the Unity compile ${compile.how}` }
+          : compile.needsEditor
+            ? { available: false, needsEditor: true, note: `${compile.how}; the export is live, the Unity compile needs the open Unity Editor with the com.unity.design-ui bridge` }
+            : { available: false, note: `the export is live, but the Unity compile cannot run: ${compile.how}` },
     design_ui_verify: !cmp
       ? { available: false, note: `not available yet: ${MISSING.compare}` }
       : !cap
@@ -34,9 +45,13 @@ export function availability(ctx: ServerContext): Record<string, ToolAvailabilit
         : capture.ready
           ? { available: true, note: `live: Unity capture ${capture.how} (counted only with capture-done.json), then the comparison and report.html` }
           : { available: false, note: `the comparison is live, but the Unity capture cannot run: ${capture.how}` },
-    design_ui_kit_sync: kit.ready
-      ? { available: true, note: `live: ${kit.how}` }
-      : { available: false, note: `the Unity kit sync cannot run: ${kit.how}` },
+    design_ui_kit_sync: unprobed(kit)
+      ? { available: false, needsEditor: true, note: `live ${whileEditor}: ${kit.how}` }
+      : kit.ready
+        ? { available: true, needsEditor: kit.needsEditor, note: `live: ${kit.how}` }
+        : kit.needsEditor
+          ? { available: false, needsEditor: true, note: `${kit.how}; kit sync needs the open Unity Editor with the com.unity.design-ui bridge` }
+          : { available: false, note: `the Unity kit sync cannot run: ${kit.how}` },
   };
 }
 
@@ -73,8 +88,8 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
       }
 
       const cfg = ctx.cfg;
-      const tools = availability(ctx);
-      const unity = cfg ? await t.async("bridge", () => bridgeStatus(cfg.projectDir)) : null;
+      const unity = cfg ? await t.async("bridge", () => probeBridge(cfg.projectDir)) : null;
+      const tools = availability(ctx, unity);
       const config = cfg
         ? {
           ok: true, path: cfg.configPath, designRoot: cfg.designRoot, designRootExists: fs.existsSync(cfg.designRoot),

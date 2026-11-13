@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Browser } from "playwright";
+import type { BridgeStatus } from "./bridge.js";
 import type { DesignUiConfig, UnityStep } from "./config.js";
 import { readThresholds, runCompare, runExport, summarizeIssues, writeReport, writeVerdict, type Finding, type KitConfig } from "./exporter.js";
 
@@ -108,21 +109,29 @@ export const MISSING = {
   capture: "the Unity capture (the com.unity.design-ui test that renders the compiled screen for every golden capture) is not installed in this pipeline; the comparison against the design and the HTML report run once it is",
 };
 
-/** Whether a Unity step can run with the project's configuration, and how (for status, instructions and verify). */
-export interface UnityStepRoute { ready: boolean; how: string }
+/**
+ * Whether a Unity step can run, and how (for status, instructions and verify). `needsEditor`: the step runs in the open
+ * Editor, so it is live only while the bridge answers; `ready` then says whether it answered at the last probe (false
+ * when no probe was made).
+ */
+export interface UnityStepRoute { ready: boolean; how: string; needsEditor?: boolean }
 
 /**
- * import and kitSync run on `unityRunner.prefer`, capture on `unityRunner.captureVia`. The Editor route needs the open
- * Editor's bridge (checked when the step runs; design_ui_status shows it); the package has no Editor capture, so a
- * capture needs the command route. The command route needs its argv template.
+ * import and kitSync run on `unityRunner.prefer`, capture on `unityRunner.captureVia`. The Editor route is live only when
+ * the open Editor's bridge answers (`bridge`: a probe from probeBridge; undefined when none was made); the package has
+ * no Editor capture, so a capture needs the command route. The command route needs its argv template.
  */
-export function unityStep(cfg: DesignUiConfig | null, step: UnityStep): UnityStepRoute {
+export function unityStep(cfg: DesignUiConfig | null, step: UnityStep, bridge?: BridgeStatus | null): UnityStepRoute {
   if (!cfg) return { ready: false, how: "design-ui.config.json is missing or invalid" };
   const route = step === "capture" ? cfg.unityRunner.captureVia : cfg.unityRunner.prefer;
   if (route === "editor") {
-    return step === "capture"
-      ? { ready: false, how: "the com.unity.design-ui package has no Editor capture (the open Editor is never put into a capture); set \"unityRunner.captureVia\": \"command\" with a capture command in design-ui.config.json" }
-      : { ready: true, how: "in the open Unity Editor through its bridge (Window > Design UI > Status), which answers code 0 with a log" };
+    if (step === "capture") {
+      return { ready: false, how: "the com.unity.design-ui package has no Editor capture (the open Editor is never put into a capture); set \"unityRunner.captureVia\": \"command\" with a capture command in design-ui.config.json" };
+    }
+    if (!bridge) return { ready: false, needsEditor: true, how: "in the open Unity Editor through its bridge (Window > Design UI > Status)" };
+    return bridge.bridge === "connected"
+      ? { ready: true, needsEditor: true, how: `in the open Unity Editor (bridge on 127.0.0.1:${bridge.port}), which answers code 0 with a log` }
+      : { ready: false, needsEditor: true, how: `Editor not reachable: ${bridge.detail}` };
   }
   const argv = cfg.unityRunner.command[step];
   return argv.length

@@ -57,7 +57,7 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
   const info = findBridge(cfg.projectDir);
   if (!info) {
     throw new UnityRunnerError(
-      `Unity Editor bridge not found for ${cfg.projectDir}: open this project in Unity with the com.unity.design-ui package ` +
+      `Editor not reachable: Unity Editor bridge not found for ${cfg.projectDir}: open this project in Unity with the com.unity.design-ui package ` +
       `(Window > Design UI > Status shows the bridge), or set "unityRunner.prefer": "command" in design-ui.config.json.`);
   }
   const route = step === "import" ? "/import" : step === "kitSync" ? "/kit-sync" : "/capture";
@@ -72,7 +72,9 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
     if (e instanceof BridgeHttpError && e.status === 404 && step === "capture") {
       throw new UnityRunnerError(`this version of the com.unity.design-ui package has no Editor capture; use "unityRunner.captureVia": "command"`);
     }
-    throw new UnityRunnerError((e as Error).message);
+    // no answer at all (closed, reloading, switched off) is an unreachable Editor; a refusal (401, 409) is not
+    const unreachable = e instanceof BridgeHttpError && e.status === null;
+    throw new UnityRunnerError(`${unreachable ? "Editor not reachable: " : ""}${(e as Error).message}`);
   }
   timings.request = Math.round(performance.now() - t0);
   const code = typeof res?.code === "number" ? res.code : 1;

@@ -103,3 +103,27 @@ export async function bridgeStatus(projectDir: string, timeoutMs = 1500): Promis
     };
   }
 }
+
+/** Longest a status probe waits for the Editor, so status and list stay fast when it is closed or hung. */
+export const PROBE_TIMEOUT_MS = 500;
+/** How long one probe answer is reused. */
+export const PROBE_MAX_AGE_MS = 3000;
+
+const probes = new Map<string, { at: number; status: BridgeStatus }>();
+
+/**
+ * The bridge state for availability (status, list): bridgeStatus with a short timeout, reused for a few seconds per
+ * bridge.json (an Editor that starts or restarts writes a new one, so it is probed at once). Without bridge.json nothing
+ * is sent.
+ */
+export async function probeBridge(projectDir: string, opts: { timeoutMs?: number; maxAgeMs?: number } = {}): Promise<BridgeStatus> {
+  let raw = "";
+  try { raw = fs.readFileSync(bridgeFile(projectDir), "utf8"); } catch { return bridgeStatus(projectDir, opts.timeoutMs ?? PROBE_TIMEOUT_MS); }
+  const key = `${canonical(projectDir)}\n${raw}`;
+  const hit = probes.get(key);
+  if (hit && Date.now() - hit.at < (opts.maxAgeMs ?? PROBE_MAX_AGE_MS)) return hit.status;
+  const status = await bridgeStatus(projectDir, opts.timeoutMs ?? PROBE_TIMEOUT_MS);
+  for (const k of probes.keys()) if (k.startsWith(`${canonical(projectDir)}\n`)) probes.delete(k);
+  probes.set(key, { at: Date.now(), status });
+  return status;
+}

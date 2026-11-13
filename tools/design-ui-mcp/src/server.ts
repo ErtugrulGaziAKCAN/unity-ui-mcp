@@ -31,7 +31,8 @@ export interface ServerDeps {
 export function instructions(ctx: ServerContext): string {
   const a = availability(ctx);
   const live = Object.entries(a).filter(([, v]) => v.available).map(([k]) => k);
-  const notYet = Object.entries(a).filter(([, v]) => !v.available);
+  const editor = Object.entries(a).filter(([, v]) => !v.available && v.needsEditor);
+  const notYet = Object.entries(a).filter(([, v]) => !v.available && !v.needsEditor);
   return [
     `design-ui (unity-ui-mcp ${VERSION}) turns HTML screens designed under its kit (Claude Design or any AI) into Unity UI Toolkit`,
     "screens for the Unity project this server was started for, and measures the result against the design.",
@@ -46,6 +47,9 @@ export function instructions(ctx: ServerContext): string {
     "Rules: never edit generated Unity files; never claim a pass that design_ui_verify did not return.",
     "",
     `Live in this version: ${live.join(", ")}.`,
+    ...(editor.length
+      ? ["Live while the Unity Editor bridge answers (otherwise they return isError: Editor not reachable, with the reason):", ...editor.map(([k, v]) => `- ${k}: ${v.note}`)]
+      : []),
     ...(notYet.length
       ? ["Not available yet (they return isError with the reason; do not work around them):", ...notYet.map(([k, v]) => `- ${k}: ${v.note}`)]
       : []),

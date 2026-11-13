@@ -74,10 +74,12 @@ describe("server surface", () => {
     const p = tempProject({ prefer: "editor" });
     p.writeConfig({ unityRunner: { prefer: "editor", captureVia: "editor" } });
     const client = await serverFor(p.dir);
-    expect(client.getInstructions() ?? "").toMatch(/design_ui_verify: the comparison is live, but the Unity capture cannot run: the com\.unity\.design-ui package has no Editor capture/);
+    const instructions = client.getInstructions() ?? "";
+    expect(instructions).toMatch(/design_ui_verify: the comparison is live, but the Unity capture cannot run: the com\.unity\.design-ui package has no Editor capture/);
+    // the Editor route is live only while the bridge answers; the instructions are written once, so they say so
+    expect(instructions).toMatch(/Live while the Unity Editor bridge answers[^\n]*\n- design_ui_import: [^\n]*design_ui_status shows whether it answers/);
+    expect(instructions).not.toMatch(/Live in this version: [^\n]*design_ui_import/);
     const r = await call(client, "design_ui_status");
-    expect(r.data.tools.design_ui_import).toMatchObject({ available: true });
-    expect(r.data.tools.design_ui_import.note).toMatch(/Unity compile in the open Unity Editor through its bridge/);
     expect(r.data.tools.design_ui_verify.available).toBe(false);
     p.writeConfig({ unityRunner: { prefer: "command", command: { import: [], capture: [], kitSync: [] } } });
     const s = await call(await serverFor(p.dir), "design_ui_status");
@@ -85,6 +87,41 @@ describe("server surface", () => {
     expect(s.data.tools.design_ui_import.note).toMatch(/"unityRunner\.command\.import" is not configured/);
     expect(s.data.tools.design_ui_verify.note).toMatch(/"unityRunner\.command\.capture" is not configured/);
     expect(s.data.tools.design_ui_kit_sync.available).toBe(false);
+  });
+
+  it("reports the Editor route live only while the bridge answers, and stays fast when it does not", async () => {
+    const p = tempProject({ prefer: "editor" });
+    p.addScreen("clean-screen", "clean-screen");
+    p.writeConfig({ unityRunner: { prefer: "editor" } });
+    const client = await serverFor(p.dir);
+
+    // no Editor: bridge.json missing
+    const closed = await call(client, "design_ui_status");
+    for (const tool of ["design_ui_import", "design_ui_kit_sync"]) {
+      expect(closed.data.tools[tool], tool).toMatchObject({ available: false });
+      expect(closed.data.tools[tool].note, tool).toMatch(/^Editor not reachable: no Unity Editor bridge for this project/);
+    }
+    expect(closed.text).toMatch(/design_ui_import: Editor not reachable/);
+
+    // bridge.json left behind by an Editor that is gone: refused at once, well under the 500 ms probe limit
+    fs.mkdirSync(path.join(p.dir, "Library", "DesignUi"), { recursive: true });
+    fs.writeFileSync(path.join(p.dir, "Library", "DesignUi", "bridge.json"), JSON.stringify({ port: 9, token: "b".repeat(64), projectPath: p.dir }));
+    const t0 = performance.now();
+    const stale = await call(client, "design_ui_status");
+    const list = await call(client, "design_ui_list");
+    expect(performance.now() - t0).toBeLessThan(1500);
+    expect(stale.data.tools.design_ui_import.note).toMatch(/^Editor not reachable: bridge\.json names port 9 but nothing answers/);
+    expect(list.data.unity.bridge).toBe("not-responding");
+
+    // an open Editor: live, and one probe serves calls a moment apart
+    bridge = await startStubBridge(p.dir);
+    const open = await call(client, "design_ui_status");
+    expect(open.data.tools.design_ui_import).toMatchObject({ available: true });
+    expect(open.data.tools.design_ui_import.note).toMatch(/^live: export .*the Unity compile in the open Unity Editor/);
+    expect(open.data.tools.design_ui_kit_sync).toMatchObject({ available: true });
+    await call(client, "design_ui_list");
+    await call(client, "design_ui_status");
+    expect(bridge.requests.filter((q) => q.path === "/status")).toHaveLength(1);
   });
 
   it("matches the package version", () => {
@@ -258,7 +295,7 @@ describe("design_ui_import", () => {
     p.addScreen("clean-screen", "clean-screen");
     const r = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
     expect(r.isError).toBe(true);
-    expect(r.text).toContain(`Unity Editor bridge not found for ${p.dir}`);
+    expect(r.text).toContain(`Editor not reachable: Unity Editor bridge not found for ${p.dir}`);
     expect(p.runnerCalls()).toEqual([]);
   });
 
@@ -379,6 +416,15 @@ describe("design_ui_kit_sync", () => {
     expect(r.isError).toBe(true);
     expect(r.text).toContain("Not available yet: kit sync arrives with the import pipeline.");
     expect(bridge.requests.some((q) => q.path === "/kit-sync")).toBe(true);
+  });
+
+  it("says the Editor is not reachable when its bridge.json names a port nothing answers on", async () => {
+    const p = tempProject({ prefer: "editor" });
+    fs.mkdirSync(path.join(p.dir, "Library", "DesignUi"), { recursive: true });
+    fs.writeFileSync(path.join(p.dir, "Library", "DesignUi", "bridge.json"), JSON.stringify({ port: 9, token: "c".repeat(64), projectPath: p.dir }));
+    const r = await call(await serverFor(p.dir), "design_ui_kit_sync");
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/Kit sync not run: Editor not reachable: Unity Editor bridge on 127\.0\.0\.1:9 did not answer/);
   });
 
   it("fails when the bridge rejects the token", async () => {

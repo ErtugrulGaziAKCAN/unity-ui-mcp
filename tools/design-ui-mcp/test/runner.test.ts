@@ -2,7 +2,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { findBridge, bridgeStatus } from "../src/bridge.js";
+import { findBridge, bridgeStatus, probeBridge } from "../src/bridge.js";
 import { readConfig } from "../src/config.js";
 import { expandTemplate, runUnity, UnityRunnerError } from "../src/runner.js";
 import { startStubBridge, tempProject, type StubBridge } from "./helpers.js";
@@ -128,6 +128,20 @@ describe("expandTemplate", () => {
   it("rejects unknown or unset placeholders", () => {
     expect(() => expandTemplate(["{nope}"], {})).toThrow(/\{nope\}/);
     expect(() => expandTemplate(["{exportDir}"], {})).toThrow(/\{exportDir\}/);
+  });
+});
+
+describe("probeBridge", () => {
+  it("caches one answer per bridge.json for a few seconds; a new bridge.json is probed again", async () => {
+    const p = tempProject({ prefer: "editor" });
+    expect((await probeBridge(p.dir)).bridge).toBe("not-found");
+    bridge = await startStubBridge(p.dir);
+    expect((await probeBridge(p.dir)).bridge).toBe("connected");
+    expect((await probeBridge(p.dir)).bridge).toBe("connected");
+    expect(bridge.requests.filter((q) => q.path === "/status")).toHaveLength(1);
+    await new Promise((r) => setTimeout(r, 60));
+    expect((await probeBridge(p.dir, { maxAgeMs: 50 })).bridge).toBe("connected");
+    expect(bridge.requests.filter((q) => q.path === "/status")).toHaveLength(2);
   });
 });
 

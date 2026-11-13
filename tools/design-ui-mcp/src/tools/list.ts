@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { bridgeStatus } from "../bridge.js";
+import { probeBridge } from "../bridge.js";
 import { requireConfig, type ServerContext } from "../context.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { listScreens } from "../status.js";
@@ -19,7 +19,7 @@ export function registerList(server: McpServer, ctx: ServerContext): void {
       const cfg = requireConfig(ctx);
       const designRootExists = fs.existsSync(cfg.designRoot);
       const screens = t.sync("screens", () => listScreens(cfg));
-      const unity = await t.async("bridge", () => bridgeStatus(cfg.projectDir));
+      const unity = await t.async("bridge", () => probeBridge(cfg.projectDir));
       const lines = [
         designRootExists
           ? `${screens.length} screen${screens.length === 1 ? "" : "s"} under ${cfg.designRoot}${screens.length ? ":" : " (put each design in its own folder there)."}`
