@@ -7,6 +7,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.TestTools;
+using UnityEngine.TextCore;
 using UnityEngine.TextCore.LowLevel;
 using UnityEngine.UIElements;
 using FontAsset = UnityEngine.TextCore.Text.FontAsset;
@@ -71,63 +72,86 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void LineBox_AnyPositiveRatio_KeyedByItsDigits_OnePerDistinctRatio()
+        public void LineBox_OnePerStyleSize_KeyedByItsRatioAndFontSize()
         {
-            Assert.AreEqual("r125", FontTwinGenerator.LineBox.ForRatio(20.0 / 16).Key);
-            Assert.AreEqual("r13333", FontTwinGenerator.LineBox.ForRatio(16.0 / 12).Key);
-            Assert.AreEqual("r1125", FontTwinGenerator.LineBox.ForRatio(36.0 / 32).Key);
-            Assert.AreEqual("r15", FontTwinGenerator.LineBox.ForRatio(1.5).Key);
-            Assert.IsNull(FontTwinGenerator.LineBox.ForRatio(0));
-            Assert.IsNull(FontTwinGenerator.LineBox.ForRatio(double.NaN));
-            CollectionAssert.AreEqual(new[] { "r125", "r13333" },
-                FontTwinGenerator.LineBox.Of(new[] { 16.0 / 12, 1.25, 32.0 / 24, 60.0 / 48 }).Select(b => b.Key).ToArray());
+            Assert.AreEqual("r125s16", FontTwinGenerator.LineBox.For(16, 20).Key);
+            Assert.AreEqual("r13333s12", FontTwinGenerator.LineBox.For(12, 16).Key);
+            Assert.AreEqual("r1125s32", FontTwinGenerator.LineBox.For(32, 36).Key);
+            Assert.AreEqual("r15s16", FontTwinGenerator.LineBox.For(16, 24).Key);
+            Assert.AreEqual("r1s1p6", FontTwinGenerator.LineBox.For(1.6, 1.6).Key, "a decimal point is written as p, so 1.6 px never reads as 16 px");
+            Assert.IsNull(FontTwinGenerator.LineBox.For(0, 20));
+            Assert.IsNull(FontTwinGenerator.LineBox.For(16, double.NaN));
+            CollectionAssert.AreEqual(new[] { "r125s16", "r125s48", "r13333s12", "r13333s24" },
+                FontTwinGenerator.LineBox.Of(new[] { (12.0, 16.0), (16.0, 20.0), (24.0, 32.0), (48.0, 60.0), (16.0, 20.0) }).Select(b => b.Key).ToArray(),
+                "one per distinct size and line height, ordered by key");
+        }
+
+        /// <summary>
+        /// Chromium's first baseline below the line box top in CSS px (LayoutNG, measured on 396 Inter sizes and line heights:
+        /// docs/findings/text-baselines.md): the font's ascent and descent rounded at the CSS font size, the half-leading floored.
+        /// </summary>
+        static double ChromiumBaseline(FaceInfo f, double size, double line)
+        {
+            double a = Math.Floor(f.ascentLine / f.pointSize * size + 0.5), d = Math.Floor(-f.descentLine / f.pointSize * size + 0.5);
+            return Math.Floor((line - (a + d)) / 2) + a;
+        }
+
+        [TestCase(12, 16, 12)]
+        [TestCase(16, 20, 16)]
+        [TestCase(24, 32, 24)]
+        [TestCase(32, 40, 31)]
+        [TestCase(36, 48, 37)]
+        [TestCase(48, 60, 47)]
+        [TestCase(64, 80, 63)]
+        public void LineBox_Baseline_IsChromiums_ForTheKitStyles(double size, double line, double chromium)
+        {
+            // Chromium's baselines of the kit's text styles in Inter, from the fidelity goldens (CSS px below the line top)
+            var face = FontTwinGenerator.GetOrCreateTwin(FontFixture.Regular, Twins).faceInfo;
+            Assert.AreEqual(chromium, FontTwinGenerator.LineBox.For(size, line).Baseline(face), 1e-9);
+            Assert.AreEqual(chromium, ChromiumBaseline(face, size, line), 1e-9, "the reference formula");
         }
 
         [Test]
-        public void LineBoxVariant_HasTheCssLineBoxFace_AndFallsBackToTheSameRatiosVariants()
+        public void LineBoxVariant_HasTheCssLineBoxFace_AndFallsBackToTheSameSizesVariants()
         {
             var fallback = FontFixture.CreateTmp(FontFixture.BoldTtf, "Box Fallback");
             var bold = FontFixture.CreateTmp(FontFixture.BoldTtf, "Box Bold");
             var tmp = FontFixture.CreateTmp(FontFixture.RegularTtf, "Box Regular");
             FontFixture.SetFallbacks(tmp, fallback);
             FontFixture.SetWeight(tmp, 700, bold);
-            var box = FontTwinGenerator.LineBox.ForRatio(1.25);
+            var box = FontTwinGenerator.LineBox.For(16, 20);
             var variant = FontTwinGenerator.GetOrCreateTwin(tmp, Twins, box);
             var plain = AssetDatabase.LoadAssetAtPath<FontAsset>(Twins + "/Box Regular UITK.asset");
 
-            Assert.AreEqual(Twins + "/Box Regular UITK r125.asset", AssetDatabase.GetAssetPath(variant));
+            Assert.AreEqual(Twins + "/Box Regular UITK r125s16.asset", AssetDatabase.GetAssetPath(variant));
             Assert.IsNotNull(plain, "the plain twin is made too (its face is the variant's source)");
             var f = plain.faceInfo;
             var v = variant.faceInfo;
             Assert.AreEqual(1.25f * f.pointSize, v.lineHeight, 1e-3f, "line height = r × pointSize");
             Assert.Less(v.lineHeight, 1.25f * f.pointSize, "a hair below, so UI Toolkit's ceil keeps the whole line box");
-            var h = (1.25f * f.pointSize - (f.ascentLine - f.descentLine)) / 2;
-            Assert.AreEqual(f.ascentLine + h, v.ascentLine, 1e-3f, "ascent moved up by the half-leading");
-            Assert.AreEqual(f.descentLine - h, v.descentLine, 1e-3f, "descent moved down by the half-leading");
+            Assert.AreEqual(ChromiumBaseline(f, 16, 20) / 16 * f.pointSize, v.ascentLine, 1e-3f, "the baseline where Chromium puts it in a 16/20 line");
+            Assert.AreEqual(v.ascentLine - v.lineHeight, v.descentLine, 1e-3f, "ascent and descent lines span the line box");
             Assert.AreEqual(f.pointSize, v.pointSize);
             Assert.AreEqual(f.capLine, v.capLine, "glyph metrics stay");
-            CollectionAssert.AreEqual(new[] { "Box Fallback UITK r125" }, variant.fallbackFontAssetTable.Select(x => x.name).ToArray(), "same-ratio fallbacks");
-            Assert.AreEqual("Box Bold UITK r125", variant.fontWeightTable[7].regularTypeface.name, "same-ratio weight faces");
+            CollectionAssert.AreEqual(new[] { "Box Fallback UITK r125s16" }, variant.fallbackFontAssetTable.Select(x => x.name).ToArray(), "same-size fallbacks");
+            Assert.AreEqual("Box Bold UITK r125s16", variant.fontWeightTable[7].regularTypeface.name, "same-size weight faces");
 
             // the face survives a forced re-import and a second pass writes nothing new
             AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(variant), ImportAssetOptions.ForceUpdate);
             var again = FontTwinGenerator.GetOrCreateTwin(tmp, Twins, box);
             Assert.AreSame(variant, again);
-            Assert.AreEqual(1.25f * f.pointSize, AssetDatabase.LoadAssetAtPath<FontAsset>(Twins + "/Box Regular UITK r125.asset").faceInfo.lineHeight, 1e-3f);
+            Assert.AreEqual(1.25f * f.pointSize, AssetDatabase.LoadAssetAtPath<FontAsset>(Twins + "/Box Regular UITK r125s16.asset").faceInfo.lineHeight, 1e-3f);
         }
 
         [UnityTest]
         public IEnumerator LineBoxVariant_LabelsAreExactlyTheCssLineBoxTall_WithTheBaselineWhereChromiumPutsIt()
         {
-            // 16 px text in a 20 px CSS line box (ratio 1.25): Chromium puts the baseline at round(ascent) + (20 − round(ascent) − round(descent)) / 2
-            var variant = FontTwinGenerator.GetOrCreateTwin(FontFixture.Regular, Twins, FontTwinGenerator.LineBox.ForRatio(1.25));
+            // 16 px text in a 20 px CSS line box: Chromium lays the baseline out at ChromiumBaseline CSS px below the line top
+            var variant = FontTwinGenerator.GetOrCreateTwin(FontFixture.Regular, Twins, FontTwinGenerator.LineBox.For(16, 20));
             var plain = AssetDatabase.LoadAssetAtPath<FontAsset>(Twins + "/Inter Fixture UITK.asset").faceInfo;
+            double chromium = ChromiumBaseline(plain, 16, 20);
             foreach (var scale in new[] { 1f, 0.75f, 0.5f })
             {
-                double ascent = plain.ascentLine * 16.0 * scale / plain.pointSize, descent = -plain.descentLine * 16.0 * scale / plain.pointSize;
-                double lineBox = 20 * scale;
-                double chromium = (Math.Round(ascent, MidpointRounding.AwayFromZero) + (lineBox - Math.Round(ascent, MidpointRounding.AwayFromZero) - Math.Round(descent, MidpointRounding.AwayFromZero)) / 2) / scale;
-
                 _rt = new RenderTexture(256, 256, 24, RenderTextureFormat.ARGB32);
                 _settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
                 _settings.scaleMode = PanelScaleMode.ConstantPixelSize;
@@ -161,7 +185,8 @@ namespace DesignUi.Editor.Tests
                 {
                     var lines = (Newtonsoft.Json.Linq.JArray)measured["elements"][l.name]["lines"];
                     Assert.AreEqual(int.Parse(l.name.Substring(1)), lines.Count, l.name + " lines");
-                    Assert.AreEqual(10 + chromium, (double)lines[0]["baseline"] / scale, 0.5, l.name + ": first baseline at scale " + scale);
+                    // the label's top lands on the device grid (Yoga); the baseline is Chromium's below it
+                    Assert.AreEqual((double)measured["elements"][l.name]["y"] + chromium * scale, (double)lines[0]["baseline"], 0.01, l.name + ": first baseline at scale " + scale + " (device px)");
                     for (int k = 1; k < lines.Count; k++)
                         Assert.AreEqual(20 * scale, (double)lines[k]["baseline"] - (double)lines[k - 1]["baseline"], 2e-3, l.name + ": line pitch");
                 }

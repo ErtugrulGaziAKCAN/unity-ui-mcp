@@ -130,7 +130,8 @@ bold). The first, smoothing-off comparison of section 1 gave up to 1.26 at 9 px.
   1, 2, 5 and 10 lines and scales 1, 0.75 and 0.5); the sum is not. Only line boxes that are multiples of 4 px are whole
   at both scales. Kit sync now rejects a text-style table whose font sizes or line heights are not whole device pixels
   at every viewport the profile declares, naming the viewport and the nearest sizes that fit; the kit's table uses
-  multiples of 4 px (ratios 1.25 and 4/3), and every ratio of the table gets its own line-box twin.
+  multiples of 4 px (ratios 1.25 and 4/3), and every size of the table gets its own line-box twin (one per size since
+  the baselines follow Chromium's rounding, [text-baselines.md](text-baselines.md)).
 
 ## 6. Kerning on the first layout
 

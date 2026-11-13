@@ -214,13 +214,13 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void Run_AnyRatioThatIsWholeAtEveryScale_GetsItsOwnLineBoxTwin()
+        public void Run_AnyStyleThatIsWholeAtEveryScale_GetsItsOwnLineBoxTwin()
         {
             var kit = Kit("{ \"x\": { \"fontSize\": 16, \"lineHeight\": 24, \"weight\": 400 } }"); // ratio 1.5
             var profile = Profile();
             var r = KitSync.Run(profile, kit, Resolver(profile));
             Assert.IsTrue(r.Ok, Errors(r));
-            CollectionAssert.Contains(r.Twins.ToArray(), FontFixture.TwinFolder + "/Kit Regular UITK r15.asset");
+            CollectionAssert.Contains(r.Twins.ToArray(), FontFixture.TwinFolder + "/Kit Regular UITK r15s16.asset");
         }
 
         [Test]
@@ -229,7 +229,7 @@ namespace DesignUi.Editor.Tests
             var profile = Profile();
             var r = KitSync.Run(profile, Kit(), Resolver(profile));
             Assert.IsTrue(r.Ok, Errors(r));
-            foreach (var key in new[] { "r125", "r13333" })
+            foreach (var key in new[] { "r13333s12", "r125s16", "r13333s24", "r125s32", "r125s48", "r125s64" })
                 CollectionAssert.Contains(r.Twins.ToArray(), FontFixture.TwinFolder + "/Kit Regular UITK " + key + ".asset");
         }
 

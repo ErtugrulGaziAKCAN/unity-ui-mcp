@@ -24,37 +24,37 @@ namespace DesignUi.Editor
             return null;
         }
 
-        /// <summary>The line boxes of a table: one per distinct <c>lineHeight / fontSize</c> ratio of its styles.</summary>
+        /// <summary>The line boxes of a table: one per distinct font size and line height of its styles.</summary>
         public static IReadOnlyList<FontTwinGenerator.LineBox> LineBoxesOf(string path)
         {
-            var ratios = new List<double>();
+            var sizes = new List<(double, double)>();
             foreach (var p in Read(path))
             {
-                var size = (p.Value as JObject)?["fontSize"];
-                var line = (p.Value as JObject)?["lineHeight"];
-                double s = size != null && (size.Type == JTokenType.Float || size.Type == JTokenType.Integer) ? size.Value<double>() : 0;
-                double l = line != null && (line.Type == JTokenType.Float || line.Type == JTokenType.Integer) ? line.Value<double>() : 0;
-                if (s > 0 && l > 0) ratios.Add(l / s);
+                var (s, l) = SizeAndLine(p.Value as JObject);
+                if (s > 0 && l > 0) sizes.Add((s, l));
             }
-            return FontTwinGenerator.LineBox.Of(ratios);
+            return FontTwinGenerator.LineBox.Of(sizes);
         }
 
         /// <summary>
-        /// Style name to the key of its line-box variant (<see cref="FontTwinGenerator.LineBox"/>): the ratio of its
-        /// <c>lineHeight / fontSize</c>, or null for a style without a positive size and line height.
+        /// Style name to the key of its line-box variant (<see cref="FontTwinGenerator.LineBox"/>): its font size and line
+        /// height, or null for a style without a positive size and line height.
         /// </summary>
         public static IReadOnlyDictionary<string, string> LoadLineBoxes(string path)
         {
             var result = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var p in Read(path))
             {
-                var size = (p.Value as JObject)?["fontSize"];
-                var line = (p.Value as JObject)?["lineHeight"];
-                double s = size != null && (size.Type == JTokenType.Float || size.Type == JTokenType.Integer) ? size.Value<double>() : 0;
-                double l = line != null && (line.Type == JTokenType.Float || line.Type == JTokenType.Integer) ? line.Value<double>() : 0;
-                result[p.Key] = s > 0 && l > 0 ? FontTwinGenerator.LineBox.ForRatio(l / s)?.Key : null;
+                var (s, l) = SizeAndLine(p.Value as JObject);
+                result[p.Key] = FontTwinGenerator.LineBox.For(s, l)?.Key;
             }
             return result;
+        }
+
+        static (double size, double line) SizeAndLine(JObject style)
+        {
+            double Num(JToken t) => t != null && (t.Type == JTokenType.Float || t.Type == JTokenType.Integer) ? t.Value<double>() : 0;
+            return (Num(style?["fontSize"]), Num(style?["lineHeight"]));
         }
 
         static JObject Read(string path)

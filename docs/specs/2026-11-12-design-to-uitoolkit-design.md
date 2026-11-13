@@ -297,8 +297,10 @@ referenced from USS. The twin generator creates one UI Toolkit FontAsset per res
 source file, matching sampling point size, padding, atlas size and render mode, and reproducing the fallback order
 and weight table. Twins are always **dynamic**, because the advanced text generator (needed for Arabic shaping and
 bidirectional text) does not accept static font assets. Twins regenerate when TMP Settings or the per-locale mapping
-change. The project keeps one font configuration: its TMP setup. Each twin's face carries the kit's CSS line box
-(`faceInfo.lineHeight = r × pointSize`, half-leading folded into ascent and descent; r 1.25 or 4/3, §5.3 text styles).
+change. The project keeps one font configuration: its TMP setup. Each twin has one variant per text-style size whose face
+carries that style's CSS line box (`faceInfo.lineHeight = r × pointSize`, r 1.25 or 4/3, §5.3 text styles) with the
+ascent line where Chromium lays out the baseline: `floor((L − round(a·s) − round(d·s)) / 2) + round(a·s)` CSS px below
+the line top, the font's ascent and descent rounded at the font size (docs/findings/text-baselines.md).
 
 **Kerning.** A dynamic twin adds a glyph the moment text first needs it, but that glyph's kerning pairs only in its
 update queue, after the text was laid out, and UI Toolkit keeps that unkerned first layout (up to 46 px wider on a

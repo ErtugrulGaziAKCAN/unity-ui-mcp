@@ -17,12 +17,14 @@ namespace DesignUi.Editor.Tests
     /// style of the repository's <c>design-kit/text-styles.json</c> (both ratios, regular and bold) at 1, 2, 5 and 10 lines,
     /// laid out on a real panel at the viewport scales 1, 0.75 and 0.5 with its line-box font twin, is
     /// <c>n × lineHeight</c> tall and has every line's baseline where Chromium puts it, both within the comparison's
-    /// <c>boxPx</c> / <c>baselinePx</c> (device px, <c>tools/design-export/fidelity-thresholds.json</c>). Chromium's first
-    /// baseline: <c>round(ascent) + (L − round(ascent) − round(descent)) / 2</c> in device px, with the font's own ascent and
-    /// descent; each further line one line box lower. Each style also sets one line with kerned pairs whose width must be
+    /// <c>boxPx</c> (device px, <c>tools/design-export/fidelity-thresholds.json</c>) and every line's baseline exactly where
+    /// Chromium lays it out (within 0.01 device px). Chromium's first baseline, in CSS px below the line top (LayoutNG, measured
+    /// on 396 Inter sizes and line heights, docs/findings/text-baselines.md):
+    /// <c>floor((L − round(ascent) − round(descent)) / 2) + round(ascent)</c>, ascent and descent the font's own at the CSS font
+    /// size; the device baseline is that times the scale, each further line one line box lower. Each style also sets one line with kerned pairs whose width must be
     /// Chromium's (<c>Data/chromium-kerning-line.json</c>, from the exporter's goldens) within <c>boxPx</c> on its first
     /// layout: its characters reach the twins through <see cref="DesignText.Prepare"/> before it is laid out, as a bound text's
-    /// do. The line-box variants are the table's own ratios. Skips when the package is not inside the repository.
+    /// do. The line-box variants are the table's own sizes. Skips when the package is not inside the repository.
     /// </summary>
     public class LineBoxStyleTableTests
     {
@@ -30,6 +32,8 @@ namespace DesignUi.Editor.Tests
         const string Twins = FontFixture.KeptTwinFolder;
         static readonly int[] LineCounts = { 1, 2, 5, 10 };
         static readonly float[] Scales = { 1f, 0.75f, 0.5f };
+        /// <summary>The line-box twins put every baseline where Chromium lays it out; float arithmetic only.</summary>
+        const double ExactBaseline = 0.01;
 
         GameObject _go;
         PanelSettings _settings;
@@ -68,15 +72,15 @@ namespace DesignUi.Editor.Tests
                 yield break;
             }
             var thresholds = JObject.Parse(File.ReadAllText(thresholdsPath));
-            double boxPx = (double)thresholds["boxPx"], baselinePx = (double)thresholds["baselinePx"];
+            double boxPx = (double)thresholds["boxPx"];
             var styles = JObject.Parse(File.ReadAllText(stylesPath)).Properties()
                 .Where(p => !p.Name.StartsWith("$", StringComparison.Ordinal))
                 .Select(p => new Style { Name = p.Name, Size = (double)p.Value["fontSize"], Line = (double)p.Value["lineHeight"], Weight = (int?)p.Value["weight"] ?? 400 })
                 .ToList();
             Assert.IsNotEmpty(styles);
-            // every ratio the table holds gets its line-box variant (table-driven: no fixed ratio list)
-            var ratios = styles.Select(s => FontTwinGenerator.LineBox.ForRatio(s.Line / s.Size)).ToList();
-            for (int i = 0; i < styles.Count; i++) Assert.IsNotNull(ratios[i], styles[i].Name + ": " + styles[i].Line + "/" + styles[i].Size + " is no line box");
+            // every size the table holds gets its line-box variant (table-driven: no fixed list)
+            var ratios = styles.Select(s => FontTwinGenerator.LineBox.For(s.Size, s.Line)).ToList();
+            for (int i = 0; i < styles.Count; i++) Assert.IsNotNull(ratios[i], styles[i].Name + ": " + styles[i].Size + "/" + styles[i].Line + " is no line box");
             var boxes = KitTextStyles.LineBoxesOf(stylesPath);
             CollectionAssert.AreEquivalent(ratios.Select(r => r.Key).Distinct().ToList(), boxes.Select(b => b.Key).ToList(), "the table's line boxes");
 
@@ -143,11 +147,11 @@ namespace DesignUi.Editor.Tests
                 foreach (var (label, style, lines) in labels)
                 {
                     var face = style.Weight >= 700 ? plainBold : plain;
-                    double dev = style.Size * scale, lineBox = style.Line * scale;
-                    double ascent = Math.Round(face.ascentLine * dev / face.pointSize, MidpointRounding.AwayFromZero);
-                    double descent = Math.Round(-face.descentLine * dev / face.pointSize, MidpointRounding.AwayFromZero);
+                    double lineBox = style.Line * scale;
+                    double ascent = Math.Floor(face.ascentLine * style.Size / face.pointSize + 0.5);
+                    double descent = Math.Floor(-face.descentLine * style.Size / face.pointSize + 0.5);
                     double top = (8 + 8 * styles.IndexOf(style)) * scale;
-                    double chromiumFirst = top + ascent + (lineBox - ascent - descent) / 2;
+                    double chromiumFirst = top + (Math.Floor((style.Line - ascent - descent) / 2) + ascent) * scale;
                     var el = measured["elements"][label.name];
                     var where = style.Name + " (" + style.Size + "/" + style.Line + ", " + style.Weight + ") × " + lines + " lines at scale " + scale;
                     double h = (double)el["h"], y = (double)el["y"];
@@ -160,8 +164,8 @@ namespace DesignUi.Editor.Tests
                     {
                         double expected = chromiumFirst + k * lineBox, got = (double)measuredLines[k]["baseline"];
                         worstB = Math.Max(worstB, Math.Abs(got - expected));
-                        if (Math.Abs(got - expected) > baselinePx + 1e-6)
-                            failures.Add(where + ": line " + (k + 1) + " baseline " + got.ToString("0.###") + " device px, Chromium " + expected.ToString("0.###") + " (limit ±" + baselinePx + ")");
+                        if (Math.Abs(got - expected) > ExactBaseline)
+                            failures.Add(where + ": line " + (k + 1) + " baseline " + got.ToString("0.###") + " device px, Chromium " + expected.ToString("0.###") + " (limit ±" + ExactBaseline + ")");
                     }
                 }
                 double worstW = 0;
