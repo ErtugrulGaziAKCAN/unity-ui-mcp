@@ -2,8 +2,10 @@
 body{margin:0}
 .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16.515625px;line-height:20px;color:#ffffff;background-color:#0b1f26}
 p{margin:0}
+.card{width:200px;height:100px;flex-shrink:0;box-shadow:0px 2px 4px rgba(0, 0, 0, 0.5);transition:box-shadow 200ms ease}
+.card:hover{box-shadow:0px 8px 16px rgba(0, 0, 0, 0.5)}
 </style></head>
 <body><div class="screen" data-u-screen="lint.sample">
 <p data-l10n="lint.sample.title" data-en="Title">Başlık</p>
-<div style="width:10px;height:10px;box-shadow:inset 0px 0px 4px #000000"></div>
+<div class="card" data-u-id="card"></div>
 </div></body></html>

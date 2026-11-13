@@ -72,8 +72,8 @@ export function linearAngle(prelude: string | null, box: Box): number | null {
   return ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
 }
 
-interface Center { x: number; y: number }
-function radialCenter(prelude: string | null, box: Box, ctx: LengthContext): Center | null {
+export interface Center { x: number; y: number }
+export function radialCenter(prelude: string | null, box: Box, ctx: LengthContext): Center | null {
   const at = prelude ? /\bat\b(.*)$/i.exec(prelude) : null;
   if (!at) return { x: box.w / 2, y: box.h / 2 };
   const t = splitTopLevel(at[1].trim().toLowerCase(), " ");

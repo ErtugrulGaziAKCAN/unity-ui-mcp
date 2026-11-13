@@ -49,6 +49,20 @@ describe("IR contract", () => {
     expect(flat.some((n) => Object.keys(n.style).some((k) => k.startsWith("anc(")))).toBe(true);
     expect(flat.some((n) => Object.keys(n.attrTexts).length)).toBe(true);
     expect(flat.some((n) => n.initial)).toBe(true);
+    // baked effects per layer: a hover lift with its own shadow, a layer without one, inset shadows, a state gradient
+    expect(flat.some((n) => n.shadowLayers.hover?.kind === "shadow9" && Object.values(n.shadowLayers).includes(null))).toBe(true);
+    expect(flat.some((n) => n.insetShadow?.kind === "shadow9" && Object.keys(n.insetShadowLayers).length)).toBe(true);
+    expect(flat.some((n) => Object.values(n.backgroundLayers).some((a: any) => a?.kind === "svg" && a.stopGap > 0))).toBe(true);
+    expect(flat.some((n) => n.background?.stopGap > 0)).toBe(true);
+  });
+  it("validates the per-layer effects", () => {
+    const bad = (edit: (ir: any) => void) => { const ir = contract("ir-sample.json"); edit(ir); return validateIr(ir).length; };
+    expect(bad((ir) => { ir.root.children[1].shadowLayers["hover+"] = null; })).toBeGreaterThan(0);
+    expect(bad((ir) => { ir.root.children[1].shadowLayers.focus = ir.root.background; })).toBeGreaterThan(0);
+    expect(bad((ir) => { ir.root.backgroundLayers.hover = { ...ir.root.background, stopGap: -1 }; })).toBeGreaterThan(0);
+    expect(bad((ir) => { delete ir.root.insetShadowLayers; })).toBeGreaterThan(0);
+    expect(bad((ir) => { ir.root.insetShadow = { ...ir.root.children[1].shadow, stopGap: 0.5 }; })).toBeGreaterThan(0);
+    expect(bad((ir) => { ir.root.children[1].shadowLayers.focus = null; ir.root.backgroundLayers["anc(card):class:is-on"] = null; })).toBe(0);
   });
   it("accepts the layer-key grammar and rejects malformed keys and per-kind animation fields", () => {
     const ir = contract("ir-sample.json");

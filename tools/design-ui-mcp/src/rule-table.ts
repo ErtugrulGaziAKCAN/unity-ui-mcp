@@ -17,7 +17,7 @@ export const RULE_SUMMARIES: Record<string, { when: string; fix: string }> = {
   "U-CSS-011": { when: "`gap` on a wrapping flex container", fix: "margins on the items" },
   "U-CSS-012": { when: "`@media` features other than min/max-width and min/max-aspect-ratio, media types other than screen/all, `not`", fix: "the allowed features only" },
   "U-CSS-013": { when: "`@keyframes` animating properties other than transform, translate, rotate, scale, opacity and colours", fix: "animate allowed properties" },
-  "U-CSS-014": { when: "`inset` box-shadow", fix: "an outer shadow or a border" },
+  "U-CSS-014": { when: "a transition of `box-shadow` or `background-image`, a url() image beside another image, a gradient that does not fill the element or uses a colour space", fix: "transition opacity or transform; one image per element; gradients over the whole element in sRGB stops" },
   "U-CSS-015": { when: "a `filter` function not enabled in the kit (`filterFunctions`)", fix: "remove the filter" },
   "U-CSS-016": { when: "text size, line height or weight that is not a kit text style", fix: "the nearest kit text style (see Text styles)" },
   "U-CSS-017": { when: "`position: fixed/sticky`, `float`", fix: "absolute positioning or flex" },

@@ -69,7 +69,7 @@ const PROBES: Record<string, string[]> = {
   "07-display-table": ["U-CSS-023", "U-CSS-029"], "08-justify-contents": ["U-CSS-023"], "09-property-calc": ["U-CSS-028"],
   "10-iframe": ["U-CSS-029"], "11-common-resets": [], "12-font-shorthand": [], "13-animation-shorthand": [],
   "14-misc-hints": [], "15-inline-svg": [], "16-link-flex-item": ["U-CSS-026"], "17-margin-collapse": ["U-CSS-030"], "18-br": [],
-  "19-mixed-content": ["U-CSS-030", "U-MRK-004"], "20-object-fit-bg": ["U-CSS-023"],
+  "19-mixed-content": ["U-CSS-030", "U-MRK-004"], "20-object-fit-bg": [],
   "21-native-controls": ["U-CSS-016", "U-CSS-026", "U-CSS-029", "U-MRK-004"], "22-input-placeholder": ["U-CSS-026", "U-MRK-007"],
   "23-ua-color-hidden": ["U-CSS-016", "U-FONT-003"], "24-text-shadow-multi": ["U-CSS-023"], "25-italic-no-face": ["U-FONT-001"],
   "26-letter-em-logical": ["U-CSS-023"], "27-gradient-hint": ["U-CSS-022"], "28-transform-centre": ["U-CSS-025"],

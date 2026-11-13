@@ -195,7 +195,8 @@
         "width",
         "height",
         "slice",
-        "tint"
+        "tint",
+        "stopGap"
       ],
       "properties": {
         "kind": {
@@ -234,11 +235,24 @@
               "minItems": 4,
               "maxItems": 4
             }
-          ]
+          ],
+          "description": "9-slice insets in image pixels, CSS box order: top, right, bottom, left."
         },
         "tint": {
           "type": "boolean",
           "description": "SVG painted with currentColor, written white: tinted with the node's color per layer."
+        },
+        "stopGap": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ],
+          "description": "Baked gradient: smallest distance between consecutive colour stops of different colours, as a fraction of the gradient line (U-CSS-022); null for other assets."
         }
       }
     },
@@ -255,6 +269,10 @@
         "asset",
         "background",
         "shadow",
+        "shadowLayers",
+        "insetShadow",
+        "insetShadowLayers",
+        "backgroundLayers",
         "attrTexts",
         "initial",
         "bind",
@@ -328,7 +346,25 @@
             {
               "$ref": "#/$defs/asset"
             }
-          ]
+          ],
+          "description": "Base layer's background image: a url() image or the baked SVG of its gradients."
+        },
+        "backgroundLayers": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(base|(bp:[^+()]+|state:[^+()]+|class:[^+()]+|anc\\([^()+]+\\):(hover|active|focus|disabled|checked|class:[^+()]+)|hover|active|focus|disabled|checked)(\\+(bp:[^+()]+|state:[^+()]+|class:[^+()]+|anc\\([^()+]+\\):(hover|active|focus|disabled|checked|class:[^+()]+)|hover|active|focus|disabled|checked))*)$"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/asset"
+              }
+            ]
+          },
+          "description": "Layer key -> background image while exactly that layer holds, when it differs from the layers inside it; null: none."
         },
         "shadow": {
           "oneOf": [
@@ -338,7 +374,53 @@
             {
               "$ref": "#/$defs/shadow"
             }
-          ]
+          ],
+          "description": "Base layer's outer box-shadows baked into one 9-slice, drawn behind the element."
+        },
+        "shadowLayers": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(base|(bp:[^+()]+|state:[^+()]+|class:[^+()]+|anc\\([^()+]+\\):(hover|active|focus|disabled|checked|class:[^+()]+)|hover|active|focus|disabled|checked)(\\+(bp:[^+()]+|state:[^+()]+|class:[^+()]+|anc\\([^()+]+\\):(hover|active|focus|disabled|checked|class:[^+()]+)|hover|active|focus|disabled|checked))*)$"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/shadow"
+              }
+            ]
+          },
+          "description": "Layer key -> outer shadow while exactly that layer holds, when it differs; null: none."
+        },
+        "insetShadow": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/shadow"
+            }
+          ],
+          "description": "Base layer's inset box-shadows baked into one 9-slice over the padding box, drawn above the background and below the content."
+        },
+        "insetShadowLayers": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(base|(bp:[^+()]+|state:[^+()]+|class:[^+()]+|anc\\([^()+]+\\):(hover|active|focus|disabled|checked|class:[^+()]+)|hover|active|focus|disabled|checked)(\\+(bp:[^+()]+|state:[^+()]+|class:[^+()]+|anc\\([^()+]+\\):(hover|active|focus|disabled|checked|class:[^+()]+)|hover|active|focus|disabled|checked))*)$"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/shadow"
+              }
+            ]
+          },
+          "description": "Layer key -> inset shadow while exactly that layer holds, when it differs; null: none."
         },
         "bind": {
           "type": [
@@ -447,7 +529,8 @@
         "height",
         "slice",
         "offset",
-        "tint"
+        "tint",
+        "stopGap"
       ],
       "properties": {
         "kind": {
@@ -475,13 +558,18 @@
             "minimum": 0
           },
           "minItems": 4,
-          "maxItems": 4
+          "maxItems": 4,
+          "description": "9-slice insets in image pixels, CSS box order: top, right, bottom, left."
         },
         "offset": {
-          "$ref": "#/$defs/rect"
+          "$ref": "#/$defs/rect",
+          "description": "The image's rect relative to the element's border box (x, y, w, h): drawn at (x + offset.x, y + offset.y) with size (w + offset.w, h + offset.h), CSS px. Inset shadows: the padding box."
         },
         "tint": {
           "const": false
+        },
+        "stopGap": {
+          "type": "null"
         }
       }
     },

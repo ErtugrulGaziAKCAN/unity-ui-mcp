@@ -188,7 +188,7 @@ describe("buildIr: kinds, assets and external regions", () => {
     const logo = byId(r.ir.root, "logo");
     const sha = crypto.createHash("sha256").update(fs.readFileSync(fx("assets/logo.png"))).digest("hex");
     expect(logo.kind).toBe("image");
-    expect(logo.asset).toEqual({ kind: "image", file: `assets/${sha}.png`, sha256: sha, width: 1, height: 1, slice: null, tint: false });
+    expect(logo.asset).toEqual({ kind: "image", file: `assets/${sha}.png`, sha256: sha, width: 1, height: 1, slice: null, tint: false, stopGap: null });
     expect(fs.readFileSync(path.join(r.outDir, logo.asset!.file))).toEqual(fs.readFileSync(fx("assets/logo.png")));
     expect(logo.style.base).toMatchObject({ width: "64px", height: "32px", "overflow-x": "clip", "overflow-y": "clip" });
     const bg = byId(r.ir.root, "bg");

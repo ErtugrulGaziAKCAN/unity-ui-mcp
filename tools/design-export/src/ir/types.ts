@@ -10,9 +10,22 @@ export type StyleMap = Record<string, string>;
 export type StyleLayers = Record<string, StyleMap>;
 /** `style`: the kit text style the text matches (text-styles.json name), or null. */
 export interface IrText { key: string | null; tr: string; en: string | null; args: string[]; rich: boolean; style: string | null }
-/** `tint`: an SVG painted with currentColor, written white; the compiler tints it with the node's `color` in each layer. */
-export interface IrAsset { kind: 'image' | 'svg' | 'shadow9'; file: string; sha256: string; width: number; height: number; slice: [number, number, number, number] | null; tint: boolean }
+/**
+ * `tint`: an SVG painted with currentColor, written white; the compiler tints it with the node's `color` in each layer.
+ * `slice`: 9-slice insets in image pixels, CSS box order top, right, bottom, left (shadows), else null.
+ * `stopGap`: a baked gradient (SVG of CSS gradients): the smallest distance between two consecutive colour stops of
+ * different colours, as a fraction of the gradient line (U-CSS-022 needs ≥ 1/64 for the importer's 64-step ramp); null
+ * for every other asset and for gradients without a colour change.
+ */
+export interface IrAsset { kind: 'image' | 'svg' | 'shadow9'; file: string; sha256: string; width: number; height: number; slice: [number, number, number, number] | null; tint: boolean; stopGap: number | null }
 export interface BoxRect { x: number; y: number; w: number; h: number }
+/**
+ * A baked box-shadow: a 9-slice PNG (`slice` always set) drawn into the rect (x + offset.x, y + offset.y, w + offset.w,
+ * h + offset.h) of the element's border box (x, y, w, h), in CSS px. Outer shadows are drawn behind the element and are
+ * transparent under its border box (CSS clips them there); inset shadows are drawn inside the element, above its
+ * background and below its border and content, and their rect is the padding box.
+ */
+export type IrShadow = IrAsset & { offset: BoxRect };
 /** One keyframe: offset 0..1, the values it sets, and the easing of the segment that starts here (null: the animation's). */
 export interface IrKeyframe { offset: number; values: StyleMap; easing: string | null }
 /**
@@ -45,10 +58,26 @@ export interface IrNode {
   text: IrText | null;
   /** Content image or svg. */
   asset: IrAsset | null;
-  /** Baked gradient (SVG). */
+  /**
+   * The base layer's background image: a url() image or the baked SVG of its CSS gradients (several gradients are
+   * one SVG, painted in CSS order; its size is the element's border box at the reference viewport, the gradient laid
+   * out for the padding box). `background-image` stays in the style layers only for url() images and none (their
+   * size, repeat and position stay there too); gradients appear only here.
+   */
   background: IrAsset | null;
-  /** Baked 9-slice shadow; offset is relative to the element, in device-independent CSS px. */
-  shadow: (IrAsset & { offset: BoxRect }) | null;
+  /**
+   * Layer key (as in `style`) → the background image while exactly that layer holds, when it differs from what the
+   * layers inside it give (another gradient or image, a gradient re-baked for the layer's box); null: no image.
+   */
+  backgroundLayers: Record<string, IrAsset | null>;
+  /** The base layer's outer box-shadows, all baked into one 9-slice image; `box-shadow` never appears in `style`. */
+  shadow: IrShadow | null;
+  /** Layer key → the outer shadow while exactly that layer holds, when it differs (e.g. a hover lift); null: none. */
+  shadowLayers: Record<string, IrShadow | null>;
+  /** The base layer's inset box-shadows, baked into one 9-slice image for the padding box. */
+  insetShadow: IrShadow | null;
+  /** Layer key → the inset shadow while exactly that layer holds, when it differs; null: none. */
+  insetShadowLayers: Record<string, IrShadow | null>;
   /** Text in attributes (placeholder, title, alt, aria-label), each with its own key. */
   attrTexts: Record<string, IrText>;
   /** Form controls: the pseudo-states the markup starts in (disabled/checked attributes); null for other elements. */

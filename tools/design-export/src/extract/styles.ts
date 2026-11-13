@@ -1,9 +1,9 @@
 import type { StyleLayers } from "../ir/types.js";
 import { CSS_SUPPORT_DATA, cssSupport } from "../lint/allowed-css.js";
-import { CSS_WIDE, px, resolveVars, type SnapDecl } from "../lint/css-values.js";
+import { CSS_WIDE, LENGTH_RE, px, resolveVars, splitTopLevel, type SnapDecl } from "../lint/css-values.js";
 import { stateAncestor } from "../lint/ancestors.js";
 import { breakpointsOf, MediaError, type Breakpoint } from "../lint/resolve/media.js";
-import { CORNERS, cornerProperty, resolveRadii, type Corner } from "../lint/resolve/radius.js";
+import { CORNERS, cornerProperty, lengthPx, resolveRadii, type Corner } from "../lint/resolve/radius.js";
 import { splitTransform, type TransformSplit } from "../lint/resolve/transform.js";
 import { declsAt, lookup, sourcesOf } from "../lint/rules/util.js";
 import { DYNAMIC_PSEUDO_CLASSES } from "../lint/selectors.js";
@@ -157,6 +157,30 @@ function sheetUrl(label: string, docUrl: string | undefined): string | undefined
   return DESIGN_ORIGIN + "/" + label.split("/").map(encodeURIComponent).join("/");
 }
 
+/**
+ * One text shadow as `<x>px <y>px <blur>px <colour>` (USS order; blur 0 and the element's colour when omitted, colours
+ * #rrggbb or rgba()); `none` stays. Throws on a list (UI Toolkit draws one text shadow; lint U-CSS-023).
+ */
+export function normalizeTextShadow(value: string, color: string, ctx: { fontSize?: number; rootFontSize?: number } = {}, where = "text-shadow"): string {
+  const v = value.trim();
+  if (/^none$/i.test(v)) return "none";
+  const items = splitTopLevel(v, ",");
+  if (items.length !== 1) throw new Error(`${where}: text-shadow ${v}: UI Toolkit draws one text shadow`);
+  const lens: number[] = [];
+  const rest: string[] = [];
+  for (const t of splitTopLevel(items[0], " ")) {
+    if (LENGTH_RE.test(t)) {
+      const n = lengthPx(t, 0, { fontSize: ctx.fontSize ?? 16, rootFontSize: ctx.rootFontSize ?? 16 });
+      if (n === null) throw new Error(`${where}: text-shadow length ${t} cannot be resolved`);
+      lens.push(n);
+    } else rest.push(t);
+  }
+  if (lens.length < 2 || lens.length > 3) throw new Error(`${where}: text-shadow ${v} is not one shadow`);
+  const c = rest.join(" ");
+  const col = !c || /^currentcolor$/i.test(c) ? color : normalizeColor(c);
+  return `${fmt(lens[0])}px ${fmt(lens[1])}px ${fmt(lens[2] ?? 0)}px ${col}`;
+}
+
 // ---- cascade ------------------------------------------------------------------------------------------------
 
 export interface Cand { prop: string; entry: Entry; weight: number; spec: [number, number, number]; order: number; dims: string[]; key: string }
@@ -166,7 +190,7 @@ const winner = (pool: Cand[]) => pool.reduce((m, c) => (better(c, m) >= 0 ? c : 
 const MAX_UNION_SOURCES = 8;
 
 /** Unions of two or more of the given dimension sets that can hold at once (co-active layers). */
-function unions(sets: string[][], bps: ReadonlyMap<string, Breakpoint>): string[][] {
+export function unions(sets: string[][], bps: ReadonlyMap<string, Breakpoint>): string[][] {
   const out = new Map<string, string[]>();
   const n = sets.length;
   if (n < 2) return [];
@@ -482,7 +506,8 @@ export class StyleExtractor {
     return this.ctx.boxes?.get(key)?.get(i) ?? this.baseBox(i);
   }
 
-  private baseBox(i: number): Size | null {
+  /** Untransformed border box in the default state (else the first layer that shows the element), or null. */
+  baseBox(i: number): Size | null {
     const e = this.s.elements[i];
     if (e.size) return e.size;
     for (const k of Array.from(this.ctx.boxes?.keys() ?? []).sort()) { const b = this.ctx.boxes!.get(k)!.get(i); if (b) return b; }
@@ -541,6 +566,12 @@ export class StyleExtractor {
         }
         fix(layer, dims);
       }
+    }
+
+    // text-shadow: the one shadow USS draws, as "x y blur colour" (lint U-CSS-023 rejects a list)
+    for (const [name, layer] of out) {
+      const en = layer.get("text-shadow");
+      if (en) layer.set("text-shadow", { ...en, value: normalizeTextShadow(en.value, colorAt(dimsOf(name)), { fontSize: px(e.computed["font-size"]) ?? undefined, rootFontSize: s.rootFontSize }, e.path) });
     }
 
     // transform → translate / rotate / scale, against the layer's box

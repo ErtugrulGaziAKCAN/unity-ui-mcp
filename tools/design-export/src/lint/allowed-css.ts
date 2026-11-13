@@ -117,6 +117,7 @@ export const CSS_SUPPORT_DATA: CssSupportData = {
     // paint
     "color": ty("direct", ["color"]),
     "background-color": ty("direct", ["color"]),
+    // gradients are baked to SVG, url() images become assets (U-CSS-014: what cannot be baked, U-CSS-022: hard stops)
     "background-image": { handling: "dropped", keywords: ["none"], list: true, rule: "U-CSS-022" },
     // url() backgrounds become IR background assets; their size, repeat and position stay in the style layers
     "background-size": kw("direct", ["auto", "cover", "contain"], { types: LEN, list: true }),
@@ -131,7 +132,11 @@ export const CSS_SUPPORT_DATA: CssSupportData = {
     "border-bottom-style": { handling: "dropped", rule: "U-CSS-021" }, "border-left-style": { handling: "dropped", rule: "U-CSS-021" },
     "border-top-left-radius": ty("direct", LEN, { rule: "U-CSS-020" }), "border-top-right-radius": ty("direct", LEN, { rule: "U-CSS-020" }),
     "border-bottom-right-radius": ty("direct", LEN, { rule: "U-CSS-020" }), "border-bottom-left-radius": ty("direct", LEN, { rule: "U-CSS-020" }),
+    // baked by the exporter (outer and inset shadows, per layer); U-CSS-014 rejects what cannot be baked
     "box-shadow": { handling: "dropped", rule: "U-CSS-014" },
+    // content images: fill → stretch-to-fill, contain → scale-to-fit, cover → scale-and-crop (-unity-background-scale-mode), centred
+    "object-fit": kw("lowered", ["fill", "contain", "cover"]),
+    "object-position": kw("dropped", ["center", "50%"]),
     "filter": { handling: "error", rule: "U-CSS-015" },
     "backdrop-filter": { handling: "error", rule: "U-CSS-007" },
     "transform": { handling: "lowered", rule: "U-CSS-025" },

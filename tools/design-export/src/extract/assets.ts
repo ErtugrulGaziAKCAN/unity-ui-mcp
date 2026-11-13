@@ -280,8 +280,8 @@ export async function presentationalStyles(cdp: CDPSession, s: DomSnapshot, indi
 
 const sha = (b: Buffer | string) => crypto.createHash("sha256").update(b).digest("hex");
 
-/** Writes `assets/<sha256>.<ext>` under outDir (once) and returns its IR record. */
-export function writeAsset(outDir: string, bytes: Buffer, ext: string, kind: "image" | "svg", width: number, height: number, tint = false): IrAsset {
+/** Writes `assets/<sha256>.<ext>` under outDir once (content-addressed) and returns its IR path and hash. */
+export function storeAsset(outDir: string, bytes: Buffer, ext: string): { file: string; sha256: string } {
   const hash = sha(bytes);
   const file = `assets/${hash}.${ext}`;
   const target = path.join(outDir, file);
@@ -289,7 +289,13 @@ export function writeAsset(outDir: string, bytes: Buffer, ext: string, kind: "im
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, bytes);
   }
-  return { kind, file, sha256: hash, width: Math.max(width, 1), height: Math.max(height, 1), slice: null, tint };
+  return { file, sha256: hash };
+}
+
+/** Writes `assets/<sha256>.<ext>` under outDir (once) and returns its IR record. */
+export function writeAsset(outDir: string, bytes: Buffer, ext: string, kind: "image" | "svg", width: number, height: number, tint = false, stopGap: number | null = null): IrAsset {
+  const { file, sha256 } = storeAsset(outDir, bytes, ext);
+  return { kind, file, sha256, width: Math.max(width, 1), height: Math.max(height, 1), slice: null, tint, stopGap };
 }
 
 const MIME_EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg" };

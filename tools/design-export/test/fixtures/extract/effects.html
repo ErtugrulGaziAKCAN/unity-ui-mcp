@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}.screen{display:flex;flex-direction:column;width:2560px;height:1440px;font-family:"Inter UI";font-size:16.515625px;line-height:20px;color:#ffffff;background-color:#0b1f26}p{margin:0}
+.row{display:flex;flex-direction:row;flex-shrink:0}
+.card{width:320px;height:180px;flex-shrink:0;border-radius:12px;background-color:#123c47;box-shadow:0 8px 24px rgba(0,0,0,0.4);transition:transform 0.2s ease}
+.card:hover{box-shadow:0 16px 40px rgba(0,0,0,0.5);transform:translateY(-4px)}
+.wide{width:600px}
+.flat:hover{box-shadow:none}
+.panel{width:400px;height:200px;flex-shrink:0;border:2px solid #16c2d5;border-radius:16px;background-color:rgba(255,255,255,0.08);box-shadow:inset 0 1px 0 rgba(255,255,255,0.1),0 2px 4px rgba(0,0,0,0.3)}
+.hero{width:800px;height:200px;flex-shrink:0;background-image:linear-gradient(180deg,#16c2d5,#0b1f26 80%)}
+.state-loading .hero{background-image:linear-gradient(90deg,#0b1f26,#123c47)}
+@media (max-width: 1600px){.hero{height:120px}}
+.chip{width:24px;height:20px;flex-shrink:0;border-radius:10px;background-color:#16c2d5;box-shadow:0 8px 24px rgba(0,0,0,0.4)}
+.glow{text-shadow:0 1px 2px rgba(0,0,0,0.5)}
+.pic{width:120px;height:80px;flex-shrink:0;object-fit:cover}
+.pill{width:200px;height:40px;flex-shrink:0;border-radius:9999px;background-image:radial-gradient(circle at 30% 50%,#ffffff,#16c2d5 60%)}
+</style></head><body><div class="screen" data-u-screen="effects" data-u-state="default">
+<p class="glow" data-u-id="title" data-l10n="effects.title" data-en="Effects">Efektler</p>
+<div class="row" data-u-id="cards">
+<div class="card" data-u-id="card"></div>
+<div class="card wide" data-u-id="card-wide"></div>
+<div class="card flat" data-u-id="card-flat"></div>
+</div>
+<div class="panel" data-u-id="panel"></div>
+<div class="hero" data-u-id="hero"></div>
+<div class="chip" data-u-id="chip"></div>
+<img class="pic" data-u-id="pic" src="assets/logo.png">
+<div class="pill" data-u-id="pill"></div>
+</div></body></html>

@@ -148,8 +148,10 @@ rows that cite them; items marked *unmeasured* are allowed by the reference but 
 | `:hover`, `:active`, `:focus`, `:disabled`, `:checked` | USS pseudo-classes | Allowed. UI Toolkit applies `:active` only to elements with a `Clickable`, so elements with an `:active` rule compile to `Button` or get a `Clickable` |
 | Custom states (selected, active tab) | Class toggled by the view, e.g. `.is-selected` | Allowed via `is-*` classes |
 | `gap`, `row-gap`, `column-gap` | Not in USS → lowered to child margins | Only on non-wrapping flex containers |
-| `box-shadow` | Not in USS → baked to a 9-slice image by Chromium, placed behind the element | Allowed; no `inset` |
-| `linear-gradient`, `radial-gradient` | Not in USS → SVG gradient → VectorImage background (`SVGType.VectorImage`; the importer bakes a 64-step ramp) | Allowed; colour stops closer than 1/64 of the gradient line, hard stops included, are U-CSS-022 (the 1/64 boundary is derived from the ramp size and one measured hard stop) |
+| `box-shadow` | Not in USS → baked by Chromium per style layer: the outer shadows into one 9-slice image behind the element, the `inset` shadows into one 9-slice image over the padding box (above the background, below the content); a layer whose shadow or box differs (a hover lift) gets its own image | Allowed; a transition of `box-shadow` is U-CSS-014 (transition opacity or transform instead) |
+| `linear-gradient`, `radial-gradient` | Not in USS → SVG gradient → VectorImage background (`SVGType.VectorImage`; the importer bakes a 64-step ramp), one SVG per style layer box, several gradients in one SVG; the IR records the smallest stop spacing | Allowed; colour stops closer than 1/64 of the gradient line, hard stops included, are U-CSS-022 (the 1/64 boundary is derived from the ramp size and one measured hard stop); a transition of `background-image`, a url() image beside another image, a gradient that does not fill the element and colour spaces are U-CSS-014 |
+| `text-shadow` | Direct USS (one shadow, written as x y blur colour) | Several shadows are U-CSS-023 |
+| `object-fit` | `-unity-background-scale-mode` (fill → stretch-to-fill, contain → scale-to-fit, cover → scale-and-crop) | `fill`, `contain`, `cover`; `object-position` only centred (U-CSS-023) |
 | `@media` | Not in USS → breakpoint classes on the root | Only `min/max-width`, `min/max-aspect-ratio` |
 | `@keyframes` / `animation` | Not in USS → generated keyframe data + runtime player | Only transform, opacity and color properties |
 | Inline emphasis inside a paragraph | TextCore rich text tags | Only `b`, `i`, `color`, `size` |
@@ -257,7 +259,8 @@ fix is adding the real face to the TMP weight table; the twin generator mirrors 
 4. **Styles.** Per element, record **specified** values from matched rules (`CSS.getMatchedStylesForNode`), which
    keep `%`, `auto` and flex intent and drive compilation, and **computed** values, which are used only for
    verification. Record pseudo-state, breakpoint and state deltas, transitions and keyframes.
-5. **Bake.** Render each `box-shadow` alone in Chromium and cut it into a 9-slice PNG; convert gradients to SVG;
+5. **Bake.** Render each `box-shadow` alone in Chromium and cut it into a 9-slice PNG (outer and inset separately, per style
+   layer whose shadow or box differs); convert gradients to SVG per layer box;
    name every asset by content hash.
 6. **Fixtures.** Sample values inside `data-u-bind` and repeated items are written to `fixtures/sample-data.json`.
    They are used only by verification, never by game data or saves.

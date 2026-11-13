@@ -17,11 +17,13 @@
  *   text style (§5.3 text styles); tintable SVGs carry `color` the same way.
  */
 import path from "node:path";
+import type { Page } from "playwright";
+import { openBakePage } from "../bake/shadow.js";
 import type { IrAnim, IrAsset, IrNode, IrScreen, NodeKind } from "../ir/types.js";
 import { validateIr } from "../ir/validate.js";
 import type { KitConfig } from "../kit.js";
 import { DESIGN_ORIGIN, type LoadedDesign } from "../load.js";
-import { firstFamily } from "../lint/css-values.js";
+import { firstFamily, px } from "../lint/css-values.js";
 import { kitFonts, realFaces } from "../lint/fonts.js";
 import { designChildren, describeAt, itemChildren, repeatIssues, repeatSamples, repeatTemplate } from "../lint/repeat.js";
 import { nonDesign } from "../lint/rules/util.js";
@@ -30,6 +32,7 @@ import { isRichInline, isTextElement, runPlans, type RunPlan } from "../lint/tex
 import { readTextStyles } from "../lint/text-styles.js";
 import { animsOf, inheritedAnims, mergeAnims } from "./anims.js";
 import { backgroundUrl, collectPageData, fileSha, hasPresentational, measureLayerBoxes, presentationalStyles, readImageUrl, svgSize, writeAsset } from "./assets.js";
+import { hasEffects, nodeEffects } from "./effects.js";
 import { classifyKind, isScroll } from "./kind.js";
 import { dimsOf } from "./layers.js";
 import { structuralId, tokenKey, uniqueId } from "./naming.js";
@@ -57,7 +60,18 @@ const URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)/gi;
 /** Properties that never change an element's box (or its descendants'): a layer of only these keeps the base box. */
 const paintOnly = (p: string) => /^(color|opacity|visibility|cursor|pointer-events|z-index|box-shadow|text-shadow|transform|translate|rotate|scale|transform-origin|background-.+|border-.+-(color|radius)|outline-.+|text-decoration-.+|transition-.+|animation-.+|-webkit-.+)$/.test(p);
 
-export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: string, htmlPath: string): Promise<IrBuild> {
+export interface BuildOptions {
+  /** A bake page (openBakePage) to share between screens of one run; without it one is opened and closed here. */
+  bakePage?: Page;
+}
+
+export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: string, htmlPath: string, opts: BuildOptions = {}): Promise<IrBuild> {
+  const bake: { open: { page: Page; close(): Promise<void> } | null } = { open: null };
+  try { return await build(d, s, kit, outDir, htmlPath, async () => opts.bakePage ?? (bake.open ??= await openBakePage(d.browser)).page); }
+  finally { await bake.open?.close(); }
+}
+
+async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: string, htmlPath: string, bakePage: () => Promise<Page>): Promise<IrBuild> {
   const timings: Record<string, number> = {};
   const t0 = performance.now();
   let t = t0;
@@ -151,7 +165,7 @@ export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, o
     return false;
   };
   for (const p of plans) {
-    if (!ex.needsBoxes(p.i)) continue;
+    if (!ex.needsBoxes(p.i) && !hasEffects(ex, p.i)) continue;
     for (const key of ex.raw(p.i).keys()) if (key !== "base" && changesBox(p.i, key)) ask(key, p.i);
     if (!el(p.i).size) for (const st of stateList) if (!requests.get(`state:${st}`)?.includes(p.i)) ask(`state:${st}`, p.i);
   }
@@ -206,7 +220,8 @@ export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, o
     return writeAsset(outDir, bytes, ext, ext === "svg" ? "svg" : "image", img.w, img.h);
   };
   const nodeAnims = new Map<number, IrAnim[]>();
-  const node = (p: Plan): IrNode => {
+  let bakeMs = 0;
+  const node = async (p: Plan): Promise<IrNode> => {
     const e = el(p.i);
     const layers = clone(ex.layers(p.i));
     const base = layers.get("base")!;
@@ -217,19 +232,26 @@ export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, o
     const text = textual(p) ? irText(s, p.i, page.seqs, styles, page.rendered) : null;
     const tint = p.kind === "vector" && e.svgPaint === "current";
     const copies = text ? ex.addInherited(p.i, layers, TEXT_INHERITED) : tint ? ex.addInherited(p.i, layers, ["color"]) : [];
-    // url() backgrounds → assets; the base one is the node's background image
-    let background: IrAsset | null = null;
-    for (const [key, layer] of layers) {
+    // url() backgrounds → assets (the layers keep them, with their size, repeat and position)
+    for (const layer of layers.values()) {
       const en = layer.get("background-image");
       if (!en || !/url\(/i.test(en.value)) continue;
-      let first: IrAsset | null = null;
-      const value = en.value.replace(URL_RE, (m, a?: string, b?: string, c?: string) => {
-        const asset = urlAsset(new URL((a ?? b ?? c ?? "").trim(), en.base ?? docUrl).href);
-        first ??= asset;
-        return `url("${asset.file}")`;
-      });
-      layer.set("background-image", { ...en, value });
-      if (key === "base" && p.kind !== "image") background = first;
+      layer.set("background-image", { ...en, value: en.value.replace(URL_RE, (m, a?: string, b?: string, c?: string) => `url("${urlAsset(new URL((a ?? b ?? c ?? "").trim(), en.base ?? docUrl).href).file}")`) });
+    }
+    // shadows and background images per layer: baked shadows and gradients, url() assets; box-shadow and gradients
+    // leave the style layers (a background-image of only url() and none stays for the compiler's background geometry)
+    const tb = performance.now();
+    const fx = await nodeEffects(p.i, {
+      ex, page: bakePage, outDir, boxes: ctx.boxes, urlAsset, urls: urlsOf, computedColor: e.computed.color ?? "#000000",
+      fontSize: px(e.computed["font-size"]) ?? undefined, rootFontSize: s.rootFontSize,
+    }, describeAt(s, p.i));
+    bakeMs += performance.now() - tb;
+    if (p.kind === "image") { fx.background = null; fx.backgroundLayers = {}; }
+    const gradient = Array.from(layers.values()).some((m) => /gradient\(/i.test(m.get("background-image")?.value ?? ""));
+    for (const [key, m] of layers) {
+      m.delete("box-shadow");
+      if (gradient) m.delete("background-image");
+      if (key !== "base" && m.size === 0) layers.delete(key);
     }
     for (const m of layers.values()) for (const en of m.values()) en.refs.forEach((r) => refs.add(r));
     let anims = animsOf(ex, p.i, ex.raw(p.i), layers, refs);
@@ -242,13 +264,14 @@ export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, o
     return {
       id: p.id, kind: p.kind, external: p.external, classes, style: toStyleLayers(layers), text, attrTexts: attrTexts(e),
       initial: control ? { disabled: e.attrs.disabled !== undefined, checked: toggle && e.attrs.checked !== undefined } : null,
-      asset: assetOf(p), background, shadow: null,
+      asset: assetOf(p), ...fx,
       bind: e.attrs["data-u-bind"] ?? null, action: e.attrs["data-u-action"] ?? null, repeat: p.repeat, anims,
-      children: p.children.map(node),
+      children: await sequential(p.children, node),
     };
   };
-  const rootNode = node(tree);
+  const rootNode = await node(tree);
   lap("nodes");
+  timings.bake = Math.round(bakeMs * 10) / 10;
 
   // ---- 6. fixtures, fonts, tokens -----------------------------------------------------------------------------
   const sample = (i: number) => (el(i).tag === "select" ? irText(s, i, page.seqs, styles, page.rendered)?.tr ?? "" : plainText(s, i, page.seqs, page.rendered));
@@ -338,4 +361,11 @@ export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, o
   const elements: Record<string, number> = {};
   for (const p of plans) elements[p.id] = p.i;
   return { ir, fixtures, timings, elements };
+}
+
+/** Maps in order, one at a time (bakes share one page; asset writes stay in document order). */
+async function sequential<T, R>(items: T[], fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (const x of items) out.push(await fn(x));
+  return out;
 }

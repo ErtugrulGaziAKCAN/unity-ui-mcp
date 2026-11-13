@@ -31,7 +31,11 @@ function covers(name: string): string[] | "all" {
 const list = (v: string | undefined, fallback: string) =>
   splitTopLevel(v === undefined || CSS_WIDE.has(v.trim().toLowerCase()) ? fallback : v, ",").map((x) => x.trim());
 
-function transitionAnims(ex: StyleExtractor, i: number, at: string, changed: string[], trigger: string, phase: "enter" | "leave"): IrAnim[] {
+/**
+ * The transition in effect in layer `at` for each of the `changed` properties (CSS: the last entry naming a property
+ * wins); properties without one are absent. Zero-length entries are included (callers skip them).
+ */
+export function transitionsAt(ex: StyleExtractor, i: number, at: string, changed: string[]): Map<string, { duration: number; delay: number; timing: string }> {
   const v = (p: string) => ex.effective(i, dimsOf(at), p)?.entry.value;
   const names = list(v("transition-property"), "all"), durs = list(v("transition-duration"), "0s");
   const delays = list(v("transition-delay"), "0s"), timings = list(v("transition-timing-function"), "ease");
@@ -40,9 +44,13 @@ function transitionAnims(ex: StyleExtractor, i: number, at: string, changed: str
     if (n.toLowerCase() === "none") return;
     const c = covers(n);
     const t = { duration: timeMs(durs[j % durs.length]) ?? 0, delay: timeMs(delays[j % delays.length]) ?? 0, timing: timings[j % timings.length] };
-    // CSS: the last entry naming a property wins
     for (const p of c === "all" ? changed : changed.filter((x) => c.includes(x))) per.set(p, t);
   });
+  return per;
+}
+
+function transitionAnims(ex: StyleExtractor, i: number, at: string, changed: string[], trigger: string, phase: "enter" | "leave"): IrAnim[] {
+  const per = transitionsAt(ex, i, at, changed);
   const groups = new Map<string, { t: { duration: number; delay: number; timing: string }; props: string[] }>();
   for (const [p, t] of per) {
     if (t.duration <= 0 && t.delay <= 0) continue;

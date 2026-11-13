@@ -27,7 +27,7 @@ afterAll(() => { for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force:
 // ---- synthetic IR -----------------------------------------------------------------------------------------------
 const node = (id: string, o: Partial<IrNode> = {}): IrNode => ({
   id, kind: "container", external: false, classes: [], style: { base: { display: "flex" } }, text: null, asset: null, background: null,
-  shadow: null, attrTexts: {}, initial: null, bind: null, action: null, repeat: null, anims: [], children: [], ...o,
+  shadow: null, shadowLayers: {}, insetShadow: null, insetShadowLayers: {}, backgroundLayers: {}, attrTexts: {}, initial: null, bind: null, action: null, repeat: null, anims: [], children: [], ...o,
 });
 const screen = (root: IrNode, o: Partial<IrScreen> = {}): IrScreen => ({
   irVersion: 1, screen: "s", source: { path: "s.html", sha256: "0".repeat(64) }, referenceViewport: [2560, 1440],
