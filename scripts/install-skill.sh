@@ -19,7 +19,7 @@ SKILL="$REPO/skills/unity-ui-mcp"
 
 FOUND=0
 for dir in "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.cursor/skills"; do
-  [ -d "$dir" ] || continue
+  if [ ! -d "$dir" ]; then echo "  skipped: $dir does not exist (that client is not installed, or has no skill folder yet)"; continue; fi
   FOUND=1
   link="$dir/unity-ui-mcp"
   if [ -L "$link" ]; then

@@ -3,5 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["tools/*"]
+  "workspaces": [
+    "tools/*"
+  ],
+  "dependencies": {
+    "smol-toml": "1.9.1"
+  }
 }

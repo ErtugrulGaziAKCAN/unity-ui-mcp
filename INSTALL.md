@@ -55,7 +55,10 @@ scripts/setup.sh --project "<Unity project>" --design-root "<design folder>" \
 `--client` is `claude-code` (default), `codex`, `cursor`, `all` (those three), `claude-desktop` (prints the snippet to add)
 or `none`. Codex gets one `[mcp_servers.design-ui]` table in `~/.codex/config.toml`; Cursor gets a merged
 `.cursor/mcp.json` in the `--client-dir` folder (or `~/.cursor/mcp.json` when you pass none); the rest of both files stays
-as it is. Setup also links the `/unity-ui-mcp` skill into those of `~/.claude/skills`, `~/.codex/skills` and
+as it is: only `command` and `args` of the entry are set (other keys you added stay), a copy of the file is kept once as
+`<file>.design-ui.bak`, and when the file already has a `design-ui` entry for another project this project gets
+`design-ui-<project folder>`. With `--client all`, Codex and Cursor are skipped when their config folder does not exist.
+Setup also links the `/unity-ui-mcp` skill into those of `~/.claude/skills`, `~/.codex/skills` and
 `~/.cursor/skills` that exist (`scripts/install-skill.sh [--dry-run]` does only that; it replaces only its own link).
 
 Show the user the complete dry-run output. It lists every change (`would …` lines): `npm ci` and the server build

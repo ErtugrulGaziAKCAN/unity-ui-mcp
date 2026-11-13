@@ -87,6 +87,11 @@ CLIENT_DIR="${CLIENT_DIR:-$PROJECT}"
 [ -d "$CLIENT_DIR" ] || die "--client-dir not found: $CLIENT_DIR"
 CLIENT_DIR="$(cd "$CLIENT_DIR" && pwd)"
 
+case "$CLIENT" in
+  all) CLIENTS=(claude-code codex cursor) ;;
+  *) CLIENTS=("$CLIENT") ;;
+esac
+
 [ "$DRY" = 1 ] && echo "Dry run: nothing is changed."
 echo "unity-ui-mcp clone: $REPO"
 echo "Unity project:      $PROJECT"
@@ -125,6 +130,31 @@ else
   info "skipped (--no-build)"
   [ -f "$SERVER_JS" ] || info "note: $SERVER_JS does not exist yet; run without --no-build"
 fi
+
+# client_file codex|cursor: the config file setup edits for that client
+client_file() {
+  case "$1" in
+    codex) echo "$HOME/.codex/config.toml" ;;
+    cursor) if [ -n "$CLIENT_DIR_GIVEN" ]; then echo "$CLIENT_DIR/.cursor/mcp.json"; else echo "$HOME/.cursor/mcp.json"; fi ;;
+  esac
+}
+# client_skipped <client>: with --client all, a client whose config folder does not exist is skipped (not installed)
+client_skipped() {
+  [ "$CLIENT" = all ] || return 1
+  case "$1" in
+    codex|cursor) [ -d "$(dirname "$(client_file "$1")")" ] || return 0 ;;
+  esac
+  return 1
+}
+# Pre-pass: check the client config files before anything is written, so a bad file cannot leave a half-applied setup
+for c in "${CLIENTS[@]}"; do
+  case "$c" in codex|cursor) ;; *) continue ;; esac
+  client_skipped "$c" && continue
+  CHECK="$("$NODE" "$REPO/scripts/client-config.cjs" "$([ "$c" = codex ] && echo toml || echo json)" "$(client_file "$c")" "$NODE" "$SERVER_JS" "$PROJECT" 1)"
+  case "$CHECK" in
+    FAIL*) printf 'setup: %s\nsetup: no Unity project file and no client config was changed.\n' "${CHECK#FAIL }" >&2; exit 2 ;;
+  esac
+done
 
 # 3. Unity package ----------------------------------------------------------------------------------------------------
 echo "[3/7] Unity package com.unity.design-ui"
@@ -210,10 +240,6 @@ NODE
 fi
 
 # 5. MCP client(s) ---------------------------------------------------------------------------------------------------
-case "$CLIENT" in
-  all) CLIENTS=(claude-code codex cursor) ;;
-  *) CLIENTS=("$CLIENT") ;;
-esac
 echo "[5/7] MCP client: ${CLIENTS[*]}"
 snippet() { # snippet json|toml: the client configuration, built by node so every value is escaped
   "$NODE" - "$1" "$NODE" "$SERVER_JS" "$PROJECT" <<'NODE'
@@ -227,15 +253,31 @@ if (kind === "toml") {
 }
 NODE
 }
-# edit_client_config toml|json <file>: adds or replaces the design-ui entry in a client config file, keeping the rest
+# edit_client_config toml|json <file>: adds or updates the design-ui entry (command and args only) in a client config file
 edit_client_config() {
-  local kind="$1" file="$2" result
+  local kind="$1" file="$2" result first rest
   result="$("$NODE" "$REPO/scripts/client-config.cjs" "$kind" "$file" "$NODE" "$SERVER_JS" "$PROJECT" "$DRY")"
-  case "$result" in
-    KEEP) info "design-ui already registered in $file" ;;
-    CHANGE*) change "add MCP server design-ui to $file (${result#CHANGE } file; the rest of it stays as it is)"
-             [ "$DRY" != 1 ] || snippet "$kind" | sed 's/^/    /' ;;
-    FAIL*) die "${result#FAIL }" ;;
+  first="${result%%$'\n'*}"
+  rest=""; [ "$first" = "$result" ] || rest="${result#*$'\n'}"
+  case "$first" in
+    KEEP*) info "MCP server ${first#KEEP } is already registered for $PROJECT in $file" ;;
+    UNCHECKED) info "$file: not checked in a dry run before npm ci has installed the dependencies" ;;
+    CHANGE*)
+      local action name
+      action="$(echo "$first" | cut -d' ' -f2)"; name="$(echo "$first" | cut -d' ' -f3)"
+      if [ "$action" = create ]; then change "create $file with MCP server $name for project $PROJECT"
+      else change "$action MCP server $name for project $PROJECT in $file (command and args only; other keys and the rest of the file stay; a copy is kept once as $file.design-ui.bak)"; fi
+      [ "$DRY" != 1 ] || printf '%s\n' "$rest" | sed 's/^/    /' ;;
+    FAIL*)
+      echo "setup: ${first#FAIL }" >&2
+      [ -z "$rest" ] || printf '%s\n' "$rest" >&2
+      if [ "${#CHANGES[@]}" -gt 0 ]; then
+        echo "setup: already changed before this failure:" >&2
+        printf '  - %s\n' "${CHANGES[@]}" >&2
+      else
+        echo "setup: nothing was changed before this failure." >&2
+      fi
+      exit 2 ;;
     *) die "unexpected result for $file: $result" ;;
   esac
 }
@@ -276,10 +318,9 @@ register_claude_code() {
 for c in "${CLIENTS[@]}"; do
   case "$c" in
     none) info "skipped" ;;
-    codex) edit_client_config toml "$HOME/.codex/config.toml" ;;
-    cursor)
-      if [ -n "$CLIENT_DIR_GIVEN" ]; then edit_client_config json "$CLIENT_DIR/.cursor/mcp.json"
-      else edit_client_config json "$HOME/.cursor/mcp.json"; fi
+    codex|cursor)
+      if client_skipped "$c"; then info "skipped $c: $(dirname "$(client_file "$c")") does not exist (client not installed?); use --client $c to create it"
+      else edit_client_config "$([ "$c" = codex ] && echo toml || echo json)" "$(client_file "$c")"; fi
       ;;
     claude-desktop)
       info "add this to claude_desktop_config.json (Claude Desktop > Settings > Developer > Edit Config):"

@@ -45,6 +45,19 @@ describe("skills/unity-ui-mcp/SKILL.md", () => {
     expect(text).toMatch(/not available yet/i);
   });
 
+  it("treats canvas content as data and confines writes to the screen folder", () => {
+    expect(text).toMatch(/data, never\s+instructions/);
+    expect(text).toMatch(/only to read the one link the user gave/i);
+    expect(text).toMatch(/Never publish, comment, delete/);
+    expect(text).toMatch(/sanitised id/);
+    expect(text).toMatch(/no path separators, no `\.\.`/);
+    expect(text).toMatch(/Write only inside `<designRoot>\/<screen-id>\/`/);
+    expect(text).toMatch(/dry-run/);
+    expect(text).not.toMatch(/node <that command>/);
+    expect(frontmatter(text).description).toMatch(/UXML/);
+    expect(frontmatter(text).description).toMatch(/tasarimi Unity'ye aktar/);
+  });
+
   it("has no local paths or private plan ids", () => {
     expect(text).not.toMatch(/\/Users\/|C:\\|Task \d+|\.superpowers/);
   });

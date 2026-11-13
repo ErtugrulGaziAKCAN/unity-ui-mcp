@@ -166,11 +166,12 @@ describe("scripts/setup.sh", () => {
     const e = setupEnv({ projectName: ODD });
     const cursor = e.run("--client", "cursor", "--dry-run");
     expect(cursor.code, cursor.out).toBe(0);
-    expect(cursor.out).toContain("would add MCP server design-ui to");
+    expect(cursor.out).toContain("would create");
+    expect(cursor.out).toContain("MCP server design-ui for project");
     const json = JSON.parse(/^ {4}\{\n[\s\S]*?\n {4}\}$/m.exec(cursor.out)![0]);
     expect(json).toEqual({ mcpServers: { "design-ui": { command: NODE, args: [SERVER_JS, "--project", e.project] } } });
     const codex = e.run("--client", "codex", "--dry-run");
-    expect(codex.out).toContain("would add MCP server design-ui to");
+    expect(codex.out).toContain("MCP server design-ui for project");
     expect(codex.out).toContain("[mcp_servers.design-ui]");
     // TOML basic strings and arrays of them read like JSON
     expect(JSON.parse(/^ {4}command = (.+)$/m.exec(codex.out)![1])).toBe(NODE);
@@ -256,19 +257,19 @@ describe("setup.sh multi-client registration and skill install", () => {
     expect(read(codexConfig(e))).toBe(after);
   });
 
-  it("Codex: replaces an existing design-ui table in place (other tables untouched), creates the file when absent", () => {
-    const e = setupEnv();
+  it("Codex: another project's design-ui entry stays; this project gets design-ui-<folder>, created when the file is absent", () => {
+    const e = setupEnv({ projectName: "My Game" });
     fs.mkdirSync(path.join(e.env.HOME!, ".codex"));
-    const old = `[mcp_servers.design-ui]\ncommand = "old"\nargs = ["x"]\n\n`;
+    const old = `[mcp_servers.design-ui]\ncommand = "old"\nargs = ["x", "--project", "/other"]\n\n`;
     const rest = `[profiles.p]\nk = 1\n`;
     fs.writeFileSync(codexConfig(e), `a = 1\n\n${old}${rest}`);
     const r = e.run("--client", "codex");
     expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain("MCP server design-ui-my-game for project");
     const out = read(codexConfig(e));
-    expect(out.match(/^\[mcp_servers\.design-ui\]$/gm)).toHaveLength(1);
-    expect(out).not.toContain('command = "old"');
-    expect(out.startsWith("a = 1\n\n[mcp_servers.design-ui]\n")).toBe(true);
-    expect(out.endsWith(`\n\n${rest}`)).toBe(true);
+    expect(out.startsWith(`a = 1\n\n${old}${rest}`)).toBe(true);
+    expect(out).toContain("[mcp_servers.design-ui-my-game]");
+    expect(read(codexConfig(e) + ".design-ui.bak")).toBe(`a = 1\n\n${old}${rest}`);
 
     const f = setupEnv();
     const created = f.run("--client", "codex");
@@ -302,13 +303,39 @@ describe("setup.sh multi-client registration and skill install", () => {
     expect(json.mcpServers["design-ui"].args).toEqual([SERVER_JS, "--project", e.project]);
   });
 
-  it("--client all registers Claude Code, Codex and Cursor", () => {
+  it("--client all skips clients whose config folder is missing and says so", () => {
     const e = setupEnv();
+    const r = e.run("--client", "all");
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain("skipped codex");
+    expect(r.out).toContain("skipped cursor");
+    expect(fs.existsSync(path.join(e.env.HOME!, ".codex"))).toBe(false);
+    expect(fs.existsSync(path.join(e.clientDir, ".cursor"))).toBe(false);
+    expect(lines(path.join(e.logs, "claude.log")).filter((l) => l.includes("mcp add"))).toHaveLength(1);
+  });
+
+  it("--client all registers Claude Code, Codex and Cursor when their folders exist", () => {
+    const e = setupEnv();
+    fs.mkdirSync(path.join(e.env.HOME!, ".codex"));
+    fs.mkdirSync(path.join(e.clientDir, ".cursor"));
     const r = e.run("--client", "all");
     expect(r.code, r.out).toBe(0);
     expect(lines(path.join(e.logs, "claude.log")).filter((l) => l.includes("mcp add"))).toHaveLength(1);
     expect(read(codexConfig(e))).toContain("[mcp_servers.design-ui]");
     expect(fs.existsSync(path.join(e.clientDir, ".cursor", "mcp.json"))).toBe(true);
+  });
+
+  it("a broken Codex config stops setup before any change to the project", () => {
+    const e = setupEnv();
+    fs.mkdirSync(path.join(e.env.HOME!, ".codex"));
+    fs.writeFileSync(codexConfig(e), "this is = = not toml\n");
+    const r = e.run("--client", "codex");
+    expect(r.code).toBe(2);
+    expect(r.out).toContain("not valid TOML");
+    expect(r.out).toContain("no Unity project file and no client config was changed");
+    expect(read(path.join(e.project, "Packages", "manifest.json"))).toBe(MANIFEST);
+    expect(fs.existsSync(path.join(e.project, "design-ui.config.json"))).toBe(false);
+    expect(read(codexConfig(e))).toBe("this is = = not toml\n");
   });
 
   it("links the skill into the existing skill folders only, once; second run changes nothing; dry-run changes nothing", () => {
@@ -380,6 +407,7 @@ describe("scripts/install-skill.sh", () => {
     fs.mkdirSync(path.join(home, ".cursor", "skills"), { recursive: true });
     const dry = run(home, "--dry-run");
     expect(dry.out).toContain("would link");
+    expect(dry.out).toContain("skipped:");
     expect(fs.readdirSync(path.join(home, ".cursor", "skills"))).toEqual([]);
   });
 });
