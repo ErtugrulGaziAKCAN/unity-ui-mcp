@@ -165,10 +165,11 @@ export function declRule(
   s: DomSnapshot,
   r: Pick<Rule, "id" | "severity">,
   fix: string,
-  bad: (d: SnapDecl, value: string, src: Source, t: Target) => string | null,
+  bad: (d: SnapDecl, value: string, src: Source, t: Target) => string | { detail: string; fix: string } | null,
   opts: { keyframes?: boolean; pseudo?: boolean } = {},
 ): Finding[] {
   const c = new Collector();
+  const fixes = new Map<string, Set<string>>();
   const all = opts.keyframes ? [...sources(s), ...keyframeSources(s)] : sources(s);
   for (const src of all) {
     const t0 = targetOf(s, src);
@@ -177,13 +178,19 @@ export function declRule(
     for (const i of judgeAt(s, src, t0)) {
       const t: Target = i === null ? t0 : { path: s.elements[i].path, element: s.elements[i], more: t0.more };
       const hits: string[] = [];
+      const own: string[] = [];
       for (const d of declsAt(src, i)) {
         if (d.name.startsWith("--")) continue;
         const why = bad(d, resolved(s, d.value, i), src, t);
-        if (why !== null) hits.push(why);
+        if (why === null) continue;
+        if (typeof why === "string") { hits.push(why); own.push(fix); } else { hits.push(why.detail); own.push(why.fix); }
       }
-      if (hits.length) { c.add(t.path, hits.join(", ") + at(src, t)); break; }
+      if (hits.length) {
+        c.add(t.path, hits.join(", ") + at(src, t));
+        for (const f of own) fixes.set(t.path, (fixes.get(t.path) ?? new Set()).add(f));
+        break;
+      }
     }
   }
-  return c.findings(r, fix);
+  return c.findings(r, (path) => Array.from(fixes.get(path) ?? [fix]).join(" "));
 }

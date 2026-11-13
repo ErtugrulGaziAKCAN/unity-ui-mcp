@@ -451,7 +451,8 @@
         "style": {
           "base": {
             "display": "flex",
-            "flex-direction": "column"
+            "flex-direction": "column",
+            "overflow-y": "auto"
           }
         },
         "text": null

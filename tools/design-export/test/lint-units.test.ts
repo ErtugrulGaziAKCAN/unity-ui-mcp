@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readKit } from "../src/kit.js";
-import { cssSupport } from "../src/lint/allowed-css.js";
+import { CSS_SUPPORT_DATA, cssSupport, cssSupportDataFrom, cssSupportFrom, readCssSupportFile } from "../src/lint/allowed-css.js";
+import { cssPaintOrder, unityPaintOrder, type PaintSibling } from "../src/lint/paint-order.js";
+import { badKeywords } from "../src/lint/rules/U-CSS-023.js";
 import { declsOf, functionNames, parseDeclarations, resolveVars, splitTopLevel } from "../src/lint/css-values.js";
 import { readFontFile, readPostScriptName, realFaces, weightRange } from "../src/lint/fonts.js";
 import { physicalNames } from "../src/lint/snapshot.js";
@@ -194,5 +196,91 @@ describe("kit data", () => {
     expect(weightRange("100 900")).toEqual([100, 900]);
     expect(weightRange("")).toEqual([400, 400]);
     expect(weightRange("bold")).toEqual([700, 700]);
+  });
+});
+
+describe("css-support.json: the single source of CSS support", () => {
+  const file = readCssSupportFile();
+  it("is what the lint reads, property by property", () => {
+    expect(Object.keys(CSS_SUPPORT_DATA.properties).sort()).toEqual(Object.keys(file.properties).sort());
+    for (const [n, e] of Object.entries(file.properties)) {
+      const p = CSS_SUPPORT_DATA.properties[n];
+      expect(p.irHandling, n).toBe(e.handling);
+      expect(p.handling, n).toBe(e.authoring?.handling ?? e.handling);
+      for (const k of [...(e.keywords ?? []), ...(e.loweredValues ?? []), ...(e.dropValues ?? [])]) expect(p.keywords, n).toContain(k);
+    }
+    // a property read from another file: the lint follows the data, not code
+    const other = cssSupportFrom(cssSupportDataFrom({ ...file, properties: { ...file.properties, "mix-blend-mode": { handling: "direct", keywords: ["normal", "multiply"] } } }));
+    expect(other.isAllowedProperty("mix-blend-mode")).toBe(true);
+    expect(cssSupport.isAllowedProperty("mix-blend-mode")).toBe(false);
+  });
+  it("keeps the Unity mapper's reading: IR units, colour functions, rule and fix on errors, a value form on direct entries", () => {
+    expect(file.units).toEqual(["px", "%"]);
+    expect(file.colors.functions).toEqual(["rgb", "rgba"]);
+    for (const [n, e] of Object.entries(file.properties)) {
+      if (e.handling === "error") { expect(e.rule, n).toMatch(/^U-CSS-\d{3}$/); expect(e.fix, n).toBeTruthy(); }
+      if (e.handling === "direct") expect((e.keywords?.length ?? 0) + (e.types?.length ?? 0), n).toBeGreaterThan(0);
+    }
+  });
+  it("gives every rejected keyword a rule and a fix, and every keyed property a value fix", () => {
+    for (const [n, e] of Object.entries(file.properties)) {
+      for (const [k, r] of Object.entries(e.rejectedValues ?? {})) { expect(r.rule, `${n}: ${k}`).toMatch(/^U-CSS-\d{3}$/); expect(r.fix, `${n}: ${k}`).toBeTruthy(); }
+      if (e.handling !== "error" && (e.keywords?.length || e.types?.length) && !e.valueRule) expect(e.valueFix, n).toBeTruthy();
+    }
+    expect(cssSupport.rejection("display", "grid")).toMatchObject({ rule: "U-CSS-001" });
+    expect(cssSupport.rejection("position", "sticky")).toMatchObject({ rule: "U-CSS-017" });
+    expect(cssSupport.rejection("align-items", "baseline")).toMatchObject({ rule: "U-CSS-018" });
+    expect(cssSupport.rejection("border-top-style", "dashed")).toMatchObject({ rule: "U-CSS-021" });
+    expect(cssSupport.property("backdrop-filter")).toMatchObject({ handling: "error", rule: "U-CSS-007" });
+    expect(cssSupport.fixFor("text-align")).toContain("left, center or right");
+  });
+  it("widens keywords to what the compiler lowers and marks export-resolved forms", () => {
+    expect(cssSupport.allowedValuesFor("display")).toEqual(expect.arrayContaining(["flex", "none", "block", "inline", "inline-block", "inline-flex"]));
+    expect(cssSupport.allowedValuesFor("position")).toEqual(expect.arrayContaining(["static", "relative", "absolute"]));
+    expect(cssSupport.allowedValuesFor("overflow-y")).toEqual(expect.arrayContaining(["auto", "scroll", "clip"]));
+    expect(cssSupport.property("transform")).toMatchObject({ handling: "lowered", irHandling: "error", valueRule: "U-CSS-025" });
+    expect(file.exportResolved.units).toContain("rem");
+    expect(cssSupport.isAllowedUnit("rem") && cssSupport.isAllowedFunction("var") && cssSupport.isAllowedFunction("hsl")).toBe(true);
+    // a property with value types and no keyword takes no keyword
+    expect(badKeywords(cssSupport.property("padding-left")!, "auto")).toEqual(["auto"]);
+    expect(badKeywords(cssSupport.property("opacity")!, "50%")).toEqual(["50%"]);
+    expect(badKeywords(cssSupport.property("border-top-width")!, "medium")).toEqual([]);
+    expect(badKeywords(cssSupport.property("cursor")!, "pointer")).toEqual([]);
+  });
+  it("accepts initial-value resets and leaves out those the mapper rejects", () => {
+    for (const [n, v] of [["outline-style", "none"], ["outline-width", "0px"], ["text-decoration-line", "none"], ["appearance", "none"], ["float", "none"], ["filter", "none"], ["text-transform", "none"]]) {
+      expect(cssSupport.isInitialValue(n, v) || cssSupport.allowedValuesFor(n)?.includes(v), `${n}: ${v}`).toBe(true);
+    }
+    expect(cssSupport.omittedAtExport("filter", "none")).toBe(true);
+    expect(cssSupport.omittedAtExport("float", "inherit")).toBe(true);
+    expect(cssSupport.omittedAtExport("text-decoration-line", "none")).toBe(true);
+    expect(cssSupport.omittedAtExport("filter", "blur(2px)")).toBe(false);
+    expect(cssSupport.omittedAtExport("transform", "none")).toBe(false); // split into translate/rotate/scale by the exporter
+    expect(cssSupport.omittedAtExport("opacity", "1")).toBe(false);
+  });
+});
+
+describe("paint order (the compiler's sibling order)", () => {
+  const sib = (index: number, position: PaintSibling["position"], z: number | null = null, isolates = false): PaintSibling =>
+    ({ index, name: `e${index}`, position, z, isolates });
+  const order = (r: ReturnType<typeof unityPaintOrder>) => (r.ok ? r.order : r.problem);
+  it("moves absolute siblings into the gap that gives them their CSS level", () => {
+    expect(order(unityPaintOrder([sib(0, "absolute"), sib(1, "static"), sib(2, "relative")], false))).toEqual([1, 0, 2]);
+    expect(order(unityPaintOrder([sib(0, "relative", 1), sib(1, "absolute")], false))).toEqual([1, 0]);
+    expect(order(unityPaintOrder([sib(0, "static"), sib(1, "relative", 1), sib(2, "absolute", 0)], false))).toEqual([0, 2, 1]);
+    expect(order(unityPaintOrder([sib(0, "absolute", -1), sib(1, "static")], false))).toEqual([0, 1]);
+  });
+  it("rejects what hierarchy order cannot reproduce", () => {
+    expect(unityPaintOrder([sib(0, "absolute"), sib(1, "relative"), sib(2, "static")], false).ok).toBe(false);
+    expect(order(unityPaintOrder([sib(0, "relative", 1), sib(1, "static")], false))).toMatch(/paints below e0/);
+    expect(order(unityPaintOrder([sib(0, "static", 1)], false))).toMatch(/no effect in CSS/);
+    expect(unityPaintOrder([sib(0, "static", 1)], true).ok).toBe(true); // a flex item stacks with its z-index
+    expect(unityPaintOrder([sib(0, "static", 0), sib(1, "relative")], false).ok).toBe(true);
+  });
+  it("knows where CSS paints a faded or transformed sibling", () => {
+    const sibs = [sib(0, "absolute"), sib(1, "static", null, true)];
+    expect(cssPaintOrder(sibs, true)).toEqual([0, 1]);
+    expect(order(unityPaintOrder(sibs, true))).toEqual([1, 0]);
+    expect(cssPaintOrder([sib(0, "relative"), sib(1, "static")], false)).toEqual([1, 0]);
   });
 });

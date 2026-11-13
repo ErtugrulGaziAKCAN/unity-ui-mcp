@@ -130,7 +130,7 @@ export const SNAP_COMPUTED = [
   "font-family", "font-size", "line-height", "font-weight", "font-style", "font-variant-caps", "letter-spacing", "word-spacing",
   "text-transform", "text-shadow", "text-align", "list-style-type", "list-style-image", "white-space-collapse", "text-wrap-mode",
   "text-decoration-line", "vertical-align", "color", "background-color", "background-image", "box-shadow", "filter",
-  "backdrop-filter", "transform", "outline-style",
+  "backdrop-filter", "transform", "translate", "rotate", "scale", "outline-style",
   "border-top-style", "border-right-style", "border-bottom-style", "border-left-style",
   "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
   "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius",

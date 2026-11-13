@@ -2,8 +2,11 @@
 body{margin:0}
 .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
 p{margin:0}
+.rel{position:relative;z-index:2;width:10px;height:10px;flex-shrink:0}
+.abs{position:absolute;left:0px;top:0px;z-index:-1;width:10px;height:10px}
 </style></head>
 <body><div class="screen" data-u-screen="lint.sample">
 <p data-l10n="lint.sample.title" data-en="Title">Başlık</p>
-<div style="position:absolute;left:0px;top:0px;z-index:2;width:10px;height:10px"></div>
+<div class="rel"></div>
+<div class="abs"></div>
 </div></body></html>

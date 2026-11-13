@@ -1,6 +1,8 @@
 import { cssSupport } from "../allowed-css.js";
 import type { Rule } from "../types.js";
 import type { SnapElement } from "../snapshot.js";
+import { layoutOf } from "../layout.js";
+import { isTextElement } from "../text-runs.js";
 import { Collector, inFlow, isExternal, nonDesign } from "./util.js";
 
 const RICH = new Set(["b", "strong", "i", "em", "span"]);
@@ -47,7 +49,12 @@ export const rule: Rule = {
       const siblings = parent.children.filter((k) => k !== e.index && !nonDesign(s)[k] && s.elements[k].computed.display !== "none");
       if (parent.texts.length === 0 && siblings.length === 0) {
         const box = BOX.filter((p) => e.computed[p] !== INITIAL[p]);
-        if (box.length) c.add(e.path, `<${e.tag}> (display: ${e.computed.display}) draws an inline box: ${box.map((p) => `${p}: ${e.computed[p]}`).join(", ")}`);
+        if (box.length) { c.add(e.path, `<${e.tag}> (display: ${e.computed.display}) draws an inline box: ${box.map((p) => `${p}: ${e.computed[p]}`).join(", ")}`); continue; }
+        // rich text of the parent, or a flex item (blockified): no inline flow
+        if (isTextElement(s, parent) || layoutOf(s).visibleDisplay(parent.index) === "flex") continue;
+        // an inline box in the line of a block container: its height and width follow the line, not the box
+        if (e.computed.display !== "inline") c.add(e.path, `<${e.tag}> is display: ${e.computed.display}, the only content of a block container: an inline box in a line, which UI Toolkit cannot lay out`);
+        else if (!isTextElement(s, e)) c.add(e.path, `<${e.tag}> is display: inline, the only content of a block container, and holds elements that are not inline text`);
         continue;
       }
       if (!RICH.has(e.tag) || e.computed.display !== "inline") { c.add(e.path, `<${e.tag}> is display: ${e.computed.display} inside a line of text`); continue; }

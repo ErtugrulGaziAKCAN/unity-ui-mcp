@@ -1,4 +1,4 @@
-import { cssSupport, type PropertySupport } from "../allowed-css.js";
+import { cssSupport, GENERIC_FIX, type PropertySupport } from "../allowed-css.js";
 import { CSS_WIDE, splitTopLevel, stripStringsAndUrls } from "../css-values.js";
 import type { Rule } from "../types.js";
 import { at, Collector, declsAt, declText, inSvg, judgeAt, resolved, sources, targetOf, type Source, type Target } from "./util.js";
@@ -6,6 +6,7 @@ import { at, Collector, declsAt, declText, inSvg, judgeAt, resolved, sources, ta
 const UNIT = /(^|[^\w.#-])[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?([a-z]+)(?![\w(-])/gi;
 const VIEWPORT = /^[sld]?v(?:w|h|i|b|min|max)$/; // U-CSS-006
 const IDENT = /^-?[a-z_][a-z0-9_-]*$/i;
+const PERCENT = /^[+-]?(?:\d+\.?\d*|\.\d+)%$/;
 const SVG_TAGS = new Set(["svg", "g", "path", "circle", "ellipse", "line", "polyline", "polygon", "rect", "text", "tspan", "use",
   "defs", "symbol", "lineargradient", "radialgradient", "stop", "clippath", "mask", "pattern", "marker", "image"]);
 const ZERO = /^(0|0px|0%|0em|0rem)$/i;
@@ -14,8 +15,11 @@ const ZERO = /^(0|0px|0%|0em|0rem)$/i;
 const svgSelectors = (src: Source) => !!src.rule && src.rule.selectors.length > 0 &&
   src.rule.selectors.every((sel) => sel.parsed.compounds.some((c) => c.simples.some((x) => x.kind === "type" && SVG_TAGS.has(x.name.toLowerCase()))));
 
-/** Keywords of a value the property does not accept (functions are U-CSS-024's; owned values are their rule's). */
-function badKeywords(p: PropertySupport, value: string): string[] {
+/**
+ * Keywords (and percentages) of a value the property does not accept. Functions are U-CSS-024's; keywords another
+ * rule rejects (css-support.json rejectedValues) are that rule's.
+ */
+export function badKeywords(p: PropertySupport, value: string): string[] {
   const allowed = new Set([...(p.keywords ?? []), ...Object.keys(p.mapValues ?? {}), ...(p.owns ?? [])].map((k) => k.toLowerCase()));
   const types = p.types ?? [];
   const out: string[] = [];
@@ -29,17 +33,21 @@ function badKeywords(p: PropertySupport, value: string): string[] {
         if (types.includes("color") && cssSupport.isAllowedColorKeyword(low)) continue;
         if (!p.keywords && !types.includes("color")) continue;
         out.push(tok);
-      } else if (!types.length && p.keywords && !allowed.has(low)) out.push(tok);
+      } else if (allowed.has(low)) continue;
+      else if (!types.length && p.keywords) out.push(tok);
+      else if (p.keywords && PERCENT.test(tok) && !types.includes("percent")) out.push(tok);
     }
   }
   return out;
 }
 
-/** Catch-all whitelist: properties, keywords and units the pipeline supports (allowed-css.ts, published in RULES.md). */
+/** Catch-all whitelist: properties, keywords and units of css-support.json (published in RULES.md). */
 export const rule: Rule = {
   id: "U-CSS-023", severity: "error",
   check(s) {
     const c = new Collector();
+    const fixes = new Map<string, Set<string>>();
+    const fix = (path: string, f: string) => fixes.set(path, (fixes.get(path) ?? new Set()).add(f));
     for (const src of sources(s)) {
       const t0 = targetOf(s, src);
       if (!t0) continue;
@@ -56,40 +64,38 @@ export const rule: Rule = {
           return (w !== null && ZERO.test(w)) || (st !== null && /^(none|hidden)$/i.test(st));
         };
         const hits: string[] = [];
+        const hitFixes: string[] = [];
         for (const sel of src.rule?.selectors ?? []) {
-          if (sel.pseudoElement && !cssSupport.isAllowedPseudoElement(sel.pseudoElement)) hits.push(`::${sel.pseudoElement} (in "${sel.text}") has no UI Toolkit equivalent`);
+          if (sel.pseudoElement && !cssSupport.isAllowedPseudoElement(sel.pseudoElement)) { hits.push(`::${sel.pseudoElement} (in "${sel.text}") has no UI Toolkit equivalent`); hitFixes.push(GENERIC_FIX); }
         }
         for (const d of decls) {
           if (d.name.startsWith("--")) continue;
           const v = resolved(s, d.value, i);
-          if (d.invalid) { hits.push(`${d.name}: ${v} does not parse after var() substitution`); continue; }
+          if (d.invalid) { hits.push(`${d.name}: ${v} does not parse after var() substitution`); hitFixes.push(GENERIC_FIX); continue; }
           // initial values (what shorthands write) and CSS-wide keywords add nothing an ancestor's declaration does not
           if (cssSupport.isInitialValue(d.name, v) || CSS_WIDE.has(v.trim().toLowerCase())) continue;
           // inside an inline <svg>: presentation properties are baked into the vector asset
           if (svgOnly && cssSupport.isSvgPresentation(d.name)) continue;
           const p = cssSupport.property(d.name);
-          if (!p || (p.handling === "error" && !p.rule)) { hits.push(`${declText(d, v)} is not supported`); continue; }
-          if (p.rule && !p.keywords) continue; // the dedicated rule judges the value
+          if (!p) { hits.push(`${declText(d, v)} is not supported`); hitFixes.push(GENERIC_FIX); continue; }
+          if (p.handling === "error") {
+            if (p.rule && p.rule !== rule.id) continue; // its own rule reports it
+            hits.push(`${declText(d, v)} is not supported`); hitFixes.push(p.fix ?? GENERIC_FIX); continue;
+          }
+          if (p.valueRule) continue; // the dedicated rule judges the value
           let kws = badKeywords(p, v);
           // `border: 0` writes the initial colour (currentcolor) on sides that draw nothing
           const side = /^border-(top|right|bottom|left)-color$/.exec(d.name);
           if (side && blank(side[1])) kws = kws.filter((k) => k.toLowerCase() !== "currentcolor");
-          if (kws.length) hits.push(`${declText(d, v)}: value ${kws.map((k) => `"${k}"`).join(", ")} is not supported${p.keywords ? ` (use ${p.keywords.join(", ")})` : ""}`);
-          if (d.name === "text-shadow" && splitTopLevel(v, ",").length > 1) hits.push(`${declText(d, v)}: UI Toolkit draws one text shadow`);
-          if (d.name === "box-sizing" && v.trim() === "content-box") {
-            const boxed = src.elements.find((k) => ["padding-top", "padding-right", "padding-bottom", "padding-left", "border-top-width", "border-right-width", "border-bottom-width", "border-left-width"]
-              .some((q) => s.elements[k].computed[q] !== "0px"));
-            if (boxed !== undefined) hits.push(`box-sizing: content-box on an element with padding or border (UI Toolkit sizes the border box)`);
-          }
-          if (p.rule) continue;
+          if (kws.length) { hits.push(`${declText(d, v)}: value ${kws.map((k) => `"${k}"`).join(", ")} is not supported`); hitFixes.push(cssSupport.fixFor(d.name)); }
+          if (d.name === "text-shadow" && splitTopLevel(v, ",").length > 1) { hits.push(`${declText(d, v)}: UI Toolkit draws one text shadow`); hitFixes.push(cssSupport.fixFor(d.name)); }
           const units = Array.from(stripStringsAndUrls(v).matchAll(UNIT), (m) => m[2].toLowerCase())
             .filter((u) => !cssSupport.isAllowedUnit(u) && !VIEWPORT.test(u) && u !== "e");
-          if (units.length) hits.push(`${declText(d, v)} uses unit ${Array.from(new Set(units)).join(", ")}`);
+          if (units.length) { hits.push(`${declText(d, v)} uses unit ${Array.from(new Set(units)).join(", ")}`); hitFixes.push(cssSupport.fixFor(d.name)); }
         }
-        if (hits.length) { c.add(t.path, hits.join(", ") + at(src, t)); break; }
+        if (hits.length) { c.add(t.path, hits.join(", ") + at(src, t)); hitFixes.forEach((f) => fix(t.path, f)); break; }
       }
     }
-    return c.findings(rule,
-      "Remove the property or value, or express it with supported CSS: the properties, keywords and units of RULES.md in the design kit (spec §5.3); lengths in px, % or rem; colours as hex, rgb()/rgba(), hsl()/hsla() or the basic named colours.");
+    return c.findings(rule, (path) => Array.from(fixes.get(path) ?? [GENERIC_FIX]).join(" "));
   },
 };

@@ -1,8 +1,9 @@
+import { cssSupport } from "../allowed-css.js";
 import { clip } from "../css-values.js";
 import type { Rule } from "../types.js";
 import { at, Collector, isExternal, nonDesign, resolved, sources, targetOf } from "./util.js";
 
-const FIX = "Use a real element instead of generated content (::before/::after content, list markers): an icon, bullet or divider element; set list-style: none on list items.";
+const FIX = cssSupport.fixFor("content");
 
 export const rule: Rule = {
   id: "U-CSS-002", severity: "error",

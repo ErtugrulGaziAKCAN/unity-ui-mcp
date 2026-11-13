@@ -42,6 +42,8 @@ describe("IR contract", () => {
     expect(flat.some((n) => Object.keys(n.style).some((k) => k.startsWith("class:is-")))).toBe(true);
     expect(flat.some((n) => n.text?.style)).toBe(true);
     expect(flat.some((n) => n.repeat?.count > 1)).toBe(true);
+    // a list repeat is a scroll area: the compiler makes it a ListView, which scrolls by itself
+    for (const n of flat.filter((x) => x.kind === "list")) expect(["auto", "scroll"]).toContain(n.style.base["overflow-y"]);
     const anims = flat.flatMap((n) => n.anims);
     expect(anims.some((a) => a.kind === "transition" && a.phase === "leave" && a.timing.startsWith("cubic-bezier("))).toBe(true);
     expect(anims.some((a) => a.kind === "keyframes" && a.trigger === "show" && a.iterations === "infinite" && a.keyframes.some((k: any) => k.easing))).toBe(true);

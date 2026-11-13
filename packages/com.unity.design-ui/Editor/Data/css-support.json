@@ -37,13 +37,58 @@
       "fuchsia"
     ]
   },
+  "typeUnits": {
+    "length": [
+      "px"
+    ],
+    "percent": [
+      "%"
+    ],
+    "angle": [
+      "deg",
+      "rad",
+      "grad",
+      "turn"
+    ],
+    "time": [
+      "s",
+      "ms"
+    ]
+  },
+  "exportResolved": {
+    "units": [
+      "rem"
+    ],
+    "functions": [
+      "var"
+    ],
+    "colorFunctions": [
+      "hsl",
+      "hsla"
+    ],
+    "keywords": [
+      "inherit",
+      "initial",
+      "unset",
+      "revert",
+      "revert-layer"
+    ],
+    "note": "Authoring forms the exporter resolves before the IR: rem → px (root font size), var() at the element, hsl()/hsla() → hex or rgba(), CSS-wide keywords → the inherited or initial value. Lint accepts them; the mapper never sees them and rejects them."
+  },
   "notes": {
-    "handling": "direct = written to USS (value validated); lowered = Lowering removes it, the mapper rejects leftovers; dropped = accepted and omitted; error = rejected with rule and fix. Properties not listed are U-CSS-023, value functions not listed are U-CSS-024.",
+    "handling": "direct = written to USS (value validated); lowered = rewritten before mapping (by the Unity Lowering, or by the exporter: see the property's note); the mapper rejects leftovers; dropped = accepted and omitted; error = rejected with rule and fix. Properties not listed are U-CSS-023, value functions not listed are U-CSS-024.",
     "components": "[min,max] space-separated components per list item (default [1,1]); list = comma separated list allowed",
     "dropValues": "keyword values that are accepted and omitted",
     "mapValues": "keyword aliases rewritten before mapping",
     "loweredValues": "keyword values valid only where the compiler lowers them (see the property's note); the mapper rejects them elsewhere",
-    "loweredFunctions": "value functions only the compiler consumes (see the property's note); the mapper rejects them elsewhere"
+    "loweredFunctions": "value functions only the compiler consumes (see the property's note); the mapper rejects them elsewhere",
+    "rejectedValues": "keyword → {rule, fix}: values a dedicated lint rule rejects (e.g. display: grid is U-CSS-001); the mapper may report them with that rule and fix",
+    "valueRule": "a dedicated lint rule judges this property's values (U-CSS-023 checks neither its keywords nor its units)",
+    "valueFix": "the fix for any other rejected value of this property (rule U-CSS-023 unless valueRule names another)",
+    "authoring": "authoring-level overrides the lint applies because the exporter rewrites the value before the IR (handling, extra types or keywords, comma lists)",
+    "lists": "initialValues, svgPresentation, transformFunctions, keyframeProperties, timingKeywords, mediaFeatures, mediaTypes, layoutTransitionProperties, pseudoElements, pseudoClasses, atRules, elements, inputTypes and browserDefaults are read by the exporter's lint only",
+    "typeUnits": "the units of each value type the mapper's validation accepts (units lists the length and percent units)",
+    "exportResolved": "authoring forms the exporter resolves before the IR; see its note"
   },
   "properties": {
     "-webkit-font-smoothing": {
@@ -51,6 +96,10 @@
     },
     "-webkit-tap-highlight-color": {
       "handling": "dropped"
+    },
+    "-webkit-text-size-adjust": {
+      "handling": "dropped",
+      "note": "No effect on the compiled screen (a rendering hint, or ignored by flex layout); accepted and omitted."
     },
     "align-content": {
       "handling": "direct",
@@ -60,7 +109,22 @@
         "flex-end",
         "center",
         "stretch"
-      ]
+      ],
+      "rejectedValues": {
+        "baseline": {
+          "rule": "U-CSS-018",
+          "fix": "Use flex-start, center or flex-end; to line up two text styles, give the smaller one a top margin equal to the difference of their baselines."
+        },
+        "first": {
+          "rule": "U-CSS-018",
+          "fix": "Use flex-start, center or flex-end; to line up two text styles, give the smaller one a top margin equal to the difference of their baselines."
+        },
+        "last": {
+          "rule": "U-CSS-018",
+          "fix": "Use flex-start, center or flex-end; to line up two text styles, give the smaller one a top margin equal to the difference of their baselines."
+        }
+      },
+      "valueFix": "Use auto, flex-start, flex-end, center, stretch."
     },
     "align-items": {
       "handling": "direct",
@@ -69,7 +133,22 @@
         "flex-end",
         "center",
         "stretch"
-      ]
+      ],
+      "rejectedValues": {
+        "baseline": {
+          "rule": "U-CSS-018",
+          "fix": "Use flex-start, center or flex-end; to line up two text styles, give the smaller one a top margin equal to the difference of their baselines."
+        },
+        "first": {
+          "rule": "U-CSS-018",
+          "fix": "Use flex-start, center or flex-end; to line up two text styles, give the smaller one a top margin equal to the difference of their baselines."
+        },
+        "last": {
+          "rule": "U-CSS-018",
+          "fix": "Use flex-start, center or flex-end; to line up two text styles, give the smaller one a top margin equal to the difference of their baselines."
+        }
+      },
+      "valueFix": "Use flex-start, flex-end, center, stretch."
     },
     "align-self": {
       "handling": "direct",
@@ -79,7 +158,114 @@
         "flex-end",
         "center",
         "stretch"
-      ]
+      ],
+      "rejectedValues": {
+        "baseline": {
+          "rule": "U-CSS-018",
+          "fix": "Use flex-start, center or flex-end; to line up two text styles, give the smaller one a top margin equal to the difference of their baselines."
+        },
+        "first": {
+          "rule": "U-CSS-018",
+          "fix": "Use flex-start, center or flex-end; to line up two text styles, give the smaller one a top margin equal to the difference of their baselines."
+        },
+        "last": {
+          "rule": "U-CSS-018",
+          "fix": "Use flex-start, center or flex-end; to line up two text styles, give the smaller one a top margin equal to the difference of their baselines."
+        }
+      },
+      "valueFix": "Use auto, flex-start, flex-end, center, stretch."
+    },
+    "animation": {
+      "handling": "lowered",
+      "list": true,
+      "note": "Recorded for the animation player (IrNode.Anims), never written as USS"
+    },
+    "animation-delay": {
+      "handling": "lowered",
+      "types": [
+        "time"
+      ],
+      "list": true,
+      "valueFix": "Write animation delays in s or ms.",
+      "note": "Recorded for the animation player (IrNode.Anims), never written as USS"
+    },
+    "animation-direction": {
+      "handling": "lowered",
+      "keywords": [
+        "normal",
+        "reverse",
+        "alternate",
+        "alternate-reverse"
+      ],
+      "list": true,
+      "valueFix": "Use normal, reverse, alternate or alternate-reverse.",
+      "note": "Recorded for the animation player (IrNode.Anims), never written as USS"
+    },
+    "animation-duration": {
+      "handling": "lowered",
+      "types": [
+        "time"
+      ],
+      "list": true,
+      "valueFix": "Write animation durations in s or ms.",
+      "note": "Recorded for the animation player (IrNode.Anims), never written as USS"
+    },
+    "animation-fill-mode": {
+      "handling": "lowered",
+      "keywords": [
+        "none",
+        "forwards",
+        "backwards",
+        "both"
+      ],
+      "list": true,
+      "valueFix": "Use none, forwards, backwards or both.",
+      "note": "Recorded for the animation player (IrNode.Anims), never written as USS"
+    },
+    "animation-iteration-count": {
+      "handling": "lowered",
+      "keywords": [
+        "infinite"
+      ],
+      "types": [
+        "number"
+      ],
+      "list": true,
+      "valueFix": "Use a number or infinite.",
+      "note": "Recorded for the animation player (IrNode.Anims), never written as USS"
+    },
+    "animation-name": {
+      "handling": "lowered",
+      "types": [
+        "ident"
+      ],
+      "list": true,
+      "valueFix": "Name a @keyframes rule of the design.",
+      "note": "Recorded for the animation player (IrNode.Anims), never written as USS"
+    },
+    "animation-play-state": {
+      "handling": "lowered",
+      "keywords": [
+        "running",
+        "paused"
+      ],
+      "list": true,
+      "valueFix": "Use running or paused.",
+      "note": "Recorded for the animation player (IrNode.Anims), never written as USS"
+    },
+    "animation-timing-function": {
+      "handling": "lowered",
+      "list": true,
+      "valueRule": "U-CSS-008",
+      "valueFix": "Use one of linear, ease, ease-in, ease-out, ease-in-out as the timing function of transitions and animations.",
+      "note": "Recorded for the animation player (IrNode.Anims), never written as USS"
+    },
+    "appearance": {
+      "handling": "dropped",
+      "keywords": [
+        "none"
+      ],
+      "valueFix": "Write appearance: none: native control looks are not compiled (the kit's components draw the control)."
     },
     "aspect-ratio": {
       "handling": "direct",
@@ -89,18 +275,20 @@
       "types": [
         "ratio"
       ],
+      "valueFix": "Use auto or a ratio (a / b or one number).",
       "note": "a / b is written as one number (USS <ratio> is a number); auto together with a ratio is the ratio (no compiled element has a natural ratio of its own)"
     },
     "backdrop-filter": {
       "handling": "error",
-      "rule": "U-CSS-023",
-      "fix": "UI Toolkit has no backdrop filter; draw the blur as a baked image."
+      "rule": "U-CSS-007",
+      "fix": "Remove backdrop-filter; use a semi-transparent background colour or a pre-blurred image."
     },
     "background-color": {
       "handling": "direct",
       "types": [
         "color"
-      ]
+      ],
+      "valueFix": "Write colours as hex, rgb()/rgba(), hsl()/hsla() or a basic colour keyword."
     },
     "background-image": {
       "handling": "dropped",
@@ -115,7 +303,8 @@
       "loweredFunctions": [
         "url"
       ],
-      "note": "url() images are IR assets (the node's background or image asset): the compiler writes the base one from the asset with CSS background geometry, a layer may switch to another image file or to none; gradients are baked from the base layer"
+      "valueFix": "Use none, linear-gradient(), radial-gradient() or url().",
+      "note": "url() images are IR assets (the node's background or image asset): the compiler writes the base one from the asset with CSS background geometry, a layer may switch to another image file or to none; gradients are baked per layer by the exporter. U-CSS-037 rejects a url() image beside a gradient in another layer, a url() image only in a layer, and any background image on a tintable icon"
     },
     "background-position-x": {
       "handling": "direct",
@@ -132,6 +321,11 @@
         1,
         2
       ],
+      "valueFix": "Use left, center, right or a px or % offset.",
+      "authoring": {
+        "list": true,
+        "note": "one value per background layer; the exporter bakes the layers into one image (U-CSS-014 rejects layers it cannot bake)"
+      },
       "note": "USS grammar [ center | [ [ left | right ]? <length-percentage>? ] ]"
     },
     "background-position-y": {
@@ -149,6 +343,11 @@
         1,
         2
       ],
+      "valueFix": "Use top, center, bottom or a px or % offset.",
+      "authoring": {
+        "list": true,
+        "note": "one value per background layer; the exporter bakes the layers into one image (U-CSS-014 rejects layers it cannot bake)"
+      },
       "note": "USS grammar [ center | [ [ top | bottom ]? <length-percentage>? ] ]"
     },
     "background-repeat": {
@@ -165,6 +364,11 @@
         1,
         2
       ],
+      "valueFix": "Use repeat, no-repeat, repeat-x, repeat-y, space or round.",
+      "authoring": {
+        "list": true,
+        "note": "one value per background layer; the exporter bakes the layers into one image (U-CSS-014 rejects layers it cannot bake)"
+      },
       "note": "USS grammar repeat-x | repeat-y | [ repeat | space | round | no-repeat ]{1,2}"
     },
     "background-size": {
@@ -182,38 +386,106 @@
         1,
         2
       ],
+      "valueFix": "Use auto, cover, contain or px or % sizes.",
+      "authoring": {
+        "list": true,
+        "note": "one value per background layer; the exporter bakes the layers into one image (U-CSS-014 rejects layers it cannot bake)"
+      },
       "note": "USS grammar [ <length-percentage> | auto ]{1,2} | cover | contain; on a CSS background image auto becomes the asset's natural size in px"
     },
     "border-bottom-color": {
       "handling": "direct",
       "types": [
         "color"
-      ]
+      ],
+      "valueFix": "Write colours as hex, rgb()/rgba(), hsl()/hsla() or a basic colour keyword."
     },
     "border-bottom-left-radius": {
       "handling": "direct",
       "types": [
         "length"
-      ]
+      ],
+      "valueRule": "U-CSS-020",
+      "valueFix": "Use one px radius per corner (circular corners); for a pill use half the height. A % radius on a non-square box and the / syntax draw ellipses.",
+      "authoring": {
+        "types": [
+          "length",
+          "percent"
+        ],
+        "note": "% and rem radii are resolved to one px value per corner at export (CSS's overlapping-curves scaling)"
+      }
     },
     "border-bottom-right-radius": {
       "handling": "direct",
       "types": [
         "length"
-      ]
+      ],
+      "valueRule": "U-CSS-020",
+      "valueFix": "Use one px radius per corner (circular corners); for a pill use half the height. A % radius on a non-square box and the / syntax draw ellipses.",
+      "authoring": {
+        "types": [
+          "length",
+          "percent"
+        ],
+        "note": "% and rem radii are resolved to one px value per corner at export (CSS's overlapping-curves scaling)"
+      }
     },
     "border-bottom-style": {
       "handling": "dropped",
       "keywords": [
         "solid",
         "none"
-      ]
+      ],
+      "rejectedValues": {
+        "dotted": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "dashed": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "double": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "groove": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "ridge": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "inset": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "outset": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "hidden": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        }
+      },
+      "valueFix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
     },
     "border-bottom-width": {
       "handling": "direct",
       "types": [
         "length"
-      ]
+      ],
+      "valueFix": "Write border widths in px.",
+      "authoring": {
+        "keywords": [
+          "thin",
+          "medium",
+          "thick"
+        ],
+        "note": "width keywords are written as 1px, 3px and 5px at export"
+      }
     },
     "border-color": {
       "handling": "direct",
@@ -223,26 +495,72 @@
       "components": [
         1,
         4
-      ]
+      ],
+      "valueFix": "Write colours as hex, rgb()/rgba(), hsl()/hsla() or a basic colour keyword."
     },
     "border-left-color": {
       "handling": "direct",
       "types": [
         "color"
-      ]
+      ],
+      "valueFix": "Write colours as hex, rgb()/rgba(), hsl()/hsla() or a basic colour keyword."
     },
     "border-left-style": {
       "handling": "dropped",
       "keywords": [
         "solid",
         "none"
-      ]
+      ],
+      "rejectedValues": {
+        "dotted": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "dashed": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "double": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "groove": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "ridge": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "inset": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "outset": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "hidden": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        }
+      },
+      "valueFix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
     },
     "border-left-width": {
       "handling": "direct",
       "types": [
         "length"
-      ]
+      ],
+      "valueFix": "Write border widths in px.",
+      "authoring": {
+        "keywords": [
+          "thin",
+          "medium",
+          "thick"
+        ],
+        "note": "width keywords are written as 1px, 3px and 5px at export"
+      }
     },
     "border-radius": {
       "handling": "direct",
@@ -252,26 +570,80 @@
       "components": [
         1,
         4
-      ]
+      ],
+      "valueRule": "U-CSS-020",
+      "valueFix": "Use one px radius per corner (circular corners); for a pill use half the height. A % radius on a non-square box and the / syntax draw ellipses.",
+      "authoring": {
+        "types": [
+          "length",
+          "percent"
+        ],
+        "note": "% and rem radii are resolved to one px value per corner at export (CSS's overlapping-curves scaling)"
+      }
     },
     "border-right-color": {
       "handling": "direct",
       "types": [
         "color"
-      ]
+      ],
+      "valueFix": "Write colours as hex, rgb()/rgba(), hsl()/hsla() or a basic colour keyword."
     },
     "border-right-style": {
       "handling": "dropped",
       "keywords": [
         "solid",
         "none"
-      ]
+      ],
+      "rejectedValues": {
+        "dotted": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "dashed": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "double": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "groove": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "ridge": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "inset": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "outset": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "hidden": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        }
+      },
+      "valueFix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
     },
     "border-right-width": {
       "handling": "direct",
       "types": [
         "length"
-      ]
+      ],
+      "valueFix": "Write border widths in px.",
+      "authoring": {
+        "keywords": [
+          "thin",
+          "medium",
+          "thick"
+        ],
+        "note": "width keywords are written as 1px, 3px and 5px at export"
+      }
     },
     "border-style": {
       "handling": "dropped",
@@ -282,38 +654,136 @@
       "components": [
         1,
         4
-      ]
+      ],
+      "rejectedValues": {
+        "dotted": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "dashed": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "double": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "groove": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "ridge": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "inset": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "outset": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "hidden": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        }
+      },
+      "valueFix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
     },
     "border-top-color": {
       "handling": "direct",
       "types": [
         "color"
-      ]
+      ],
+      "valueFix": "Write colours as hex, rgb()/rgba(), hsl()/hsla() or a basic colour keyword."
     },
     "border-top-left-radius": {
       "handling": "direct",
       "types": [
         "length"
-      ]
+      ],
+      "valueRule": "U-CSS-020",
+      "valueFix": "Use one px radius per corner (circular corners); for a pill use half the height. A % radius on a non-square box and the / syntax draw ellipses.",
+      "authoring": {
+        "types": [
+          "length",
+          "percent"
+        ],
+        "note": "% and rem radii are resolved to one px value per corner at export (CSS's overlapping-curves scaling)"
+      }
     },
     "border-top-right-radius": {
       "handling": "direct",
       "types": [
         "length"
-      ]
+      ],
+      "valueRule": "U-CSS-020",
+      "valueFix": "Use one px radius per corner (circular corners); for a pill use half the height. A % radius on a non-square box and the / syntax draw ellipses.",
+      "authoring": {
+        "types": [
+          "length",
+          "percent"
+        ],
+        "note": "% and rem radii are resolved to one px value per corner at export (CSS's overlapping-curves scaling)"
+      }
     },
     "border-top-style": {
       "handling": "dropped",
       "keywords": [
         "solid",
         "none"
-      ]
+      ],
+      "rejectedValues": {
+        "dotted": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "dashed": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "double": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "groove": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "ridge": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "inset": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "outset": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        },
+        "hidden": {
+          "rule": "U-CSS-021",
+          "fix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
+        }
+      },
+      "valueFix": "Use border-style solid (or none); draw dashed or dotted lines as an SVG image."
     },
     "border-top-width": {
       "handling": "direct",
       "types": [
         "length"
-      ]
+      ],
+      "valueFix": "Write border widths in px.",
+      "authoring": {
+        "keywords": [
+          "thin",
+          "medium",
+          "thick"
+        ],
+        "note": "width keywords are written as 1px, 3px and 5px at export"
+      }
     },
     "border-width": {
       "handling": "direct",
@@ -323,7 +793,16 @@
       "components": [
         1,
         4
-      ]
+      ],
+      "valueFix": "Write border widths in px.",
+      "authoring": {
+        "keywords": [
+          "thin",
+          "medium",
+          "thick"
+        ],
+        "note": "width keywords are written as 1px, 3px and 5px at export"
+      }
     },
     "bottom": {
       "handling": "direct",
@@ -333,26 +812,52 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "box-shadow": {
-      "handling": "dropped"
+      "handling": "dropped",
+      "valueRule": "U-CSS-014",
+      "valueFix": "Transition opacity or transform instead of box-shadow or background-image; use one url() image per element; let a gradient fill the element; write gradient colours as sRGB colour stops.",
+      "note": "Baked per layer by the exporter (outer shadows behind the element, inset shadows as an overlay over the padding box); U-CSS-037 rejects an inset shadow under the element's own text, on a form control or on a scroll area, and on a tintable icon"
     },
     "box-sizing": {
       "handling": "dropped",
       "keywords": [
         "border-box"
-      ]
+      ],
+      "loweredValues": [
+        "content-box"
+      ],
+      "valueFix": "Use box-sizing: border-box (the kit's sizing).",
+      "note": "The kit sizes every element as border-box. content-box is consumed by the compiler: it is rejected on an element with a width or height and padding or border (U-CSS-036) and dropped elsewhere."
     },
     "color": {
       "handling": "direct",
       "types": [
         "color"
-      ]
+      ],
+      "valueFix": "Write colours as hex, rgb()/rgba(), hsl()/hsla() or a basic colour keyword."
     },
     "column-gap": {
       "handling": "lowered",
+      "keywords": [
+        "normal"
+      ],
+      "types": [
+        "length"
+      ],
+      "components": [
+        1,
+        1
+      ],
+      "valueFix": "Write the gap in px; it is lowered to child margins (only on flex containers that do not wrap, U-CSS-011).",
       "note": "Lowering: child margins on flex containers"
+    },
+    "content": {
+      "handling": "error",
+      "rule": "U-CSS-002",
+      "fix": "Use a real element instead of generated content (::before/::after content, list markers): an icon, bullet or divider element; set list-style: none on list items."
     },
     "cursor": {
       "handling": "dropped"
@@ -362,7 +867,25 @@
       "keywords": [
         "flex",
         "none"
-      ]
+      ],
+      "loweredValues": [
+        "block",
+        "inline",
+        "inline-block",
+        "inline-flex"
+      ],
+      "rejectedValues": {
+        "grid": {
+          "rule": "U-CSS-001",
+          "fix": "Use display: flex (nested flex rows and columns; flex-wrap for tiles) instead of grid."
+        },
+        "inline-grid": {
+          "rule": "U-CSS-001",
+          "fix": "Use display: flex (nested flex rows and columns; flex-wrap for tiles) instead of grid."
+        }
+      },
+      "valueFix": "Use display: flex, block or none (block becomes a flex column; inline-block, inline-flex and inline only on flex items and absolute elements, where CSS blockifies them, or as rich text inside a paragraph).",
+      "note": "USS has flex and none. The compiler writes block as a flex column, blockifies inline-level flex items and absolute elements (inline-flex → flex, inline-block and inline → block) and rejects an in-flow inline-level child of a block container (U-CSS-009)."
     },
     "filter": {
       "handling": "error",
@@ -383,7 +906,8 @@
       "components": [
         1,
         3
-      ]
+      ],
+      "valueFix": "Use flex: <grow> <shrink> <basis> with numbers and a px or % basis (or auto or none)."
     },
     "flex-basis": {
       "handling": "direct",
@@ -393,7 +917,8 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "flex-direction": {
       "handling": "direct",
@@ -402,19 +927,22 @@
         "column",
         "row-reverse",
         "column-reverse"
-      ]
+      ],
+      "valueFix": "Use row, column, row-reverse or column-reverse."
     },
     "flex-grow": {
       "handling": "direct",
       "types": [
         "number"
-      ]
+      ],
+      "valueFix": "Use a number."
     },
     "flex-shrink": {
       "handling": "direct",
       "types": [
         "number"
-      ]
+      ],
+      "valueFix": "Use a number."
     },
     "flex-wrap": {
       "handling": "direct",
@@ -422,7 +950,13 @@
         "nowrap",
         "wrap",
         "wrap-reverse"
-      ]
+      ],
+      "valueFix": "Use nowrap, wrap or wrap-reverse."
+    },
+    "float": {
+      "handling": "error",
+      "rule": "U-CSS-017",
+      "fix": "Use flex layout instead of float."
     },
     "font-family": {
       "handling": "direct",
@@ -434,20 +968,25 @@
       "components": [
         1,
         6
-      ]
+      ],
+      "valueRule": "U-CSS-010",
+      "valueFix": "Put a kit font family first in font-family."
     },
     "font-size": {
       "handling": "direct",
       "types": [
         "length"
-      ]
+      ],
+      "valueRule": "U-CSS-016",
+      "valueFix": "Use a kit text style (text-styles.json): font-size, line-height and font-weight of one entry."
     },
     "font-style": {
       "handling": "direct",
       "keywords": [
         "normal",
         "italic"
-      ]
+      ],
+      "valueFix": "Use font-style: normal or italic."
     },
     "font-weight": {
       "handling": "direct",
@@ -456,10 +995,23 @@
         "bold",
         "400",
         "700"
-      ]
+      ],
+      "valueRule": "U-CSS-016",
+      "valueFix": "Use a kit text style (text-styles.json): font-size, line-height and font-weight of one entry."
     },
     "gap": {
       "handling": "lowered",
+      "keywords": [
+        "normal"
+      ],
+      "types": [
+        "length"
+      ],
+      "components": [
+        1,
+        2
+      ],
+      "valueFix": "Write the gap in px; it is lowered to child margins (only on flex containers that do not wrap, U-CSS-011).",
       "note": "Lowering: child margins on flex containers"
     },
     "height": {
@@ -470,7 +1022,8 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "justify-content": {
       "handling": "direct",
@@ -481,7 +1034,16 @@
         "space-between",
         "space-around",
         "space-evenly"
-      ]
+      ],
+      "valueFix": "Use flex-start, flex-end, center, space-between, space-around or space-evenly."
+    },
+    "justify-items": {
+      "handling": "dropped",
+      "note": "No effect on the compiled screen (a rendering hint, or ignored by flex layout); accepted and omitted."
+    },
+    "justify-self": {
+      "handling": "dropped",
+      "note": "No effect on the compiled screen (a rendering hint, or ignored by flex layout); accepted and omitted."
     },
     "left": {
       "handling": "direct",
@@ -491,7 +1053,8 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "letter-spacing": {
       "handling": "direct",
@@ -503,10 +1066,28 @@
       ],
       "mapValues": {
         "normal": "0px"
-      }
+      },
+      "valueFix": "Write letter-spacing in px (or normal)."
     },
     "line-height": {
-      "handling": "dropped"
+      "handling": "dropped",
+      "valueRule": "U-CSS-016",
+      "valueFix": "Use a kit text style (text-styles.json): font-size, line-height and font-weight of one entry."
+    },
+    "list-style-image": {
+      "handling": "dropped",
+      "valueRule": "U-CSS-002",
+      "valueFix": "Use a real element instead of generated content (::before/::after content, list markers): an icon, bullet or divider element; set list-style: none on list items."
+    },
+    "list-style-position": {
+      "handling": "dropped",
+      "valueRule": "U-CSS-002",
+      "valueFix": "Use a real element instead of generated content (::before/::after content, list markers): an icon, bullet or divider element; set list-style: none on list items."
+    },
+    "list-style-type": {
+      "handling": "dropped",
+      "valueRule": "U-CSS-002",
+      "valueFix": "Use a real element instead of generated content (::before/::after content, list markers): an icon, bullet or divider element; set list-style: none on list items."
     },
     "margin": {
       "handling": "direct",
@@ -520,7 +1101,8 @@
       "components": [
         1,
         4
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "margin-bottom": {
       "handling": "direct",
@@ -530,7 +1112,8 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "margin-left": {
       "handling": "direct",
@@ -540,7 +1123,8 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "margin-right": {
       "handling": "direct",
@@ -550,7 +1134,8 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "margin-top": {
       "handling": "direct",
@@ -560,7 +1145,8 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "max-height": {
       "handling": "direct",
@@ -570,7 +1156,8 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "max-width": {
       "handling": "direct",
@@ -580,7 +1167,8 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "min-height": {
       "handling": "direct",
@@ -593,7 +1181,8 @@
       ],
       "dropValues": [
         "auto"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "min-width": {
       "handling": "direct",
@@ -606,18 +1195,66 @@
       ],
       "dropValues": [
         "auto"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
+    },
+    "object-fit": {
+      "handling": "lowered",
+      "keywords": [
+        "fill",
+        "contain",
+        "cover"
+      ],
+      "valueFix": "Use object-fit fill, contain or cover (centred).",
+      "note": "Image nodes only: the compiler writes -unity-background-scale-mode (fill → stretch-to-fill, contain → scale-to-fit, cover → scale-and-crop), centred like object-position: center"
+    },
+    "object-position": {
+      "handling": "dropped",
+      "keywords": [
+        "center",
+        "50%"
+      ],
+      "components": [
+        1,
+        2
+      ],
+      "valueFix": "Only centred content images are compiled (object-position: center)."
     },
     "opacity": {
       "handling": "direct",
       "types": [
         "number"
-      ]
+      ],
+      "valueFix": "Use a number from 0 to 1."
     },
     "outline": {
       "handling": "error",
       "rule": "U-CSS-023",
       "fix": "Use a border, or draw the focus ring with an element; UI Toolkit has no outline."
+    },
+    "outline-color": {
+      "handling": "dropped",
+      "note": "No effect on the compiled screen (a rendering hint, or ignored by flex layout); accepted and omitted."
+    },
+    "outline-offset": {
+      "handling": "dropped",
+      "note": "No effect on the compiled screen (a rendering hint, or ignored by flex layout); accepted and omitted."
+    },
+    "outline-style": {
+      "handling": "dropped",
+      "keywords": [
+        "none"
+      ],
+      "valueFix": "UI Toolkit has no outline: draw a focus ring with a border or an element (outline: none or 0 is fine)."
+    },
+    "outline-width": {
+      "handling": "dropped",
+      "keywords": [
+        "0",
+        "0px",
+        "medium"
+      ],
+      "valueFix": "UI Toolkit has no outline: draw a focus ring with a border or an element (outline: none or 0 is fine)."
     },
     "overflow": {
       "handling": "direct",
@@ -629,10 +1266,11 @@
         "auto",
         "scroll"
       ],
-      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected.",
       "mapValues": {
         "clip": "hidden"
-      }
+      },
+      "valueFix": "Use visible, hidden or clip; auto or scroll make the element a scroll area.",
+      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected."
     },
     "overflow-x": {
       "handling": "direct",
@@ -644,10 +1282,11 @@
         "auto",
         "scroll"
       ],
-      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected.",
       "mapValues": {
         "clip": "hidden"
-      }
+      },
+      "valueFix": "Use visible, hidden or clip; auto or scroll make the element a scroll area.",
+      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected."
     },
     "overflow-y": {
       "handling": "direct",
@@ -659,10 +1298,11 @@
         "auto",
         "scroll"
       ],
-      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected.",
       "mapValues": {
         "clip": "hidden"
-      }
+      },
+      "valueFix": "Use visible, hidden or clip; auto or scroll make the element a scroll area.",
+      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected."
     },
     "padding": {
       "handling": "direct",
@@ -673,38 +1313,48 @@
       "components": [
         1,
         4
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "padding-bottom": {
       "handling": "direct",
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "padding-left": {
       "handling": "direct",
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "padding-right": {
       "handling": "direct",
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "padding-top": {
       "handling": "direct",
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "pointer-events": {
       "handling": "lowered",
+      "keywords": [
+        "auto",
+        "none"
+      ],
+      "valueFix": "Use pointer-events: auto or none.",
       "note": "Lowering: none becomes the picking-ignore flag"
     },
     "position": {
@@ -712,7 +1362,33 @@
       "keywords": [
         "relative",
         "absolute"
-      ]
+      ],
+      "loweredValues": [
+        "static"
+      ],
+      "rejectedValues": {
+        "fixed": {
+          "rule": "U-CSS-017",
+          "fix": "Use position: absolute inside the screen root instead of fixed or sticky."
+        },
+        "sticky": {
+          "rule": "U-CSS-017",
+          "fix": "Use position: absolute inside the screen root instead of fixed or sticky."
+        },
+        "-webkit-sticky": {
+          "rule": "U-CSS-017",
+          "fix": "Use position: absolute inside the screen root instead of fixed or sticky."
+        }
+      },
+      "valueFix": "Use position: static, relative or absolute.",
+      "note": "static (the CSS default) drops the insets and is written as USS relative after the compiler has ordered siblings like CSS paints them. An absolute element needs a positioned parent (U-CSS-035)."
+    },
+    "resize": {
+      "handling": "dropped",
+      "keywords": [
+        "none"
+      ],
+      "valueFix": "Remove resize; UI Toolkit elements cannot be resized by the player."
     },
     "right": {
       "handling": "direct",
@@ -722,7 +1398,8 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "rotate": {
       "handling": "direct",
@@ -731,10 +1408,23 @@
       ],
       "types": [
         "angle"
-      ]
+      ],
+      "valueRule": "U-CSS-025",
+      "valueFix": "Use only translate()/translateX()/translateY(), rotate() and scale()/scaleX()/scaleY() in the order translate → rotate → scale (or the translate, rotate and scale properties); no matrix, skew, perspective or 3D functions."
     },
     "row-gap": {
       "handling": "lowered",
+      "keywords": [
+        "normal"
+      ],
+      "types": [
+        "length"
+      ],
+      "components": [
+        1,
+        1
+      ],
+      "valueFix": "Write the gap in px; it is lowered to child margins (only on flex containers that do not wrap, U-CSS-011).",
       "note": "Lowering: child margins on flex containers"
     },
     "scale": {
@@ -748,7 +1438,9 @@
       "components": [
         1,
         3
-      ]
+      ],
+      "valueRule": "U-CSS-025",
+      "valueFix": "Use only translate()/translateX()/translateY(), rotate() and scale()/scaleX()/scaleY() in the order translate → rotate → scale (or the translate, rotate and scale properties); no matrix, skew, perspective or 3D functions."
     },
     "text-align": {
       "handling": "direct",
@@ -760,14 +1452,20 @@
       "mapValues": {
         "start": "left",
         "end": "right"
-      }
+      },
+      "valueFix": "Use text-align: left, center or right (start and end are read as left and right)."
     },
     "text-overflow": {
       "handling": "direct",
       "keywords": [
         "clip",
         "ellipsis"
-      ]
+      ],
+      "valueFix": "Use text-overflow: clip or ellipsis."
+    },
+    "text-rendering": {
+      "handling": "dropped",
+      "note": "No effect on the compiled screen (a rendering hint, or ignored by flex layout); accepted and omitted."
     },
     "text-shadow": {
       "handling": "direct",
@@ -781,7 +1479,12 @@
       "components": [
         2,
         4
-      ]
+      ],
+      "valueFix": "Use one text shadow: x y blur colour in px (UI Toolkit draws one)."
+    },
+    "text-size-adjust": {
+      "handling": "dropped",
+      "note": "No effect on the compiled screen (a rendering hint, or ignored by flex layout); accepted and omitted."
     },
     "text-transform": {
       "handling": "error",
@@ -793,7 +1496,8 @@
       "keywords": [
         "wrap",
         "nowrap"
-      ]
+      ],
+      "valueFix": "Use text-wrap-mode: wrap or nowrap."
     },
     "top": {
       "handling": "direct",
@@ -803,12 +1507,19 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
     },
     "transform": {
       "handling": "error",
-      "rule": "U-CSS-023",
-      "fix": "Use translate, rotate and scale; the exporter splits transform into them."
+      "rule": "U-CSS-025",
+      "fix": "Use translate, rotate and scale; the exporter splits transform into them.",
+      "valueRule": "U-CSS-025",
+      "valueFix": "Use only translate()/translateX()/translateY(), rotate() and scale()/scaleX()/scaleY() in the order translate → rotate → scale (or the translate, rotate and scale properties); no matrix, skew, perspective or 3D functions.",
+      "authoring": {
+        "handling": "lowered",
+        "note": "the exporter splits transform into translate, rotate and scale (U-CSS-025 rejects what cannot be split)"
+      }
     },
     "transform-origin": {
       "handling": "direct",
@@ -826,10 +1537,12 @@
       "components": [
         1,
         3
-      ]
+      ],
+      "valueFix": "Use keywords (left, center, right, top, bottom) or px or % offsets."
     },
     "transition": {
       "handling": "lowered",
+      "list": true,
       "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
     },
     "transition-behavior": {
@@ -837,22 +1550,41 @@
       "keywords": [
         "normal"
       ],
-      "list": true
+      "list": true,
+      "valueFix": "Use transition-behavior: normal."
     },
     "transition-delay": {
       "handling": "lowered",
+      "types": [
+        "time"
+      ],
+      "list": true,
+      "valueFix": "Write transition delays in s or ms.",
       "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
     },
     "transition-duration": {
       "handling": "lowered",
+      "types": [
+        "time"
+      ],
+      "list": true,
+      "valueFix": "Write transition durations in s or ms.",
       "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
     },
     "transition-property": {
       "handling": "lowered",
+      "types": [
+        "ident"
+      ],
+      "list": true,
+      "valueFix": "Name the properties to transition (or all).",
       "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
     },
     "transition-timing-function": {
       "handling": "lowered",
+      "list": true,
+      "valueRule": "U-CSS-008",
+      "valueFix": "Use one of linear, ease, ease-in, ease-out, ease-in-out as the timing function of transitions and animations.",
       "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
     },
     "translate": {
@@ -867,7 +1599,9 @@
       "components": [
         1,
         2
-      ]
+      ],
+      "valueRule": "U-CSS-025",
+      "valueFix": "Use only translate()/translateX()/translateY(), rotate() and scale()/scaleX()/scaleY() in the order translate → rotate → scale (or the translate, rotate and scale properties); no matrix, skew, perspective or 3D functions."
     },
     "user-select": {
       "handling": "dropped"
@@ -877,7 +1611,8 @@
       "keywords": [
         "visible",
         "hidden"
-      ]
+      ],
+      "valueFix": "Use visibility: visible or hidden."
     },
     "white-space": {
       "handling": "direct",
@@ -886,14 +1621,16 @@
         "nowrap",
         "pre",
         "pre-wrap"
-      ]
+      ],
+      "valueFix": "Use white-space: normal, nowrap, pre or pre-wrap."
     },
     "white-space-collapse": {
       "handling": "direct",
       "keywords": [
         "collapse",
         "preserve"
-      ]
+      ],
+      "valueFix": "Use white-space-collapse: collapse or preserve."
     },
     "width": {
       "handling": "direct",
@@ -903,7 +1640,12 @@
       "types": [
         "length",
         "percent"
-      ]
+      ],
+      "valueFix": "Write a px or % length (rem is resolved at export); no other units or keywords."
+    },
+    "will-change": {
+      "handling": "dropped",
+      "note": "No effect on the compiled screen (a rendering hint, or ignored by flex layout); accepted and omitted."
     },
     "word-spacing": {
       "handling": "direct",
@@ -915,11 +1657,548 @@
       ],
       "mapValues": {
         "normal": "0px"
-      }
+      },
+      "valueFix": "Write word-spacing in px (or normal)."
     },
     "z-index": {
       "handling": "lowered",
-      "note": "Lowering: sibling order"
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "number"
+      ],
+      "valueRule": "U-CSS-004",
+      "valueFix": "Set z-index in the base style only, on absolute elements, relative elements or flex items, and only where the markup order already gives the CSS paint order of in-flow siblings (UI Toolkit paints siblings in hierarchy order and moves only absolute ones); otherwise reorder the markup, give the element position: relative or absolute, or remove the z-index.",
+      "note": "Lowering: sibling order (CSS paint order: negative z, in-flow, positioned auto/0, positive z); base layer only. U-CSS-004 rejects what UI Toolkit's hierarchy order cannot reproduce."
+    }
+  },
+  "initialValues": {
+    "animation-composition": [
+      "replace"
+    ],
+    "animation-range-end": [
+      "normal"
+    ],
+    "animation-range-start": [
+      "normal"
+    ],
+    "animation-timeline": [
+      "auto"
+    ],
+    "backdrop-filter": [
+      "none"
+    ],
+    "background-attachment": [
+      "scroll"
+    ],
+    "background-clip": [
+      "border-box"
+    ],
+    "background-origin": [
+      "padding-box"
+    ],
+    "background-position-x": [
+      "0%"
+    ],
+    "background-position-y": [
+      "0%"
+    ],
+    "background-repeat": [
+      "repeat"
+    ],
+    "background-size": [
+      "auto"
+    ],
+    "border-image-outset": [
+      "0"
+    ],
+    "border-image-repeat": [
+      "stretch"
+    ],
+    "border-image-slice": [
+      "100%"
+    ],
+    "border-image-source": [
+      "none"
+    ],
+    "border-image-width": [
+      "1"
+    ],
+    "content": [
+      "normal",
+      "none"
+    ],
+    "filter": [
+      "none"
+    ],
+    "float": [
+      "none"
+    ],
+    "font-feature-settings": [
+      "normal"
+    ],
+    "font-kerning": [
+      "auto"
+    ],
+    "font-language-override": [
+      "normal"
+    ],
+    "font-optical-sizing": [
+      "auto"
+    ],
+    "font-size-adjust": [
+      "none"
+    ],
+    "font-stretch": [
+      "normal",
+      "100%"
+    ],
+    "font-variant-alternates": [
+      "normal"
+    ],
+    "font-variant-caps": [
+      "normal"
+    ],
+    "font-variant-east-asian": [
+      "normal"
+    ],
+    "font-variant-emoji": [
+      "normal"
+    ],
+    "font-variant-ligatures": [
+      "normal"
+    ],
+    "font-variant-numeric": [
+      "normal"
+    ],
+    "font-variant-position": [
+      "normal"
+    ],
+    "font-variation-settings": [
+      "normal"
+    ],
+    "text-decoration-color": [
+      "currentcolor"
+    ],
+    "text-decoration-line": [
+      "none"
+    ],
+    "text-decoration-style": [
+      "solid"
+    ],
+    "text-decoration-thickness": [
+      "auto"
+    ],
+    "text-transform": [
+      "none"
+    ],
+    "text-wrap-style": [
+      "auto"
+    ]
+  },
+  "svgPresentation": [
+    "fill",
+    "fill-opacity",
+    "fill-rule",
+    "stroke",
+    "stroke-width",
+    "stroke-linecap",
+    "stroke-linejoin",
+    "stroke-miterlimit",
+    "stroke-dasharray",
+    "stroke-dashoffset",
+    "stroke-opacity",
+    "clip-rule",
+    "color-interpolation",
+    "color-interpolation-filters",
+    "color-rendering",
+    "flood-color",
+    "flood-opacity",
+    "lighting-color",
+    "marker-start",
+    "marker-mid",
+    "marker-end",
+    "paint-order",
+    "shape-rendering",
+    "stop-color",
+    "stop-opacity",
+    "text-anchor",
+    "dominant-baseline",
+    "vector-effect",
+    "d",
+    "cx",
+    "cy",
+    "r",
+    "rx",
+    "ry",
+    "x",
+    "y",
+    "transform-box",
+    "mask-type",
+    "color"
+  ],
+  "transformFunctions": [
+    "translate",
+    "translatex",
+    "translatey",
+    "scale",
+    "scalex",
+    "scaley",
+    "rotate"
+  ],
+  "keyframeProperties": [
+    "transform",
+    "translate",
+    "rotate",
+    "scale",
+    "opacity",
+    "color",
+    "background-color",
+    "border-color",
+    "border-top-color",
+    "border-right-color",
+    "border-bottom-color",
+    "border-left-color",
+    "animation-timing-function"
+  ],
+  "timingKeywords": [
+    "linear",
+    "ease",
+    "ease-in",
+    "ease-out",
+    "ease-in-out"
+  ],
+  "mediaFeatures": [
+    "min-width",
+    "max-width",
+    "min-aspect-ratio",
+    "max-aspect-ratio"
+  ],
+  "mediaTypes": [
+    "all",
+    "screen"
+  ],
+  "layoutTransitionProperties": [
+    "all",
+    "width",
+    "height",
+    "min-width",
+    "min-height",
+    "max-width",
+    "max-height",
+    "margin",
+    "margin-top",
+    "margin-right",
+    "margin-bottom",
+    "margin-left",
+    "padding",
+    "padding-top",
+    "padding-right",
+    "padding-bottom",
+    "padding-left",
+    "top",
+    "right",
+    "bottom",
+    "left",
+    "inset",
+    "flex",
+    "flex-grow",
+    "flex-shrink",
+    "flex-basis",
+    "flex-direction",
+    "flex-wrap",
+    "flex-flow"
+  ],
+  "pseudoElements": [
+    "before",
+    "after",
+    "placeholder"
+  ],
+  "pseudoClasses": [
+    "hover",
+    "active",
+    "focus",
+    "disabled",
+    "checked",
+    "root"
+  ],
+  "atRules": {
+    "media": "any",
+    "keyframes": "any",
+    "import": "kit",
+    "font-face": "kit"
+  },
+  "elements": [
+    "body",
+    "div",
+    "span",
+    "p",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "button",
+    "input",
+    "textarea",
+    "select",
+    "option",
+    "label",
+    "img",
+    "svg",
+    "br",
+    "ul",
+    "ol",
+    "li",
+    "a",
+    "section",
+    "header",
+    "footer",
+    "nav",
+    "main",
+    "aside",
+    "article",
+    "b",
+    "strong",
+    "i",
+    "em"
+  ],
+  "inputTypes": [
+    "text",
+    "search",
+    "password",
+    "number",
+    "email",
+    "tel",
+    "url",
+    "checkbox",
+    "radio"
+  ],
+  "browserDefaults": {
+    "inherited": [
+      "color",
+      "text-align",
+      "text-indent",
+      "text-transform",
+      "text-shadow",
+      "letter-spacing",
+      "word-spacing",
+      "white-space-collapse",
+      "text-wrap-mode",
+      "overflow-wrap",
+      "word-break",
+      "line-break",
+      "visibility",
+      "tab-size",
+      "hyphens",
+      "text-align-last",
+      "text-justify",
+      "text-underline-position",
+      "text-emphasis-style",
+      "text-emphasis-color"
+    ],
+    "initial": {
+      "margin-top": [
+        "0px"
+      ],
+      "margin-right": [
+        "0px"
+      ],
+      "margin-bottom": [
+        "0px"
+      ],
+      "margin-left": [
+        "0px"
+      ],
+      "padding-top": [
+        "0px"
+      ],
+      "padding-right": [
+        "0px"
+      ],
+      "padding-bottom": [
+        "0px"
+      ],
+      "padding-left": [
+        "0px"
+      ],
+      "border-top-width": [
+        "0px"
+      ],
+      "border-right-width": [
+        "0px"
+      ],
+      "border-bottom-width": [
+        "0px"
+      ],
+      "border-left-width": [
+        "0px"
+      ],
+      "background-color": [
+        "rgba(0, 0, 0, 0)"
+      ],
+      "background-image": [
+        "none"
+      ],
+      "appearance": [
+        "none"
+      ],
+      "text-decoration-line": [
+        "none"
+      ],
+      "vertical-align": [
+        "baseline"
+      ],
+      "resize": [
+        "none"
+      ],
+      "opacity": [
+        "1"
+      ],
+      "box-shadow": [
+        "none"
+      ],
+      "float": [
+        "none"
+      ],
+      "position": [
+        "static"
+      ],
+      "z-index": [
+        "auto"
+      ],
+      "object-fit": [
+        "fill"
+      ],
+      "min-width": [
+        "auto",
+        "0px"
+      ],
+      "min-height": [
+        "auto",
+        "0px"
+      ],
+      "max-width": [
+        "none"
+      ],
+      "max-height": [
+        "none"
+      ],
+      "overflow-x": [
+        "visible"
+      ],
+      "overflow-y": [
+        "visible"
+      ],
+      "column-count": [
+        "auto"
+      ],
+      "transform": [
+        "none"
+      ],
+      "align-items": [
+        "normal"
+      ],
+      "align-self": [
+        "auto"
+      ],
+      "align-content": [
+        "normal"
+      ],
+      "justify-content": [
+        "normal"
+      ],
+      "flex-direction": [
+        "row"
+      ],
+      "flex-wrap": [
+        "nowrap"
+      ],
+      "outline-style": [
+        "none"
+      ],
+      "border-top-left-radius": [
+        "0px"
+      ],
+      "border-top-right-radius": [
+        "0px"
+      ],
+      "border-bottom-right-radius": [
+        "0px"
+      ],
+      "border-bottom-left-radius": [
+        "0px"
+      ]
+    },
+    "ignored": [
+      "display",
+      "unicode-bidi",
+      "direction",
+      "writing-mode",
+      "cursor",
+      "user-select",
+      "text-rendering",
+      "text-autospace",
+      "overflow-clip-margin",
+      "caret-color",
+      "box-sizing",
+      "list-style-type",
+      "list-style-position",
+      "list-style-image",
+      "content",
+      "quotes",
+      "line-height",
+      "text-size-adjust",
+      "text-decoration-thickness",
+      "text-decoration-style",
+      "text-decoration-color",
+      "outline-color",
+      "outline-offset",
+      "outline-width",
+      "border-image-source",
+      "border-image-slice",
+      "border-image-width",
+      "border-image-outset",
+      "border-image-repeat",
+      "animation-name",
+      "transition-property",
+      "pointer-events",
+      "touch-action",
+      "speak",
+      "zoom"
+    ],
+    "reproduced": {
+      "img": [
+        "overflow-x",
+        "overflow-y"
+      ],
+      "svg": [
+        "overflow-x",
+        "overflow-y"
+      ],
+      "button": [
+        "text-align"
+      ],
+      "input": [
+        "overflow-x",
+        "overflow-y"
+      ],
+      "textarea": [
+        "overflow-x",
+        "overflow-y",
+        "white-space-collapse",
+        "text-wrap-mode",
+        "overflow-wrap"
+      ],
+      "select": [
+        "overflow-x",
+        "overflow-y",
+        "white-space-collapse",
+        "text-wrap-mode",
+        "align-items"
+      ]
     }
   }
 }

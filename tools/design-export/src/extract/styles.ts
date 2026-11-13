@@ -6,6 +6,8 @@ import { breakpointsOf, MediaError, type Breakpoint } from "../lint/resolve/medi
 import { CORNERS, cornerProperty, lengthPx, resolveRadii, type Corner } from "../lint/resolve/radius.js";
 import { splitTransform, type TransformSplit } from "../lint/resolve/transform.js";
 import { declsAt, lookup, sourcesOf } from "../lint/rules/util.js";
+import { designChildren } from "../lint/repeat.js";
+import { isTextElement } from "../lint/text-runs.js";
 import { DYNAMIC_PSEUDO_CLASSES } from "../lint/selectors.js";
 import type { DomSnapshot, SnapElement, SnapRule, SnapSelector, Size } from "../lint/snapshot.js";
 import { DESIGN_ORIGIN, KIT_PREFIX } from "../load.js";
@@ -552,7 +554,7 @@ export class StyleExtractor {
       const l: Layer = new Map();
       for (const [p, en] of m) {
         if (isAnimProperty(p) || NO_EFFECT.has(p)) continue;
-        if (!cssSupport.property(p) && (CSS_WIDE.has(en.value.trim().toLowerCase()) || cssSupport.isInitialValue(p, en.value))) continue; // shorthand residue
+        if (cssSupport.omittedAtExport(p, en.value)) continue; // shorthand residue, initial values of properties the mapper rejects
         l.set(p, en);
       }
       out.set(name, l);
@@ -667,11 +669,14 @@ export class StyleExtractor {
       if (sized("width") && sized("height")) base.delete("aspect-ratio"); else base.set("aspect-ratio", { ...ar!, value: arm[1] });
     }
 
-    // display, blockified like CSS in every layer (flex item or absolute); explicit in base (default state)
+    // display, blockified like CSS in every layer (flex item or absolute); explicit in base (default state). The only
+    // content of a block container, an inline element holding text, lays out like a block (lint U-CSS-009 rejects one
+    // that draws an inline box, an atomic inline box and an inline holding blocks)
     const parent = e.parent >= 0 ? s.elements[e.parent] : null;
+    const lone = !!parent && parent.texts.length === 0 && designChildren(s, parent).length === 1 && isTextElement(s, e);
     const blockify = (d: string) => ((parent && /flex/.test(parent.computed.display)) || e.computed.position === "absolute"
       ? ({ inline: "block", "inline-block": "block", "inline-flex": "flex", "list-item": "block" } as Record<string, string>)[d] ?? d
-      : d === "list-item" ? "block" : d);
+      : d === "list-item" || (d === "inline" && lone) ? "block" : d);
     for (const [name, layer] of out) {
       const d = layer.get("display");
       if (d) layer.set("display", { ...d, value: blockify(d.value.trim()) });

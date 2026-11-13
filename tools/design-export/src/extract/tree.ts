@@ -247,10 +247,12 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     bakeMs += performance.now() - tb;
     // an element painted only by a url() image: that image is its content asset (an <img> keeps its background)
     if (p.kind === "image" && e.tag !== "img") { fx.background = null; fx.backgroundLayers = {}; }
+    // with a gradient, the layers' images are the baked effect layers; a url() image stays in its style layer, so the
+    // compiler sees (and rejects, like lint U-CSS-037) a url() image combined with a gradient
     const gradient = Array.from(layers.values()).some((m) => /gradient\(/i.test(m.get("background-image")?.value ?? ""));
     for (const [key, m] of layers) {
       m.delete("box-shadow");
-      if (gradient) m.delete("background-image");
+      if (gradient && !/^url\(/i.test(m.get("background-image")?.value.trim() ?? "")) m.delete("background-image");
       if (key !== "base" && m.size === 0) layers.delete(key);
     }
     for (const m of layers.values()) for (const en of m.values()) en.refs.forEach((r) => refs.add(r));

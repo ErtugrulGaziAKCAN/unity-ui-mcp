@@ -1,3 +1,4 @@
+import { cssSupport } from "../allowed-css.js";
 import type { Rule } from "../types.js";
 import { at, Collector, resolved, sources, targetOf } from "./util.js";
 
@@ -20,6 +21,6 @@ export const rule: Rule = {
       }
       if (hits.length) c.add(t.path, Array.from(new Set(hits)).join(", ") + at(src, t));
     }
-    return c.findings(rule, "Use border-style solid (or none); draw dashed or dotted lines as an SVG image.");
+    return c.findings(rule, cssSupport.rejection("border-top-style", "dashed")!.fix);
   },
 };

@@ -35,6 +35,13 @@ import { rule as U_CSS_028 } from "./rules/U-CSS-028.js";
 import { rule as U_CSS_029 } from "./rules/U-CSS-029.js";
 import { rule as U_CSS_030 } from "./rules/U-CSS-030.js";
 import { rule as U_CSS_031 } from "./rules/U-CSS-031.js";
+import { rule as U_CSS_032 } from "./rules/U-CSS-032.js";
+import { rule as U_CSS_033 } from "./rules/U-CSS-033.js";
+import { rule as U_CSS_034 } from "./rules/U-CSS-034.js";
+import { rule as U_CSS_035 } from "./rules/U-CSS-035.js";
+import { rule as U_CSS_036 } from "./rules/U-CSS-036.js";
+import { rule as U_CSS_037 } from "./rules/U-CSS-037.js";
+import { rule as I_MRK_001 } from "./rules/I-MRK-001.js";
 import { rule as U_DC_001 } from "./rules/U-DC-001.js";
 import { rule as U_DC_002 } from "./rules/U-DC-002.js";
 import { rule as U_DC_003 } from "./rules/U-DC-003.js";
@@ -59,7 +66,7 @@ import { rule as W_CSS_001 } from "./rules/W-CSS-001.js";
 import { rule as W_FONT_001 } from "./rules/W-FONT-001.js";
 import { rule as W_FONT_002 } from "./rules/W-FONT-002.js";
 
-export type { Finding, LintContext, Rule } from "./types.js";
+export type { Finding, LintContext, Rule, Severity } from "./types.js";
 export { collectSnapshot, SNAP_COMPUTED, type DomSnapshot, type SnapElement, type SnapRule, type SnapSelector } from "./snapshot.js";
 
 /** Every rule, by id. */
@@ -95,6 +102,12 @@ export const RULES: readonly Rule[] = [
   U_CSS_029,
   U_CSS_030,
   U_CSS_031,
+  U_CSS_032,
+  U_CSS_033,
+  U_CSS_034,
+  U_CSS_035,
+  U_CSS_036,
+  U_CSS_037,
   U_DC_001,
   U_DC_002,
   U_DC_003,
@@ -118,6 +131,7 @@ export const RULES: readonly Rule[] = [
   W_CSS_001,
   W_FONT_001,
   W_FONT_002,
+  I_MRK_001,
 ];
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);

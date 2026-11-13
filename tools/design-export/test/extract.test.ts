@@ -54,7 +54,10 @@ describe("fixtures", () => {
   it("lint clean (except the animation fixture, whose easing lint still restricts)", async () => {
     for (const f of ["inbox.html", "assets.html", "repeat.html"]) {
       const d = await openDesign(fx(f), kit, [2560, 1440], browser);
-      try { expect((await lint(d, kit)).map((x) => `${f} ${x.ruleId} ${x.path}: ${x.detail}`)).toEqual([]); } finally { await d.close(); }
+      // inbox keeps CSS's initial content-box on sized elements with padding or border, so the IR records it (below);
+      // lint rejects exactly those (U-CSS-036), because the compiler cannot size them
+      const expected = f === "inbox.html" ? ["card", "half"].map((id) => `${f} U-CSS-036 [data-u-screen=inbox] > div[data-u-id=${id}]`) : [];
+      try { expect((await lint(d, kit)).map((x) => `${f} ${x.ruleId} ${x.path}`)).toEqual(expected); } finally { await d.close(); }
     }
   });
 });
@@ -358,7 +361,7 @@ describe("buildIr: layers, text runs and lossless values", () => {
 
   it("custom properties redefined in a layer re-resolve shorthand users too", async () => {
     const p = write(`.b{display:flex;flex-direction:column;flex-shrink:0;--c:#00ff00;--p:4px} .b:hover{--c:#ff0000;--p:8px}
-      .k{width:10px;height:10px;flex-shrink:0} .k1{border:1px solid var(--c)} .k2{background:var(--c)} .k3{padding:var(--p)}
+      .k{box-sizing:border-box;width:10px;height:10px;flex-shrink:0} .k1{border:1px solid var(--c)} .k2{background:var(--c)} .k3{padding:var(--p)}
       .k4{border-width:1px;border-style:solid;border-color:var(--c)}`,
       '<div class="b" data-u-id="b"><div class="k k1" data-u-id="k1"></div><div class="k k2" data-u-id="k2"></div><div class="k k3" data-u-id="k3"></div><div class="k k4" data-u-id="k4"></div></div>');
     expect(await lintIds(p)).toEqual([]);
@@ -497,7 +500,7 @@ describe("buildIr: speed", () => {
       `<div class="row" data-u-id="row-${i}"><p data-u-id="name-${i}" data-u-bind="name-${i}">Oyuncu ${i}</p>` +
       `<p data-l10n="big.role" data-en="Role">Rol <b>A</b></p><div class="dot"></div></div>`).join("\n");
     const p = path.join(tmp(), "big.html");
-    fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}
+    fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0} *,*::before,*::after{box-sizing:border-box}
       .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
       .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:1px solid #16c2d5;transition:background-color 150ms ease}
       .row:hover{background-color:#123c47} p{margin:0;flex-shrink:0} .dot{width:8px;height:8px;border-radius:4px;background-color:#16c2d5}

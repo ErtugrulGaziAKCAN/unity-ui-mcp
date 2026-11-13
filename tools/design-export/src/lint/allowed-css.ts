@@ -1,40 +1,55 @@
 /**
- * The CSS the pipeline supports, in one place. Rules read it only through `cssSupport` so this data can later be
- * replaced by a loader of the Unity package's css-support.json (same shape: property → handling, keywords, types,
- * value maps) without touching the rules.
+ * The CSS the pipeline supports, in one place: the Unity package's `Editor/Data/css-support.json`, which the Unity
+ * style mapper reads too. Rules read it only through `cssSupport`.
  *
- * handling: direct = written to USS; lowered = rewritten by the compiler (gap → margins, z-index → order,
- * display: block → column); dropped = accepted and omitted (baked by the exporter, or no effect in UI Toolkit);
- * error = never supported.
+ * The file describes IR values for the mapper (handling, keywords, types, functions, lowered values) and adds what the
+ * lint needs on top: rule ids and fixes per rejected value (`rejectedValues`, `valueRule`, `valueFix`), authoring-level
+ * overrides for values the exporter rewrites before the IR (`authoring`, `exportResolved`), initial values and the
+ * auxiliary lists (pseudo-classes, elements, at-rules, …). This module derives the lint's authoring-level view.
+ *
+ * handling: direct = written to USS; lowered = rewritten before mapping (gap → margins, z-index → order, display:
+ * block → column, transform → translate/rotate/scale at export); dropped = accepted and omitted (baked by the exporter,
+ * or no effect in UI Toolkit); error = never supported.
  */
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+import { CSS_WIDE } from "./css-values.js";
 
 export type Handling = "direct" | "lowered" | "dropped" | "error";
-export interface PropertySupport {
+export interface Rejection { rule: string; fix: string }
+
+/** One property as css-support.json records it. */
+export interface CssSupportEntry {
   handling: Handling;
-  /** Allowed keywords; when absent any keyword passes the keyword check. */
   keywords?: string[];
-  /** Value types besides the keywords (length, percent, number, color, angle, time, ratio, ident, string). */
   types?: string[];
-  /** Keyword aliases the compiler rewrites (accepted as is). */
-  mapValues?: Record<string, string>;
-  /** Comma-separated list allowed. */
+  functions?: string[];
   list?: boolean;
-  /** The lint rule that owns the property's values (or the values in `owns`); U-CSS-023 leaves them to it. */
+  components?: [number, number];
+  dropValues?: string[];
+  loweredValues?: string[];
+  loweredFunctions?: string[];
+  mapValues?: Record<string, string>;
+  /** Rule and fix of an error property. */
   rule?: string;
-  /** Keywords another rule (`rule`) reports, so U-CSS-023 does not report them twice. */
-  owns?: string[];
+  fix?: string;
+  /** Keywords a dedicated lint rule rejects, with that rule and its fix. */
+  rejectedValues?: Record<string, Rejection>;
+  /** A dedicated lint rule judges the values (U-CSS-023 checks neither keywords nor units). */
+  valueRule?: string;
+  /** Fix for any other rejected value. */
+  valueFix?: string;
+  /** Authoring-level overrides: the exporter rewrites the value before the IR. */
+  authoring?: { handling?: Handling; keywords?: string[]; types?: string[]; list?: boolean; note?: string };
+  note?: string;
 }
 
-export interface CssSupportData {
-  version: number;
-  units: string[];
-  colors: { functions: string[]; keywords: string[] };
-  properties: Record<string, PropertySupport>;
-  /** CSS initial values (as Chromium serialises them) of unsupported longhands that shorthands write; never flagged. */
+/** Lint data besides the properties (shared by both views). */
+interface Lists {
+  /** CSS initial values (as Chromium serialises them) of longhands that shorthands write; never flagged. */
   initialValues: Record<string, string[]>;
   /** SVG presentation properties: allowed on elements inside an inline <svg>, which is exported as a vector asset. */
   svgPresentation: string[];
-  valueFunctions: string[];
   transformFunctions: string[];
   keyframeProperties: string[];
   timingKeywords: string[];
@@ -61,194 +76,104 @@ export interface CssSupportData {
   };
 }
 
-const LEN = ["length", "percent"];
-const kw = (handling: Handling, keywords: string[], extra: Partial<PropertySupport> = {}): PropertySupport => ({ handling, keywords, ...extra });
-const ty = (handling: Handling, types: string[], extra: Partial<PropertySupport> = {}): PropertySupport => ({ handling, types, ...extra });
-const BASELINE = ["baseline", "first", "last"];
-const DROPPED = { handling: "dropped" as const };
+/** css-support.json as written. */
+export interface CssSupportFile extends Lists {
+  version: number;
+  /** Length and percent units of IR values (the Unity mapper's units). */
+  units: string[];
+  colors: { hex: boolean; functions: string[]; keywords: string[] };
+  /** Units of each value type the mapper accepts. */
+  typeUnits: Record<string, string[]>;
+  /** Authoring forms the exporter resolves before the IR. */
+  exportResolved: { units: string[]; functions: string[]; colorFunctions: string[]; keywords: string[]; note: string };
+  notes: Record<string, string>;
+  properties: Record<string, CssSupportEntry>;
+}
 
-export const CSS_SUPPORT_DATA: CssSupportData = {
-  version: 1,
-  units: ["px", "%", "rem", "s", "ms", "deg", "rad", "grad", "turn"],
-  colors: {
-    functions: ["rgb", "rgba", "hsl", "hsla"],
-    keywords: ["transparent", "white", "black", "red", "green", "blue", "yellow", "cyan", "magenta", "gray", "grey", "orange",
-      "purple", "pink", "brown", "silver", "gold", "navy", "teal", "lime", "maroon", "olive", "aqua", "fuchsia"],
-  },
-  properties: {
-    // no effect in UI Toolkit, or a hint only
-    "-webkit-font-smoothing": DROPPED, "-webkit-tap-highlight-color": DROPPED, "-webkit-text-size-adjust": DROPPED,
-    "text-size-adjust": DROPPED, "text-rendering": DROPPED, "will-change": DROPPED, "cursor": DROPPED, "user-select": DROPPED,
-    "justify-items": DROPPED, "justify-self": DROPPED, "outline-color": DROPPED, "outline-offset": DROPPED,
-    "appearance": kw("dropped", ["none"]),
-    "outline-style": kw("dropped", ["none"]),
-    "outline-width": kw("dropped", ["0", "0px", "medium"]),
-    "resize": kw("dropped", ["none"]),
-    // layout
-    "display": kw("lowered", ["block", "flex", "none", "inline", "inline-block", "inline-flex"], { rule: "U-CSS-001", owns: ["grid", "inline-grid"] }),
-    "position": kw("direct", ["static", "relative", "absolute"], { rule: "U-CSS-017", owns: ["fixed", "sticky", "-webkit-sticky"] }),
-    "float": { handling: "error", rule: "U-CSS-017" },
-    "top": kw("direct", ["auto"], { types: LEN }), "right": kw("direct", ["auto"], { types: LEN }),
-    "bottom": kw("direct", ["auto"], { types: LEN }), "left": kw("direct", ["auto"], { types: LEN }),
-    "z-index": { handling: "lowered", rule: "U-CSS-004" },
-    "width": kw("direct", ["auto"], { types: LEN }), "height": kw("direct", ["auto"], { types: LEN }),
-    "min-width": kw("direct", ["auto"], { types: LEN }), "min-height": kw("direct", ["auto"], { types: LEN }),
-    "max-width": kw("direct", ["none"], { types: LEN }), "max-height": kw("direct", ["none"], { types: LEN }),
-    "aspect-ratio": kw("direct", ["auto"], { types: ["ratio", "number"] }),
-    "box-sizing": kw("lowered", ["border-box", "content-box"]),
-    "margin-top": kw("direct", ["auto"], { types: LEN }), "margin-right": kw("direct", ["auto"], { types: LEN }),
-    "margin-bottom": kw("direct", ["auto"], { types: LEN }), "margin-left": kw("direct", ["auto"], { types: LEN }),
-    "padding-top": ty("direct", LEN), "padding-right": ty("direct", LEN), "padding-bottom": ty("direct", LEN), "padding-left": ty("direct", LEN),
-    "flex-direction": kw("direct", ["row", "column", "row-reverse", "column-reverse"]),
-    "flex-wrap": kw("direct", ["nowrap", "wrap", "wrap-reverse"]),
-    "flex-grow": ty("direct", ["number"]), "flex-shrink": ty("direct", ["number"]),
-    "flex-basis": kw("direct", ["auto"], { types: LEN }),
-    "justify-content": kw("direct", ["flex-start", "flex-end", "center", "space-between", "space-around", "space-evenly"]),
-    "align-items": kw("direct", ["flex-start", "flex-end", "center", "stretch"], { rule: "U-CSS-018", owns: BASELINE }),
-    "align-self": kw("direct", ["auto", "flex-start", "flex-end", "center", "stretch"], { rule: "U-CSS-018", owns: BASELINE }),
-    "align-content": kw("direct", ["auto", "flex-start", "flex-end", "center", "stretch"], { rule: "U-CSS-018", owns: BASELINE }),
-    "row-gap": { handling: "lowered", rule: "U-CSS-011" }, "column-gap": { handling: "lowered", rule: "U-CSS-011" },
-    // overflow: visible/hidden map to USS; auto/scroll make the element a scroll area (ScrollView, spec §10)
-    "overflow-x": kw("direct", ["visible", "hidden", "auto", "scroll"], { mapValues: { clip: "hidden" } }),
-    "overflow-y": kw("direct", ["visible", "hidden", "auto", "scroll"], { mapValues: { clip: "hidden" } }),
-    "visibility": kw("direct", ["visible", "hidden"]),
-    "opacity": ty("direct", ["number"]),
-    "pointer-events": kw("lowered", ["auto", "none"]),
-    // paint
-    "color": ty("direct", ["color"]),
-    "background-color": ty("direct", ["color"]),
-    // gradients are baked to SVG, url() images become assets (U-CSS-014: what cannot be baked, U-CSS-022: hard stops)
-    "background-image": { handling: "dropped", keywords: ["none"], list: true, rule: "U-CSS-022" },
-    // url() backgrounds become IR background assets; their size, repeat and position stay in the style layers
-    "background-size": kw("direct", ["auto", "cover", "contain"], { types: LEN, list: true }),
-    "background-repeat": kw("direct", ["repeat", "no-repeat", "repeat-x", "repeat-y", "space", "round"], { list: true }),
-    "background-position-x": kw("direct", ["left", "center", "right"], { types: LEN, list: true }),
-    "background-position-y": kw("direct", ["top", "center", "bottom"], { types: LEN, list: true }),
-    "border-top-color": ty("direct", ["color"]), "border-right-color": ty("direct", ["color"]),
-    "border-bottom-color": ty("direct", ["color"]), "border-left-color": ty("direct", ["color"]),
-    "border-top-width": ty("direct", ["length"]), "border-right-width": ty("direct", ["length"]),
-    "border-bottom-width": ty("direct", ["length"]), "border-left-width": ty("direct", ["length"]),
-    "border-top-style": { handling: "dropped", rule: "U-CSS-021" }, "border-right-style": { handling: "dropped", rule: "U-CSS-021" },
-    "border-bottom-style": { handling: "dropped", rule: "U-CSS-021" }, "border-left-style": { handling: "dropped", rule: "U-CSS-021" },
-    "border-top-left-radius": ty("direct", LEN, { rule: "U-CSS-020" }), "border-top-right-radius": ty("direct", LEN, { rule: "U-CSS-020" }),
-    "border-bottom-right-radius": ty("direct", LEN, { rule: "U-CSS-020" }), "border-bottom-left-radius": ty("direct", LEN, { rule: "U-CSS-020" }),
-    // baked by the exporter (outer and inset shadows, per layer); U-CSS-014 rejects what cannot be baked
-    "box-shadow": { handling: "dropped", rule: "U-CSS-014" },
-    // content images: fill → stretch-to-fill, contain → scale-to-fit, cover → scale-and-crop (-unity-background-scale-mode), centred
-    "object-fit": kw("lowered", ["fill", "contain", "cover"]),
-    "object-position": kw("dropped", ["center", "50%"]),
-    "filter": { handling: "error", rule: "U-CSS-015" },
-    "backdrop-filter": { handling: "error", rule: "U-CSS-007" },
-    "transform": { handling: "lowered", rule: "U-CSS-025" },
-    "translate": { handling: "direct", rule: "U-CSS-025" }, "rotate": { handling: "direct", rule: "U-CSS-025" },
-    "scale": { handling: "direct", rule: "U-CSS-025" },
-    "transform-origin": kw("direct", ["left", "center", "right", "top", "bottom"], { types: LEN }),
-    "content": { handling: "error", rule: "U-CSS-002" },
-    "list-style-type": { handling: "dropped", rule: "U-CSS-002" },
-    "list-style-image": { handling: "dropped", rule: "U-CSS-002" },
-    "list-style-position": { handling: "dropped", rule: "U-CSS-002" },
-    // text
-    "font-family": { handling: "direct", rule: "U-CSS-010" },
-    "font-size": { handling: "direct", rule: "U-CSS-016" },
-    "font-weight": { handling: "direct", rule: "U-CSS-016" },
-    "line-height": { handling: "dropped", rule: "U-CSS-016" },
-    "font-style": kw("direct", ["normal", "italic"]),
-    "letter-spacing": kw("direct", ["normal"], { types: ["length"] }),
-    "word-spacing": kw("direct", ["normal"], { types: ["length"] }),
-    "text-align": kw("direct", ["left", "center", "right"], { mapValues: { start: "left", end: "right" } }),
-    "text-overflow": kw("direct", ["clip", "ellipsis"]),
-    "text-shadow": kw("direct", ["none"], { types: ["length", "color"] }),
-    "white-space-collapse": kw("direct", ["collapse", "preserve"]),
-    "text-wrap-mode": kw("direct", ["wrap", "nowrap"]),
-    // transitions and keyframe animations (spec §11); keyframe bodies are U-CSS-013's
-    "transition-property": ty("direct", ["ident"], { list: true }),
-    "transition-duration": ty("direct", ["time"], { list: true }),
-    "transition-delay": ty("direct", ["time"], { list: true }),
-    "transition-timing-function": { handling: "direct", list: true, rule: "U-CSS-008" },
-    "transition-behavior": kw("dropped", ["normal"], { list: true }),
-    "animation-name": ty("lowered", ["ident"], { list: true }),
-    "animation-duration": ty("lowered", ["time"], { list: true }),
-    "animation-delay": ty("lowered", ["time"], { list: true }),
-    "animation-timing-function": { handling: "lowered", list: true, rule: "U-CSS-008" },
-    "animation-iteration-count": kw("lowered", ["infinite"], { types: ["number"], list: true }),
-    "animation-direction": kw("lowered", ["normal", "reverse", "alternate", "alternate-reverse"], { list: true }),
-    "animation-fill-mode": kw("lowered", ["none", "forwards", "backwards", "both"], { list: true }),
-    "animation-play-state": kw("lowered", ["running", "paused"], { list: true }),
-  },
-  initialValues: {
-    "border-image-source": ["none"], "border-image-slice": ["100%"], "border-image-width": ["1"], "border-image-outset": ["0"],
-    "border-image-repeat": ["stretch"],
-    "background-position-x": ["0%"], "background-position-y": ["0%"], "background-size": ["auto"], "background-repeat": ["repeat"],
-    "background-attachment": ["scroll"], "background-origin": ["padding-box"], "background-clip": ["border-box"],
-    "font-variant-caps": ["normal"], "font-variant-ligatures": ["normal"], "font-variant-numeric": ["normal"],
-    "font-variant-east-asian": ["normal"], "font-variant-alternates": ["normal"], "font-variant-position": ["normal"],
-    "font-variant-emoji": ["normal"], "font-size-adjust": ["none"], "font-language-override": ["normal"], "font-kerning": ["auto"],
-    "font-optical-sizing": ["auto"], "font-feature-settings": ["normal"], "font-variation-settings": ["normal"],
-    "font-stretch": ["normal", "100%"],
-    "text-decoration-line": ["none"], "text-decoration-thickness": ["auto"], "text-decoration-style": ["solid"],
-    "text-decoration-color": ["currentcolor"],
-    "animation-timeline": ["auto"], "animation-range-start": ["normal"], "animation-range-end": ["normal"],
-    "animation-composition": ["replace"], "text-wrap-style": ["auto"],
-  },
-  svgPresentation: ["fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin",
-    "stroke-miterlimit", "stroke-dasharray", "stroke-dashoffset", "stroke-opacity", "clip-rule", "color-interpolation",
-    "color-interpolation-filters", "color-rendering", "flood-color", "flood-opacity", "lighting-color", "marker-start",
-    "marker-mid", "marker-end", "paint-order", "shape-rendering", "stop-color", "stop-opacity", "text-anchor",
-    "dominant-baseline", "vector-effect", "d", "cx", "cy", "r", "rx", "ry", "x", "y", "transform-box", "mask-type", "color"],
-  valueFunctions: ["var", "rgb", "rgba", "hsl", "hsla", "linear-gradient", "radial-gradient", "url"],
-  transformFunctions: ["translate", "translatex", "translatey", "scale", "scalex", "scaley", "rotate"],
-  keyframeProperties: ["transform", "translate", "rotate", "scale", "opacity", "color", "background-color", "border-color",
-    "border-top-color", "border-right-color", "border-bottom-color", "border-left-color", "animation-timing-function"],
-  timingKeywords: ["linear", "ease", "ease-in", "ease-out", "ease-in-out"],
-  mediaFeatures: ["min-width", "max-width", "min-aspect-ratio", "max-aspect-ratio"],
-  mediaTypes: ["all", "screen"],
-  layoutTransitionProperties: ["all", "width", "height", "min-width", "min-height", "max-width", "max-height", "margin", "margin-top",
-    "margin-right", "margin-bottom", "margin-left", "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
-    "top", "right", "bottom", "left", "inset", "flex", "flex-grow", "flex-shrink", "flex-basis", "flex-direction", "flex-wrap",
-    "flex-flow"],
-  pseudoElements: ["before", "after", "placeholder"],
-  pseudoClasses: ["hover", "active", "focus", "disabled", "checked", "root"],
-  atRules: { media: "any", keyframes: "any", import: "kit", "font-face": "kit" },
-  elements: ["body", "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "button", "input", "textarea", "select", "option",
-    "label", "img", "svg", "br", "ul", "ol", "li", "a", "section", "header", "footer", "nav", "main", "aside", "article",
-    "b", "strong", "i", "em"],
-  // text fields (TextField), toggles (Toggle); range has no compiled control
-  inputTypes: ["text", "search", "password", "number", "email", "tel", "url", "checkbox", "radio"],
-  browserDefaults: {
-    inherited: ["color", "text-align", "text-indent", "text-transform", "text-shadow", "letter-spacing", "word-spacing",
-      "white-space-collapse", "text-wrap-mode", "overflow-wrap", "word-break", "line-break", "visibility", "tab-size",
-      "hyphens", "text-align-last", "text-justify", "text-underline-position", "text-emphasis-style", "text-emphasis-color"],
-    initial: {
-      "margin-top": ["0px"], "margin-right": ["0px"], "margin-bottom": ["0px"], "margin-left": ["0px"],
-      "padding-top": ["0px"], "padding-right": ["0px"], "padding-bottom": ["0px"], "padding-left": ["0px"],
-      "border-top-width": ["0px"], "border-right-width": ["0px"], "border-bottom-width": ["0px"], "border-left-width": ["0px"],
-      "background-color": ["rgba(0, 0, 0, 0)"], "background-image": ["none"], "appearance": ["none"],
-      "text-decoration-line": ["none"], "vertical-align": ["baseline"], "resize": ["none"], "opacity": ["1"],
-      "box-shadow": ["none"], "float": ["none"], "position": ["static"], "z-index": ["auto"], "object-fit": ["fill"],
-      "min-width": ["auto", "0px"], "min-height": ["auto", "0px"], "max-width": ["none"], "max-height": ["none"],
-      "overflow-x": ["visible"], "overflow-y": ["visible"], "column-count": ["auto"], "transform": ["none"],
-      "align-items": ["normal"], "align-self": ["auto"], "align-content": ["normal"], "justify-content": ["normal"],
-      "flex-direction": ["row"], "flex-wrap": ["nowrap"], "outline-style": ["none"],
-      "border-top-left-radius": ["0px"], "border-top-right-radius": ["0px"], "border-bottom-right-radius": ["0px"],
-      "border-bottom-left-radius": ["0px"],
-    },
-    ignored: ["display", "unicode-bidi", "direction", "writing-mode", "cursor", "user-select", "text-rendering", "text-autospace",
-      "overflow-clip-margin", "caret-color", "box-sizing", "list-style-type", "list-style-position", "list-style-image",
-      "content", "quotes", "line-height", "text-size-adjust", "text-decoration-thickness", "text-decoration-style",
-      "text-decoration-color", "outline-color", "outline-offset", "outline-width", "border-image-source", "border-image-slice",
-      "border-image-width", "border-image-outset", "border-image-repeat", "animation-name", "transition-property",
-      "pointer-events", "touch-action", "speak", "zoom"],
-    reproduced: {
-      img: ["overflow-x", "overflow-y"], svg: ["overflow-x", "overflow-y"],
-      // text controls: clipping, the single-line select label and multi-line textarea wrapping are the control's own
-      // a button's centred label reaches Unity through the IR as middle-center
-      button: ["text-align"],
-      input: ["overflow-x", "overflow-y"],
-      textarea: ["overflow-x", "overflow-y", "white-space-collapse", "text-wrap-mode", "overflow-wrap"],
-      select: ["overflow-x", "overflow-y", "white-space-collapse", "text-wrap-mode", "align-items"],
-    },
-  },
-};
+/** A property as the lint sees it (authoring level). */
+export interface PropertySupport {
+  handling: Handling;
+  /** How the Unity mapper handles the property in the IR. */
+  irHandling: Handling;
+  /** Accepted keywords (lowered and dropped values included); absent when any keyword passes the keyword check. */
+  keywords?: string[];
+  /** Value types besides the keywords (length, percent, number, color, angle, time, ratio, ident, string). */
+  types?: string[];
+  /** Keyword aliases the compiler rewrites (accepted as is). */
+  mapValues?: Record<string, string>;
+  /** Comma-separated list allowed. */
+  list?: boolean;
+  /** The rule that judges the values (`valueRule`), or the rule of an error property. */
+  rule?: string;
+  /** A dedicated rule judges the values; U-CSS-023 checks neither keywords nor units. */
+  valueRule?: string;
+  /** Keywords another rule rejects (`rejected`), so U-CSS-023 does not report them twice. */
+  owns?: string[];
+  rejected?: Record<string, Rejection>;
+  /** Fix of an error property. */
+  fix?: string;
+  /** Fix for a rejected value. */
+  valueFix?: string;
+}
+
+export interface CssSupportData extends Lists {
+  version: number;
+  /** Units the lint accepts (the mapper's, plus the units of every value type and the ones resolved at export). */
+  units: string[];
+  colors: { functions: string[]; keywords: string[] };
+  properties: Record<string, PropertySupport>;
+  valueFunctions: string[];
+}
+
+export const CSS_SUPPORT_FILE = fileURLToPath(new URL("../../../../packages/com.unity.design-ui/Editor/Data/css-support.json", import.meta.url));
+
+export function readCssSupportFile(file = CSS_SUPPORT_FILE): CssSupportFile {
+  return JSON.parse(fs.readFileSync(file, "utf8")) as CssSupportFile;
+}
+
+const uniq = (xs: (string | undefined)[]) => Array.from(new Set(xs.filter((x): x is string => !!x)));
+
+/** The lint's authoring-level view of one property. */
+export function propertyView(e: CssSupportEntry): PropertySupport {
+  const handling = e.authoring?.handling ?? e.handling;
+  const kws = uniq([...(e.keywords ?? []), ...(e.loweredValues ?? []), ...(e.dropValues ?? []), ...(e.authoring?.keywords ?? [])]);
+  const types = uniq([...(e.types ?? []), ...(e.authoring?.types ?? [])]);
+  const p: PropertySupport = { handling, irHandling: e.handling };
+  // a property with value types but no keyword accepts no keyword (padding: auto is not a length)
+  if (kws.length || types.length) p.keywords = kws;
+  if (types.length) p.types = types;
+  if (e.mapValues) p.mapValues = e.mapValues;
+  if (e.list || e.authoring?.list) p.list = true;
+  const rule = e.valueRule ?? (e.handling === "error" ? e.rule : undefined);
+  if (rule) p.rule = rule;
+  if (e.valueRule) p.valueRule = e.valueRule;
+  if (e.rejectedValues) { p.rejected = e.rejectedValues; p.owns = Object.keys(e.rejectedValues); }
+  if (e.handling === "error" && e.fix) p.fix = e.fix;
+  if (e.valueFix) p.valueFix = e.valueFix;
+  return p;
+}
+
+export function cssSupportDataFrom(f: CssSupportFile): CssSupportData {
+  const props = Object.values(f.properties);
+  return {
+    version: f.version,
+    units: uniq([...f.units, ...Object.values(f.typeUnits).flat(), ...f.exportResolved.units]),
+    colors: { functions: uniq([...f.colors.functions, ...f.exportResolved.colorFunctions]), keywords: f.colors.keywords },
+    properties: Object.fromEntries(Object.entries(f.properties).map(([n, e]) => [n, propertyView(e)])),
+    valueFunctions: uniq([...f.exportResolved.functions, ...f.colors.functions, ...f.exportResolved.colorFunctions,
+      ...props.flatMap((e) => [...(e.functions ?? []), ...(e.loweredFunctions ?? [])])]),
+    initialValues: f.initialValues, svgPresentation: f.svgPresentation, transformFunctions: f.transformFunctions,
+    keyframeProperties: f.keyframeProperties, timingKeywords: f.timingKeywords, mediaFeatures: f.mediaFeatures, mediaTypes: f.mediaTypes,
+    layoutTransitionProperties: f.layoutTransitionProperties, pseudoElements: f.pseudoElements, pseudoClasses: f.pseudoClasses,
+    atRules: f.atRules, elements: f.elements, inputTypes: f.inputTypes, browserDefaults: f.browserDefaults,
+  };
+}
+
+export const CSS_SUPPORT_JSON: CssSupportFile = readCssSupportFile();
+export const CSS_SUPPORT_DATA: CssSupportData = cssSupportDataFrom(CSS_SUPPORT_JSON);
+
+/** U-CSS-023's fix when the property names none of its own. */
+export const GENERIC_FIX = "Remove the property or value, or express it with supported CSS: the properties, keywords and units of RULES.md in the design kit (spec §5.3); lengths in px, % or rem; colours as hex, rgb()/rgba(), hsl()/hsla() or the basic named colours.";
 
 export interface CssSupport {
   property(name: string): PropertySupport | null;
@@ -258,6 +183,15 @@ export interface CssSupport {
   allowedValuesFor(name: string): readonly string[] | null;
   /** The value equals the property's CSS initial value (what a shorthand writes for an omitted part). */
   isInitialValue(name: string, value: string): boolean;
+  /** A keyword a dedicated rule rejects, with that rule and fix. */
+  rejection(name: string, keyword: string): Rejection | null;
+  /** The fix for a rejected value of the property (or for the rejected property itself). */
+  fixFor(name: string): string;
+  /**
+   * A declaration the exporter leaves out of the IR: a CSS-wide keyword or an initial value of a property that is not
+   * listed or that the mapper rejects (filter: none, float: none, text-transform: none).
+   */
+  omittedAtExport(name: string, value: string): boolean;
   isAllowedFunction(name: string): boolean;
   isAllowedUnit(unit: string): boolean;
   isAllowedColorKeyword(word: string): boolean;
@@ -288,6 +222,7 @@ export function cssSupportFrom(d: CssSupportData): CssSupport {
   const mf = set(d.mediaFeatures), mt = set(d.mediaTypes), lt = set(d.layoutTransitionProperties), pe = set(d.pseudoElements);
   const units = set(d.units), colors = set(d.colors.keywords), svg = set(d.svgPresentation), pc = set(d.pseudoClasses);
   const els = set(d.elements), types = set(d.inputTypes);
+  const isInitialValue = (n: string, v: string) => v.trim().toLowerCase() === "initial" || (d.initialValues[n] ?? []).includes(v.trim().toLowerCase());
   return {
     property: (n) => d.properties[n] ?? null,
     isAllowedProperty: (n) => !!d.properties[n] && d.properties[n].handling !== "error",
@@ -296,7 +231,13 @@ export function cssSupportFrom(d: CssSupportData): CssSupport {
       if (!p?.keywords) return null;
       return [...p.keywords, ...Object.keys(p.mapValues ?? {})];
     },
-    isInitialValue: (n, v) => v.trim().toLowerCase() === "initial" || (d.initialValues[n] ?? []).includes(v.trim().toLowerCase()),
+    isInitialValue,
+    rejection: (n, k) => d.properties[n]?.rejected?.[k.trim().toLowerCase()] ?? null,
+    fixFor: (n) => d.properties[n]?.valueFix ?? d.properties[n]?.fix ?? GENERIC_FIX,
+    omittedAtExport: (n, v) => {
+      const p = d.properties[n];
+      return (!p || p.handling === "error") && (CSS_WIDE.has(v.trim().toLowerCase()) || isInitialValue(n, v));
+    },
     isAllowedFunction: (n) => fns.has(n.toLowerCase()),
     isAllowedUnit: (u) => u === "" || units.has(u.toLowerCase()),
     isAllowedColorKeyword: (w) => colors.has(w.toLowerCase()),

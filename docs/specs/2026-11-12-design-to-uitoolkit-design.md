@@ -151,17 +151,23 @@ rows that cite them; items marked *unmeasured* are allowed by the reference but 
 | `box-shadow` | Not in USS → baked by Chromium per style layer: the outer shadows into one 9-slice image behind the element, the `inset` shadows into one 9-slice image over the padding box (above the background, below the content); a layer whose shadow or box differs (a hover lift) gets its own image | Allowed; a transition of `box-shadow` is U-CSS-014 (transition opacity or transform instead) |
 | `linear-gradient`, `radial-gradient` | Not in USS → SVG gradient → VectorImage background (`SVGType.VectorImage`; the importer bakes a 64-step ramp), one SVG per style layer box, several gradients in one SVG; the IR records the smallest stop spacing | Allowed; colour stops closer than 1/64 of the gradient line, hard stops included, are U-CSS-022 (the 1/64 boundary is derived from the ramp size and one measured hard stop); a transition of `background-image`, a url() image beside another image, a gradient that does not fill the element and colour spaces are U-CSS-014 |
 | `text-shadow` | Direct USS (one shadow, written as x y blur colour) | Several shadows are U-CSS-023 |
-| `object-fit` | `-unity-background-scale-mode` (fill → stretch-to-fill, contain → scale-to-fit, cover → scale-and-crop) | `fill`, `contain`, `cover`; `object-position` only centred (U-CSS-023) |
+| `object-fit` | `-unity-background-scale-mode` (fill → stretch-to-fill, contain → scale-to-fit, cover → scale-and-crop), on image nodes | `fill`, `contain`, `cover`; `object-position` only centred (U-CSS-023) |
 | `@media` | Not in USS → breakpoint classes on the root | Only `min/max-width`, `min/max-aspect-ratio` |
 | `@keyframes` / `animation` | Not in USS → generated keyframe data + runtime player | Only transform, opacity and color properties |
 | Inline emphasis inside a paragraph | TextCore rich text tags | Only `b`, `i`, `color`, `size` |
 | `rem` | Resolved to px at export | Allowed |
 | Transitions and easing | Recorded in the IR and played by the animation player (§11), never emitted as USS transitions, so nothing animates twice | `linear`, `ease*`, `cubic-bezier()`, `steps()` once the player lands; until then the five keywords |
-| `display: grid`, `::before`/`::after`, `:nth-child` and structural pseudo-classes, `z-index` on in-flow elements, `calc()`, `vw`/`vh`, `backdrop-filter`, `cubic-bezier()`, `inline`/`inline-block` text flow, `font-family` outside the kit | No equivalent | **Lint error** |
+| `display: grid`, `::before`/`::after`, `:nth-child` and structural pseudo-classes, a `z-index` the sibling order cannot follow (U-CSS-004), `calc()`, `vw`/`vh`, `backdrop-filter`, `cubic-bezier()`, `inline`/`inline-block` text flow, `font-family` outside the kit, `box-sizing: content-box` on a sized element with padding or border (U-CSS-036), an absolute element in a static parent (U-CSS-035) | No equivalent | **Lint error** |
 | `font-size`, `line-height`, `font-weight` | Font size and weight direct; `line-height` is not in USS and is dropped by the compiler | Only the kit text styles in `text-styles.json` (whole-pixel sizes and line heights; U-CSS-016); see "Text styles" below. Weights need a real face in the reference locale's font (checked by kit sync; U-FONT-001 as backstop) |
 
-`z-index` on absolutely positioned siblings is allowed and compiled by reordering siblings, since UI Toolkit
-draws in hierarchy order.
+`z-index` is compiled by reordering siblings, since UI Toolkit draws in hierarchy order. The compiler keeps in-flow
+siblings in layout order and moves only absolute siblings, each into the gap that gives it its CSS stacking level
+(negative z, in-flow, positioned auto/0, positive z; a flex item with a z-index stacks like a relative element). So
+`z-index` is allowed in the base layer on absolute siblings, and on relative siblings and flex items where the markup
+order already is the CSS paint order (U-CSS-004). Overlapping siblings whose paint order still differs (a relative
+sibling before a static one, an absolute sibling before a faded or transformed one) are U-CSS-032, and pseudo-state
+combinations a pointer or focus cannot produce in UI Toolkit (`:active` on an ancestor and on the element, two focused
+elements) are U-CSS-033.
 
 Design screens render on a dedicated PanelSettings with the package's minimal `DesignUiRuntimeTheme` (no Unity
 default theme), in the verifier and in game alike, so no theme rule can change a compiled control; the inner parts of
@@ -187,14 +193,46 @@ font weight with no real face in a non-reference locale's font, a layout propert
 
 Lint is a whitelist. Which CSS properties, keywords, units and value functions the pipeline handles, and how
 (direct, lowered, dropped or rejected with a rule id and fix), is recorded once in
-`packages/com.unity.design-ui/Editor/Data/css-support.json`; the exporter's lint and the Unity style mapper both read
-it, so a property the mapper cannot reproduce can never pass lint. Anything not listed is an error (U-CSS-023 for
-properties, U-CSS-024 for value functions). Missing assets (U-NET-002), font faces not from the kit (U-FONT-002),
-glyphs rendered by a platform fallback font (U-FONT-003) and markup outside `<x-dc>` (U-DC-005) are errors too.
+`packages/com.unity.design-ui/Editor/Data/css-support.json`; the exporter's lint (`tools/design-export/src/lint/allowed-css.ts`
+loads it) and the Unity style mapper both read it, so a property the mapper cannot reproduce can never pass lint.
+Anything not listed is an error (U-CSS-023 for properties, U-CSS-024 for value functions). Missing assets (U-NET-002),
+font faces not from the kit (U-FONT-002), glyphs rendered by a platform fallback font (U-FONT-003) and markup outside
+`<x-dc>` (U-DC-005) are errors too.
+
+The file describes IR values for the mapper (per property `handling`, `keywords`, `types`, `functions`, `components`,
+`list`, `mapValues`, `dropValues`, `loweredValues` valid only where the compiler lowers them, and `rule` + `fix` on
+rejected properties) and adds what the lint needs, without changing those fields:
+
+- `rejectedValues` (keyword → rule and fix, e.g. `display: grid` is U-CSS-001, `position: sticky` U-CSS-017),
+  `valueRule` (a dedicated rule judges the values, e.g. U-CSS-016 for font sizes) and `valueFix` (the fix for any
+  other rejected value), so every rejected property and value carries a rule id and a fix;
+- `exportResolved`: authoring forms the exporter resolves before the IR (`rem`, `var()`, `hsl()`/`hsla()`, CSS-wide
+  keywords), and per property `authoring` overrides for values it rewrites (`transform` split into
+  translate/rotate/scale, `%` radii, background layer lists, border width keywords);
+- `typeUnits`, `initialValues` (resets such as `outline: none`, `text-decoration: none`, `appearance: none` and the
+  longhands shorthands write; the exporter leaves out initial values of properties the mapper rejects) and the lint's
+  lists: pseudo-classes and -elements, at-rules, media features, elements and input types, keyframe properties, timing
+  keywords and browser defaults.
+
+`contracts/css-support-cases.json` is the shared verdict table: each case puts one declaration in a named context
+(a flex item, a block child, a hover or state layer, siblings that overlap, …), and records the lint's rule ids, the
+IR the exporter writes and whether the Unity compiler must compile or reject it. The exporter's test lints and exports
+every case; the Unity test compiles every IR and must agree.
+
+Lint also reports `info` findings (rule ids `I-…`) that need no fix, e.g. a `title` becomes a tooltip, which UI
+Toolkit shows only in Editor panels (I-MRK-001).
 
 The compiler makes every CSS default that differs from UI Toolkit explicit before mapping: flex rows, block children
 that do not shrink, gap only on flex containers, insets ignored on static elements, border-box sizing, and CSS paint
-order (negative z-index, then in-flow siblings, then positioned siblings).
+order (negative z-index, then in-flow siblings, then positioned siblings). Lint rejects what it cannot make explicit:
+an absolute element whose parent is static (UI Toolkit anchors to the parent, CSS to the nearest positioned ancestor;
+U-CSS-035), `content-box` on a sized element with padding or border (U-CSS-036), an inline-level box as the only
+content of a block container (U-CSS-009), a gap container whose earlier child shows or hides itself by its own
+pseudo-state or `is-*` class (the first visible child takes no gap margin, and USS has no sibling combinator; U-CSS-034),
+and baked effects that cannot share one element (U-CSS-037): an inset shadow (an overlay child above the background,
+below the content) under the element's own text, on a form control or on a scroll area; a url() image beside a gradient
+in another layer, or only in a layer (one background image with one geometry per element); a background image or an
+inset shadow on a tintable icon (the icon is the element's own tinted background image).
 
 ### 5.5 Claude Design canvases
 
@@ -318,8 +356,30 @@ Per screen, into the folder named by the profile:
 | `<Screen>.anim.asset` | Keyframe data, when the design has keyframes |
 | `.design-ui.json` | Source, IR and generator hashes plus output file hashes |
 
-Selector policy: one class per selector, optionally preceded by one state or breakpoint class on the root
-(`.bp-narrow .s-3f2a`) and followed by one pseudo-class. Wrappers with no visual or layout effect are removed.
+Selector policy: every element gets one content-hash class (`s-` + 8 hex of its declarations), and each style layer
+key of the IR becomes one selector, its dimensions written from the outside in:
+
+| Layer key | Selector |
+|---|---|
+| `base` | `.s-x` |
+| own pseudo-state | `.s-x:hover` (`:active`, `:focus`, `:checked`, `:disabled`) |
+| `class:is-selected` (view-toggled state) | `.s-x.is-selected` |
+| `state:loading`, `bp:narrow` | `.state-loading .s-x`, `.bp-narrow .s-x`; both: `.bp-narrow.state-loading .s-x` (classes on the screen root) |
+| on the screen root itself | `.s-root.state-loading` |
+| `anc(card):hover`, `anc(row):class:is-selected` | `.s-card:hover .s-x`, `.s-row.is-selected .s-x` (an ancestor named this way keeps a class of its own) |
+| compound, e.g. `state:loading+anc(card):hover+active` | `.state-loading .s-card:hover .s-x:active` |
+| `class:__first` (first item of an inline repeat with gap) | `.s-x.__first` (the view toggles it; USS has no `:first-child`) |
+| `class:dui-hover` … on a shadow host | `.s-host.dui-hover` (a PseudoStateMirror copies the element's pseudo-states to the host) |
+
+A key with more dimensions always has the higher specificity, so a union layer wins over the layers it combines, as the
+IR requires. Rules are ordered by the first element that uses their class, then base, single dimensions, pairs and so on.
+
+The content layout of a scroll area (`flex-direction`, `flex-wrap`, `justify-content`, `align-items`, `align-content`,
+`padding`), which CSS applies inside the scroll container, goes to the ScrollView's content container: its rules carry the
+child-combinator chain `.s-x > .unity-scroll-view__content-and-vertical-scroll-container > .unity-scroll-view__content-viewport > .unity-scroll-view__content-container`
+(the 6000.3 hierarchy; child combinators keep nested ScrollViews out of the match). A list repeat compiles to a
+ListView, which scrolls by itself, so it must be a scroll area (`overflow-y: auto`) or the only child of one.
+Wrappers with no visual or layout effect are removed.
 
 ## 9. Generated view and binding
 

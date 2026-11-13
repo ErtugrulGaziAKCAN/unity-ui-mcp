@@ -1,31 +1,31 @@
+import { cssSupport } from "../allowed-css.js";
+import { layoutOf } from "../layout.js";
+import { unityPaintOrder, type PaintSibling } from "../paint-order.js";
 import type { Rule } from "../types.js";
-import { at, Collector, declText, resolved, sources, sourcesOf, targetOf } from "./util.js";
+import { Collector } from "./util.js";
 
-const FIX = "Use z-index only on position: absolute elements; order in-flow siblings in the markup instead (UI Toolkit draws in hierarchy order).";
-
-/** z-index from any layer on an element that no layer makes absolute. */
+/**
+ * z-index exactly where the compiler can reproduce it: base layer only, and only where UI Toolkit's sibling order can
+ * follow CSS's stacking order (absolute siblings move into place; in-flow siblings keep the layout order, so a relative
+ * or flex item z-index must already agree with it; a static element that is not a flex item ignores z-index in CSS).
+ */
 export const rule: Rule = {
   id: "U-CSS-004", severity: "error",
   check(s) {
+    const L = layoutOf(s);
     const c = new Collector();
-    const zOf = (src: ReturnType<typeof sources>[number], i: number | null) =>
-      src.decls.find((d) => d.name === "z-index" && resolved(s, d.value, i).trim() !== "auto");
-    const absoluteIn = (src: ReturnType<typeof sources>[number], i: number | null) =>
-      src.decls.some((d) => d.name === "position" && resolved(s, d.value, i).trim() === "absolute");
-    sourcesOf(s).forEach((list, i) => {
-      const z = list.find((src) => zOf(src, i));
-      if (!z) return;
-      if (s.elements[i].computed.position === "absolute" || list.some((src) => absoluteIn(src, i))) return;
-      const d = zOf(z, i)!;
-      c.add(s.elements[i].path, `${declText(d, resolved(s, d.value, i))} on position: ${s.elements[i].computed.position}${at(z, { path: s.elements[i].path, element: s.elements[i], more: 0 })}`);
-    });
-    // rules that reach no element are judged on their own declarations
-    for (const src of sources(s)) {
-      const t = targetOf(s, src);
-      if (!t || t.element !== null) continue;
-      const d = zOf(src, null);
-      if (d && !absoluteIn(src, null)) c.add(t.path, declText(d, resolved(s, d.value, null)));
+    for (const e of s.elements) {
+      if (!L.inScreen(e.index)) continue;
+      for (const d of L.layerCands(e.index, "z-index")) {
+        c.add(e.path, `z-index: ${d.entry.value} in layer ${d.key} (the compiler orders siblings once, from the base layer)`);
+      }
+      const kids = L.children(e.index).filter((k) => L.inScreen(k));
+      if (!kids.some((k) => L.zIndex(k) !== null)) continue;
+      const sibs: PaintSibling[] = kids.map((k) => ({ index: k, name: L.name(k), position: L.position(k) as PaintSibling["position"], z: L.zIndex(k) }))
+        .filter((x) => x.position === "static" || x.position === "relative" || x.position === "absolute");
+      const r = unityPaintOrder(sibs, L.visibleDisplay(e.index) === "flex");
+      if (!r.ok) c.add(s.elements[r.elements[0]].path, r.problem);
     }
-    return c.findings(rule, FIX);
+    return c.findings(rule, cssSupport.fixFor("z-index"));
   },
 };
