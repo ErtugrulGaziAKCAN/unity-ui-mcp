@@ -219,6 +219,35 @@ describe("lint engine", () => {
   });
 });
 
+describe("device grid, group opacity and stacking rules", () => {
+  const page = (body: string, css: string) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lint-grid-"));
+    const p = path.join(dir, "s.html");
+    fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
+      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+      p{margin:0}${css}</style></head><body><div class="screen" data-u-screen="s">${body}</div></body></html>`);
+    return { p, done: () => fs.rmSync(dir, { recursive: true }) };
+  };
+  const ids = async (body: string, css: string, rule: string) => {
+    const { p, done } = page(body, css);
+    try { return (await lintFile(p)).filter((f) => f.ruleId === rule); } finally { done(); }
+  };
+
+  it("U-CSS-040: a painted box thinner than 8px, and a rem border, must be whole device px at every viewport", async () => {
+    const f = await ids(
+      `<div class="l1"></div><div class="l2"></div><div class="l6"></div><div class="half"></div><div class="l4"></div><div class="spacer"></div><div class="rule"></div><div class="rem"></div>`,
+      `.l1,.l2,.l6,.half,.l4{width:400px;margin-bottom:16px;background-color:#2b6573} .l1{height:1px} .l2{width:2px;height:40px} .l6{height:6px}
+       .half{height:0.5px} .l4{height:4px} .spacer{height:2px;margin-bottom:16px} .rule{width:400px;height:4px;border-top:4px solid #2b6573}
+       .rem{width:96px;height:64px;border:0.125rem solid #2b6573}`, "U-CSS-040");
+    expect(f.map((x) => x.path)).toEqual(["[data-u-screen=s] > div:0", "[data-u-screen=s] > div:1", "[data-u-screen=s] > div:2", "[data-u-screen=s] > div:3", "[data-u-screen=s] > div:7"]);
+    expect(f[4].detail).toMatch(/border-top-width: 0\.125rem is 1\.5 device px at 1920×1080/);
+    expect(f[0].detail).toMatch(/1px tall: 0\.75 device px at 1920×1080/);
+    expect(f[1].detail).toMatch(/2px wide: 1\.5 device px at 1920×1080/);
+    expect(f[0].fix).toMatch(/4px/);
+    expect(f[0].fix).not.toMatch(/draw a thinner line/);
+  });
+});
+
 describe("collectSnapshot", () => {
   it("records paths, matched kit text styles and fonts, and leaves the page as it was", async () => {
     const d = await openDesign(fx("U-CSS-019.fail.html"), kit, [2560, 1440], browser);

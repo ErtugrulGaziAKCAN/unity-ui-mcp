@@ -63,8 +63,8 @@ paints from 241 CSS px, 180.75 device px: its first column is a quarter covered,
 such an anti-aliased row or column at 1920 or 1280. The comparison now uses Chromium's painted rect (`paintedRect`):
 
 - a border's colour is sampled on the pixels both renderers cover fully (one pixel, or a 3×3 mean where three or more
-  are), and corner samples whose 3×3 mean straddles a border's inner edge are left out — the sample measures the border
-  colour, the box check its position;
+  are; the third round below moves it to the centre of each painted band), and corner samples whose 3×3 mean straddles
+  a border's inner edge are left out — the sample measures the border colour, the box check its position;
 - the one-pixel row or column of a painted edge the design draws off the device grid is copied from the design before
   SSIM, like text (`offGridEdges` in the verdict); the box check measures where that edge is.
 
@@ -101,6 +101,34 @@ the effects screen passes there.
 
 **Disabled and focused.** Unions of `:disabled` with `:focus` or `:active` on the same element are not captured: no
 browser and no UI Toolkit panel focuses or presses a disabled control (the capture said so for every such job).
+
+## Third round: thin lines and border sides
+
+The second round's edge mask reached too far. It went into the masks colour samples consult, and a sample there keeps
+its whole 3×3 neighbourhood clear of them, so:
+
+- the border sample sits on the first fully covered pixel next to an off-grid outer edge, and was refused on every
+  off-grid side at 0.5 and on the top and left sides at 0.75: a bordered text element at 1280 could keep no border colour
+  check at all;
+- a line about 2 device px thick or less (1 CSS px at 0.75 is 97.5 to 98.25 device px) is all edge rows: the mask copied
+  all of it, its colour points were refused, and a divider UI Toolkit rounds to 0 px (top 97.5 → 98, bottom 98.25 → 98)
+  passed at 1920 and 1280.
+
+Now:
+
+- the off-grid rows are SSIM masks only; a colour sample is refused only when a pixel it averages is one of them (its
+  neighbourhood stays clear of text alone);
+- each border side is sampled across at the centre of the band each renderer paints, so every side is sampled (for a
+  border of 2 device px or more that pixel is fully covered in Chromium); a 3×3 mean only where it stays on fully
+  covered pixels;
+- the mask never takes all of an element's rows or columns;
+- a painted element thinner than 8 device px is a line: it is sampled one pixel at a time on each renderer's centre
+  line; a line Unity rounds to 0 px is a box issue, and a line left without a sample that later elements do not cover
+  fails.
+
+Lint U-CSS-040 keeps such lines reproducible: a painted box thinner than 8 CSS px must be whole device px at every
+declared viewport (4 px with 1, 0.75 and 0.5), because UI Toolkit rounds both of its edges to whole device px and a
+thinner line can vanish.
 
 ## Open
 

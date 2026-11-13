@@ -68,8 +68,8 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
     fix: "`--color-disabled-*` colours",
   },
   "U-CSS-040": {
-    when: "a border width off the device grid",
-    fix: "4px, 8px, 12px …",
+    when: "a border width, a hard shadow edge or a painted line under 8px that is not whole device px at every viewport",
+    fix: "the lengths the finding lists",
   },
   "U-CSS-041": { when: "a moved state's shadow over later elements", fix: "room for the shadow" },
   "U-DC-001": { when: "`{{…}}` holes in a Claude Design artboard", fix: "static sample text" },

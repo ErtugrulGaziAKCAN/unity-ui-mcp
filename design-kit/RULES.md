@@ -395,7 +395,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-037 | error | baked effects that cannot share one element: an inset shadow under its own text, on a form control or a scroll area; a url() image beside a gradient or only in a layer; a background image or inset shadow on a tintable icon | move the text, image, gradient or icon into a child, or the shadow onto a wrapper |
 | U-CSS-038 | error | text that renders without `-webkit-font-smoothing: antialiased` (macOS browsers then thicken glyph stems, which UI Toolkit does not) | the kit base stylesheet (it sets the smoothing on `:root`); never override it on text |
 | U-CSS-039 | error | `opacity` < 1 on overlapping parts | `--color-disabled-*` colours |
-| U-CSS-040 | error | a border width off the device grid | 4px, 8px, 12px … |
+| U-CSS-040 | error | a border width, a hard shadow edge or a painted line under 8px that is not whole device px at every viewport | the lengths the finding lists |
 | U-CSS-041 | error | a moved state's shadow over later elements | room for the shadow |
 | U-DC-001 | error | `{{…}}` holes in a Claude Design artboard | static sample text |
 | U-DC-002 | error | `<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import` | write rows out, `data-u-repeat` on the first |
