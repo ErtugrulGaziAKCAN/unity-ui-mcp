@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>lint.filters-rejected</title>
+<!--
+  Lint only, never in the fidelity suite: one tile per CSS filter function the pipeline rejects. blur, contrast,
+  grayscale, hue-rotate, opacity and sepia exist in UI Toolkit but do not match Chromium yet; brightness, saturate,
+  drop-shadow and url() have no UI Toolkit equivalent. Each tile fails lint with U-CSS-015 and its fix.
+-->
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 16px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 16px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
+.text-subtitle-bold { font-size: 32px; line-height: 40px; font-weight: 700; }
+.text-title { font-size: 36px; line-height: 48px; font-weight: 400; }
+.text-title-bold { font-size: 36px; line-height: 48px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 60px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 60px; font-weight: 700; }
+.text-display { font-size: 64px; line-height: 80px; font-weight: 400; }
+.text-display-bold { font-size: 64px; line-height: 80px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 48px; background-color: var(--color-surface-900); }
+.row { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 48px; }
+.tile { display: flex; flex-direction: column; justify-content: flex-end; width: 280px; height: 200px; flex-shrink: 0; margin-right: 40px; padding: 16px; border-radius: 16px; background-color: #16c2d5; }
+.tile-text { color: #06171c; }
+.f-blur { filter: blur(4px); }
+.f-contrast { filter: contrast(1.6); }
+.f-grayscale { filter: grayscale(1); }
+.f-hue-rotate { filter: hue-rotate(120deg); }
+.f-opacity { filter: opacity(0.5); }
+.f-sepia { filter: sepia(0.8); }
+.f-brightness { filter: brightness(1.2); }
+.f-saturate { filter: saturate(2); }
+.f-drop-shadow { filter: drop-shadow(0 2px 4px #000000); }
+.f-url { filter: url(#tone); }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="lint.filters-rejected">
+  <div class="row">
+    <div class="tile f-blur" data-u-id="tile-blur"><p class="tile-text text-body-bold" data-l10n="lint.filters.blur" data-en="Blur">Bulanık</p></div>
+    <div class="tile f-contrast" data-u-id="tile-contrast"><p class="tile-text text-body-bold" data-l10n="lint.filters.contrast" data-en="Contrast">Kontrast</p></div>
+    <div class="tile f-grayscale" data-u-id="tile-grayscale"><p class="tile-text text-body-bold" data-l10n="lint.filters.grayscale" data-en="Grayscale">Gri tonlama</p></div>
+    <div class="tile f-hue-rotate" data-u-id="tile-hue-rotate"><p class="tile-text text-body-bold" data-l10n="lint.filters.hue-rotate" data-en="Hue rotation">Renk döndürme</p></div>
+    <div class="tile f-opacity" data-u-id="tile-opacity"><p class="tile-text text-body-bold" data-l10n="lint.filters.opacity" data-en="Opacity">Saydamlık</p></div>
+  </div>
+  <div class="row">
+    <div class="tile f-sepia" data-u-id="tile-sepia"><p class="tile-text text-body-bold" data-l10n="lint.filters.sepia" data-en="Sepia">Sepya</p></div>
+    <div class="tile f-brightness" data-u-id="tile-brightness"><p class="tile-text text-body-bold" data-l10n="lint.filters.brightness" data-en="Brightness">Parlaklık</p></div>
+    <div class="tile f-saturate" data-u-id="tile-saturate"><p class="tile-text text-body-bold" data-l10n="lint.filters.saturate" data-en="Saturation">Doygunluk</p></div>
+    <div class="tile f-drop-shadow" data-u-id="tile-drop-shadow"><p class="tile-text text-body-bold" data-l10n="lint.filters.drop-shadow" data-en="Drop shadow">Gölge</p></div>
+    <div class="tile f-url" data-u-id="tile-url"><p class="tile-text text-body-bold" data-l10n="lint.filters.url" data-en="Reference">Bağlantı</p></div>
+  </div>
+</div>
+</body>
+</html>

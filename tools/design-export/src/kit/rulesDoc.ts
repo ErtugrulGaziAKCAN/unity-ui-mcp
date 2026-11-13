@@ -1,5 +1,5 @@
 import type { KitConfig } from "../kit.js";
-import { CSS_SUPPORT_DATA, enabledFilterFunctions, type CssSupportData, type PropertySupport } from "../lint/allowed-css.js";
+import { CSS_SUPPORT_DATA, CSS_SUPPORT_JSON, enabledFilterFunctions, type CssSupportData, type PropertySupport } from "../lint/allowed-css.js";
 import { RULES } from "../lint/index.js";
 import { RULE_SUMMARIES } from "../lint/rule-table.js";
 import { readTextStyles, type TextStyle } from "../lint/text-styles.js";
@@ -51,6 +51,8 @@ export function allowedCssMarkdown(d: CssSupportData = CSS_SUPPORT_DATA): string
     const parts: string[] = [];
     if (p.keywords?.length) parts.push(p.keywords.join(" | "));
     if (p.types?.length) parts.push(`<${p.types.join(" | ")}>`);
+    const fns = CSS_SUPPORT_JSON.properties[name]?.functions ?? [];
+    if (fns.length) parts.push(fns.map((f) => `${f}()`).join(" | "));
     const values = parts.length ? `: ${parts.join(" or ")}` : "";
     const rule = p.rule ? ` (${p.rule})` : "";
     return `- \`${name}\`${values}${p.list ? " (comma list)" : ""}${rule}`;

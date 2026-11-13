@@ -4,10 +4,9 @@
 <meta charset="utf-8">
 <title>fidelity.filters</title>
 <!--
-  One tile per CSS filter function that UI Toolkit 6.3 also offers (blur, contrast, grayscale, hue-rotate, invert,
-  opacity, sepia), each on a coloured tile with text and on a gradient. Lint accepts a function only when kit.config.json
-  filterFunctions lists it (U-CSS-015), and the list stays empty until a function passes this fixture in Unity. CSS
-  functions UI Toolkit lacks (brightness, saturate, drop-shadow, url()) stay rejected with the U-CSS-015 fix.
+  The filter functions css-support.json enables, each on a solid tile with text, on a gradient tile and on hover:
+  invert() only (docs/findings/filters.md). The functions lint rejects, each with its U-CSS-015 fix, are shown by the
+  lint-only page fixtures/lint/filters-rejected.html.
 -->
 <style>
 /* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
@@ -44,41 +43,17 @@ textarea { resize: none; }
 .tile { display: flex; flex-direction: column; justify-content: flex-end; width: 280px; height: 200px; flex-shrink: 0; margin-right: 40px; padding: 16px; border-radius: 16px; background-color: #16c2d5; }
 .tile-gradient { background-image: linear-gradient(135deg, #f2b544 0%, #f0605d 50%, #16c2d5 100%); }
 .tile-text { color: #06171c; }
-.f-blur { filter: blur(4px); }
-.f-contrast { filter: contrast(1.6); }
-.f-grayscale { filter: grayscale(1); }
-.f-hue { filter: hue-rotate(120deg); }
 .f-invert { filter: invert(1); }
-.f-opacity { filter: opacity(0.5); }
-.f-sepia { filter: sepia(0.8); }
-.f-chain { filter: grayscale(0.5) contrast(1.2) blur(2px); }
-.f-hover:hover { filter: grayscale(1); }
+.f-hover:hover { filter: invert(1); }
 </style>
 </head>
 <body>
 <div class="screen" data-u-screen="fidelity.filters">
   <h1 class="title text-title-bold" data-l10n="fidelity.filters.title" data-en="Filters">Filtreler</h1>
   <div class="row">
-    <div class="tile f-blur"><p class="tile-text text-body-bold" data-l10n="fidelity.filters.blur" data-en="Blur">Bulanık</p></div>
-    <div class="tile f-contrast"><p class="tile-text text-body-bold" data-l10n="fidelity.filters.contrast" data-en="Contrast">Kontrast</p></div>
-    <div class="tile f-grayscale"><p class="tile-text text-body-bold" data-l10n="fidelity.filters.grayscale" data-en="Grayscale">Gri tonlama</p></div>
-    <div class="tile f-hue"><p class="tile-text text-body-bold" data-l10n="fidelity.filters.hue" data-en="Hue rotation">Renk döndürme</p></div>
     <div class="tile f-invert"><p class="tile-text text-body-bold" data-l10n="fidelity.filters.invert" data-en="Invert">Ters çevir</p></div>
-    <div class="tile f-opacity"><p class="tile-text text-body-bold" data-l10n="fidelity.filters.opacity" data-en="Opacity">Saydamlık</p></div>
-    <div class="tile f-sepia"><p class="tile-text text-body-bold" data-l10n="fidelity.filters.sepia" data-en="Sepia">Sepya</p></div>
-  </div>
-  <div class="row">
-    <div class="tile tile-gradient f-blur"></div>
-    <div class="tile tile-gradient f-contrast"></div>
-    <div class="tile tile-gradient f-grayscale"></div>
-    <div class="tile tile-gradient f-hue"></div>
     <div class="tile tile-gradient f-invert"></div>
-    <div class="tile tile-gradient f-opacity"></div>
-    <div class="tile tile-gradient f-sepia"></div>
-  </div>
-  <div class="row">
-    <div class="tile f-chain"><p class="tile-text text-body-bold" data-l10n="fidelity.filters.chain" data-en="Chained filters">Zincir filtre</p></div>
-    <div class="tile f-hover" data-u-id="hover-filter"><p class="tile-text text-body-bold" data-l10n="fidelity.filters.hover" data-en="Grayscale on hover">Üzerine gelince gri</p></div>
+    <div class="tile f-hover" data-u-id="hover-filter"><p class="tile-text text-body-bold" data-l10n="fidelity.filters.hover" data-en="Invert on hover">Üzerine gelince ters çevir</p></div>
   </div>
 </div>
 </body>

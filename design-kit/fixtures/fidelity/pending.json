@@ -1,3 +1,1 @@
-{
-  "filters.html": "filters pending: css-support.json enables no filter function yet, so this screen fails lint with U-CSS-015 until the Unity mapper writes filter and the functions pass here"
-}
+{}

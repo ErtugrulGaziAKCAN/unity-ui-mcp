@@ -1,4 +1,4 @@
-import { enabledFilterFunctions } from "../allowed-css.js";
+import { cssSupport, enabledFilterFunctions } from "../allowed-css.js";
 import { functionCalls } from "../css-values.js";
 import type { Rule } from "../types.js";
 import { declRule, declText } from "./util.js";
@@ -10,8 +10,9 @@ export const rule: Rule = {
     const enabled = enabledFilterFunctions();
     const allowed = new Set(enabled);
     return declRule(s, rule,
+      // css-support.json's fix says which functions pass and why the others do not
       allowed.size
-        ? `Use only the filter functions the pipeline supports: ${enabled.join(", ")}.`
+        ? cssSupport.fixFor("filter")
         : "Remove the filter: css-support.json enables no filter function yet (each is enabled once its fidelity fixture passes in Unity).",
       (d, v) => {
         if ((d.name !== "filter" && d.name !== "-webkit-filter") || v.trim() === "none") return null;

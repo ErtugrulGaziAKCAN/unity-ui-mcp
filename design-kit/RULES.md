@@ -194,7 +194,7 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 - `linear-gradient()` and `radial-gradient()` are baked into a vector image that fills the element; colour stops at least 1/64 of the gradient line apart (U-CSS-022), sRGB stops only (U-CSS-014). One background image per element (U-CSS-037).
 - `text-shadow`: one shadow, `x y blur colour` (several are U-CSS-023). `border-style`: `solid` or `none` (U-CSS-021). Corner radii are circular, one px value per corner (U-CSS-020; % only on squares, a pill uses half the height).
 - `object-fit`: `fill`, `contain` or `cover`, centred, on images. Icons are inline `<svg>`: paint every shape with `currentColor` to follow the text colour in every state, or every shape with fixed colours (U-CSS-031).
-- `filter`: only the functions css-support.json enables, each once its fidelity fixture passes in Unity (U-CSS-015; `kit.config.json` `filterFunctions` mirrors the list); currently none. No `backdrop-filter` (U-CSS-007), no `outline` (draw focus with a border).
+- `filter`: only the functions css-support.json enables, each once its fidelity fixture passes in Unity (U-CSS-015; `kit.config.json` `filterFunctions` mirrors the list); currently `invert`. No `backdrop-filter` (U-CSS-007), no `outline` (draw focus with a border).
 
 ## Animation
 
@@ -236,6 +236,7 @@ Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `
 - `bottom`: auto or <length | percent>
 - `color`: <color>
 - `display`: flex | none | block | inline | inline-block | inline-flex
+- `filter`: none or invert() (U-CSS-015)
 - `flex`: auto | none or <number | length | percent>
 - `flex-basis`: auto or <length | percent>
 - `flex-direction`: row | column | row-reverse | column-reverse
@@ -312,7 +313,7 @@ Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `
 **Accepted and left out of USS (baked by the exporter, or no effect in UI Toolkit):**
 
 - `appearance`: none
-- `background-image`: none (comma list)
+- `background-image`: none or linear-gradient() | radial-gradient() (comma list)
 - `border-bottom-style`: solid | none
 - `border-left-style`: solid | none
 - `border-right-style`: solid | none
@@ -333,10 +334,10 @@ Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `
 
 **Never supported:**
 
-- `backdrop-filter` (U-CSS-007), `content` (U-CSS-002), `filter` (U-CSS-015), `float` (U-CSS-017), `outline` (U-CSS-023), `text-transform` (U-CSS-023): the rule's fix is in the lint table
+- `backdrop-filter` (U-CSS-007), `content` (U-CSS-002), `float` (U-CSS-017), `outline` (U-CSS-023), `text-transform` (U-CSS-023): the rule's fix is in the lint table
 
 **Units:** `px`, `%`, `deg`, `rad`, `grad`, `turn`, `s`, `ms`, `rem`. **Colours:** hex, `rgb()`, `rgba()`, `hsl()`, `hsla()`, keywords `transparent`, `white`, `black`, `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `gray`, `grey`, `orange`, `purple`, `pink`, `brown`, `silver`, `gold`, `navy`, `teal`, `lime`, `maroon`, `olive`, `aqua`, `fuchsia`.
-**Value functions:** `var()`, `rgb()`, `rgba()`, `hsl()`, `hsla()`, `linear-gradient()`, `radial-gradient()`, `url()`. **Transform functions:** `translate`, `translatex`, `translatey`, `scale`, `scalex`, `scaley`, `rotate`.
+**Value functions:** `var()`, `rgb()`, `rgba()`, `hsl()`, `hsla()`, `linear-gradient()`, `radial-gradient()`, `url()`, `invert()`. **Transform functions:** `translate`, `translatex`, `translatey`, `scale`, `scalex`, `scaley`, `rotate`.
 **Timing functions:** `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`. **Keyframe properties:** `transform`, `translate`, `rotate`, `scale`, `opacity`, `color`, `background-color`, `border-color`, `border-top-color`, `border-right-color`, `border-bottom-color`, `border-left-color`, `animation-timing-function`.
 **Pseudo-classes:** `:hover`, `:active`, `:focus`, `:disabled`, `:checked`, `:root`. **Pseudo-elements:** `::before`, `::after`, `::placeholder` (`::before`/`::after` only without content).
 **At-rules:** `@media`, `@keyframes`, `@import` (kit files only), `@font-face` (kit files only); `@media` features `min-width`, `max-width`, `min-aspect-ratio`, `max-aspect-ratio`, media types `all`, `screen`.

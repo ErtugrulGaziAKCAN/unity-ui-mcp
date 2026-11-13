@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { launchChromium } from "../src/browser.js";
 import { lintScreen } from "../src/export.js";
 import { openDesign } from "../src/load.js";
+import { cssSupport, enabledFilterFunctions } from "../src/lint/allowed-css.js";
 import { readKit, type KitConfig } from "../src/kit.js";
 import { kitStylesheet } from "../src/kit/claudeDesignSystem.js";
 import { EXAMPLE_STYLESHEET_LINE, renderRules } from "../src/kit/rulesDoc.js";
@@ -76,28 +77,26 @@ describe("fidelity fixtures lint clean", () => {
     }
   });
 
-  it("filters.html is pending while css-support.json enables none of its functions: only U-CSS-015, each with its fix", async () => {
-    const file = fixtures.find((f) => f.endsWith("filters.html"))!;
-    const found = await lintFile(file);
-    if (found.length === 0) throw new Error("filters.html lints clean now: remove it from design-kit/fixtures/fidelity/pending.json");
-    expect(PENDING["filters.html"]).toMatch(/^filters pending/);
-    for (const f of found) { expect(f.ruleId).toBe("U-CSS-015"); expect(f.fix).toMatch(/filter/); }
+  it("the lint-only page fails every rejected filter function with U-CSS-015 and css-support.json's fix", async () => {
+    const page = path.join(KIT_DIR, "fixtures", "lint", "filters-rejected.html");
+    const found = await lintFile(page);
+    const fns = ["blur", "contrast", "grayscale", "hue-rotate", "opacity", "sepia", "brightness", "saturate", "drop-shadow", "url"];
+    expect(found.map((f) => f.ruleId)).toEqual(fns.map(() => "U-CSS-015"));
+    for (const fn of fns) {
+      const f = found.find((x) => x.path.endsWith(`[data-u-id=tile-${fn}]`));
+      expect(f, `${fn}: still rejected? (remove its tile once css-support.json enables it)`).toBeDefined();
+      expect(f!.detail).toContain(`(${fn})`);
+      expect(f!.fix).toBe(cssSupport.fixFor("filter"));
+    }
     // the kit's filterFunctions cannot widen what css-support.json enables
-    const widened = await lintFile(file, { ...kit, filterFunctions: ["blur", "contrast", "grayscale", "hue-rotate", "invert", "opacity", "sepia"] });
+    const widened = await lintFile(page, { ...kit, filterFunctions: [...fns, "invert"] });
     expect(widened.map((f) => f.ruleId)).toEqual(found.map((f) => f.ruleId));
   });
 
-  it("CSS filter functions UI Toolkit lacks stay rejected with U-CSS-015", async () => {
-    const dir = tmp();
-    const file = path.join(dir, "screen.html");
-    const src = fs.readFileSync(fixtures.find((f) => f.endsWith("filters.html"))!, "utf8")
-      .replace(".f-blur { filter: blur(4px); }", ".f-blur { filter: brightness(1.2) saturate(2) drop-shadow(0 2px 4px #000000); }");
-    fs.writeFileSync(file, src);
-    const found = await lintFile(file);
-    const lacking = found.filter((f) => /brightness/.test(f.detail));
-    expect(lacking).toHaveLength(1);
-    expect(lacking[0].ruleId).toBe("U-CSS-015");
-    expect(lacking[0].detail).toMatch(/\(brightness, saturate, drop-shadow\)/);
+  it("filters.html uses only the functions css-support.json enables", () => {
+    const used = Array.from(fs.readFileSync(fixtures.find((f) => f.endsWith("filters.html"))!, "utf8").matchAll(/filter:\s*([a-z-]+)\(/g), (m) => m[1]);
+    expect(used.length).toBeGreaterThan(0);
+    for (const fn of used) expect(enabledFilterFunctions()).toContain(fn);
   });
 });
 

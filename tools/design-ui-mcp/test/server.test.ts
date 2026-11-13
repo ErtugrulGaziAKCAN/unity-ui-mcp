@@ -153,7 +153,9 @@ describe("design_ui_rules", () => {
       expect(fix.length).toBeGreaterThan(0);
     }
     expect(data.css.properties.direct).toContain("width");
-    expect(data.css.properties.rejected.filter).toBe("U-CSS-015");
+    expect(data.css.properties.direct).toContain("filter");
+    expect(data.css.filterFunctions).toEqual(["invert"]);
+    expect(data.css.properties.rejected["backdrop-filter"]).toBe("U-CSS-007");
     expect(data.textStyles).toContainEqual({ name: "body", fontSize: 24, lineHeight: 32, weight: 400, class: ".text-body" });
     expect(json).not.toContain("\n  "); // compact
     expect(r.data.rulesSource).toBe("file");

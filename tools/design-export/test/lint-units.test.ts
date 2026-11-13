@@ -251,7 +251,9 @@ describe("css-support.json: the single source of CSS support", () => {
     for (const [n, v] of [["outline-style", "none"], ["outline-width", "0px"], ["text-decoration-line", "none"], ["appearance", "none"], ["float", "none"], ["filter", "none"], ["text-transform", "none"]]) {
       expect(cssSupport.isInitialValue(n, v) || cssSupport.allowedValuesFor(n)?.includes(v), `${n}: ${v}`).toBe(true);
     }
-    expect(cssSupport.omittedAtExport("filter", "none")).toBe(true);
+    // filter is written to USS now (invert only), so an explicit filter: none stays in the IR; a rejected property's reset does not
+    expect(cssSupport.omittedAtExport("filter", "none")).toBe(false);
+    expect(cssSupport.omittedAtExport("backdrop-filter", "none")).toBe(true);
     expect(cssSupport.omittedAtExport("float", "inherit")).toBe(true);
     expect(cssSupport.omittedAtExport("text-decoration-line", "none")).toBe(true);
     expect(cssSupport.omittedAtExport("filter", "blur(2px)")).toBe(false);
