@@ -6,8 +6,8 @@ import { requireConfig, type ServerContext } from "../context.js";
 import { findEntry, resolveScreen, sha256, sourceSha } from "../design.js";
 import { MISSING } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
-import { runUnity, UnityRunnerError } from "../runner.js";
-import { exportDirOf, readLastImport, unityDirOf, writeLastImport } from "../status.js";
+import { CompileWaitTimeout, runUnity, UnityRunnerError } from "../runner.js";
+import { bookkeepingDir, exportDirOf, readLastImport, unityDirOf, writeLastImport } from "../status.js";
 import { designArg, formatFindings } from "./lint.js";
 
 export function registerImport(server: McpServer, ctx: ServerContext): void {
@@ -66,11 +66,21 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         });
       }
 
+      // the command route's done marker: Unity names the IR it imported (a command's exit code alone proves nothing)
+      const doneFile = path.join(bookkeepingDir(dir), "import-done.json");
+      fs.rmSync(doneFile, { force: true });
       let run;
       try {
-        run = await t.async("unity", () => runUnity(cfg, "import", { exportDir, outDir: unityDirOf(dir), discardManualEdits: String(discard) }, ctx.runnerOptions));
+        run = await t.async("unity", () => runUnity(cfg, "import", {
+          exportDir, outDir: unityDirOf(dir), discardManualEdits: String(discard), importDone: doneFile,
+        }, ctx.runnerOptions));
       } catch (e) {
         if (!(e instanceof UnityRunnerError)) throw e;
+        if (e instanceof CompileWaitTimeout) {
+          // the files were written; only the compile's outcome is missing, so nothing is recorded
+          return toolResult(`Imported the files of ${screen} into Unity, but ${e.message}. The import is not recorded; import again once Unity has compiled.`,
+            { screen, exported, unityCalled: true, via: "editor", unity: e.answer, exportDir, timings: t.done() }, true);
+        }
         return toolResult(`Import of ${screen} not run: ${e.message}`, { screen, exported, unityCalled: false, exportDir, timings: t.done() }, true);
       }
       if (run.code !== 0) {
@@ -82,16 +92,60 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         }, true);
       }
 
+      const unity = {
+        ...(run.answer ? { unity: run.answer } : {}), ...(run.compile ? { compile: run.compile } : {}),
+        ...(run.scriptsFailed !== undefined ? { scriptsFailed: run.scriptsFailed } : {}),
+      };
+      const base = { screen, exported, unityCalled: true, via: run.via, code: 0, irSha, sourceSha: src, exportDir, logTail: run.logTail, ...unity };
+      if (run.via === "command" && !confirmsImport(doneFile, irSha)) {
+        return toolResult(`Unity import of ${screen} (via command) exited 0 but did not confirm this export: ${fs.existsSync(doneFile) ? "import-done.json names another IR or a failed import" : "no import-done.json"} ` +
+          "(the import command must run DesignUiOpsTests.ImportFromEnv or DesignUiBatch.Import, which write it). Nothing was recorded. Log tail:\n" + run.logTail,
+        { ...base, unityTimings: run.timings, timings: t.done() }, true);
+      }
+      // an import counts only when the project's scripts compile with it: a failed, not started or unchecked compile, or
+      // scripts that already fail, are never recorded (so the next import calls Unity again instead of skipping it)
+      const state = run.scriptsFailed === true || run.compile?.state === "failed" ? "failed" : run.compile && !run.compile.ok ? run.compile.state : null;
+      if (state) {
+        const errors = run.compile?.errors.length ? run.compile.errors : run.scriptErrors ?? [];
+        const why = state === "failed"
+          ? "the project's scripts do not compile. Fix these errors in Unity first" + (errors.length ? ":" : " (they are in the Unity Console).")
+          : state === "not-started"
+            ? "Unity did not start compiling the changed scripts (Auto Refresh is off, or the Editor waits for focus). Bring Unity to the front so it compiles, then import again."
+            : "the result of Unity's script compile for this import is unknown (the Editor restarted, or another import superseded this one) and the bridge cannot confirm that the scripts compile. Check the Unity Console, then import again.";
+        return toolResult([
+          `Imported the files of ${screen} into Unity via ${run.via}, but ${why}`,
+          ...errors.map((e) => `- ${e}`),
+          ...(state === "failed"
+            ? ["Errors in files this tool generated come from the design or the generator: change the design (or report the generator bug). " +
+               "Importing the same design again changes nothing while the scripts do not compile. The import is not recorded."]
+            : ["The import is not recorded."]),
+        ].join("\n"), { ...base, unityTimings: run.timings, timings: t.done() }, true);
+      }
+
       const steps: Record<string, number> = { export: t.steps.export };
       if (run.via === "editor") { steps.import = run.timings.request; if (run.timings.compileWait !== undefined) steps.compile = run.timings.compileWait; }
       else steps.import = run.timings.total;
       writeLastImport(dir, {
         screen, sourceSha: src, kitSha: kit.sha, irSha, importedAt: new Date().toISOString(), via: run.via, discardManualEdits: discard, timings: steps,
       });
-      return toolResult(`Imported ${screen} into Unity via ${run.via}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${screen}" }.`, {
-        screen, exported, unityCalled: true, via: run.via, code: 0, irSha, sourceSha: src, exportDir, logTail: run.logTail,
-        unityTimings: run.timings, timings: t.done(),
+      const a = run.answer;
+      const what = a
+        ? `: ${a.changed.length} file${a.changed.length === 1 ? "" : "s"} changed, ${a.imported.length} imported` +
+          (a.compiled.length
+            ? `, scripts compiled${run.compile?.state === "reloaded" ? ` and reloaded (${Math.round((run.timings.compileWait ?? 0) / 100) / 10} s)` : " (Unity did not report this import's compile result, but the project's scripts compile)"}`
+            : ", no script change")
+        : "";
+      return toolResult(`Imported ${screen} into Unity via ${run.via}${what}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${screen}" }.`, {
+        ...base, unityTimings: run.timings, timings: t.done(),
       });
     });
   });
+}
+
+/** Whether the command route's import-done.json confirms a successful import of this IR. */
+function confirmsImport(file: string, irSha: string): boolean {
+  try {
+    const done = JSON.parse(fs.readFileSync(file, "utf8"));
+    return Array.isArray(done?.imports) && done.imports.some((e: any) => e?.irSha === irSha && e?.code === 0);
+  } catch { return false; }
 }

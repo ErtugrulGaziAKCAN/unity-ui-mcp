@@ -239,7 +239,10 @@ namespace DesignUi.Editor
         /// its primary twin and line-box variants, so <see cref="DesignUi.DesignText.SetText"/> can prepare a bound text before
         /// the element's styles resolve. Written only inside Assets/ and only when it changes; returns its path then, else null.
         /// </summary>
-        internal static string WriteFontSet(FontsPlan plan, FontTwinGenerator.TwinRun run, string outFolder)
+        internal static string WriteFontSet(FontsPlan plan, FontTwinGenerator.TwinRun run, string outFolder) => WriteFontSet(plan, run, outFolder, null);
+
+        /// <param name="textSizes">The text-size steps the screens have rules for (recorded for the locale controller).</param>
+        internal static string WriteFontSet(FontsPlan plan, FontTwinGenerator.TwinRun run, string outFolder, IReadOnlyList<DesignUi.DesignTextSize> textSizes)
         {
             var folder = ScreenCompiler.ProjectPath(outFolder?.Replace('\\', '/').TrimEnd('/'));
             if (folder == null || !folder.StartsWith("Assets", StringComparison.Ordinal) || !AssetDatabase.IsValidFolder(folder)) return null;
@@ -250,16 +253,20 @@ namespace DesignUi.Editor
                 fonts = new[] { "" }.Concat(plan.LineBoxes.Select(b => b.Key))
                     .Select(k => run.Twins.TryGetValue((plan.Fonts[l].Primary, k), out var t) ? t : null).Where(t => t != null).ToArray(),
             }).ToArray();
+            var steps = (textSizes ?? new DesignUi.DesignTextSize[0]).Where(t => t != null).Select(t => t.Clone()).ToArray();
             var set = AssetDatabase.LoadAssetAtPath<DesignUi.DesignFontSet>(path);
             if (set == null && System.IO.File.Exists(path))
                 throw new FontSetupException("'" + path + "' is in the way of the generated font set: it is not a DesignFontSet. Move or delete it.");
             if (set != null && set.referenceLocale == plan.ReferenceLocale && (set.locales ?? new DesignUi.DesignFontSet.LocaleFonts[0]).Length == wanted.Length &&
-                set.locales.Zip(wanted, (a, b) => a != null && a.locale == b.locale && (a.fonts ?? new UnityEngine.TextCore.Text.FontAsset[0]).SequenceEqual(b.fonts)).All(x => x))
+                set.locales.Zip(wanted, (a, b) => a != null && a.locale == b.locale && (a.fonts ?? new UnityEngine.TextCore.Text.FontAsset[0]).SequenceEqual(b.fonts)).All(x => x) &&
+                (set.textSizes ?? new DesignUi.DesignTextSize[0]).Length == steps.Length &&
+                set.textSizes.Zip(steps, (a, b) => a != null && a.key == b.key && a.scale == b.scale).All(x => x))
                 return null;
             bool created = set == null;
             if (created) set = UnityEngine.ScriptableObject.CreateInstance<DesignUi.DesignFontSet>();
             set.referenceLocale = plan.ReferenceLocale;
             set.locales = wanted;
+            set.textSizes = steps;
             if (created) AssetDatabase.CreateAsset(set, path);
             else
             {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -40,6 +41,7 @@ namespace DesignUi.Editor.Tests
             m_SettingsBackup = m_SettingsExisted ? File.ReadAllText(p) : null;
             m_Import = DesignUiBridge.ImportHandler;
             m_Kit = DesignUiBridge.KitSyncHandler;
+            DesignUiBridge.ResetCompileForTests();
             // Make sure the bridge runs with the setting on, without persisting a different value than the original.
             DesignUiBridge.StartForTests();
         }
@@ -49,6 +51,7 @@ namespace DesignUi.Editor.Tests
         {
             DesignUiBridge.ImportHandler = m_Import;
             DesignUiBridge.KitSyncHandler = m_Kit;
+            DesignUiBridge.ResetCompileForTests();
             var p = DesignUiBridgeSettings.SettingsPath;
             if (m_SettingsExisted) File.WriteAllText(p, m_SettingsBackup);
             else if (File.Exists(p)) File.Delete(p);
@@ -344,6 +347,194 @@ namespace DesignUi.Editor.Tests
             var st = Send("GET", "/status", Token());
             yield return Wait(st);
             Assert.AreEqual(1, st.Result.body["last"].Value<int>("code"));
+        }
+
+        const string Ok = "{\"profile\":\"p\",\"exportDir\":\"e\",\"discardManualEdits\":false}";
+
+        static string InProject(string relative) => Path.Combine(Root, relative).Replace('\\', '/');
+
+        static string[] Strings(JToken t) => t is JArray a ? a.Select(x => x.Value<string>()).ToArray() : null;
+
+        [UnityTest]
+        public IEnumerator Import_AnswersWhatChanged_AndStaysCompilingUntilTheReload()
+        {
+            var outside = Path.Combine(Path.GetTempPath(), "design-ui-outside", "A.uss").Replace('\\', '/');
+            DesignUiBridge.ImportHandler = (p, d, x) => new OpResult(0, "imported", new[]
+            {
+                InProject("Assets/UI/Generated/A/A.uss"), InProject("Assets/UI/Generated/A/AView.g.cs"), outside,
+            });
+            var t = Send("POST", "/import", Token(), Ok);
+            yield return Wait(t);
+            var body = t.Result.body;
+            Assert.AreEqual(0, body.Value<int>("code"));
+            CollectionAssert.AreEqual(new[] { InProject("Assets/UI/Generated/A/A.uss"), InProject("Assets/UI/Generated/A/AView.g.cs"), outside }, Strings(body["changed"]));
+            CollectionAssert.AreEqual(new[] { "Assets/UI/Generated/A/A.uss", "Assets/UI/Generated/A/AView.g.cs" }, Strings(body["imported"]));
+            CollectionAssert.AreEqual(new[] { "Assets/UI/Generated/A/AView.g.cs" }, Strings(body["compiled"]));
+            Assert.IsTrue(body.Value<bool>("compiling"));
+            var id = body.Value<int>("compileId");
+            Assert.Greater(id, 0);
+            Assert.GreaterOrEqual(body.Value<long>("ms"), 0);
+
+            var st = Send("GET", "/status", Token());
+            yield return Wait(st);
+            Assert.IsTrue(st.Result.body.Value<bool>("compiling"), "the reload is still to come");
+
+            DesignUiBridge.SimulateReloadForTests(); // a new domain: statics gone, then what the bridge does on load
+            st = Send("GET", "/status", Token());
+            yield return Wait(st);
+            Assert.IsFalse(st.Result.body.Value<bool>("compiling"));
+            // the import before the reload is still the last operation (the window and /status show it)
+            Assert.AreEqual("import", DesignUiBridge.LastOperation.Value.Op);
+            Assert.AreEqual("import", st.Result.body["last"].Value<string>("op"));
+            StringAssert.Contains("scripts reloaded", DesignUiBridge.LastOperationSummary());
+            var last = st.Result.body["lastCompile"];
+            Assert.AreEqual(id, last.Value<int>("id"));
+            Assert.AreEqual("reloaded", last.Value<string>("state"));
+            Assert.IsTrue(last.Value<bool>("ok"));
+        }
+
+        [UnityTest]
+        public IEnumerator Import_WithoutACSharpChange_IsNotCompiling()
+        {
+            DesignUiBridge.ImportHandler = (p, d, x) => new OpResult(0, "imported", new[] { InProject("Assets/UI/Generated/A/A.uss") });
+            var t = Send("POST", "/import", Token(), Ok);
+            yield return Wait(t);
+            Assert.IsFalse(t.Result.body.Value<bool>("compiling"));
+            CollectionAssert.IsEmpty(Strings(t.Result.body["compiled"]));
+            Assert.AreEqual(JTokenType.Null, t.Result.body["compileId"].Type);
+            var st = Send("GET", "/status", Token());
+            yield return Wait(st);
+            Assert.IsFalse(st.Result.body.Value<bool>("compiling"));
+        }
+
+        [UnityTest]
+        public IEnumerator FailedImport_IsNotCompiling()
+        {
+            DesignUiBridge.ImportHandler = (p, d, x) => new OpResult(1, "failed", new[] { InProject("Assets/UI/Generated/A/AView.g.cs") });
+            var t = Send("POST", "/import", Token(), Ok);
+            yield return Wait(t);
+            Assert.AreEqual(1, t.Result.body.Value<int>("code"));
+            Assert.IsFalse(t.Result.body.Value<bool>("compiling"));
+        }
+
+        [UnityTest]
+        public IEnumerator CompileErrors_EndCompiling_WithTheErrors()
+        {
+            DesignUiBridge.ImportHandler = (p, d, x) => new OpResult(0, "imported", new[] { InProject("Assets/UI/Generated/A/AView.g.cs") });
+            var t = Send("POST", "/import", Token(), Ok);
+            yield return Wait(t);
+            var id = t.Result.body.Value<int>("compileId");
+            StringAssert.Contains("scripts compiling", DesignUiBridge.LastOperationSummary());
+            DesignUiBridge.CompileFinishedForTests(new[] { "Assets/UI/Generated/A/AView.g.cs(3,1): error CS1002: ; expected" });
+            StringAssert.Contains("script compile failed (1 error;", DesignUiBridge.LastOperationSummary());
+            var st = Send("GET", "/status", Token());
+            yield return Wait(st);
+            Assert.IsFalse(st.Result.body.Value<bool>("compiling"));
+            var last = st.Result.body["lastCompile"];
+            Assert.AreEqual(id, last.Value<int>("id"));
+            Assert.AreEqual("failed", last.Value<string>("state"));
+            Assert.IsFalse(last.Value<bool>("ok"));
+            StringAssert.Contains("CS1002", Strings(last["errors"])[0]);
+        }
+
+        [UnityTest]
+        public IEnumerator ACompileThatFailsInsideTheImport_IsInTheAnswer()
+        {
+            // some Editor states compile synchronously while the import's asset batch ends
+            DesignUiBridge.ImportHandler = (p, d, x) =>
+            {
+                DesignUiBridge.CompileFinishedForTests(new[] { "Assets/UI/Generated/A/AView.g.cs(3,1): error CS0101: duplicate type" });
+                return new OpResult(0, "imported", new[] { InProject("Assets/UI/Generated/A/AView.g.cs") });
+            };
+            var t = Send("POST", "/import", Token(), Ok);
+            yield return Wait(t);
+            var body = t.Result.body;
+            Assert.IsFalse(body.Value<bool>("compiling"));
+            var id = body.Value<int>("compileId");
+            var last = body["lastCompile"];
+            Assert.IsNotNull(last, "the ended compile travels with the answer");
+            Assert.AreEqual(id, last.Value<int>("id"));
+            Assert.AreEqual("failed", last.Value<string>("state"));
+            StringAssert.Contains("CS0101", Strings(last["errors"])[0]);
+        }
+
+        [UnityTest]
+        public IEnumerator ScriptsFailed_IsInTheImportAnswer_AndInStatus()
+        {
+            DesignUiBridge.ScriptsFailedProbe = () => true;
+            DesignUiBridge.ImportHandler = (p, d, x) => new OpResult(0, "imported", new string[0]);
+            var t = Send("POST", "/import", Token(), Ok);
+            yield return Wait(t);
+            Assert.IsTrue(t.Result.body.Value<bool>("scriptsFailed"), "an import that changes no script still says the scripts do not compile");
+            yield return null;
+            var st = Send("GET", "/status", Token());
+            yield return Wait(st);
+            Assert.IsTrue(st.Result.body.Value<bool>("scriptsFailed"));
+            DesignUiBridge.ScriptsFailedProbe = () => false;
+            yield return null;
+            st = Send("GET", "/status", Token());
+            yield return Wait(st);
+            Assert.IsFalse(st.Result.body.Value<bool>("scriptsFailed"));
+        }
+
+        [UnityTest]
+        public IEnumerator ASecondImportWhileACompileIsPending_SharesItsCompileId()
+        {
+            DesignUiBridge.ImportHandler = (p, d, x) => new OpResult(0, "imported", new[] { InProject("Assets/UI/Generated/A/AView.g.cs") });
+            var first = Send("POST", "/import", Token(), Ok);
+            yield return Wait(first);
+            var second = Send("POST", "/import", Token(), Ok);
+            yield return Wait(second);
+            Assert.AreEqual(first.Result.body.Value<int>("compileId"), second.Result.body.Value<int>("compileId"));
+            Assert.IsTrue(second.Result.body.Value<bool>("compiling"));
+        }
+
+        [UnityTest]
+        public IEnumerator HandlerExceptions_ClientDisconnectsAreInfo_OthersAreErrors()
+        {
+            LogAssert.Expect(LogType.Log, new Regex("closed the connection before its answer was sent"));
+            LogAssert.Expect(LogType.Exception, new Regex("a real bug"));
+            DesignUiBridge.ReportHandlerException(new IOException("Connection reset by peer"));
+            DesignUiBridge.ReportHandlerException(new InvalidOperationException("a real bug"));
+            yield return null; // logged on the main thread
+            yield return null;
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [UnityTest]
+        public IEnumerator ACompileThatNeverStarts_EndsCompiling()
+        {
+            DesignUiBridge.CompileStartTimeout = TimeSpan.FromMilliseconds(100);
+            DesignUiBridge.ImportHandler = (p, d, x) => new OpResult(0, "imported", new[] { InProject("Assets/UI/Generated/A/AView.g.cs") });
+            var t = Send("POST", "/import", Token(), Ok);
+            yield return Wait(t);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < 400) yield return null;
+            var st = Send("GET", "/status", Token());
+            yield return Wait(st);
+            Assert.IsFalse(st.Result.body.Value<bool>("compiling"));
+            Assert.AreEqual("not-started", st.Result.body["lastCompile"].Value<string>("state"));
+        }
+
+        [UnityTest]
+        public IEnumerator KitSync_AnswersItsTime_AndNeverCompiles()
+        {
+            DesignUiBridge.KitSyncHandler = (p, k) => new OpResult(0, "ok");
+            var t = Send("POST", "/kit-sync", Token(), "{\"profile\":\"/p\",\"kitDir\":\"/k\"}");
+            yield return Wait(t);
+            Assert.GreaterOrEqual(t.Result.body.Value<long>("ms"), 0);
+            Assert.IsFalse(t.Result.body.Value<bool>("compiling"));
+        }
+
+        [Test]
+        public void ClientDisconnects_AreNotErrors()
+        {
+            Assert.IsTrue(DesignUiBridge.IsClientDisconnect(new System.Net.HttpListenerException(64)));
+            Assert.IsTrue(DesignUiBridge.IsClientDisconnect(new IOException("Broken pipe")));
+            Assert.IsTrue(DesignUiBridge.IsClientDisconnect(new ObjectDisposedException("stream")));
+            Assert.IsTrue(DesignUiBridge.IsClientDisconnect(new AggregateException(new IOException("reset"))));
+            Assert.IsFalse(DesignUiBridge.IsClientDisconnect(new InvalidOperationException("bug")));
+            Assert.IsFalse(DesignUiBridge.IsClientDisconnect(new NullReferenceException()));
         }
 
         [UnityTest]

@@ -110,7 +110,7 @@ describe("scripts/setup.sh", () => {
     expect(added[0]).toMatch(/^ {4}"com\.unity\.design-ui": "https:\/\/github\.com\/.+\.git\?path=\/packages\/com\.unity\.design-ui#.+",$/);
     expect(manifest.replace(added[0] + "\n", "")).toBe(MANIFEST);
     const cfg = JSON.parse(read(path.join(e.project, "design-ui.config.json")));
-    expect(cfg).toMatchObject({ designRoot: "Designs", kitDir: path.join(REPO, "design-kit"), unityRunner: { prefer: "editor" } });
+    expect(cfg).toMatchObject({ designRoot: "Designs", kitDir: path.join(REPO, "design-kit"), mcpServer: SERVER_JS, unityRunner: { prefer: "editor" } });
     const adds = lines(path.join(e.logs, "claude.log")).filter((l) => l.includes("mcp add"));
     expect(adds).toHaveLength(1);
     expect(adds[0].startsWith(`${e.clientDir} :: `)).toBe(true);
@@ -192,6 +192,7 @@ describe("scripts/setup.sh", () => {
     expect(r.out).toContain("kept existing entry");
     expect(read(path.join(e.project, "Packages", "manifest.json"))).toBe(manifest);
     expect(read(path.join(e.project, "design-ui.config.json"))).toBe("{\"mine\": true}\n");
+    expect(r.out).toContain(`has no "mcpServer" (the Design UI window's client snippets need it): add "mcpServer": ${JSON.stringify(SERVER_JS)}`);
     expect(r.out).toContain("Nothing to change");
   });
 

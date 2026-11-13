@@ -5,15 +5,77 @@ import type { DesignUiConfig, RunnerRoute, UnityStep } from "./config.js";
 /** A Unity step could not be run (no bridge, refused, timed out, command missing): not a Unity exit code. */
 export class UnityRunnerError extends Error {}
 
-export interface RunResult { code: number; logTail: string; via: RunnerRoute; timings: Record<string, number> }
+/** What the Editor bridge's import answers besides code and log (files as the bridge names them). */
+export interface ImportAnswer {
+  /** Files the import wrote because their content changed. */
+  changed: string[];
+  /** Of those, the project files Unity imported. */
+  imported: string[];
+  /** Of those, the C# files: Unity compiles and reloads the scripts after the answer. */
+  compiled: string[];
+  /** The Editor still has to compile and reload for this import (true only with `compiled`). */
+  compiling: boolean;
+  /** Ties the bridge's `lastCompile` to this import. */
+  compileId: number | null;
+  /** Milliseconds of the import on the Editor's main thread. */
+  ms: number | null;
+  /** The project's scripts do not compile (Unity's last compilation failed); null from a bridge that does not say. */
+  scriptsFailed: boolean | null;
+}
+
+/**
+ * How the script compile after an import ended: reloaded (ok), failed (errors), not-started, or unknown (no result for this
+ * import: the Editor restarted or another import's compile superseded it). An unknown result is ok only when the bridge
+ * shows that the project's scripts compile (not compiling, scripts not failed).
+ */
+export interface CompileOutcome { id: number | null; state: "reloaded" | "failed" | "not-started" | "unknown"; ok: boolean; errors: string[] }
+
+/** Thrown when the import ran (files written) but Unity was still compiling at the limit. */
+export class CompileWaitTimeout extends UnityRunnerError {
+  constructor(message: string, readonly answer: ImportAnswer) { super(message); }
+}
+
+export interface RunResult {
+  code: number; logTail: string; via: RunnerRoute; timings: Record<string, number>;
+  /** Editor route, a bridge that reports them: the import's changed files and compile state. */
+  answer?: ImportAnswer;
+  /** Editor route, after a script change: how the compile ended (waited for, or already ended inside the import). */
+  compile?: CompileOutcome;
+  /** Editor route: whether the project's scripts failed to compile when the result was decided (null: not reported). */
+  scriptsFailed?: boolean | null;
+  /** Editor route: the errors of the bridge's last compile when it failed (they explain scriptsFailed). */
+  scriptErrors?: string[];
+}
+
+/** The outcome of compile `id` from the bridge's lastCompile, else unknown (ok only when the scripts demonstrably compile). */
+function outcomeOf(last: any, id: number | null, scriptsFailed: boolean | null): CompileOutcome {
+  if (last && last.id === id && ["reloaded", "failed", "not-started"].includes(last.state)) {
+    return { id, state: last.state, ok: last.state === "reloaded", errors: strings(last.errors) };
+  }
+  return { id, state: "unknown", ok: scriptsFailed === false, errors: [] };
+}
+
+const failedErrors = (last: any): string[] => (last?.state === "failed" ? strings(last.errors) : []);
 
 export interface RunnerOptions {
   /** Poll interval while waiting for the Editor to finish compiling. */
   pollIntervalMs?: number;
   /** The Editor must report "not compiling" for this long before an import counts as done. */
   settleMs?: number;
-  /** Limit for the wait after an import (scripts compile, domain reloads). */
+  /** Limit for the wait after an import (scripts compile, domain reloads); default 300 s. */
   compileTimeoutMs?: number;
+}
+
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
+
+/** The bridge's import fields; null for an older bridge that answers only code and log. */
+function importAnswer(res: any): ImportAnswer | null {
+  if (typeof res?.compiling !== "boolean") return null;
+  return {
+    changed: strings(res.changed), imported: strings(res.imported), compiled: strings(res.compiled), compiling: res.compiling,
+    compileId: typeof res.compileId === "number" ? res.compileId : null, ms: typeof res.ms === "number" ? res.ms : null,
+    scriptsFailed: typeof res.scriptsFailed === "boolean" ? res.scriptsFailed : null,
+  };
 }
 
 export const PLACEHOLDERS = ["projectDir", "profile", "exportDir", "outDir", "kitDir"] as const;
@@ -79,18 +141,62 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
   timings.request = Math.round(performance.now() - t0);
   const code = typeof res?.code === "number" ? res.code : 1;
   const log = typeof res?.log === "string" ? res.log : "";
-  if (code === 0 && step !== "capture") {
+  const answer = importAnswer(res);
+  let compile: CompileOutcome | undefined;
+  let scriptsFailed: boolean | null = answer?.scriptsFailed ?? null;
+  let scriptErrors = failedErrors(res?.lastCompile);
+  if (code === 0 && step !== "capture" && (!answer || answer.compiling)) {
     const t1 = performance.now();
-    await waitForCompile(cfg.projectDir, info, opts);
+    if (answer) {
+      const end = await waitForCompileEnd(cfg.projectDir, info, answer, opts);
+      ({ compile, scriptsFailed } = end);
+      scriptErrors = failedErrors(end.last);
+    } else await waitForCompile(cfg.projectDir, info, opts); // a bridge without the compile fields: wait for "not compiling" to settle, as before
     timings.compileWait = Math.round(performance.now() - t1);
+  } else if (answer && answer.compileId !== null) {
+    // the compile already ended inside the import (failed, typically): its outcome is in the answer
+    compile = outcomeOf(res.lastCompile, answer.compileId, answer.scriptsFailed);
   }
   timings.total = Math.round(performance.now() - t0);
-  return { code, logTail: tail(log), via: "editor", timings };
+  return {
+    code, logTail: tail(log), via: "editor", timings,
+    ...(answer && step === "import" ? { answer, scriptsFailed, scriptErrors } : {}), ...(compile ? { compile } : {}),
+  };
 }
 
 /**
- * After an import the Editor may compile and reload scripts; the bridge stops during the reload and comes back
- * (possibly on another port, re-read from bridge.json). Done when it reports "not compiling" for `settleMs`.
+ * After an import that changed scripts: polls GET /status until `compiling` is false (the bridge keeps it true until the
+ * domain reload, a failed compile or a compile that never starts). The bridge is down during the reload and may come back
+ * on another port (re-read from bridge.json). `lastCompile` with this import's compileId says how it ended.
+ */
+async function waitForCompileEnd(projectDir: string, first: BridgeInfo, answer: ImportAnswer, opts: RunnerOptions):
+  Promise<{ compile: CompileOutcome; scriptsFailed: boolean | null; last: unknown }> {
+  const interval = opts.pollIntervalMs ?? 250;
+  const limit = opts.compileTimeoutMs ?? 300_000;
+  const deadline = Date.now() + limit;
+  let info: BridgeInfo = first;
+  for (;;) {
+    try {
+      const s = await bridgeRequest(info, "GET", "/status", undefined, Math.max(1000, interval * 4));
+      if (s?.compiling === false) {
+        const scriptsFailed = typeof s.scriptsFailed === "boolean" ? s.scriptsFailed : null;
+        return { compile: outcomeOf(s.lastCompile, answer.compileId, scriptsFailed), scriptsFailed, last: s.lastCompile };
+      }
+    } catch {
+      info = findBridge(projectDir) ?? info; // reloading: the bridge restarts and rewrites bridge.json
+    }
+    if (Date.now() > deadline) {
+      throw new CompileWaitTimeout(`the import wrote ${answer.changed.length} files, but Unity was still compiling the changed scripts ` +
+        `(${answer.compiled.join(", ")}) after ${Math.round(limit / 1000)} s; check the Unity console`, answer);
+    }
+    await sleep(interval);
+  }
+}
+
+/**
+ * An older bridge (no compile fields in its answer): after an import the Editor may compile and reload scripts; the bridge
+ * stops during the reload and comes back (possibly on another port, re-read from bridge.json). Done when it reports
+ * "not compiling" for `settleMs`.
  */
 async function waitForCompile(projectDir: string, first: BridgeInfo, opts: RunnerOptions): Promise<void> {
   const interval = opts.pollIntervalMs ?? 250;
@@ -127,7 +233,8 @@ async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<str
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) if (!k.startsWith("DESIGN_UI_")) env[k] = v;
   // the same values as environment variables (DESIGN_UI_EXPORT_DIR, …), for runners such as an EditMode capture test
-  for (const k of [...PLACEHOLDERS, "discardManualEdits"]) {
+  // DESIGN_UI_IMPORT_DONE: where the import writes its done marker (the IR SHA-256 it imported), checked by design_ui_import
+  for (const k of [...PLACEHOLDERS, "discardManualEdits", "importDone"]) {
     if (vars[k]) env[`DESIGN_UI_${k.replace(/[A-Z]/g, (c) => "_" + c).toUpperCase()}`] = vars[k];
   }
   const timeoutMs = cfg.unityRunner.timeoutSec * 1000;

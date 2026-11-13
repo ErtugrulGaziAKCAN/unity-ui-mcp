@@ -20,3 +20,6 @@ private/
 # design-ui bookkeeping and reports written next to designs
 .design-ui/
 samples/FidelityProject/Designs/**/report.html
+
+# a test fixture folder (a system font copied for the Arabic shaping test; deleted after the test)
+samples/FidelityProject/Assets/DesignUiLocaleFixture*

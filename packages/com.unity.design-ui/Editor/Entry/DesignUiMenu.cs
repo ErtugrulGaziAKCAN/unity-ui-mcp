@@ -39,7 +39,7 @@ namespace DesignUi.Editor
             var export = EditorUtility.OpenFolderPanel("Design UI: export folder to import (screen.ir.json)", "", "");
             if (string.IsNullOrEmpty(export)) return;
             var r = DesignUiOps.Import(profile, export, false);
-            if (r.Code != 0 && r.Log.Contains("edited by hand: ")
+            if (DesignUiOps.HasManualEdits(r)
                 && EditorUtility.DisplayDialog(Title, DialogText(r) + "\n\nDiscard the hand edits and import again?", "Discard and import", "Keep my edits"))
                 r = DesignUiOps.Import(profile, export, true);
             Report("Import", r);
@@ -87,7 +87,8 @@ namespace DesignUi.Editor
             return path;
         }
 
-        static void Report(string what, OpResult r)
+        /// <summary>Logs the result (an error when it failed) and shows its first lines in a dialog.</summary>
+        internal static void Report(string what, OpResult r)
         {
             if (r.Code == 0) Debug.Log("Design UI " + what + ":\n" + r.Log);
             else Debug.LogError("Design UI " + what + " failed (code " + r.Code + "):\n" + r.Log);

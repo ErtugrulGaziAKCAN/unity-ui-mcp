@@ -55,6 +55,12 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(HasLabel(w, "Listening on 127.0.0.1:" + DesignUiBridge.Port));
             Assert.IsTrue(HasLabel(w, "None yet"));
             Assert.IsTrue(HasLabel(w, "Design UI "));
+            string copied = null;
+            DesignUiWindow.Clipboard = t => copied = t;
+            try { w.CopySnippet(McpClient.ClaudeCode); }
+            finally { DesignUiWindow.ResetSeams(); }
+            StringAssert.StartsWith("claude mcp add --scope local design-ui -- node ", copied.Substring(copied.IndexOf("claude ", System.StringComparison.Ordinal)));
+            StringAssert.Contains(" --project " + DesignUiBridgeSettings.ProjectRoot, copied.Replace("'", ""), "this project's path");
 
             var saved = DesignUiBridge.ImportHandler;
             DesignUiBridge.ImportHandler = (p, d, x) => new OpResult(3, "x");
@@ -79,6 +85,7 @@ namespace DesignUi.Editor.Tests
                 yield return null;
                 yield return null;
                 Assert.IsTrue(HasLabel(w, "\u00b7 import \u00b7 code 3"));
+                Assert.IsTrue(HasLabel(w, "Last operation: "), "the last import or kit sync, which status requests do not replace");
             }
             finally { DesignUiBridge.ImportHandler = saved; }
 

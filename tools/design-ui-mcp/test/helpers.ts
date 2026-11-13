@@ -27,14 +27,17 @@ export interface TempProject {
   runnerCalls(): string[];
 }
 
-/** A temp Unity project folder with design-ui.config.json, a designs folder and a stub command runner log. */
-export function tempProject(opts: { prefer?: "editor" | "command"; exit?: number } = {}): TempProject {
+/**
+ * A temp Unity project folder with design-ui.config.json, a designs folder and a stub command runner log. `importDone`:
+ * what the stub's import writes as import-done.json (default: a confirmation of the export's IR).
+ */
+export function tempProject(opts: { prefer?: "editor" | "command"; exit?: number; importDone?: "ok" | "none" | "wrong" } = {}): TempProject {
   const dir = tempDir();
   fs.mkdirSync(path.join(dir, "Assets"));
   const designRoot = path.join(dir, "Designs");
   fs.mkdirSync(designRoot);
   const runnerLog = path.join(dir, "runner.log");
-  const stub = (exit: number) => ["sh", STUB_RUNNER, "--log", runnerLog, "--exit", String(exit)];
+  const stub = (exit: number) => ["sh", STUB_RUNNER, "--log", runnerLog, "--exit", String(exit), "--import-done", opts.importDone ?? "ok"];
   const p: TempProject = {
     dir, designRoot, runnerLog,
     writeConfig(extra = {}) {
@@ -73,9 +76,15 @@ export interface StubBridge {
   token: string;
   requests: { method: string; path: string; auth: string | undefined; body: unknown }[];
   /** Answers of POST /import and /kit-sync. */
-  answer: { code: number; log: string };
-  /** Number of GET /status answers that still report isCompiling = true. */
+  answer: Record<string, unknown> & { code: number; log: string };
+  /** Number of GET /status answers that still report isCompiling (and compiling) = true. */
   compilingPolls: number;
+  /** Number of GET /status requests answered by dropping the connection (a domain reload), after the compiling ones. */
+  downPolls: number;
+  /** `lastCompile` of GET /status. */
+  lastCompile: unknown;
+  /** `scriptsFailed` of GET /status (omitted while undefined, like an older bridge). */
+  scriptsFailed: boolean | undefined;
   close(): Promise<void>;
 }
 
@@ -83,7 +92,7 @@ export interface StubBridge {
 export async function startStubBridge(projectDir: string, opts: { tokenInFile?: string; projectPath?: string } = {}): Promise<StubBridge> {
   const token = "a".repeat(64);
   const state: StubBridge = {
-    port: 0, token, requests: [], answer: { code: 0, log: "imported" }, compilingPolls: 0,
+    port: 0, token, requests: [], answer: { code: 0, log: "imported" }, compilingPolls: 0, downPolls: 0, lastCompile: null, scriptsFailed: undefined,
     close: async () => {},
   };
   const server = http.createServer((req, res) => {
@@ -101,7 +110,11 @@ export async function startStubBridge(projectDir: string, opts: { tokenInFile?: 
       if (req.url === "/status" && req.method === "GET") {
         const compiling = state.compilingPolls > 0;
         if (compiling) state.compilingPolls--;
-        return send(200, { projectPath: opts.projectPath ?? projectDir, isCompiling: compiling, busy: false, last: null });
+        else if (state.downPolls > 0) { state.downPolls--; req.socket.destroy(); return; }
+        return send(200, {
+          projectPath: opts.projectPath ?? projectDir, isCompiling: compiling, compiling, lastCompile: compiling ? null : state.lastCompile, busy: false, last: null,
+          ...(state.scriptsFailed === undefined ? {} : { scriptsFailed: compiling ? false : state.scriptsFailed }),
+        });
       }
       if ((req.url === "/import" || req.url === "/kit-sync") && req.method === "POST") return send(200, state.answer);
       return send(404, { error: "not found" });

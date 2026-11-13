@@ -1,0 +1,16 @@
+{
+  "name": "DesignUi.Runtime.Localization",
+  "rootNamespace": "DesignUi",
+  "references": ["DesignUi.Runtime", "Unity.Localization", "Unity.ResourceManager"],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": ["DESIGN_UI_LOCALIZATION"],
+  "versionDefines": [
+    { "name": "com.unity.localization", "expression": "1.5.0", "define": "DESIGN_UI_LOCALIZATION" }
+  ],
+  "noEngineReferences": false
+}

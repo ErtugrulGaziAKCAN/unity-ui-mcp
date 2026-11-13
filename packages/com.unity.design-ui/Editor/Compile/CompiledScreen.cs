@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 
 namespace DesignUi.Editor
 {
@@ -69,11 +70,13 @@ namespace DesignUi.Editor
     }
 
     /// <summary>
-    /// A repeated item template (<c>data-u-repeat</c>). Mode <c>list</c>: the container is a ListView with fixed-height
-    /// slots (item height and margins plus the gap) and the item template is written to its own UXML
-    /// (<see cref="TemplateFile"/>), not into the screen. Mode <c>inline</c>: the template stays in the screen's UXML and
-    /// the view toggles <see cref="ScreenBuilder.FirstItemClass"/> on the first item. Only the template is compiled; the
-    /// IR's <c>repeat.count</c> sample items are filled from the fixtures by the verifier.
+    /// A repeated item template (<c>data-u-repeat</c>). Mode <c>list</c>: the container is a ListView, with fixed-height
+    /// slots (item height and margins plus the gap) when the items have one px height, else measured items (dynamic
+    /// height); its item lives only in the item template. Mode <c>inline</c>: the item stays in the screen's UXML as the
+    /// first item, and the view clones more from the template; the view keeps <see cref="ScreenBuilder.FirstItemClass"/> on
+    /// the first item. The template is written to its own UXML (<see cref="TemplateFile"/>), which the screen's UXML
+    /// declares. Only the template is compiled; the IR's <c>repeat.count</c> sample items are filled from the fixtures by
+    /// the verifier.
     /// </summary>
     public sealed class CompiledRepeat
     {
@@ -81,7 +84,7 @@ namespace DesignUi.Editor
         public string Mode;
         /// <summary>Name of the repeat container.</summary>
         public string Container;
-        /// <summary>Item template file next to the screen (list mode), or null (inline mode).</summary>
+        /// <summary>Item template file next to the screen (<c>&lt;Repeat&gt;Item.uxml</c>).</summary>
         public string TemplateFile;
         public readonly List<CompiledElement> Items = new List<CompiledElement>();
     }
@@ -100,6 +103,8 @@ namespace DesignUi.Editor
         public IReadOnlyList<CompiledRepeat> Repeats;
         public IReadOnlyList<string> States;
         public IReadOnlyList<string> Breakpoints;
+        /// <summary>Remarks for the compile log, e.g. a text-size step that is not whole device pixels at a viewport.</summary>
+        public IReadOnlyList<string> Notes = new string[0];
 
         /// <summary>Every element: the screen tree, then the list-mode item templates.</summary>
         public IEnumerable<CompiledElement> AllElements()
@@ -114,5 +119,27 @@ namespace DesignUi.Editor
         }
 
         public CompiledElement Find(string name) => AllElements().FirstOrDefault(e => e.Name == name);
+    }
+}
+
+namespace DesignUi.Editor
+{
+    /// <summary>What a screen compiles with besides its IR (spec 8, 13): the kit's text styles and the profile's settings.</summary>
+    public sealed class ScreenBuildOptions
+    {
+        /// <summary>Kit text style name to font size in px (<see cref="KitTextStyles.Load"/>), or null without a table.</summary>
+        public IReadOnlyDictionary<string, double> TextStyleSizes;
+        /// <summary>Kit text style name to its line-box key (<see cref="KitTextStyles.LoadLineBoxes"/>), or null.</summary>
+        public IReadOnlyDictionary<string, string> TextStyleLineBoxes;
+        /// <summary>The kit's line boxes (<see cref="KitTextStyles.LineBoxesOf"/>), which the text-size steps scale.</summary>
+        public IReadOnlyList<FontTwinGenerator.LineBox> LineBoxes;
+        /// <summary>The profile's text-size steps; each gets <c>.text-size-&lt;key&gt;</c> rules.</summary>
+        public IReadOnlyList<DesignUi.DesignTextSize> TextSizes;
+        /// <summary>The profile's right-to-left alignment rule (<c>.rtl</c> rules), or null for none.</summary>
+        public DesignUi.RtlTextAlignment? RtlAlignment;
+        /// <summary>The declared viewports and their panel scales: text-size steps are checked at each.</summary>
+        public IReadOnlyList<(Vector2Int viewport, double scale)> Viewports;
+        /// <summary>The compiled font set (<c>DesignFonts.asset</c>) relative to the screen's UXML, for the screen root's reference, or null.</summary>
+        public string FontSet;
     }
 }

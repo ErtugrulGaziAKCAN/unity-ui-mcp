@@ -2,6 +2,7 @@
   "designRoot": "Designs",
   "kitDir": "../../design-kit",
   "profileAsset": "Assets/DesignUi/DesignUiProfile.asset",
+  "mcpServer": "../../tools/design-ui-mcp/dist/server.js",
   "unityRunner": {
     "prefer": "command",
     "captureVia": "command",

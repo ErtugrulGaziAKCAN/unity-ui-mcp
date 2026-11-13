@@ -43,8 +43,9 @@ namespace DesignUi.Editor.Tests
             // the log's first line, and for a failed import its errors (one line, " | " between them)
             var report = Env("DESIGN_UI_IMPORT_REPORT");
             var lines = new List<string>();
+            // DESIGN_UI_IMPORT_DONE: the done marker with each export's IR SHA-256, for a runner that checks what was imported
             var r = DesignUiBatch.ImportEach(profile, DesignUiBatch.PathList(export), discard,
-                (dir, one) => lines.Add(one.Code + "\t" + dir + "\t" + ReportLine(one)));
+                (dir, one) => lines.Add(one.Code + "\t" + dir + "\t" + ReportLine(one)), Env(DesignUiBatch.ImportDoneVariable));
             if (report != null) File.WriteAllText(report, string.Concat(lines.Select(l => l + "\n")));
             Debug.Log("Design UI import (code " + r.Code + "):\n" + r.Log);
             Assert.AreEqual(0, r.Code, r.Log);

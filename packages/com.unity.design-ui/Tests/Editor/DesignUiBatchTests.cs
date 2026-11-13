@@ -115,6 +115,27 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void ImportEach_WritesTheDoneMarker_WithEachIrsSha256AndCode()
+        {
+            var profile = Profile(TempDir("out"));
+            var good = Export(TempDir("good"), "batch.good", "#111111");
+            var missing = Path.Combine(TempDir("x"), "missing");
+            var done = Path.Combine(TempDir("done"), "sub", "import-done.json");
+            DesignUiBatch.ImportEach(profile, new[] { good, missing }, false, null, done);
+            var o = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(done));
+            var imports = (Newtonsoft.Json.Linq.JArray)o["imports"];
+            Assert.AreEqual(2, imports.Count);
+            Assert.AreEqual(good, imports[0].Value<string>("exportDir"));
+            Assert.AreEqual(0, imports[0].Value<int>("code"));
+            string sha;
+            using (var h = System.Security.Cryptography.SHA256.Create())
+                sha = string.Concat(h.ComputeHash(File.ReadAllBytes(Path.Combine(good, ScreenCompiler.IrFileName))).Select(b => b.ToString("x2")));
+            Assert.AreEqual(sha, imports[0].Value<string>("irSha"));
+            Assert.AreEqual(1, imports[1].Value<int>("code"));
+            Assert.AreEqual(Newtonsoft.Json.Linq.JTokenType.Null, imports[1]["irSha"].Type);
+        }
+
+        [Test]
         public void Import_DiscardManualEdits_OverwritesAHandEditedFile()
         {
             var output = TempDir("out");

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using UnityEditor;
 
@@ -9,17 +10,31 @@ namespace DesignUi.Editor
     {
         public readonly int Code;
         public readonly string Log;
+        /// <summary>
+        /// Files the operation wrote because their content changed (an import's generated files and assets); may be null.
+        /// Files it deleted are not listed.
+        /// </summary>
+        public readonly IReadOnlyList<string> Written;
 
-        public OpResult(int code, string log)
+        public OpResult(int code, string log) : this(code, log, null) { }
+
+        public OpResult(int code, string log, IReadOnlyList<string> written)
         {
             Code = code;
             Log = log;
+            Written = written;
         }
     }
 
     /// <summary>Entry points of the import pipeline (bridge, menu, batchmode).</summary>
     public static class DesignUiOps
     {
+        /// <summary>The log line prefix of a generated file that was edited by hand (the import refused to overwrite it).</summary>
+        internal const string ManualEditPrefix = "edited by hand: ";
+
+        /// <summary>Whether an import failed only because generated files were edited by hand (it can be retried with discard).</summary>
+        internal static bool HasManualEdits(OpResult r) => r.Code != 0 && (r.Log ?? "").Contains(ManualEditPrefix);
+
         /// <summary>
         /// Font sync into the kit folder (<c>KitSync.Run</c>) with the profile's resolver (per-locale fonts
         /// over TMP Settings). <paramref name="profilePath"/> is the profile's asset path (Assets/…); a relative
@@ -88,11 +103,11 @@ namespace DesignUi.Editor
             else log.Append("Import failed; nothing was written for the screen.\n");
             foreach (var e in r.Errors) log.Append("error: ").Append(e).Append('\n');
             foreach (var n in r.Notes) log.Append("note: ").Append(n).Append('\n');
-            foreach (var m in r.ManualEdits) log.Append("edited by hand: ").Append(m).Append('\n');
+            foreach (var m in r.ManualEdits) log.Append(ManualEditPrefix).Append(m).Append('\n');
             if (r.Written.Count > 0) log.Append("written: ").Append(string.Join(", ", r.Written)).Append('\n');
             foreach (var o in r.Orphans) log.Append("orphan screen folder (not deleted): ").Append(o).Append('\n');
             foreach (var a in r.StaleAssets) log.Append("asset no screen uses (not deleted): ").Append(a).Append('\n');
-            return new OpResult(r.Ok ? 0 : 1, log.ToString().TrimEnd('\n'));
+            return new OpResult(r.Ok ? 0 : 1, log.ToString().TrimEnd('\n'), r.Written);
         }
     }
 }

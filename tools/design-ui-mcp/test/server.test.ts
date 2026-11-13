@@ -11,7 +11,7 @@ import { Runtime } from "../src/runtime.js";
 import { createServer, createUnconfiguredServer, TOOL_NAMES, VERSION } from "../src/server.js";
 import { screenStatus } from "../src/status.js";
 import { fileURLToPath } from "node:url";
-import { call, connect, startStubBridge, tempDir, tempProject, writeZip, type StubBridge } from "./helpers.js";
+import { call, connect, startStubBridge, STUB_RUNNER, tempDir, tempProject, writeZip, type StubBridge } from "./helpers.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fast = { pollIntervalMs: 10, settleMs: 20, compileTimeoutMs: 5000 };
@@ -42,6 +42,8 @@ function stubPipeline(): Pipeline & { exports: string[] } {
 }
 
 const NO_EXPORT: Pipeline = { exportScreen: null, compareScreen: null };
+/** An import command that only confirms the export it was given (import-done.json with the IR's SHA-256), like Unity's. */
+const CONFIRMING_IMPORT = ["sh", STUB_RUNNER, "--log", "/dev/null", "import", "{exportDir}"];
 
 async function serverFor(dir: string, pipeline?: Pipeline): Promise<Client> {
   return connect(createServer(readConfig(dir), { runtime, pipeline, runnerOptions: fast }));
@@ -358,6 +360,159 @@ describe("design_ui_import", () => {
     expect(p.runnerCalls()).toEqual([]);
   });
 
+  it("on the command route records an import only when Unity confirms this IR in import-done.json", async () => {
+    for (const mode of ["none", "wrong"] as const) {
+      const p = tempProject({ prefer: "command", importDone: mode });
+      const dir = p.addScreen("clean-screen", "clean-screen");
+      const r = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+      expect(r.isError, mode).toBe(true);
+      expect(r.text).toContain("import-done.json");
+      expect(r.data).toMatchObject({ unityCalled: true, via: "command", code: 0 });
+      expect(fs.existsSync(path.join(dir, ".design-ui", "last-import.json"))).toBe(false);
+    }
+  });
+
+  it("on the command route never accepts a marker left by an earlier run", async () => {
+    const p = tempProject({ prefer: "command", importDone: "none" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const pipeline = stubPipeline();
+    await pipeline.exportScreen!(path.join(dir, "screen.html"), {} as never, path.join(dir, ".design-ui", "export"), async () => { throw new Error("no browser"); });
+    const ir = fs.readFileSync(path.join(dir, ".design-ui", "export", "screen.ir.json"));
+    const sha = (await import("node:crypto")).createHash("sha256").update(ir).digest("hex");
+    fs.writeFileSync(path.join(dir, ".design-ui", "import-done.json"), JSON.stringify({ imports: [{ exportDir: "x", code: 0, irSha: sha }] }));
+    const r = await call(await serverFor(p.dir, pipeline), "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("import-done.json");
+  });
+
+  it("on the editor route reports what changed, waits for the script compile and records the import", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = {
+      code: 0, log: "Imported clean-screen into Assets/UI/Generated/CleanScreen: 3 files written (55 ms).",
+      changed: ["a.uss", "a.uxml", "AView.g.cs"], imported: ["Assets/a.uss", "Assets/a.uxml", "Assets/AView.g.cs"], compiled: ["Assets/AView.g.cs"],
+      compiling: true, compileId: 9, ms: 55,
+    };
+    bridge.compilingPolls = 2;
+    bridge.lastCompile = { id: 9, state: "reloaded", ok: true, errors: [] };
+    const r = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBeFalsy();
+    expect(r.data).toMatchObject({
+      via: "editor", code: 0, unity: { changed: ["a.uss", "a.uxml", "AView.g.cs"], imported: ["Assets/a.uss", "Assets/a.uxml", "Assets/AView.g.cs"], compiled: ["Assets/AView.g.cs"], compiling: true, compileId: 9, ms: 55 },
+      compile: { id: 9, state: "reloaded", ok: true },
+    });
+    expect(r.data.unityTimings).toHaveProperty("compileWait");
+    expect(r.text).toMatch(/3 files changed/);
+    expect(r.text).toMatch(/scripts compiled/);
+    const rec = JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8"));
+    expect(rec.timings).toHaveProperty("compile");
+  });
+
+  it("on the editor route is an error, and records nothing, when the generated scripts do not compile", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = { code: 0, log: "Imported.", changed: ["AView.g.cs"], imported: ["Assets/AView.g.cs"], compiled: ["Assets/AView.g.cs"], compiling: true, compileId: 2, ms: 9 };
+    bridge.lastCompile = { id: 2, state: "failed", ok: false, errors: ["Assets/AView.g.cs(3,1): error CS0101: duplicate type"] };
+    const r = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("CS0101");
+    expect(r.data.compile).toMatchObject({ state: "failed" });
+    expect(fs.existsSync(path.join(dir, ".design-ui", "last-import.json"))).toBe(false);
+  });
+
+  const editorAnswer = (extra: Record<string, unknown>) => ({
+    code: 0, log: "Imported.", changed: ["AView.g.cs"], imported: ["Assets/AView.g.cs"], compiled: ["Assets/AView.g.cs"], compiling: false, compileId: null, ms: 9, ...extra,
+  });
+  const lastImport = (dir: string) => path.join(dir, ".design-ui", "last-import.json");
+
+  it("on the editor route never records an import whose compile failed inside it (no wait, answered at once)", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = editorAnswer({
+      compileId: 4, scriptsFailed: true, lastCompile: { id: 4, state: "failed", ok: false, errors: ["Assets/AView.g.cs(3,1): error CS0101: duplicate type"] },
+    });
+    const r = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("CS0101");
+    expect(r.text).toMatch(/importing the same design again changes nothing/i);
+    expect(r.data).toMatchObject({ unityCalled: true, compile: { state: "failed" } });
+    expect(fs.existsSync(lastImport(dir))).toBe(false);
+  });
+
+  it("on the editor route never records an import while the project's scripts do not compile, even with no script change", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = editorAnswer({
+      changed: [], imported: [], compiled: [], scriptsFailed: true,
+      lastCompile: { id: 1, state: "failed", ok: false, errors: ["Assets/AView.g.cs(3,1): error CS0101: duplicate type"] },
+    });
+    const r = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/scripts do not compile/);
+    expect(r.text).toContain("CS0101");
+    expect(fs.existsSync(lastImport(dir))).toBe(false);
+    // and the next import calls Unity again instead of skipping it
+    bridge.answer = editorAnswer({ changed: [], imported: [], compiled: [], scriptsFailed: false });
+    const again = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+    expect(again.isError).toBeFalsy();
+    expect(again.data.unityCalled).toBe(true);
+    expect(fs.existsSync(lastImport(dir))).toBe(true);
+  });
+
+  it("on the editor route an unknown compile result is an error and is not recorded, unless the scripts demonstrably compile", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = editorAnswer({ compiling: true, compileId: 8 });
+    bridge.compilingPolls = 1;
+    bridge.lastCompile = null; // the Editor restarted: no result for this compile id
+    const r = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/unknown/);
+    expect(r.data.compile).toMatchObject({ state: "unknown", ok: false });
+    expect(fs.existsSync(lastImport(dir))).toBe(false);
+
+    bridge.compilingPolls = 1;
+    bridge.scriptsFailed = false;
+    const ok = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+    expect(ok.isError).toBeFalsy();
+    expect(ok.data.compile).toMatchObject({ state: "unknown", ok: true });
+    expect(fs.existsSync(lastImport(dir))).toBe(true);
+  });
+
+  it("on the editor route a compile wait that times out says the import ran, and records nothing", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = editorAnswer({ compiling: true, compileId: 2 });
+    bridge.compilingPolls = 1_000_000;
+    const client = await connect(createServer(readConfig(p.dir), { runtime, pipeline: stubPipeline(), runnerOptions: { ...fast, compileTimeoutMs: 100 } }));
+    const r = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/^Imported the files of clean-screen .*still compiling/);
+    expect(r.data).toMatchObject({ unityCalled: true, unity: { compileId: 2 } });
+    expect(fs.existsSync(lastImport(dir))).toBe(false);
+  });
+
+  it("on the editor route reports the real failure when the Editor closed after a cached 'connected'", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    const client = await serverFor(p.dir, stubPipeline());
+    expect((await call(client, "design_ui_status")).data.unity.bridge).toBe("connected");
+    await bridge.close(); // a crash: bridge.json stays, nothing listens
+    bridge = null;
+    expect((await call(client, "design_ui_status")).data.unity.bridge).toBe("connected"); // the probe's short cache
+    const r = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/Editor not reachable: Unity Editor bridge on 127\.0\.0\.1:\d+ did not answer POST \/import/);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "last-import.json"))).toBe(false);
+  });
+
   it("stops at lint errors", async () => {
     const p = tempProject({ prefer: "command" });
     p.addScreen("grid-screen", "grid-screen");
@@ -517,7 +672,7 @@ describe("design_ui_verify", () => {
   it("gives no verdict for a capture that exits 0 without its done marker, and never compares it", async () => {
     const p = tempProject({ prefer: "command" });
     p.addScreen("clean-screen", "clean-screen");
-    p.writeConfig({ unityRunner: { prefer: "command", command: { import: ["sh", "-c", "exit 0"], capture: ["sh", "-c", "mkdir -p \"$0\"", "{outDir}"], kitSync: [] } } });
+    p.writeConfig({ unityRunner: { prefer: "command", command: { import: CONFIRMING_IMPORT, capture: ["sh", "-c", "mkdir -p \"$0\"", "{outDir}"], kitSync: [] } } });
     let compared = 0;
     const pipeline = { ...stubPipeline(), unityCapture: true };
     pipeline.compareScreen = async () => { compared++; return { pass: true, topIssues: [], notRun: [], compared: 1 }; };
@@ -608,7 +763,7 @@ const copyCapture = (without: string[] = []) => ({
   unityRunner: {
     prefer: "command",
     command: {
-      import: ["sh", "-c", "exit 0"],
+      import: CONFIRMING_IMPORT,
       capture: ["sh", "-c", `mkdir -p "$1" && cp "$0"/goldens/*.png "$0"/goldens/boxes.json "$1"/ && echo '{"runId":"t","jobs":2,"captured":2,"notCaptured":0}' > "$1"/capture-done.json && rm -f ${without.map((f) => `"$1/${f}"`).join(" ") || '"$1/none"'}`, "{exportDir}", "{outDir}"],
       kitSync: ["sh", "-c", "exit 0"],
     },
