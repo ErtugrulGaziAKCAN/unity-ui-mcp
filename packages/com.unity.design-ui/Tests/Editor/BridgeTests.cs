@@ -379,10 +379,14 @@ namespace DesignUi.Editor.Tests
             yield return Wait(st);
             Assert.IsTrue(st.Result.body.Value<bool>("compiling"), "the reload is still to come");
 
-            DesignUiBridge.AfterReloadForTests(); // what the next domain does on load
+            DesignUiBridge.SimulateReloadForTests(); // a new domain: statics gone, then what the bridge does on load
             st = Send("GET", "/status", Token());
             yield return Wait(st);
             Assert.IsFalse(st.Result.body.Value<bool>("compiling"));
+            // the import before the reload is still the last operation (the window and /status show it)
+            Assert.AreEqual("import", DesignUiBridge.LastOperation.Value.Op);
+            Assert.AreEqual("import", st.Result.body["last"].Value<string>("op"));
+            StringAssert.Contains("scripts reloaded", DesignUiBridge.LastOperationSummary());
             var last = st.Result.body["lastCompile"];
             Assert.AreEqual(id, last.Value<int>("id"));
             Assert.AreEqual("reloaded", last.Value<string>("state"));
@@ -420,7 +424,9 @@ namespace DesignUi.Editor.Tests
             var t = Send("POST", "/import", Token(), Ok);
             yield return Wait(t);
             var id = t.Result.body.Value<int>("compileId");
+            StringAssert.Contains("scripts compiling", DesignUiBridge.LastOperationSummary());
             DesignUiBridge.CompileFinishedForTests(new[] { "Assets/UI/Generated/A/AView.g.cs(3,1): error CS1002: ; expected" });
+            StringAssert.Contains("script compile failed (1 error;", DesignUiBridge.LastOperationSummary());
             var st = Send("GET", "/status", Token());
             yield return Wait(st);
             Assert.IsFalse(st.Result.body.Value<bool>("compiling"));

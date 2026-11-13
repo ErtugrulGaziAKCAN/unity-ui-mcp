@@ -43,7 +43,7 @@ namespace DesignUi.Editor
         static string ProjectRoot => ProjectRootOverride ?? DesignUiBridgeSettings.ProjectRoot;
 
         static string s_Version;
-        Label m_Status, m_Project, m_Last, m_Package;
+        Label m_Status, m_Project, m_Last, m_LastOperation, m_Package;
         Toggle m_Enable;
         Label m_ConfigPath, m_DesignRoot, m_LastReport, m_ProfileNote, m_OpResult, m_TextKit, m_TextTwins, m_TextFontSet, m_ServerPath, m_CopyResult;
         Button m_OpenConfig, m_OpenDesignRoot, m_OpenReport, m_CreateProfile;
@@ -53,6 +53,10 @@ namespace DesignUi.Editor
         DesignUiProjectConfig.Report m_Report;
         /// <summary>A profile picked in the field for this window's operations; null uses the config's.</summary>
         DesignUiProfile m_ProfileOverride;
+        DateTime m_SeenOperation;
+        /// <summary>The profile and kit folder the Text row was last checked with (null = never).</summary>
+        string m_TextCheckedFor;
+        int m_Ticks;
 
         [MenuItem("Window/Design UI/Status")]
         public static void Open()
@@ -89,6 +93,8 @@ namespace DesignUi.Editor
             root.Add(Section("Last request", out var last));
             m_Last = new Label { name = "last-request" };
             last.Add(m_Last);
+            m_LastOperation = Wrapped("last-operation");
+            last.Add(m_LastOperation);
 
             root.Add(Section("Project", out var project));
             project.Add(Row(m_ConfigPath = Wrapped("config-path"), m_OpenConfig = Btn("open-config", "Open", OpenConfig)));
@@ -135,8 +141,8 @@ namespace DesignUi.Editor
             DesignUiBridge.StateChanged -= Refresh;
             DesignUiBridge.StateChanged += Refresh;
             rootVisualElement.schedule.Execute(Refresh).Every(1000);
-            RefreshProject();
-            RefreshText();
+            m_SeenOperation = DesignUiBridge.LastOperation?.Utc ?? default;
+            RefreshProject(); // checks the Text row too
             Refresh();
         }
 
@@ -190,11 +196,20 @@ namespace DesignUi.Editor
 
         string ProfilePathForOps => m_ProfileOverride != null ? AssetDatabase.GetAssetPath(m_ProfileOverride) : m_Config.ProfilePath;
 
-        // ---- bridge (every second) ----------------------------------------------------------------------------------
+        // ---- bridge (every second); the project every 5 s and after a bridge operation ------------------------------
 
         internal void Refresh()
         {
             if (m_Status == null) return;
+            var op = DesignUiBridge.LastOperation;
+            if (op.HasValue && op.Value.Utc != m_SeenOperation)
+            {
+                // an import or kit sync from the MCP server changed what the project and text rows show
+                m_SeenOperation = op.Value.Utc;
+                RefreshProject();
+                RefreshText();
+            }
+            else if (++m_Ticks % 5 == 0) RefreshProject();
             if (!DesignUiBridgeSettings.Enabled) m_Status.text = "Disabled";
             else if (DesignUiBridge.IsListening) m_Status.text = "Listening on 127.0.0.1:" + DesignUiBridge.Port;
             else m_Status.text = "Stopped";
@@ -203,9 +218,9 @@ namespace DesignUi.Editor
 
             var last = DesignUiBridge.LastRequest;
             m_Last.text = last.HasValue
-                ? last.Value.Utc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture) + " · " + last.Value.Op + " · code " + last.Value.Code +
-                  (DesignUiBridge.CompilePending ? " · waiting for the script compile" : "")
+                ? last.Value.Utc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture) + " · " + last.Value.Op + " · code " + last.Value.Code
                 : "None yet";
+            m_LastOperation.text = "Last operation: " + DesignUiBridge.LastOperationSummary();
 
             if (s_Version == null)
             {
@@ -250,6 +265,15 @@ namespace DesignUi.Editor
 
             m_ServerPath.text = m_Config.ServerPath == null ? McpClientSnippets.UnknownServer
                 : "Server: " + m_Config.ServerPath + (File.Exists(m_Config.ServerPath) ? "" : " (not built yet: run scripts/setup.sh in that clone)");
+
+            // another profile or kit folder (the config changed, a profile was created or picked): check the Text row again
+            if (TextKey() != m_TextCheckedFor) RefreshText();
+        }
+
+        string TextKey()
+        {
+            var profile = CurrentProfile;
+            return (profile != null ? AssetDatabase.GetAssetPath(profile) : "") + "\n" + (m_Config.KitDir ?? DesignUiMenu.KitFolder(profile));
         }
 
         internal void OpenConfig() { if (m_Config.Exists) OpenPath(m_Config.Path); }
@@ -337,6 +361,7 @@ namespace DesignUi.Editor
         internal void RefreshText()
         {
             if (m_TextKit == null) return;
+            m_TextCheckedFor = TextKey();
             var profile = CurrentProfile;
             var s = TextStatus.Check(profile, m_Config.KitDir ?? DesignUiMenu.KitFolder(profile));
             m_TextKit.text = "Kit fonts: " + s.Kit;

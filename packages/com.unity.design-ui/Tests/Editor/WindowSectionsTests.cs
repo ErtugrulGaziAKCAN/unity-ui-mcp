@@ -227,6 +227,59 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(profile, w.rootVisualElement.Q<UnityEditor.UIElements.ObjectField>("profile").value);
         }
 
+        [UnityEngine.TestTools.UnityTest]
+        public System.Collections.IEnumerator ProjectAndText_Refresh_AfterABridgeOperation()
+        {
+            Config();
+            var w = Open();
+            StringAssert.Contains("none yet", Text(w, "last-report"));
+            bool wasListening = DesignUiBridge.IsListening;
+            DesignUiBridge.StartForTests();
+            var saved = DesignUiBridge.ImportHandler;
+            // an import through the bridge (as from the MCP server); the verification lands on disk meanwhile
+            DesignUiBridge.ImportHandler = (p, d, x) => { Verified("inbox", "pass", "2026-02-03T04:05:06.000Z"); return new OpResult(0, "imported"); };
+            try
+            {
+                var cfg = JObject.Parse(File.ReadAllText(Path.Combine(DesignUiBridgeSettings.ProjectRoot, "Library", "DesignUi", "bridge.json")));
+                var task = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    using (var c = new System.Net.Http.HttpClient())
+                    {
+                        var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, "http://127.0.0.1:" + cfg.Value<int>("port") + "/import");
+                        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", cfg.Value<string>("token"));
+                        req.Content = new System.Net.Http.StringContent("{\"profile\":\"p\",\"exportDir\":\"e\",\"discardManualEdits\":false}");
+                        (await c.SendAsync(req)).Dispose();
+                    }
+                });
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (!task.IsCompleted && sw.Elapsed.TotalSeconds < 20) yield return null;
+                Assert.IsTrue(task.IsCompleted);
+                yield return null;
+                w.Refresh();
+                StringAssert.Contains("inbox · pass", Text(w, "last-report"));
+            }
+            finally
+            {
+                DesignUiBridge.ImportHandler = saved;
+                if (!wasListening) DesignUiBridge.StopForTests();
+            }
+        }
+
+        [Test]
+        public void TextRow_FollowsTheConfigsProfile_WhenTheConfigChanges()
+        {
+            var w = Open();
+            StringAssert.Contains("no DesignUiProfile", Text(w, "text-kit"));
+            Config();
+            if (!AssetDatabase.IsValidFolder(ProfileFolder)) AssetDatabase.CreateFolder("Assets", "DesignUiWindowTests");
+            var profile = ScriptableObject.CreateInstance<DesignUiProfile>();
+            FontFixture.Use(profile);
+            AssetDatabase.CreateAsset(profile, ProfilePath);
+            w.RefreshProject();
+            StringAssert.DoesNotContain("no DesignUiProfile", Text(w, "text-kit"));
+            StringAssert.Contains("kit.config.json", Text(w, "text-kit"), "the config's kit folder (empty here) is checked");
+        }
+
         // ---- operations ---------------------------------------------------------------------------------------------
 
         [Test]

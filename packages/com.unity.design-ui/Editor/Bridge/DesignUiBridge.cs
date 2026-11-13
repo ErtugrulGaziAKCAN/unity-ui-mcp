@@ -21,6 +21,8 @@ namespace DesignUi.Editor
         public DateTime Utc;
         public string Op;
         public int Code;
+        /// <summary>An import that changed scripts: the compile it waits for (the bridge's lastCompile id); else 0.</summary>
+        public int CompileId;
     }
 
     /// <summary>
@@ -39,6 +41,7 @@ namespace DesignUi.Editor
         const string CompileIdKey = "DesignUi.Bridge.CompileId";
         const string PendingCompileKey = "DesignUi.Bridge.PendingCompile";
         const string LastCompileKey = "DesignUi.Bridge.LastCompile";
+        const string LastOperationKey = "DesignUi.Bridge.LastOperation";
         const int MaxBodyBytes = 1024 * 1024;
         const int MaxCompileErrors = 20;
 
@@ -102,6 +105,12 @@ namespace DesignUi.Editor
             get { lock (s_Lock) return s_LastRequest; }
         }
 
+        /// <summary>The last import or kit sync (status requests do not count).</summary>
+        internal static BridgeRequestInfo? LastOperation
+        {
+            get { lock (s_Lock) return s_LastOperation; }
+        }
+
         public static event Action StateChanged;
 
         internal static bool IsBusy => Volatile.Read(ref s_Busy) != 0;
@@ -124,12 +133,19 @@ namespace DesignUi.Editor
 
         internal static void ResetLastRequestForTests()
         {
+            SessionState.EraseString(LastOperationKey);
             lock (s_Lock) { s_LastRequest = null; s_LastOperation = null; }
         }
 
         internal static void RequestAutoStartForTests() => s_AutoStartPending = true;
 
-        internal static void AfterReloadForTests() => AfterReload();
+        /// <summary>What a domain reload does to the bridge's state: statics are gone, then the load restores them.</summary>
+        internal static void SimulateReloadForTests()
+        {
+            lock (s_Lock) { s_LastRequest = null; s_LastOperation = null; }
+            s_LastCompile = "";
+            AfterReload();
+        }
 
         internal static void CompileFinishedForTests(IEnumerable<string> errors)
         {
@@ -154,6 +170,16 @@ namespace DesignUi.Editor
         static void AfterReload()
         {
             s_LastCompile = SessionState.GetString(LastCompileKey, "");
+            // the last import or kit sync outlives the reload it caused, for /status and the window
+            var parts = SessionState.GetString(LastOperationKey, "").Split('\n');
+            if (parts.Length == 4 && DateTime.TryParse(parts[0], System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var utc) &&
+                int.TryParse(parts[2], out var code) && int.TryParse(parts[3], out var compileId))
+                lock (s_Lock)
+                {
+                    var info = new BridgeRequestInfo { Utc = utc, Op = parts[1], Code = code, CompileId = compileId };
+                    if (!s_LastOperation.HasValue) s_LastOperation = info;
+                    if (!s_LastRequest.HasValue) s_LastRequest = info;
+                }
             var pending = SessionState.GetInt(PendingCompileKey, 0);
             if (pending != 0) EndCompile(pending, "reloaded", null);
         }
@@ -234,6 +260,30 @@ namespace DesignUi.Editor
             };
         }
 
+        /// <summary>
+        /// The last import or kit sync for the window: time, operation, code and, for an import that changed scripts, how
+        /// their compile went (compiling, reloaded, failed, did not start).
+        /// </summary>
+        internal static string LastOperationSummary()
+        {
+            var op = LastOperation;
+            if (!op.HasValue) return "None yet";
+            var text = op.Value.Utc.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + " · " + op.Value.Op + " · code " + op.Value.Code;
+            if (op.Value.CompileId == 0) return text;
+            if (s_PendingCompile == op.Value.CompileId) return text + " · scripts compiling";
+            try
+            {
+                var last = JObject.Load(new Newtonsoft.Json.JsonTextReader(new StringReader(s_LastCompile ?? "")) { DateParseHandling = Newtonsoft.Json.DateParseHandling.None });
+                if (last.Value<int>("id") != op.Value.CompileId) return text;
+                var state = last.Value<string>("state");
+                var errors = (last["errors"] as JArray)?.Count ?? 0;
+                return text + (state == "reloaded" ? " · scripts reloaded"
+                    : state == "failed" ? " · script compile failed (" + errors + (errors == 1 ? " error" : " errors") + "; see the Console)"
+                    : " · the script compile did not start");
+            }
+            catch (Exception e) when (e is Newtonsoft.Json.JsonException || e is FormatException || e is InvalidCastException) { return text; }
+        }
+
         /// <summary>A client that went away before its answer was written: not an error of the bridge.</summary>
         internal static bool IsClientDisconnect(Exception e)
         {
@@ -286,7 +336,7 @@ namespace DesignUi.Editor
                 catch (Exception e) { r = new OpResult(1, "Unhandled error: " + e.Message); Debug.LogException(e); }
                 item.Ms = watch.ElapsedMilliseconds;
                 if (item.Op == "import") item.Answer = ImportAnswer(r, compilesBefore);
-                Record(item.Op, r.Code, true);
+                Record(item.Op, r.Code, true, item.Answer?["compileId"]?.Type == JTokenType.Integer ? item.Answer.Value<int>("compileId") : 0);
                 item.Done.TrySetResult(r);
             }
             while (s_MainActions.TryDequeue(out var a))
@@ -454,14 +504,17 @@ namespace DesignUi.Editor
             s_MainActions.Enqueue(() => StateChanged?.Invoke());
         }
 
-        static void Record(string op, int code, bool isOperation)
+        static void Record(string op, int code, bool isOperation, int compileId = 0)
         {
-            var info = new BridgeRequestInfo { Utc = DateTime.UtcNow, Op = op, Code = code };
+            var info = new BridgeRequestInfo { Utc = DateTime.UtcNow, Op = op, Code = code, CompileId = compileId };
             lock (s_Lock)
             {
                 s_LastRequest = info;
                 if (isOperation) s_LastOperation = info;
             }
+            // operations are recorded on the main thread (SessionState is main-thread only); status requests are not kept
+            if (isOperation)
+                SessionState.SetString(LastOperationKey, info.Utc.ToString("o", System.Globalization.CultureInfo.InvariantCulture) + "\n" + op + "\n" + code + "\n" + compileId);
             Notify();
         }
 

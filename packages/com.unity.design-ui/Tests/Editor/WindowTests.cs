@@ -85,6 +85,7 @@ namespace DesignUi.Editor.Tests
                 yield return null;
                 yield return null;
                 Assert.IsTrue(HasLabel(w, "\u00b7 import \u00b7 code 3"));
+                Assert.IsTrue(HasLabel(w, "Last operation: "), "the last import or kit sync, which status requests do not replace");
             }
             finally { DesignUiBridge.ImportHandler = saved; }
 
