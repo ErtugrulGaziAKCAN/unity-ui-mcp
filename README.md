@@ -15,6 +15,19 @@ verifier land.
 - `samples/FidelityProject` - Unity 6000.3.6f1 test project
 - `design-kit` - design kit config, tokens and rules
 
+## Install with an AI
+
+Paste one line into your AI client (Claude Code, Codex, Cursor, …) and answer its questions:
+
+> Install unity-ui-mcp from https://github.com/ErtugrulGaziAKCAN/unity-ui-mcp for my Unity project by following INSTALL.md in that repository.
+
+Türkçe:
+
+> https://github.com/ErtugrulGaziAKCAN/unity-ui-mcp deposundaki unity-ui-mcp'yi Unity projeme kur; depodaki INSTALL.md adımlarını izle.
+
+The agent clones the repository, asks for your Unity project and design folder, shows a dry run of
+`scripts/setup.sh` and runs it after you agree. [INSTALL.md](INSTALL.md) is the agent's guide.
+
 ## MCP server
 
 `tools/design-ui-mcp` is a standalone MCP server (stdio), started by the AI client, one per Unity project. It is not
@@ -32,7 +45,8 @@ Start command for every client:
 node <clone>/tools/design-ui-mcp/dist/server.js --project <UnityProjectDir>
 ```
 
-Register it once per client and project:
+`scripts/setup.sh --project <UnityProjectDir>` does all of this, adds the Unity package and `design-ui.config.json`
+when they are missing, and registers the server for Claude Code (`--dry-run` shows the changes first). By hand:
 
 - **Claude Code**, in the folder you start it from:
   `claude mcp add --scope local design-ui -- node <clone>/tools/design-ui-mcp/dist/server.js --project <UnityProjectDir>`
