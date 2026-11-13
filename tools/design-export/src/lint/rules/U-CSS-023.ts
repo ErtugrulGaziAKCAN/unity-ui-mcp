@@ -1,11 +1,18 @@
 import { cssSupport, type PropertySupport } from "../allowed-css.js";
 import { CSS_WIDE, splitTopLevel, stripStringsAndUrls } from "../css-values.js";
 import type { Rule } from "../types.js";
-import { at, Collector, declsAt, declText, inSvg, judgeAt, resolved, sources, targetOf, type Target } from "./util.js";
+import { at, Collector, declsAt, declText, inSvg, judgeAt, resolved, sources, targetOf, type Source, type Target } from "./util.js";
 
 const UNIT = /(^|[^\w.#-])[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?([a-z]+)(?![\w(-])/gi;
 const VIEWPORT = /^[sld]?v(?:w|h|i|b|min|max)$/; // U-CSS-006
 const IDENT = /^-?[a-z_][a-z0-9_-]*$/i;
+const SVG_TAGS = new Set(["svg", "g", "path", "circle", "ellipse", "line", "polyline", "polygon", "rect", "text", "tspan", "use",
+  "defs", "symbol", "lineargradient", "radialgradient", "stop", "clippath", "mask", "pattern", "marker", "image"]);
+const ZERO = /^(0|0px|0%|0em|0rem)$/i;
+
+/** A rule that reaches no element is judged on its selector: does it only target inline-SVG content? */
+const svgSelectors = (src: Source) => !!src.rule && src.rule.selectors.length > 0 &&
+  src.rule.selectors.every((sel) => sel.parsed.compounds.some((c) => c.simples.some((x) => x.kind === "type" && SVG_TAGS.has(x.name.toLowerCase()))));
 
 /** Keywords of a value the property does not accept (functions are U-CSS-024's; owned values are their rule's). */
 function badKeywords(p: PropertySupport, value: string): string[] {
@@ -36,14 +43,23 @@ export const rule: Rule = {
     for (const src of sources(s)) {
       const t0 = targetOf(s, src);
       if (!t0) continue;
-      const svgOnly = src.elements.length > 0 && src.elements.every((i) => inSvg(s)[i]);
+      // exemptions use the reached elements, or the rule's own declarations and selector when it reaches none
+      const svgOnly = src.elements.length > 0 ? src.elements.every((i) => inSvg(s)[i]) : svgSelectors(src);
       for (const i of judgeAt(s, src, t0)) {
         const t: Target = i === null ? t0 : { path: s.elements[i].path, element: s.elements[i], more: t0.more };
+        const decls = declsAt(src, i);
+        /** A border side that draws nothing: computed at the element, or declared zero/none by the rule itself. */
+        const blank = (side: string) => {
+          if (i !== null) return s.elements[i].computed[`border-${side}-width`] === "0px";
+          const v = (n: string) => { const d = decls.find((x) => x.name === n); return d ? resolved(s, d.value, null).trim() : null; };
+          const w = v(`border-${side}-width`), st = v(`border-${side}-style`);
+          return (w !== null && ZERO.test(w)) || (st !== null && /^(none|hidden)$/i.test(st));
+        };
         const hits: string[] = [];
         for (const sel of src.rule?.selectors ?? []) {
           if (sel.pseudoElement && !cssSupport.isAllowedPseudoElement(sel.pseudoElement)) hits.push(`::${sel.pseudoElement} (in "${sel.text}") has no UI Toolkit equivalent`);
         }
-        for (const d of declsAt(src, i)) {
+        for (const d of decls) {
           if (d.name.startsWith("--")) continue;
           const v = resolved(s, d.value, i);
           if (d.invalid) { hits.push(`${d.name}: ${v} does not parse after var() substitution`); continue; }
@@ -57,7 +73,7 @@ export const rule: Rule = {
           let kws = badKeywords(p, v);
           // `border: 0` writes the initial colour (currentcolor) on sides that draw nothing
           const side = /^border-(top|right|bottom|left)-color$/.exec(d.name);
-          if (side && i !== null && s.elements[i].computed[`border-${side[1]}-width`] === "0px") kws = kws.filter((k) => k.toLowerCase() !== "currentcolor");
+          if (side && blank(side[1])) kws = kws.filter((k) => k.toLowerCase() !== "currentcolor");
           if (kws.length) hits.push(`${declText(d, v)}: value ${kws.map((k) => `"${k}"`).join(", ")} is not supported${p.keywords ? ` (use ${p.keywords.join(", ")})` : ""}`);
           if (d.name === "text-shadow" && splitTopLevel(v, ",").length > 1) hits.push(`${declText(d, v)}: UI Toolkit draws one text shadow`);
           if (d.name === "box-sizing" && v.trim() === "content-box") {

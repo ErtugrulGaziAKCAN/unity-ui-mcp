@@ -3,16 +3,17 @@ import type { Rule } from "../types.js";
 import { Collector, inSvg, isExternal, nonDesign, sources } from "./util.js";
 
 const FLEX_ONLY = new Set(["align-items", "align-content", "justify-content", "flex-direction", "flex-wrap", "row-gap", "column-gap"]);
-/** What to write instead of a browser default, by property group. */
-function writeInstead(prop: string): string {
+/** The exact declaration that replaces a browser default: the parent's value when inherited, else the initial value. */
+function writeInstead(prop: string, parent: string, inherited: boolean, initial: string[] | undefined): string {
   if (prop.startsWith("margin-")) return "margin: 0";
   if (prop.startsWith("padding-")) return "padding: 0";
-  if (prop.startsWith("border-")) return "border: 0 (or your own solid border)";
+  if (/^border-(top|right|bottom|left)-(width|style)$/.test(prop)) return "border: 0";
   if (prop === "appearance") return "appearance: none";
   if (prop === "text-decoration-line") return "text-decoration: none";
-  if (prop === "resize") return "resize: none";
-  if (prop.startsWith("white-space") || prop === "text-wrap-mode") return "white-space";
-  return prop;
+  if (prop === "background-color") return "background-color: transparent";
+  if ((prop === "white-space-collapse" || prop === "text-wrap-mode") && inherited) return "white-space: normal";
+  if (inherited) return `${prop}: ${parent}`;
+  return `${prop}: ${initial?.[0] ?? "initial"}`;
 }
 
 /**
@@ -26,9 +27,9 @@ export const rule: Rule = {
     const inherited = new Set(d.inherited);
     const c = new Collector();
     const fixes = new Map<string, Set<string>>();
-    const flag = (path: string, detail: string, prop: string) => {
+    const flag = (path: string, detail: string, write: string) => {
       c.add(path, detail);
-      fixes.set(path, (fixes.get(path) ?? new Set()).add(writeInstead(prop)));
+      fixes.set(path, (fixes.get(path) ?? new Set()).add(write));
     };
     const placeholderStyled = new Set<number>();
     for (const src of sources(s)) for (const i of src.pseudo.get("placeholder") ?? []) {
@@ -48,14 +49,14 @@ export const rule: Rule = {
           if (FLEX_ONLY.has(prop) && !/flex|grid/.test(e.computed.display)) continue;
           if ((d.initial[prop] ?? []).includes(value)) continue;
         }
-        flag(e.path, `${prop}: ${value} (browser default for <${e.tag}>)`, prop);
+        flag(e.path, `${prop}: ${value} (browser default for <${e.tag}>)`, writeInstead(prop, parent, inherited.has(prop), d.initial[prop]));
       }
       const ph = e.pseudo.placeholder;
       if (ph && !placeholderStyled.has(e.index) && ph.color !== e.computed.color) {
-        flag(e.path, `::placeholder color: ${ph.color} (browser default)`, "::placeholder { color }");
+        flag(e.path, `::placeholder color: ${ph.color} (browser default)`, `::placeholder { color: ${e.computed.color} }`);
       }
     }
     return c.findings(rule, (path) =>
-      `Write these explicitly instead of relying on the browser's default style (the kit's base stylesheet resets them): ${Array.from(fixes.get(path) ?? []).join("; ")}.`);
+      `Write these declarations instead of relying on the browser's default style (the kit's base stylesheet resets them): ${Array.from(fixes.get(path) ?? []).join("; ")}.`);
   },
 };

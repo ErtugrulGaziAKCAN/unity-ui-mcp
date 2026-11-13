@@ -62,12 +62,12 @@ describe("lint rules: one pass and one fail fixture per rule", () => {
   });
 });
 
-/** Reviewer probe pages (round 1): each design must give exactly these rule ids. */
+/** Reviewer probe pages (rounds 1 and 2): each design must give exactly these rule ids. */
 const PROBES: Record<string, string[]> = {
   "01-ua-margins-no-reset": ["U-CSS-026", "U-MRK-006"], "02-ua-button-native": ["U-CSS-026"], "03-shadow-dom": ["U-CSS-029"],
   "04-adopted-sheet": ["U-CSS-001", "U-CSS-015"], "05-container-query": ["U-CSS-028"], "06-layer": ["U-CSS-028"],
   "07-display-table": ["U-CSS-023", "U-CSS-029"], "08-justify-contents": ["U-CSS-023"], "09-property-calc": ["U-CSS-028"],
-  "10-iframe": ["U-CSS-029"], "11-common-resets": ["U-CSS-026"], "12-font-shorthand": [], "13-animation-shorthand": [],
+  "10-iframe": ["U-CSS-029"], "11-common-resets": [], "12-font-shorthand": [], "13-animation-shorthand": [],
   "14-misc-hints": [], "15-inline-svg": [], "16-link-flex-item": ["U-CSS-026"], "17-margin-collapse": ["U-CSS-030"], "18-br": [],
   "19-mixed-content": ["U-CSS-030", "U-MRK-004"], "20-object-fit-bg": ["U-CSS-023"],
   "21-native-controls": ["U-CSS-016", "U-CSS-026", "U-CSS-029", "U-MRK-004"], "22-input-placeholder": ["U-CSS-026", "U-MRK-007"],
@@ -78,6 +78,9 @@ const PROBES: Record<string, string[]> = {
   "44-common-ok": ["U-CSS-023", "U-CSS-024"], "45-onclick-div": ["U-MRK-003"], "46-ua-bold-strong-heading": ["U-CSS-026"],
   "50-select-lh": [], "51-visibility": [], "52-anim-steps": ["U-CSS-008"], "53-kit-font-local": [], "60-all-unset": [],
   "61-root-size": ["U-MRK-006"], "62-rem-body": [],
+  // review round 2
+  "70-reset-unused-button": [], "71-reset-unused-class": [], "72-link-only-block": [], "73-duplicate-sibling-ids": ["U-MRK-002"],
+  "74-realistic-screen": ["U-CSS-016"],
 };
 
 describe("lint probes (review round 1)", () => {
@@ -176,6 +179,30 @@ describe("lint engine", () => {
       expect(f.map((x) => x.ruleId)).toEqual(["U-CSS-012", "U-CSS-012"]);
       expect(f.map((x) => x.detail).join(" ")).toContain("media type print");
       expect(f.map((x) => x.detail).join(" ")).toMatch(/: not\b/);
+    } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
+  it("names both duplicates, exact browser-default fixes, and lone inline boxes", async () => {
+    const dup = await lintFile(fx("probes/73-duplicate-sibling-ids.html"));
+    expect(dup[0].detail).toContain("p:0 (this element is [data-u-screen=s] > div[data-u-id=g] > p:1)");
+    const ua = await lintFile(fx("probes/01-ua-margins-no-reset.html"));
+    expect(ua.filter((f) => f.ruleId === "U-CSS-026").every((f) => /margin: 0/.test(f.fix))).toBe(true);
+    const link = await lintFile(fx("U-CSS-026.fail.html"));
+    expect(link[0].fix).toContain("color: rgb(255, 255, 255)");
+    expect(link[0].fix).toContain("text-decoration: none");
+    const dir = tmp();
+    try {
+      const f = await lintFile(write(dir, '<ul style="margin:0;padding:0;list-style:none"><li><a data-u-id="l" data-l10n="s.l" data-en="L" style="padding:4px">L</a></li></ul>'));
+      expect(f.map((x) => x.ruleId)).toEqual(["U-CSS-009"]);
+      expect(f[0].detail).toContain("draws an inline box");
+    } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
+  it("judges rules that reach no element on their own declarations", async () => {
+    const dir = tmp();
+    try {
+      const f = await lintFile(write(dir, "", ".dead{column-gap:8px;flex-wrap:wrap} .dead2{transform:rotate(10deg) translateX(50%)} svg path{fill:none;stroke:#ffffff}"));
+      expect(f.map((x) => [x.ruleId, x.path])).toEqual([["U-CSS-011", "style:0 .dead"]]);
     } finally { fs.rmSync(dir, { recursive: true }); }
   });
 

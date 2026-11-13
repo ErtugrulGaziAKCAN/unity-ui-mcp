@@ -15,6 +15,11 @@ const INITIAL: Record<string, string> = {
   "margin-top": "0px", "margin-right": "0px", "margin-bottom": "0px", "margin-left": "0px",
 };
 
+/** Box properties an inline element draws per line fragment, unlike a block. */
+const BOX = ["background-color", "background-image", "box-shadow", "transform", "border-top-width", "border-right-width",
+  "border-bottom-width", "border-left-width", "padding-top", "padding-right", "padding-bottom", "padding-left",
+  "margin-top", "margin-right", "margin-bottom", "margin-left"];
+
 function richEffects(e: SnapElement, parent: SnapElement): string[] {
   const out: string[] = [];
   const same = [...SAME_AS_PARENT];
@@ -37,10 +42,18 @@ export const rule: Rule = {
       const parent = s.elements[e.parent];
       // children of a display:none root are not blockified while hidden: their layout is not known here
       if (parent.computed.display === "none") continue;
+      // the only content of its block (no sibling text or elements), e.g. <li><a>…</a></li>: not inside a line of
+      // text; it compiles as the text element itself, unless it draws an inline box, which UI Toolkit cannot
+      const siblings = parent.children.filter((k) => k !== e.index && !nonDesign(s)[k] && s.elements[k].computed.display !== "none");
+      if (parent.texts.length === 0 && siblings.length === 0) {
+        const box = BOX.filter((p) => e.computed[p] !== INITIAL[p]);
+        if (box.length) c.add(e.path, `<${e.tag}> (display: ${e.computed.display}) draws an inline box: ${box.map((p) => `${p}: ${e.computed[p]}`).join(", ")}`);
+        continue;
+      }
       if (!RICH.has(e.tag) || e.computed.display !== "inline") { c.add(e.path, `<${e.tag}> is display: ${e.computed.display} inside a line of text`); continue; }
       const fx = richEffects(e, parent);
       if (fx.length) c.add(e.path, `<${e.tag}> inside text changes ${fx.join(", ")} (rich text allows only color and font-size${e.tag === "b" || e.tag === "strong" ? ", and bold" : e.tag === "i" || e.tag === "em" ? ", and italic" : ""})`);
     }
-    return c.findings(rule, "Inside a line of text use only b/strong, i/em, br and span with color or font-size; make other elements flex items of a flex container, or split the text into separate elements.");
+    return c.findings(rule, "Inside a line of text use only b/strong, i/em, br and span with color or font-size; give other elements (and a lone link or label that draws a background, border, padding or margin) display: block or flex, or split the text into separate elements.");
   },
 };

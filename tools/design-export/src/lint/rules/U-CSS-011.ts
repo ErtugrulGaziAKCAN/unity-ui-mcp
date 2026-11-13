@@ -1,5 +1,5 @@
 import type { Rule } from "../types.js";
-import { Collector, isExternal, nonDesign, resolved, sourcesOf } from "./util.js";
+import { Collector, isExternal, nonDesign, resolved, sources, sourcesOf, targetOf } from "./util.js";
 
 const GAPS = new Set(["gap", "row-gap", "column-gap", "grid-gap", "grid-row-gap", "grid-column-gap"]);
 const zero = (v: string) => /^(normal|0|0px|0%)(\s+(normal|0|0px|0%))?$/i.test(v.trim());
@@ -24,6 +24,14 @@ export const rule: Rule = {
       }
       if (gaps.length && wrapsIn.length) c.add(e.path, `${Array.from(new Set(gaps))[0]} with ${Array.from(new Set(wrapsIn))[0]}`);
     });
+    // a rule that reaches no element is judged on its own declarations
+    for (const src of sources(s)) {
+      const t = targetOf(s, src);
+      if (!t || t.element !== null) continue;
+      const gap = src.decls.find((d) => GAPS.has(d.name) && !zero(resolved(s, d.value, null)));
+      const wrap = src.decls.find((d) => (d.name === "flex-wrap" || d.name === "flex-flow") && wraps(resolved(s, d.value, null)));
+      if (gap && wrap) c.add(t.path, `${gap.name}: ${gap.value} with ${wrap.name}: ${wrap.value}`);
+    }
     return c.findings(rule, "Remove gap from wrapping flex containers and space the items with margins (gap is lowered to margins, which cannot follow line breaks).");
   },
 };

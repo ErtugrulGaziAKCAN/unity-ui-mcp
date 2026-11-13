@@ -11,6 +11,8 @@ export const rule: Rule = {
       if (d.name === "transform") {
         const e = t.element;
         const r = splitTransform(v, e?.size ?? undefined, { fontSize: px(e?.computed["font-size"]) ?? undefined, rootFontSize: s.rootFontSize });
+        // without a box (the rule reaches no element) a % translation cannot be resolved: not judged
+        if (!r.ok && !e && /needs to come first/.test(r.reason)) return null;
         return r.ok ? null : `${declText(d, v)}: ${r.reason}`;
       }
       if (d.name === "translate" || d.name === "rotate" || d.name === "scale") {

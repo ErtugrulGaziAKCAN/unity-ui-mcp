@@ -29,7 +29,11 @@ export const rule: Rule = {
       const key = `${scope[e.index]}\u0000${id}`;
       const first = seen.get(key);
       if (first === undefined) { seen.set(key, e.index); continue; }
-      out.push(make(rule, e.path, `data-u-id "${id}" is already used by ${s.elements[first].path}`,
+      const a = s.elements[first];
+      // siblings with the same id share a path: name both by position
+      const pos = (x: typeof e) => (x.parent >= 0 ? `${s.elements[x.parent].path} > ${x.tag.toLowerCase()}:${s.elements[x.parent].children.indexOf(x.index)}` : x.path);
+      const where = a.path === e.path ? `${pos(a)} (this element is ${pos(e)})` : a.path;
+      out.push(make(rule, e.path, `data-u-id "${id}" is already used by ${where}`,
         "Give every element a data-u-id that is unique in the screen (inner ids may repeat only across the written-out items of a data-u-repeat list)."));
     }
     return out;

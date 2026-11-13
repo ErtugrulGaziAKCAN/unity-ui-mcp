@@ -230,6 +230,8 @@ export const CSS_SUPPORT_DATA: CssSupportData = {
     reproduced: {
       img: ["overflow-x", "overflow-y"], svg: ["overflow-x", "overflow-y"],
       // text controls: clipping, the single-line select label and multi-line textarea wrapping are the control's own
+      // a button's centred label reaches Unity through the IR as middle-center
+      button: ["text-align"],
       input: ["overflow-x", "overflow-y"],
       textarea: ["overflow-x", "overflow-y", "white-space-collapse", "text-wrap-mode", "overflow-wrap"],
       select: ["overflow-x", "overflow-y", "white-space-collapse", "text-wrap-mode", "align-items"],
