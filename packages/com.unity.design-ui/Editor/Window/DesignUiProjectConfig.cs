@@ -85,7 +85,8 @@ namespace DesignUi.Editor
                 if (!File.Exists(file)) continue;
                 try
                 {
-                    var o = JObject.Parse(File.ReadAllText(file));
+                    // dates stay strings: a parsed date token would come back in another format
+                    var o = JObject.Load(new JsonTextReader(new StringReader(File.ReadAllText(file))) { DateParseHandling = DateParseHandling.None });
                     if (!DateTime.TryParse(o.Value<string>("verifiedAt"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var when)) continue;
                     if (best != null && when <= best.When) continue;
                     best = new Report
