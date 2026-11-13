@@ -4,7 +4,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { readConfig } from "../src/config.js";
 import { RULES } from "../src/exporter.js";
-import type { Pipeline } from "../src/pipeline.js";
+import { INSTALLED_PIPELINE, type Pipeline } from "../src/pipeline.js";
+import { encodePng } from "../../design-export/src/compare/png.js";
 import { RULE_SUMMARIES } from "../src/rule-table.js";
 import { Runtime } from "../src/runtime.js";
 import { createServer, createUnconfiguredServer, TOOL_NAMES, VERSION } from "../src/server.js";
@@ -163,8 +164,9 @@ describe("design_ui_list and design_ui_status", () => {
     expect(r.data.tools.design_ui_lint.available).toBe(true);
     expect(r.data.tools.design_ui_import.available).toBe(true);
     expect(r.data.tools.design_ui_import.note).toMatch(/export live.*Unity compile not available yet/i);
-    expect(r.data.pipeline).toEqual({ export: true, compare: false });
+    expect(r.data.pipeline).toEqual({ export: true, compare: true, capture: false });
     expect(r.data.tools.design_ui_verify.available).toBe(false);
+    expect(r.data.tools.design_ui_verify.note).toMatch(/not available yet: the Unity capture .* comparison against the design and the HTML report are installed/);
     expect(r.data.config).toMatchObject({ ok: true, designRoot: p.designRoot });
   });
 
@@ -392,7 +394,7 @@ describe("design_ui_verify", () => {
   it("with compare installed: needs an import first, then captures through the command runner and records the verdict", async () => {
     const p = tempProject({ prefer: "command" });
     const dir = p.addScreen("clean-screen", "clean-screen");
-    const pipeline = stubPipeline();
+    const pipeline = { ...stubPipeline(), unityCapture: true };
     pipeline.compareScreen = async (_e, _u, reportFile) => {
       fs.writeFileSync(reportFile, "<p>report</p>");
       return { pass: false, topIssues: ["header: box +3 px"], notRun: [] };
@@ -420,6 +422,106 @@ describe("design_ui_verify", () => {
     expect(r.text).toMatch(/not available yet/i);
     expect(r.text).not.toMatch(/\bpass\b/i);
     expect(p.runnerCalls()).toHaveLength(1);
+  });
+});
+
+/** Export stand-in that writes a real golden set: two captures (PNG + boxes + matrix) and a minimal IR. */
+function goldenPipeline(): Pipeline {
+  return {
+    exportScreen: async (_entry, _kit, outDir) => {
+      const g = path.join(outDir, "goldens");
+      fs.mkdirSync(g, { recursive: true });
+      const w = 64, h = 48, data = new Uint8Array(w * h * 4);
+      for (let p = 0; p < w * h; p++) data.set(p % w >= 16 && p % w < 48 && p / w >= 8 && p / w < 40 ? [200, 60, 60, 255] : [20, 30, 40, 255], p * 4);
+      const el = (x: number, y: number, ww: number, hh: number) => ({ x, y, w: ww, h: hh, visible: true, text: false, lines: [] });
+      const boxes: Record<string, unknown> = {};
+      const captures = ["default@64x48", "hover@64x48"].map((name) => {
+        fs.writeFileSync(path.join(g, `${name}.png`), encodePng({ w, h, data }));
+        boxes[name] = { capture: name, viewport: [w, h], scale: 1, external: [], elements: { root: el(0, 0, w, h), card: el(16, 8, 32, 32) } };
+        return { name, state: name.split("@")[0], viewport: [w, h], pseudo: null, apply: [], coverage: null, anim: null };
+      });
+      fs.writeFileSync(path.join(g, "boxes.json"), JSON.stringify(boxes));
+      fs.writeFileSync(path.join(g, "matrix.json"), JSON.stringify({ chromium: "test", platform: "test", captures, unsampled: [] }));
+      fs.writeFileSync(path.join(outDir, "screen.ir.json"), JSON.stringify({ irVersion: 1, screen: "clean-screen", root: { id: "root", children: [{ id: "card", children: [] }] } }));
+      fs.writeFileSync(path.join(outDir, "export-report.json"), JSON.stringify({ screen: "clean-screen", timings: { lint: 11 }, totalMs: 99 }));
+      return { ok: true, findings: [], timings: { total: 99 } };
+    },
+    compareScreen: INSTALLED_PIPELINE.compareScreen,
+    unityCapture: true,
+  };
+}
+/** A capture command that copies the goldens into {outDir} (a perfect Unity), optionally without some files. */
+const copyCapture = (without: string[] = []) => ({
+  unityRunner: {
+    prefer: "command",
+    command: {
+      import: ["sh", "-c", "exit 0"],
+      capture: ["sh", "-c", `mkdir -p "$1" && cp "$0"/goldens/*.png "$0"/goldens/boxes.json "$1"/ && rm -f ${without.map((f) => `"$1/${f}"`).join(" ") || '"$1/none"'}`, "{exportDir}", "{outDir}"],
+      kitSync: ["sh", "-c", "exit 0"],
+    },
+  },
+});
+
+describe("design_ui_verify with the installed comparison", () => {
+  it("says the Unity capture is not available yet and runs nothing, even after an import", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.addScreen("clean-screen", "clean-screen");
+    const client = await serverFor(p.dir, { ...stubPipeline(), compareScreen: INSTALLED_PIPELINE.compareScreen });
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/not available yet: the Unity capture/);
+    expect(r.data).toMatchObject({ available: false, missing: ["capture"], verdict: null });
+    expect(p.runnerCalls().map((c) => c.split("|")[0])).toEqual(["import"]);
+  });
+
+  it("captures, compares and writes report.html, verdict.json and the verdict (pass)", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.writeConfig(copyCapture());
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const client = await serverFor(p.dir, goldenPipeline());
+    expect((await call(client, "design_ui_import", { design: "clean-screen" })).isError).toBeFalsy();
+    // a stale capture from an earlier run is never compared
+    fs.mkdirSync(path.join(dir, ".design-ui", "unity"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".design-ui", "unity", "stale@64x48.png"), "x");
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(r.text).toMatch(/^PASS: clean-screen/);
+    expect(r.isError).toBeFalsy();
+    expect(r.data).toMatchObject({ verdict: "pass", compared: 2, notRun: [], extra: [], reportPath: path.join(dir, "report.html") });
+    // lint from the exporter's report; export, import and capture as this server measured them
+    expect(r.data.steps).toMatchObject({ lint: 11 });
+    expect(typeof r.data.steps.export).toBe("number");
+    expect(r.data.steps.capture).toBeGreaterThanOrEqual(0);
+    expect(r.data.steps).toHaveProperty("import");
+    const html = fs.readFileSync(path.join(dir, "report.html"), "utf8");
+    expect(html).toContain("default@64x48");
+    expect(html).toContain("PASS");
+    expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "compare", "verdict.json"), "utf8"))).toMatchObject({ pass: true });
+    expect(screenStatus(readConfig(p.dir), "clean-screen")).toMatchObject({ state: "verified", verdict: "pass" });
+    // the report and the bookkeeping do not change the design's source hash
+    expect(screenStatus(readConfig(p.dir), "clean-screen").sourceSha).toBe(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8")).sourceSha);
+  });
+
+  it("fails a screen with a capture Unity did not produce, and gives no verdict when Unity produced nothing", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.writeConfig(copyCapture(["hover@64x48.png"]));
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const client = await serverFor(p.dir, goldenPipeline());
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.data).toMatchObject({ verdict: "fail", notRun: ["hover@64x48"], compared: 1 });
+    expect(r.text).toContain("Not run: hover@64x48");
+    expect(fs.readFileSync(path.join(dir, "report.html"), "utf8")).toContain("NOT RUN");
+
+    p.writeConfig(copyCapture(["default@64x48.png", "hover@64x48.png", "boxes.json"]));
+    const client2 = await serverFor(p.dir, goldenPipeline());
+    const none = await call(client2, "design_ui_verify", { screen: "clean-screen" });
+    expect(none.isError).toBe(true);
+    expect(none.data.verdict).toBeNull();
+    expect(none.text).toMatch(/wrote no boxes\.json .*; no verdict/);
+    // the earlier verdict stays the last one recorded
+    expect(screenStatus(readConfig(p.dir), "clean-screen").verdict).toBe("fail");
   });
 });
 

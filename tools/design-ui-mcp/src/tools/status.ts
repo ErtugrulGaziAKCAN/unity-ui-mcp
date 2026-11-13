@@ -15,7 +15,7 @@ export interface ToolAvailability { available: boolean; note: string }
 
 /** What each tool can do in this build; shared by design_ui_status and the server instructions. */
 export function availability(ctx: ServerContext): Record<string, ToolAvailability> {
-  const exp = !!ctx.pipeline.exportScreen, cmp = !!ctx.pipeline.compareScreen;
+  const exp = !!ctx.pipeline.exportScreen, cmp = !!ctx.pipeline.compareScreen, cap = !!ctx.pipeline.unityCapture;
   return {
     design_ui_rules: { available: true, note: "live (kit RULES.md is still a stub; allowed CSS, attributes, text styles and the lint rule table are complete)" },
     design_ui_list: { available: true, note: "live" },
@@ -24,9 +24,11 @@ export function availability(ctx: ServerContext): Record<string, ToolAvailabilit
     design_ui_import: exp
       ? { available: true, note: "export live (lint, IR, goldens, assets); Unity compile not available yet: the import stops with the Editor's code 2 until the Unity side answers code 0" }
       : { available: false, note: `not available yet: ${MISSING.export}; ${MISSING.compile}` },
-    design_ui_verify: cmp
+    design_ui_verify: cmp && cap
       ? { available: true, note: "live" }
-      : { available: false, note: `not available yet: ${MISSING.compare}` },
+      : cmp
+        ? { available: false, note: `not available yet: ${MISSING.capture}` }
+        : { available: false, note: `not available yet: ${MISSING.compare}` },
     design_ui_kit_sync: {
       available: false,
       note: "forwarded to Unity; the current com.unity.design-ui package answers \"Not available yet\" until its import pipeline lands",
@@ -86,7 +88,7 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
       ];
       return toolResult(lines.join("\n"), {
         server: "design-ui", version: VERSION, project: ctx.projectDir, config, tools,
-        pipeline: { export: !!ctx.pipeline.exportScreen, compare: !!ctx.pipeline.compareScreen },
+        pipeline: { export: !!ctx.pipeline.exportScreen, compare: !!ctx.pipeline.compareScreen, capture: !!ctx.pipeline.unityCapture },
         unity, browser: { warm: ctx.runtime.browserWarm, launches: ctx.runtime.browserLaunches }, timings: t.done(),
       });
     });

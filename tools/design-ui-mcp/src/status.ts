@@ -14,6 +14,8 @@ export interface ImportRecord {
   importedAt: string;
   via: RunnerRoute;
   discardManualEdits: boolean;
+  /** Milliseconds of the import's steps (export, import, compile), carried into the verification report. */
+  timings?: Record<string, number>;
 }
 
 /** `<designRoot>/<screen>/.design-ui/last-verify.json`, written after a completed comparison. */

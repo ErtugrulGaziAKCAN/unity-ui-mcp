@@ -1,6 +1,7 @@
+import fs from "node:fs";
 import path from "node:path";
 import type { Browser } from "playwright";
-import { runExport, type Finding, type KitConfig } from "./exporter.js";
+import { readThresholds, runCompare, runExport, summarizeIssues, writeReport, writeVerdict, type Finding, type KitConfig } from "./exporter.js";
 
 export interface ExportOutcome {
   /** false when lint found errors: nothing but the lint report was written. */
@@ -19,20 +20,38 @@ export interface CompareOutcome {
   topIssues: string[];
   /** Captures that could not be compared (never counted as a pass). */
   notRun: string[];
+  /** Captures compared; 0 means the Unity capture produced nothing to compare (no verdict). */
+  compared?: number;
+  /** Unity captures without a design golden (listed, not failures). */
+  extra?: string[];
+  /** The machine-readable verdict written next to the report's data. */
+  verdictFile?: string;
+  /** Per-step milliseconds as recorded in the report. */
+  timings?: Record<string, number>;
 }
-/** Compares the Unity captures in `unityDir` with the goldens in `exportDir` and writes the HTML report. */
-export type CompareScreen = (exportDir: string, unityDir: string, reportFile: string) => Promise<CompareOutcome>;
+/**
+ * Compares the Unity captures in `unityDir` with the goldens in `exportDir` and writes the HTML report. `timings`:
+ * steps measured before the comparison (import, compile, capture), recorded in the report.
+ */
+export type CompareScreen = (exportDir: string, unityDir: string, reportFile: string, opts?: { timings?: Record<string, number> }) => Promise<CompareOutcome>;
 
 /** The pipeline steps that run inside this server. A null step is not installed in this version. */
 export interface Pipeline {
   exportScreen: ExportScreen | null;
   compareScreen: CompareScreen | null;
+  /**
+   * Whether the Unity side of this version can capture a compiled screen for verification (the com.unity.design-ui
+   * capture test). Without it design_ui_verify answers "not available yet" and runs nothing.
+   */
+  unityCapture?: boolean;
 }
 
 /**
  * What this version ships: the exporter's export step runs in this process on the server's warm browser (lint, IR,
- * baked effects, goldens, assets, sample data). Comparison is still being built; wire it in here when it lands and
- * design_ui_verify lights up without other changes.
+ * baked effects, goldens, assets, sample data), and the comparison of Unity captures with the goldens writes the HTML
+ * report (`<screen>/report.html`; difference images and verdict.json in `<screen>/.design-ui/compare/`). The Unity
+ * capture is not in the com.unity.design-ui package yet: set `unityCapture` when it lands and design_ui_verify lights
+ * up without other changes.
  */
 export const INSTALLED_PIPELINE: Pipeline = {
   exportScreen: async (entry, kit, outDir, browser) => {
@@ -40,7 +59,20 @@ export const INSTALLED_PIPELINE: Pipeline = {
     const r = await runExport(entry, kit, outDir, { browser, lintReportFile: path.join(path.dirname(outDir), "lint-report.json") });
     return { ok: r.ok, findings: r.findings, timings: { ...r.timings, total: r.totalMs }, skipped: r.skipped };
   },
-  compareScreen: null,
+  compareScreen: async (exportDir, unityDir, reportFile, opts = {}) => {
+    // derived files live in the screen's bookkeeping folder, next to the Unity captures (a dot folder: not design source)
+    const work = path.join(path.dirname(unityDir), "compare");
+    fs.rmSync(path.join(work, "diff"), { recursive: true, force: true });
+    const v = await runCompare(exportDir, unityDir, readThresholds(), { diffDir: path.join(work, "diff"), timings: opts.timings });
+    writeReport(v, exportDir, unityDir, reportFile);
+    const verdictFile = path.join(work, "verdict.json");
+    writeVerdict(v, verdictFile);
+    return {
+      pass: v.pass, topIssues: summarizeIssues(v, 20, { notRun: false }), notRun: v.notRun, compared: v.captures.length,
+      extra: v.extra, verdictFile, timings: v.timings,
+    };
+  },
+  unityCapture: false,
 };
 
 /** Why a step is unavailable, worded for the AI client and the user. */
@@ -48,4 +80,5 @@ export const MISSING = {
   export: "the design export step (browser capture to screen IR, goldens and assets) is not installed in this version of unity-ui-mcp",
   compile: "the Unity side (IR compiler and import into the open Editor) arrives with the import pipeline of the com.unity.design-ui package; until then the Editor answers \"Not available yet\"",
   compare: "verification (Unity capture and comparison against the design) is not installed in this version of unity-ui-mcp",
+  capture: "the Unity capture (the com.unity.design-ui test that renders the compiled screen for every golden capture) is not in the Unity package yet; the comparison against the design and the HTML report are installed and run once it lands",
 };

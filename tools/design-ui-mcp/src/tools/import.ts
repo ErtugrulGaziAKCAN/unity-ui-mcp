@@ -82,8 +82,11 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         }, true);
       }
 
+      const steps: Record<string, number> = { export: t.steps.export };
+      if (run.via === "editor") { steps.import = run.timings.request; if (run.timings.compileWait !== undefined) steps.compile = run.timings.compileWait; }
+      else steps.import = run.timings.total;
       writeLastImport(dir, {
-        screen, sourceSha: src, kitSha: kit.sha, irSha, importedAt: new Date().toISOString(), via: run.via, discardManualEdits: discard,
+        screen, sourceSha: src, kitSha: kit.sha, irSha, importedAt: new Date().toISOString(), via: run.via, discardManualEdits: discard, timings: steps,
       });
       return toolResult(`Imported ${screen} into Unity via ${run.via}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${screen}" }.`, {
         screen, exported, unityCalled: true, via: run.via, code: 0, irSha, sourceSha: src, exportDir, logTail: run.logTail,

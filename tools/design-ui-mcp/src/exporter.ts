@@ -6,3 +6,5 @@ export { lint, RULES, type Finding, type Rule } from "../../design-export/src/li
 export { CSS_SUPPORT_DATA, type CssSupportData, type PropertySupport } from "../../design-export/src/lint/allowed-css.js";
 export { readTextStyles, type TextStyle } from "../../design-export/src/lint/text-styles.js";
 export { exportScreen as runExport, type ExportResult } from "../../design-export/src/export.js";
+export { compareScreen as runCompare, readThresholds, summarizeIssues, type ScreenVerdict } from "../../design-export/src/compare/compare.js";
+export { writeReport, writeVerdict } from "../../design-export/src/compare/report.js";
