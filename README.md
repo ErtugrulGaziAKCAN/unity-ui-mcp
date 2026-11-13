@@ -46,7 +46,9 @@ node <clone>/tools/design-ui-mcp/dist/server.js --project <UnityProjectDir>
 ```
 
 `scripts/setup.sh --project <UnityProjectDir>` does all of this, adds the Unity package and `design-ui.config.json`
-when they are missing, and registers the server for Claude Code (`--dry-run` shows the changes first). By hand:
+when they are missing, and registers the server for the client you pick with `--client claude-code|codex|cursor|all` (default `claude-code`;
+Codex: one `[mcp_servers.design-ui]` table in `~/.codex/config.toml`; Cursor: `.cursor/mcp.json` in `--client-dir`, else
+`~/.cursor/mcp.json`). It also links the skill (below). `--dry-run` shows every change first. By hand:
 
 - **Claude Code**, in the folder you start it from:
   `claude mcp add --scope local design-ui -- node <clone>/tools/design-ui-mcp/dist/server.js --project <UnityProjectDir>`
@@ -97,6 +99,15 @@ reason when a step fails or is not available. `node tools/design-ui-mcp/scripts/
 built server without a client (stdio: initialize, tools/list, design_ui_list; `--call <tool>` for others).
 
 `scripts/setup.sh` is bash (macOS, Linux; on Windows use WSL or Git Bash, or the manual steps above).
+
+## The `/unity-ui-mcp` skill
+
+`skills/unity-ui-mcp` is the entry skill: type `/unity-ui-mcp` to start a chat that checks the tools and the Unity
+bridge, reads the design rules, fetches a Claude Design canvas (with an Artifact tool; otherwise from an exported
+folder), then lints, imports and verifies each screen and reports honestly what is not available yet. It also triggers
+from plain requests such as "apply this Claude Design to Unity UI Toolkit" or "Claude Design'ı Unity arayüzüne uygula".
+`scripts/install-skill.sh [--dry-run]` links it into `~/.claude/skills`, `~/.codex/skills` and `~/.cursor/skills`
+(those that exist); setup runs it for you. It replaces only its own link and is safe to run again.
 
 ## Install the Unity package
 

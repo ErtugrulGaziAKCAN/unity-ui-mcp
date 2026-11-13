@@ -162,18 +162,23 @@ describe("scripts/setup.sh", () => {
     expect(lines(path.join(x.logs, "claude-add-args"))).toEqual(expectedAddArgs(x.project));
   });
 
-  it("prints Cursor and Codex snippets that parse back to the exact paths", () => {
+  it("--dry-run for Codex and Cursor prints the planned configuration and writes nothing", () => {
     const e = setupEnv({ projectName: ODD });
     const cursor = e.run("--client", "cursor", "--dry-run");
     expect(cursor.code, cursor.out).toBe(0);
-    const json = JSON.parse(/^\{\n[\s\S]*?\n\}$/m.exec(cursor.out)![0]);
+    expect(cursor.out).toContain("would add MCP server design-ui to");
+    const json = JSON.parse(/^ {4}\{\n[\s\S]*?\n {4}\}$/m.exec(cursor.out)![0]);
     expect(json).toEqual({ mcpServers: { "design-ui": { command: NODE, args: [SERVER_JS, "--project", e.project] } } });
     const codex = e.run("--client", "codex", "--dry-run");
+    expect(codex.out).toContain("would add MCP server design-ui to");
     expect(codex.out).toContain("[mcp_servers.design-ui]");
     // TOML basic strings and arrays of them read like JSON
-    expect(JSON.parse(/^command = (.+)$/m.exec(codex.out)![1])).toBe(NODE);
-    expect(JSON.parse(/^args = (.+)$/m.exec(codex.out)![1])).toEqual([SERVER_JS, "--project", e.project]);
+    expect(JSON.parse(/^ {4}command = (.+)$/m.exec(codex.out)![1])).toBe(NODE);
+    expect(JSON.parse(/^ {4}args = (.+)$/m.exec(codex.out)![1])).toEqual([SERVER_JS, "--project", e.project]);
     expect(lines(path.join(e.logs, "claude.log"))).toEqual([]);
+    expect(fs.existsSync(path.join(e.env.HOME!, ".codex"))).toBe(false);
+    expect(fs.existsSync(path.join(e.env.HOME!, ".cursor"))).toBe(false);
+    expect(fs.existsSync(path.join(e.clientDir, ".cursor"))).toBe(false);
   });
 
   it("keeps an existing package entry and an existing config", () => {
@@ -228,3 +233,154 @@ describe("scripts/setup.sh", () => {
     expect(missing.stderr).toContain("--project needs a value");
   });
 });
+
+describe("setup.sh multi-client registration and skill install", () => {
+  const codexConfig = (e: Env) => path.join(e.env.HOME!, ".codex", "config.toml");
+  const OTHER_TOML = `# my codex config\nmodel = "x"\n\n[mcp_servers.other]\ncommand = "other"\nargs = ["a"]\n\n[profiles.p]\nk = 1\n`;
+
+  it("Codex: adds exactly one table once, keeps the rest byte for byte, second run changes nothing", () => {
+    const e = setupEnv({ projectName: ODD });
+    fs.mkdirSync(path.join(e.env.HOME!, ".codex"));
+    fs.writeFileSync(codexConfig(e), OTHER_TOML);
+    const first = e.run("--client", "codex");
+    expect(first.code, first.out).toBe(0);
+    const after = read(codexConfig(e));
+    expect(after.startsWith(OTHER_TOML)).toBe(true);
+    expect(after.match(/^\[mcp_servers\.design-ui\]$/gm)).toHaveLength(1);
+    const table = after.slice(OTHER_TOML.length);
+    expect(JSON.parse(/^command = (.+)$/m.exec(table)![1])).toBe(NODE);
+    expect(JSON.parse(/^args = (.+)$/m.exec(table)![1])).toEqual([SERVER_JS, "--project", e.project]);
+    const second = e.run("--client", "codex");
+    expect(second.code, second.out).toBe(0);
+    expect(second.out).toContain("Nothing to change");
+    expect(read(codexConfig(e))).toBe(after);
+  });
+
+  it("Codex: replaces an existing design-ui table in place (other tables untouched), creates the file when absent", () => {
+    const e = setupEnv();
+    fs.mkdirSync(path.join(e.env.HOME!, ".codex"));
+    const old = `[mcp_servers.design-ui]\ncommand = "old"\nargs = ["x"]\n\n`;
+    const rest = `[profiles.p]\nk = 1\n`;
+    fs.writeFileSync(codexConfig(e), `a = 1\n\n${old}${rest}`);
+    const r = e.run("--client", "codex");
+    expect(r.code, r.out).toBe(0);
+    const out = read(codexConfig(e));
+    expect(out.match(/^\[mcp_servers\.design-ui\]$/gm)).toHaveLength(1);
+    expect(out).not.toContain('command = "old"');
+    expect(out.startsWith("a = 1\n\n[mcp_servers.design-ui]\n")).toBe(true);
+    expect(out.endsWith(`\n\n${rest}`)).toBe(true);
+
+    const f = setupEnv();
+    const created = f.run("--client", "codex");
+    expect(created.code, created.out).toBe(0);
+    expect(read(codexConfig(f)).match(/^\[mcp_servers\.design-ui\]$/gm)).toHaveLength(1);
+  });
+
+  it("Cursor: merges into an existing mcp.json keeping other servers; --client-dir selects the folder; second run no change", () => {
+    const e = setupEnv();
+    const file = path.join(e.clientDir, ".cursor", "mcp.json");
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, JSON.stringify({ mcpServers: { keep: { command: "k" } }, extra: 1 }, null, 2) + "\n");
+    const first = e.run("--client", "cursor");
+    expect(first.code, first.out).toBe(0);
+    const json = JSON.parse(read(file));
+    expect(json).toEqual({
+      mcpServers: { keep: { command: "k" }, "design-ui": { command: NODE, args: [SERVER_JS, "--project", e.project] } },
+      extra: 1,
+    });
+    const bytes = read(file);
+    const second = e.run("--client", "cursor");
+    expect(second.out).toContain("Nothing to change");
+    expect(read(file)).toBe(bytes);
+  });
+
+  it("Cursor without --client-dir uses ~/.cursor/mcp.json", () => {
+    const e = setupEnv();
+    const r = spawnSync("bash", [SETUP, "--project", e.project, "--no-build", "--client", "cursor"], { env: e.env, encoding: "utf8" });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const json = JSON.parse(read(path.join(e.env.HOME!, ".cursor", "mcp.json")));
+    expect(json.mcpServers["design-ui"].args).toEqual([SERVER_JS, "--project", e.project]);
+  });
+
+  it("--client all registers Claude Code, Codex and Cursor", () => {
+    const e = setupEnv();
+    const r = e.run("--client", "all");
+    expect(r.code, r.out).toBe(0);
+    expect(lines(path.join(e.logs, "claude.log")).filter((l) => l.includes("mcp add"))).toHaveLength(1);
+    expect(read(codexConfig(e))).toContain("[mcp_servers.design-ui]");
+    expect(fs.existsSync(path.join(e.clientDir, ".cursor", "mcp.json"))).toBe(true);
+  });
+
+  it("links the skill into the existing skill folders only, once; second run changes nothing; dry-run changes nothing", () => {
+    const e = setupEnv();
+    const home = e.env.HOME!;
+    fs.mkdirSync(path.join(home, ".claude", "skills"), { recursive: true });
+    fs.mkdirSync(path.join(home, ".codex", "skills"), { recursive: true });
+    const dry = e.run("--client", "none", "--dry-run");
+    expect(dry.out).toContain("would link");
+    expect(fs.readdirSync(path.join(home, ".claude", "skills"))).toEqual([]);
+    const r = e.run("--client", "none");
+    expect(r.code, r.out).toBe(0);
+    const want = path.join(REPO, "skills", "unity-ui-mcp");
+    expect(fs.readlinkSync(path.join(home, ".claude", "skills", "unity-ui-mcp"))).toBe(want);
+    expect(fs.readlinkSync(path.join(home, ".codex", "skills", "unity-ui-mcp"))).toBe(want);
+    expect(fs.existsSync(path.join(home, ".cursor"))).toBe(false);
+    const again = e.run("--client", "none");
+    expect(again.out).toContain("Nothing to change");
+  });
+});
+
+describe("scripts/install-skill.sh", () => {
+  const INSTALL = path.join(REPO, "scripts", "install-skill.sh");
+  const SKILL_DIR = path.join(REPO, "skills", "unity-ui-mcp");
+  const run = (home: string, ...args: string[]) => {
+    const r = spawnSync("bash", [INSTALL, ...args], { env: { PATH: BASE_PATH, HOME: home }, encoding: "utf8" });
+    return { code: r.status ?? -1, out: r.stdout + r.stderr };
+  };
+
+  it("creates links once, reports already in place, replaces only its own stale link, never touches other skills", () => {
+    const home = tempDir("design-ui-home-");
+    const claude = path.join(home, ".claude", "skills");
+    const cursor = path.join(home, ".cursor", "skills");
+    fs.mkdirSync(claude, { recursive: true });
+    fs.mkdirSync(cursor, { recursive: true });
+    fs.mkdirSync(path.join(claude, "other-skill"));
+    fs.writeFileSync(path.join(claude, "other-skill", "SKILL.md"), "mine");
+    fs.symlinkSync("/nonexistent/elsewhere", path.join(cursor, "unity-ui-mcp")); // stale link of this name
+
+    const first = run(home);
+    expect(first.code, first.out).toBe(0);
+    expect(fs.readlinkSync(path.join(claude, "unity-ui-mcp"))).toBe(SKILL_DIR);
+    expect(fs.readlinkSync(path.join(cursor, "unity-ui-mcp"))).toBe(SKILL_DIR);
+    expect(read(path.join(claude, "other-skill", "SKILL.md"))).toBe("mine");
+    expect(fs.existsSync(path.join(home, ".codex"))).toBe(false);
+
+    const second = run(home);
+    expect(second.code, second.out).toBe(0);
+    expect(second.out).toMatch(/already in place/);
+    expect(second.out).not.toMatch(/change:|would/);
+  });
+
+  it("leaves a real folder or file with that name alone and says so", () => {
+    const home = tempDir("design-ui-home-");
+    const dir = path.join(home, ".codex", "skills");
+    fs.mkdirSync(path.join(dir, "unity-ui-mcp"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "unity-ui-mcp", "SKILL.md"), "user copy");
+    const r = run(home);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toMatch(/not a link|left alone/i);
+    expect(fs.lstatSync(path.join(dir, "unity-ui-mcp")).isSymbolicLink()).toBe(false);
+    expect(read(path.join(dir, "unity-ui-mcp", "SKILL.md"))).toBe("user copy");
+  });
+
+  it("--dry-run prints the links and creates nothing; with no skill folder it says so", () => {
+    const home = tempDir("design-ui-home-");
+    const none = run(home);
+    expect(none.out).toMatch(/no skill folder/i);
+    fs.mkdirSync(path.join(home, ".cursor", "skills"), { recursive: true });
+    const dry = run(home, "--dry-run");
+    expect(dry.out).toContain("would link");
+    expect(fs.readdirSync(path.join(home, ".cursor", "skills"))).toEqual([]);
+  });
+});
+

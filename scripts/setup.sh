@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # unity-ui-mcp setup: builds the design-ui MCP server from this clone and connects it to one Unity project.
 #
-#   scripts/setup.sh --project <UnityProjectDir> [--client claude-code|codex|cursor|claude-desktop|none]
+#   scripts/setup.sh --project <UnityProjectDir> [--client claude-code|codex|cursor|claude-desktop|all|none]
 #                    [--client-dir <dir>] [--design-root <dir>] [--package git|local] [--dry-run] [--no-build]
 #
 # Idempotent: a second run changes nothing. --dry-run prints every change without making it.
+# It also links the /unity-ui-mcp skill (scripts/install-skill.sh) and edits the chosen clients' MCP config.
 # In the Unity project it only adds the com.unity.design-ui entry to Packages/manifest.json (when absent) and writes
 # design-ui.config.json (when absent). It never commits or pushes anything. Bash only (macOS, Linux; on Windows use
 # WSL or Git Bash, or the manual steps in INSTALL.md).
@@ -15,10 +16,13 @@ usage() {
 Usage: scripts/setup.sh --project <UnityProjectDir> [options]
 
   --project <dir>       Unity project folder (holds Assets/ and Packages/manifest.json). Required.
-  --client <name>       MCP client to connect: claude-code (default), codex, cursor, claude-desktop, none.
-                        claude-code registers the server with `claude mcp add --scope local`; the others print the
-                        configuration snippet to add.
-  --client-dir <dir>    Folder you start Claude Code from (local scope belongs to that folder). Default: --project.
+  --client <name>       MCP client to connect: claude-code (default), codex, cursor, all (these three),
+                        claude-desktop (prints the snippet), none. claude-code runs `claude mcp add --scope local`;
+                        codex adds one [mcp_servers.design-ui] table to ~/.codex/config.toml; cursor merges
+                        design-ui into <--client-dir>/.cursor/mcp.json (or ~/.cursor/mcp.json without --client-dir).
+                        The skill is linked into those of ~/.claude/skills, ~/.codex/skills, ~/.cursor/skills that exist.
+  --client-dir <dir>    Folder you start the client from (Claude Code local scope belongs to that folder; Cursor project
+                        config). Default: --project for Claude Code, ~/.cursor for Cursor.
   --design-root <dir>   Where design screens live (one folder per screen), relative to the project or absolute.
                         Used only when design-ui.config.json is created. Default: Designs
   --package git|local   Unity package reference: git URL of this repository at its current branch (default), or a
@@ -38,6 +42,7 @@ SMOKE_JS="$REPO/tools/design-ui-mcp/scripts/smoke.mjs"
 PROJECT=""
 CLIENT="claude-code"
 CLIENT_DIR=""
+CLIENT_DIR_GIVEN=""
 DESIGN_ROOT="Designs"
 PACKAGE="git"
 DRY=0
@@ -50,7 +55,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --project) need_value "$@"; PROJECT="$2"; shift 2 ;;
     --client) need_value "$@"; CLIENT="$2"; shift 2 ;;
-    --client-dir) need_value "$@"; CLIENT_DIR="$2"; shift 2 ;;
+    --client-dir) need_value "$@"; CLIENT_DIR="$2"; CLIENT_DIR_GIVEN=1; shift 2 ;;
     --design-root) need_value "$@"; DESIGN_ROOT="$2"; shift 2 ;;
     --package) need_value "$@"; PACKAGE="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
@@ -76,7 +81,7 @@ quoted() { # a command as one shell-quoted line that can be pasted into a shell
 [ -d "$PROJECT" ] || die "Unity project folder not found: $PROJECT"
 PROJECT="$(cd "$PROJECT" && pwd)"
 [ -d "$PROJECT/Assets" ] && [ -f "$PROJECT/Packages/manifest.json" ] || die "$PROJECT is not a Unity project (needs Assets/ and Packages/manifest.json)"
-case "$CLIENT" in claude-code|codex|cursor|claude-desktop|none) ;; *) die "unknown --client $CLIENT" ;; esac
+case "$CLIENT" in claude-code|codex|cursor|claude-desktop|all|none) ;; *) die "unknown --client $CLIENT" ;; esac
 case "$PACKAGE" in git|local) ;; *) die "--package must be git or local" ;; esac
 CLIENT_DIR="${CLIENT_DIR:-$PROJECT}"
 [ -d "$CLIENT_DIR" ] || die "--client-dir not found: $CLIENT_DIR"
@@ -87,7 +92,7 @@ echo "unity-ui-mcp clone: $REPO"
 echo "Unity project:      $PROJECT"
 
 # 1. Node -------------------------------------------------------------------------------------------------------------
-echo "[1/6] Node.js"
+echo "[1/7] Node.js"
 command -v node >/dev/null 2>&1 || die "Node.js 20 or later is required (https://nodejs.org)"
 NODE="$(command -v node)"
 NODE_MAJOR="$("$NODE" -p 'process.versions.node.split(".")[0]')"
@@ -95,7 +100,7 @@ NODE_MAJOR="$("$NODE" -p 'process.versions.node.split(".")[0]')"
 info "node $("$NODE" --version) at $NODE"
 
 # 2. MCP server -------------------------------------------------------------------------------------------------------
-echo "[2/6] MCP server (tools/design-ui-mcp)"
+echo "[2/7] MCP server (tools/design-ui-mcp)"
 if [ "$BUILD" = 1 ]; then
   command -v npm >/dev/null 2>&1 || die "npm is required"
   if [ ! -d "$REPO/node_modules" ] || [ "$REPO/package-lock.json" -nt "$REPO/node_modules/.package-lock.json" ]; then
@@ -122,7 +127,7 @@ else
 fi
 
 # 3. Unity package ----------------------------------------------------------------------------------------------------
-echo "[3/6] Unity package com.unity.design-ui"
+echo "[3/7] Unity package com.unity.design-ui"
 if [ "$PACKAGE" = local ]; then
   PKG_VALUE="file:$REPO/packages/com.unity.design-ui"
 else
@@ -183,7 +188,7 @@ if [ "$PACKAGE" = git ] && [ "${DESIGN_UI_SETUP_OFFLINE:-0}" != 1 ] && ! git -C 
 fi
 
 # 4. design-ui.config.json --------------------------------------------------------------------------------------------
-echo "[4/6] design-ui.config.json"
+echo "[4/7] design-ui.config.json"
 CONFIG="$PROJECT/design-ui.config.json"
 if [ -f "$CONFIG" ]; then
   info "kept existing $CONFIG"
@@ -204,8 +209,12 @@ NODE
   fi
 fi
 
-# 5. MCP client -------------------------------------------------------------------------------------------------------
-echo "[5/6] MCP client: $CLIENT"
+# 5. MCP client(s) ---------------------------------------------------------------------------------------------------
+case "$CLIENT" in
+  all) CLIENTS=(claude-code codex cursor) ;;
+  *) CLIENTS=("$CLIENT") ;;
+esac
+echo "[5/7] MCP client: ${CLIENTS[*]}"
 snippet() { # snippet json|toml: the client configuration, built by node so every value is escaped
   "$NODE" - "$1" "$NODE" "$SERVER_JS" "$PROJECT" <<'NODE'
 const [kind, command, server, project] = process.argv.slice(2);
@@ -218,57 +227,79 @@ if (kind === "toml") {
 }
 NODE
 }
-ADD_CMD=(mcp add --scope local design-ui -- "$NODE" "$SERVER_JS" --project "$PROJECT")
-case "$CLIENT" in
-  none) info "skipped" ;;
-  codex)
-    info "add this to ~/.codex/config.toml (automatic registration for Codex arrives with the skill installer):"
-    snippet toml
-    ;;
-  cursor)
-    info "add this to $CLIENT_DIR/.cursor/mcp.json (or ~/.cursor/mcp.json):"
-    snippet json
-    ;;
-  claude-desktop)
-    info "add this to claude_desktop_config.json (Claude Desktop > Settings > Developer > Edit Config):"
-    snippet json
-    ;;
-  claude-code)
-    CLAUDE="${CLAUDE_BIN:-}"
-    [ -n "$CLAUDE" ] || CLAUDE="$(command -v claude 2>/dev/null || true)"
-    if [ -n "$CLAUDE" ] && [ ! -x "$CLAUDE" ]; then die "CLAUDE_BIN is not an executable file: $CLAUDE"; fi
-    if [ -z "$CLAUDE" ]; then
-      info "claude CLI: not found on PATH (set CLAUDE_BIN to use another one); nothing was registered."
-      info "Run this in $CLIENT_DIR:"
-      echo "    cd $(quoted "$CLIENT_DIR") && $(quoted claude "${ADD_CMD[@]}")"
-      if [ "$(uname)" = Darwin ]; then
-        BUNDLED="$(ls -t "$HOME"/Library/Application\ Support/Claude/claude-code/*/*/claude.app/Contents/MacOS/claude 2>/dev/null | head -1 || true)"
-        [ -z "$BUNDLED" ] || info "The Claude desktop app has a CLI at $BUNDLED; to let setup use it, rerun with CLAUDE_BIN=$(quoted "$BUNDLED")"
-      fi
-    else
-      info "claude CLI: $CLAUDE"
-      REGISTERED=0
-      EXISTING="$(cd "$CLIENT_DIR" && "$CLAUDE" mcp get design-ui 2>&1)" && REGISTERED=1 || true
-      if [ "$REGISTERED" = 1 ] && printf '%s' "$EXISTING" | grep -qF -- "$SERVER_JS" && printf '%s' "$EXISTING" | grep -qF -- "$PROJECT"; then
-        info "already registered in $CLIENT_DIR"
-      else
-        if [ "$REGISTERED" = 1 ]; then
-          change "replace the design-ui MCP server registered for $CLIENT_DIR (it points elsewhere): $(quoted "$CLAUDE" mcp remove --scope local design-ui)"
-          [ "$DRY" = 1 ] || (cd "$CLIENT_DIR" && "$CLAUDE" mcp remove --scope local design-ui >/dev/null)
-        fi
-        change "register MCP server design-ui for Claude Code in $CLIENT_DIR: $(quoted "$CLAUDE" "${ADD_CMD[@]}")"
-        if [ "$DRY" != 1 ]; then
-          (cd "$CLIENT_DIR" && "$CLAUDE" "${ADD_CMD[@]}")
-          STATUS="$(cd "$CLIENT_DIR" && "$CLAUDE" mcp get design-ui 2>&1 | grep -i 'status' | head -1 || true)"
-          [ -z "$STATUS" ] || info "claude mcp get design-ui: $STATUS"
-        fi
-      fi
+# edit_client_config toml|json <file>: adds or replaces the design-ui entry in a client config file, keeping the rest
+edit_client_config() {
+  local kind="$1" file="$2" result
+  result="$("$NODE" "$REPO/scripts/client-config.cjs" "$kind" "$file" "$NODE" "$SERVER_JS" "$PROJECT" "$DRY")"
+  case "$result" in
+    KEEP) info "design-ui already registered in $file" ;;
+    CHANGE*) change "add MCP server design-ui to $file (${result#CHANGE } file; the rest of it stays as it is)"
+             [ "$DRY" != 1 ] || snippet "$kind" | sed 's/^/    /' ;;
+    FAIL*) die "${result#FAIL }" ;;
+    *) die "unexpected result for $file: $result" ;;
+  esac
+}
+register_claude_code() {
+  local ADD_CMD=(mcp add --scope local design-ui -- "$NODE" "$SERVER_JS" --project "$PROJECT")
+  local CLAUDE="${CLAUDE_BIN:-}"
+  [ -n "$CLAUDE" ] || CLAUDE="$(command -v claude 2>/dev/null || true)"
+  if [ -n "$CLAUDE" ] && [ ! -x "$CLAUDE" ]; then die "CLAUDE_BIN is not an executable file: $CLAUDE"; fi
+  if [ -z "$CLAUDE" ]; then
+    info "claude CLI: not found on PATH (set CLAUDE_BIN to use another one); nothing was registered."
+    info "Run this in $CLIENT_DIR:"
+    echo "    cd $(quoted "$CLIENT_DIR") && $(quoted claude "${ADD_CMD[@]}")"
+    if [ "$(uname)" = Darwin ]; then
+      local BUNDLED
+      BUNDLED="$(ls -t "$HOME"/Library/Application\ Support/Claude/claude-code/*/*/claude.app/Contents/MacOS/claude 2>/dev/null | head -1 || true)"
+      [ -z "$BUNDLED" ] || info "The Claude desktop app has a CLI at $BUNDLED; to let setup use it, rerun with CLAUDE_BIN=$(quoted "$BUNDLED")"
     fi
-    ;;
-esac
+    return 0
+  fi
+  info "claude CLI: $CLAUDE"
+  local REGISTERED=0 EXISTING STATUS
+  EXISTING="$(cd "$CLIENT_DIR" && "$CLAUDE" mcp get design-ui 2>&1)" && REGISTERED=1 || true
+  if [ "$REGISTERED" = 1 ] && printf '%s' "$EXISTING" | grep -qF -- "$SERVER_JS" && printf '%s' "$EXISTING" | grep -qF -- "$PROJECT"; then
+    info "already registered in $CLIENT_DIR"
+    return 0
+  fi
+  if [ "$REGISTERED" = 1 ]; then
+    change "replace the design-ui MCP server registered for $CLIENT_DIR (it points elsewhere): $(quoted "$CLAUDE" mcp remove --scope local design-ui)"
+    [ "$DRY" = 1 ] || (cd "$CLIENT_DIR" && "$CLAUDE" mcp remove --scope local design-ui >/dev/null)
+  fi
+  change "register MCP server design-ui for Claude Code in $CLIENT_DIR: $(quoted "$CLAUDE" "${ADD_CMD[@]}")"
+  if [ "$DRY" != 1 ]; then
+    (cd "$CLIENT_DIR" && "$CLAUDE" "${ADD_CMD[@]}")
+    STATUS="$(cd "$CLIENT_DIR" && "$CLAUDE" mcp get design-ui 2>&1 | grep -i 'status' | head -1 || true)"
+    [ -z "$STATUS" ] || info "claude mcp get design-ui: $STATUS"
+  fi
+}
+for c in "${CLIENTS[@]}"; do
+  case "$c" in
+    none) info "skipped" ;;
+    codex) edit_client_config toml "$HOME/.codex/config.toml" ;;
+    cursor)
+      if [ -n "$CLIENT_DIR_GIVEN" ]; then edit_client_config json "$CLIENT_DIR/.cursor/mcp.json"
+      else edit_client_config json "$HOME/.cursor/mcp.json"; fi
+      ;;
+    claude-desktop)
+      info "add this to claude_desktop_config.json (Claude Desktop > Settings > Developer > Edit Config):"
+      snippet json
+      ;;
+    claude-code) register_claude_code ;;
+  esac
+done
 
-# 6. Server check -----------------------------------------------------------------------------------------------------
-echo "[6/6] Server check (stdio: initialize, tools/list, design_ui_list)"
+# 6. Skill ------------------------------------------------------------------------------------------------------------
+echo "[6/7] Skill /unity-ui-mcp (scripts/install-skill.sh)"
+SKILL_ARGS=(); [ "$DRY" != 1 ] || SKILL_ARGS=(--dry-run)
+SKILL_OUT="$("$REPO/scripts/install-skill.sh" ${SKILL_ARGS[@]+"${SKILL_ARGS[@]}"})" || die "install-skill.sh failed"
+printf '%s\n' "$SKILL_OUT"
+while IFS= read -r l; do
+  case "$l" in "  would "*|"  change: "*) CHANGES+=("skill: ${l#  }") ;; esac
+done <<<"$SKILL_OUT"
+
+# 7. Server check -----------------------------------------------------------------------------------------------------
+echo "[7/7] Server check (stdio: initialize, tools/list, design_ui_list)"
 if [ "$DRY" = 1 ] || [ "$BUILD" = 0 ]; then
   info "skipped$([ "$DRY" = 1 ] && echo " (dry run)" || echo " (--no-build)"); run it later with:"
   echo "    $(quoted "$NODE" "$SMOKE_JS" --project "$PROJECT")"
