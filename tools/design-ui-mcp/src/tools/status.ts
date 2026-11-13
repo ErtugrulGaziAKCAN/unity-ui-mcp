@@ -22,7 +22,7 @@ export function availability(ctx: ServerContext): Record<string, ToolAvailabilit
     design_ui_lint: { available: true, note: "live (real lint in Chromium with the kit fonts)" },
     design_ui_status: { available: true, note: "live" },
     design_ui_import: exp
-      ? { available: true, note: "live (the Unity side answers through the runner)" }
+      ? { available: true, note: "export live (lint, IR, goldens, assets); Unity compile not available yet: the import stops with the Editor's code 2 until the Unity side answers code 0" }
       : { available: false, note: `not available yet: ${MISSING.export}; ${MISSING.compile}` },
     design_ui_verify: cmp
       ? { available: true, note: "live" }

@@ -45,7 +45,6 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
 
       let exported = false;
       if (!(last && last.sourceSha === src && last.kitSha === kit.sha && fs.existsSync(irFile))) {
-        fs.rmSync(exportDir, { recursive: true, force: true });
         const browser = await t.async("browser", () => ctx.runtime.browser());
         const out = await t.async("export", () => exportScreen(entry, kit.kit, exportDir, browser));
         if (!out.ok) {

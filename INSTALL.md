@@ -104,7 +104,7 @@ Then tell the user:
 | `design_ui_list` | live: screens under `designRoot` and the Unity bridge state |
 | `design_ui_lint` | live: real lint in a headless Chromium with the kit fonts; folder, `.html`, `.dc.html` or `.zip` |
 | `design_ui_status` | live: what this version supports; per-screen hashes and history |
-| `design_ui_import` | not available yet (export and Unity import pipeline are being built); answers with an error that says so |
+| `design_ui_import` | export is live (lint, IR, goldens, assets, sample data); the Unity compile step is not available yet, so the import stops with the Editor's "Not available yet" answer |
 | `design_ui_verify` | not available yet (capture and comparison are being built) |
 | `design_ui_kit_sync` | forwarded to Unity; the current package answers "Not available yet" |
 

@@ -1,5 +1,5 @@
 import type { Browser } from "playwright";
-import type { Finding, KitConfig } from "./exporter.js";
+import { runExport, type Finding, type KitConfig } from "./exporter.js";
 
 export interface ExportOutcome {
   /** false when lint found errors: nothing but the lint report was written. */
@@ -27,10 +27,17 @@ export interface Pipeline {
 }
 
 /**
- * What this version ships. The exporter's `export` and `compare` commands are still being built; wire them in here
- * when they land and design_ui_import / design_ui_verify light up without other changes.
+ * What this version ships: the exporter's export step runs in this process on the server's warm browser (lint, IR,
+ * baked effects, goldens, assets, sample data). Comparison is still being built; wire it in here when it lands and
+ * design_ui_verify lights up without other changes.
  */
-export const INSTALLED_PIPELINE: Pipeline = { exportScreen: null, compareScreen: null };
+export const INSTALLED_PIPELINE: Pipeline = {
+  exportScreen: async (entry, kit, outDir, browser) => {
+    const r = await runExport(entry, kit, outDir, { browser });
+    return { ok: r.ok, findings: r.findings, timings: r.timings };
+  },
+  compareScreen: null,
+};
 
 /** Why a step is unavailable, worded for the AI client and the user. */
 export const MISSING = {

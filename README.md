@@ -6,8 +6,8 @@ import it into the open Unity Editor, verify it, read the report.
 
 **Status:** in development. The design spec is in `docs/specs/`. The Unity package currently contains the Editor
 bridge and the `Window → Design UI → Status` window. The MCP server is available as an early version: rules, list,
-lint and status work; import, verify and kit sync answer "not available yet" until the exporter, compiler and
-verifier land.
+lint and status work, and import runs the export; the Unity compile step, verify and kit sync answer "not available yet"
+until the compiler and verifier land.
 
 - `tools/design-export` - Node/TypeScript CLI (`lint`, `export`, `compare`)
 - `tools/design-ui-mcp` - MCP server (stdio) for any MCP client
@@ -88,7 +88,7 @@ use the command runner with projects whose `design-ui.config.json` you trust.
 | `design_ui_list` | Screens under `designRoot` with their state, and the Unity bridge state | live |
 | `design_ui_lint` | Lints a design folder, `.html`, `.dc.html` or `.zip` in Chromium with the kit fonts | live |
 | `design_ui_status` | Server capabilities, or one screen's hashes, last import and verdict | live |
-| `design_ui_import` | Exports a screen and compiles it into the Unity project | not available yet |
+| `design_ui_import` | Exports a screen and compiles it into the Unity project | export live; Unity compile not available yet |
 | `design_ui_verify` | Captures in Unity, compares, returns verdict and report | not available yet |
 | `design_ui_kit_sync` | Syncs fonts and settings from Unity into the kit | forwarded; Unity answers "not available yet" |
 

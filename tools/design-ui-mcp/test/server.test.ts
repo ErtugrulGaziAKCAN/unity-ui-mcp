@@ -9,8 +9,10 @@ import { RULE_SUMMARIES } from "../src/rule-table.js";
 import { Runtime } from "../src/runtime.js";
 import { createServer, createUnconfiguredServer, TOOL_NAMES, VERSION } from "../src/server.js";
 import { screenStatus } from "../src/status.js";
+import { fileURLToPath } from "node:url";
 import { call, connect, startStubBridge, tempDir, tempProject, writeZip, type StubBridge } from "./helpers.js";
 
+const here = path.dirname(fileURLToPath(import.meta.url));
 const fast = { pollIntervalMs: 10, settleMs: 20, compileTimeoutMs: 5000 };
 /** One warm browser for the whole file, like a server lifetime. */
 const runtime = new Runtime();
@@ -33,6 +35,8 @@ function stubPipeline(): Pipeline & { exports: string[] } {
     compareScreen: null,
   };
 }
+
+const NO_EXPORT: Pipeline = { exportScreen: null, compareScreen: null };
 
 async function serverFor(dir: string, pipeline?: Pipeline): Promise<Client> {
   return connect(createServer(readConfig(dir), { runtime, pipeline, runnerOptions: fast }));
@@ -153,7 +157,9 @@ describe("design_ui_list and design_ui_status", () => {
     expect(r.isError).toBeFalsy();
     expect(r.data.version).toBe(VERSION);
     expect(r.data.tools.design_ui_lint.available).toBe(true);
-    expect(r.data.tools.design_ui_import.available).toBe(false);
+    expect(r.data.tools.design_ui_import.available).toBe(true);
+    expect(r.data.tools.design_ui_import.note).toMatch(/export live.*Unity compile not available yet/i);
+    expect(r.data.pipeline).toEqual({ export: true, compare: false });
     expect(r.data.tools.design_ui_verify.available).toBe(false);
     expect(r.data.config).toMatchObject({ ok: true, designRoot: p.designRoot });
   });
@@ -170,7 +176,7 @@ describe("design_ui_import", () => {
   it("is not available without the export step, names it, and does not call Unity", async () => {
     const p = tempProject();
     p.addScreen("clean-screen", "clean-screen");
-    const r = await call(await serverFor(p.dir), "design_ui_import", { design: "clean-screen" });
+    const r = await call(await serverFor(p.dir, NO_EXPORT), "design_ui_import", { design: "clean-screen" });
     expect(r.isError).toBe(true);
     expect(r.text).toMatch(/not available yet/i);
     expect(r.text).toMatch(/export/);
@@ -243,6 +249,41 @@ describe("design_ui_import", () => {
     expect(r.text).toContain("U-CSS-001");
     expect(p.runnerCalls()).toEqual([]);
   });
+
+  it("runs the real export on the warm browser, then reaches the Unity step (stubbed runner)", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = path.join(p.designRoot, "inbox-mini");
+    fs.cpSync(path.resolve(here, "../../design-export/test/fixtures/export/inbox-mini"), dir, { recursive: true });
+    fs.renameSync(path.join(dir, "inbox-mini.html"), path.join(dir, "screen.html"));
+    const launches = runtime.browserLaunches;
+    const client = await serverFor(p.dir);
+    const r = await call(client, "design_ui_import", { design: "inbox-mini" });
+    expect(r.isError).toBeFalsy();
+    const exportDir = path.join(dir, ".design-ui", "export");
+    for (const f of ["screen.ir.json", "lint-report.json", "export-report.json", "fixtures/sample-data.json", "goldens/boxes.json", "goldens/matrix.json"]) {
+      expect(fs.existsSync(path.join(exportDir, f)), f).toBe(true);
+    }
+    expect(fs.readdirSync(path.join(exportDir, "assets")).some((f) => f.endsWith(".png"))).toBe(true);
+    expect(fs.readdirSync(path.join(exportDir, "goldens")).some((f) => f.endsWith(".png"))).toBe(true);
+    expect(r.data).toMatchObject({ exported: true, unityCalled: true, code: 0 });
+    expect(r.data.timings).toHaveProperty("export");
+    expect(p.runnerCalls()).toEqual([`import|${p.dir}|Assets/DesignUi/DesignUiProfile.asset|${exportDir}| env=${exportDir}`]);
+    expect(runtime.browserLaunches).toBeLessThanOrEqual(launches + 1);
+    const again = await call(client, "design_ui_import", { design: "inbox-mini" });
+    expect(again.data).toMatchObject({ exported: false, unityCalled: false });
+  }, 120_000);
+
+  it("stops at real lint errors without calling Unity", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = path.join(p.designRoot, "bad");
+    fs.mkdirSync(dir);
+    fs.copyFileSync(path.resolve(here, "../../design-export/test/fixtures/export/lint-error/bad.html"), path.join(dir, "screen.html"));
+    const r = await call(await serverFor(p.dir), "design_ui_import", { design: "bad" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("U-CSS-001");
+    expect(fs.readdirSync(path.join(dir, ".design-ui", "export"))).toEqual(["lint-report.json"]);
+    expect(p.runnerCalls()).toEqual([]);
+  }, 120_000);
 
   it("validates its arguments", async () => {
     const p = tempProject();
