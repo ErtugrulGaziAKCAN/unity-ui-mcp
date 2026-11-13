@@ -13,7 +13,12 @@ const fx = (n: string) => path.join(here, "fixtures", "lint", n);
 const kit: KitConfig = readKit(fx("kit"));
 /** Same kit with a second active locale (ar) whose font has no bold face. */
 const localesKit: KitConfig = { ...kit, fontsCss: "fonts/locales.css" };
-const KIT_FOR: Record<string, KitConfig> = { "W-FONT-001": localesKit };
+/** Same kit with an extra face whose file cannot be read (local()). */
+const unreadableKit: KitConfig = { ...kit, fontsCss: "fonts/unreadable.css" };
+const KIT_FOR: Record<string, { pass?: KitConfig; fail?: KitConfig }> = {
+  "W-FONT-001": { pass: localesKit, fail: localesKit },
+  "W-FONT-002": { fail: unreadableKit },
+};
 
 const fixture = (id: string, kind: "pass" | "fail") => {
   const plain = `${id}.${kind}.html`;
@@ -34,11 +39,11 @@ const show = (f: Finding[]) => f.map((x) => `${x.ruleId} ${x.path}: ${x.detail}`
 describe("lint rules: one pass and one fail fixture per rule", () => {
   for (const r of RULES) {
     it(`${r.id}: pass fixture has no findings`, async () => {
-      const f = await lintFile(fx(fixture(r.id, "pass")), KIT_FOR[r.id] ?? kit);
+      const f = await lintFile(fx(fixture(r.id, "pass")), KIT_FOR[r.id]?.pass ?? kit);
       expect(show(f)).toEqual([]);
     });
     it(`${r.id}: fail fixture has exactly one ${r.id} finding with a fix, and nothing else`, async () => {
-      const f = await lintFile(fx(fixture(r.id, "fail")), KIT_FOR[r.id] ?? kit);
+      const f = await lintFile(fx(fixture(r.id, "fail")), KIT_FOR[r.id]?.fail ?? kit);
       const mine = f.filter((x) => x.ruleId === r.id);
       expect(show(mine)).toHaveLength(1);
       expect(mine[0].severity).toBe(r.severity);
@@ -55,6 +60,36 @@ describe("lint rules: one pass and one fail fixture per rule", () => {
     expect(new Set(files.map((n) => n.split(".")[0]))).toEqual(ids);
     for (const id of ids) for (const k of ["pass", "fail"] as const) expect(fs.existsSync(fx(fixture(id, k)))).toBe(true);
   });
+});
+
+/** Reviewer probe pages (round 1): each design must give exactly these rule ids. */
+const PROBES: Record<string, string[]> = {
+  "01-ua-margins-no-reset": ["U-CSS-026", "U-MRK-006"], "02-ua-button-native": ["U-CSS-026"], "03-shadow-dom": ["U-CSS-029"],
+  "04-adopted-sheet": ["U-CSS-001", "U-CSS-015"], "05-container-query": ["U-CSS-028"], "06-layer": ["U-CSS-028"],
+  "07-display-table": ["U-CSS-023", "U-CSS-029"], "08-justify-contents": ["U-CSS-023"], "09-property-calc": ["U-CSS-028"],
+  "10-iframe": ["U-CSS-029"], "11-common-resets": ["U-CSS-026"], "12-font-shorthand": [], "13-animation-shorthand": [],
+  "14-misc-hints": [], "15-inline-svg": [], "16-link-flex-item": ["U-CSS-026"], "17-margin-collapse": ["U-CSS-030"], "18-br": [],
+  "19-mixed-content": ["U-CSS-030", "U-MRK-004"], "20-object-fit-bg": ["U-CSS-023"],
+  "21-native-controls": ["U-CSS-016", "U-CSS-026", "U-CSS-029", "U-MRK-004"], "22-input-placeholder": ["U-CSS-026", "U-MRK-007"],
+  "23-ua-color-hidden": ["U-CSS-016", "U-FONT-003"], "24-text-shadow-multi": ["U-CSS-023"], "25-italic-no-face": ["U-FONT-001"],
+  "26-letter-em-logical": ["U-CSS-023"], "27-gradient-hint": ["U-CSS-022"], "28-transform-centre": ["U-CSS-025"],
+  "29-supports-false": ["U-CSS-028"], "30-starting-style": ["U-CSS-028"], "40-pseudo-class-whitelist": ["U-CSS-027"],
+  "41-l10n-on-ancestor": ["U-MRK-004"], "42-bind-action-turkish": ["U-MRK-005"], "43-has-sibling": ["U-CSS-027"],
+  "44-common-ok": ["U-CSS-023", "U-CSS-024"], "45-onclick-div": ["U-MRK-003"], "46-ua-bold-strong-heading": ["U-CSS-026"],
+  "50-select-lh": [], "51-visibility": [], "52-anim-steps": ["U-CSS-008"], "53-kit-font-local": [], "60-all-unset": [],
+  "61-root-size": ["U-MRK-006"], "62-rem-body": [],
+};
+
+describe("lint probes (review round 1)", () => {
+  it("covers every probe page", () => {
+    expect(fs.readdirSync(fx("probes")).map((n) => n.replace(/\.html$/, "")).sort()).toEqual(Object.keys(PROBES).sort());
+  });
+  for (const [name, ids] of Object.entries(PROBES)) {
+    it(`${name}: ${ids.join(", ") || "clean"}`, async () => {
+      const f = await lintFile(fx(`probes/${name}.html`));
+      expect(Array.from(new Set(f.map((x) => x.ruleId))).sort(), show(f).join("\n")).toEqual([...ids].sort());
+    });
+  }
 });
 
 describe("lint engine", () => {
@@ -117,6 +152,33 @@ describe("lint engine", () => {
     } finally { fs.rmSync(dir, { recursive: true }); }
   });
 
+  it("resolves var() at every element a rule reaches", async () => {
+    const dir = tmp();
+    try {
+      const f = await lintFile(write(dir, '<div class="t" style="width:10px;height:10px"></div><div class="t" style="--d:grid;width:10px;height:10px"></div>',
+        ".t{display:var(--d)} :root{--d:flex}"));
+      expect(f.map((x) => [x.ruleId, x.path])).toEqual([["U-CSS-001", "[data-u-screen=s] > div:1"]]);
+    } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
+  it("resolves radii against the untransformed box", async () => {
+    const dir = tmp();
+    try {
+      const f = await lintFile(write(dir, '<div style="width:80px;height:80px;border-radius:50%;transform:rotate(45deg)"></div>'));
+      expect(show(f)).toEqual([]);
+    } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
+  it("rejects media types other than screen and all, and not", async () => {
+    const dir = tmp();
+    try {
+      const f = await lintFile(write(dir, "", "@media print{.screen{color:#000000}} @media not all and (min-width: 1px){.screen{color:#000000}}"));
+      expect(f.map((x) => x.ruleId)).toEqual(["U-CSS-012", "U-CSS-012"]);
+      expect(f.map((x) => x.detail).join(" ")).toContain("media type print");
+      expect(f.map((x) => x.detail).join(" ")).toMatch(/: not\b/);
+    } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
   it("sorts findings by path, then rule id", async () => {
     const dir = tmp();
     try {
@@ -154,7 +216,7 @@ describe("collectSnapshot", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lint-big-"));
     try {
       const rows = Array.from({ length: 150 }, (_, i) =>
-        `<div class="row"${i === 0 ? ' data-u-repeat="rows"' : ""} data-u-id="row"><p data-u-bind="name">Oyuncu ${i}</p>` +
+        `<div class="row"${i === 0 ? ' data-u-repeat="rows"' : ""} data-u-id="row"><p data-u-id="name" data-u-bind="name">Oyuncu ${i}</p>` +
         `<p data-l10n="big.role" data-en="Role">Rol</p><div class="dot"></div></div>`).join("\n");
       const p = path.join(dir, "big.html");
       fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}

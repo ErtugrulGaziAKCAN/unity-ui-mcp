@@ -165,6 +165,16 @@ export const STATIC_CSS =
   "animation-fill-mode:both!important;transition-duration:0s!important;transition-delay:0s!important;caret-color:transparent!important}";
 const STATIC_STYLE = `<style>${STATIC_CSS}</style>`;
 
+/** Resolves once the DOM has not changed for 50 ms (at most 2 s). A string, so no transpiler helper reaches the page. */
+const QUIET_JS = `new Promise((resolve) => {
+  let idle;
+  const done = () => { mo.disconnect(); clearTimeout(idle); clearTimeout(cap); resolve(); };
+  const mo = new MutationObserver(() => { clearTimeout(idle); idle = setTimeout(done, 50); });
+  mo.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  idle = setTimeout(done, 50);
+  const cap = setTimeout(done, 2000);
+})`;
+
 function inject(html: string, kit: KitConfig): string {
   const links =
     `<link rel="stylesheet" href="${KIT_PREFIX}${kit.fontsCss}">` +
@@ -262,10 +272,14 @@ export async function openDesign(
       return route.abort();
     });
 
+    // tsx (esbuild keepNames) wraps functions passed to page.evaluate in __name(); give every page a no-op one
+    await context.addInitScript({ content: "globalThis.__name = globalThis.__name || ((f) => f);" });
     const page = await context.newPage();
     const cdp = await context.newCDPSession(page);
     await page.goto(`${ORIGIN}/${encodeURIComponent(name)}`, { waitUntil: "load" });
     await page.evaluate(() => document.fonts.ready);
+    // scripts (e.g. React from an allowed CDN) may still be committing after load: wait until the DOM is quiet
+    await page.evaluate(QUIET_JS);
     // static capture: finish anything already running, keep the no-animation style last in head
     await page.addStyleTag({ content: STATIC_CSS });
     await page.evaluate(() => document.getAnimations().forEach((a) => { try { a.finish(); } catch { /* infinite */ } }));

@@ -10,7 +10,7 @@ export const rule: Rule = {
     (d, v, _src, t) => {
       if (d.name === "transform") {
         const e = t.element;
-        const r = splitTransform(v, e?.box ?? undefined, { fontSize: px(e?.computed["font-size"]) ?? undefined });
+        const r = splitTransform(v, e?.size ?? undefined, { fontSize: px(e?.computed["font-size"]) ?? undefined, rootFontSize: s.rootFontSize });
         return r.ok ? null : `${declText(d, v)}: ${r.reason}`;
       }
       if (d.name === "translate" || d.name === "rotate" || d.name === "scale") {

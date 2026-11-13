@@ -1,13 +1,15 @@
 import type { CDPSession, Page } from "playwright";
 import type { KitConfig } from "../kit.js";
 import { declaredFontFaces, DESIGN_ORIGIN, KIT_PREFIX, STATIC_CSS, type DeclaredFontFace } from "../load.js";
+import { cssSupport } from "./allowed-css.js";
 import { declsOf, px, resolveVars, type SnapDecl } from "./css-values.js";
-import { parseSelectorList, pseudoElement, reachSelector, specificity, structural, pseudoClasses } from "./selectors.js";
+import { parseSelectorList, pseudoElement, reachSelector, specificity, structural, pseudoClasses, type ParsedSelector } from "./selectors.js";
 import { matchRichStyle, matchTextStyle, readTextStyles } from "./text-styles.js";
 
 export type { SnapDecl } from "./css-values.js";
 
 export interface Box { x: number; y: number; w: number; h: number }
+export interface Size { w: number; h: number }
 export interface PlatformFont { familyName: string; postScriptName: string; isCustomFont: boolean; glyphCount: number }
 
 export interface SnapElement {
@@ -29,8 +31,10 @@ export interface SnapElement {
   textFonts: (PlatformFont[] | null)[];
   /** Has a layout box. */
   rendered: boolean;
-  /** Border box from getBoundingClientRect (CSS px), null when not rendered. */
+  /** Border box from getBoundingClientRect (CSS px, transforms applied), null when not rendered. */
   box: Box | null;
+  /** Untransformed border-box size (CSS px) for resolving %, radii, gradient lines; null when not rendered. */
+  size: Size | null;
   /** Computed values of SNAP_COMPUTED. Verification only; compilation uses specified values. */
   computed: Record<string, string>;
   /** Computed ::before/::after with content other than none/normal, and ::placeholder for elements with a placeholder. */
@@ -41,12 +45,20 @@ export interface SnapElement {
   vars: Record<string, string>;
   /** U-CSS-019 relayout: flex item whose main-axis min size is `auto`, box before and with that min size set to 0. */
   minAuto: { axis: "row" | "column"; before: Box; after: Box } | null;
+  /** The element hosts a shadow root (the walk does not enter it). */
+  shadowRoot: "open" | "closed" | null;
+  /**
+   * Properties a browser-default (user-agent) rule sets and no author or inline declaration overrides, as physical
+   * longhands with the element's and its parent's computed value. A lowest-priority source: U-CSS-026 judges it.
+   */
+  ua: Record<string, { value: string; parent: string }>;
   /** Kit text style the element's text matches (set when collectSnapshot gets the kit); null = no match, undefined = no text. */
   textStyle?: string | null;
 }
 
 export interface SnapSelector {
   text: string;
+  parsed: ParsedSelector;
   /** Selector used to find the elements this rule reaches in any interaction or screen state. */
   reach: string;
   specificity: [number, number, number];
@@ -68,14 +80,18 @@ export interface SnapRule {
   media: string[];
   /** Every enclosing condition (@media, @supports, @layer, @container, …), outermost first. */
   conditions: string[];
-  /** CSSOM longhands, plus shorthands pending var() substitution expanded with the values at `varsFrom`. */
+  /** CSSOM longhands, plus shorthands pending var() substitution expanded with the values at the first reached element. */
   decls: SnapDecl[];
+  /** Elements whose var() values expand a pending shorthand differently from `decls`. */
+  declsAt: Record<number, SnapDecl[]>;
   path: string;
 }
 
 export interface SnapMedia { sheet: string; kit: boolean; condition: string; source: "rule" | "import" | "sheet"; path: string }
 export interface SnapKeyframes { sheet: string; kit: boolean; name: string; path: string; frames: { key: string; decls: SnapDecl[] }[] }
 export interface SnapSheet { label: string; href: string | null; kit: boolean; media: string }
+/** Every at-rule in every sheet (`kind` without "@": media, keyframes, import, font-face, layer, supports, …). */
+export interface SnapAtRule { sheet: string; kit: boolean; kind: string; prelude: string; path: string }
 
 export interface DomSnapshot {
   viewport: { width: number; height: number; scale: number };
@@ -84,51 +100,54 @@ export interface DomSnapshot {
   media: SnapMedia[];
   keyframes: SnapKeyframes[];
   sheets: SnapSheet[];
-  /** At-rules without style content the walk does not model (@property, @page, …), for reporting. */
-  otherAtRules: { sheet: string; text: string }[];
+  atRules: SnapAtRule[];
   fontFaces: DeclaredFontFace[];
   /** Referenced custom properties on the root element. */
   rootVars: Record<string, string>;
+  /** Computed font size of the root (html) element: the base of `rem`. */
+  rootFontSize: number;
   timings: Record<string, number>;
 }
 
 /** Computed properties recorded per element. Extend here when a rule or the exporter needs more. */
 export const SNAP_COMPUTED = [
   "display", "position", "float", "z-index", "flex-direction", "flex-wrap", "row-gap", "column-gap", "align-items", "align-self",
-  "justify-content", "min-width", "min-height", "width", "height", "overflow-x", "overflow-y", "visibility", "opacity",
+  "justify-content", "min-width", "min-height", "width", "height", "box-sizing", "overflow-x", "overflow-y", "visibility", "opacity",
   "font-family", "font-size", "line-height", "font-weight", "font-style", "font-variant-caps", "letter-spacing", "word-spacing",
-  "text-transform", "text-shadow", "text-align", "list-style-type", "list-style-image", "white-space-collapse", "text-wrap-mode", "text-decoration-line", "vertical-align",
-  "color", "background-color", "background-image", "box-shadow", "filter", "backdrop-filter", "transform", "outline-style",
+  "text-transform", "text-shadow", "text-align", "list-style-type", "list-style-image", "white-space-collapse", "text-wrap-mode",
+  "text-decoration-line", "vertical-align", "color", "background-color", "background-image", "box-shadow", "filter",
+  "backdrop-filter", "transform", "outline-style",
   "border-top-style", "border-right-style", "border-bottom-style", "border-left-style",
   "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
   "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius",
   "padding-top", "padding-right", "padding-bottom", "padding-left", "margin-top", "margin-right", "margin-bottom", "margin-left",
 ] as const;
 
-const PSEUDO_PROPS = ["content", "display", "font-family", "font-size", "line-height", "font-weight", "color"];
+const PSEUDO_PROPS = ["content", "display", "font-family", "font-size", "line-height", "font-weight", "font-style", "color"];
 const NO_TEXT_TAGS = new Set(["script", "style", "template", "noscript", "title"]);
 
 interface RawStyle { longhands: SnapDecl[]; cssText: string }
 interface RawRule extends RawStyle { index: number; sheet: string; kit: boolean; selectorText: string; media: string[]; conditions: string[] }
 interface RawElement {
   tag: string; ns: string; attrs: Record<string, string>; parent: number; texts: string[]; rendered: boolean; box: Box | null;
-  computed: Record<string, string>; pseudo: Record<string, Record<string, string>>; inline: RawStyle | null; vars: Record<string, string>;
-  minAuto: { axis: "row" | "column"; before: Box; after: Box } | null;
+  size: Size | null; computed: Record<string, string>; pseudo: Record<string, Record<string, string>>; inline: RawStyle | null;
+  vars: Record<string, string>; minAuto: { axis: "row" | "column"; before: Box; after: Box } | null; shadow: boolean;
 }
 interface RawPage {
   viewport: { width: number; height: number; scale: number };
-  sheets: SnapSheet[]; rules: RawRule[]; media: Omit<SnapMedia, "path">[]; otherAtRules: { sheet: string; text: string }[];
+  sheets: SnapSheet[]; rules: RawRule[]; media: Omit<SnapMedia, "path">[]; atRules: Omit<SnapAtRule, "path">[];
   keyframes: { sheet: string; kit: boolean; name: string; frames: { key: string; longhands: SnapDecl[] }[] }[];
-  elements: RawElement[]; rootVars: Record<string, string>;
+  elements: RawElement[]; rootVars: Record<string, string>; rootFontSize: string;
 }
 
-/** Runs in the page: sheets, rules, keyframes, elements with computed styles, and the U-CSS-019 relayout. */
+/** Runs in the page: sheets (adopted ones too), rules, at-rules, keyframes, elements, and the U-CSS-019 relayout. */
 function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: string; kitBase: string; origin: string }): RawPage {
   const isFreeze = (n: Node | null) => !!n && (n as Element).localName === "style" && (n.textContent ?? "").trim() === arg.staticCss;
   const styleEls = Array.from(document.querySelectorAll("style")).filter((s) => !isFreeze(s));
   const out: RawPage = {
     viewport: { width: innerWidth, height: innerHeight, scale: devicePixelRatio },
-    sheets: [], rules: [], media: [], otherAtRules: [], keyframes: [], elements: [], rootVars: {},
+    sheets: [], rules: [], media: [], atRules: [], keyframes: [], elements: [], rootVars: {},
+    rootFontSize: getComputedStyle(document.documentElement).fontSize,
   };
   const label = (sheet: CSSStyleSheet): string => {
     const own = sheet.ownerNode as Element | null;
@@ -143,6 +162,11 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
     for (let i = 0; i < st.length; i++) r.push({ name: st[i], value: st.getPropertyValue(st[i]), important: st.getPropertyPriority(st[i]) === "important" });
     return r;
   };
+  const at = (lab: string, kit: boolean, r: CSSRule) => {
+    const text = r.cssText;
+    const m = /^@([\w-]+)\s*([^{;]*)/.exec(text);
+    if (m) out.atRules.push({ sheet: lab, kit, kind: m[1].toLowerCase(), prelude: m[2].trim() });
+  };
   let ruleIndex = 0;
   const walk = (list: CSSRuleList, lab: string, kit: boolean, media: string[], conds: string[], parentSel: string | null): void => {
     for (const r of Array.from(list)) {
@@ -153,7 +177,10 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
         const st = (r as CSSStyleRule).style;
         out.rules.push({ index: ruleIndex++, sheet: lab, kit, selectorText: sel, media, conditions: conds, longhands: longhands(st), cssText: st.cssText });
         if (r instanceof CSSStyleRule && r.cssRules && r.cssRules.length) walk(r.cssRules, lab, kit, media, conds, sel);
-      } else if (r instanceof CSSMediaRule) {
+        continue;
+      }
+      at(lab, kit, r);
+      if (r instanceof CSSMediaRule) {
         out.media.push({ sheet: lab, kit, condition: r.media.mediaText, source: "rule" });
         walk(r.cssRules, lab, kit, [...media, r.media.mediaText], [...conds, `@media ${r.media.mediaText}`], parentSel);
       } else if (r instanceof CSSImportRule) {
@@ -162,24 +189,23 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
         if (r.styleSheet) sheet(r.styleSheet, m ? [...media, m] : media, m ? [...conds, `@import ${m}`] : conds);
       } else if (r instanceof CSSKeyframesRule) {
         out.keyframes.push({ sheet: lab, kit, name: r.name, frames: Array.from(r.cssRules).map((k) => ({ key: (k as CSSKeyframeRule).keyText, longhands: longhands((k as CSSKeyframeRule).style) })) });
-      } else if (r instanceof CSSFontFaceRule) {
-        // reported by declaredFontFaces
-      } else if ("cssRules" in r) {
+      } else if ("cssRules" in r && !(r instanceof CSSFontFaceRule)) {
         const head = r.cssText.slice(0, r.cssText.indexOf("{")).trim();
         walk((r as CSSGroupingRule).cssRules, lab, kit, media, [...conds, head], parentSel);
-      } else out.otherAtRules.push({ sheet: lab, text: r.cssText.slice(0, 160) });
+      }
     }
   };
-  const sheet = (s: CSSStyleSheet, media: string[], conds: string[]): void => {
+  const sheet = (s: CSSStyleSheet, media: string[], conds: string[], fixedLabel?: string): void => {
     if (isFreeze(s.ownerNode)) return;
     let rules: CSSRuleList;
     try { rules = s.cssRules; } catch { return; }
-    const lab = label(s), kit = (s.href ?? "").startsWith(arg.kitBase), m = s.media.mediaText;
+    const lab = fixedLabel ?? label(s), kit = (s.href ?? "").startsWith(arg.kitBase), m = s.media.mediaText;
     out.sheets.push({ label: lab, href: s.href, kit, media: m });
     if (m && !s.ownerRule) out.media.push({ sheet: lab, kit, condition: m, source: "sheet" });
     walk(rules, lab, kit, m && !s.ownerRule ? [...media, m] : media, m && !s.ownerRule ? [...conds, `@media ${m}`] : conds, null);
   };
   for (const s of Array.from(document.styleSheets)) sheet(s, [], []);
+  Array.from(document.adoptedStyleSheets ?? []).forEach((s, i) => sheet(s, [], [], `adopted:${i}`));
 
   // custom properties referenced anywhere
   const names = new Set<string>();
@@ -195,6 +221,7 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
   const idx = new Map<Element, number>(els.map((e, i) => [e, i]));
   const allVals: Record<string, string>[] = [];
   const rect = (el: Element): Box => { const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; };
+  const num = (v: string) => parseFloat(v) || 0;
   els.forEach((el, i) => {
     const cs = getComputedStyle(el);
     const computed: Record<string, string> = {};
@@ -204,6 +231,17 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
     const texts: string[] = [];
     for (const c of Array.from(el.childNodes)) if (c.nodeType === 3 && /\S/.test((c as Text).data)) texts.push((c as Text).data);
     const rendered = el.getClientRects().length > 0;
+    let size: Size | null = null;
+    if (rendered) {
+      // layout size without transforms: computed width/height are used values for boxes that are not inline
+      const w = parseFloat(cs.width), h = parseFloat(cs.height);
+      if (Number.isFinite(w) && Number.isFinite(h) && cs.display !== "inline") {
+        const extra = cs.boxSizing === "content-box"
+          ? [num(cs.paddingLeft) + num(cs.paddingRight) + num(cs.borderLeftWidth) + num(cs.borderRightWidth), num(cs.paddingTop) + num(cs.paddingBottom) + num(cs.borderTopWidth) + num(cs.borderBottomWidth)]
+          : [0, 0];
+        size = { w: w + extra[0], h: h + extra[1] };
+      } else { const b = rect(el); size = { w: b.w, h: b.h }; }
+    }
     const pseudo: Record<string, Record<string, string>> = {};
     for (const p of ["before", "after"]) {
       const pcs = getComputedStyle(el, `::${p}`);
@@ -227,7 +265,10 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
     const vars: Record<string, string> = {};
     for (const n of varNames) if (vals[n] !== base[n]) vars[n] = vals[n];
     const ns = el.namespaceURI === "http://www.w3.org/2000/svg" ? "svg" : el.namespaceURI === "http://www.w3.org/1998/Math/MathML" ? "math" : "html";
-    out.elements.push({ tag: el.localName, ns, attrs, parent: parentIdx, texts, rendered, box: rendered ? rect(el) : null, computed, pseudo, inline, vars, minAuto: null });
+    out.elements.push({
+      tag: el.localName, ns, attrs, parent: parentIdx, texts, rendered, box: rendered ? rect(el) : null, size, computed, pseudo, inline, vars,
+      minAuto: null, shadow: !!(el as HTMLElement).shadowRoot,
+    });
   });
 
   // U-CSS-019: one relayout with the main-axis min size of every `auto` flex item set to 0
@@ -283,6 +324,16 @@ function pageExpand(items: { name: string; value: string }[]): (SnapDecl[] | nul
   });
 }
 
+/** Runs in the page: computed values of properties on elements and their parents (the root for body). */
+function pageComputed(items: { i: number; props: string[] }[]): [string, string][][] {
+  const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
+  return items.map(({ i, props }) => {
+    const el = els[i];
+    const cs = getComputedStyle(el), ps = getComputedStyle(el.parentElement ?? document.documentElement);
+    return props.map((p) => [cs.getPropertyValue(p), ps.getPropertyValue(p)] as [string, string]);
+  });
+}
+
 const quote = (v: string) => (/^[A-Za-z0-9._-]+$/.test(v) ? v : JSON.stringify(v));
 
 function elementPaths(els: { tag: string; attrs: Record<string, string>; parent: number }[], children: number[][]): string[] {
@@ -297,18 +348,59 @@ function elementPaths(els: { tag: string; attrs: Record<string, string>; parent:
   return paths;
 }
 
-/** Calls the page function with a `__name` shim: tsx (esbuild keepNames) wraps inner functions with it. */
 async function evaluate<A, R>(page: Page, fn: (a: A) => R, arg: A): Promise<R> {
-  await page.evaluate("globalThis.__name ??= (f) => f");
   return page.evaluate(fn as unknown as (a: unknown) => R, arg as unknown) as Promise<R>;
 }
 
+// physical longhands a property name sets (logical properties map to horizontal-tb, left-to-right)
+const SIDES = ["top", "right", "bottom", "left"] as const;
+const LOGICAL: Record<string, string> = { "block-start": "top", "block-end": "bottom", "inline-start": "left", "inline-end": "right" };
+const SHORTHANDS: Record<string, string[]> = {
+  margin: SIDES.map((s) => `margin-${s}`), padding: SIDES.map((s) => `padding-${s}`),
+  "margin-block": ["margin-top", "margin-bottom"], "margin-inline": ["margin-left", "margin-right"],
+  "padding-block": ["padding-top", "padding-bottom"], "padding-inline": ["padding-left", "padding-right"],
+  "border-width": SIDES.map((s) => `border-${s}-width`), "border-style": SIDES.map((s) => `border-${s}-style`),
+  "border-color": SIDES.map((s) => `border-${s}-color`),
+  border: SIDES.flatMap((s) => [`border-${s}-width`, `border-${s}-style`, `border-${s}-color`]),
+  "border-block": ["top", "bottom"].flatMap((s) => [`border-${s}-width`, `border-${s}-style`, `border-${s}-color`]),
+  "border-inline": ["left", "right"].flatMap((s) => [`border-${s}-width`, `border-${s}-style`, `border-${s}-color`]),
+  ...Object.fromEntries(SIDES.map((s) => [`border-${s}`, [`border-${s}-width`, `border-${s}-style`, `border-${s}-color`]])),
+  inset: [...SIDES], overflow: ["overflow-x", "overflow-y"], "white-space": ["white-space-collapse", "text-wrap-mode"],
+  gap: ["row-gap", "column-gap"], "place-items": ["align-items", "justify-items"], "place-content": ["align-content", "justify-content"],
+  "place-self": ["align-self", "justify-self"], flex: ["flex-grow", "flex-shrink", "flex-basis"], "flex-flow": ["flex-direction", "flex-wrap"],
+  "text-decoration": ["text-decoration-line", "text-decoration-style", "text-decoration-color", "text-decoration-thickness"],
+  outline: ["outline-color", "outline-style", "outline-width"], "list-style": ["list-style-type", "list-style-position", "list-style-image"],
+  background: ["background-color", "background-image"], "border-radius": ["border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius"],
+};
+export function physicalNames(name: string): string[] {
+  if (SHORTHANDS[name]) return SHORTHANDS[name];
+  let n = name;
+  for (const [l, p] of Object.entries(LOGICAL)) n = n.replace(new RegExp(`-${l}(?=-|$)`), `-${p}`);
+  n = n.replace(/^inset-(top|bottom|left|right)$/, "$1").replace(/^(min-|max-)?inline-size$/, "$1width").replace(/^(min-|max-)?block-size$/, "$1height");
+  return [n];
+}
+
+const UA_SKIP_TAGS = new Set(["div", "span", "b", "strong", "i", "em", "br", "option", ...NO_TEXT_TAGS, "link", "meta"]);
+type CdpProp = { name: string; value: string; disabled?: boolean; parsedOk?: boolean };
+type CdpRule = { rule: { origin: string; style: { cssProperties: CdpProp[] } } };
+
+class DomChanged extends Error {}
+
 /**
  * Collects everything lint and extraction read from a loaded design, once: DOM with computed styles and boxes,
- * every style rule with the elements it can reach, @media, @keyframes, font faces, the platform fonts that render
- * each text node, and the automatic-minimum-size relayout. Leaves the page as it was.
+ * every style rule with the elements it can reach, at-rules, keyframes, font faces, browser-default styles, the
+ * platform fonts that render each text node, and the automatic-minimum-size relayout. Leaves the page as it was.
+ * Retries once when the DOM changes while it is read.
  */
 export async function collectSnapshot(page: Page, cdp: CDPSession, kit?: KitConfig): Promise<DomSnapshot> {
+  try { return await collectOnce(page, cdp, kit); } catch (e) {
+    if (!(e instanceof DomChanged)) throw e;
+    await page.waitForTimeout(100);
+    return collectOnce(page, cdp, kit);
+  }
+}
+
+async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promise<DomSnapshot> {
   const timings: Record<string, number> = {};
   let t = performance.now();
   const lap = (k: string) => { const n = performance.now(); timings[k] = Math.round((n - t) * 10) / 10; t = n; };
@@ -331,6 +423,7 @@ export async function collectSnapshot(page: Page, cdp: CDPSession, kit?: KitConf
     return s;
   }));
   const matched = await evaluate(page, pageMatch, Array.from(reach.keys()));
+  const reached = raw.rules.map((_, k) => Array.from(new Set(reachOf[k].flatMap((s) => matched[reach.get(s)!] ?? []))).sort((a, b) => a - b));
   lap("match");
 
   // var() lookup per element (walks up to the root)
@@ -338,56 +431,93 @@ export async function collectSnapshot(page: Page, cdp: CDPSession, kit?: KitConf
     for (let k = i; k >= 0; k = raw.elements[k].parent) if (name in raw.elements[k].vars) return raw.elements[k].vars[name];
     return raw.rootVars[name];
   };
-  // shorthands pending var() substitution: expand with the values at the first reached element (or the root)
+  // shorthands pending var() substitution: expanded per distinct substituted value, in one page call
   const pending: { name: string; value: string }[] = [];
-  const pendingOf = (style: RawStyle, at: number) => {
+  const slots = new Map<string, number>();
+  const slot = (name: string, value: string) => {
+    const k = `${name}\u0000${value}`;
+    if (!slots.has(k)) { slots.set(k, pending.length); pending.push({ name, value }); }
+    return slots.get(k)!;
+  };
+  type Planned = { d: SnapDecl; slot: number }[];
+  const plan = (style: RawStyle, at: number): Planned => {
     const decls = declsOf(style.longhands, style.cssText);
     const known = new Set(style.longhands.map((l) => l.name));
-    return decls.map((d) => {
-      if (known.has(d.name)) return { d, slot: -1 };
-      pending.push({ name: d.name, value: resolveVars(d.value, lookupAt(at)) });
-      return { d, slot: pending.length - 1 };
-    });
+    return decls.map((d) => (known.has(d.name) ? { d, slot: -1 } : { d, slot: slot(d.name, resolveVars(d.value, lookupAt(at))) }));
   };
-  const ruleDecls = raw.rules.map((r, k) => {
-    const first = reachOf[k].map((s) => matched[reach.get(s)!] ?? []).flat().sort((a, b) => a - b)[0] ?? -1;
-    return pendingOf(r, first);
+  const rulePlans = raw.rules.map((r, k) => {
+    const els = reached[k];
+    const first = plan(r, els[0] ?? -1);
+    const per: Record<number, Planned> = {};
+    if (first.some((p) => p.slot >= 0)) {
+      for (const i of els.slice(1)) {
+        const p = plan(r, i);
+        if (p.some((x, j) => x.slot !== first[j].slot)) per[i] = p;
+      }
+    }
+    return { first, per };
   });
-  const inlineDecls = raw.elements.map((e, i) => (e.inline ? pendingOf(e.inline, i) : null));
+  const inlinePlans = raw.elements.map((e, i) => (e.inline ? plan(e.inline, i) : null));
   const expanded = pending.length ? await evaluate(page, pageExpand, pending) : [];
-  const finish = (list: { d: SnapDecl; slot: number }[]): SnapDecl[] => list.flatMap(({ d, slot }) => {
-    if (slot < 0) return [d];
-    const ex = expanded[slot];
+  const finish = (list: Planned): SnapDecl[] => list.flatMap(({ d, slot: sl }) => {
+    if (sl < 0) return [d];
+    const ex = expanded[sl];
     // invalid after substitution: keep the shorthand so rules can report it
     return ex ? ex.map((x) => ({ ...x, important: d.important, via: `${d.name}: ${d.value}` })) : [{ ...d, invalid: true }];
   });
   lap("expand");
 
-  // CDP: node ids and the platform fonts that render every text node
+  // CDP: node ids, closed shadow roots, platform fonts per text node, browser-default (user-agent) rules
   await cdp.send("DOM.enable");
   await cdp.send("CSS.enable");
-  const doc = await cdp.send("DOM.getDocument", { depth: -1 });
-  type Node = { nodeId: number; backendNodeId: number; nodeType: number; nodeName: string; localName?: string; nodeValue?: string; children?: Node[] };
+  const doc = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+  type Node = {
+    nodeId: number; backendNodeId: number; nodeType: number; nodeName: string; localName?: string; nodeValue?: string;
+    children?: Node[]; shadowRoots?: { shadowRootType?: string }[];
+  };
   const findBody = (n: Node): Node | null => {
     if (n.nodeType === 1 && (n.localName ?? n.nodeName.toLowerCase()) === "body") return n;
     for (const c of n.children ?? []) { const b = findBody(c); if (b) return b; }
     return null;
   };
   const body = findBody(doc.root as Node);
-  const cdpEls: { node: Node; texts: number[] }[] = [];
+  const cdpEls: { node: Node; texts: number[]; shadow: "open" | "closed" | null }[] = [];
   const visit = (n: Node) => {
-    cdpEls.push({ node: n, texts: (n.children ?? []).filter((c) => c.nodeType === 3 && /\S/.test(c.nodeValue ?? "")).map((c) => c.nodeId) });
+    const sr = (n.shadowRoots ?? []).find((r) => r.shadowRootType !== "user-agent");
+    cdpEls.push({
+      node: n, shadow: sr ? (sr.shadowRootType === "closed" ? "closed" : "open") : null,
+      texts: (n.children ?? []).filter((c) => c.nodeType === 3 && /\S/.test(c.nodeValue ?? "")).map((c) => c.nodeId),
+    });
     for (const c of n.children ?? []) if (c.nodeType === 1) visit(c);
   };
   if (body) visit(body);
   if (cdpEls.length !== raw.elements.length || cdpEls.some((c, i) => (c.node.localName ?? c.node.nodeName).toLowerCase() !== raw.elements[i].tag.toLowerCase())) {
-    throw new Error("collectSnapshot: the DOM changed while it was being read");
+    throw new DomChanged("collectSnapshot: the DOM changed while it was being read");
   }
-  const fontJobs: Promise<PlatformFont[] | null>[][] = cdpEls.map((c, i) => c.texts.map((id) => {
+  const inSvg = raw.elements.map(() => false);
+  raw.elements.forEach((e, i) => { inSvg[i] = e.ns === "svg" || (e.parent >= 0 && inSvg[e.parent]); });
+  const fontJobs = cdpEls.map((c, i) => Promise.all(c.texts.map((id) => {
     if (!raw.elements[i].rendered || NO_TEXT_TAGS.has(raw.elements[i].tag.toLowerCase())) return Promise.resolve(null);
     return cdp.send("CSS.getPlatformFontsForNode", { nodeId: id }).then((r) => r.fonts as PlatformFont[], () => null);
-  }));
-  const textFonts = await Promise.all(fontJobs.map((j) => Promise.all(j)));
+  })));
+  const uaIdx = raw.elements.map((e, i) => i).filter((i) => raw.elements[i].ns === "html" && !inSvg[i] && !UA_SKIP_TAGS.has(raw.elements[i].tag));
+  const uaJobs = uaIdx.map((i) => cdp.send("CSS.getMatchedStylesForNode", { nodeId: cdpEls[i].node.nodeId }).then((r) => {
+    const names = (rules: CdpRule[] | undefined, ua: boolean) => (rules ?? []).filter((m) => (m.rule.origin === "user-agent") === ua)
+      .flatMap((m) => m.rule.style.cssProperties.filter((p) => !p.disabled).flatMap((p) => physicalNames(p.name)));
+    const author = new Set([
+      ...names(r.matchedCSSRules as CdpRule[], false),
+      ...((r.inlineStyle?.cssProperties ?? []) as CdpProp[]).flatMap((p) => physicalNames(p.name)),
+      ...((r.attributesStyle?.cssProperties ?? []) as CdpProp[]).flatMap((p) => physicalNames(p.name)),
+    ]);
+    const ignored = new Set(cssSupport.browserDefaults.ignored);
+    return Array.from(new Set(names(r.matchedCSSRules as CdpRule[], true)))
+      .filter((n) => !author.has(n) && !ignored.has(n) && !/^-(webkit|internal)-/.test(n) && !n.startsWith("font") && n !== "line-height");
+  }, () => [] as string[]));
+  const [textFonts, uaNames] = await Promise.all([Promise.all(fontJobs), Promise.all(uaJobs)]);
+  const uaItems = uaIdx.map((i, k) => ({ i, props: uaNames[k] })).filter((x) => x.props.length);
+  const uaValues = uaItems.length ? await evaluate(page, pageComputed, uaItems) : [];
+  const ua: Record<number, SnapElement["ua"]> = {};
+  uaItems.forEach((x, k) => { ua[x.i] = Object.fromEntries(x.props.map((p, j) => [p, { value: uaValues[k][j][0], parent: uaValues[k][j][1] }])); });
   lap("cdp");
 
   const fontFaces = await declaredFontFaces(page, kit);
@@ -397,14 +527,16 @@ export async function collectSnapshot(page: Page, cdp: CDPSession, kit?: KitConf
     index: i, tag: e.tag, ns: e.ns as SnapElement["ns"], attrs: e.attrs, parent: e.parent, children: children[i], path: paths[i],
     nodeId: cdpEls[i].node.nodeId, backendNodeId: cdpEls[i].node.backendNodeId,
     texts: e.texts, textFonts: textFonts[i].length === e.texts.length ? textFonts[i] : e.texts.map(() => null),
-    rendered: e.rendered, box: e.box, computed: e.computed, pseudo: e.pseudo, inline: inlineDecls[i] ? finish(inlineDecls[i]!) : null,
-    vars: e.vars, minAuto: e.minAuto,
+    rendered: e.rendered, box: e.box, size: e.size, computed: e.computed, pseudo: e.pseudo,
+    inline: inlinePlans[i] ? finish(inlinePlans[i]!) : null, vars: e.vars, minAuto: e.minAuto,
+    shadowRoot: e.shadow ? "open" : cdpEls[i].shadow, ua: ua[i] ?? {},
   }));
   const rules: SnapRule[] = raw.rules.map((r, k) => ({
     index: r.index, sheet: r.sheet, kit: r.kit, selectorText: r.selectorText, media: r.media, conditions: r.conditions,
-    decls: finish(ruleDecls[k]), path: `${r.sheet} ${r.selectorText}`,
+    decls: finish(rulePlans[k].first), declsAt: Object.fromEntries(Object.entries(rulePlans[k].per).map(([i, p]) => [i, finish(p)])),
+    path: `${r.sheet} ${r.selectorText}`,
     selectors: parsed[k].map((p, j) => ({
-      text: p.text, reach: reachOf[k][j], specificity: specificity(p), pseudoClasses: pseudoClasses(p), pseudoElement: pseudoElement(p),
+      text: p.text, parsed: p, reach: reachOf[k][j], specificity: specificity(p), pseudoClasses: pseudoClasses(p), pseudoElement: pseudoElement(p),
       structural: structural(p), elements: matched[reach.get(reachOf[k][j])!],
     })),
   }));
@@ -412,7 +544,8 @@ export async function collectSnapshot(page: Page, cdp: CDPSession, kit?: KitConf
     viewport: raw.viewport, elements, rules,
     media: raw.media.map((m) => ({ ...m, path: `${m.sheet} @media ${m.condition}` })),
     keyframes: raw.keyframes.map((k) => ({ sheet: k.sheet, kit: k.kit, name: k.name, path: `${k.sheet} @keyframes ${k.name}`, frames: k.frames.map((f) => ({ key: f.key, decls: f.longhands })) })),
-    sheets: raw.sheets, otherAtRules: raw.otherAtRules, fontFaces, rootVars: raw.rootVars, timings,
+    sheets: raw.sheets, atRules: raw.atRules.map((a) => ({ ...a, path: `${a.sheet} @${a.kind}${a.prelude ? ` ${a.prelude}` : ""}` })),
+    fontFaces, rootVars: raw.rootVars, rootFontSize: px(raw.rootFontSize) ?? 16, timings,
   };
   if (kit) annotateTextStyles(s, kit);
   lap("finish");

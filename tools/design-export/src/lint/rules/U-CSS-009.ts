@@ -1,3 +1,4 @@
+import { cssSupport } from "../allowed-css.js";
 import type { Rule } from "../types.js";
 import type { SnapElement } from "../snapshot.js";
 import { Collector, inFlow, isExternal, nonDesign } from "./util.js";
@@ -31,6 +32,8 @@ export const rule: Rule = {
     const c = new Collector();
     for (const e of s.elements) {
       if (!inFlow(e) || e.parent < 0 || isExternal(s, e.index) || nonDesign(s)[e.index]) continue;
+      // a line break is part of the text; unsupported elements are U-CSS-029's
+      if (e.tag === "br" || !cssSupport.isAllowedElement(e.tag, e.attrs)) continue;
       const parent = s.elements[e.parent];
       // children of a display:none root are not blockified while hidden: their layout is not known here
       if (parent.computed.display === "none") continue;
@@ -38,6 +41,6 @@ export const rule: Rule = {
       const fx = richEffects(e, parent);
       if (fx.length) c.add(e.path, `<${e.tag}> inside text changes ${fx.join(", ")} (rich text allows only color and font-size${e.tag === "b" || e.tag === "strong" ? ", and bold" : e.tag === "i" || e.tag === "em" ? ", and italic" : ""})`);
     }
-    return c.findings(rule, "Inside a line of text use only b/strong, i/em and span with color or font-size; make other elements flex items of a flex container, or split the text into separate elements.");
+    return c.findings(rule, "Inside a line of text use only b/strong, i/em, br and span with color or font-size; make other elements flex items of a flex container, or split the text into separate elements.");
   },
 };

@@ -29,6 +29,11 @@ import { rule as U_CSS_022 } from "./rules/U-CSS-022.js";
 import { rule as U_CSS_023 } from "./rules/U-CSS-023.js";
 import { rule as U_CSS_024 } from "./rules/U-CSS-024.js";
 import { rule as U_CSS_025 } from "./rules/U-CSS-025.js";
+import { rule as U_CSS_026 } from "./rules/U-CSS-026.js";
+import { rule as U_CSS_027 } from "./rules/U-CSS-027.js";
+import { rule as U_CSS_028 } from "./rules/U-CSS-028.js";
+import { rule as U_CSS_029 } from "./rules/U-CSS-029.js";
+import { rule as U_CSS_030 } from "./rules/U-CSS-030.js";
 import { rule as U_DC_001 } from "./rules/U-DC-001.js";
 import { rule as U_DC_002 } from "./rules/U-DC-002.js";
 import { rule as U_DC_003 } from "./rules/U-DC-003.js";
@@ -42,10 +47,13 @@ import { rule as U_MRK_002 } from "./rules/U-MRK-002.js";
 import { rule as U_MRK_003 } from "./rules/U-MRK-003.js";
 import { rule as U_MRK_004 } from "./rules/U-MRK-004.js";
 import { rule as U_MRK_005 } from "./rules/U-MRK-005.js";
+import { rule as U_MRK_006 } from "./rules/U-MRK-006.js";
+import { rule as U_MRK_007 } from "./rules/U-MRK-007.js";
 import { rule as U_NET_001 } from "./rules/U-NET-001.js";
 import { rule as U_NET_002 } from "./rules/U-NET-002.js";
 import { rule as W_CSS_001 } from "./rules/W-CSS-001.js";
 import { rule as W_FONT_001 } from "./rules/W-FONT-001.js";
+import { rule as W_FONT_002 } from "./rules/W-FONT-002.js";
 
 export type { Finding, LintContext, Rule } from "./types.js";
 export { collectSnapshot, SNAP_COMPUTED, type DomSnapshot, type SnapElement, type SnapRule, type SnapSelector } from "./snapshot.js";
@@ -77,6 +85,11 @@ export const RULES: readonly Rule[] = [
   U_CSS_023,
   U_CSS_024,
   U_CSS_025,
+  U_CSS_026,
+  U_CSS_027,
+  U_CSS_028,
+  U_CSS_029,
+  U_CSS_030,
   U_DC_001,
   U_DC_002,
   U_DC_003,
@@ -90,10 +103,13 @@ export const RULES: readonly Rule[] = [
   U_MRK_003,
   U_MRK_004,
   U_MRK_005,
+  U_MRK_006,
+  U_MRK_007,
   U_NET_001,
   U_NET_002,
   W_CSS_001,
   W_FONT_001,
+  W_FONT_002,
 ];
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);

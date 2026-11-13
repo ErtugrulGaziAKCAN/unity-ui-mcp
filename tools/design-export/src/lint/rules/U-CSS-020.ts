@@ -7,7 +7,7 @@ export const rule: Rule = {
   id: "U-CSS-020", severity: "error",
   check(s) {
     const c = new Collector();
-    const rootFontSize = px(s.elements[0]?.computed["font-size"]) ?? 16;
+    const rootFontSize = s.rootFontSize;
     for (const src of sources(s)) {
       const t = targetOf(s, src);
       if (!t || (src.kind === "rule" && src.elements.length === 0 && src.pseudo.size > 0)) continue;
@@ -22,14 +22,14 @@ export const rule: Rule = {
       let hit: { path: string; detail: string } | null = null;
       for (const i of src.elements) {
         const e = s.elements[i];
-        if (!e.box) continue;
-        const r = resolveRadii(corners, e.box, { fontSize: px(e.computed["font-size"]) ?? undefined, rootFontSize });
+        if (!e.size) continue;
+        const r = resolveRadii(corners, e.size, { fontSize: px(e.computed["font-size"]) ?? undefined, rootFontSize });
         const bad = r ? ellipticalCorners(r) : [];
         if (bad.length) {
           const text = (k: Corner) => `${corners[k]} → ${r![k].x.toFixed(2)}px × ${r![k].y.toFixed(2)}px`;
           const same = bad.length === 4 && bad.every((k) => text(k) === text(bad[0]));
           const list = same ? `border-radius (all corners): ${text(bad[0])}` : bad.map((k) => `${cornerProperty(k)}: ${text(k)}`).join(", ");
-          hit = { path: e.path, detail: `${list} on a ${e.box!.w.toFixed(2)}×${e.box!.h.toFixed(2)} box` };
+          hit = { path: e.path, detail: `${list} on a ${e.size.w.toFixed(2)}×${e.size.h.toFixed(2)} box` };
           break;
         }
       }

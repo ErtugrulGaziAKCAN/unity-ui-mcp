@@ -14,6 +14,7 @@ export const rule: Rule = {
     const c = new Collector();
     const blocks = new Set<SnapElement>();
     for (const e of textElements(s)) {
+      if (e.tag === "option") continue; // drawn by the native popup, not the screen
       if (!inFlow(e) || e.parent < 0) { blocks.add(e); continue; }
       // rich text: the paragraph sets the line; the tag may change size and weight within kit styles
       let k = e.parent;

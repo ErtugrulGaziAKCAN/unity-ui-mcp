@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import { readKit } from "../src/kit.js";
 import { cssSupport } from "../src/lint/allowed-css.js";
 import { declsOf, functionNames, parseDeclarations, resolveVars, splitTopLevel } from "../src/lint/css-values.js";
-import { readPostScriptName, weightRange } from "../src/lint/fonts.js";
+import { readFontFile, readPostScriptName, realFaces, weightRange } from "../src/lint/fonts.js";
+import { physicalNames } from "../src/lint/snapshot.js";
+import { mediaTypeProblems } from "../src/lint/rules/U-CSS-012.js";
 import { closeStops, findGradients, gradientLineLength, linearAngle, resolveStopOffsets } from "../src/lint/resolve/gradient.js";
 import { ellipticalCorners, expandBorderRadius, resolveRadii } from "../src/lint/resolve/radius.js";
 import { individualTransformProblem, splitTransform } from "../src/lint/resolve/transform.js";
@@ -124,6 +126,19 @@ describe("css values", () => {
     expect(parseDeclarations('a: b; content: "x;y" !important;')).toEqual([{ name: "a", value: "b", important: false }, { name: "content", value: '"x;y"', important: true }]);
     expect(declsOf([{ name: "border-top-width", value: "", important: false }], "border: 1px solid var(--x);")).toEqual([{ name: "border", value: "1px solid var(--x)", important: false }]);
   });
+  it("maps logical and shorthand properties to physical longhands", () => {
+    expect(physicalNames("margin-block-start")).toEqual(["margin-top"]);
+    expect(physicalNames("padding-inline-end")).toEqual(["padding-right"]);
+    expect(physicalNames("border-inline-start-width")).toEqual(["border-left-width"]);
+    expect(physicalNames("min-inline-size")).toEqual(["min-width"]);
+    expect(physicalNames("margin-inline")).toEqual(["margin-left", "margin-right"]);
+    expect(physicalNames("color")).toEqual(["color"]);
+  });
+  it("finds unsupported media types and not", () => {
+    expect(mediaTypeProblems("print")).toEqual(["media type print"]);
+    expect(mediaTypeProblems("only screen and (min-width: 1px), all")).toEqual([]);
+    expect(mediaTypeProblems("not all and (min-width: 1px)")).toEqual(["not"]);
+  });
   it("reads media features, including range syntax", () => {
     expect(mediaFeatures("(min-width: 1px) and (hover: hover), print and (width >= 10px), (10px < height)")).toEqual(["min-width", "hover", "width", "height"]);
   });
@@ -148,6 +163,27 @@ describe("kit data", () => {
     expect(cssSupport.isAllowedFunction("clamp")).toBe(false);
     expect(cssSupport.isAllowedUnit("em")).toBe(false);
     expect(cssSupport.isAllowedUnit("rem")).toBe(true);
+  });
+  it("reads the kit font's character map and real faces", () => {
+    const { cmap } = readFontFile(path.join(kit.dir, "fonts", "Inter_18pt-Regular.ttf"));
+    expect(cmap).not.toBeNull();
+    for (const ch of "AzÇĞİÖŞÜçğıöşü€") expect(cmap!.has(ch.codePointAt(0)!)).toBe(true);
+    expect(cmap!.has("漢".codePointAt(0)!)).toBe(false);
+    const faces = [{ family: "F", weightMin: 400, weightMax: 400, style: "normal", file: null, cmap: null }];
+    expect(realFaces(faces, 400, false)).toHaveLength(1);
+    expect(realFaces(faces, 700, false)).toHaveLength(0);
+    expect(realFaces(faces, 400, true)).toHaveLength(0);
+  });
+  it("whitelists elements and input types", () => {
+    expect(cssSupport.isAllowedElement("div", {})).toBe(true);
+    expect(cssSupport.isAllowedElement("input", {})).toBe(true);
+    expect(cssSupport.isAllowedElement("input", { type: "checkbox" })).toBe(true);
+    expect(cssSupport.isAllowedElement("input", { type: "date" })).toBe(false);
+    expect(cssSupport.isAllowedElement("table", {})).toBe(false);
+    expect(cssSupport.isAllowedPseudoClass("hover")).toBe(true);
+    expect(cssSupport.isAllowedPseudoClass("focus-visible")).toBe(false);
+    expect(cssSupport.atRule("layer")).toBeNull();
+    expect(cssSupport.atRule("import")).toBe("kit");
   });
   it("reads kit font names and weight ranges", () => {
     expect(readPostScriptName(path.join(kit.dir, "fonts", "Inter_18pt-Bold.ttf"))).toBe("Inter18pt-Bold");

@@ -2,15 +2,30 @@ import type { Rule } from "../types.js";
 import { isExternal, make, nonDesign } from "./util.js";
 
 const INTERACTIVE = new Set(["button", "input", "select", "textarea", "a"]);
+const ROLES = new Set(["button", "link", "checkbox", "radio", "switch", "tab", "menuitem", "option", "slider", "textbox", "combobox"]);
 
-/** Interactive elements need a code-facing name. */
+function why(e: { tag: string; ns: string; attrs: Record<string, string> }): string | null {
+  const a = e.attrs;
+  if (e.ns === "html" && INTERACTIVE.has(e.tag)) return `<${e.tag}>`;
+  if (a.tabindex !== undefined) return `tabindex="${a.tabindex}"`;
+  if (a["data-u-bind"] !== undefined) return `data-u-bind="${a["data-u-bind"]}"`;
+  if (a["data-u-action"] !== undefined) return `data-u-action="${a["data-u-action"]}"`;
+  if (a.onclick !== undefined) return "onclick";
+  if (a.role !== undefined && ROLES.has(a.role.toLowerCase())) return `role="${a.role}"`;
+  return null;
+}
+
+/** Interactive and bound elements need a code-facing name (spec 5.2). */
 export const rule: Rule = {
   id: "U-MRK-003", severity: "error",
   check(s) {
-    return s.elements
-      .filter((e) => ((e.ns === "html" && INTERACTIVE.has(e.tag)) || e.attrs.tabindex !== undefined) && e.attrs["data-u-id"] === undefined
-        && !isExternal(s, e.index) && !nonDesign(s)[e.index])
-      .map((e) => make(rule, e.path, `<${e.tag}${e.attrs.tabindex !== undefined ? ` tabindex="${e.attrs.tabindex}"` : ""}> has no data-u-id`,
-        'Add data-u-id="<name>" (lowercase ASCII, e.g. open-inbox) so the generated view can reach the element.'));
+    const out = [];
+    for (const e of s.elements) {
+      if (e.attrs["data-u-id"] !== undefined || isExternal(s, e.index) || nonDesign(s)[e.index]) continue;
+      const w = why(e);
+      if (w) out.push(make(rule, e.path, `${w} has no data-u-id`,
+        'Add data-u-id="<name>" (lowercase ASCII, e.g. open-inbox) to every interactive or bound element so the generated view can reach it.'));
+    }
+    return out;
   },
 };

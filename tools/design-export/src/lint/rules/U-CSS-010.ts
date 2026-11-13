@@ -9,6 +9,7 @@ export const rule: Rule = {
     const isKit = (stack: string) => ctx.fonts.families.has(firstFamily(stack).toLowerCase());
     const c = new Collector();
     for (const e of textElements(s)) {
+      if (e.tag === "option") continue; // drawn by the native popup, not the screen
       const fam = e.computed["font-family"];
       // rich text inherits the paragraph's font: report it only where it differs
       if (inFlow(e) && e.parent >= 0 && s.elements[e.parent].computed["font-family"] === fam) continue;

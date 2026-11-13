@@ -36,12 +36,21 @@ export const textElements = memo((s) => s.elements.filter((e) => rendersText(e) 
 /** Inline-level element in text flow (rich text candidate). */
 export const inFlow = (e: SnapElement) => e.ns === "html" && isInlineLevel(e);
 
+/** Inside an inline <svg> (the <svg> root included): exported as a vector asset, not compiled as elements. */
+export const inSvg = memo((s) => {
+  const out = s.elements.map(() => false);
+  for (const e of s.elements) out[e.index] = e.ns === "svg" || (e.parent >= 0 && out[e.parent]);
+  return out;
+});
+
 export interface Source {
   kind: "rule" | "inline" | "keyframe";
   /** Location for details: `style:0 .card:hover`, `inline style`, `style:0 @keyframes spin 50%`. */
   where: string;
   path: string;
   decls: SnapDecl[];
+  /** Elements where pending var() shorthands expand differently from `decls`. */
+  declsAt: Record<number, SnapDecl[]>;
   rule: SnapRule | null;
   /** Inline style owner, else -1. */
   owner: number;
@@ -69,17 +78,24 @@ export const sources = memo((s): Source[] => {
     }
     const elements = Array.from(els).sort((a, b) => a - b);
     const reached = elements.length > 0 || Array.from(pseudo.values()).some((v) => v.length > 0);
-    out.push({ kind: "rule", where: r.path, path: r.path, decls: r.decls, rule: r, owner: -1, elements, pseudo, onlyExternal: any && !reached });
+    out.push({ kind: "rule", where: r.path, path: r.path, decls: r.decls, declsAt: r.declsAt, rule: r, owner: -1, elements, pseudo, onlyExternal: any && !reached });
   }
   for (const e of s.elements) {
     if (!e.inline || !keep(e.index)) continue;
-    out.push({ kind: "inline", where: "inline style", path: e.path, decls: e.inline, rule: null, owner: e.index, elements: [e.index], pseudo: new Map(), onlyExternal: false });
+    out.push({ kind: "inline", where: "inline style", path: e.path, decls: e.inline, declsAt: {}, rule: null, owner: e.index, elements: [e.index], pseudo: new Map(), onlyExternal: false });
   }
   return out;
 });
 
+/** Sources (rules and inline styles) reaching each element, in cascade order. */
+export const sourcesOf = memo((s): Source[][] => {
+  const out: Source[][] = s.elements.map(() => []);
+  for (const src of sources(s)) for (const i of src.elements) out[i].push(src);
+  return out;
+});
+
 export const keyframeSources = memo((s): Source[] => s.keyframes.flatMap((k) => k.frames.map((f) => ({
-  kind: "keyframe" as const, where: `${k.path} ${f.key}`, path: k.path, decls: f.decls, rule: null, owner: -1, elements: [],
+  kind: "keyframe" as const, where: `${k.path} ${f.key}`, path: k.path, decls: f.decls, declsAt: {}, rule: null, owner: -1, elements: [],
   pseudo: new Map<string, number[]>(), onlyExternal: false,
 }))));
 
@@ -128,9 +144,22 @@ export class Collector {
   }
 }
 
+/** Declarations of a source as they apply at element `i` (pending var() shorthands expanded there). */
+export const declsAt = (src: Source, i: number | null): SnapDecl[] => (i !== null && src.declsAt[i]) || src.decls;
+const varDependent = (src: Source) => Object.keys(src.declsAt).length > 0 || src.decls.some((d) => /var\(/i.test(d.value));
+
 /**
- * Shared shape of the declaration rules: for every source, the declarations `bad` flags (value already
- * var()-resolved at the reported element), one finding per source.
+ * Elements a source's declarations are judged at: every reached element when a value depends on var() (custom
+ * properties may differ per element), else only the first; `null` stands for the rule itself.
+ */
+export function judgeAt(s: DomSnapshot, src: Source, t: Target): (number | null)[] {
+  if (t.element === null) return [null];
+  return varDependent(src) && src.elements.length > 1 ? src.elements : [t.element.index];
+}
+
+/**
+ * Shared shape of the declaration rules: for every source, the declarations `bad` flags (value var()-resolved at the
+ * element judged), one finding per source at the first element where something is flagged.
  */
 export function declRule(
   s: DomSnapshot,
@@ -142,17 +171,19 @@ export function declRule(
   const c = new Collector();
   const all = opts.keyframes ? [...sources(s), ...keyframeSources(s)] : sources(s);
   for (const src of all) {
-    const t = targetOf(s, src);
-    if (!t) continue;
+    const t0 = targetOf(s, src);
+    if (!t0) continue;
     if (!opts.pseudo && src.kind === "rule" && src.elements.length === 0 && src.pseudo.size > 0) continue;
-    const hits: string[] = [];
-    for (const d of src.decls) {
-      if (d.name.startsWith("--")) continue;
-      const v = resolved(s, d.value, t.element?.index ?? null);
-      const why = bad(d, v, src, t);
-      if (why !== null) hits.push(why);
+    for (const i of judgeAt(s, src, t0)) {
+      const t: Target = i === null ? t0 : { path: s.elements[i].path, element: s.elements[i], more: t0.more };
+      const hits: string[] = [];
+      for (const d of declsAt(src, i)) {
+        if (d.name.startsWith("--")) continue;
+        const why = bad(d, resolved(s, d.value, i), src, t);
+        if (why !== null) hits.push(why);
+      }
+      if (hits.length) { c.add(t.path, hits.join(", ") + at(src, t)); break; }
     }
-    if (hits.length) c.add(t.path, hits.join(", ") + at(src, t));
   }
   return c.findings(r, fix);
 }

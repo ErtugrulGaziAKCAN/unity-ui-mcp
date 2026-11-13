@@ -14,13 +14,27 @@ export function mediaFeatures(condition: string): string[] {
   return out;
 }
 
+/** Media types and the `not` keyword of a media query list ("print", "not screen" → ["print", "not"]). */
+export function mediaTypeProblems(condition: string): string[] {
+  const out: string[] = [];
+  for (const q of splitTopLevel(condition, ",")) {
+    const head = q.split("(")[0].toLowerCase().replace(/\band\s*$/, "").trim();
+    for (const w of head.split(/\s+/).filter(Boolean)) {
+      if (w === "only" || w === "and") continue;
+      if (w === "not") out.push("not");
+      else if (!cssSupport.isMediaType(w)) out.push(`media type ${w}`);
+    }
+  }
+  return out;
+}
+
 export const rule: Rule = {
   id: "U-CSS-012", severity: "error",
   check(s) {
     return s.media.flatMap((m) => {
-      const bad = Array.from(new Set(mediaFeatures(m.condition).filter((f) => !cssSupport.isMediaFeature(f))));
-      return bad.length ? [make(rule, m.path, `@media ${m.condition}: feature ${bad.join(", ")}${m.source !== "rule" ? ` (${m.source} media)` : ""}`,
-        `Use only ${cssSupport.mediaFeatures.join(", ")} in @media (they compile to breakpoint classes); write range syntax as min-/max-width.`)] : [];
+      const bad = Array.from(new Set([...mediaTypeProblems(m.condition), ...mediaFeatures(m.condition).filter((f) => !cssSupport.isMediaFeature(f)).map((f) => `feature ${f}`)]));
+      return bad.length ? [make(rule, m.path, `@media ${m.condition}: ${bad.join(", ")}${m.source !== "rule" ? ` (${m.source} media)` : ""}`,
+        `Use only ${cssSupport.mediaFeatures.join(", ")} in @media, with no media type other than screen or all and no "not" (they compile to breakpoint classes); write range syntax as min-/max-width.`)] : [];
     });
   },
 };

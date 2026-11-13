@@ -1,32 +1,29 @@
 import type { Rule } from "../types.js";
-import { at, Collector, isExternal, nonDesign, resolved, sources, targetOf } from "./util.js";
+import { Collector, isExternal, nonDesign, resolved, sourcesOf } from "./util.js";
 
 const GAPS = new Set(["gap", "row-gap", "column-gap", "grid-gap", "grid-row-gap", "grid-column-gap"]);
 const zero = (v: string) => /^(normal|0|0px|0%)(\s+(normal|0|0px|0%))?$/i.test(v.trim());
 const wraps = (v: string) => /\bwrap(-reverse)?\b/i.test(v);
 
+/** gap and wrapping on one flex container, from any combination of layers (base, hover, breakpoints, states). */
 export const rule: Rule = {
   id: "U-CSS-011", severity: "error",
   check(s) {
     const c = new Collector();
-    for (const e of s.elements) {
-      if (isExternal(s, e.index) || nonDesign(s)[e.index]) continue;
+    sourcesOf(s).forEach((list, i) => {
+      const e = s.elements[i];
+      if (isExternal(s, i) || nonDesign(s)[i]) return;
       const k = e.computed;
-      if (!k.display.endsWith("flex") || !wraps(k["flex-wrap"])) continue;
-      if (!zero(k["row-gap"]) || !zero(k["column-gap"])) c.add(e.path, `flex-wrap: ${k["flex-wrap"]} with row-gap ${k["row-gap"]}, column-gap ${k["column-gap"]}`);
-    }
-    // gaps declared in rules the current state does not apply (hover, breakpoints, states)
-    for (const src of sources(s)) {
-      const t = targetOf(s, src);
-      if (!t) continue;
-      const gap = src.decls.find((d) => GAPS.has(d.name) && !zero(resolved(s, d.value, t.element?.index ?? null)));
-      if (!gap) continue;
-      const wrapDecl = src.decls.find((d) => (d.name === "flex-wrap" || d.name === "flex-flow") && wraps(resolved(s, d.value, t.element?.index ?? null)));
-      const wrapped = src.elements.find((i) => wraps(s.elements[i].computed["flex-wrap"]));
-      if (!wrapDecl && wrapped === undefined) continue;
-      const path = wrapped !== undefined ? s.elements[wrapped].path : t.path;
-      if (!c.has(path)) c.add(path, `${gap.name}: ${gap.value} on a wrapping flex container${at(src, t)}`);
-    }
+      const gaps: string[] = [], wrapsIn: string[] = [];
+      if (k.display.endsWith("flex") && (!zero(k["row-gap"]) || !zero(k["column-gap"]))) gaps.push(`row-gap ${k["row-gap"]}, column-gap ${k["column-gap"]}`);
+      if (wraps(k["flex-wrap"])) wrapsIn.push(`flex-wrap: ${k["flex-wrap"]}`);
+      for (const src of list) for (const d of src.decls) {
+        const v = resolved(s, d.value, i);
+        if (GAPS.has(d.name) && !zero(v)) gaps.push(`${d.name}: ${v} [${src.where}]`);
+        if ((d.name === "flex-wrap" || d.name === "flex-flow") && wraps(v)) wrapsIn.push(`${d.name}: ${v} [${src.where}]`);
+      }
+      if (gaps.length && wrapsIn.length) c.add(e.path, `${Array.from(new Set(gaps))[0]} with ${Array.from(new Set(wrapsIn))[0]}`);
+    });
     return c.findings(rule, "Remove gap from wrapping flex containers and space the items with margins (gap is lowered to margins, which cannot follow line breaks).");
   },
 };
