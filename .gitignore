@@ -16,3 +16,7 @@ spike/out/
 
 # Local, project-specific notes and the working plan (never published)
 private/
+
+# design-ui bookkeeping and reports written next to designs
+.design-ui/
+samples/FidelityProject/Designs/**/report.html
