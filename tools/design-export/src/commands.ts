@@ -1,5 +1,7 @@
 import { Command, CommanderError } from "commander";
 import path from "node:path";
+import { compareScreen, readThresholds, summarizeIssues } from "./compare/compare.js";
+import { writeReport, writeVerdict } from "./compare/report.js";
 import { exportScreen, lintScreen } from "./export.js";
 import type { Finding } from "./lint/index.js";
 
@@ -10,9 +12,11 @@ const USAGE = `Usage: design-export <command> [options]
 Commands:
   lint <designDir> --kit <kitDir>                Lint a Claude Design HTML screen
   export <designDir> --kit <kitDir> --out <dir>  Export a screen: IR, goldens, assets, sample data
-  compare                                        Compare a Unity capture against the golden (not available yet)
+  compare <exportDir> --unity <captureDir> --report <file.html>
+                                                 Compare Unity captures with the goldens; write the report and verdict.json
 
-Exit codes: 0 ok, 1 lint errors, 2 usage or internal error.
+Exit codes: 0 ok (compare: every capture passes), 1 lint errors (compare: a capture fails or is not run),
+2 usage or internal error.
 `;
 
 const line = (f: Finding) => `${f.severity.padEnd(7)} ${f.ruleId} ${f.path}: ${f.detail}${f.fix ? `\n        fix: ${f.fix}` : ""}`;
@@ -52,8 +56,28 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       return r.ok ? 0 : 1;
     }) as never);
 
-  program.command("compare").allowExcessArguments(false).description("Compare a Unity capture against the golden")
-    .action(guard(async () => { io.err("design-export: compare is not available yet\n"); return 2; }) as never);
+  program.command("compare").allowExcessArguments(false).argument("<exportDir>").requiredOption("--unity <captureDir>").requiredOption("--report <file>")
+    .option("--verdict <file>", "verdict JSON (default: verdict.json next to the report)")
+    .option("--diff <dir>", "difference images (default: <report name>-diff next to the report)")
+    .option("--thresholds <file>", "thresholds JSON (default: fidelity-thresholds.json of this tool)")
+    .description("Compare Unity captures with the design's goldens")
+    .action(guard(async (dir: string, o: { unity: string; report: string; verdict?: string; diff?: string; thresholds?: string }) => {
+      const exportDir = path.resolve(dir), unityDir = path.resolve(o.unity), report = path.resolve(o.report);
+      const base = path.basename(report).replace(/\.html?$/i, "");
+      const diffDir = o.diff ? path.resolve(o.diff) : path.join(path.dirname(report), `${base}-diff`);
+      const t = readThresholds(o.thresholds ? path.resolve(o.thresholds) : undefined);
+      const v = await compareScreen(exportDir, unityDir, t, { diffDir });
+      writeReport(v, exportDir, unityDir, report);
+      const verdictFile = o.verdict ? path.resolve(o.verdict) : path.join(path.dirname(report), "verdict.json");
+      writeVerdict(v, verdictFile);
+      const total = v.captures.length + v.notRun.length, passed = v.captures.filter((c) => c.pass).length;
+      io.out(`${v.pass ? "PASS" : "FAIL"} ${v.screen}: ${passed}/${total} captures pass (compare ${v.timings.compare} ms)\n`);
+      if (v.notRun.length) io.out(`not run: ${v.notRun.join(", ")}\n`);
+      if (v.extra.length) io.out(`extra Unity captures (not compared): ${v.extra.join(", ")}\n`);
+      for (const line of summarizeIssues(v, 10, { notRun: false })) io.out(`- ${line}\n`);
+      io.out(`report: ${report}\nverdict: ${verdictFile}\n`);
+      return v.pass ? 0 : 1;
+    }) as never);
 
   if (argv.length === 0) { io.err(USAGE); return 2; }
   try {
