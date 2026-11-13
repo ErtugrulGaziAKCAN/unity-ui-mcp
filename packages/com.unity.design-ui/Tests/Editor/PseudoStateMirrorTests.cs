@@ -71,12 +71,25 @@ namespace DesignUi.Editor.Tests
         [TearDown]
         public void Cleanup()
         {
+            PressOrReleaseElsewhere(EventType.MouseUp);
             if (_go != null) Object.DestroyImmediate(_go);
             if (_settings != null) Object.DestroyImmediate(_settings);
             if (_rt != null) Object.DestroyImmediate(_rt);
         }
 
         static Event Mouse(EventType type, int button = 0) => new Event { type = type, button = button, mousePosition = new Vector2(10, 10) };
+
+        /// <summary>
+        /// A pointer event with an explicit button and pressed-button mask. GetPooled(Event) with a mouse down or up
+        /// would press or release the button in the global pointer state, so it is built from a move and set here.
+        /// </summary>
+        static T Pointer<T>(int button, int pressedButtons) where T : PointerEventBase<T>, new()
+        {
+            var e = PointerEventBase<T>.GetPooled(Mouse(EventType.MouseMove));
+            typeof(T).GetProperty("button").GetSetMethod(true).Invoke(e, new object[] { button });
+            typeof(T).GetProperty("pressedButtons").GetSetMethod(true).Invoke(e, new object[] { pressedButtons });
+            return e;
+        }
 
         void Send<T>(T e) where T : EventBase<T>, new()
         {
@@ -98,20 +111,82 @@ namespace DesignUi.Editor.Tests
         [UnityTest]
         public IEnumerator Active_PrimaryButtonOnly_RestoredOnReenterWhilePressed_ClearedOnUp()
         {
-            Send(PointerDownEvent.GetPooled(Mouse(EventType.MouseDown, 1)));
+            Send(Pointer<PointerDownEvent>(1, 2));
             Assert.IsFalse(Has("dui-active"), "secondary button");
-            Send(PointerDownEvent.GetPooled(Mouse(EventType.MouseDown, 0)));
+            Send(Pointer<PointerDownEvent>(0, 1));
             Assert.IsTrue(Has("dui-active"));
-            Send(PointerLeaveEvent.GetPooled(Mouse(EventType.MouseMove)));
+            Send(Pointer<PointerLeaveEvent>(-1, 1));
             Assert.IsFalse(Has("dui-active"), "pointer outside");
-            Send(PointerEnterEvent.GetPooled(Mouse(EventType.MouseMove)));
+            Send(Pointer<PointerEnterEvent>(-1, 1));
             Assert.IsTrue(Has("dui-active"), "re-entered while pressed");
-            Send(PointerUpEvent.GetPooled(Mouse(EventType.MouseUp, 0)));
+            Send(Pointer<PointerUpEvent>(0, 0));
             Assert.IsFalse(Has("dui-active"));
-            Send(PointerLeaveEvent.GetPooled(Mouse(EventType.MouseMove)));
-            Send(PointerEnterEvent.GetPooled(Mouse(EventType.MouseMove)));
+            Send(Pointer<PointerLeaveEvent>(-1, 0));
+            Send(Pointer<PointerEnterEvent>(-1, 0));
             Assert.IsFalse(Has("dui-active"), "not pressed any more");
             yield return null;
+        }
+
+        // Real input presses and releases the button in the global pointer state, and events the panel creates itself
+        // (the enter that follows a pointer capture) read their pressed buttons from it, so these tests keep it in step.
+        void Press() => Send(PointerDownEvent.GetPooled(Mouse(EventType.MouseDown, 0)));
+        void Release() => Send(PointerUpEvent.GetPooled(Mouse(EventType.MouseUp, 0)));
+        static void PressOrReleaseElsewhere(EventType type) { using (PointerDownEvent.GetPooled(Mouse(type, 0))) { } }
+        void Enter() => Send(PointerEnterEvent.GetPooled(Mouse(EventType.MouseMove)));
+        void Leave() => Send(PointerLeaveEvent.GetPooled(Mouse(EventType.MouseMove)));
+
+        System.Text.StringBuilder Log()
+        {
+            var log = new System.Text.StringBuilder();
+            void Add(string n, IPointerEvent e) => log.Append(n).Append('(').Append(e.pressedButtons).Append(") ");
+            _el.RegisterCallback<PointerEnterEvent>(e => Add("enter", e));
+            _el.RegisterCallback<PointerLeaveEvent>(e => Add("leave", e));
+            _el.RegisterCallback<PointerDownEvent>(e => Add("down", e), TrickleDown.TrickleDown);
+            _el.RegisterCallback<PointerUpEvent>(e => Add("up", e), TrickleDown.TrickleDown);
+            _el.RegisterCallback<PointerCaptureEvent>(e => log.Append("capture "));
+            _el.RegisterCallback<PointerCaptureOutEvent>(e => log.Append("captureOut "));
+            return log;
+        }
+
+        [UnityTest]
+        public IEnumerator Active_PressDraggedOutAndReleasedElsewhere_DoesNotStick()
+        {
+            // no Clickable, so nothing captures the pointer and the release outside never reaches the element
+            var log = Log();
+            Press();
+            Assert.IsTrue(Has("dui-active"), log.ToString());
+            Leave();
+            PressOrReleaseElsewhere(EventType.MouseUp);
+            Enter();
+            Assert.IsTrue(Has("dui-hover"));
+            Assert.IsFalse(Has("dui-active"), "hover after the release elsewhere: " + log);
+            Leave();
+            PressOrReleaseElsewhere(EventType.MouseDown);
+            Enter();
+            Assert.IsFalse(Has("dui-active"), "a press that started outside is not this element's press: " + log);
+            PressOrReleaseElsewhere(EventType.MouseUp);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator Active_ElementWithItsClickable_FollowsPressLeaveReenterAndRelease()
+        {
+            // a shadowed card keeps its Clickable (R33): it captures the pointer and stops the down event, which the
+            // mirror has already seen in the trickle-down phase
+            _el.AddManipulator(new Clickable(() => { }));
+            var log = Log();
+            Press();
+            Assert.IsTrue(Has("dui-active"), "down: " + log);
+            Leave();
+            Assert.IsFalse(Has("dui-active"), "dragged out: " + log);
+            Enter();
+            Assert.IsTrue(Has("dui-active"), "dragged back while pressed: " + log);
+            Release();
+            yield return null;
+            Assert.IsFalse(Has("dui-active"), "released: " + log);
+            Leave();
+            Enter();
+            Assert.IsFalse(Has("dui-active"), "hover after the release: " + log);
         }
 
         [UnityTest]
@@ -129,6 +204,37 @@ namespace DesignUi.Editor.Tests
             child.Focus();
             yield return null;
             Assert.IsFalse(Has("dui-focus"));
+        }
+
+        [UnityTest]
+        public IEnumerator Focus_TextFieldWhoseInnerInputHasFocus_IsMirrored()
+        {
+            var field = new TextField();
+            var host = new VisualElement();
+            host.Add(field);
+            _host.Add(host);
+            var m = new PseudoStateMirror(host);
+            field.AddManipulator(m);
+            var other = new Button();
+            _host.Add(other);
+            yield return null;
+
+            var input = field.Q(className: TextField.inputUssClassName);
+            Assert.IsNotNull(input, "inner input");
+            input.Focus();
+            yield return null;
+            Assert.IsTrue(host.ClassListContains("dui-focus"), "the field is a focus target of its inner input");
+
+            other.Focus();
+            yield return null;
+            Assert.IsFalse(host.ClassListContains("dui-focus"));
+
+            field.Focus();
+            yield return null;
+            Assert.IsTrue(host.ClassListContains("dui-focus"), "focus delegated by the field itself");
+            other.Focus();
+            yield return null;
+            Assert.IsFalse(host.ClassListContains("dui-focus"));
         }
 
         [UnityTest]

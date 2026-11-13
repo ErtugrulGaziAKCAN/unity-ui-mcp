@@ -560,14 +560,14 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void Shadow_AllDisplayValuesMoveToTheHost_ElementStaysDisplayed()
+        public void Shadow_AllDisplayValuesMoveToTheHost_FlexElementKeepsOnlyItsBaseFlex()
         {
             var card = Node("card", ("display", "flex"));
             card.Style["state:loading"] = Layer(("display", "none"), ("opacity", "0.4"), ("background-color", "#000000"));
             card.Shadow = Shadow(0, 8, 0, 0);
             var host = Hosted(card).Children[0];
             var el = host.Children[1];
-            Assert.IsFalse(B(el).ContainsKey("display"));
+            Assert.AreEqual("flex", B(el)["display"]);
             Assert.AreEqual("flex", B(host)["display"]);
             Assert.AreEqual("none", host.Style["state:loading"]["display"]);
             Assert.AreEqual("0.4", host.Style["state:loading"]["opacity"]);
@@ -587,7 +587,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("none", B(host)["display"]);
             Assert.AreEqual("flex", host.Style["state:error"]["display"]);
             var el = host.Children[1];
-            Assert.IsFalse(B(el).ContainsKey("display"));
+            Assert.AreEqual("flex", B(el)["display"], "the host hides it; the element keeps its flex rules");
             Assert.IsFalse(el.Style.ContainsKey("state:error") && el.Style["state:error"].ContainsKey("display"));
             Assert.IsFalse(B(r.Children[1]).ContainsKey("margin-left"));
             Assert.AreEqual("10px", r.Children[1].Style["state:error"]["margin-left"]);
@@ -655,14 +655,16 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void Shadow_ElementWithOnlyAMovedActiveLayer_IsNotClickableItself_HostNeverIs()
+        public void Shadow_ElementWithOnlyAMovedActiveLayer_KeepsItsClickable_HostNeverIs()
         {
             var card = Node("card");
             card.Style["active"] = Layer(("scale", "0.98"));
             card.Shadow = Shadow(0, 8, 0, 0);
             var host = Hosted(card).Children[0];
             Assert.IsFalse(host.Clickable);
-            Assert.IsFalse(host.Children[1].Clickable);
+            Assert.IsTrue(host.Children[1].Clickable, "same as without a shadow");
+            Assert.IsFalse(host.Children[1].Style.ContainsKey("active"));
+            Assert.AreEqual("0.98", host.Style["class:dui-active"]["scale"]);
             Assert.IsTrue(host.MirrorPseudoState);
         }
 
@@ -882,10 +884,12 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void PaintOrder_AbsoluteBetweenRelativeAndStatic_CannotBeReproduced_Throws()
+        public void PaintOrder_AbsoluteBetweenRelativeAndStatic_CannotBeReproduced_Throws_NamingThem()
         {
-            Assert.Throws<IrFormatException>(() => Lowering.Apply(WithChildren(Node("p"),
+            // CSS: tail (in flow), bg, content (positioned, tree order); the layout order content, tail leaves bg no slot
+            var e = Assert.Throws<IrFormatException>(() => Lowering.Apply(WithChildren(Node("p"),
                 Node("bg", ("position", "absolute")), Node("content", ("position", "relative")), Node("tail"))));
+            foreach (var id in new[] { "bg", "content", "tail" }) StringAssert.Contains("'" + id + "'", e.Message);
         }
 
         [Test]
@@ -937,6 +941,202 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("card__shadowhost", host.Id);
             Assert.IsTrue(host.PickingIgnore);
             Assert.IsTrue(host.Children[0].PickingIgnore);
+        }
+
+        // ---- fix round 4: shadowed flex text alignment (I-A) -------------------------------------------------
+
+        static IrNode Text(string id, params (string k, string v)[] style)
+        {
+            var n = Node(id, style);
+            n.Kind = "text";
+            return n;
+        }
+
+        /// <summary>The -unity-text-align that applies to the lowered element in a layer: the layer's own, else base's.</summary>
+        static string EffectiveTextAlign(IrNode el, string layer)
+        {
+            string Of(string name) => el.Style.TryGetValue(name, out var l)
+                ? StyleMapper.Map(l, B(el), true, name == "base").Where(d => d.Property == "-unity-text-align").Select(d => d.Value).FirstOrDefault()
+                : null;
+            return (layer == "base" ? null : Of(layer)) ?? Of("base");
+        }
+
+        static IrNode LowerText(IrNode text, bool shadowed)
+        {
+            if (shadowed) text.Shadow = Shadow(0, 4, 0, 0);
+            var r = Lowering.Apply(WithChildren(Flex("row", "row"), text)).Children[0];
+            if (!shadowed) return r;
+            Assert.AreEqual(text.Id + "__shadowhost", r.Id);
+            return r.Children[1];
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void TextAlign_AvatarWithCentredInitials_IsMiddleCenter_WithAndWithoutShadow(bool shadowed)
+        {
+            var avatar = Text("avatar", ("display", "flex"), ("align-items", "center"), ("justify-content", "center"), ("width", "40px"), ("height", "40px"));
+            Assert.AreEqual("middle-center", EffectiveTextAlign(LowerText(avatar, shadowed), "base"));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void TextAlign_PillWithTextAlignCenter_IsMiddleCenter_WithAndWithoutShadow(bool shadowed)
+        {
+            var pill = Text("pill", ("display", "flex"), ("align-items", "center"), ("text-align", "center"), ("height", "28px"));
+            Assert.AreEqual("middle-center", EffectiveTextAlign(LowerText(pill, shadowed), "base"));
+        }
+
+        [Test]
+        public void TextAlign_ShadowedAndPlainFlexText_MapIdentically()
+        {
+            IrNode Make(string id) => Text(id, ("display", "flex"), ("align-items", "flex-end"), ("justify-content", "space-between"), ("text-align", "right"));
+            var plain = LowerText(Make("a"), false);
+            var shadowed = LowerText(Make("b"), true);
+            Assert.AreEqual(EffectiveTextAlign(plain, "base"), EffectiveTextAlign(shadowed, "base"));
+            Assert.IsNotNull(EffectiveTextAlign(plain, "base"));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void TextAlign_ShadowedTextStateRoot_IsMiddleCenterInTheStateThatShowsIt(bool shadowed)
+        {
+            var toast = Text("toast", ("display", "none"), ("align-items", "center"), ("justify-content", "center"));
+            toast.Style["state:saved"] = Layer(("display", "flex"));
+            var el = LowerText(toast, shadowed);
+            Assert.AreEqual("middle-center", EffectiveTextAlign(el, "state:saved"));
+        }
+
+        [Test]
+        public void Shadow_BlockText_KeepsNoDisplay_AndPlainTextAlign()
+        {
+            var label = Text("label", ("text-align", "center"));
+            var el = LowerText(label, true);
+            Assert.IsFalse(B(el).ContainsKey("display"));
+            Assert.AreEqual("upper-center", EffectiveTextAlign(el, "base"));
+        }
+
+        // ---- fix round 4: absolutely positioned inline-level children are blockified (I-B) ---------------------
+
+        [TestCase("inline-flex", "flex")]
+        [TestCase("inline-block", null)]
+        [TestCase("inline", null)]
+        public void Display_AbsoluteInlineLevelChildOfBlockContainer_IsBlockified(string display, string expected)
+        {
+            var badge = WithChildren(Node("badge", ("position", "absolute"), ("display", display), ("top", "0"), ("right", "0")), Node("count"), Node("icon"));
+            var card = WithChildren(Node("card", ("position", "relative")), Node("title"), badge);
+            var r = Lowering.Apply(WithChildren(Node("screen"), card)).Children[0];
+            var b = r.Children.Single(c => c.Id == "badge");
+            if (expected == null) Assert.IsFalse(B(b).ContainsKey("display"));
+            else Assert.AreEqual(expected, B(b)["display"]);
+            Assert.AreEqual(expected == "flex" ? "row" : "column", B(b)["flex-direction"]);
+            Assert.AreEqual("0", B(b)["top"]);
+            Assert.IsFalse(B(b).ContainsKey("flex-shrink"), "an absolute child is not a block child");
+            Assert.DoesNotThrow(() => StyleMapper.Map(B(b), B(b), false, true));
+        }
+
+        [Test]
+        public void Display_AbsoluteInlineBlockDot_WithoutChildren_IsLowered()
+        {
+            var dot = Node("dot", ("position", "absolute"), ("display", "inline-block"), ("width", "8px"), ("height", "8px"));
+            var r = Lowering.Apply(WithChildren(Node("screen"), WithChildren(Node("card", ("position", "relative")), Node("title"), dot))).Children[0];
+            Assert.IsFalse(B(r.Children.Single(c => c.Id == "dot")).ContainsKey("display"));
+        }
+
+        // ---- fix round 4: CSS stacking order among siblings (I-C) --------------------------------------------
+
+        [Test]
+        public void PaintOrder_AbsoluteAfterRelativeWithPositiveZ_PaintsBelowIt()
+        {
+            var r = Lowering.Apply(WithChildren(Node("p"), Node("content", ("position", "relative"), ("z-index", "1")), Node("glow", ("position", "absolute"))));
+            CollectionAssert.AreEqual(new[] { "glow", "content" }, Ids(r));
+        }
+
+        [Test]
+        public void PaintOrder_ZeroAbsoluteAfterRelativeWithPositiveZ_GoesBetweenStaticAndRelative()
+        {
+            var r = Lowering.Apply(WithChildren(Node("p"), Node("s"), Node("content", ("position", "relative"), ("z-index", "1")), Node("glow", ("position", "absolute"), ("z-index", "0"))));
+            CollectionAssert.AreEqual(new[] { "s", "glow", "content" }, Ids(r));
+        }
+
+        [Test]
+        public void PaintOrder_ShadowedRelativeContentWithPositiveZ_StaysAboveALaterAbsolute()
+        {
+            var content = Node("content", ("position", "relative"), ("z-index", "1"));
+            content.Shadow = Shadow(0, 8, 0, 0);
+            var r = Lowering.Apply(WithChildren(Node("p"), content, Node("glow", ("position", "absolute"))));
+            CollectionAssert.AreEqual(new[] { "glow", "content__shadowhost" }, Ids(r));
+        }
+
+        [Test]
+        public void PaintOrder_FullStackingOrder_AbsolutesInterleaveWithInFlowLevels()
+        {
+            var r = Lowering.Apply(WithChildren(Node("p"),
+                Node("a1", ("position", "absolute"), ("z-index", "2")),
+                Node("s1"),
+                Node("a2", ("position", "absolute"), ("z-index", "-1")),
+                Node("r1", ("position", "relative")),
+                Node("a3", ("position", "absolute")),
+                Node("r2", ("position", "relative"), ("z-index", "1")),
+                Node("a4", ("position", "absolute"), ("z-index", "1")),
+                Node("a5", ("position", "absolute"), ("z-index", "-3"))));
+            // CSS: z<0 by z (a5, a2); in-flow non-positioned (s1); z auto/0 in tree order (r1, a3); z>0 by z then tree order (r2, a4, a1)
+            CollectionAssert.AreEqual(new[] { "a5", "a2", "s1", "r1", "a3", "r2", "a4", "a1" }, Ids(r));
+        }
+
+        [Test]
+        public void PaintOrder_RelativeAutoBeforeStatic_IsLeftInLayoutOrder()
+        {
+            // CSS paints s below r; only visible where they overlap, which lint checks from the captured boxes
+            var r = Lowering.Apply(WithChildren(Node("p"), Node("r", ("position", "relative")), Node("s")));
+            CollectionAssert.AreEqual(new[] { "r", "s" }, Ids(r));
+        }
+
+        [Test]
+        public void PaintOrder_InFlowPositiveZBeforeStatic_Throws_NamingBoth()
+        {
+            var e = Assert.Throws<IrFormatException>(() => Lowering.Apply(WithChildren(Node("p"), Node("content", ("position", "relative"), ("z-index", "1")), Node("bg"))));
+            StringAssert.Contains("'content'", e.Message);
+            StringAssert.Contains("'bg'", e.Message);
+        }
+
+        [Test]
+        public void PaintOrder_StaticFlexItemWithZIndex_StacksLikeRelative()
+        {
+            var r = Lowering.Apply(WithChildren(Flex("p", "row"),
+                Node("item", ("z-index", "1")),
+                Node("deco", ("position", "absolute"))));
+            CollectionAssert.AreEqual(new[] { "deco", "item" }, Ids(r));
+            Assert.IsFalse(B(r.Children[1]).ContainsKey("z-index"));
+        }
+
+        [Test]
+        public void PaintOrder_StaticFlexItemsWithZIndexInLayoutOrder_AreAccepted()
+        {
+            var r = Lowering.Apply(WithChildren(Flex("p", "row"), Node("a"), Node("b", ("z-index", "1")), Node("c", ("z-index", "2"))));
+            CollectionAssert.AreEqual(new[] { "a", "b", "c" }, Ids(r));
+        }
+
+        [Test]
+        public void PaintOrder_StaticFlexItemZIndexNeedingAnotherLayoutOrder_Throws_NamingBoth()
+        {
+            var e = Assert.Throws<IrFormatException>(() => Lowering.Apply(WithChildren(Flex("p", "row"), Node("front", ("z-index", "2")), Node("back", ("z-index", "1")))));
+            StringAssert.Contains("'front'", e.Message);
+            StringAssert.Contains("'back'", e.Message);
+        }
+
+        [Test]
+        public void PaintOrder_StaticFlexItemWithZeroZIndex_PaintsWithPositionedSiblings()
+        {
+            // z-index 0 makes a flex item stack at the positioned level: the earlier absolute stays below it
+            var r = Lowering.Apply(WithChildren(Flex("p", "row"), Node("a"), Node("bg", ("position", "absolute")), Node("item", ("z-index", "0"))));
+            CollectionAssert.AreEqual(new[] { "a", "bg", "item" }, Ids(r));
+        }
+
+        [Test]
+        public void PaintOrder_StaticBlockChildWithZIndex_Throws_NamingIt()
+        {
+            var e = Assert.Throws<IrFormatException>(() => Lowering.Apply(WithChildren(Node("p"), Node("a"), Node("lifted", ("z-index", "2")))));
+            StringAssert.Contains("'lifted'", e.Message);
         }
 
         // ---- clickable, sample -----------------------------------------------------------------------------
