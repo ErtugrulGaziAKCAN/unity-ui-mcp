@@ -64,13 +64,15 @@ namespace DesignUi.Editor.Tests
         string Export(IrScreen ir, bool textStyles = false)
         {
             var dir = TempDir();
-            WriteIr(dir, ir);
             Directory.CreateDirectory(Path.Combine(dir, "assets"));
             var tex = new Texture2D(8, 8, TextureFormat.RGBA32, false);
             var pixels = Enumerable.Repeat(new Color32(0, 0, 0, 128), 64).ToArray();
             tex.SetPixels32(pixels);
-            File.WriteAllBytes(Path.Combine(dir, ShadowFile), tex.EncodeToPNG());
+            var png = tex.EncodeToPNG();
+            File.WriteAllBytes(Path.Combine(dir, ShadowFile), png);
             UnityEngine.Object.DestroyImmediate(tex);
+            SetHash(ir, ShadowFile, png);
+            WriteIr(dir, ir);
             if (textStyles)
                 File.WriteAllText(Path.Combine(dir, KitTextStyles.FileName), "{ \"label\": { \"fontSize\": 16.515625, \"lineHeight\": 20, \"weight\": 400 } }");
             return dir;

@@ -100,5 +100,23 @@ namespace DesignUi.Editor.Tests
                 .With("bp:narrow", ("opacity", "0.9"));
             return Screen(root, screenId);
         }
+
+        /// <summary>Every asset of a node tree: its image, background and shadow.</summary>
+        public static IEnumerable<IrAsset> Assets(IrNode node)
+        {
+            if (node.Asset != null) yield return node.Asset;
+            if (node.Background != null) yield return node.Background;
+            if (node.Shadow != null) yield return node.Shadow;
+            foreach (var child in node.Children)
+                foreach (var a in Assets(child)) yield return a;
+        }
+
+        /// <summary>Gives every asset that points at <paramref name="file"/> the SHA-256 of <paramref name="bytes"/>, as the exporter records it.</summary>
+        public static void SetHash(IrScreen ir, string file, byte[] bytes)
+        {
+            string hex;
+            using (var sha = System.Security.Cryptography.SHA256.Create()) hex = string.Concat(sha.ComputeHash(bytes).Select(b => b.ToString("x2")));
+            foreach (var a in Assets(ir.Root)) if (a.File == file) a.Sha256 = hex;
+        }
     }
 }

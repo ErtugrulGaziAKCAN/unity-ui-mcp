@@ -20,6 +20,10 @@ namespace DesignUi.Editor
         /// Reported only; nothing is deleted.
         /// </summary>
         public IReadOnlyList<string> Orphans = new string[0];
+        /// <summary>
+        /// Shared assets (<c>_assets/</c>) that no compiled screen uses any more, by file name. Reported only; nothing is deleted.
+        /// </summary>
+        public IReadOnlyList<string> StaleAssets = new string[0];
     }
 
     /// <summary>
@@ -54,7 +58,6 @@ namespace DesignUi.Editor
         public const string SharedManifestFileName = ".design-ui-shared.json";
         public const string TokensFileName = "DesignTokens.uss";
         public const string GitAttributesFileName = ".gitattributes";
-        public const string AssetsFolder = "assets";
 
         /// <summary>
         /// Keeps generated text LF in git on every platform, so the recorded hashes match a fresh checkout; binary assets
@@ -89,6 +92,7 @@ namespace DesignUi.Editor
             var outputs = new SortedDictionary<string, byte[]>(StringComparer.Ordinal);
             IrScreen ir;
             CompiledScreen compiled;
+            AssetPlan plan;
             string screenDir, folderName;
             try
             {
@@ -104,12 +108,10 @@ namespace DesignUi.Editor
                                 "); export it with the design or set the profile's kit folder");
                 var textStyles = stylesPath != null ? KitTextStyles.Load(stylesPath) : null;
 
-                // default asset step: the asset importer, its imports queued in one asset-editing batch
-                var importAssets = hooks?.AssetPath == null;
-                var assetPath = hooks?.AssetPath ?? (a => DesignAssetImporter.Import(a, exportDir, outFolder, profile));
-                if (importAssets) AssetDatabase.StartAssetEditing();
-                try { compiled = ScreenBuilder.Build(ir, assetPath, hooks?.FontDefinition, textStyles); }
-                finally { if (importAssets) AssetDatabase.StopAssetEditing(); }
+                // default asset step: the build only plans the assets (paths, checks); they are copied and imported in the write batch
+                plan = hooks?.AssetPath == null ? new AssetPlan(exportDir, outFolder, profile) : null;
+                var assetPath = hooks?.AssetPath ?? plan.Add;
+                compiled = ScreenBuilder.Build(ir, assetPath, hooks?.FontDefinition, textStyles);
 
                 Add(outputs, folderName + ".uxml", UxmlWriter.Write(compiled, folderName + ".uss"));
                 Add(outputs, folderName + ".uss", UssWriter.Write(compiled));
@@ -212,12 +214,13 @@ namespace DesignUi.Editor
             var written = new List<string>();
             var folders = new List<string>();
             string failure = null;
-            var batch = writes.Any(w => ProjectPath(w.Key) != null) || stale.Any(p => ProjectPath(p) != null);
+            var batch = writes.Any(w => ProjectPath(w.Key) != null) || stale.Any(p => ProjectPath(p) != null) || plan != null && plan.HasProjectAssets;
             if (batch) AssetDatabase.StartAssetEditing();
             try
             {
                 try
                 {
+                    plan?.Apply(folderName); // shared assets first: the style sheets imported later resolve them
                     foreach (var w in writes)
                     {
                         EnsureFolder(Path.GetDirectoryName(w.Key)?.Replace('\\', '/'), folders);
@@ -239,7 +242,7 @@ namespace DesignUi.Editor
                 if (batch) AssetDatabase.StopAssetEditing(); // imports everything queued in this batch
             }
             if (failure != null) return new CompileResult { Ok = false, Written = written, Errors = new[] { failure } };
-            return new CompileResult { Ok = true, Written = written, Orphans = FindOrphans(outFolder, folderName, profile.designRoot) };
+            return new CompileResult { Ok = true, Written = written, Orphans = FindOrphans(outFolder, folderName, profile.designRoot), StaleAssets = plan?.StaleAssets ?? new string[0] };
         }
 
         public static string ViewFileName(string className) => className + "View.g.cs";
@@ -264,17 +267,6 @@ namespace DesignUi.Editor
             if (clash != null && (clash != name || !outputs[clash].SequenceEqual(bytes)))
                 throw new IrFormatException("two generated files would be '" + name + "' (" + clash + "); rename the screen or the repeat");
             outputs[name] = bytes;
-        }
-
-        /// <summary>Built-in asset step until an asset importer is wired: the asset's bytes become an output next to the screen.</summary>
-        static string CopyAsset(IrAsset asset, string exportDir, IDictionary<string, byte[]> outputs)
-        {
-            if (string.IsNullOrEmpty(asset.File)) throw new IrFormatException("an asset has no file");
-            var source = Path.Combine(exportDir, asset.File);
-            if (!File.Exists(source)) throw new IrFormatException("asset file '" + asset.File + "' is missing in the export folder");
-            var relative = AssetsFolder + "/" + Path.GetFileName(asset.File);
-            Add(outputs, relative, File.ReadAllBytes(source));
-            return relative;
         }
 
         /// <summary>
