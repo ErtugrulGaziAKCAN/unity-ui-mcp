@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace DesignUi.Editor
 {
@@ -43,6 +44,8 @@ namespace DesignUi.Editor
         [JsonProperty("en")] public string En;
         [JsonProperty("args")] public string[] Args = new string[0];
         [JsonProperty("rich")] public bool Rich;
+        /// <summary>Name of the matched kit text style (text-styles.json), or null; its font size is written exactly.</summary>
+        [JsonProperty("style")] public string Style;
     }
 
     public class IrAsset
@@ -87,7 +90,8 @@ namespace DesignUi.Editor
         [JsonProperty("bind")] public string Bind;
         [JsonProperty("action")] public string Action;
         [JsonProperty("repeat")] public IrRepeat Repeat;
-        [JsonProperty("anims")] public object[] Anims = new object[0];
+        /// <summary>Transitions and keyframe animations with their triggers, kept as raw JSON until the animation player types them.</summary>
+        [JsonProperty("anims")] public JArray Anims = new JArray();
         [JsonProperty("children")] public IrNode[] Children = new IrNode[0];
 
         /// <summary>

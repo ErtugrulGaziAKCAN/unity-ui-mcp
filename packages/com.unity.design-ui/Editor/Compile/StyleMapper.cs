@@ -60,6 +60,9 @@ namespace DesignUi.Editor
             { "white-space", new[] { "white-space-collapse", "text-wrap-mode" } },
         };
 
+        /// <summary>Whether a USS property is a shorthand that the mapper writes before its longhands.</summary>
+        internal static bool IsShorthand(string property) => Shorthands.ContainsKey(property);
+
         /// <summary>Maps a base layer. The layer is its own cascade and the node is treated as a text element.</summary>
         public static IReadOnlyList<UssDeclaration> Map(IReadOnlyDictionary<string, string> css) => Map(css, css, true, true);
 

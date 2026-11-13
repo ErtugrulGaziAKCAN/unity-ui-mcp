@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json.Linq;
 
 namespace DesignUi.Editor
 {
@@ -634,7 +635,7 @@ namespace DesignUi.Editor
                 External = n.External,
                 Classes = (string[])n.Classes?.Clone() ?? new string[0],
                 Style = n.Style?.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)) ?? new Dictionary<string, Dictionary<string, string>>(),
-                Text = n.Text == null ? null : new IrText { Key = n.Text.Key, Tr = n.Text.Tr, En = n.Text.En, Args = (string[])n.Text.Args?.Clone(), Rich = n.Text.Rich },
+                Text = n.Text == null ? null : new IrText { Key = n.Text.Key, Tr = n.Text.Tr, En = n.Text.En, Args = (string[])n.Text.Args?.Clone(), Rich = n.Text.Rich, Style = n.Text.Style },
                 Asset = CloneAsset(n.Asset),
                 Background = CloneAsset(n.Background),
                 Shadow = n.Shadow == null ? null : new IrShadow
@@ -646,7 +647,7 @@ namespace DesignUi.Editor
                 Bind = n.Bind,
                 Action = n.Action,
                 Repeat = n.Repeat == null ? null : new IrRepeat { Name = n.Repeat.Name, Mode = n.Repeat.Mode },
-                Anims = (object[])n.Anims?.Clone() ?? new object[0],
+                Anims = (JArray)n.Anims?.DeepClone() ?? new JArray(),
                 Children = (n.Children ?? new IrNode[0]).Select(Clone).ToArray(),
                 Clickable = n.Clickable,
                 PickingIgnore = n.PickingIgnore,

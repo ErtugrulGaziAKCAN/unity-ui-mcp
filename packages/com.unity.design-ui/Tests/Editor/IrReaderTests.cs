@@ -125,5 +125,37 @@ namespace DesignUi.Editor.Tests
             }
             finally { File.Delete(path); }
         }
+
+        const string TypedAnims = "[{\"kind\":\"transition\",\"property\":\"opacity\",\"duration\":200,\"delay\":0,\"timing\":\"ease\",\"trigger\":\"pseudo:hover\"}," +
+                                  "{\"kind\":\"keyframes\",\"name\":\"spin\",\"keyframes\":[{\"offset\":0,\"values\":{\"rotate\":\"0deg\"}},{\"offset\":1,\"values\":{\"rotate\":\"360deg\"}}],\"iterations\":\"infinite\",\"trigger\":\"show\"}]";
+
+        [Test]
+        public void Read_TextStyleAndTypedAnims_AreAccepted()
+        {
+            var path = WriteTemp("{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"anims\":" + TypedAnims +
+                                 ",\"text\":{\"key\":\"a.b\",\"tr\":\"x\",\"en\":\"x\",\"args\":[],\"rich\":false,\"style\":\"label-bold\"}}}");
+            try
+            {
+                var root = IrReader.Read(path).Root;
+                Assert.AreEqual("label-bold", root.Text.Style);
+                Assert.AreEqual(2, root.Anims.Count);
+                Assert.AreEqual("pseudo:hover", (string)root.Anims[0]["trigger"]);
+                Assert.AreEqual("360deg", (string)root.Anims[1]["keyframes"][1]["values"]["rotate"]);
+
+                var lowered = Lowering.Apply(root);
+                Assert.IsTrue(Newtonsoft.Json.Linq.JToken.DeepEquals(root.Anims, lowered.Anims), "anims pass through lowering untouched");
+                Assert.AreNotSame(root.Anims, lowered.Anims, "deep copy");
+                Assert.AreEqual("label-bold", lowered.Text.Style);
+            }
+            finally { File.Delete(path); }
+        }
+
+        [Test]
+        public void Read_SampleWithoutStyleOrAnims_Defaults()
+        {
+            var root = IrReader.Read(SamplePath()).Root;
+            Assert.IsNull(root.Children[0].Text.Style);
+            Assert.AreEqual(0, root.Anims.Count);
+        }
     }
 }
