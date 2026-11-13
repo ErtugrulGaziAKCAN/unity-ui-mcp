@@ -43,7 +43,8 @@ export { repeatSamples };
  * object per item; `$classes` maps template element ids to the is-* classes that item shows.
  */
 export interface SampleData { [name: string]: string | SampleData[] | Record<string, string[]> }
-export interface IrBuild { ir: IrScreen; fixtures: SampleData; timings: Record<string, number> }
+/** `elements`: IR id → index of its DOM element in document order (`[body, ...body.querySelectorAll("*")]`), for captures. */
+export interface IrBuild { ir: IrScreen; fixtures: SampleData; timings: Record<string, number>; elements: Record<string, number> }
 
 interface Plan {
   i: number; kind: NodeKind; external: boolean; repeat: IrNode["repeat"]; children: Plan[];
@@ -334,5 +335,7 @@ export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, o
   if (errors.length) throw new Error(`extracted IR does not match the IR schema: ${errors.join("; ")}`);
   lap("finish");
   timings.total = Math.round((performance.now() - t0) * 10) / 10;
-  return { ir, fixtures, timings };
+  const elements: Record<string, number> = {};
+  for (const p of plans) elements[p.id] = p.i;
+  return { ir, fixtures, timings, elements };
 }

@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}
+.screen{display:flex;flex-direction:column;align-items:flex-start;width:2560px;height:1440px;font-family:"Inter UI";font-size:16.515625px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+.card{display:flex;width:300px;height:100px;flex-shrink:0;background-color:#123c47;transition:background-color 400ms linear}
+.card:hover{background-color:#16c2d5}
+.dot{width:20px;height:20px;flex-shrink:0;background-color:#000000;transition:background-color 100ms linear}
+.card:hover .dot{background-color:#ffffff}
+.spin{display:none;width:20px;height:20px;flex-shrink:0;background-color:#ffffff;animation:fade 1000ms linear infinite}
+.state-busy .spin{display:block}
+@keyframes fade{from{opacity:1}to{opacity:0.2}}
+</style></head><body><div class="screen" data-u-screen="clock">
+<div class="card" data-u-id="card"><div class="dot" data-u-id="dot"></div></div>
+<div class="spin" data-u-id="spin"></div>
+</div></body></html>
