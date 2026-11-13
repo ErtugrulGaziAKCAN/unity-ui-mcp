@@ -31,7 +31,7 @@ import { annotateTextStyles, expandShorthands, rendersText, type DomSnapshot } f
 import { isRichInline, isTextElement, runPlans, type RunPlan } from "../lint/text-runs.js";
 import { readTextStyles } from "../lint/text-styles.js";
 import { animsOf, inheritedAnims, mergeAnims } from "./anims.js";
-import { backgroundUrl, collectPageData, fileSha, hasPresentational, measureLayerBoxes, presentationalStyles, readImageUrl, svgSize, writeAsset } from "./assets.js";
+import { backgroundUrl, collectPageData, fileSha, hasPresentational, measureLayerBoxes, pinViewBox, presentationalStyles, readImageUrl, svgSize, writeAsset } from "./assets.js";
 import { hasEffects, nodeEffects } from "./effects.js";
 import { classifyKind, isScroll } from "./kind.js";
 import { dimsOf } from "./layers.js";
@@ -202,20 +202,22 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
   const urlAsset = (abs: string): IrAsset => {
     const { bytes, ext } = readImageUrl(abs, designDir, kit);
     const size = page.bgs.get(abs) ?? { w: 1, h: 1 };
-    return writeAsset(outDir, bytes, ext, ext === "svg" ? "svg" : "image", size.w, size.h);
+    return ext === "svg" ? writeAsset(outDir, Buffer.from(pinViewBox(bytes.toString("utf8")), "utf8"), ext, "svg", size.w, size.h)
+      : writeAsset(outDir, bytes, ext, "image", size.w, size.h);
   };
   const assetOf = (p: Plan): IrNode["asset"] => {
     const e = el(p.i);
     if (p.kind === "vector") {
       const xml = page.svgs.get(p.i)!;
       const sz = svgSize(xml, e.size);
-      return writeAsset(outDir, Buffer.from(xml, "utf8"), "svg", "svg", sz.w, sz.h, e.svgPaint === "current");
+      return writeAsset(outDir, Buffer.from(pinViewBox(xml), "utf8"), "svg", "svg", sz.w, sz.h, e.svgPaint === "current");
     }
     if (p.kind !== "image") return null;
     if (e.tag !== "img") { const u = backgroundUrl(e.computed["background-image"]); if (!u) throw new Error(`${e.path}: image without a source`); return urlAsset(u); }
     const img = page.imgs.get(p.i)!;
     const { bytes, ext } = readImageUrl(img.src, designDir, kit);
-    return writeAsset(outDir, bytes, ext, ext === "svg" ? "svg" : "image", img.w, img.h);
+    return ext === "svg" ? writeAsset(outDir, Buffer.from(pinViewBox(bytes.toString("utf8")), "utf8"), ext, "svg", img.w, img.h)
+      : writeAsset(outDir, bytes, ext, "image", img.w, img.h);
   };
   const nodeAnims = new Map<number, IrAnim[]>();
   let bakeMs = 0;
@@ -267,6 +269,10 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     return {
       id: p.id, kind: p.kind, external: p.external, classes, style: toStyleLayers(layers), text, attrTexts: attrTexts(e),
       initial: control ? { disabled: e.attrs.disabled !== undefined, checked: toggle && e.attrs.checked !== undefined } : null,
+      ...(p.kind === "input" ? { field: {
+        password: e.tag === "input" && (e.attrs.type ?? "").toLowerCase() === "password", multiline: e.tag === "textarea",
+        placeholderColor: e.pseudo.placeholder?.color ? normalizeColor(e.pseudo.placeholder.color) : null,
+      } } : {}),
       asset: assetOf(p), ...fx,
       bind: e.attrs["data-u-bind"] ?? null, action: e.attrs["data-u-action"] ?? null, repeat: p.repeat, anims,
       children: await sequential(p.children, node),

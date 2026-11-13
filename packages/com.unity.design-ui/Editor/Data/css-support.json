@@ -1510,6 +1510,16 @@
       ],
       "valueFix": "Use text-wrap-mode: wrap or nowrap."
     },
+    "overflow-wrap": {
+      "handling": "dropped",
+      "keywords": [
+        "break-word",
+        "anywhere"
+      ],
+      "valueRule": "U-CSS-023",
+      "valueFix": "Leave overflow-wrap out, or use break-word: UI Toolkit wraps a word longer than its line at a character.",
+      "note": "A textarea's browser default. UI Toolkit wraps a word that does not fit its line at a character, as break-word and anywhere do, so the compiler writes nothing."
+    },
     "top": {
       "handling": "direct",
       "keywords": [

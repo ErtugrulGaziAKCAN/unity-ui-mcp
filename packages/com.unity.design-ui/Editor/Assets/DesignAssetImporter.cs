@@ -115,6 +115,8 @@ namespace DesignUi.Editor
         /// <summary>
         /// SVG as a UI Toolkit VectorImage: gradients are baked into a 64-step ramp, edges antialiased by the shader.
         /// A currentColor icon is exported white, so <c>-unity-background-image-tint-color</c> multiplies it to the node's colour.
+        /// The importer sizes a VectorImage by its shapes' bounds (PreserveViewport does not apply to VectorImage), so the
+        /// exporter pins every svg's viewBox with a transparent rect.
         /// </summary>
         static void ConfigureSvg(SVGImporter s)
         {

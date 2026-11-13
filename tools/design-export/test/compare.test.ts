@@ -9,6 +9,7 @@ import type { CaptureJob } from "../src/capture/matrix.js";
 import { deltaE2000, deltaE2000Lab, isTransparentColor } from "../src/compare/color.js";
 import { compareCapture, compareScreen, readThresholds, summarizeIssues, WHOLE, type CaptureContext, type Thresholds } from "../src/compare/compare.js";
 import { captureContext, indexIr } from "../src/compare/context.js";
+import { flatAt, nearCurve, ringPoints, type RingPoint } from "../src/compare/samples.js";
 import { decodePngAsync, encodePng } from "../src/compare/png.js";
 import { writeReport, writeVerdict } from "../src/compare/report.js";
 import { blockSsimMap, maskRects, regionSsim, ssimMasked, unionRect } from "../src/compare/ssim.js";
@@ -491,7 +492,8 @@ describe("IR context", () => {
     root: {
       id: "root", kind: "container", style: { base: { "background-color": "rgb(10, 10, 10)" } }, children: [
         {
-          id: "card", kind: "container", style: { base: { "background-color": "rgba(0, 0, 0, 0)" }, "state:busy": { "background-color": "#334455" } },
+          id: "card", kind: "container", style: { base: { "background-color": "rgba(0, 0, 0, 0)", "border-top-left-radius": "16px", "border-bottom-right-radius": "8px" },
+            "state:busy": { "background-color": "#334455", "border-top-left-radius": "0px" } },
           shadow: { offset: { x: -4, y: -2, w: 8, h: 10 } },
           shadowLayers: { hover: { offset: { x: -10, y: -6, w: 20, h: 24 } }, "state:busy": null },
           children: [{ id: "btn", kind: "button", style: { base: {} }, background: { kind: "svg" }, children: [] }],
@@ -514,6 +516,53 @@ describe("IR context", () => {
     expect(hover.shadows).toEqual({ card: { x: 95, y: 97, w: 210, h: 112 } });
     // a layer can remove the shadow
     expect(captureContext(ix, { state: "busy", viewport: [1280, 720], apply: [] }, boxes).shadows).toEqual({});
+  });
+
+  it("knows each element's corner radii in device px in the capture", () => {
+    expect(captureContext(ix, { state: "default", viewport: [1280, 720], apply: [] }, boxes).radii).toEqual({ card: [8, 0, 4, 0] });
+    expect(captureContext(ix, { state: "busy", viewport: [1280, 720], apply: [] }, boxes).radii).toEqual({ card: [0, 0, 4, 0] });
+  });
+
+  it("keeps ring samples off a rounded corner's anti-aliased curve", () => {
+    const pill = { x: 10, y: 10, w: 110, h: 56 };
+    const plain = ringPoints(pill, pill, undefined, ["edge", "corner"]);
+    const round = ringPoints(pill, pill, undefined, ["edge", "corner"], [28, 28, 28, 28]);
+    // the right edge at 25 %: 3 px in sits on the curve (3.75 px in at 14 px from the end), so it moves 2 px past it
+    const at = (pts: RingPoint[], where: string) => pts.find((p) => p.where === where)!;
+    expect(at(plain, "inside the right edge at 25%").gx).toBe(119 - 3);
+    expect(at(round, "inside the right edge at 25%").gx).toBe(119 - 6);
+    // the top edge at 25 % (27.5 px from the end) is past the curve: unchanged
+    expect(at(round, "inside the top edge at 25%").gy).toBe(at(plain, "inside the top edge at 25%").gy);
+    // on the diagonal the curve of radius 28 crosses 8.2 px in: the 7 px corner samples go, the others stay
+    expect(round.filter((p) => p.kind === "corner").map((p) => p.where)).not.toContain("top-left corner, 7 px in");
+    expect(round.filter((p) => p.kind === "corner").map((p) => p.where)).toContain("top-left corner, 2 px in");
+    expect(round.filter((p) => p.kind === "corner").map((p) => p.where)).toContain("top-left corner, 11 px in");
+    // a square corner keeps every sample
+    expect(plain.filter((p) => p.where.startsWith("top-left corner")).length).toBe(5);
+  });
+
+  it("tells the colour grid which points sit on a rounded corner's curve, outer or inside a border", () => {
+    const radio = { x: 64, y: 284, w: 32, h: 32 };
+    // a checked radio: 10 px border, radius 16, so the inner dot has radius 6 around (80, 300)
+    expect(nearCurve(radio, [10, 10, 10, 10], [16, 16, 16, 16], 79, 294)).toBe(true);
+    expect(nearCurve(radio, [10, 10, 10, 10], [16, 16, 16, 16], 79, 299)).toBe(false);
+    expect(nearCurve(radio, [10, 10, 10, 10], [16, 16, 16, 16], 70, 290)).toBe(false);
+    // the outer curve; square corners have none
+    expect(nearCurve(radio, undefined, [16, 16, 16, 16], 68, 289)).toBe(true);
+    expect(nearCurve(radio, undefined, undefined, 64, 284)).toBe(false);
+    expect(nearCurve(radio, undefined, [0, 0, 0, 0], 64, 284)).toBe(false);
+  });
+
+  it("samples a background colour only where the design is flat", () => {
+    const img = { w: 20, h: 10, data: new Uint8Array(20 * 10 * 4) } as Rgba;
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 20; x++) {
+      const o = (y * 20 + x) * 4, dark = x === 10;
+      img.data.set(dark ? [6, 23, 28, 255] : [242, 181, 68, 255], o);
+    }
+    expect(flatAt(img, 4, 5)).toBe(true);
+    expect(flatAt(img, 7, 5)).toBe(true); // 3 px from the line: the 5×5 window stops short of it
+    expect(flatAt(img, 8, 5)).toBe(false);
+    expect(flatAt(img, 12, 5)).toBe(false);
   });
 
   it("knows which elements paint a background in the capture", () => {

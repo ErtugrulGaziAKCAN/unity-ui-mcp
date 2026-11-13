@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0}
+.screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+p{margin:0}
+.row{display:flex;flex-direction:row;align-items:center;flex-shrink:0;margin-bottom:8px}
+.chip{display:flex;flex-shrink:0;padding:0 10px;border:1px solid #2b6573;margin-right:4px}
+.fixed{width:100px;flex-shrink:0}
+.boxed{width:100px;height:20px;flex-shrink:0;border:2px solid #2b6573;border-right-width:3px}
+.dot{width:20px;height:20px;flex-shrink:0;appearance:none;margin:0 4px 0 0;padding:0;border:none;background-color:#123c47}
+.dot:checked{background-color:#16c2d5}
+@keyframes slide{from{translate:-10px 0}to{translate:10px 0}}
+.late{display:none;flex-shrink:0;font-weight:700;font-size:24px;line-height:32px}
+.state-on .late{display:flex}
+.mover{width:20px;height:20px;flex-shrink:0;background-color:#f2b544;animation:slide 500ms ease 0ms 1 normal both}
+</style></head><body><div class="screen" data-u-screen="rules">
+<div class="row" data-u-id="row"><p class="chip" data-u-id="a" data-l10n="r.a" data-en="Squad">Kadro</p><p class="chip" data-u-id="b" data-l10n="r.b" data-en="Tactics">Taktik</p><p class="fixed" data-u-id="c" data-l10n="r.c" data-en="Fixed">Sabit</p><div class="boxed" data-u-id="d"></div></div>
+<div class="row" data-u-id="radios"><input type="radio" class="dot" name="pick" data-u-id="r1" checked><input type="radio" class="dot" name="pick" data-u-id="r2"></div>
+<div class="mover" data-u-id="mover"></div>
+<div class="row" data-u-id="late-row"><p class="late" data-u-state="on" data-u-id="late" data-l10n="r.late" data-en="Shown late">Sonradan görünen yazı</p></div>
+</div></body></html>

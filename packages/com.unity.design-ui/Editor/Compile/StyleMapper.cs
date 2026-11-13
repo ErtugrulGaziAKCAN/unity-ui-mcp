@@ -135,6 +135,8 @@ namespace DesignUi.Editor
                 if (key == "filter") value = FilterValue(value, spec);
                 support.ValidateValue(spec, value);
                 if (spec.MapValues.TryGetValue(value, out var mapped)) value = mapped;
+                // CSS translate with one value moves along x only; USS repeats a single value for y
+                if (key == "translate" && value != "none" && value.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Length == 1) value += " 0px";
 
                 switch (key)
                 {

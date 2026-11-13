@@ -116,14 +116,22 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void AttrTexts_PlaceholderOutsideAnInput_AndTextOnInputs_AreErrors()
+        public void AttrTexts_PlaceholderOutsideAnInput_AndTextOnImages_AreErrors_AnInputsTextIsItsValue()
         {
             var box = Node("box", "container");
             box.AttrTexts["placeholder"] = T("x");
             Assert.Throws<IrFormatException>(() => Build(Screen(Root(box))));
+            var image = Node("crest", "image");
+            image.Text = T("Ali");
+            Assert.Throws<IrFormatException>(() => Build(Screen(Root(image))), "an image draws no text");
+            // the exporter records an input's value attribute as its text: the field's value (a bound field's sample)
             var input = Node("search", "input");
             input.Text = T("Ali");
-            Assert.Throws<IrFormatException>(() => Build(Screen(Root(input))), "a field's value text keeps the error path");
+            CollectionAssert.Contains(Build(Screen(Root(input))).Find("search").Attributes, A("value", "Ali"));
+            // a text field form outside an input is an error
+            var label = Node("label", "text");
+            label.Field = new IrField { Password = true };
+            Assert.Throws<IrFormatException>(() => Build(Screen(Root(label))));
         }
 
         // ---- tintable vectors ------------------------------------------------------------------------------

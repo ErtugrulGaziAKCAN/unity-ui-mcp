@@ -329,6 +329,26 @@ export function svgSize(xml: string, fallback: Size | null): { w: number; h: num
   return { w: fallback?.w ?? 1, h: fallback?.h ?? 1 };
 }
 
+/**
+ * Pins an svg's viewBox with a transparent rect as its first shape: Unity's importer sizes a VectorImage by its shapes'
+ * bounds (its PreserveViewport does not apply to VectorImage), so without the pin an icon drawn with a margin inside its
+ * viewBox would be stretched over the whole element. The rect covers the viewBox (else width × height); an svg with
+ * neither is returned unchanged.
+ */
+export function pinViewBox(xml: string): string {
+  const open = /<svg\b[^>]*>/i.exec(xml);
+  if (!open || open[0].endsWith("/>")) return xml;
+  const attr = (n: string) => new RegExp(`\\s${n}="([^"]*)"`, "i").exec(open[0])?.[1];
+  const num = (v: string | undefined) => { const m = v && /^\s*(-?\d+(?:\.\d+)?)(px)?\s*$/.exec(v); return m ? Number(m[1]) : null; };
+  let box: number[] | null = null;
+  const vb = attr("viewBox")?.trim().split(/[\s,]+/).map(Number);
+  if (vb && vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0) box = vb;
+  else { const w = num(attr("width")), h = num(attr("height")); if (w && h) box = [0, 0, w, h]; }
+  if (!box) return xml;
+  const at = open.index + open[0].length;
+  return `${xml.slice(0, at)}<rect x="${box[0]}" y="${box[1]}" width="${box[2]}" height="${box[3]}" fill="#000000" fill-opacity="0"/>${xml.slice(at)}`;
+}
+
 /** First url(...) of a computed background-image. */
 export function backgroundUrl(computed: string | undefined): string | null {
   const m = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/i.exec(computed ?? "");

@@ -1029,6 +1029,7 @@ namespace DesignUi.Editor
                 AssetLayers = CanonicalMap(n.AssetLayers, n.Id, a => a?.Copy()),
                 AttrTexts = (n.AttrTexts ?? new Dictionary<string, IrText>()).ToDictionary(kv => kv.Key, kv => CloneText(kv.Value)),
                 Initial = n.Initial == null ? null : new IrInitial { Disabled = n.Initial.Disabled, Checked = n.Initial.Checked },
+                Field = n.Field == null ? null : new IrField { Password = n.Field.Password, Multiline = n.Field.Multiline, PlaceholderColor = n.Field.PlaceholderColor },
                 Bind = n.Bind,
                 Action = n.Action,
                 Repeat = n.Repeat == null ? null : new IrRepeat { Name = n.Repeat.Name, Mode = n.Repeat.Mode, Count = n.Repeat.Count },

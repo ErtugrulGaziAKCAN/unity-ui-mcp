@@ -81,6 +81,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-MRK-008": { when: "a variable inside localized text not marked as `<span data-u-arg=\"name\">` with one `{name}` in `data-en`", fix: "one `data-u-arg` span per `{name}` placeholder; `data-l10n-args` (optional) lists the same names" },
   "U-MRK-009": { when: "a keyed, bound, id'd or action inline element sharing a line with other text, tags or spaces, or changing font size or line height inside the line", fix: "its own block element (or a flex row of them); `data-u-arg` for a variable inside one text" },
   "U-MRK-010": { when: "a `data-u-repeat` container with other children, a sample whose structure differs from the template, or a mode other than list/inline", fix: "only the items in the container, samples with the template's elements, ids, keys and binds" },
+  "U-MRK-011": { when: "a `data-u-id` that gives a member the generated view class already has (`state`, `set-state`, `find`, `screen-root`, …)", fix: "another id, e.g. `state-label`" },
   "U-NET-001": { when: "any remote resource (fonts, stylesheets, images) except scripts from allowed origins", fix: "no remote resources; local files" },
   "U-NET-002": { when: "a local file or Claude Design blob that is missing", fix: "add the file, or map the blob in blobs.json" },
   "W-CSS-001": { when: "a transition on a layout property or `all` (warning)", fix: "transition transform, opacity or colours" },

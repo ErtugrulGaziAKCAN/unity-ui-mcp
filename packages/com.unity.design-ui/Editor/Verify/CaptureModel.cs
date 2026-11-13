@@ -42,6 +42,8 @@ namespace DesignUi.Editor
         public string PseudoElementId;
         /// <summary>Everything applied besides the state (the job's <c>apply</c>).</summary>
         public List<CaptureApply> Apply = new List<CaptureApply>();
+        /// <summary>Keyframe animations the golden shows frozen at their end frame (<see cref="FrozenFrames"/>).</summary>
+        public List<FrozenAnimation> Frozen = new List<FrozenAnimation>();
         public string OutDir;
         public string CaptureName;
         /// <summary>Filled by the capture: how it was made where that differs from the plain route (written to the meta file).</summary>
@@ -59,6 +61,8 @@ namespace DesignUi.Editor
         public List<CaptureApply> Apply = new List<CaptureApply>();
         /// <summary>An animation sample (the animation player is not available yet, so it is not captured).</summary>
         public bool Animation;
+        /// <summary>Static captures: the keyframe animations the golden had in effect, frozen at their end frame.</summary>
+        public List<FrozenAnimation> Frozen = new List<FrozenAnimation>();
 
         /// <summary>The jobs of a <c>matrix.json</c> in its order. Throws <see cref="IrFormatException"/> when it is not a capture matrix.</summary>
         public static List<CaptureJob> ReadMatrix(string matrixJsonPath)
@@ -85,6 +89,12 @@ namespace DesignUi.Editor
                     Viewport = new Vector2Int((int)vp[0], (int)vp[1]),
                     Animation = c["anim"] != null && c["anim"].Type != JTokenType.Null,
                 };
+                foreach (var f in (c["frozen"] as JArray) ?? new JArray())
+                {
+                    if (!(f is JArray pair) || pair.Count != 2 || pair[0].Type != JTokenType.String || pair[1].Type != JTokenType.String)
+                        throw new IrFormatException("'" + matrixJsonPath + "': capture '" + name + "' has a frozen entry that is not [element id, animation name]");
+                    job.Frozen.Add(new FrozenAnimation { ElementId = (string)pair[0], Name = (string)pair[1] });
+                }
                 foreach (var a in (c["apply"] as JArray) ?? new JArray())
                 {
                     var kind = (string)a["kind"];

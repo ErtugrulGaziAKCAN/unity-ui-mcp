@@ -106,6 +106,18 @@ namespace DesignUi.Editor.Tests
         // ---- incremental output (spec 14) ------------------------------------------------------------------
 
         [Test]
+        public void ScreenStrings_AreTheTextsAttributeTextsAndThePasswordMask()
+        {
+            var label = Node("label", "text");
+            label.Text = new IrText { Key = "k", Tr = "Kadro", En = "Squad" };
+            var secret = Node("secret", "input");
+            secret.AttrTexts["placeholder"] = new IrText { Key = "p", Tr = "Parola", En = "Password" };
+            secret.Field = new IrField { Password = true };
+            var strings = ScreenCompiler.ScreenStrings(Root(label, secret)).Where(x => x != null).ToList();
+            CollectionAssert.AreEquivalent(new[] { "Kadro", "Squad", "Parola", "Password", ScreenBuilder.PasswordMask.ToString() }, strings);
+        }
+
+        [Test]
         public void Compile_Twice_SecondWritesNothingAndFilesAreByteIdentical()
         {
             var export = ShowcaseExport();
@@ -732,6 +744,15 @@ namespace DesignUi.Editor.Tests
             check.Initial = new IrInitial { Checked = true };
             var search = Node("search", "input", ("height", "20px"));
             search.AttrTexts["placeholder"] = new IrText { Key = "t.find", Tr = "Ara", En = "Search" };
+            search.Field = new IrField { PlaceholderColor = "#8899aa" };
+            // an input's text is its value; the field form gives a password field and a multi-line text area
+            var manager = Node("manager", "input", ("height", "20px"));
+            manager.Text = new IrText { Tr = "Deniz Yılmaz" };
+            var secret = Node("secret", "input", ("height", "20px"));
+            secret.Text = new IrText { Tr = "parola12" };
+            secret.Field = new IrField { Password = true };
+            var notes = Node("notes", "input", ("height", "40px"));
+            notes.Field = new IrField { Multiline = true };
             var league = Node("league", "dropdown", ("height", "20px"));
             league.Text = new IrText { Key = "t.league", Tr = "Süper Lig", En = "Super League" };
             var tile = Node("tile", "container", ("height", "8px")).With("focus", ("opacity", "0.6"));
@@ -740,7 +761,7 @@ namespace DesignUi.Editor.Tests
             crest.AttrTexts["alt"] = new IrText { Key = "t.crest", Tr = "Kulüp arması", En = "Club crest" };
             var lifted = Node("lifted", "container", ("width", "8px"), ("height", "8px")).With("class:is-selected", ("translate", "0 -2px"));
             lifted.Shadow = new IrShadow { Kind = "shadow9", File = ShadowFile, Sha256 = new string('d', 64), Width = 8, Height = 8, Slice = new float[] { 2, 2, 2, 2 }, Offset = new BoxRect() };
-            var ir = TestIr.Screen(Root(card, hov, icon, banner, go, check, search, league, tile, crest, lifted));
+            var ir = TestIr.Screen(Root(card, hov, icon, banner, go, check, search, manager, secret, notes, league, tile, crest, lifted));
             var export = Export(ir);
             var bytes = File.ReadAllBytes(Path.Combine(export, ShadowFile));
             File.WriteAllBytes(Path.Combine(export, image), bytes);
@@ -788,6 +809,26 @@ namespace DesignUi.Editor.Tests
             var field = tree.Q<TextField>("search");
             Assert.AreEqual("Ara", field.textEdition.placeholder);
             Assert.IsFalse(field.textEdition.hidePlaceholderOnFocus, "CSS keeps a placeholder while the empty field has focus");
+            Assert.AreEqual("", field.value);
+            Assert.IsFalse(field.textEdition.isPassword);
+            Assert.IsFalse(field.multiline);
+            Assert.AreEqual("Deniz Yılmaz", tree.Q<TextField>("manager").value, "an input's text is its value");
+            var secretEl = tree.Q<TextField>("secret");
+            Assert.AreEqual("parola12", secretEl.value);
+            Assert.IsTrue(secretEl.textEdition.isPassword, "a password input masks its value");
+            Assert.AreEqual(ScreenBuilder.PasswordMask, secretEl.textEdition.maskChar, "Chromium's mask character");
+            Assert.IsTrue(tree.Q<TextField>("notes").multiline, "a textarea takes several lines");
+            // the parts as Chromium lays out an input: the visual input fills the field, one line centred, a text area's at the top
+            var input = field.Q(className: TextField.inputUssClassName);
+            Assert.AreEqual(1f, input.resolvedStyle.flexGrow);
+            Assert.AreEqual(Justify.Center, input.resolvedStyle.justifyContent);
+            Assert.AreEqual(TextAnchor.MiddleLeft, field.Q<TextElement>().resolvedStyle.unityTextAlign);
+            AssertColor("#8899aa", input.resolvedStyle.color); // the empty field shows its placeholder in the ::placeholder colour
+            var notesInput = tree.Q<TextField>("notes").Q(className: TextField.inputUssClassName);
+            Assert.AreEqual(Justify.FlexStart, notesInput.resolvedStyle.justifyContent);
+            Assert.AreEqual(TextAnchor.UpperLeft, tree.Q<TextField>("notes").Q<TextElement>().resolvedStyle.unityTextAlign);
+            Assert.AreNotEqual(input.resolvedStyle.color, tree.Q<TextField>("manager").Q(className: TextField.inputUssClassName).resolvedStyle.color,
+                "a field with a value draws it in the text colour");
             Assert.AreEqual("Süper Lig", tree.Q<DropdownField>("league").value, "a select's selected option");
             var tileEl = tree.Q("tile");
             Assert.IsTrue(tileEl.focusable, "a :focus style needs a focusable element");

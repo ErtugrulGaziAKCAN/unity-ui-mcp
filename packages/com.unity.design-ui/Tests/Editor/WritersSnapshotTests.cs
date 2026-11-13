@@ -492,6 +492,30 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void List_ZeroPaddingAndMargins_AreNoBoxOfItsOwn()
+        {
+            // the exporter writes every longhand: a list with padding and margins of 0 lays its items out as a ListView does
+            var zeros = new[] { "padding-top", "padding-right", "padding-bottom", "padding-left", "margin-top", "margin-right", "margin-bottom", "margin-left" };
+            var own = ListContainer("rows", Item("row"));
+            own.Style["base"]["overflow-y"] = "auto";
+            own.Style["base"]["height"] = "120px";
+            foreach (var p in zeros) own.Style["base"][p] = p.StartsWith("padding-top") ? "0" : "0px";
+            var s = Build(Screen(Root(own)));
+            Assert.AreEqual("ui:ListView", s.Find("rows").Tag);
+            Assert.IsFalse(s.Rules.Any(r => r.Declarations.Any(d => d.Property.StartsWith("padding") && d.Value != "0" && d.Value != "0px")));
+
+            var merged = ListContainer("l", Item());
+            foreach (var p in zeros) merged.Style["base"][p] = "0px";
+            s = Build(Screen(Root(Scroll("s", ("overflow-y", "auto")).Add(merged))));
+            Assert.AreEqual("ui:ListView", s.Find("s").Tag);
+
+            var padded = ListContainer("p", Item());
+            padded.Style["base"]["overflow-y"] = "auto";
+            padded.Style["base"]["padding-bottom"] = "0.5px";
+            Assert.Throws<UnsupportedStyleException>(() => Build(Screen(Root(padded))), "a padding that is not 0 still has no ListView equivalent");
+        }
+
+        [Test]
         public void List_UnsupportedShapes_AreErrors()
         {
             // not a scroll area and not inside one

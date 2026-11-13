@@ -47,6 +47,9 @@ namespace DesignUi.Editor
         /// <summary>The TextField placeholder's UXML attribute (TextInputBaseField in UnityEngine.UIElementsModule 6000.3).</summary>
         public const string PlaceholderAttribute = "placeholder-text";
 
+        /// <summary>The character a password field shows for each character of its value, as Chromium draws it (U+2022 BULLET).</summary>
+        public const char PasswordMask = '\u2022';
+
         /// <summary>USS property that tints a background image (a tintable SVG is written white and tinted with the node's color).</summary>
         public const string TintProperty = "-unity-background-image-tint-color";
 
@@ -69,6 +72,7 @@ namespace DesignUi.Editor
         static readonly Regex ClassIdent = new Regex(@"^-?[A-Za-z_][A-Za-z0-9_-]*$", RegexOptions.Compiled);
         static readonly Regex NameIdent = new Regex(@"^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
         static readonly Regex PxValue = new Regex(@"^(-?\d+(?:\.\d+)?)px$|^0$", RegexOptions.Compiled);
+        static readonly Regex ZeroLength = new Regex(@"^-?(?:0+(?:\.0*)?|\.0+)(?:px|%)?$", RegexOptions.Compiled);
 
         /// <summary>Layout of the scrolled content: in CSS it applies inside the scroll container, in UI Toolkit to the content container.</summary>
         static readonly HashSet<string> ScrollContentProperties = new HashSet<string>
@@ -272,6 +276,8 @@ namespace DesignUi.Editor
         {
             public string Key;
             public bool Content;
+            /// <summary>A selector suffix to a part of a control (e.g. a text field's input), or null for the element itself.</summary>
+            public string Part;
             public List<UssDeclaration> Declarations;
         }
 
@@ -344,6 +350,7 @@ namespace DesignUi.Editor
                     inScroll = true;
                 }
                 else MapLayers(d, node, node.Kind == "text" || node.Text != null, null, null, null);
+                if (d.Tag == "ui:TextField") TextFieldParts(d, node);
 
                 foreach (var child in node.Children) d.Children.Add(Draft(child, false, inScroll));
                 if (node.Repeat != null)
@@ -384,6 +391,48 @@ namespace DesignUi.Editor
                 }
             }
 
+            /// <summary>
+            /// A text field's parts as Chromium lays out an input: the input element (the field's visual input) fills the
+            /// field and holds its text line centred vertically on one line (an input) or at the top (a text area); the
+            /// text's horizontal place follows text-align. The placeholder takes the <c>::placeholder</c> colour. Without a
+            /// theme UI Toolkit gives the parts none of this (TextInputBaseField, UnityEngine.UIElementsModule 6000.3).
+            /// </summary>
+            static void TextFieldParts(Draft d, IrNode node)
+            {
+                var multiline = node.Field != null && node.Field.Multiline;
+                var vertical = multiline ? "upper-" : "middle-";
+                string Horizontal(string textAlign)
+                {
+                    switch ((textAlign ?? "start").Trim())
+                    {
+                        case "center": return "center";
+                        case "right": case "end": return "right";
+                        default: return "left";
+                    }
+                }
+                var baseLayer = d.Layers.FirstOrDefault(l => l.Key == Base && !l.Content && l.Part == null);
+                if (baseLayer == null) d.Layers.Insert(0, baseLayer = new LayerRules { Key = Base, Declarations = new List<UssDeclaration>() });
+                foreach (var layer in d.Layers.Where(l => !l.Content && l.Part == null))
+                {
+                    var align = layer.Key == Base || (node.Style.TryGetValue(layer.Key, out var css) && css.ContainsKey("text-align"))
+                        ? vertical + Horizontal(Get(node, layer.Key, "text-align") ?? Get(node, Base, "text-align"))
+                        : null;
+                    layer.Declarations.RemoveAll(x => x.Property == "-unity-text-align");
+                    if (align != null) layer.Declarations.Add(new UssDeclaration("-unity-text-align", align));
+                }
+                d.Layers.Add(new LayerRules
+                {
+                    Key = Base, Part = " > ." + TextField.inputUssClassName,
+                    Declarations = new List<UssDeclaration> { new UssDeclaration("flex-grow", "1"), new UssDeclaration("justify-content", multiline ? "flex-start" : "center") },
+                });
+                if (node.Field?.PlaceholderColor != null)
+                    d.Layers.Add(new LayerRules
+                    {
+                        Key = Base, Part = " > ." + TextField.placeholderUssClassName,
+                        Declarations = new List<UssDeclaration> { new UssDeclaration("color", node.Field.PlaceholderColor) },
+                    });
+            }
+
             static string Visibility(string overflow) => overflow == "auto" ? "Auto" : overflow == "scroll" ? "AlwaysVisible" : "Hidden";
 
             Draft Start(IrNode node, bool isRoot)
@@ -408,8 +457,21 @@ namespace DesignUi.Editor
                         d.Attributes.Add(new KeyValuePair<string, string>("index", "0"));
                     }
                 }
+                else if (node.Text != null && d.Tag == "ui:TextField")
+                    d.Attributes.Add(new KeyValuePair<string, string>("value", node.Text.Tr ?? "")); // an input's text is its value
                 else if (node.Text != null && d.Tag != "ui:Label" && d.Tag != "ui:Button" && d.Tag != "ui:Toggle")
-                    throw new IrFormatException("node '" + node.Id + "' of kind '" + node.Kind + "' has text; only text, button, toggle and dropdown nodes carry text");
+                    throw new IrFormatException("node '" + node.Id + "' of kind '" + node.Kind + "' has text; only text, button, toggle, input and dropdown nodes carry text");
+                if (node.Field != null)
+                {
+                    // UXML: TextInputBaseField password and mask-character, TextField multiline (UnityEngine.UIElementsModule 6000.3)
+                    if (d.Tag != "ui:TextField") throw new IrFormatException("node '" + node.Id + "' of kind '" + node.Kind + "' has a text field form; only input nodes have one");
+                    if (node.Field.Password)
+                    {
+                        d.Attributes.Add(new KeyValuePair<string, string>("password", "true"));
+                        d.Attributes.Add(new KeyValuePair<string, string>("mask-character", PasswordMask.ToString()));
+                    }
+                    if (node.Field.Multiline) d.Attributes.Add(new KeyValuePair<string, string>("multiline", "true"));
+                }
                 foreach (var kv in (node.AttrTexts ?? new Dictionary<string, IrText>()).OrderBy(kv => kv.Key, StringComparer.Ordinal))
                 {
                     switch (kv.Key)
@@ -712,7 +774,7 @@ namespace DesignUi.Editor
                 MapLayers(d, box, false, ScrollContentProperties, new[] { new UssDeclaration("overflow", "hidden") }, null);
                 foreach (var layer in d.Layers.Where(l => l.Content))
                     foreach (var decl in layer.Declarations)
-                        if (!(decl.Property == "flex-direction" && decl.Value == "column"))
+                        if (!(decl.Property == "flex-direction" && decl.Value == "column") && !(decl.Property.StartsWith("padding", StringComparison.Ordinal) && IsZeroLength(decl.Value)))
                             throw new UnsupportedStyleException(decl.Property, decl.Value, null,
                                 "The content layout of list repeat '" + name + "' cannot be reproduced by a ListView, which stacks fixed-height items from the top of its box; move it to the items.");
                 d.Layers.RemoveAll(l => l.Content);
@@ -721,6 +783,9 @@ namespace DesignUi.Editor
                 if (merged) _removed.Add(list.Id);
                 return d;
             }
+
+            /// <summary>A length of 0 (<c>0</c>, <c>0px</c>, <c>0%</c>): a padding or margin that lays nothing out.</summary>
+            static bool IsZeroLength(string v) => ZeroLength.IsMatch((v ?? "").Trim());
 
             /// <summary>The repeat container inside a scroll area merges into the ListView, so it must not draw or place anything itself.</summary>
             static void CheckBoxlessList(IrNode scroll, IrNode list)
@@ -736,7 +801,8 @@ namespace DesignUi.Editor
                             (kv.Key == "display" && v == "flex") || (kv.Key == "flex-direction" && v == "column") || kv.Key == "flex-shrink" ||
                             (kv.Key == "position" && v == "relative") || (kv.Key == "align-items" && (v == "stretch" || v == "normal")) ||
                             (kv.Key == "justify-content" && (v == "flex-start" || v == "normal" || v == "start")) ||
-                            (kv.Key == "flex-wrap" && v == "nowrap"));
+                            (kv.Key == "flex-wrap" && v == "nowrap") ||
+                            ((kv.Key.StartsWith("padding", StringComparison.Ordinal) || kv.Key.StartsWith("margin", StringComparison.Ordinal)) && IsZeroLength(v)));
                         if (!ok)
                             throw new UnsupportedStyleException(kv.Key, kv.Value, null,
                                 "List repeat container '" + list.Id + "' inside scroll area '" + scroll.Id + "' has a box of its own (layer '" + pair.Key + "'); it merges into one ListView with the scroll area's box. Move the style to the scroll area or the items.");
@@ -970,7 +1036,7 @@ namespace DesignUi.Editor
                 bool wrapperShrinks = true;
                 foreach (var layer in wrapper.Layers)
                 {
-                    if (layer.Key != Base || layer.Content) return false;
+                    if (layer.Key != Base || layer.Content || layer.Part != null) return false;
                     foreach (var decl in layer.Declarations)
                     {
                         if (decl.Property == "flex-direction" && decl.Value == "column") continue;
@@ -1101,7 +1167,7 @@ namespace DesignUi.Editor
                 if (_ancestorTargets.Contains(d.Name)) sb.Append("ancestor ").Append(d.Name).Append('\n');
                 foreach (var layer in d.Layers)
                 {
-                    sb.Append('[').Append(layer.Key).Append(layer.Content ? ContentSuffix : "").Append("]\n");
+                    sb.Append('[').Append(layer.Key).Append(layer.Content ? ContentSuffix : "").Append(layer.Part ?? "").Append("]\n");
                     foreach (var decl in layer.Declarations) sb.Append(decl.Property).Append(": ").Append(decl.Value).Append(";\n");
                 }
                 var canonical = sb.ToString();
@@ -1113,7 +1179,7 @@ namespace DesignUi.Editor
                 }
                 _canonical[cls] = canonical;
                 foreach (var layer in d.Layers)
-                    _rules.Add(new UssRule(Selector(LayerKey.Parse(layer.Key), cls, d, ancestors) + (layer.Content ? ScrollContentChain : ""), layer.Declarations));
+                    _rules.Add(new UssRule(Selector(LayerKey.Parse(layer.Key), cls, d, ancestors) + (layer.Content ? ScrollContentChain : "") + (layer.Part ?? ""), layer.Declarations));
                 return cls;
             }
 

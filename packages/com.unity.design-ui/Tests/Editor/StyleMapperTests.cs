@@ -16,6 +16,25 @@ namespace DesignUi.Editor.Tests
         static IReadOnlyList<UssDeclaration> Map(params (string k, string v)[] css) => StyleMapper.Map(D(css));
         static string Get(IReadOnlyList<UssDeclaration> l, string prop) => l.Where(x => x.Property == prop).Select(x => x.Value).SingleOrDefault();
 
+        [Test]
+        public void Translate_OneValue_MovesAlongXOnly()
+        {
+            // CSS: one value is x (y 0); USS repeats a single value for y, so the y is always written
+            Assert.AreEqual("24px 0px", Get(Map(("translate", "24px")), "translate"));
+            Assert.AreEqual("-10% 0px", Get(Map(("translate", "-10%")), "translate"));
+            Assert.AreEqual("0px 6px", Get(Map(("translate", "0px 6px")), "translate"));
+            Assert.AreEqual("none", Get(Map(("translate", "none")), "translate"));
+        }
+
+        [Test]
+        public void OverflowWrap_BreakWord_IsUiToolkitsWrapping_SoNothingIsWritten()
+        {
+            // a textarea's browser default (the exporter keeps it): UI Toolkit breaks a word longer than its line anyway
+            Assert.IsEmpty(Map(("overflow-wrap", "break-word")));
+            Assert.IsEmpty(Map(("overflow-wrap", "anywhere")));
+            Assert.AreEqual("U-CSS-023", Assert.Throws<UnsupportedStyleException>(() => Map(("overflow-wrap", "normal"))).RuleId);
+        }
+
         // ---- font ------------------------------------------------------------------------------------------
 
         [Test]

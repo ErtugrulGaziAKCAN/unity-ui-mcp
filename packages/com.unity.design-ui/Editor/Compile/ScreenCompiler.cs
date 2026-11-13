@@ -104,6 +104,7 @@ namespace DesignUi.Editor
                 yield return t.Tr;
                 yield return t.En;
             }
+            if (node.Field != null && node.Field.Password) yield return ScreenBuilder.PasswordMask.ToString(); // drawn instead of the value
             foreach (var c in node.Children ?? new IrNode[0])
                 foreach (var s in ScreenStrings(c)) yield return s;
         }

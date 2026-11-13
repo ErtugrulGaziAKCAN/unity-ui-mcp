@@ -482,6 +482,23 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("#aa0000", Hex(Pixel(tex, 50, 20)), "the badge at the card's centre is not");
         }
 
+        /// <summary>
+        /// A text field takes the pointer on its own parts (the visual input and its text element, which are not design
+        /// elements): a real pointer there hovers the field, so the capture can hover it.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Run_Hover_OnATextField_PointsAtItsOwnInputPart()
+        {
+            var field = Node("field", "input", ("position", "absolute"), ("left", "20px"), ("top", "20px"), ("width", "200px"), ("height", "40px"),
+                ("background-color", "#112233")).With("hover", ("background-color", "#445566"));
+            var export = Export(Small(BlackRoot(field)));
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var req = Request(export, screen, "default@320x180.hover.field", 320, 180, CaptureApply.Pseudo("hover", "field"));
+            yield return DesignCapture.Run(req, profile);
+            Assert.AreEqual("#445566", Hex(Pixel(Png(req), 30, 30)), "the field is hovered");
+        }
+
         [UnityTest]
         public IEnumerator Run_ViewportOfAnotherAspect_BoxesUseThePanelsScale_AndMatchThePng()
         {

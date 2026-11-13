@@ -116,6 +116,15 @@ namespace DesignUi.Editor
         [JsonProperty("checked")] public bool Checked;
     }
 
+    /// <summary>A text field's form (an <c>input</c> or <c>textarea</c>): a password field masks its value, a text area takes several lines.</summary>
+    public sealed class IrField
+    {
+        [JsonProperty("password")] public bool Password;
+        [JsonProperty("multiline")] public bool Multiline;
+        /// <summary>The <c>::placeholder</c> text colour (null: the field has no placeholder).</summary>
+        [JsonProperty("placeholderColor")] public string PlaceholderColor;
+    }
+
     /// <summary>One keyframe: offset 0..1, the values it sets, and the easing of the segment that starts here (null: the animation's).</summary>
     public sealed class IrKeyframe
     {
@@ -224,6 +233,8 @@ namespace DesignUi.Editor
         [JsonProperty("attrTexts")] public Dictionary<string, IrText> AttrTexts = new Dictionary<string, IrText>();
         /// <summary>Form controls: the pseudo-states the markup starts in; null for other elements.</summary>
         [JsonProperty("initial")] public IrInitial Initial;
+        /// <summary>Input nodes: the field's form; null (or absent) for other elements.</summary>
+        [JsonProperty("field")] public IrField Field;
         [JsonProperty("bind")] public string Bind;
         [JsonProperty("action")] public string Action;
         [JsonProperty("repeat")] public IrRepeat Repeat;

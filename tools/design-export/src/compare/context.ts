@@ -32,6 +32,8 @@ export interface CaptureContext {
   borders?: Record<string, [number, number, number, number]>;
   /** Font size of each text element in device px (its `font-size` in this capture times the capture scale). */
   fontPx?: Record<string, number>;
+  /** Corner radii per element in device px (top-left, top-right, bottom-right, bottom-left); absent: square corners. */
+  radii?: Record<string, [number, number, number, number]>;
 }
 
 /** The screen setup of a capture: state, viewport and what is applied (matrix.json `captures[]`). */
@@ -140,6 +142,7 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
   const backgrounds = new Set<string>(), painters = new Set<string>();
   const borders: Record<string, [number, number, number, number]> = {};
   const fontPx: Record<string, number> = {};
+  const radii: Record<string, [number, number, number, number]> = {};
   for (const id of ix.order) {
     const n = ix.nodes.get(id)!;
     const holds = (key: string) => key.split("+").every((d) => test(d, id));
@@ -161,11 +164,16 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
       return Number.isFinite(px) ? px * golden.scale : 0;
     }) as [number, number, number, number];
     if (widths.some((x) => x > 0)) borders[id] = widths;
+    const corners = (["top-left", "top-right", "bottom-right", "bottom-left"] as const).map((c) => {
+      const px = parseFloat(styleValue(n, `border-${c}-radius`, holds) ?? "0");
+      return Number.isFinite(px) && px > 0 ? px * golden.scale : 0;
+    }) as [number, number, number, number];
+    if (corners.some((x) => x > 0)) radii[id] = corners;
     if (n.kind === "text" || n.text) {
       const size = parseFloat(styleValue(n, "font-size", holds) ?? "");
       if (Number.isFinite(size) && size > 0) fontPx[id] = size * golden.scale;
     }
     if (backgrounds.has(id) || borders[id] || sh || inset || n.asset || n.kind === "image" || n.kind === "vector") painters.add(id);
   }
-  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, borders, fontPx };
+  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, borders, fontPx, radii };
 }

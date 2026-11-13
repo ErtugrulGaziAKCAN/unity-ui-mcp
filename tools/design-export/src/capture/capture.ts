@@ -131,6 +131,124 @@ async function pageSettle(): Promise<boolean> {
   return true;
 }
 
+/**
+ * UI Toolkit's pixel grid for a box sized by its text, which the golden reproduces so the comparison sees the compile's
+ * differences and not this engine rounding (Unity 6000.3, measured in the fidelity suite, docs/findings/pixel-grid.md):
+ * - a text element's measured size is rounded up to the device-pixel grid (TextUtilities.PostProcessMeasuredSize,
+ *   CeilToPixelGrid), so the box is up to 1 device px wider and the boxes after it on its line move by as much;
+ * - its border widths are laid out as whole device pixels (a 2px border at scale 0.75, 1.5 device px, takes 2), which
+ *   Chromium cannot reproduce with border-width itself (it floors border widths to whole CSS px).
+ * An IR text element (text node or text button) whose content width is its one-line text's width gets the width Unity
+ * gives it: the text width rounded up to the device grid, plus its padding, plus its borders rounded to whole device
+ * pixels. The width is an !important declaration in a style element of its own, keyed by an attribute; every call first
+ * removes the previous ones (they depend on the state: a bolder hover, another text). Text under a transform is left
+ * alone. Returns how many elements got a width.
+ */
+function pageTextCeil(arg: { items: number[]; ir: number[]; scale: number }): number {
+  const ATTR = "data-design-ui-text-ceil";
+  for (const el of Array.from(document.querySelectorAll(`[${ATTR}]`))) el.removeAttribute(ATTR);
+  let sheet = document.getElementById("design-ui-text-ceil") as HTMLStyleElement | null;
+  if (sheet) sheet.textContent = "";
+  const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
+  const irEls = new Set(arg.ir.map((i) => els[i]));
+  const px = (v: string) => parseFloat(v) || 0;
+  /** A border width as Unity lays it out: whole device pixels, at least one. */
+  const gridBorder = (w: number) => (w <= 0 ? 0 : Math.max(1, Math.round(w * arg.scale)) / arg.scale);
+  const moved = (e: Element | null): boolean => {
+    for (let x = e; x && x !== document.documentElement; x = x.parentElement) {
+      const cs = getComputedStyle(x);
+      if (cs.transform !== "none" || cs.translate !== "none" || cs.rotate !== "none" || cs.scale !== "none") return true;
+    }
+    return false;
+  };
+  const want: [Element, number][] = [];
+  for (const i of arg.items) {
+    const el = els[i] as HTMLElement;
+    if (!el || el.getClientRects().length === 0) continue;
+    const cs = getComputedStyle(el);
+    if (cs.display === "inline" || cs.display === "contents" || moved(el)) continue;
+    // the element's own text (not text inside nested IR elements) on one line
+    let left = Infinity, right = -Infinity;
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => {
+        for (let p = n.parentElement; p && p !== el; p = p.parentElement) if (irEls.has(p)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const tops: number[] = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      for (const r of Array.from(range.getClientRects())) {
+        if (r.width <= 0 || r.height <= 0) continue;
+        left = Math.min(left, r.left); right = Math.max(right, r.right);
+        if (!tops.some((t) => Math.abs(t - r.top) < 1)) tops.push(r.top);
+      }
+    }
+    if (tops.length !== 1) continue;
+    const text = right - left;
+    const padding = px(cs.paddingLeft) + px(cs.paddingRight), bl = px(cs.borderLeftWidth), br = px(cs.borderRightWidth);
+    const outer = px(cs.width) + (cs.boxSizing === "border-box" ? 0 : padding + bl + br);
+    // sized by its text: the content box is the text's width (LayoutUnit precision); stretched, fixed and wrapped boxes are not
+    if (Math.abs(outer - padding - bl - br - text) > 1 / 32) continue;
+    const content = Math.ceil(text * arg.scale - 1e-4) / arg.scale;
+    const unity = content + padding + gridBorder(bl) + gridBorder(br);
+    if (unity - outer < 1e-4) continue;
+    // the border-box width Unity lays out; with content-box sizing the content takes what the borders do not
+    want.push([el, cs.boxSizing === "border-box" ? unity : unity - padding - bl - br]);
+  }
+  const rules = want.map(([el, w], k) => { el.setAttribute(ATTR, String(k)); return `[${ATTR}="${k}"]{width:${w}px!important}`; });
+  if (rules.length) {
+    if (!sheet) { sheet = document.createElement("style"); sheet.id = "design-ui-text-ceil"; document.head.appendChild(sheet); }
+    sheet.textContent = rules.join("\n");
+  }
+  return want.length;
+}
+
+/** Removes what pageTextCeil added. */
+function pageTextCeilRemove(): void {
+  for (const el of Array.from(document.querySelectorAll("[data-design-ui-text-ceil]"))) el.removeAttribute("data-design-ui-text-ceil");
+  document.getElementById("design-ui-text-ceil")?.remove();
+}
+
+/**
+ * Radio buttons as Unity has them: independent toggles. A name groups radios in the page, so checking one (a capture's
+ * :checked) would uncheck its group and a restore would leave the group empty; with a name of its own each radio keeps
+ * the state its markup gives it (the IR's initial checked). Returns [element index, name] to restore.
+ */
+function pageRadiosApart(): [number, string][] {
+  const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
+  const out: [number, string][] = [];
+  els.forEach((e, i) => {
+    if (!(e instanceof HTMLInputElement) || e.type !== "radio") return;
+    const name = e.getAttribute("name");
+    // a new value keeps the attribute where it is in the markup
+    if (name !== null && name !== "") { out.push([i, name]); e.setAttribute("name", `design-ui-radio-${i}`); }
+    e.checked = e.defaultChecked;
+  });
+  return out;
+}
+
+function pageRadiosTogether(names: [number, string][]): void {
+  const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
+  for (const [i, name] of names) els[i]?.setAttribute("name", name);
+}
+
+/** CSS keyframe animations in effect on IR elements (finished with fill both in a static capture): [element index, name]. */
+function pageFrozenAnims(ir: number[]): [number, string][] {
+  const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
+  const index = new Map(ir.map((i) => [els[i], i] as const));
+  const out: [number, string][] = [];
+  for (const a of document.getAnimations()) {
+    if (!(a instanceof CSSAnimation)) continue;
+    const effect = a.effect as KeyframeEffect | null;
+    if (!effect?.target || effect.pseudoElement) continue;
+    const i = index.get(effect.target);
+    if (i !== undefined) out.push([i, a.animationName]);
+  }
+  return out.sort((p, q) => p[0] - q[0] || (p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0));
+}
+
 /** Every animation jumps to its end (frozen ones are finite); infinite ones are left as they are. */
 function pageFinishAll(): void {
   for (const a of document.getAnimations()) { try { a.finish(); } catch { /* infinite */ } }
@@ -239,6 +357,12 @@ export class CaptureSession {
   private nodes = new Map<string, IrNode>();
   private items: [string, number, boolean][] = [];
   private irIndices: number[] = [];
+  /** DOM indices of the IR text nodes and text buttons, whose text-sized width the golden rounds as UI Toolkit does. */
+  private textItems: number[] = [];
+  /** Radio names taken off for the session ([element index, name]), put back on close. */
+  private radioNames: [number, string][] = [];
+  /** Per static capture name: the keyframe animations in effect, [IR id, animation name] (matrix.json `frozen`). */
+  readonly frozen = new Map<string, [string, string][]>();
   private external: string[] = [];
   private current: Desired = emptyDesired();
   /** Classes the session added (absent in the markup), by `i|class`. */
@@ -314,8 +438,10 @@ export class CaptureSession {
       this.items.push([id, elements[id], n.text !== null]);
       this.irIndices.push(elements[id]);
       if (n.external) this.external.push(id);
+      if (n.text !== null && (n.kind === "text" || n.kind === "button")) this.textItems.push(elements[id]);
     }
     this.external.sort();
+    this.radioNames = await d.page.evaluate(pageRadiosApart);
 
     await this.send("Animation.enable");
     await this.send("Animation.setPlaybackRate", { playbackRate: 0 });
@@ -464,7 +590,15 @@ export class CaptureSession {
       await this.endSeries();
       await this.goTo({ state: job.state, apply: job.apply });
     }
+    // text widths are measured once a face the job shows for the first time has loaded (else the fallback's width)
     await this.d.page.evaluate(pageSettle);
+    await this.d.page.evaluate(pageTextCeil, { items: this.textItems, ir: this.irIndices, scale: this.scale });
+    await this.d.page.evaluate(pageSettle);
+    if (!job.anim) {
+      const idOf = new Map(Object.entries(this.elements).map(([id, i]) => [i, id] as const));
+      const frozen = await this.d.page.evaluate(pageFrozenAnims, this.irIndices);
+      this.frozen.set(name, frozen.map(([i, n]) => [idOf.get(i)!, n] as [string, string]).filter(([id]) => id !== undefined && this.nodes.has(id)));
+    }
     // caret "initial": the loader's freeze rule already hides carets; Playwright's own hiding leaves style="" on inputs
     const png = await this.d.page.screenshot({ type: "png", caret: "initial" });
     const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
@@ -492,6 +626,9 @@ export class CaptureSession {
     };
     if (m.remove.length || m.set.length) await attempt(() => this.d.page.evaluate(pageMutate, m));
     this.added.clear(); this.originals.clear();
+    await attempt(() => this.d.page.evaluate(pageTextCeilRemove));
+    if (this.radioNames.length) await attempt(() => this.d.page.evaluate(pageRadiosTogether, this.radioNames));
+    this.radioNames = [];
     if (this.cdp) for (const i of this.current.forced.keys()) await attempt(() => this.send("CSS.forcePseudoState", { nodeId: this.dom[i].nodeId, forcedPseudoClasses: [] }));
     await attempt(() => this.d.page.evaluate(pageFinishAll));
     await attempt(() => this.d.page.evaluate(() => { delete (window as unknown as { __designUiAscent?: unknown }).__designUiAscent; }));
@@ -544,6 +681,7 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
   const ownBrowser = !opts.browser && !opts.open?.length;
   const timings: MatrixTimings = { totalMs: 0, viewports: {}, jobs: {} };
   const boxes: Record<string, CaptureBoxes> = {};
+  const frozen = new Map<string, [string, string][]>();
   const reusable = async (vp: [number, number]): Promise<LoadedDesign | undefined> => {
     const lv = logicalViewport(vp, ir.referenceViewport, ir.screenMatch);
     for (const d of opts.open ?? []) {
@@ -570,6 +708,8 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
           const t3 = performance.now();
           const b = await s.capture(j, goldensDir);
           boxes[b.capture] = b;
+          const f = s.frozen.get(b.capture);
+          if (f?.length) frozen.set(b.capture, f);
           timings.jobs[b.capture] = ms(t3);
         }
       } finally { await s.close(); }
@@ -591,7 +731,8 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
     fs.writeFileSync(path.join(goldensDir, "matrix.json"), stableStringify({
       chromium: browser.version(),
       platform: `${process.platform}-${process.arch}`,
-      captures: jobs.map((j) => ({ name: captureName(j), ...j })),
+      // frozen: the keyframe animations a static capture shows at their frozen end frame (the Unity capture writes that frame)
+      captures: jobs.map((j) => { const name = captureName(j), f = frozen.get(name); return { name, ...j, ...(f ? { frozen: f } : {}) }; }),
       unsampled: unsampledAnims(ir),
     }));
   } finally { if (ownBrowser) await browser.close(); }

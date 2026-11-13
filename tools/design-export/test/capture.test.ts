@@ -535,4 +535,81 @@ describe("captures", () => {
       for (const n of jobs.map(captureName)) expect(fresh[n], n).toEqual(reused[n]);
     }, 120000);
   });
+
+  describe("rules the golden shares with UI Toolkit", () => {
+    let rules: IrBuild;
+    beforeAll(async () => {
+      const d = await openDesign(fx("engine-rules.html"), kit, [2560, 1440], browser);
+      try { rules = await buildIr(d, await collectSnapshot(d.page, d.cdp, kit), kit, tmp(), fx("engine-rules.html")); } finally { await d.close(); }
+    });
+
+    it("gives a text-sized box the width UI Toolkit lays out (text rounded up, borders whole device pixels); other widths stay", async () => {
+      for (const vp of [[2560, 1440], [1920, 1080]] as [number, number][]) {
+        const s = logicalViewport(vp, [2560, 1440], 0.5).scale;
+        const d = await openDesign(fx("engine-rules.html"), kit, vp, browser);
+        try {
+          const html = await d.page.evaluate(() => document.documentElement.outerHTML);
+          const b = (await runCapture(d, rules.ir, job({ viewport: vp }), tmp(), rules.elements)).elements;
+          // padding + borders as Unity lays them out (whole device pixels), device px
+          const inline = 10 * 2 * s + 2 * Math.max(1, Math.round(1 * s));
+          for (const id of ["a", "b"]) {
+            const content = b[id].w - inline;
+            // to Chromium's layout precision (1/64 CSS px)
+            expect(Math.abs(content - Math.round(content)), `${id} at ${vp[0]}: ${content}`).toBeLessThan(s / 64 + 1e-6);
+            expect(content - b[id].lines[0].w, `${id} at ${vp[0]}`).toBeGreaterThan(0);
+            expect(content - b[id].lines[0].w, `${id} at ${vp[0]}`).toBeLessThan(1);
+          }
+          // the next box follows the rounded one, as Yoga lays it out
+          expect(b.b.x).toBeCloseTo(b.a.x + b.a.w + 4 * s, 4);
+          expect(b.c.w).toBeCloseTo(100 * s, 4);
+          // a box not sized by its text keeps its width
+          expect(b.d.w).toBeCloseTo(100 * s, 4);
+          // the page is given back as it was
+          expect(await d.page.evaluate(() => document.documentElement.outerHTML)).toBe(html);
+        } finally { await d.close(); }
+      }
+    });
+
+    it("measures a text-sized width once the face that text shows for the first time has loaded", async () => {
+      // the bold face is used by nothing but the state's text: a fresh page loads it only when the state shows the text
+      const d = await openDesign(fx("engine-rules.html"), kit, [1920, 1080], browser);
+      try {
+        const b = (await runCapture(d, rules.ir, job({ state: "on", viewport: [1920, 1080] }), tmp(), rules.elements)).elements.late;
+        expect(b.lines).toHaveLength(1);
+        expect(b.w).toBeGreaterThanOrEqual(b.lines[0].w);
+        expect(b.w - b.lines[0].w).toBeLessThan(1);
+      } finally { await d.close(); }
+    });
+
+    it("keeps radios independent, as Unity's toggles are: checking one leaves the other checked, and the next capture starts as the markup", async () => {
+      const d = await openDesign(fx("engine-rules.html"), kit, [2560, 1440], browser);
+      try {
+        const html = await d.page.evaluate(() => document.documentElement.outerHTML);
+        const s = await CaptureSession.open(d, rules.ir, rules.elements, [2560, 1440]);
+        const dir = tmp();
+        let checked: CaptureBoxes, plain: CaptureBoxes;
+        try {
+          checked = await s.capture(job({ pseudo: { kind: "checked", elementId: "r2" }, apply: [{ kind: "pseudo", pseudo: "checked", elementId: "r2" }] }), dir);
+          plain = await s.capture(job({}), dir);
+        } finally { await s.close(); }
+        const one = decodePng(fs.readFileSync(path.join(dir, `${checked.capture}.png`)));
+        expect(near(centre(one, checked, "r1"), [0x16, 0xc2, 0xd5]), "r1 keeps its checked state").toBe(true);
+        expect(near(centre(one, checked, "r2"), [0x16, 0xc2, 0xd5]), "r2 checked").toBe(true);
+        const two = decodePng(fs.readFileSync(path.join(dir, `${plain.capture}.png`)));
+        expect(near(centre(two, plain, "r1"), [0x16, 0xc2, 0xd5]), "r1 as the markup").toBe(true);
+        expect(near(centre(two, plain, "r2"), [0x12, 0x3c, 0x47]), "r2 as the markup").toBe(true);
+        expect(await d.page.evaluate(() => document.documentElement.outerHTML)).toBe(html);
+        expect(await d.page.evaluate(() => (document.querySelector("[data-u-id=r1]") as HTMLInputElement).name)).toBe("pick");
+      } finally { await d.close(); }
+    });
+
+    it("records the keyframe animations a static capture shows frozen, in matrix.json", async () => {
+      const dir = tmp();
+      const jobs = buildMatrix(rules.ir).filter((j) => !j.anim && j.viewport[0] === 2560);
+      await captureMatrix(fx("engine-rules.html"), kit, rules.ir, rules.elements, dir, { browser, jobs });
+      const matrix = JSON.parse(fs.readFileSync(path.join(dir, "matrix.json"), "utf8"));
+      const def = matrix.captures.find((c: { name: string }) => c.name === "default@2560x1440");
+      expect(def.frozen).toEqual([["mover", "slide"]]);
+    });
+  });
 });

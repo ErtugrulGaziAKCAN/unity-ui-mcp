@@ -461,6 +461,43 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
+        /// An icon drawn in part of its viewBox (as most icon sets are, with a margin around the shape) keeps that place: the
+        /// exporter pins the viewBox with a transparent rect (the importer sizes a VectorImage by its shapes' bounds, and its
+        /// PreserveViewport does not apply to VectorImage), so the image spans the viewBox as Chromium draws the svg.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Svg_KeepsItsViewBox_OnAPanel()
+        {
+            var export = Export();
+            const string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\">" +
+                               "<rect x=\"0\" y=\"0\" width=\"24\" height=\"24\" fill=\"#000000\" fill-opacity=\"0\"/>" +
+                               "<path d=\"M12 12 L24 12 L24 24 L12 24 Z\" fill=\"#ffffff\"/></svg>";
+            File.WriteAllText(export + "/assets/corner.svg", svg);
+            var asset = new IrAsset { Kind = "svg", File = "assets/corner.svg", Sha256 = Hash(File.ReadAllBytes(export + "/assets/corner.svg")), Width = 24, Height = 24 };
+            var vector = AssetDatabase.LoadAssetAtPath<VectorImage>(DesignAssetImporter.Import(asset, export, OutRoot, _profile));
+            Assert.IsNotNull(vector);
+            var doc = Panel(64);
+            for (int i = 0; i < 2; i++) yield return null;
+            var box = new VisualElement();
+            box.style.position = Position.Absolute;
+            box.style.left = 0; box.style.top = 0; box.style.width = 48; box.style.height = 48;
+            box.style.backgroundImage = new StyleBackground(vector);
+            doc.rootVisualElement.Add(box);
+            for (int i = 0; i < 6; i++) yield return null;
+
+            var tex = Read();
+            Color At(int x, int y) => tex.GetPixel(x, 63 - y);
+            try
+            {
+                Assert.Less(At(12, 12).a, 0.02f, "the empty top-left quarter of the viewBox: " + At(12, 12));
+                Assert.Less(At(30, 12).a, 0.02f, "top-right quarter: " + At(30, 12));
+                Assert.Greater(At(36, 36).a, 0.98f, "the shape in the bottom-right quarter: " + At(36, 36));
+                Assert.Greater(At(26, 26).a, 0.98f, "the shape starts at the viewBox centre: " + At(26, 26));
+            }
+            finally { UnityEngine.Object.DestroyImmediate(tex); }
+        }
+
+        /// <summary>
         /// The exporter's gradient SVG for an image that leaves part of the border box empty (a no-repeat gradient under a
         /// border): a transparent full-box rect pins the box, then the gradient rect. The importer sizes a VectorImage by
         /// its geometry, so without the pin it would shrink to the gradient rect and stretch it over the whole element.

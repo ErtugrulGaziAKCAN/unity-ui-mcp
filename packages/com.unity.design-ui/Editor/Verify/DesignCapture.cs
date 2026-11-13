@@ -173,6 +173,14 @@ namespace DesignUi.Editor
                                                          (focused?.name ?? "nothing") + ")");
                 }
 
+                if (req.Frozen != null && req.Frozen.Count > 0)
+                {
+                    // the golden shows these keyframe animations frozen at their end frame (the player does not play them yet)
+                    FrozenFrames.ApplyAll(docRoot, screen.Ir, req.Frozen);
+                    req.Notes.Add("keyframe animations shown at their frozen end frame, as in the golden: " + string.Join(", ", req.Frozen));
+                    for (int i = 0; i < ChangeFrames; i++) yield return null;
+                }
+
                 Directory.CreateDirectory(req.OutDir);
                 File.WriteAllBytes(Path.Combine(req.OutDir, req.CaptureName + ".png"), mount.ReadPng());
                 BoxesWriter.Merge(Path.Combine(req.OutDir, BoxesWriter.FileName), BoxesWriter.Measure(req.CaptureName, docRoot, req.Viewport, scale, screen.Ir));
@@ -216,7 +224,7 @@ namespace DesignUi.Editor
                 var req = new CaptureRequest
                 {
                     ExportDir = exportDir, ScreenFolder = screenFolder, State = job.State, Viewport = job.Viewport, Apply = job.Apply,
-                    OutDir = outDir, CaptureName = job.Name,
+                    Frozen = job.Frozen, OutDir = outDir, CaptureName = job.Name,
                 };
                 var watch = Stopwatch.StartNew();
                 var capture = Run(req, profile);
@@ -247,8 +255,9 @@ namespace DesignUi.Editor
                 else
                 {
                     result.Captured.Add(job.Name);
-                    if (animated.Count > 0)
-                        req.Notes.Add("animations are not played yet: " + string.Join(", ", animated) + " show their unanimated style, the golden a frozen frame");
+                    var unfrozen = animated.Where(id => job.Frozen.All(f => f.ElementId != id)).ToList();
+                    if (unfrozen.Count > 0)
+                        req.Notes.Add("animations are not played yet: " + string.Join(", ", unfrozen) + " show their unanimated style, the golden a frozen frame");
                     if (req.Notes.Count > 0) run.Notes[job.Name] = new JArray(req.Notes);
                 }
             }
@@ -528,11 +537,26 @@ namespace DesignUi.Editor
         /// A panel point where picking finds the element itself (not a descendant, which would hover too, unlike the
         /// golden): its centre, else the centres of a 5×5 grid over it.
         /// </summary>
+        /// <summary>
+        /// The picked element is the target or one of the target control's own parts (a text field's visual input and
+        /// text element: unnamed or <c>unity-</c> named, never a design element), so the pointer hovers the target and no
+        /// design element below it.
+        /// </summary>
+        static bool IsPartOf(VisualElement picked, VisualElement target)
+        {
+            for (var x = picked; x != null; x = x.hierarchy.parent)
+            {
+                if (x == target) return true;
+                if (!string.IsNullOrEmpty(x.name) && !x.name.StartsWith("unity-", StringComparison.Ordinal)) return false;
+            }
+            return false;
+        }
+
         static Vector2? PointOn(IPanel panel, VisualElement target)
         {
             var b = target.worldBound;
             if (float.IsNaN(b.width) || b.width <= 0 || b.height <= 0) return null;
-            bool Hits(Vector2 p) => panel.Pick(p) == target;
+            bool Hits(Vector2 p) => IsPartOf(panel.Pick(p), target);
             if (Hits(b.center)) return b.center;
             for (int iy = 0; iy < 5; iy++)
                 for (int ix = 0; ix < 5; ix++)

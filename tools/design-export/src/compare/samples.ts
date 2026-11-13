@@ -49,9 +49,14 @@ const CORNER_DEPTHS = [2, 4, 7, 11, 16];
  * - `border`: the middle of each painted border side, at half its width (single pixels under 3 px);
  * - `corner`: along each corner's diagonal at 2, 4, 7, 11 and 16 px (within half the smaller side), 3×3 means, which
  *   tell a pill from a rounded rectangle or a square corner.
+ * With the corner radii (device px, top-left, top-right, bottom-right, bottom-left), no sample sits on a rounded
+ * corner's anti-aliased edge, where Chromium's and UI Toolkit's anti-aliasing differ by a few ΔE although the shapes
+ * agree: an edge point that would is moved inside the curve, and a corner point within 2 px of the curve is left out.
+ * A radius that differs by 2 px or more still moves the curve across a remaining point.
  */
-export function ringPoints(g: Rect, u: Rect, border: readonly number[] | undefined, kinds: readonly RingKind[]): RingPoint[] {
+export function ringPoints(g: Rect, u: Rect, border: readonly number[] | undefined, kinds: readonly RingKind[], radii?: readonly number[]): RingPoint[] {
   const bw = border ?? [0, 0, 0, 0];
+  const rr = (radii ?? [0, 0, 0, 0]).map((r) => Math.max(0, Math.min(r, g.w / 2, g.h / 2)));
   const out: RingPoint[] = [];
   const L = (b: Rect) => Math.floor(b.x), T = (b: Rect) => Math.floor(b.y), R = (b: Rect) => Math.ceil(b.x + b.w) - 1, B = (b: Rect) => Math.ceil(b.y + b.h) - 1;
   const minSide = Math.min(g.w, g.h, u.w, u.h);
@@ -59,13 +64,20 @@ export function ringPoints(g: Rect, u: Rect, border: readonly number[] | undefin
     const [gx, gy] = at(g), [ux, uy] = at(u);
     out.push({ where, kind, gx, gy, ux, uy, win });
   };
+  /** How far a corner of radius r curves in from a side, at distance `along` from that side's end (0 past the curve). */
+  const curve = (r: number, along: number) => (along >= r ? 0 : r - Math.sqrt(r * r - (r - along) * (r - along)));
+  /** The depth of an edge point: inside the border by 3 px, and 2 px past the curve of the nearer corner. */
+  const depth = (base: number, rA: number, alongA: number, rB: number, alongB: number) => Math.ceil(Math.max(base, curve(rA, alongA) + 2, curve(rB, alongB) + 2));
   if (kinds.includes("edge")) {
     for (const f of [0.25, 0.5, 0.75]) {
       const pct = `${f * 100}%`;
-      if (bw[0] + 4 < g.h / 2) add(`inside the top edge at ${pct}`, "edge", 3, (b) => [Math.floor(b.x + f * b.w), T(b) + bw[0] + 3]);
-      if (bw[2] + 4 < g.h / 2) add(`inside the bottom edge at ${pct}`, "edge", 3, (b) => [Math.floor(b.x + f * b.w), B(b) - bw[2] - 3]);
-      if (bw[3] + 4 < g.w / 2) add(`inside the left edge at ${pct}`, "edge", 3, (b) => [L(b) + bw[3] + 3, Math.floor(b.y + f * b.h)]);
-      if (bw[1] + 4 < g.w / 2) add(`inside the right edge at ${pct}`, "edge", 3, (b) => [R(b) - bw[1] - 3, Math.floor(b.y + f * b.h)]);
+      // [top-left, top-right, bottom-right, bottom-left] = rr[0..3]
+      const top = depth(bw[0] + 3, rr[0], f * g.w, rr[1], (1 - f) * g.w), bottom = depth(bw[2] + 3, rr[3], f * g.w, rr[2], (1 - f) * g.w);
+      const left = depth(bw[3] + 3, rr[0], f * g.h, rr[3], (1 - f) * g.h), right = depth(bw[1] + 3, rr[1], f * g.h, rr[2], (1 - f) * g.h);
+      if (top + 1 < g.h / 2) add(`inside the top edge at ${pct}`, "edge", 3, (b) => [Math.floor(b.x + f * b.w), T(b) + top]);
+      if (bottom + 1 < g.h / 2) add(`inside the bottom edge at ${pct}`, "edge", 3, (b) => [Math.floor(b.x + f * b.w), B(b) - bottom]);
+      if (left + 1 < g.w / 2) add(`inside the left edge at ${pct}`, "edge", 3, (b) => [L(b) + left, Math.floor(b.y + f * b.h)]);
+      if (right + 1 < g.w / 2) add(`inside the right edge at ${pct}`, "edge", 3, (b) => [R(b) - right, Math.floor(b.y + f * b.h)]);
     }
   }
   if (kinds.includes("border")) {
@@ -79,15 +91,61 @@ export function ringPoints(g: Rect, u: Rect, border: readonly number[] | undefin
     });
   }
   if (kinds.includes("corner")) {
+    // where each corner's curve crosses its diagonal, in px from the corner
+    const cross = rr.map((r) => r * (1 - Math.SQRT1_2));
     for (const d of CORNER_DEPTHS) {
       if (d + 2 >= minSide / 2) break;
-      add(`top-left corner, ${d} px in`, "corner", 3, (b) => [L(b) + d, T(b) + d]);
-      add(`top-right corner, ${d} px in`, "corner", 3, (b) => [R(b) - d, T(b) + d]);
-      add(`bottom-left corner, ${d} px in`, "corner", 3, (b) => [L(b) + d, B(b) - d]);
-      add(`bottom-right corner, ${d} px in`, "corner", 3, (b) => [R(b) - d, B(b) - d]);
+      const near = (k: number) => rr[k] > 0 && Math.abs(d - cross[k]) < 2;
+      if (!near(0)) add(`top-left corner, ${d} px in`, "corner", 3, (b) => [L(b) + d, T(b) + d]);
+      if (!near(1)) add(`top-right corner, ${d} px in`, "corner", 3, (b) => [R(b) - d, T(b) + d]);
+      if (!near(3)) add(`bottom-left corner, ${d} px in`, "corner", 3, (b) => [L(b) + d, B(b) - d]);
+      if (!near(2)) add(`bottom-right corner, ${d} px in`, "corner", 3, (b) => [R(b) - d, B(b) - d]);
     }
   }
   return out;
+}
+
+/**
+ * Whether the image is flat around (x, y): every pixel of the 5×5 window within ΔE2000 `limit` of the 3×3 mean. A
+ * colour sample is a background colour only where the design is flat; at an edge (a picture's detail, a curve, a line
+ * of text) two renderers' anti-aliasing and resampling differ although both draw the same thing, which SSIM measures.
+ */
+export function flatAt(img: Rgba, x: number, y: number, limit = 3): boolean {
+  const mean = sampleAt(img, x, y, 3);
+  for (let yy = y - 2; yy <= y + 2; yy++) for (let xx = x - 2; xx <= x + 2; xx++) {
+    if (xx < 0 || yy < 0 || xx >= img.w || yy >= img.h) continue;
+    const o = (yy * img.w + xx) * 4;
+    if (deltaE2000(mean, [img.data[o], img.data[o + 1], img.data[o + 2]]) > limit) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether pixel (x, y) lies within `margin` px of a rounded corner's curve of box `b` (device px): the outer edge of the
+ * border box, or the inner edge of the border (the padding box's curve, radius minus the border). Colours there are
+ * anti-aliased, and Chromium's and UI Toolkit's anti-aliasing differ by a few ΔE where the shapes agree.
+ */
+export function nearCurve(b: Rect, border: readonly number[] | undefined, radii: readonly number[] | undefined, x: number, y: number, margin = 2.5): boolean {
+  if (!radii) return false;
+  const bw = border ?? [0, 0, 0, 0];
+  const px = x + 0.5, py = y + 0.5;
+  // corners: [top-left, top-right, bottom-right, bottom-left]; the border sides each corner joins
+  const corners: [number, number, number, number, number][] = [
+    [radii[0], b.x, b.y, bw[3], bw[0]], [radii[1], b.x + b.w, b.y, bw[1], bw[0]],
+    [radii[2], b.x + b.w, b.y + b.h, bw[1], bw[2]], [radii[3], b.x, b.y + b.h, bw[3], bw[2]],
+  ];
+  for (const [rRaw, ex, ey, sx, sy] of corners) {
+    const r = Math.min(rRaw, b.w / 2, b.h / 2);
+    if (!(r > 0)) continue;
+    const cx = ex + (ex === b.x ? r : -r), cy = ey + (ey === b.y ? r : -r);
+    // only the corner's own quadrant curves
+    if ((ex === b.x ? px > cx : px < cx) || (ey === b.y ? py > cy : py < cy)) continue;
+    const dx = px - cx, dy = py - cy;
+    if (Math.abs(Math.hypot(dx, dy) - r) < margin) return true;
+    const rx = r - sx, ry = r - sy;
+    if (rx > 0 && ry > 0 && Math.abs(Math.hypot(dx / rx, dy / ry) - 1) * Math.min(rx, ry) < margin) return true;
+  }
+  return false;
 }
 
 /** Ink of the text in a window: background and ink colour, and the ink amount in pixels (anti-aliasing weighted). */

@@ -39,14 +39,34 @@ namespace DesignUi.Editor.Tests
             var profile = Env("DESIGN_UI_PROFILE");
             Assert.IsNotNull(profile, "DESIGN_UI_PROFILE names the DesignUiProfile asset (Assets/…)");
             var discard = string.Equals(Env("DESIGN_UI_DISCARD_MANUAL_EDITS"), "true", StringComparison.OrdinalIgnoreCase);
-            // DESIGN_UI_IMPORT_REPORT: one line per export folder, "<code>\t<folder>\t<first log line>", for a runner
+            // DESIGN_UI_IMPORT_REPORT: one line per export folder, "<code>\t<folder>\t<summary>", for a runner; the summary is
+            // the log's first line, and for a failed import its errors (one line, " | " between them)
             var report = Env("DESIGN_UI_IMPORT_REPORT");
             var lines = new List<string>();
             var r = DesignUiBatch.ImportEach(profile, DesignUiBatch.PathList(export), discard,
-                (dir, one) => lines.Add(one.Code + "\t" + dir + "\t" + (one.Log ?? "").Split('\n')[0]));
+                (dir, one) => lines.Add(one.Code + "\t" + dir + "\t" + ReportLine(one)));
             if (report != null) File.WriteAllText(report, string.Concat(lines.Select(l => l + "\n")));
             Debug.Log("Design UI import (code " + r.Code + "):\n" + r.Log);
             Assert.AreEqual(0, r.Code, r.Log);
+        }
+
+        /// <summary>One line for a runner's import report: the first log line, and a failed import's errors after it.</summary>
+        internal static string ReportLine(OpResult r)
+        {
+            var log = (r.Log ?? "").Replace("\r", "").Split('\n');
+            var errors = log.Where(l => l.StartsWith("error: ", StringComparison.Ordinal) || l.StartsWith("edited by hand: ", StringComparison.Ordinal) || l.StartsWith("Import failed: ", StringComparison.Ordinal)).ToList();
+            var head = log.Length > 0 ? log[0] : "";
+            var line = r.Code == 0 || errors.Count == 0 ? head : head + " " + string.Join(" | ", errors.Where(e => e != head));
+            return line.Replace('\t', ' ').Trim();
+        }
+
+        [Test]
+        public void ReportLine_IsTheFirstLine_PlusAFailedImportsErrors()
+        {
+            Assert.AreEqual("Imported a into b: 2 files written (3 ms).", ReportLine(new OpResult(0, "Imported a into b: 2 files written (3 ms).\nwritten: x, y")));
+            Assert.AreEqual("Import failed; nothing was written for the screen. error: display: grid is not supported | error: second",
+                ReportLine(new OpResult(1, "Import failed; nothing was written for the screen.\nerror: display: grid is not supported\nerror: second\n")));
+            Assert.AreEqual("Import failed: font", ReportLine(new OpResult(1, "Import failed: font")));
         }
 
         /// <summary>Syncs the kit folder <c>$DESIGN_UI_KIT_DIR</c> with the profile <c>$DESIGN_UI_PROFILE</c>.</summary>

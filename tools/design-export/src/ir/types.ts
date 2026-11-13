@@ -84,6 +84,11 @@ export interface IrNode {
   attrTexts: Record<string, IrText>;
   /** Form controls: the pseudo-states the markup starts in (disabled/checked attributes); null for other elements. */
   initial: { disabled: boolean; checked: boolean } | null;
+  /**
+   * Input nodes only (absent elsewhere): the text field's form, a password field (masked value) or a text area (several
+   * lines), and its ::placeholder colour (null without a placeholder attribute).
+   */
+  field?: { password: boolean; multiline: boolean; placeholderColor: string | null };
   bind: string | null; action: string | null;
   /** On the container of a data-u-repeat list: its only child is the template (the first sample); `count` = items in the design. */
   repeat: { name: string; mode: 'list' | 'inline'; count: number } | null;

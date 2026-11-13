@@ -515,6 +515,30 @@
               }
             }
           ]
+        },
+        "field": {
+          "description": "Input nodes only: the text field's form. password: the value is masked; multiline: a text area; placeholderColor: the ::placeholder colour (null without a placeholder).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "password",
+            "multiline",
+            "placeholderColor"
+          ],
+          "properties": {
+            "password": {
+              "type": "boolean"
+            },
+            "multiline": {
+              "type": "boolean"
+            },
+            "placeholderColor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
         }
       }
     },

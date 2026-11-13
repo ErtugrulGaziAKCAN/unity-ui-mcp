@@ -10,6 +10,7 @@ import { openDesign } from "../src/load.js";
 import { collectSnapshot, lint, type DomSnapshot } from "../src/lint/index.js";
 import { buildIr, type IrBuild } from "../src/extract/tree.js";
 import { classifyKind } from "../src/extract/kind.js";
+import { pinViewBox } from "../src/extract/assets.js";
 import { structuralId } from "../src/extract/naming.js";
 import { specifiedLayers } from "../src/extract/styles.js";
 import type { IrNode } from "../src/ir/types.js";
@@ -212,7 +213,17 @@ describe("buildIr: kinds, assets and external regions", () => {
     expect(svg).toContain("stroke: rgb(255, 255, 255)");
     expect(svg).toContain("stroke-width: 2");
     expect(svg).toMatch(/^<svg xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+    // the viewBox is pinned by a transparent rect, so Unity's VectorImage spans it (not just the shapes' bounds)
+    expect(svg).toMatch(/^<svg[^>]*><rect x="0" y="0" width="24" height="24" fill="#000000" fill-opacity="0"\/>/);
     expect(icon.style.base.color).toBe("#16c2d5");
+  });
+
+  it("pins an svg's viewBox (else its width and height) with a transparent first rect", () => {
+    expect(pinViewBox('<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 1 20 10"><path d="M0 0"/></svg>'))
+      .toBe('<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 1 20 10"><rect x="-2" y="1" width="20" height="10" fill="#000000" fill-opacity="0"/><path d="M0 0"/></svg>');
+    expect(pinViewBox('<svg width="48px" height="24"><path d="M0 0"/></svg>')).toContain('<svg width="48px" height="24"><rect x="0" y="0" width="48" height="24"');
+    expect(pinViewBox("<svg><path/></svg>")).toBe("<svg><path/></svg>");
+    expect(pinViewBox("<svg/>")).toBe("<svg/>");
   });
 
   it("keeps a data-u-external region as one node without children", () => {
@@ -446,6 +457,14 @@ describe("buildIr: layers, text runs and lossless values", () => {
     expect(mail.kind).toBe("input");
     expect(mail.text).toBeNull();
     expect(mail.attrTexts).toEqual({ placeholder: { key: "probe.mail", tr: "E-posta", en: "Email", args: [], rich: false, style: "label" } });
+    // a text field's form: the compiler writes a password field and a multi-line text area; other nodes have none
+    expect(mail.field).toEqual({ password: false, multiline: false, placeholderColor: "#8899aa" });
+    expect(byId(r.ir.root, "pw").field).toEqual({ password: true, multiline: false, placeholderColor: null });
+    expect(byId(r.ir.root, "pw").text).toMatchObject({ tr: "gizli", key: null });
+    expect(byId(r.ir.root, "note").field).toEqual({ password: false, multiline: true, placeholderColor: null });
+    expect(byId(r.ir.root, "note").kind).toBe("input");
+    expect(byId(r.ir.root, "go").field).toBeUndefined();
+    expect(validateIr(r.ir)).toEqual([]);
     expect(byId((await build(fx("assets.html"))).ir.root, "logo").attrTexts.alt).toMatchObject({ key: "assets.logo", tr: "Logo", en: "Logo", style: null });
   });
 

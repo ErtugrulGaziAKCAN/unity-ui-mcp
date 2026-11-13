@@ -328,6 +328,7 @@ Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `
 - `object-position`: center | 50%
 - `outline-style`: none
 - `outline-width`: 0 | 0px | medium
+- `overflow-wrap`: break-word | anywhere (U-CSS-023)
 - `resize`: none
 - `transition-behavior`: normal (comma list)
 - any value: `-webkit-font-smoothing`, `-webkit-tap-highlight-color`, `-webkit-text-size-adjust`, `cursor`, `justify-items`, `justify-self`, `outline-color`, `outline-offset`, `text-rendering`, `text-size-adjust`, `user-select`, `will-change`
@@ -405,6 +406,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-MRK-008 | error | a variable inside localized text not marked as `<span data-u-arg="name">` with one `{name}` in `data-en` | one `data-u-arg` span per `{name}` placeholder; `data-l10n-args` (optional) lists the same names |
 | U-MRK-009 | error | a keyed, bound, id'd or action inline element sharing a line with other text, tags or spaces, or changing font size or line height inside the line | its own block element (or a flex row of them); `data-u-arg` for a variable inside one text |
 | U-MRK-010 | error | a `data-u-repeat` container with other children, a sample whose structure differs from the template, or a mode other than list/inline | only the items in the container, samples with the template's elements, ids, keys and binds |
+| U-MRK-011 | error | a `data-u-id` that gives a member the generated view class already has (`state`, `set-state`, `find`, `screen-root`, …) | another id, e.g. `state-label` |
 | U-NET-001 | error | any remote resource (fonts, stylesheets, images) except scripts from allowed origins | no remote resources; local files |
 | U-NET-002 | error | a local file or Claude Design blob that is missing | add the file, or map the blob in blobs.json |
 | W-CSS-001 | warning | a transition on a layout property or `all` (warning) | transition transform, opacity or colours |

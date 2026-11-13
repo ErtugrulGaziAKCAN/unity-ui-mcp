@@ -41,7 +41,7 @@ import type { CaptureApply, CaptureJob } from "../capture/matrix.js";
 import { deltaE2000, hex } from "./color.js";
 import { captureContext, indexIr, type CaptureContext, type IrIndex } from "./context.js";
 import { decodePngAsync, encodePngAsync } from "./png.js";
-import { bestDeltaE, inkIn, ringPoints, type RingPoint } from "./samples.js";
+import { bestDeltaE, flatAt, inkIn, nearCurve, ringPoints, type RingPoint } from "./samples.js";
 import { blockSsimMap, maskRects, regionSsim, regionSsimShifted, unionRect, wholeSsim, type Rect } from "./ssim.js";
 
 export type { CaptureContext } from "./context.js";
@@ -440,8 +440,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
             : FY.flatMap((fy) => FX.map((fx) => [Math.floor(ix0 + 6 + (cw - 12) * fx), Math.floor(iy0 + 6 + (ch - 12) * fy)] as [number, number]));
           for (const [x, y] of grid) pts.push({ where: `(${x}, ${y})`, kind: "edge", gx: x, gy: y, ux: x, uy: y, win: 3 });
         }
-        let use = pts.filter((p) => usable(p, cover));
-        if (!use.length) use = ringPoints(ge, ue, ctx.borders?.[id], ["edge"]).filter((p) => usable(p, cover));
+        // grid points off the rounded corners' anti-aliased curves (outer, and inner inside a border)
+        const curve = (p: RingPoint) => nearCurve(ge, ctx.borders?.[id], ctx.radii?.[id], p.gx, p.gy) || nearCurve(ue, ctx.borders?.[id], ctx.radii?.[id], p.ux, p.uy);
+        // and where the design is flat (a picture's detail or an edge is measured by SSIM)
+        let use = pts.filter((p) => usable(p, cover) && !curve(p) && flatAt(gp, p.gx, p.gy));
+        if (!use.length) use = ringPoints(ge, ue, ctx.borders?.[id], ["edge"], ctx.radii?.[id]).filter((p) => usable(p, cover));
         row.samples = use.length;
         if (!use.length) notSampled.push(id);
         let bestS: { de: number; p: RingPoint; a: number[]; b: number[] } | null = null;
@@ -462,7 +465,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       // an element that carries text and paints: background, border and corner shape around the text
       if (carriesText && paints(id)) {
         let bestR: { de: number; p: RingPoint; a: number[]; b: number[] } | null = null;
-        for (const p of ringPoints(ge, ue, ctx.borders?.[id], ["edge", "border", "corner"])) {
+        for (const p of ringPoints(ge, ue, ctx.borders?.[id], ["edge", "border", "corner"], ctx.radii?.[id])) {
           if (!usable(p, cover)) continue;
           const r = bestDeltaE(gp, p.gx, p.gy, up, p.ux, p.uy, p.win);
           if (!bestR || r.de > bestR.de) bestR = { de: r.de, p, a: r.a, b: r.b };
