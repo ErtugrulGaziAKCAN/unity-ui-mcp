@@ -110,7 +110,7 @@ namespace DesignUi.Editor.Tests
         {
             var export = ShowcaseExport();
             var profile = Profile(AssetsRoot);
-            var first = ScreenCompiler.Compile(export, profile);
+            var first = ScreenCompiler.Compile(export, profile, false, NoView());
             Assert.IsTrue(first.Ok, string.Join("\n", first.Errors));
             var outDir = AssetsRoot + "/TestShowcase";
             CollectionAssert.IsSubsetOf(new[] { outDir + "/TestShowcase.uxml", outDir + "/TestShowcase.uss", AssetsRoot + "/DesignTokens.uss" }, first.Written.ToArray());
@@ -126,7 +126,7 @@ namespace DesignUi.Editor.Tests
 
             var bytes = Snapshot(AssetsRoot);
             var times = Times(AssetsRoot);
-            var second = ScreenCompiler.Compile(export, profile);
+            var second = ScreenCompiler.Compile(export, profile, false, NoView());
             Assert.IsTrue(second.Ok, string.Join("\n", second.Errors));
             CollectionAssert.IsEmpty(second.Written);
             var after = Snapshot(AssetsRoot);
@@ -176,12 +176,12 @@ namespace DesignUi.Editor.Tests
             var ir = ScrollingList();
             var export = Export(ir);
             var profile = Profile(AssetsRoot);
-            Assert.IsTrue(ScreenCompiler.Compile(export, profile).Ok);
+            Assert.IsTrue(ScreenCompiler.Compile(export, profile, false, NoView()).Ok);
             var template = AssetsRoot + "/TestScreen/RowItem.uxml";
             Assert.IsNotNull(AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(template));
             ir.Root.Children = new IrNode[0];
             WriteIr(export, ir);
-            var result = ScreenCompiler.Compile(export, profile);
+            var result = ScreenCompiler.Compile(export, profile, false, NoView());
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
             Assert.IsFalse(File.Exists(template));
             Assert.IsFalse(File.Exists(template + ".meta"));
@@ -199,17 +199,50 @@ namespace DesignUi.Editor.Tests
             var hooks = new CompileHooks { ViewCode = c => "// view\n" };
             Assert.IsTrue(ScreenCompiler.Compile(export, profile, false, hooks).Ok);
             var view = output + "/TestShowcase/TestShowcaseView.g.cs";
-            var result = ScreenCompiler.Compile(export, profile);
+            var result = ScreenCompiler.Compile(export, profile, false, NoView());
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
             Assert.IsTrue(File.Exists(view), "a compile that does not write the view never deletes it");
+            Assert.AreEqual("// view\n", File.ReadAllText(view));
             Assert.IsTrue(GeneratedManifest.Load(output + "/TestShowcase/" + ScreenCompiler.ManifestFileName).files.ContainsKey("TestShowcaseView.g.cs"));
             Assert.IsTrue(ScreenCompiler.Compile(export, profile, false, hooks).Ok);
         }
 
         [Test]
+        public void Compile_WritesTheGeneratedViewByDefault()
+        {
+            var export = ShowcaseExport();
+            var output = TempDir(); // outside the project: Unity does not compile the view here
+            var profile = Profile(output);
+            profile.generatedNamespace = "Game.Ui";
+            var result = ScreenCompiler.Compile(export, profile);
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            var view = output + "/TestShowcase/TestShowcaseView.g.cs";
+            CollectionAssert.Contains(result.Written.ToArray(), view);
+            var code = File.ReadAllText(view);
+            StringAssert.Contains("namespace Game.Ui\n", code);
+            StringAssert.Contains("public sealed partial class TestShowcaseView\n", code);
+            StringAssert.Contains("public Button Go { get; }", code);
+            var manifest = GeneratedManifest.Load(output + "/TestShowcase/" + ScreenCompiler.ManifestFileName);
+            Assert.AreEqual(GeneratedManifest.Sha256Hex(File.ReadAllBytes(view)), manifest.files["TestShowcaseView.g.cs"]);
+            Assert.IsTrue(ScreenCompiler.Compile(export, profile).Ok);
+            Assert.IsTrue(ScreenCompiler.Compile(export, profile).Written.Count == 0, "an unchanged screen writes no view either");
+        }
+
+        [Test]
+        public void Compile_ElementIdsThatClashInTheView_FailBeforeWriting()
+        {
+            var output = TempDir();
+            var ir = TestIr.Screen(Root(Node("card-title", "container", ("height", "4px")), Node("card.title", "container", ("height", "4px"))));
+            var result = ScreenCompiler.Compile(Export(ir), Profile(output));
+            Assert.IsFalse(result.Ok);
+            StringAssert.Contains("card.title", string.Join("\n", result.Errors));
+            Assert.IsFalse(Directory.Exists(output + "/TestScreen"), "nothing is written");
+        }
+
+        [Test]
         public void Compile_ListRepeat_TemplateAndListViewInstantiate()
         {
-            var result = ScreenCompiler.Compile(Export(ScrollingList("4px")), Profile(AssetsRoot));
+            var result = ScreenCompiler.Compile(Export(ScrollingList("4px")), Profile(AssetsRoot), false, NoView());
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
             var screen = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(AssetsRoot + "/TestScreen/TestScreen.uxml");
             var item = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(AssetsRoot + "/TestScreen/RowItem.uxml");
@@ -350,8 +383,8 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(string.IsNullOrEmpty(m.generatorVersion));
             Assert.AreEqual("test.showcase", m.screen);
             Assert.AreEqual("root", m.root);
-            Assert.AreEqual("TestShowcaseView.g.cs", m.view, "reserved for the view class");
-            CollectionAssert.AreEquivalent(new[] { "TestShowcase.uxml", "TestShowcase.uss", ".gitattributes" }, m.files.Keys);
+            Assert.AreEqual("TestShowcaseView.g.cs", m.view, "the view class");
+            CollectionAssert.AreEquivalent(new[] { "TestShowcase.uxml", "TestShowcase.uss", "TestShowcaseView.g.cs", ".gitattributes" }, m.files.Keys);
             foreach (var kv in m.files) Assert.AreEqual(GeneratedManifest.Sha256Hex(File.ReadAllBytes(dir + "/" + kv.Key)), kv.Value, kv.Key);
             CollectionAssert.AreEqual(new[] { "tile" }, m.clickable);
             Assert.AreEqual(1, m.mirrors.Length);
@@ -552,6 +585,7 @@ namespace DesignUi.Editor.Tests
                     AssetDatabase.ImportAsset(path);
                     return path;
                 },
+                ViewCode = _ => null,
             };
             var result = ScreenCompiler.Compile(export, profile, false, hooks);
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
@@ -603,7 +637,7 @@ namespace DesignUi.Editor.Tests
             var list = Node("rows", "list", ("display", "flex"), ("flex-direction", "column"), ("gap", "4px")).Add(Node("row", "container", ("height", "10px")));
             list.Repeat = new IrRepeat { Name = "row", Mode = "list", Count = 5 };
             var inbox = Node("inbox__0", "scroll", ("width", "120px"), ("height", "60px"), ("overflow-y", "auto")).Add(list);
-            var result = ScreenCompiler.Compile(Export(TestIr.Screen(Root(area, inbox))), Profile(AssetsRoot));
+            var result = ScreenCompiler.Compile(Export(TestIr.Screen(Root(area, inbox))), Profile(AssetsRoot), false, NoView());
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
             var vta = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(AssetsRoot + "/TestScreen/TestScreen.uxml");
             Assert.IsFalse(vta.importedWithErrors || vta.importedWithWarnings);
@@ -671,7 +705,7 @@ namespace DesignUi.Editor.Tests
             File.WriteAllBytes(Path.Combine(export, image), bytes);
             SetHash(ir, image, bytes);
             WriteIr(export, ir);
-            var result = ScreenCompiler.Compile(export, Profile(AssetsRoot));
+            var result = ScreenCompiler.Compile(export, Profile(AssetsRoot), false, NoView());
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
             var vta = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(AssetsRoot + "/TestScreen/TestScreen.uxml");
             var sheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(AssetsRoot + "/TestScreen/TestScreen.uss");

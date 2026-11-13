@@ -1,7 +1,7 @@
 {
   "name": "DesignUi.Editor",
   "rootNamespace": "DesignUi",
-  "references": ["Unity.TextMeshPro"],
+  "references": ["DesignUi.Runtime", "Unity.TextMeshPro"],
   "includePlatforms": ["Editor"],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

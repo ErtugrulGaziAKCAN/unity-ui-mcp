@@ -123,21 +123,7 @@ namespace DesignUi.Editor
         /// PascalCase of an ASCII id: <c>club.overview</c> to <c>ClubOverview</c>, <c>message-list</c> to <c>MessageList</c>.
         /// Invariant culture; anything outside ASCII letters, digits and <c>. - _</c> separators throws.
         /// </summary>
-        internal static string Pascal(string id, string what = "id")
-        {
-            if (string.IsNullOrEmpty(id)) throw new IrFormatException("missing " + what);
-            var sb = new StringBuilder();
-            foreach (var part in id.Split('.', '-', '_'))
-            {
-                if (part.Length == 0) continue;
-                foreach (var c in part)
-                    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')))
-                        throw new IrFormatException(what + " '" + id + "' has characters outside ASCII letters, digits and . - _");
-                sb.Append(char.ToUpperInvariant(part[0])).Append(part, 1, part.Length - 1);
-            }
-            if (sb.Length == 0 || char.IsDigit(sb[0])) throw new IrFormatException(what + " '" + id + "' does not give a valid name");
-            return sb.ToString();
-        }
+        internal static string Pascal(string id, string what = "id") => Naming.Pascal(id, what);
 
         /// <summary>Invariant, round-trip formatting for numbers written into USS (a Turkish culture never adds a comma).</summary>
         internal static string Number(double value) => value.ToString("R", CultureInfo.InvariantCulture);

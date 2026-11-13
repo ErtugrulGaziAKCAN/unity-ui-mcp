@@ -58,6 +58,12 @@ namespace DesignUi.Editor.Tests
 
         public static string RelativeAsset(IrAsset a) => "assets/" + Path.GetFileName(a.File);
 
+        /// <summary>
+        /// A compile without the generated view: tests that compile into Assets/ must not add a C# file to the project,
+        /// which would start a script compilation and a domain reload in the middle of the test run.
+        /// </summary>
+        public static CompileHooks NoView() => new CompileHooks { ViewCode = _ => null };
+
         public const string ShadowFile = "assets/shadow.png";
 
         /// <summary>

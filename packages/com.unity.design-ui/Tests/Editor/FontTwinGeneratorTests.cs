@@ -181,10 +181,41 @@ namespace DesignUi.Editor.Tests
             var own = FontFixture.CreateTmp(FontFixture.BoldTtf, "Twin Own");
             var global = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Global");
             var tmp = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Ordered");
-            FontFixture.SetFallbacks(tmp, own);
-            var twin = FontTwinGenerator.GetOrCreateTwin(tmp, Twins, new[] { global, own, tmp, null });
+            FontFixture.SetFallbacks(tmp, own, tmp);
+            var twin = FontTwinGenerator.GetOrCreateTwin(tmp, Twins, new[] { global, own, null });
             CollectionAssert.AreEqual(new[] { "Twin Own UITK", "Twin Global UITK" }, twin.fallbackFontAssetTable.Select(f => f.name).ToArray(),
                 "TMP's search order: the asset's own fallbacks, then the global ones");
+        }
+
+        [Test]
+        public void Twin_TwoGlobalFallbacks_ListNeitherEachOtherNorThemselvesThroughTheirOwnChains()
+        {
+            var g1Own = FontFixture.CreateTmp(FontFixture.BoldTtf, "Twin G1 Own");
+            var g1 = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin G1");
+            var g2 = FontFixture.CreateTmp(FontFixture.BoldTtf, "Twin G2");
+            FontFixture.SetFallbacks(g1, g1Own);
+            var tmp = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Main");
+            var twin = FontTwinGenerator.GetOrCreateTwin(tmp, Twins, new[] { g1, g2 });
+
+            FontAsset Twin(string name) => AssetDatabase.LoadAssetAtPath<FontAsset>(Twins + "/" + name + " UITK.asset");
+            string[] Fallbacks(FontAsset f) => (f.fallbackFontAssetTable ?? new System.Collections.Generic.List<FontAsset>()).Select(x => x.name).ToArray();
+            CollectionAssert.AreEqual(new[] { "Twin G1 UITK", "Twin G2 UITK" }, Fallbacks(twin), "a font that is no global fallback searches the globals after its own chain");
+            CollectionAssert.AreEqual(new[] { "Twin G1 Own UITK" }, Fallbacks(Twin("Twin G1")), "a global fallback lists only its own fallbacks");
+            CollectionAssert.IsEmpty(Fallbacks(Twin("Twin G2")));
+            CollectionAssert.IsEmpty(Fallbacks(Twin("Twin G1 Own")), "a font in a global's own chain gets no globals either");
+
+            // no twin reaches itself through its fallback lists
+            foreach (var start in new[] { twin, Twin("Twin G1"), Twin("Twin G2"), Twin("Twin G1 Own") })
+            {
+                var seen = new System.Collections.Generic.HashSet<FontAsset>();
+                var stack = new System.Collections.Generic.Stack<FontAsset>(start.fallbackFontAssetTable ?? new System.Collections.Generic.List<FontAsset>());
+                while (stack.Count > 0)
+                {
+                    var f = stack.Pop();
+                    Assert.AreNotSame(start, f, start.name + " reaches itself");
+                    if (seen.Add(f)) foreach (var next in f.fallbackFontAssetTable ?? new System.Collections.Generic.List<FontAsset>()) stack.Push(next);
+                }
+            }
         }
 
         [UnityTest]

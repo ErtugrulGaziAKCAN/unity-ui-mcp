@@ -209,7 +209,7 @@ namespace DesignUi.Editor.Tests
             File.WriteAllText(dir + "/" + ScreenCompiler.IrFileName, Newtonsoft.Json.JsonConvert.SerializeObject(ir, Newtonsoft.Json.Formatting.Indented));
             File.WriteAllText(dir + "/" + KitTextStyles.FileName, "{ \"label\": { \"fontSize\": 16.515625, \"lineHeight\": 20, \"weight\": 400 } }");
 
-            var first = ScreenCompiler.Compile(dir, _profile);
+            var first = ScreenCompiler.Compile(dir, _profile, false, NoView());
             Assert.IsTrue(first.Ok, string.Join("\n", first.Errors));
             var shadow = SharedFolder + "/shadow.png";
             Assert.IsNotNull(AssetDatabase.LoadAssetAtPath<Texture2D>(shadow), "the shadow is imported into the shared folder");
@@ -218,7 +218,7 @@ namespace DesignUi.Editor.Tests
 
             var count = DesignAssetImporter.ImportCount;
             var hash = AssetDatabase.GetAssetDependencyHash(shadow);
-            var second = ScreenCompiler.Compile(dir, _profile);
+            var second = ScreenCompiler.Compile(dir, _profile, false, NoView());
             Assert.IsTrue(second.Ok, string.Join("\n", second.Errors));
             CollectionAssert.IsEmpty(second.Written);
             Assert.AreEqual(count, DesignAssetImporter.ImportCount, "an unchanged screen imports nothing");
@@ -344,13 +344,13 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void ARefusedCompile_WritesAndImportsNoAssets()
         {
-            Assert.IsTrue(ScreenCompiler.Compile(CompileExport(Showcase(), "shadow9.png"), _profile).Ok);
+            Assert.IsTrue(ScreenCompiler.Compile(CompileExport(Showcase(), "shadow9.png"), _profile, false, NoView()).Ok);
             var uss = OutRoot + "/TestShowcase/TestShowcase.uss";
             File.AppendAllText(uss, "\n/* hand edit */\n");
             var before = Directory.GetFiles(SharedFolder).Where(f => !f.EndsWith(".meta")).Select(Path.GetFileName).OrderBy(x => x).ToArray();
             var count = DesignAssetImporter.ImportCount;
 
-            var result = ScreenCompiler.Compile(CompileExport(Showcase(), "image.png"), _profile); // a different shadow, but the style sheet was edited
+            var result = ScreenCompiler.Compile(CompileExport(Showcase(), "image.png"), _profile, false, NoView()); // a different shadow, but the style sheet was edited
             Assert.IsFalse(result.Ok);
             CollectionAssert.IsNotEmpty(result.ManualEdits);
             CollectionAssert.AreEqual(before, Directory.GetFiles(SharedFolder).Where(f => !f.EndsWith(".meta")).Select(Path.GetFileName).OrderBy(x => x).ToArray(), "no new asset");
@@ -364,7 +364,7 @@ namespace DesignUi.Editor.Tests
             var ir = Showcase();
             foreach (var a in Assets(ir.Root).Where(a => a.File == ShadowFile)) { a.File = "assets/missing.png"; a.Sha256 = new string('1', 64); }
             File.WriteAllText(export + "/" + ScreenCompiler.IrFileName, Newtonsoft.Json.JsonConvert.SerializeObject(ir, Newtonsoft.Json.Formatting.Indented));
-            var result = ScreenCompiler.Compile(export, _profile);
+            var result = ScreenCompiler.Compile(export, _profile, false, NoView());
             Assert.IsFalse(result.Ok);
             StringAssert.Contains("missing", result.Errors[0]);
             Assert.IsFalse(AssetDatabase.IsValidFolder(OutRoot), "nothing was written");
@@ -373,9 +373,9 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void Manifest_RecordsWhichScreensUseAnAsset_AndReportsStaleOnesWithoutDeleting()
         {
-            var first = ScreenCompiler.Compile(CompileExport(Showcase(), "shadow9.png"), _profile);
+            var first = ScreenCompiler.Compile(CompileExport(Showcase(), "shadow9.png"), _profile, false, NoView());
             Assert.IsTrue(first.Ok, string.Join("\n", first.Errors));
-            var other = ScreenCompiler.Compile(CompileExport(Showcase("test.other"), "shadow9.png"), _profile);
+            var other = ScreenCompiler.Compile(CompileExport(Showcase("test.other"), "shadow9.png"), _profile, false, NoView());
             Assert.IsTrue(other.Ok, string.Join("\n", other.Errors));
             var manifestPath = SharedFolder + "/" + DesignAssetImporter.ManifestFileName;
             var json = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(manifestPath));
@@ -388,14 +388,14 @@ namespace DesignUi.Editor.Tests
             // both screens stop using it: reported as stale, the file stays
             var bare = TestIr.Screen(Root(), "test.showcase");
             var dir = CompileExport(bare, "shadow9.png");
-            Assert.IsTrue(ScreenCompiler.Compile(dir, _profile, true).Ok);
-            var bare2 = ScreenCompiler.Compile(CompileExport(TestIr.Screen(Root(), "test.other"), "shadow9.png"), _profile, true);
+            Assert.IsTrue(ScreenCompiler.Compile(dir, _profile, true, NoView()).Ok);
+            var bare2 = ScreenCompiler.Compile(CompileExport(TestIr.Screen(Root(), "test.other"), "shadow9.png"), _profile, true, NoView());
             Assert.IsTrue(bare2.Ok, string.Join("\n", bare2.Errors));
             CollectionAssert.AreEqual(new[] { Path.GetFileName(shadow) }, bare2.StaleAssets);
             Assert.IsTrue(File.Exists(shadow), "stale assets are reported, never deleted");
 
             var again = File.ReadAllText(manifestPath);
-            Assert.IsTrue(ScreenCompiler.Compile(CompileExport(TestIr.Screen(Root(), "test.other"), "shadow9.png"), _profile, true).Ok);
+            Assert.IsTrue(ScreenCompiler.Compile(CompileExport(TestIr.Screen(Root(), "test.other"), "shadow9.png"), _profile, true, NoView()).Ok);
             Assert.AreEqual(again, File.ReadAllText(manifestPath), "an unchanged compile rewrites nothing");
         }
 

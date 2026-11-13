@@ -20,7 +20,10 @@ namespace DesignUi.Editor
     /// multi-atlas on. The render mode is the TMP asset's when it is an SDF or colour mode; a bitmap mode (SMOOTH, RASTER)
     /// becomes SDFAA, the mode the fidelity measurements used, and is logged.
     /// <para>Fallbacks follow TMP's search order: the TMP asset's own fallback list, then the global fallbacks (TMP
-    /// Settings' list), as twins, without duplicates or the twin itself. The weight table is mirrored as twins.</para>
+    /// Settings' list), as twins, without duplicates or the twin itself. TMP searches the global fallbacks once, after
+    /// the whole chain of the font it started from, so a global fallback and the fonts in its own fallback chain list
+    /// only their own fallbacks: with two or more global fallbacks they would otherwise list each other (a cycle). The
+    /// weight table is mirrored as twins.</para>
     /// <para>Idempotent: an up-to-date twin is returned as it is. Changed fallbacks or weights update the twin; changed
     /// atlas settings or source font rebuild it in place, keeping its GUID, so every reference to it survives. Tables are
     /// written through SerializedObject, so the font asset refreshes its lookup and native data (OnValidate). Writes use
@@ -73,6 +76,8 @@ namespace DesignUi.Editor
         internal sealed class TwinRun
         {
             public readonly IReadOnlyList<TMP_FontAsset> Globals;
+            /// <summary>The global fallbacks and every font in their own fallback chains: their twins get no global fallbacks.</summary>
+            public readonly HashSet<TMP_FontAsset> GlobalChain = new HashSet<TMP_FontAsset>();
             public readonly Dictionary<TMP_FontAsset, FontAsset> Twins = new Dictionary<TMP_FontAsset, FontAsset>();
             /// <summary>Render-mode substitutions of this pass, one per TMP asset.</summary>
             public readonly List<string> Notes = new List<string>();
@@ -81,6 +86,13 @@ namespace DesignUi.Editor
             public TwinRun(IEnumerable<TMP_FontAsset> globals)
             {
                 Globals = (globals ?? new TMP_FontAsset[0]).Where(f => f != null).Distinct().ToList();
+                var queue = new Queue<TMP_FontAsset>(Globals);
+                while (queue.Count > 0)
+                {
+                    var f = queue.Dequeue();
+                    if (f == null || !GlobalChain.Add(f)) continue;
+                    foreach (var own in f.fallbackFontAssetTable ?? new List<TMP_FontAsset>()) queue.Enqueue(own);
+                }
             }
 
             public void Claim(string path, TMP_FontAsset tmp)
@@ -121,9 +133,11 @@ namespace DesignUi.Editor
             if (built && mode != tmp.atlasRenderMode) Debug.LogWarning(BitmapNote(tmp), twin);
             run.Twins[tmp] = twin; // before the recursion: fallback lists may form cycles
 
-            // TMP's search order: the asset's own fallbacks, then the global ones; twins without duplicates or itself
+            // TMP's search order: the asset's own fallbacks, then the global ones (not for a global fallback or a font in
+            // a global's own chain, which TMP searches without the globals again); twins without duplicates or itself
             var fallbacks = new List<FontAsset>();
-            foreach (var f in (tmp.fallbackFontAssetTable ?? new List<TMP_FontAsset>()).Concat(run.Globals))
+            var globals = run.GlobalChain.Contains(tmp) ? Enumerable.Empty<TMP_FontAsset>() : run.Globals;
+            foreach (var f in (tmp.fallbackFontAssetTable ?? new List<TMP_FontAsset>()).Concat(globals))
             {
                 if (f == null || f == tmp) continue;
                 var t = GetOrCreateTwin(f, folder, run);

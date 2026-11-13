@@ -36,7 +36,10 @@ namespace DesignUi.Editor
         public Func<IrAsset, string> AssetPath;
         /// <summary>USS value of <c>-unity-font-definition</c> for a family; default: keep the <c>var(--font-…)</c> placeholder.</summary>
         public Func<string, string> FontDefinition;
-        /// <summary>Text of <c>&lt;Screen&gt;View.g.cs</c>; default: no view is written and an existing one is kept.</summary>
+        /// <summary>
+        /// Text of <c>&lt;Screen&gt;View.g.cs</c>; default: <see cref="ViewCodeWriter"/> in the profile's namespace. A step that
+        /// returns null writes no view and keeps an existing one.
+        /// </summary>
         public Func<CompiledScreen, string> ViewCode;
         /// <summary>Which TMP font renders each locale; default: <see cref="FontMap.DefaultResolver"/> (profile mapping over TMP Settings).</summary>
         public IFontResolver Fonts;
@@ -45,7 +48,8 @@ namespace DesignUi.Editor
     /// <summary>
     /// Compiles an export folder (<c>screen.ir.json</c>, assets, optional <c>text-styles.json</c>) into
     /// <c>&lt;outputFolder&gt;/&lt;Screen&gt;/</c>: <c>&lt;Screen&gt;.uxml</c>, <c>&lt;Screen&gt;.uss</c>, list item
-    /// templates, assets, <c>.gitattributes</c> and <c>.design-ui.json</c>, plus the shared
+    /// templates, the generated view class (<c>&lt;Screen&gt;View.g.cs</c>, <see cref="ViewCodeWriter"/>), assets,
+    /// <c>.gitattributes</c> and <c>.design-ui.json</c>, plus the shared
     /// <c>&lt;outputFolder&gt;/DesignTokens.uss</c> (spec 8) and <c>&lt;outputFolder&gt;/DesignFonts.uss</c>: the font
     /// variables per locale (<see cref="FontMap"/>), which the screen's style sheet imports; the screen root carries the
     /// reference locale's class. A screen that names a font family fails when a locale has no font or the family is not
@@ -130,7 +134,8 @@ namespace DesignUi.Editor
                 Add(outputs, folderName + ".uss", UssWriter.Write(compiled, new[] { "../" + FontMap.FileName }));
                 foreach (var repeat in compiled.Repeats)
                     if (repeat.TemplateFile != null) Add(outputs, repeat.TemplateFile, UxmlWriter.WriteItemTemplate(repeat));
-                if (hooks?.ViewCode != null) Add(outputs, ViewFileName(folderName), hooks.ViewCode(compiled));
+                var view = hooks?.ViewCode != null ? hooks.ViewCode(compiled) : ViewCodeWriter.Write(compiled, profile.generatedNamespace, folderName + "View");
+                if (view != null) Add(outputs, ViewFileName(folderName), view);
                 Add(outputs, GitAttributesFileName, GitAttributes);
             }
             catch (Exception e) when (e is IrFormatException || e is UnsupportedStyleException || e is FontSetupException || e is IOException || e is UnauthorizedAccessException)
