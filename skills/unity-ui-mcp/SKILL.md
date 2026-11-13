@@ -69,6 +69,8 @@ For each screen the user names:
 1. `design_ui_lint { design }`. If there are errors, report them as design-side fixes (rule id, element, fix) for the
    user or the design tool to apply, and stop. Do not fix them in Unity output or by editing the exported files.
 2. `design_ui_import { design }`. If it answers "not available yet" or fails, report the reason as it is and stop.
+   Through the open Editor it answers once the files are imported and, when generated C# changed, once Unity has
+   compiled and reloaded the scripts; a compile that fails is an error with the compiler messages (report them).
 3. `design_ui_verify { screen }`. Report the verdict exactly as returned, the report path and the top issues.
 4. Use `design_ui_status { screen }` for hashes, last import and last verdict when the user asks what changed.
    `design_ui_kit_sync` refreshes the kit fonts and settings from Unity; run it when the user asks for it or when
