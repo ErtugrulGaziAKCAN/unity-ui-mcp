@@ -106,7 +106,7 @@ namespace DesignUi.Editor.Tests
             var first = ScreenCompiler.Compile(export, profile);
             Assert.IsTrue(first.Ok, string.Join("\n", first.Errors));
             var outDir = AssetsRoot + "/TestShowcase";
-            CollectionAssert.IsSubsetOf(new[] { outDir + "/TestShowcase.uxml", outDir + "/TestShowcase.uss", outDir + "/assets/shadow.png", AssetsRoot + "/DesignTokens.uss" }, first.Written.ToArray());
+            CollectionAssert.IsSubsetOf(new[] { outDir + "/TestShowcase.uxml", outDir + "/TestShowcase.uss", AssetsRoot + "/DesignTokens.uss" }, first.Written.ToArray());
             var vta = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(outDir + "/TestShowcase.uxml");
             var sheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(outDir + "/TestShowcase.uss");
             var tokens = AssetDatabase.LoadAssetAtPath<StyleSheet>(AssetsRoot + "/DesignTokens.uss");
@@ -344,7 +344,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("test.showcase", m.screen);
             Assert.AreEqual("root", m.root);
             Assert.AreEqual("TestShowcaseView.g.cs", m.view, "reserved for the view class");
-            CollectionAssert.AreEquivalent(new[] { "TestShowcase.uxml", "TestShowcase.uss", "assets/shadow.png", ".gitattributes" }, m.files.Keys);
+            CollectionAssert.AreEquivalent(new[] { "TestShowcase.uxml", "TestShowcase.uss", ".gitattributes" }, m.files.Keys);
             foreach (var kv in m.files) Assert.AreEqual(GeneratedManifest.Sha256Hex(File.ReadAllBytes(dir + "/" + kv.Key)), kv.Value, kv.Key);
             CollectionAssert.AreEqual(new[] { "tile" }, m.clickable);
             Assert.AreEqual(1, m.mirrors.Length);

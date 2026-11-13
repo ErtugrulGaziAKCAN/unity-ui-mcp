@@ -104,8 +104,12 @@ namespace DesignUi.Editor
                                 "); export it with the design or set the profile's kit folder");
                 var textStyles = stylesPath != null ? KitTextStyles.Load(stylesPath) : null;
 
-                var assetPath = hooks?.AssetPath ?? (a => CopyAsset(a, exportDir, outputs));
-                compiled = ScreenBuilder.Build(ir, assetPath, hooks?.FontDefinition, textStyles);
+                // default asset step: the asset importer, its imports queued in one asset-editing batch
+                var importAssets = hooks?.AssetPath == null;
+                var assetPath = hooks?.AssetPath ?? (a => DesignAssetImporter.Import(a, exportDir, outFolder, profile));
+                if (importAssets) AssetDatabase.StartAssetEditing();
+                try { compiled = ScreenBuilder.Build(ir, assetPath, hooks?.FontDefinition, textStyles); }
+                finally { if (importAssets) AssetDatabase.StopAssetEditing(); }
 
                 Add(outputs, folderName + ".uxml", UxmlWriter.Write(compiled, folderName + ".uss"));
                 Add(outputs, folderName + ".uss", UssWriter.Write(compiled));
