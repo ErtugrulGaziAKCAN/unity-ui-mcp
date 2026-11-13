@@ -145,14 +145,14 @@ describe("css values", () => {
 });
 
 describe("kit data", () => {
-  it("matches text styles numerically (whole sizes, fractional line heights as Blink serialises them)", () => {
+  it("matches text styles by whole-pixel size, line height and weight", () => {
     const styles = readTextStyles(kit);
-    expect(matchTextStyle(styles, 16, 19.359375, 400)?.name).toBe("label");
-    expect(matchTextStyle(styles, 16, 19.3594, 700)?.name).toBe("label-bold"); // 6 significant digits
-    for (const [size, lh, name] of [[12, 14.5156, "caption"], [24, 29.0469, "body"], [28, 33.875, "subtitle"], [32, 38.7188, "title"], [48, 58.0781, "headline"], [56, 67.7656, "display"]] as const)
+    expect(matchTextStyle(styles, 16, 20, 400)?.name).toBe("label");
+    expect(matchTextStyle(styles, 16, 20, 700)?.name).toBe("label-bold");
+    for (const [size, lh, name] of [[12, 15, "caption"], [24, 30, "body"], [28, 35, "subtitle"], [32, 36, "title"], [48, 54, "headline"], [56, 63, "display"]] as const)
       expect(matchTextStyle(styles, size, lh, 400)?.name).toBe(name);
-    expect(matchTextStyle(styles, 16, 20, 400)).toBeNull();
-    expect(matchTextStyle(styles, 16.5, 19.359375, 400)).toBeNull();
+    expect(matchTextStyle(styles, 16, 19.359375, 400)).toBeNull();
+    expect(matchTextStyle(styles, 16.5, 20, 400)).toBeNull();
     expect(matchTextStyle(styles, 16, null, 400)).toBeNull();
     expect(matchRichStyle(styles, 12, 400)?.name).toBe("caption");
   });

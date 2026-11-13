@@ -7,7 +7,7 @@ import { decodePng, type Rgba } from "../src/bake/png.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
 import type { CaptureJob } from "../src/capture/matrix.js";
 import { deltaE2000, deltaE2000Lab, isTransparentColor } from "../src/compare/color.js";
-import { compareCapture, compareScreen, readThresholds, WHOLE, type CaptureContext, type Thresholds } from "../src/compare/compare.js";
+import { compareCapture, compareScreen, readThresholds, summarizeIssues, WHOLE, type CaptureContext, type Thresholds } from "../src/compare/compare.js";
 import { captureContext, indexIr } from "../src/compare/context.js";
 import { decodePngAsync, encodePng } from "../src/compare/png.js";
 import { writeReport, writeVerdict } from "../src/compare/report.js";
@@ -506,6 +506,7 @@ function screenFixture(unity: (name: string, s: ReturnType<typeof scene>) => Ret
   fs.writeFileSync(path.join(exportDir, "goldens", "matrix.json"), JSON.stringify({ chromium: "158.0.8127.18", platform: "darwin-arm64", captures: entries, unsampled: [] }));
   fs.writeFileSync(path.join(exportDir, "export-report.json"), JSON.stringify({ ok: true, screen: "inbox", timings: { load: 50, lint: 120, extract: 80, bake: 0, capture: 400, write: 10 }, totalMs: 700 }));
   fs.writeFileSync(path.join(unityDir, "boxes.json"), JSON.stringify(uBoxes));
+  fs.writeFileSync(path.join(unityDir, "capture-done.json"), JSON.stringify({ runId: "r1", jobs: entries.length, captured: Object.keys(uBoxes).length, notCaptured: 0 }));
   return { exportDir, unityDir, names: entries.map((e) => e.name) };
 }
 
@@ -550,6 +551,25 @@ describe("compareScreen", () => {
     const v = await compareScreen(f.exportDir, f.unityDir, T);
     expect(v.notRun).toEqual(f.names);
     expect(v).toMatchObject({ pass: false, captures: [] });
+  });
+
+  it("treats a Unity folder without capture-done.json as not captured", async () => {
+    const f = screenFixture((_, s) => s);
+    fs.rmSync(path.join(f.unityDir, "capture-done.json"));
+    const v = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(v.notRun).toEqual(f.names);
+    for (const n of f.names) expect(v.notRunReasons[n]).toBe("Unity capture did not finish");
+    expect(v).toMatchObject({ pass: false, captures: [], extra: [] });
+  });
+
+  it("reports the not-captured reasons of boxes.meta.json as not run", async () => {
+    const f = screenFixture((name, s) => (name === "busy@320x192" ? null : s));
+    fs.writeFileSync(path.join(f.unityDir, "boxes.meta.json"), JSON.stringify({ status: "done", notCaptured: [{ capture: "busy@320x192", reason: "animation player not available" }] }));
+    const v = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(v.notRun).toEqual(["busy@320x192"]);
+    expect(v.notRunReasons["busy@320x192"]).toBe("animation player not available");
+    expect(summarizeIssues(v)).toContain("busy@320x192: not run (animation player not available)");
+    expect(v.pass).toBe(false);
   });
 
   it("reads the compiler-removed elements from the generated manifest in the Unity folder", async () => {

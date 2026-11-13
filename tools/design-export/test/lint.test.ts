@@ -100,7 +100,7 @@ describe("lint engine", () => {
   const write = (dir: string, body: string, css = "") => {
     const p = path.join(dir, "s.html");
     fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}
-      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;font-family:"Inter UI";font-size:16px;line-height:19.359375px;color:#ffffff}
+      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff}
       p{margin:0}${css}</style></head><body><div class="screen" data-u-screen="s">${body}</div></body></html>`);
     return p;
   };
@@ -247,7 +247,7 @@ describe("collectSnapshot", () => {
         `<p data-l10n="big.role" data-en="Role">Rol</p><div class="dot"></div></div>`).join("\n");
       const p = path.join(dir, "big.html");
       fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}
-        .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:16px;line-height:19.359375px;color:#ffffff;background-color:#0b1f26}
+        .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
         .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:1px solid #16c2d5}
         .row:hover{background-color:#123c47} p{margin:0;flex-shrink:0} .dot{width:8px;height:8px;border-radius:4px;background-color:#16c2d5}
         @media (max-width: 1919px){.row{height:20px}}</style></head>

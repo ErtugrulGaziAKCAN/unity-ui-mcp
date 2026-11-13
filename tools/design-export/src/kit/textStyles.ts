@@ -1,36 +1,40 @@
 /**
- * Kit text-style table: whole-pixel font sizes with the exact UI Toolkit line pitch.
+ * Kit text-style table: whole-pixel font sizes with whole-pixel CSS line boxes.
  *
- * UI Toolkit (Unity 6000.3) rounds font sizes to whole device pixels, so a kit font size is a multiple of 4 px
- * (size x 0.75 and size x 0.5 stay whole at 1920x1080 and 1280x720 for a 2560x1440 reference). CSS `line-height` is
- * size x (ascent + descent) / unitsPerEm of the reference font, rounded to the nearest 1/64 px (Chromium's LayoutUnit),
- * so Chromium's line pitch equals UI Toolkit's unrounded pitch.
+ * Two line-height ratios cover the kit: 1.25 for the small roles (caption, label, body, subtitle; sizes are multiples
+ * of 4) and 1.125 for the large ones (title, headline, display; sizes are multiples of 8). Each size times its ratio is
+ * a whole pixel count. The Unity font twins carry the same line box (faceInfo.lineHeight = ratio x pointSize, with the
+ * half-leading folded into ascent and descent), so a text block's height is lines x line height on both sides.
  */
-export interface FontVerticalMetrics { ascent: number; descent: number; unitsPerEm: number }
-export interface TextStyleRow { name: string; fontSize: number; lineHeight: number; weight: number }
+export interface TextStyleRow { name: string; fontSize: number; lineHeight: number; ratio: number; weight: number }
+export interface StyleSpec { name: string; fontSize: number; ratio: number }
 
-/** Inter (hhea ascender 1984, descender 494, 2048 units per em). */
-export const INTER_METRICS: FontVerticalMetrics = { ascent: 1984, descent: 494, unitsPerEm: 2048 };
+export const SMALL_RATIO = 1.25;
+export const LARGE_RATIO = 1.125;
 
-/** The kit's style roles with their whole-pixel (multiple of 4) font sizes. */
-export const KIT_STYLE_SIZES: ReadonlyArray<readonly [string, number]> = [
-  ["caption", 12], ["label", 16], ["body", 24], ["subtitle", 28], ["title", 32], ["headline", 48], ["display", 56],
+/** The kit's style roles with their font sizes and line-height ratios. */
+export const KIT_STYLE_SPECS: ReadonlyArray<StyleSpec> = [
+  { name: "caption", fontSize: 12, ratio: SMALL_RATIO },
+  { name: "label", fontSize: 16, ratio: SMALL_RATIO },
+  { name: "body", fontSize: 24, ratio: SMALL_RATIO },
+  { name: "subtitle", fontSize: 28, ratio: SMALL_RATIO },
+  { name: "title", fontSize: 32, ratio: LARGE_RATIO },
+  { name: "headline", fontSize: 48, ratio: LARGE_RATIO },
+  { name: "display", fontSize: 56, ratio: LARGE_RATIO },
 ];
 
-/** size x (ascent + descent) / unitsPerEm, rounded to the nearest 1/64 px (ties up). */
-export function lineHeightFor(fontSize: number, m: FontVerticalMetrics): number {
-  return Math.round(fontSize * (m.ascent + m.descent) / m.unitsPerEm * 64) / 64;
-}
+/** Size granularity each ratio needs for a whole-pixel line box. */
+const sizeStep = (ratio: number) => (ratio === LARGE_RATIO ? 8 : 4);
 
-/** Regular (400) and `-bold` (700) rows for each named size, in the order given. */
-export function buildTextStyles(
-  m: FontVerticalMetrics, sizes: ReadonlyArray<readonly [string, number]> = KIT_STYLE_SIZES,
-): TextStyleRow[] {
+/** Regular (400) and `-bold` (700) rows for each spec, in the order given. */
+export function buildTextStyles(specs: ReadonlyArray<StyleSpec> = KIT_STYLE_SPECS): TextStyleRow[] {
   const rows: TextStyleRow[] = [];
-  for (const [name, fontSize] of sizes) {
-    if (!Number.isInteger(fontSize) || fontSize % 4 !== 0) throw new Error(`text style "${name}": font size ${fontSize} is not a multiple of 4 px`);
-    const lineHeight = lineHeightFor(fontSize, m);
-    rows.push({ name, fontSize, lineHeight, weight: 400 }, { name: `${name}-bold`, fontSize, lineHeight, weight: 700 });
+  for (const { name, fontSize, ratio } of specs) {
+    if (ratio !== SMALL_RATIO && ratio !== LARGE_RATIO) throw new Error(`text style "${name}": ratio ${ratio} is not ${SMALL_RATIO} or ${LARGE_RATIO}`);
+    const step = sizeStep(ratio);
+    if (!Number.isInteger(fontSize) || fontSize % step !== 0) throw new Error(`text style "${name}": font size ${fontSize} is not a multiple of ${step} px`);
+    const lineHeight = fontSize * ratio;
+    rows.push({ name, fontSize, lineHeight, ratio, weight: 400 }, { name: `${name}-bold`, fontSize, lineHeight, ratio, weight: 700 });
   }
   return rows;
 }

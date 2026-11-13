@@ -456,7 +456,7 @@ const copyCapture = (without: string[] = []) => ({
     prefer: "command",
     command: {
       import: ["sh", "-c", "exit 0"],
-      capture: ["sh", "-c", `mkdir -p "$1" && cp "$0"/goldens/*.png "$0"/goldens/boxes.json "$1"/ && rm -f ${without.map((f) => `"$1/${f}"`).join(" ") || '"$1/none"'}`, "{exportDir}", "{outDir}"],
+      capture: ["sh", "-c", `mkdir -p "$1" && cp "$0"/goldens/*.png "$0"/goldens/boxes.json "$1"/ && echo '{"runId":"t","jobs":2,"captured":2,"notCaptured":0}' > "$1"/capture-done.json && rm -f ${without.map((f) => `"$1/${f}"`).join(" ") || '"$1/none"'}`, "{exportDir}", "{outDir}"],
       kitSync: ["sh", "-c", "exit 0"],
     },
   },
@@ -498,7 +498,7 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(html).toContain("PASS");
     expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "compare", "verdict.json"), "utf8"))).toMatchObject({ pass: true });
     // published: captures in place, no staging left, the report links the published captures
-    expect(fs.readdirSync(path.join(dir, ".design-ui", "unity")).sort()).toEqual(["boxes.json", "default@64x48.png", "hover@64x48.png"]);
+    expect(fs.readdirSync(path.join(dir, ".design-ui", "unity")).sort()).toEqual(["boxes.json", "capture-done.json", "default@64x48.png", "hover@64x48.png"]);
     expect(fs.existsSync(path.join(dir, ".design-ui", "unity.next"))).toBe(false);
     expect(fs.existsSync(path.join(dir, ".design-ui", "compare.next"))).toBe(false);
     expect(html).toContain('src=".design-ui/unity/default%4064x48.png"');
@@ -533,6 +533,14 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(fs.existsSync(path.join(dir, ".design-ui", "unity", "default@64x48.png"))).toBe(true);
     expect(fs.existsSync(path.join(dir, ".design-ui", "unity.next"))).toBe(false);
     expect(screenStatus(readConfig(p.dir), "clean-screen").verdict).toBe("fail");
+
+    // a capture folder without the capture-done marker is an unfinished capture: no verdict either
+    p.writeConfig(copyCapture(["capture-done.json"]));
+    const client3 = await serverFor(p.dir, goldenPipeline());
+    const unfinished = await call(client3, "design_ui_verify", { screen: "clean-screen" });
+    expect(unfinished.isError).toBe(true);
+    expect(unfinished.data.verdict).toBeNull();
+    expect(unfinished.text).toMatch(/did not finish \(no capture-done\.json\); no verdict/);
   });
 });
 

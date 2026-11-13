@@ -260,9 +260,9 @@ describe("captures", () => {
       const wrap = boxes.elements.wrap;
       expect(wrap.text).toBe(true);
       expect(wrap.lines).toHaveLength(3);
-      // Inter at 16px: line pitch 19.359375 (the exact UI Toolkit pitch); the glyph box is the font's rounded ascent + descent
+      // Inter at 16px: line pitch 20 (the exact UI Toolkit pitch); the glyph box is the font's rounded ascent + descent
       wrap.lines.forEach((l, k) => {
-        expect(l.y - wrap.lines[0].y).toBeCloseTo(19.359375 * k * s, 5);
+        expect(l.y - wrap.lines[0].y).toBeCloseTo(20 * k * s, 5);
         if (k === 0) expect(Math.abs(l.y - wrap.y)).toBeLessThanOrEqual(1);
         expect(l.h).toBeGreaterThanOrEqual(20 * s - 1);
         expect(l.h).toBeLessThanOrEqual(20 * s + 1);

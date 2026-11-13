@@ -575,6 +575,16 @@ function animationStrips(entries: MatrixEntry[]): AnimStrip[] {
  * capture without a Unity one is not run (the screen does not pass); Unity captures without a golden are listed as
  * extra. Captures are compared in parallel.
  */
+/** The `notCaptured` entries of a Unity capture's boxes.meta.json: capture name -> reason (empty when absent or unreadable). */
+function readNotCaptured(file: string): Record<string, string> {
+  const meta = tryJson(file);
+  const out: Record<string, string> = {};
+  if (isObj(meta) && Array.isArray(meta.notCaptured))
+    for (const n of meta.notCaptured)
+      if (isObj(n) && typeof n.capture === "string") out[n.capture] = typeof n.reason === "string" && n.reason ? n.reason : "not captured by Unity";
+  return out;
+}
+
 export async function compareScreen(exportDir: string, unityDir: string, t: Thresholds, opts: CompareOptions = {}): Promise<ScreenVerdict> {
   const t0 = performance.now();
   const goldensDir = path.join(exportDir, "goldens");
@@ -609,18 +619,23 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
     removed = isObj(manifest) && Array.isArray(manifest.removedElements) ? manifest.removedElements.filter((x): x is string => typeof x === "string") : [];
   }
 
+  // a Unity capture folder counts only with the capture-done marker, which Unity writes last
+  const finished = fs.existsSync(path.join(unityDir, "capture-done.json"));
   const unityBoxesFile = path.join(unityDir, "boxes.json");
-  const unityBoxes = fs.existsSync(unityBoxesFile) ? readBoxesFile(unityBoxesFile, "Unity") : {};
+  const unityBoxes = finished && fs.existsSync(unityBoxesFile) ? readBoxesFile(unityBoxesFile, "Unity") : {};
+  const unityNotCaptured = finished ? readNotCaptured(path.join(unityDir, "boxes.meta.json")) : {};
   const notRunReasons: Record<string, string> = {};
   const runnable: string[] = [];
   for (const name of names) {
     if (!fs.existsSync(path.join(goldensDir, `${name}.png`))) notRunReasons[name] = "the design capture PNG is missing from the export";
+    else if (!finished) notRunReasons[name] = "Unity capture did not finish";
+    else if (unityNotCaptured[name] !== undefined) notRunReasons[name] = unityNotCaptured[name];
     else if (!fs.existsSync(path.join(unityDir, `${name}.png`))) notRunReasons[name] = "no Unity capture PNG";
     else if (!unityBoxes[name]) notRunReasons[name] = "no entry in the Unity boxes.json";
     else runnable.push(name);
   }
   const known = new Set(names);
-  const unityPngs = fs.existsSync(unityDir) ? fs.readdirSync(unityDir).filter((f) => f.endsWith(".png")).map((f) => f.slice(0, -4)) : [];
+  const unityPngs = finished && fs.existsSync(unityDir) ? fs.readdirSync(unityDir).filter((f) => f.endsWith(".png")).map((f) => f.slice(0, -4)) : [];
   const extra = Array.from(new Set([...Object.keys(unityBoxes), ...unityPngs])).filter((n) => !known.has(n)).sort();
 
   if (opts.diffDir) fs.mkdirSync(opts.diffDir, { recursive: true });

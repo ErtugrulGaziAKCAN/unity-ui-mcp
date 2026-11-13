@@ -65,10 +65,11 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       const steps: Record<string, number> = { ...(imp.timings ?? {}), capture: t.steps.capture };
       const v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir }));
       if (v.compared === 0) {
-        const none = !fs.existsSync(path.join(staging, "boxes.json"));
+        const unfinished = !fs.existsSync(path.join(staging, "capture-done.json"));
+        const none = !unfinished && !fs.existsSync(path.join(staging, "boxes.json"));
         v.discard?.();
         dropStaging();
-        return toolResult(`Unity capture of ${screen} (via ${run.via}) ${none ? "wrote no boxes.json" : "produced none of the design's captures"}; no verdict. ` +
+        return toolResult(`Unity capture of ${screen} (via ${run.via}) ${unfinished ? "did not finish (no capture-done.json)" : none ? "wrote no boxes.json" : "produced none of the design's captures"}; no verdict. ` +
           "The previous report and verdict are unchanged.", { screen, verdict: null, notRun: v.notRun, logTail: run.logTail, timings: t.done() }, true);
       }
       const verdict = v.pass && v.notRun.length === 0 ? "pass" : "fail";
