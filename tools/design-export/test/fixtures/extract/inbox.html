@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0}
+.screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16.515625px;line-height:20px;color:var(--color-text);background-color:var(--color-surface)}
+p{margin:0}
+.half{display:flex;flex-direction:row;width:50%;padding:1.5rem;flex-shrink:0;transform:translate(10px, 5px) rotate(45deg) scale(1.5)}
+.card{width:300px;height:80px;flex-shrink:0;border-radius:9999px;background-color:#123c47;border:1px solid #16C2D5}
+.card:hover{background-color:var(--accent)}
+.plain{width:10px;height:10px;flex-shrink:0;border:none}
+.spinner{display:none;width:32px;height:32px;border-radius:50%;background-color:#ffffff}
+.state-loading .spinner{display:flex}
+.list{display:flex;flex-direction:column;flex-shrink:0}
+.list > div{height:24px;flex-shrink:0}
+.tab{width:40px;height:20px;flex-shrink:0;background-color:#123c47}
+.tab.is-selected{background-color:#16c2d5}
+.btn{display:flex;flex-direction:row;flex-shrink:0;color:#ffffff;text-align:center}
+.btn:hover{color:#16c2d5}
+.lbl{display:block}
+@media (max-width: 1919px){.half{padding:8px}}
+</style></head><body><div class="screen" data-u-screen="inbox">
+<p data-u-id="title" data-l10n="inbox.title" data-en="Inbox">Gelen Kutusu</p>
+<p data-u-id="note" data-l10n="inbox.note" data-en="You have new mail">Yeni <b>posta</b> var</p>
+<div class="half" data-u-id="half"></div>
+<div class="card" data-u-id="card"></div>
+<div class="plain" data-u-id="plain"></div>
+<div class="spinner" data-u-id="spinner"></div>
+<div class="list" data-u-id="list"><div data-u-id="first"></div><div data-u-id="second"></div><div></div></div>
+<div class="tab" data-u-id="tab"></div>
+<div class="btn" data-u-id="play" data-u-action="play"><span class="lbl" data-l10n="inbox.play" data-en="Play">Oyna</span></div>
+</div></body></html>

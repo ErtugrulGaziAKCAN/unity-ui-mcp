@@ -1,0 +1,194 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import type { CDPSession, Page } from "playwright";
+import type { IrAsset } from "../ir/types.js";
+import type { KitConfig } from "../kit.js";
+import type { SnapDecl } from "../lint/css-values.js";
+import { DESIGN_ORIGIN, KIT_PREFIX } from "../load.js";
+import { physicalNames, type DomSnapshot, type Size } from "../lint/snapshot.js";
+import type { ChildSeq } from "./text.js";
+
+/** SVG presentation properties written as computed values into a serialised inline SVG (currentColor and page CSS resolved). */
+export const SVG_PAINT = ["fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin",
+  "stroke-miterlimit", "stroke-dasharray", "stroke-dashoffset", "stroke-opacity", "stop-color", "stop-opacity", "flood-color",
+  "flood-opacity", "lighting-color", "clip-rule", "paint-order", "vector-effect"];
+/** Also written on SVG content (not on the <svg> root, whose opacity and visibility are the node's own style). */
+const SVG_CONTENT_ONLY = ["opacity", "visibility"];
+
+export interface PageRequest {
+  seqs: number[];
+  svgs: number[];
+  imgs: number[];
+  bgUrls: string[];
+  root: number;
+  states: string[];
+  boxes: number[];
+}
+export interface PageData {
+  seqs: Map<number, ChildSeq>;
+  svgs: Map<number, string>;
+  imgs: Map<number, { src: string; w: number; h: number }>;
+  bgs: Map<string, { w: number; h: number }>;
+  stateBoxes: Map<string, Map<number, Size>>;
+}
+
+interface PageArg extends PageRequest { paint: string[]; contentOnly: string[] }
+interface PageOut {
+  seqs: [number, ChildSeq][]; svgs: [number, string][]; imgs: [number, { src: string; w: number; h: number }][];
+  bgs: [string, { w: number; h: number } | null][]; boxes: [string, [number, Size][]][];
+}
+
+/** Runs in the page (one call): child order, serialised SVGs, image sources and sizes, element sizes per screen state. */
+async function pageExtract(arg: PageArg): Promise<PageOut> {
+  const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
+  const idx = new Map<Element, number>(els.map((e, i) => [e, i]));
+  const seqs: PageOut["seqs"] = arg.seqs.map((i) => [i, Array.from(els[i].childNodes).flatMap((n): ChildSeq =>
+    n.nodeType === 3 ? [{ t: (n as Text).data }] : n.nodeType === 1 && idx.has(n as Element) ? [{ e: idx.get(n as Element)! }] : [])]);
+  const svgs: PageOut["svgs"] = arg.svgs.map((i) => {
+    const src = els[i];
+    const clone = src.cloneNode(true) as Element;
+    const from = [src, ...Array.from(src.querySelectorAll("*"))];
+    const to = [clone, ...Array.from(clone.querySelectorAll("*"))];
+    from.forEach((o, k) => {
+      const c = to[k];
+      const cs = getComputedStyle(o);
+      for (const a of Array.from(c.attributes)) {
+        const n = a.name.toLowerCase();
+        if (n === "class" || n.startsWith("data-") || n === "color" || arg.paint.includes(n) || (k > 0 && arg.contentOnly.includes(n)) || (k === 0 && n === "style")) c.removeAttribute(a.name);
+      }
+      const st = (c as SVGElement).style;
+      for (const p of k === 0 ? arg.paint : [...arg.paint, ...arg.contentOnly]) st.setProperty(p, cs.getPropertyValue(p));
+      if (k > 0 && cs.display === "none") st.setProperty("display", "none");
+    });
+    return [i, new XMLSerializer().serializeToString(clone)];
+  });
+  const imgs: PageOut["imgs"] = arg.imgs.map((i) => {
+    const im = els[i] as HTMLImageElement;
+    return [i, { src: im.currentSrc || im.src, w: im.naturalWidth, h: im.naturalHeight }];
+  });
+  const bgs: PageOut["bgs"] = await Promise.all(arg.bgUrls.map((u) => new Promise<[string, { w: number; h: number } | null]>((resolve) => {
+    const im = new Image();
+    im.onload = () => resolve([u, { w: im.naturalWidth, h: im.naturalHeight }]);
+    im.onerror = () => resolve([u, null]);
+    im.src = u;
+  })));
+  const num = (v: string) => parseFloat(v) || 0;
+  const size = (el: Element): Size | null => {
+    if (el.getClientRects().length === 0) return null;
+    const cs = getComputedStyle(el);
+    const w = parseFloat(cs.width), h = parseFloat(cs.height);
+    if (!Number.isFinite(w) || !Number.isFinite(h) || cs.display === "inline") { const b = el.getBoundingClientRect(); return { w: b.width, h: b.height }; }
+    const extra = cs.boxSizing === "content-box"
+      ? [num(cs.paddingLeft) + num(cs.paddingRight) + num(cs.borderLeftWidth) + num(cs.borderRightWidth), num(cs.paddingTop) + num(cs.paddingBottom) + num(cs.borderTopWidth) + num(cs.borderBottomWidth)]
+      : [0, 0];
+    return { w: w + extra[0], h: h + extra[1] };
+  };
+  const boxes: PageOut["boxes"] = [];
+  const root = els[arg.root];
+  if (arg.boxes.length) {
+    for (const st of arg.states) {
+      const cls = `state-${st}`;
+      const had = root.classList.contains(cls);
+      root.classList.add(cls);
+      void (root as HTMLElement).offsetHeight;
+      boxes.push([st, arg.boxes.flatMap((i) => { const b = size(els[i]); return b ? [[i, b] as [number, Size]] : []; })]);
+      if (!had) root.classList.remove(cls);
+    }
+    void (root as HTMLElement).offsetHeight;
+  }
+  return { seqs, svgs, imgs, bgs, boxes };
+}
+
+export async function collectPageData(page: Page, req: PageRequest): Promise<PageData> {
+  const r = await page.evaluate(pageExtract as unknown as (a: PageArg) => Promise<PageOut>, { ...req, paint: SVG_PAINT, contentOnly: SVG_CONTENT_ONLY });
+  const bgs = new Map<string, { w: number; h: number }>();
+  for (const [u, sz] of r.bgs) if (sz) bgs.set(u, sz);
+  return {
+    seqs: new Map(r.seqs), svgs: new Map(r.svgs), imgs: new Map(r.imgs), bgs,
+    stateBoxes: new Map(r.boxes.map(([st, list]) => [st, new Map(list)])),
+  };
+}
+
+/** Attributes that may carry presentational styles on the whitelisted elements (CDP attributesStyle). */
+const PRESENTATIONAL = ["hidden", "width", "height", "align", "valign", "border", "hspace", "vspace", "bgcolor", "color", "nowrap"];
+export const hasPresentational = (attrs: Record<string, string>) => PRESENTATIONAL.some((a) => attrs[a] !== undefined);
+
+/** Presentational attribute styles of the given elements (R36), as physical longhand declarations. */
+export async function presentationalStyles(cdp: CDPSession, s: DomSnapshot, indices: number[]): Promise<Map<number, SnapDecl[]>> {
+  const out = new Map<number, SnapDecl[]>();
+  if (!indices.length) return out;
+  type Props = { name: string; value: string }[];
+  const read = async (i: number): Promise<Props> => {
+    const e = s.elements[i];
+    try {
+      const r = await cdp.send("CSS.getInlineStylesForNode", { nodeId: e.nodeId });
+      return (r.attributesStyle?.cssProperties ?? []) as Props;
+    } catch {
+      // node ids from another DOM.getDocument: resolve through the stable backend id
+      const { nodeIds } = await cdp.send("DOM.pushNodesByBackendIdsToFrontend", { backendNodeIds: [e.backendNodeId] });
+      const r = await cdp.send("CSS.getInlineStylesForNode", { nodeId: nodeIds[0] });
+      return (r.attributesStyle?.cssProperties ?? []) as Props;
+    }
+  };
+  const all = await Promise.all(indices.map(read));
+  indices.forEach((i, k) => {
+    const decls: SnapDecl[] = [];
+    for (const p of all[k]) for (const n of physicalNames(p.name)) decls.push({ name: n, value: p.value, important: false });
+    if (decls.length) out.set(i, decls);
+  });
+  return out;
+}
+
+const sha = (b: Buffer | string) => crypto.createHash("sha256").update(b).digest("hex");
+
+/** Writes `assets/<sha256>.<ext>` under outDir (once) and returns its IR record. */
+export function writeAsset(outDir: string, bytes: Buffer, ext: string, kind: "image" | "svg", width: number, height: number): IrAsset {
+  const hash = sha(bytes);
+  const file = `assets/${hash}.${ext}`;
+  const target = path.join(outDir, file);
+  if (!fs.existsSync(target)) {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, bytes);
+  }
+  return { kind, file, sha256: hash, width: Math.max(width, 1), height: Math.max(height, 1), slice: null };
+}
+
+const MIME_EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg" };
+
+/** Bytes and extension behind an image URL of the design page: the design folder, the kit, or a data: URL. */
+export function readImageUrl(url: string, designDir: string, kit: KitConfig): { bytes: Buffer; ext: string } {
+  if (url.startsWith("data:")) {
+    const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(url);
+    if (!m || !MIME_EXT[m[1]]) throw new Error(`unsupported data URL image (${url.slice(0, 40)}…)`);
+    return { bytes: m[2] ? Buffer.from(m[3], "base64") : Buffer.from(decodeURIComponent(m[3]), "utf8"), ext: MIME_EXT[m[1]] };
+  }
+  const u = new URL(url);
+  if (u.origin !== DESIGN_ORIGIN) throw new Error(`image ${url} is not a local design file`);
+  const rel = decodeURIComponent(u.pathname);
+  const [root, sub] = rel.startsWith(KIT_PREFIX) ? [kit.dir, rel.slice(KIT_PREFIX.length)] : [designDir, rel.slice(1)];
+  const file = path.resolve(root, "." + path.posix.normalize("/" + sub));
+  if (file !== root && !file.startsWith(root + path.sep)) throw new Error(`image ${url} is outside the design folder`);
+  if (!fs.existsSync(file)) throw new Error(`image ${url} not found (${path.relative(designDir, file)})`);
+  return { bytes: fs.readFileSync(file), ext: path.extname(file).slice(1).toLowerCase() || "bin" };
+}
+
+/** Intrinsic size of a serialised SVG: width/height attributes, else the viewBox, else the rendered box. */
+export function svgSize(xml: string, fallback: Size | null): { w: number; h: number } {
+  const root = /<svg\b[^>]*>/i.exec(xml)?.[0] ?? "";
+  const attr = (n: string) => new RegExp(`\\s${n}="([^"]*)"`, "i").exec(root)?.[1];
+  const len = (v: string | undefined) => { const m = v && /^\s*(\d+(?:\.\d+)?)(px)?\s*$/.exec(v); return m ? Number(m[1]) : null; };
+  const w = len(attr("width")), h = len(attr("height"));
+  if (w && h) return { w, h };
+  const vb = attr("viewBox")?.trim().split(/[\s,]+/).map(Number);
+  if (vb && vb.length === 4 && vb[2] > 0 && vb[3] > 0) return { w: vb[2], h: vb[3] };
+  return { w: fallback?.w ?? 1, h: fallback?.h ?? 1 };
+}
+
+/** First url(...) of a computed background-image. */
+export function backgroundUrl(computed: string | undefined): string | null {
+  const m = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/i.exec(computed ?? "");
+  return m ? (m[1] ?? m[2] ?? m[3]).trim() : null;
+}
+
+export const fileSha = (file: string) => sha(fs.readFileSync(file));

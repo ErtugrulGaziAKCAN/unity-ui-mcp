@@ -39,6 +39,33 @@ describe("IR contract", () => {
     expect(flat.some((n) => n.repeat)).toBe(true);
     expect(flat.some((n) => Object.keys(n.style.hover ?? {}).length)).toBe(true);
     expect(flat.some((n) => Object.keys(n.style).some((k) => k.startsWith("state:")))).toBe(true);
+    expect(flat.some((n) => Object.keys(n.style).some((k) => k.startsWith("class:is-")))).toBe(true);
+    expect(flat.some((n) => n.text?.style)).toBe(true);
+    expect(flat.some((n) => n.repeat?.count > 1)).toBe(true);
+    const anims = flat.flatMap((n) => n.anims);
+    expect(anims.some((a) => a.kind === "transition" && a.phase === "leave" && a.timing.startsWith("cubic-bezier("))).toBe(true);
+    expect(anims.some((a) => a.kind === "keyframes" && a.trigger === "show" && a.iterations === "infinite" && a.keyframes.some((k: any) => k.easing))).toBe(true);
+  });
+  it("rejects untyped anims, unknown triggers and layers", () => {
+    const ir = contract("ir-sample.json");
+    ir.root.anims = [{ property: "opacity" }];
+    expect(validateIr(ir).length).toBeGreaterThan(0);
+    const ir2 = contract("ir-sample.json");
+    const anim = ir2.root.children.flatMap((c: any) => c.anims)[0];
+    ir2.root.anims = [{ ...anim, trigger: "pseudo:focus-within" }];
+    expect(validateIr(ir2).join("\n")).toContain("trigger");
+    const ir3 = contract("ir-sample.json");
+    ir3.root.style["sibling:x"] = {};
+    expect(validateIr(ir3).length).toBeGreaterThan(0);
+  });
+  it("requires the matched text style and the repeat count", () => {
+    const ir = contract("ir-sample.json");
+    delete ir.root.children[0].text.style;
+    expect(validateIr(ir).join("\n")).toContain("style");
+    const ir2 = contract("ir-sample.json");
+    const list = ir2.root.children.find((c: any) => c.repeat);
+    delete list.repeat.count;
+    expect(validateIr(ir2).join("\n")).toContain("count");
   });
 });
 

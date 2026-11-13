@@ -1,0 +1,8 @@
+{
+  "caption": { "fontSize": 13, "lineHeight": 16, "weight": 400 },
+  "label": { "fontSize": 16.515625, "lineHeight": 20, "weight": 400 },
+  "label-bold": { "fontSize": 16.515625, "lineHeight": 20, "weight": 700 },
+  "body": { "fontSize": 23, "lineHeight": 28, "weight": 400 },
+  "body-bold": { "fontSize": 23, "lineHeight": 28, "weight": 700 },
+  "title": { "fontSize": 33, "lineHeight": 40, "weight": 400 }
+}

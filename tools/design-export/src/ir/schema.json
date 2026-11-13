@@ -287,7 +287,7 @@
         "style": {
           "type": "object",
           "propertyNames": {
-            "pattern": "^(base|hover|active|focus|disabled|checked|bp:.+|state:.+)$"
+            "pattern": "^(base|hover|active|focus|disabled|checked|bp:.+|state:.+|class:.+)$"
           },
           "additionalProperties": {
             "$ref": "#/$defs/styleMap"
@@ -306,7 +306,8 @@
                 "tr",
                 "en",
                 "args",
-                "rich"
+                "rich",
+                "style"
               ],
               "properties": {
                 "key": {
@@ -332,6 +333,13 @@
                 },
                 "rich": {
                   "type": "boolean"
+                },
+                "style": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Kit text style (text-styles.json name) the text matches, or null."
                 }
               }
             }
@@ -389,7 +397,8 @@
               "additionalProperties": false,
               "required": [
                 "name",
-                "mode"
+                "mode",
+                "count"
               ],
               "properties": {
                 "name": {
@@ -401,13 +410,21 @@
                     "list",
                     "inline"
                   ]
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Items the design shows (the template included)."
                 }
               }
             }
           ]
         },
         "anims": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/anim"
+          }
         },
         "children": {
           "type": "array",
@@ -459,6 +476,135 @@
         },
         "offset": {
           "$ref": "#/$defs/rect"
+        }
+      }
+    },
+    "anim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "trigger",
+        "phase",
+        "name",
+        "properties",
+        "duration",
+        "delay",
+        "timing",
+        "iterations",
+        "direction",
+        "fillMode",
+        "playState",
+        "keyframes"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "transition",
+            "keyframes"
+          ]
+        },
+        "trigger": {
+          "type": "string",
+          "pattern": "^(show|state:.+|bp:.+|pseudo:(hover|active|focus|checked|disabled)|class:.+)$"
+        },
+        "phase": {
+          "enum": [
+            "enter",
+            "leave"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0,
+          "description": "ms"
+        },
+        "delay": {
+          "type": "number",
+          "description": "ms, may be negative"
+        },
+        "timing": {
+          "type": "string",
+          "minLength": 1,
+          "description": "CSS timing function as serialised by Chromium"
+        },
+        "iterations": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "const": "infinite"
+            }
+          ]
+        },
+        "direction": {
+          "enum": [
+            "normal",
+            "reverse",
+            "alternate",
+            "alternate-reverse"
+          ]
+        },
+        "fillMode": {
+          "enum": [
+            "none",
+            "forwards",
+            "backwards",
+            "both"
+          ]
+        },
+        "playState": {
+          "enum": [
+            "running",
+            "paused"
+          ]
+        },
+        "keyframes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/keyframe"
+          }
+        }
+      }
+    },
+    "keyframe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "offset",
+        "values",
+        "easing"
+      ],
+      "properties": {
+        "offset": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "values": {
+          "$ref": "#/$defs/styleMap"
+        },
+        "easing": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     }

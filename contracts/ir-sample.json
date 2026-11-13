@@ -49,6 +49,7 @@
         "style": {
           "base": {
             "color": "#ffffff",
+            "display": "block",
             "font-size": "48px"
           }
         },
@@ -59,12 +60,53 @@
           "en": "Welcome {0}",
           "key": "sample.title",
           "rich": false,
+          "style": "title",
           "tr": "Hoş geldin {0}"
         }
       },
       {
         "action": null,
-        "anims": [],
+        "anims": [
+          {
+            "delay": 0,
+            "direction": "alternate",
+            "duration": 1200,
+            "fillMode": "both",
+            "iterations": "infinite",
+            "keyframes": [
+              {
+                "easing": null,
+                "offset": 0,
+                "values": {
+                  "opacity": "1"
+                }
+              },
+              {
+                "easing": "linear",
+                "offset": 0.5,
+                "values": {
+                  "opacity": "0.6"
+                }
+              },
+              {
+                "easing": null,
+                "offset": 1,
+                "values": {
+                  "opacity": "0.8"
+                }
+              }
+            ],
+            "kind": "keyframes",
+            "name": "pulse",
+            "phase": "enter",
+            "playState": "running",
+            "properties": [
+              "opacity"
+            ],
+            "timing": "ease-in-out",
+            "trigger": "show"
+          }
+        ],
         "asset": {
           "file": "assets/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.png",
           "height": 300,
@@ -103,6 +145,7 @@
         "style": {
           "base": {
             "border-radius": "24px",
+            "display": "block",
             "height": "300px",
             "width": "600px"
           }
@@ -111,7 +154,42 @@
       },
       {
         "action": "play",
-        "anims": [],
+        "anims": [
+          {
+            "delay": 0,
+            "direction": "normal",
+            "duration": 200,
+            "fillMode": "none",
+            "iterations": 1,
+            "keyframes": [],
+            "kind": "transition",
+            "name": null,
+            "phase": "enter",
+            "playState": "running",
+            "properties": [
+              "background-color"
+            ],
+            "timing": "cubic-bezier(0.4, 0, 0.2, 1)",
+            "trigger": "pseudo:hover"
+          },
+          {
+            "delay": 0,
+            "direction": "normal",
+            "duration": 200,
+            "fillMode": "none",
+            "iterations": 1,
+            "keyframes": [],
+            "kind": "transition",
+            "name": null,
+            "phase": "leave",
+            "playState": "running",
+            "properties": [
+              "background-color"
+            ],
+            "timing": "cubic-bezier(0.4, 0, 0.2, 1)",
+            "trigger": "pseudo:hover"
+          }
+        ],
         "asset": null,
         "background": null,
         "bind": null,
@@ -130,13 +208,16 @@
             "repeat": null,
             "shadow": null,
             "style": {
-              "base": {}
+              "base": {
+                "display": "block"
+              }
             },
             "text": {
               "args": [],
               "en": "Play",
               "key": "sample.play",
               "rich": false,
+              "style": "label",
               "tr": "Oyna"
             }
           }
@@ -152,7 +233,8 @@
             "background-color": "#1fa89e"
           },
           "base": {
-            "background-color": "#2fd1c5"
+            "background-color": "#2fd1c5",
+            "display": "flex"
           },
           "disabled": {
             "opacity": "0.4"
@@ -187,7 +269,11 @@
             "shadow": null,
             "style": {
               "base": {
+                "display": "flex",
                 "height": "64px"
+              },
+              "class:is-selected": {
+                "background-color": "#123c47"
               }
             },
             "text": null
@@ -198,12 +284,14 @@
         "id": "rows",
         "kind": "list",
         "repeat": {
+          "count": 3,
           "mode": "list",
           "name": "row"
         },
         "shadow": null,
         "style": {
           "base": {
+            "display": "flex",
             "flex-direction": "column"
           }
         },
