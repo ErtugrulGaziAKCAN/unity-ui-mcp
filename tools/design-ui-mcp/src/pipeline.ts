@@ -28,12 +28,24 @@ export interface CompareOutcome {
   verdictFile?: string;
   /** Per-step milliseconds as recorded in the report. */
   timings?: Record<string, number>;
+  /** Checks skipped for the whole screen (e.g. no IR). */
+  warnings?: string[];
+  /** Painted backgrounds left without any colour sample, over all captures. */
+  notSampled?: number;
+  /**
+   * Makes this run the screen's result: moves the Unity captures (to `opts.unityDir`) and the difference images into
+   * place and writes the report and verdict.json. Called only once a verdict exists, right before last-verify.json.
+   */
+  publish?: () => void;
+  /** Drops this run's derived files; the previous report, captures and verdict stay as they were. */
+  discard?: () => void;
 }
 /**
- * Compares the Unity captures in `unityDir` with the goldens in `exportDir` and writes the HTML report. `timings`:
- * steps measured before the comparison (import, compile, capture), recorded in the report.
+ * Compares the Unity captures in `unityDir` (a staging folder) with the goldens in `exportDir`; `publish()` writes the
+ * HTML report. `timings`: steps measured before the comparison (import, compile, capture), recorded in the report;
+ * `unityDir`: where the captures live once published (default: where they are).
  */
-export type CompareScreen = (exportDir: string, unityDir: string, reportFile: string, opts?: { timings?: Record<string, number> }) => Promise<CompareOutcome>;
+export type CompareScreen = (exportDir: string, unityDir: string, reportFile: string, opts?: { timings?: Record<string, number>; unityDir?: string }) => Promise<CompareOutcome>;
 
 /** The pipeline steps that run inside this server. A null step is not installed in this version. */
 export interface Pipeline {
@@ -60,16 +72,27 @@ export const INSTALLED_PIPELINE: Pipeline = {
     return { ok: r.ok, findings: r.findings, timings: { ...r.timings, total: r.totalMs }, skipped: r.skipped };
   },
   compareScreen: async (exportDir, unityDir, reportFile, opts = {}) => {
-    // derived files live in the screen's bookkeeping folder, next to the Unity captures (a dot folder: not design source)
-    const work = path.join(path.dirname(unityDir), "compare");
-    fs.rmSync(path.join(work, "diff"), { recursive: true, force: true });
-    const v = await runCompare(exportDir, unityDir, readThresholds(), { diffDir: path.join(work, "diff"), timings: opts.timings });
-    writeReport(v, exportDir, unityDir, reportFile);
+    // derived files live in the screen's bookkeeping folder, next to the Unity captures (a dot folder: not design
+    // source); this run's go to staging folders until publish(), so a run without a verdict changes nothing
+    const finalUnity = opts.unityDir ?? unityDir;
+    const work = path.join(path.dirname(finalUnity), "compare"), next = `${work}.next`;
+    const rm = (p: string) => fs.rmSync(p, { recursive: true, force: true });
+    rm(next);
+    const v = await runCompare(exportDir, unityDir, readThresholds(), { diffDir: path.join(next, "diff"), timings: opts.timings });
     const verdictFile = path.join(work, "verdict.json");
-    writeVerdict(v, verdictFile);
     return {
       pass: v.pass, topIssues: summarizeIssues(v, 20, { notRun: false }), notRun: v.notRun, compared: v.captures.length,
-      extra: v.extra, verdictFile, timings: v.timings,
+      extra: v.extra, verdictFile, timings: v.timings, warnings: v.warnings,
+      notSampled: v.captures.reduce((a, c) => a + c.notSampled.length, 0),
+      publish: () => {
+        if (path.resolve(finalUnity) !== path.resolve(unityDir)) { rm(finalUnity); fs.renameSync(unityDir, finalUnity); }
+        rm(work);
+        if (fs.existsSync(next)) fs.renameSync(next, work);
+        for (const c of v.captures) if (c.diff) c.diff = path.join(work, path.relative(next, c.diff));
+        writeVerdict(v, verdictFile);
+        writeReport(v, exportDir, finalUnity, reportFile);
+      },
+      discard: () => rm(next),
     };
   },
   unityCapture: false,

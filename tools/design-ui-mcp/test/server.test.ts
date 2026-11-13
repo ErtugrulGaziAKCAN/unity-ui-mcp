@@ -407,7 +407,7 @@ describe("design_ui_verify", () => {
     const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
     expect(r.isError).toBe(true);
     expect(r.data).toMatchObject({ verdict: "fail", topIssues: ["header: box +3 px"] });
-    expect(p.runnerCalls()[1]).toBe(`capture|${path.join(dir, ".design-ui", "export")}|${path.join(dir, ".design-ui", "unity")}| env=${path.join(dir, ".design-ui", "export")}`);
+    expect(p.runnerCalls()[1]).toBe(`capture|${path.join(dir, ".design-ui", "export")}|${path.join(dir, ".design-ui", "unity.next")}| env=${path.join(dir, ".design-ui", "export")}`);
     const st = screenStatus(readConfig(p.dir), "clean-screen");
     expect(st).toMatchObject({ state: "failed", verdict: "fail", reportPath: path.join(dir, "report.html") });
   });
@@ -482,8 +482,8 @@ describe("design_ui_verify with the installed comparison", () => {
     const client = await serverFor(p.dir, goldenPipeline());
     expect((await call(client, "design_ui_import", { design: "clean-screen" })).isError).toBeFalsy();
     // a stale capture from an earlier run is never compared
-    fs.mkdirSync(path.join(dir, ".design-ui", "unity"), { recursive: true });
-    fs.writeFileSync(path.join(dir, ".design-ui", "unity", "stale@64x48.png"), "x");
+    fs.mkdirSync(path.join(dir, ".design-ui", "unity.next"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".design-ui", "unity.next", "stale@64x48.png"), "x");
     const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
     expect(r.text).toMatch(/^PASS: clean-screen/);
     expect(r.isError).toBeFalsy();
@@ -497,6 +497,11 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(html).toContain("default@64x48");
     expect(html).toContain("PASS");
     expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "compare", "verdict.json"), "utf8"))).toMatchObject({ pass: true });
+    // published: captures in place, no staging left, the report links the published captures
+    expect(fs.readdirSync(path.join(dir, ".design-ui", "unity")).sort()).toEqual(["boxes.json", "default@64x48.png", "hover@64x48.png"]);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "unity.next"))).toBe(false);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "compare.next"))).toBe(false);
+    expect(html).toContain('src=".design-ui/unity/default%4064x48.png"');
     expect(screenStatus(readConfig(p.dir), "clean-screen")).toMatchObject({ state: "verified", verdict: "pass" });
     // the report and the bookkeeping do not change the design's source hash
     expect(screenStatus(readConfig(p.dir), "clean-screen").sourceSha).toBe(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8")).sourceSha);
@@ -514,13 +519,19 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(r.text).toContain("Not run: hover@64x48");
     expect(fs.readFileSync(path.join(dir, "report.html"), "utf8")).toContain("NOT RUN");
 
+    const report = fs.readFileSync(path.join(dir, "report.html"));
+    const lastVerify = fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"));
     p.writeConfig(copyCapture(["default@64x48.png", "hover@64x48.png", "boxes.json"]));
     const client2 = await serverFor(p.dir, goldenPipeline());
     const none = await call(client2, "design_ui_verify", { screen: "clean-screen" });
     expect(none.isError).toBe(true);
     expect(none.data.verdict).toBeNull();
-    expect(none.text).toMatch(/wrote no boxes\.json .*; no verdict/);
-    // the earlier verdict stays the last one recorded
+    expect(none.text).toMatch(/wrote no boxes\.json; no verdict\. The previous report and verdict are unchanged/);
+    // the earlier report, its captures and verdict stay exactly as they were
+    expect(fs.readFileSync(path.join(dir, "report.html")).equals(report)).toBe(true);
+    expect(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json")).equals(lastVerify)).toBe(true);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "unity", "default@64x48.png"))).toBe(true);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "unity.next"))).toBe(false);
     expect(screenStatus(readConfig(p.dir), "clean-screen").verdict).toBe("fail");
   });
 });

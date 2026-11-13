@@ -20,17 +20,21 @@ const STEP_ORDER = ["lint", "export", "import", "compile", "capture", "compare"]
 const ms = (v: number) => (v >= 10000 ? `${(v / 1000).toFixed(1)} s` : `${Math.round(v)} ms`);
 
 const KIND_LABEL: Record<string, string> = {
-  box: "box", missing: "missing", visibility: "visibility", lines: "line count", baseline: "baseline",
-  color: "colour", ssim: "SSIM", shadow: "shadow band", size: "image size",
+  box: "box", missing: "missing", extra: "only in Unity", visibility: "visibility", lines: "line count", baseline: "baseline",
+  color: "colour", edge: "edge, border, corner", ssim: "SSIM", ink: "text colour", inkCoverage: "text ink amount", shadow: "shadow band", size: "image size",
 };
 
 function thresholdRows(t: Thresholds): string {
+  const lo = t.textInkRatio * (1 - t.textInkCoverage), hi = 1 + t.textInkCoverage;
   const rows: [string, string, string][] = [
-    ["boxPx", `±${t.boxPx} px`, "every element's border box (x, y, width, height)"],
+    ["boxPx", `±${t.boxPx} px`, "every element's border box (x, y, width, height); only the design's elements, anything else Unity shows is an issue"],
     ["baselinePx", `±${t.baselinePx} px`, "same line count; every line's baseline (inputs and selects: lines not compared)"],
-    ["deltaE2000", `≤ ${t.deltaE2000}`, "colour samples of elements that paint a background; mean colour of each baked shadow's band"],
-    ["ssimNonText", `≥ ${t.ssimNonText}`, "SSIM of the whole capture, text and external regions copied from the design"],
-    ["ssimElement", `≥ ${t.ssimElement}`, "SSIM per visible element of at least 16×16 px, over its box joined with its baked shadow"],
+    ["deltaE2000", `≤ ${t.deltaE2000}`, "colour samples of painted backgrounds; edge, border and corner samples of elements that carry text; mean colour of each baked shadow's band (each sample against the closest Unity colour within 1 px)"],
+    ["ssimNonText", `≥ ${t.ssimNonText}`, "SSIM of the whole capture, text element boxes and external regions copied from the design"],
+    ["ssimElement", `≥ ${t.ssimElement}`, "SSIM per visible element of at least 16×16 px over its box joined with its baked shadow (an element that carries text: only its lines copied); when it fails, each block may use the Unity image offset by up to 1 px"],
+    ["textInkDeltaE", `≤ ${t.textInkDeltaE}`, "text colour per line: median of the 10 % ink pixels most different from the background (to be calibrated by the fidelity suite)"],
+    ["textInkRatio", `${t.textInkRatio}`, "Unity's text ink amount relative to the design's for correct text, measured on the M0 captures (to be calibrated by the fidelity suite)"],
+    ["textInkCoverage", `±${Math.round(t.textInkCoverage * 100)} %`, `text ink amount per line: between ${lo.toFixed(2)}× and ${hi.toFixed(2)}× the design's, and within this of the capture's median ratio when it has 3 or more lines (to be calibrated by the fidelity suite)`],
   ];
   return rows.map(([k, v, what]) => `<tr><th scope="row"><code>${k}</code></th><td class="num">${esc(v)}</td><td>${esc(what)}</td></tr>`).join("");
 }
@@ -70,7 +74,10 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     : '<p class="muted">No issues.</p>';
   const rows = c.elements.map((r) => `<tr class="st-${r.status}"><td><code>${esc(r.id)}</code></td><td>${esc(r.status)}</td>` +
     `<td class="num">${r.box ? r.box.map((d) => (d >= 0 ? "+" : "") + d.toFixed(2)).join(" ") : "—"}</td>` +
-    `<td class="num">${num(r.ssim, 5)}</td><td class="num">${num(r.deltaE, 2)}</td><td class="num">${num(r.band, 2)}</td><td>${esc(r.lines ?? "—")}</td></tr>`).join("");
+    `<td class="num">${num(r.ssim, 5)}</td><td class="num">${num(r.ssimShifted, 5)}</td>` +
+    `<td class="num">${r.samples === 0 ? '<span class="warn-text">not sampled</span>' : `${num(r.deltaE, 2)}${r.samples ? ` <span class="muted">(${r.samples})</span>` : ""}`}</td>` +
+    `<td class="num">${num(r.edge, 2)}</td><td class="num">${num(r.band, 2)}</td><td class="num">${num(r.ink, 2)}</td><td class="num">${r.inkRatio === null ? "—" : `${r.inkRatio.toFixed(2)}×`}</td>` +
+    `<td>${esc(r.lines ?? "—")}</td></tr>`).join("");
   const name = `v-${i}`;
   const views = [
     `<input type="radio" name="${name}" id="${name}-s" value="side" checked><label for="${name}-s">Side by side</label>`,
@@ -102,8 +109,10 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     </dl>
     ${issues}
     ${c.linesNotCompared.length ? `<p class="muted">Lines not compared (text not in DOM text): ${c.linesNotCompared.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
+    ${c.notSampled.length ? `<p class="warn-text">Background not sampled (every sample point covered or on text): ${c.notSampled.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
+    ${c.translucent ? `<p class="muted">${c.translucent} Unity pixels are translucent; colours were compared premultiplied.</p>` : ""}
     <details class="elements"><summary>Per-element measures (${c.elements.length})</summary>
-      <table><thead><tr><th>Element</th><th>Status</th><th>Box Δ x y w h (px)</th><th>SSIM</th><th>ΔE2000</th><th>Shadow band ΔE</th><th>Lines design/Unity</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>Element</th><th>Status</th><th>Box Δ x y w h (px)</th><th>SSIM</th><th>SSIM ≤ 1 px</th><th>Background ΔE (samples)</th><th>Edge ΔE</th><th>Shadow band ΔE</th><th>Text colour ΔE</th><th>Text ink</th><th>Lines design/Unity</th></tr></thead><tbody>${rows}</tbody></table>
     </details>
   </div>
 </details>`;
@@ -155,6 +164,8 @@ img{display:block;width:100%;height:auto;border:1px solid var(--border);border-r
 .maskbox{position:absolute;background:rgba(70,130,255,.28);pointer-events:none}
 .slider{display:flex;gap:8px;align-items:center;margin-top:8px;color:var(--muted)}.slider input{flex:0 1 320px}
 .legend{font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.warning{border:1px solid var(--warn);background:var(--warn-bg);color:var(--fg);border-radius:8px;padding:10px 14px;margin:12px 0}
+.warning strong{color:var(--warn)}.warn-text{color:var(--warn)}
 .sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px}.sw.hot{background:linear-gradient(90deg,#ffdc00,#ff0000)}.sw.mask{background:rgba(70,130,255,.45)}.sw.box{border:2px solid #ff3df5}
 .measures{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:12px 0}
 .measures div{border:1px solid var(--border);border-radius:8px;padding:6px 10px}.measures dt{font-size:12px;color:var(--muted)}.measures dd{margin:0;font-variant-numeric:tabular-nums}
@@ -199,6 +210,8 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
   const worstBox = v.captures.filter((c) => c.maxBoxDelta).sort((a, b) => b.maxBoxDelta!.px - a.maxBoxDelta!.px)[0];
   const worstDE = v.captures.filter((c) => c.maxDeltaE).sort((a, b) => b.maxDeltaE!.deltaE - a.maxDeltaE!.deltaE)[0];
   const linesNot = Array.from(new Set(v.captures.flatMap((c) => c.linesNotCompared))).sort();
+  const extraEls = v.captures.reduce((a, c) => a + c.issues.filter((i) => i.kind === "extra").length, 0);
+  const notSampled = v.captures.reduce((a, c) => a + c.notSampled.length, 0);
   const link = (c: CaptureVerdict | undefined, text: string) => (c ? `<a href="#${anchor(index.get(c.capture)!)}">${text}</a>` : "—");
 
   const indexRows = [
@@ -225,12 +238,16 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
 <body><main>
 <header><h1>Fidelity report: ${esc(v.screen)}</h1>${verdict}<span class="muted">${esc(new Date().toISOString().replace("T", " ").slice(0, 19))} UTC</span></header>
 <p class="muted">Unity captures compared with the design's goldens, capture by capture (states, pseudo-states, viewports, animation samples). The screen passes only when every capture runs and passes.</p>
+${v.warnings.length ? `<div class="warning" role="alert"><strong>Checks skipped for this screen</strong><ul>${v.warnings.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
+<p class="muted">Effective tolerance: boxes ±${v.thresholds.boxPx} px. Element SSIM and every colour sample use the Unity image offset by up to 1 px where that matches better, so a move or size change within the box allowance cannot fail them; a 2-px displacement, another shape, a missing shadow or a wrong colour still does. Images are linked, not embedded: keep this report next to the design captures (${esc(path.relative(dir, path.join(path.resolve(exportDir), "goldens")) || ".")}), the Unity captures (${esc(path.relative(dir, path.resolve(unityDir)) || ".")}) and the difference images.</p>
 <div class="cards">
   <div class="card"><div class="v">${v.captures.length + v.notRun.length}</div><div class="k">captures in the design</div></div>
   <div class="card"><div class="v" style="color:var(--pass)">${passed}</div><div class="k">pass</div></div>
   <div class="card"><div class="v" style="color:var(--fail)">${failed}</div><div class="k">fail</div></div>
   <div class="card"><div class="v" style="color:var(--warn)">${v.notRun.length}</div><div class="k">not run</div></div>
   <div class="card"><div class="v">${v.extra.length}</div><div class="k">extra Unity captures</div></div>
+  <div class="card"><div class="v">${extraEls}</div><div class="k">elements only in Unity</div></div>
+  <div class="card"><div class="v"${notSampled ? ' style="color:var(--warn)"' : ""}>${notSampled}</div><div class="k">backgrounds not sampled</div></div>
 </div>
 <div class="cards">
   <div class="card"><div class="v">${worstWhole ? num(worstWhole.ssim, 5) : "—"}</div><div class="k">lowest whole SSIM ${link(worstWhole, worstWhole ? esc(worstWhole.capture) : "")}</div></div>
@@ -244,7 +261,7 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
 </div>
 <section><h2>Notes</h2><ul>
   <li>Goldens: ${v.platform ? `Chromium ${esc(v.platform.chromium)} on ${esc(v.platform.platform)}` : "platform not recorded"}; compare with captures of the same platform (goldens are platform-specific).</li>
-  <li>Before SSIM, the boxes of text elements and external regions (inflated by 2 px) are copied from the design, so text is judged by its boxes, line count and baselines (line widths are not compared). Colour samples skip only the text lines, so a button's or badge's own background is still sampled.</li>
+  <li>Before the whole-capture SSIM, the boxes of text elements and external regions (inflated by 2 px) are copied from the design. An element that carries text is measured with only its lines copied, plus samples of its background, border and corners; its text is checked by line count, baselines, ink colour and ink amount (line widths are not compared).</li>
   ${linesNot.length ? `<li>Lines not compared (text not in DOM text): ${linesNot.map((x) => `<code>${esc(x)}</code>`).join(", ")}</li>` : ""}
   ${v.removed.length ? `<li>Removed by the compiler (no Unity box by design): ${v.removed.map((x) => `<code>${esc(x)}</code>`).join(", ")}</li>` : ""}
   ${v.notes.map((n) => `<li>${esc(n)}</li>`).join("")}

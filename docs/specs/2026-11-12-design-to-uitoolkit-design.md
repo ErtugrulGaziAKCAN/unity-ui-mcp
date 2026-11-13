@@ -478,7 +478,16 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`), calibrated in M0:
 | SSIM, non-text, whole capture (`ssimNonText`) | ≥ 0.99 | Clean fixtures ≥ 0.99998; gradient banding lowers it to about 0.998 for a full-screen gradient. Too coarse for element-sized defects |
 | SSIM, non-text, per element ≥ 16×16 px, over the element box joined with its baked-shadow rect (`ssimElement`) | ≥ 0.99 | Elements without defects ≥ 0.9956; a pill drawn as an ellipse 0.72, a missing glow 0.87, a missing hard shadow 0.955, a missing large soft shadow 0.985, a dashed border drawn solid 0.97 |
 | Shadow band: mean colour of each baked shadow's band (shadow rect minus element box) | ΔE2000 ≤ 1 | Catches faint missing shadows that SSIM dilutes |
+| Text ink colour per line (`textInkDeltaE`): median of the pixels that differ most from the line's background | ΔE2000 ≤ 3 | Initial value, to be calibrated by the fidelity suite |
+| Text ink amount per line (`textInkRatio`, `textInkCoverage`): anti-aliasing-weighted ink pixels, Unity's relative to the design's | Between 0.76 × 0.85 and 1.15; with 3 or more lines in the capture also within ±15 % of the capture's median ratio | Initial values, to be calibrated by the fidelity suite. M0 captures (light Inter on dark, 12–48 px, standard generator): correct text 0.69–0.83 (UI Toolkit draws thinner stems), synthetic bold 1.18–1.23, regular instead of bold about 0.54. The median cancels the renderer, so a single wrong weight or size stands out |
 | Animation samples (§11): every sample of every animation | Same thresholds as static captures | — |
+
+Element SSIM and colour samples allow the ±1 px box tolerance: when an element's SSIM fails, each block may take its
+best value with the Unity image offset by up to 1 px in x and y (a moved edge or a 1-px size change cannot fail it; a
+missing shadow, another shape or a dashed border still does), and every colour sample is compared with the closest
+Unity colour within 1 px. An element that carries its own text (a button, a badge) is measured with only its text lines
+copied from the design, plus samples of its background, border and corner diagonals; elements that paint a background
+but leave no sample point are reported as "not sampled".
 
 SSIM is the mean over non-overlapping 8×8 blocks of BT.601 luma with `C1 = (0.01·255)²`, `C2 = (0.03·255)²`
 (reference implementation: `spike/m0-metrics.ts`). For an element it is the mean over the blocks that overlap the

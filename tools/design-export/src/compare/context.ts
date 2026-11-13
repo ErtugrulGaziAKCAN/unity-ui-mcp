@@ -23,6 +23,13 @@ export interface CaptureContext {
   shadows?: Record<string, Rect>;
   /** Elements that paint a background in this capture (colour, gradient or image); null or absent: every element. */
   backgrounds?: ReadonlySet<string> | null;
+  /**
+   * Elements that paint anything of their own in this capture (background, border, content image or vector, baked
+   * shadow): only these can cover another element's colour samples. Null or absent: every visible element counts.
+   */
+  painters?: ReadonlySet<string> | null;
+  /** Painted border widths per element in device px (top, right, bottom, left); absent: no border known. */
+  borders?: Record<string, [number, number, number, number]>;
 }
 
 /** The screen setup of a capture: state, viewport and what is applied (matrix.json `captures[]`). */
@@ -32,6 +39,9 @@ interface LooseShadow { offset: BoxRect }
 interface LooseNode {
   id: string;
   kind?: string;
+  asset?: unknown;
+  insetShadow?: unknown;
+  insetShadowLayers?: Record<string, unknown>;
   classes?: string[];
   style?: Record<string, Record<string, string>>;
   background?: unknown;
@@ -124,7 +134,8 @@ function styleValue(n: LooseNode, prop: string, holds: (key: string) => boolean)
 export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: CaptureBoxes): CaptureContext {
   const test = dimensionTest(ix, setup);
   const shadows: Record<string, Rect> = {};
-  const backgrounds = new Set<string>();
+  const backgrounds = new Set<string>(), painters = new Set<string>();
+  const borders: Record<string, [number, number, number, number]> = {};
   for (const id of ix.order) {
     const n = ix.nodes.get(id)!;
     const holds = (key: string) => key.split("+").every((d) => test(d, id));
@@ -133,11 +144,20 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     const asset = resolve<unknown>(n.background ?? null, n.backgroundLayers, holds);
     if (!isTransparentColor(color) || (image !== undefined && image.trim() !== "none" && image.trim() !== "") || asset) backgrounds.add(id);
     const sh = resolve<LooseShadow | null>(n.shadow ?? null, n.shadowLayers, holds);
+    const inset = resolve<unknown>(n.insetShadow ?? null, n.insetShadowLayers, holds);
     const b = golden.elements[id];
     if (sh && isObj(sh.offset) && b) {
       const s = golden.scale, o = sh.offset;
       shadows[id] = { x: b.x + o.x * s, y: b.y + o.y * s, w: b.w + o.w * s, h: b.h + o.h * s };
     }
+    const widths = (["top", "right", "bottom", "left"] as const).map((side) => {
+      const style = styleValue(n, `border-${side}-style`, holds) ?? "none";
+      if (style === "none" || style === "hidden" || isTransparentColor(styleValue(n, `border-${side}-color`, holds) ?? "currentcolor")) return 0;
+      const px = parseFloat(styleValue(n, `border-${side}-width`, holds) ?? "0");
+      return Number.isFinite(px) ? px * golden.scale : 0;
+    }) as [number, number, number, number];
+    if (widths.some((x) => x > 0)) borders[id] = widths;
+    if (backgrounds.has(id) || borders[id] || sh || inset || n.asset || n.kind === "image" || n.kind === "vector") painters.add(id);
   }
-  return { order: ix.order, root: ix.root, shadows, backgrounds };
+  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, borders };
 }

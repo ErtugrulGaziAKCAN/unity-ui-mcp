@@ -2,22 +2,30 @@
  * Fidelity comparison of Unity captures against the design's goldens (spec §11, §15): this decides "one to one".
  *
  * Per capture (static, pseudo-state and animation sample alike, with the same thresholds):
- * - every golden element: present in Unity (unless the compiler removed it as a wrapper without boxes), the same
- *   visibility (hidden on both sides: nothing else is compared; hidden on one side: a visibility issue, never a box
- *   delta), border box within ±`boxPx`, text with the same line count and every line's baseline within ±`baselinePx`
- *   (elements whose design text is not in DOM text, i.e. inputs and selects, report no lines: not compared);
- * - copy-mask SSIM (ssim.ts): whole capture ≥ `ssimNonText`; each visible non-text element ≥ 16×16 px ≥ `ssimElement`
- *   over its golden box joined with its active baked-shadow rect;
- * - colour: elements that paint a background, a 5×3 grid of 3×3-pixel means inside both boxes (inset 6 px; a single
- *   centre sample for elements under 16 px), skipping points near later-painted elements or masked pixels;
- *   ΔE2000 ≤ `deltaE2000`;
+ * - every golden element: present in Unity (unless the compiler removed it as a wrapper that carries no text and
+ *   paints nothing), the same visibility (hidden on both sides: nothing else is compared; hidden on one side: a
+ *   visibility issue, never a box delta), border box within ±`boxPx`, text with the same line count and every line's
+ *   baseline within ±`baselinePx` (inputs and selects report no lines: not compared); every element Unity shows that
+ *   the design does not have is an `extra` issue;
+ * - copy-mask SSIM (ssim.ts): whole capture ≥ `ssimNonText`; per visible element ≥ 16×16 px ≥ `ssimElement` over its
+ *   golden box joined with its active baked-shadow rect. Non-text elements use the pinned copy-mask (text element boxes
+ *   copied from the design); an element that carries text uses a mask of its text lines only, so its background,
+ *   border and corners count. When the plain value fails, each block may take its best value with the Unity image
+ *   offset by up to 1 px, so the ±1 px box allowance (a move or a 1-px size change) cannot fail the element;
+ * - colour (samples.ts): elements that paint a background get a 5×3 grid of 3×3 means inside both boxes (inset 6 px;
+ *   one centre sample under 16 px), skipping points under later elements that paint or on text lines; when every
+ *   grid point is covered, samples just inside the border take over; an element left without any sample is listed
+ *   as "not sampled", never skipped silently. Elements that carry text and paint also get ring samples (background
+ *   inside the border, the border, the corner diagonals for the radius). Every sample is ΔE2000 ≤ `deltaE2000` against
+ *   the closest Unity colour within 1 px;
+ * - text ink per line: the ink colour (ΔE2000 ≤ `textInkDeltaE`) and the ink amount: Unity's relative to the
+ *   design's between `textInkRatio` and 1 (each ± `textInkCoverage`), and within ±`textInkCoverage` of the capture's
+ *   median ratio when it has 3 or more lines; this catches a wrong text colour, weight or size;
  * - shadow band: the mean colour of each active outer shadow's band (shadow rect minus element box), ΔE2000 ≤
  *   `deltaE2000`, so a faint missing shadow fails although SSIM dilutes it.
- * Masks (union of both sides, inflated by 2 px): before SSIM, the boxes of text elements and `data-u-external` regions
- * are copied from the golden (the pinned definition the SSIM thresholds were calibrated with), so text elements are
- * judged by their boxes, lines and baselines; colour samples skip only the text lines and external regions, so an
- * element that carries its own text (a button, a badge) still has its background sampled. Line widths are not compared (findings §4: the caret route's line rects differ from Chromium's by more than
- * a pixel at the same break), so a changed break with the same line count shows only through boxes and baselines.
+ * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows.
+ * Colours are compared premultiplied (a translucent Unity pixel counts as its colour over black). Line widths are not
+ * compared (findings §4: the caret route's line rects differ from Chromium's by more than a pixel at the same break).
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -30,15 +38,24 @@ import type { CaptureApply, CaptureJob } from "../capture/matrix.js";
 import { deltaE2000, hex } from "./color.js";
 import { captureContext, indexIr, type CaptureContext, type IrIndex } from "./context.js";
 import { decodePngAsync, encodePngAsync } from "./png.js";
-import { blockSsimMap, maskRects, regionSsim, unionRect, wholeSsim, type Rect } from "./ssim.js";
+import { bestDeltaE, inkIn, ringPoints, type RingPoint } from "./samples.js";
+import { blockSsimMap, maskRects, regionSsim, regionSsimShifted, unionRect, wholeSsim, type Rect } from "./ssim.js";
 
 export type { CaptureContext } from "./context.js";
 
-export interface Thresholds { boxPx: number; baselinePx: number; deltaE2000: number; ssimNonText: number; ssimElement: number }
+export interface Thresholds {
+  boxPx: number; baselinePx: number; deltaE2000: number; ssimNonText: number; ssimElement: number;
+  /** Text ink colour per line (ΔE2000). */
+  textInkDeltaE: number;
+  /** Expected ink amount of Unity text relative to the design's (renderer difference, measured). */
+  textInkRatio: number;
+  /** Allowed deviation of a line's ink amount from the expected ratio (weight, size, glyph errors). */
+  textInkCoverage: number;
+}
 
-/** `tools/design-export/fidelity-thresholds.json`, the only place the thresholds live. */
+/** `tools/design-export/fidelity-thresholds.json`, the only place the thresholds live (keys starting with `$` are comments). */
 export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.json", import.meta.url));
-const THRESHOLD_KEYS: (keyof Thresholds)[] = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement"];
+const THRESHOLD_KEYS: (keyof Thresholds)[] = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage"];
 
 export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
   const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
@@ -46,7 +63,7 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
   return Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as unknown as Thresholds;
 }
 
-export type IssueKind = "box" | "missing" | "visibility" | "lines" | "baseline" | "color" | "ssim" | "shadow" | "size";
+export type IssueKind = "size" | "missing" | "extra" | "visibility" | "lines" | "box" | "baseline" | "ssim" | "edge" | "color" | "ink" | "inkCoverage" | "shadow";
 /** Element id of capture-level issues (whole-capture SSIM, image size). */
 export const WHOLE = "*";
 
@@ -54,20 +71,32 @@ export interface ElementIssue {
   id: string;
   kind: IssueKind;
   detail: string;
-  /** Where (golden device px): the element box, its SSIM region or the colour sample; absent for capture-level issues. */
+  /** Where (golden device px; Unity's for an extra element): the element box, its SSIM region or the colour sample. */
   at?: Rect;
 }
 
-/** One golden element of a capture: what was compared and the measured values (null: not compared). */
+/** One element of a capture: what was compared and the measured values (null: not compared). */
 export interface ElementRow {
   id: string;
-  status: "ok" | "fail" | "hidden" | "removed" | "missing";
+  status: "ok" | "fail" | "hidden" | "removed" | "missing" | "extra";
   /** Unity minus design: x, y, w, h in device px. */
   box: [number, number, number, number] | null;
+  /** Element SSIM without offsets (the pinned value for non-text elements). */
   ssim: number | null;
+  /** Element SSIM with each block's best offset of up to 1 px; computed only when the plain value fails. */
+  ssimShifted: number | null;
+  /** Largest background sample ΔE2000. */
   deltaE: number | null;
+  /** Background samples taken: null when the element paints no background; 0 = not sampled. */
+  samples: number | null;
+  /** Largest ring sample ΔE2000 (text-carrying elements: background inside the border, border, corners). */
+  edge: number | null;
   /** Shadow band ΔE2000. */
   band: number | null;
+  /** Largest text ink colour ΔE2000 over the lines. */
+  ink: number | null;
+  /** Unity's text ink amount relative to the design's, for the element's worst line (0: no ink in Unity). */
+  inkRatio: number | null;
   /** `<design>/<Unity>` line counts; "not compared" for text without DOM lines. */
   lines: string | null;
 }
@@ -88,6 +117,7 @@ export interface CaptureVerdict {
   issues: ElementIssue[];
   /** Golden image size. */
   size: [number, number];
+  /** Lowest decisive element SSIM (the better of the plain and the offset value). */
   worstElement: { id: string; ssim: number } | null;
   maxBoxDelta: { id: string; px: number } | null;
   maxDeltaE: { id: string; deltaE: number } | null;
@@ -95,7 +125,11 @@ export interface CaptureVerdict {
   pixelsOff: number | null;
   /** Text elements whose lines are not compared (their design text is not DOM text: inputs, selects). */
   linesNotCompared: string[];
-  /** Regions copied from the design before SSIM and skipped by colour samples (text, external; inflated by 2 px). */
+  /** Elements that paint a background but had no colour sample left (every point covered or on text). */
+  notSampled: string[];
+  /** Unity pixels with alpha below 255 (compared premultiplied). */
+  translucent: number;
+  /** Regions copied from the design before the pinned SSIM (text element boxes, external; inflated by 2 px). */
   masked: Rect[];
   elements: ElementRow[];
   /** Set by compareScreen. */
@@ -131,7 +165,9 @@ export interface ScreenVerdict {
   /** Compiler-removed wrappers (no boxes in Unity by design). */
   removed: string[];
   animations: AnimStrip[];
-  /** What the comparison could not use (e.g. no IR: no shadow bands). */
+  /** Checks the comparison had to skip for the whole screen (e.g. no IR: no shadow bands). Shown as a warning. */
+  warnings: string[];
+  /** Other remarks (e.g. no capture matrix: name order, no animation strips). */
   notes: string[];
 }
 
@@ -148,39 +184,28 @@ export interface CompareOptions {
 
 const EPS = 1e-6;
 const MIN_ELEMENT = 16;
+const MIN_INK_PX = 16;
 const FX = [0.1, 0.3, 0.5, 0.7, 0.9], FY = [0.25, 0.5, 0.75];
 const fmt = (n: number, d = 2) => (n >= 0 ? "+" : "") + n.toFixed(d);
+const pct = (n: number) => `${n >= 0 ? "+" : ""}${Math.round(n * 100)} %`;
 const r6 = (n: number) => Math.round(n * 1e6) / 1e6;
 const inside = (r: Rect, x: number, y: number, pad = 0) => x >= r.x - pad && x < r.x + r.w + pad && y >= r.y - pad && y < r.y + r.h + pad;
+const grow = (r: Rect, d: number): Rect => ({ x: r.x - d, y: r.y - d, w: r.w + 2 * d, h: r.h + 2 * d });
 
 type Box = CaptureBoxes["elements"][string];
 interface Side { png: Rgba; boxes: CaptureBoxes }
 
-/**
- * Text regions of one side, visible elements only: `box` gives each text element's border box (the pinned SSIM
- * copy-mask); `lines` each text line's rect, or the box when the element reports no lines (colour samples).
- */
-function textRegions(boxes: CaptureBoxes, what: "box" | "lines"): Rect[] {
-  const out: Rect[] = [];
-  for (const e of Object.values(boxes.elements)) {
-    if (!e.text || !e.visible) continue;
-    if (what === "lines" && e.lines.length) out.push(...e.lines);
-    else out.push(e);
+/** The image with every pixel premultiplied by its alpha (a translucent pixel as its colour over black). */
+function opaque(img: Rgba): { img: Rgba; translucent: number } {
+  let translucent = 0;
+  for (let o = 3; o < img.data.length; o += 4) if (img.data[o] !== 255) translucent++;
+  if (!translucent) return { img, translucent };
+  const data = new Uint8Array(img.data.length);
+  for (let o = 0; o < data.length; o += 4) {
+    const a = img.data[o + 3];
+    data[o] = Math.round((img.data[o] * a) / 255); data[o + 1] = Math.round((img.data[o + 1] * a) / 255); data[o + 2] = Math.round((img.data[o + 2] * a) / 255); data[o + 3] = 255;
   }
-  return out;
-}
-
-/** Mean RGB over a window of up to 3×3 pixels around (x, y), clamped to `clip`; b's masked pixels come from a. */
-function sample(img: Rgba, x: number, y: number, clip: Rect, from?: { a: Rgba; mask: Uint8Array }): [number, number, number] {
-  const x0 = Math.max(0, Math.ceil(clip.x), x - 1), x1 = Math.min(img.w - 1, Math.ceil(clip.x + clip.w) - 1, x + 1);
-  const y0 = Math.max(0, Math.ceil(clip.y), y - 1), y1 = Math.min(img.h - 1, Math.ceil(clip.y + clip.h) - 1, y + 1);
-  let r = 0, g = 0, b = 0, n = 0;
-  for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) {
-    const p = yy * img.w + xx, src = from && from.mask[p] ? from.a.data : img.data, o = p * 4;
-    r += src[o]; g += src[o + 1]; b += src[o + 2]; n++;
-  }
-  if (!n) { const p = (Math.min(img.h - 1, Math.max(0, y)) * img.w + Math.min(img.w - 1, Math.max(0, x))) * 4; return [img.data[p], img.data[p + 1], img.data[p + 2]]; }
-  return [r / n, g / n, b / n];
+  return { img: { w: img.w, h: img.h, data }, translucent };
 }
 
 /** Mean colour of the pixels whose centre is in `outer` but not in `inner`; null when there are none. */
@@ -227,12 +252,15 @@ function difference(a: Rgba, b: Rgba, mask: Uint8Array, wantImage: boolean): { i
 interface Analysis { verdict: CaptureVerdict; heat: Rgba | null }
 
 function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thresholds, ctx: CaptureContext, wantHeat: boolean): Analysis {
-  const g = golden.boxes, u = unity.boxes, gp = golden.png, up = unity.png;
+  const g = golden.boxes, u = unity.boxes, gp = opaque(golden.png).img;
+  const { img: up, translucent } = opaque(unity.png);
   const issues: ElementIssue[] = [];
   const rows: ElementRow[] = [];
-  const linesNotCompared: string[] = [];
+  const linesNotCompared: string[] = [], notSampled: string[] = [];
   const removedSet = new Set(removed);
   const issue = (id: string, kind: IssueKind, detail: string, at?: Rect) => issues.push(at ? { id, kind, detail, at } : { id, kind, detail });
+  const newRow = (id: string, status: ElementRow["status"] = "ok"): ElementRow =>
+    ({ id, status, box: null, ssim: null, ssimShifted: null, deltaE: null, samples: null, edge: null, band: null, ink: null, inkRatio: null, lines: null });
 
   // ---- image size (HiDPI captures are an error, never rescaled)
   const sameSize = gp.w === up.w && gp.h === up.h;
@@ -250,13 +278,17 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
 
   for (const id of ids) {
     const ge = g.elements[id], ue = u.elements[id];
-    const row: ElementRow = { id, status: "ok", box: null, ssim: null, deltaE: null, band: null, lines: null };
+    const row = newRow(id);
     rows.push(row);
     rowOf.set(id, row);
     if (!ue) {
-      if (removedSet.has(id)) { row.status = "removed"; continue; }
+      // a compiler-removed wrapper has no box of its own to show; one that carries text or paints cannot be removed
+      const shows = ge.visible && (ge.text || !!ctx.painters?.has(id));
+      if (removedSet.has(id) && !shows) { row.status = "removed"; continue; }
       row.status = "missing";
-      issue(id, "missing", "in the design, but not in the Unity capture", ge);
+      issue(id, "missing", removedSet.has(id)
+        ? `listed as removed by the compiler, but it ${ge.text ? "carries text" : "paints"} in the design and Unity has no box for it`
+        : "in the design, but not in the Unity capture", ge);
       continue;
     }
     if (!ge.visible && !ue.visible) { row.status = "hidden"; continue; }
@@ -288,93 +320,182 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     }
   }
 
-  // ---- masks (both sides, inflated by 2 px): SSIM copies text element boxes and external regions from the design (the
-  // pinned definition its thresholds were calibrated with); colour samples skip only text lines and external regions,
-  // so an element that carries text (a button, a badge) still has its own background sampled
+  // ---- what Unity shows that the design does not have
+  for (const [id, ue] of Object.entries(u.elements).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (id in g.elements || !ue.visible) continue;
+    rows.push(newRow(id, "extra"));
+    issue(id, "extra", "visible in Unity, but not an element of the design", ue);
+  }
+
+  // ---- masks (both sides, inflated by 2 px); Unity's text is masked only where the design shows the same element
   const w = gp.w, h = gp.h;
   let ssim: number | null = null, pixelsOff: number | null = null, heat: Rgba | null = null, masked: Rect[] = [];
   let worst: { id: string; ssim: number } | null = null, maxDE: { id: string; deltaE: number } | null = null;
   if (sameSize) {
-    const externalBoxes = [...g.external.map((id) => g.elements[id]), ...u.external.map((id) => u.elements[id])].filter((e): e is Box => !!e);
-    const regions = [...textRegions(g, "box"), ...textRegions(u, "box"), ...externalBoxes];
-    const mask = maskRects(w, h, regions, 2);
-    const colourMask = maskRects(w, h, [...textRegions(g, "lines"), ...textRegions(u, "lines"), ...externalBoxes], 2);
-    masked = regions.filter((r) => r.w > 0 && r.h > 0).map((r) => ({ x: r6(r.x - 2), y: r6(r.y - 2), w: r6(r.w + 4), h: r6(r.h + 4) }));
-    const external = new Set([...g.external, ...u.external]);
+    const shown = (id: string) => !!g.elements[id]?.visible && !!u.elements[id]?.visible;
+    const textBoxes: Rect[] = [], textLines: Rect[] = [];
+    for (const [id, e] of Object.entries(g.elements)) {
+      if (!e.text || !e.visible) continue;
+      textBoxes.push(e);
+      textLines.push(...(e.lines.length ? e.lines : [e]));
+      const o = u.elements[id];
+      if (o && shown(id)) { textBoxes.push(o); textLines.push(...(o.lines.length ? o.lines : [o])); }
+    }
+    const externalBoxes = g.external.flatMap((id) => [g.elements[id], u.external.includes(id) ? u.elements[id] : undefined]).filter((e): e is Box => !!e);
+    const mask = maskRects(w, h, [...textBoxes, ...externalBoxes], 2);
+    const lineMask = maskRects(w, h, [...textLines, ...externalBoxes], 2);
+    masked = [...textBoxes, ...externalBoxes].filter((r) => r.w > 0 && r.h > 0).map((r) => ({ x: r6(r.x - 2), y: r6(r.y - 2), w: r6(r.w + 4), h: r6(r.h + 4) }));
+    const external = new Set(g.external);
     const fullViewport = (e: Box) => e.x <= 0 && e.y <= 0 && e.x + e.w >= w && e.y + e.h >= h;
 
     const map = blockSsimMap(gp, up, mask);
     ssim = wholeSsim(map);
     if (ssim < t.ssimNonText - EPS) issue(WHOLE, "ssim", `whole-capture SSIM ${ssim.toFixed(5)} (limit ${t.ssimNonText})`);
 
-    const from = { a: gp, mask };
+    const paints = (id: string) => !ctx.painters || ctx.painters.has(id);
     const paintIndex = new Map(order.map((id, i) => [id, i]));
-    const later = (id: string): Rect[] => {
+    /**
+     * Boxes painted over the element on either side: later elements in paint order that paint something (IR), else
+     * the elements it contains. A point under one of them on either side is not this element's colour.
+     */
+    const covering = (id: string): Rect[] => {
       const ge = g.elements[id];
-      if (paintIndex.has(id)) {
-        return order.slice(paintIndex.get(id)! + 1).map((x) => g.elements[x]).filter((e): e is Box => !!e && e.visible);
-      }
-      // without the IR: elements drawn inside this one (smaller boxes it contains)
-      return Object.entries(g.elements).filter(([x, e]) => x !== id && e.visible && e.w * e.h < ge.w * ge.h
-        && e.x >= ge.x && e.y >= ge.y && e.x + e.w <= ge.x + ge.w && e.y + e.h <= ge.y + ge.h).map(([, e]) => e);
+      const ids = paintIndex.has(id)
+        ? order.slice(paintIndex.get(id)! + 1).filter((x) => paints(x))
+        : Object.entries(g.elements).filter(([x, e]) => x !== id && e.visible && e.w * e.h < ge.w * ge.h
+          && e.x >= ge.x && e.y >= ge.y && e.x + e.w <= ge.x + ge.w && e.y + e.h <= ge.y + ge.h).map(([x]) => x);
+      return ids.flatMap((x) => [g.elements[x], u.elements[x]]).filter((e): e is Box => !!e && e.visible);
     };
+    const onText = (x: number, y: number) => {
+      for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) if (lineMask[yy * w + xx]) return true;
+      return false;
+    };
+    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect }
+    const inkLines: InkLine[] = [];
+    const usable = (p: RingPoint, cover: Rect[]) => p.gx >= 0 && p.gy >= 0 && p.gx < w && p.gy < h && p.ux >= 0 && p.uy >= 0 && p.ux < w && p.uy < h
+      && !cover.some((l) => inside(l, p.gx, p.gy, 1)) && !onText(p.gx, p.gy) && !onText(p.ux, p.uy);
 
     for (const id of compared) {
       const ge = g.elements[id], ue = u.elements[id], row = rowOf.get(id)!;
       if (external.has(id)) continue;
       const shadow = ctx.shadows?.[id];
+      const carriesText = ge.text && ge.lines.length > 0;
 
-      // element SSIM over box ∪ shadow rect: non-text elements (a text element's box is copied from the design)
-      if (!ge.text && ge.w >= MIN_ELEMENT && ge.h >= MIN_ELEMENT && id !== ctx.root && !fullViewport(ge)) {
+      // element SSIM over box ∪ shadow rect (a text element without lines, i.e. an input or select, keeps its box masked)
+      if ((!ge.text || carriesText) && ge.w >= MIN_ELEMENT && ge.h >= MIN_ELEMENT && id !== ctx.root && !fullViewport(ge)) {
         const region = shadow ? unionRect(ge, shadow) : ge;
-        const s = regionSsim(map, region);
-        if (!Number.isNaN(s)) {
-          row.ssim = r6(s);
-          if (!worst || s < worst.ssim) worst = { id, ssim: r6(s) };
-          if (s < t.ssimElement - EPS) issue(id, "ssim", `element SSIM ${s.toFixed(5)} over the ${shadow ? "box and baked shadow" : "box"} (limit ${t.ssimElement})`, region);
+        const m0 = carriesText ? lineMask : mask;
+        const s0 = carriesText ? regionSsimShifted(gp, up, lineMask, region, 0) : regionSsim(map, region);
+        if (!Number.isNaN(s0)) {
+          row.ssim = r6(s0);
+          let best = s0;
+          if (s0 < t.ssimElement - EPS) { const s1 = regionSsimShifted(gp, up, m0, region, 1); row.ssimShifted = r6(s1); best = Math.max(s0, s1); }
+          if (!worst || best < worst.ssim) worst = { id, ssim: r6(best) };
+          if (best < t.ssimElement - EPS) {
+            issue(id, "ssim", `element SSIM ${s0.toFixed(5)} (${row.ssimShifted!.toFixed(5)} with offsets up to 1 px) over the ${carriesText ? "box with its text lines copied from the design" : "box"}${shadow ? " and baked shadow" : ""} (limit ${t.ssimElement})`, region);
+          }
         }
       }
 
-      // colour samples
+      const cover = covering(id);
+      // background colour: the grid, then the ring inside the border, never silently nothing
       if (!ctx.backgrounds || ctx.backgrounds.has(id)) {
         const ix0 = Math.max(ge.x, ue.x), iy0 = Math.max(ge.y, ue.y), ix1 = Math.min(ge.x + ge.w, ue.x + ue.w), iy1 = Math.min(ge.y + ge.h, ue.y + ue.h);
-        const small = ix1 - ix0 < MIN_ELEMENT || iy1 - iy0 < MIN_ELEMENT;
-        const clip = { x: ix0, y: iy0, w: Math.max(0, ix1 - ix0), h: Math.max(0, iy1 - iy0) };
-        if (clip.w > 0 && clip.h > 0) {
-          const pts: [number, number][] = small
-            ? [[Math.floor(ix0 + clip.w / 2), Math.floor(iy0 + clip.h / 2)]]
-            : FY.flatMap((fy) => FX.map((fx) => [Math.floor(ix0 + 6 + (clip.w - 12) * fx), Math.floor(iy0 + 6 + (clip.h - 12) * fy)] as [number, number]));
-          const covering = later(id);
-          let best: { de: number; x: number; y: number; a: number[]; b: number[] } | null = null;
-          for (const [x, y] of pts) {
-            if (x < 0 || y < 0 || x >= w || y >= h) continue;
-            if (covering.some((l) => inside(l, x, y, 2))) continue;
-            let touchesMask = false;
-            for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1) && !touchesMask; yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) if (colourMask[yy * w + xx]) { touchesMask = true; break; }
-            if (touchesMask) continue;
-            const a = sample(gp, x, y, clip), b = sample(up, x, y, clip);
-            const de = deltaE2000(a, b);
-            if (!best || de > best.de) best = { de, x, y, a, b };
+        const cw = ix1 - ix0, ch = iy1 - iy0;
+        const pts: RingPoint[] = [];
+        if (cw > 0 && ch > 0) {
+          const grid: [number, number][] = cw < MIN_ELEMENT || ch < MIN_ELEMENT
+            ? [[Math.floor(ix0 + cw / 2), Math.floor(iy0 + ch / 2)]]
+            : FY.flatMap((fy) => FX.map((fx) => [Math.floor(ix0 + 6 + (cw - 12) * fx), Math.floor(iy0 + 6 + (ch - 12) * fy)] as [number, number]));
+          for (const [x, y] of grid) pts.push({ where: `(${x}, ${y})`, kind: "edge", gx: x, gy: y, ux: x, uy: y, win: 3 });
+        }
+        let use = pts.filter((p) => usable(p, cover));
+        if (!use.length) use = ringPoints(ge, ue, ctx.borders?.[id], ["edge"]).filter((p) => usable(p, cover));
+        row.samples = use.length;
+        if (!use.length) notSampled.push(id);
+        let bestS: { de: number; p: RingPoint; a: number[]; b: number[] } | null = null;
+        for (const p of use) {
+          const r = bestDeltaE(gp, p.gx, p.gy, up, p.ux, p.uy, p.win);
+          if (!bestS || r.de > bestS.de) bestS = { de: r.de, p, a: r.a, b: r.b };
+        }
+        if (bestS) {
+          row.deltaE = r6(bestS.de);
+          if (!maxDE || bestS.de > maxDE.deltaE) maxDE = { id, deltaE: r6(bestS.de) };
+          if (bestS.de > t.deltaE2000 + EPS) {
+            issue(id, "color", `ΔE2000 ${bestS.de.toFixed(2)} at ${bestS.p.where}: design ${hex(bestS.a)}, Unity ${hex(bestS.b)} (limit ${t.deltaE2000})`,
+              { x: bestS.p.gx - 1, y: bestS.p.gy - 1, w: 3, h: 3 });
           }
-          if (best) {
-            row.deltaE = r6(best.de);
-            if (!maxDE || best.de > maxDE.deltaE) maxDE = { id, deltaE: r6(best.de) };
-            if (best.de > t.deltaE2000 + EPS) {
-              issue(id, "color", `ΔE2000 ${best.de.toFixed(2)} at (${best.x}, ${best.y}): design ${hex(best.a)}, Unity ${hex(best.b)} (limit ${t.deltaE2000})`,
-                { x: best.x - 1, y: best.y - 1, w: 3, h: 3 });
-            }
+        }
+      }
+
+      // an element that carries text and paints: background, border and corner shape around the text
+      if (carriesText && paints(id)) {
+        let bestR: { de: number; p: RingPoint; a: number[]; b: number[] } | null = null;
+        for (const p of ringPoints(ge, ue, ctx.borders?.[id], ["edge", "border", "corner"])) {
+          if (!usable(p, cover)) continue;
+          const r = bestDeltaE(gp, p.gx, p.gy, up, p.ux, p.uy, p.win);
+          if (!bestR || r.de > bestR.de) bestR = { de: r.de, p, a: r.a, b: r.b };
+        }
+        if (bestR) {
+          row.edge = r6(bestR.de);
+          if (bestR.de > t.deltaE2000 + EPS) {
+            issue(id, "edge", `${bestR.p.where}: ΔE2000 ${bestR.de.toFixed(2)}, design ${hex(bestR.a)}, Unity ${hex(bestR.b)} (limit ${t.deltaE2000}): background, border or corner shape differs`,
+              { x: bestR.p.gx - 2, y: bestR.p.gy - 2, w: 5, h: 5 });
           }
+        }
+      }
+
+      // text ink per line: colour now; the amount after all lines of the capture are measured
+      if (carriesText && ue.lines.length === ge.lines.length) {
+        let wDe: { de: number; i: number; a: number[]; b: number[] } | null = null;
+        ge.lines.forEach((gl, i) => {
+          const win = grow(unionRect(gl, ue.lines[i]), 1);
+          const a = inkIn(gp, win);
+          if (!a) return;
+          const b = inkIn(up, win);
+          inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl });
+          if (b) { const de = deltaE2000(a.ink, b.ink); if (!wDe || de > wDe.de) wDe = { de, i, a: a.ink, b: b.ink }; }
+        });
+        if (wDe) {
+          const x = wDe as { de: number; i: number; a: number[]; b: number[] };
+          row.ink = r6(x.de);
+          if (x.de > t.textInkDeltaE + EPS) issue(id, "ink", `line ${x.i + 1} of ${ge.lines.length}: text colour ΔE2000 ${x.de.toFixed(2)}, design ${hex(x.a)}, Unity ${hex(x.b)} (limit ${t.textInkDeltaE})`, ge.lines[x.i]);
         }
       }
 
       // shadow band
       if (shadow) {
-        const a = bandMean(gp, shadow, ge), b = bandMean(up, shadow, ge, from);
+        const a = bandMean(gp, shadow, ge), b = bandMean(up, shadow, ge, { a: gp, mask });
         if (a && b) {
           const de = deltaE2000(a, b);
           row.band = r6(de);
           if (de > t.deltaE2000 + EPS) issue(id, "shadow", `shadow band ΔE2000 ${de.toFixed(2)}: design ${hex(a)}, Unity ${hex(b)} (limit ${t.deltaE2000})`, shadow);
         }
+      }
+    }
+
+    // text ink amount: UI Toolkit draws thinner anti-aliased stems than Chromium, by a ratio that depends on the
+    // renderer (M0: 0.69-0.83 for correct text). A line's Unity/design ratio must lie between the measured ratio and
+    // identity (each with the tolerance), and, when the capture has 3 or more measured lines, within the tolerance of
+    // the capture's median ratio, which cancels the renderer and leaves a wrong weight, size or glyph run
+    const ratios = inkLines.map((l) => l.ratio).filter((r): r is number => r !== null).sort((a, b) => a - b);
+    const median = ratios.length >= 3 ? ratios[(ratios.length - 1) >> 1] / 2 + ratios[ratios.length >> 1] / 2 : null;
+    const lo = t.textInkRatio * (1 - t.textInkCoverage), hi = 1 + t.textInkCoverage;
+    const worstInk = new Map<string, { l: InkLine; score: number }>();
+    for (const l of inkLines) {
+      const score = l.ratio === null ? Infinity : Math.max(lo - l.ratio, l.ratio - hi, median === null ? -Infinity : Math.abs(l.ratio / median - 1) - t.textInkCoverage);
+      const prev = worstInk.get(l.id);
+      if (!prev || score > prev.score) worstInk.set(l.id, { l, score });
+    }
+    for (const [id, { l, score }] of worstInk) {
+      rowOf.get(id)!.inkRatio = l.ratio === null ? 0 : r6(l.ratio);
+      if (score <= EPS) continue;
+      const head = `line ${l.i + 1} of ${l.n}`, tail = "weight, size or glyphs differ";
+      if (l.ratio === null) issue(id, "inkCoverage", `${head}: no text ink in Unity`, l.at);
+      else if (l.ratio < lo - EPS || l.ratio > hi + EPS) {
+        issue(id, "inkCoverage", `${head}: Unity draws ${l.ratio.toFixed(2)}× the design's text ink (expected ${lo.toFixed(2)}–${hi.toFixed(2)}×): ${tail}`, l.at);
+      } else {
+        issue(id, "inkCoverage", `${head}: text ink ${l.ratio.toFixed(2)}× the design's, ${pct(l.ratio / median! - 1)} against this capture's median ${median!.toFixed(2)}× (limit ±${Math.round(t.textInkCoverage * 100)} %): ${tail}`, l.at);
       }
     }
 
@@ -388,7 +509,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   return {
     verdict: {
       capture: g.capture, pass: issues.length === 0, ssim: ssim === null ? null : r6(ssim), issues, size: [gp.w, gp.h],
-      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, masked, elements: rows,
+      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, notSampled, translucent, masked, elements: rows,
     },
     heat,
   };
@@ -460,7 +581,7 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   const goldenBoxesFile = path.join(goldensDir, "boxes.json");
   if (!fs.existsSync(goldenBoxesFile)) throw new Error(`${exportDir} is not a design export (no goldens/boxes.json)`);
   const goldenBoxes = readBoxesFile(goldenBoxesFile, "design");
-  const notes: string[] = [];
+  const notes: string[] = [], warnings: string[] = [];
 
   const matrix = tryJson(path.join(goldensDir, "matrix.json"));
   const entries: MatrixEntry[] = isObj(matrix) && Array.isArray(matrix.captures) ? (matrix.captures as MatrixEntry[]) : [];
@@ -469,13 +590,15 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   const names = entries.length
     ? [...entries.map((e) => e.name).filter((n) => n in goldenBoxes), ...Object.keys(goldenBoxes).filter((n) => !byName.has(n)).sort()]
     : Object.keys(goldenBoxes).sort();
+  const bad = names.find((n) => !/^[^/\\\0]+$/.test(n) || n.includes(".."));
+  if (bad !== undefined) throw new Error(`invalid capture name ${JSON.stringify(bad)} in the design export: capture names never contain path separators or ".."`);
   const platform = isObj(matrix) && typeof matrix.chromium === "string" ? { chromium: matrix.chromium, platform: String(matrix.platform ?? "") } : null;
 
   let ix: IrIndex | null = null;
   const irFile = path.join(exportDir, "screen.ir.json");
   if (fs.existsSync(irFile)) {
-    try { ix = indexIr(readJson(irFile)); } catch (e) { notes.push(`screen.ir.json could not be read (${(e as Error).message}): no shadow bands, paint order or background filter`); }
-  } else notes.push("screen.ir.json not found: no shadow bands, paint order or background filter");
+    try { ix = indexIr(readJson(irFile)); } catch (e) { warnings.push(`screen.ir.json could not be read (${(e as Error).message}): shadow bands, paint order, background and border checks were skipped`); }
+  } else warnings.push("screen.ir.json not found: shadow bands, paint order, background and border checks were skipped");
 
   const exportReport = tryJson(path.join(exportDir, "export-report.json"));
   const screen = ix?.screen || (isObj(exportReport) && typeof exportReport.screen === "string" ? exportReport.screen : "") || path.basename(path.resolve(exportDir));
@@ -542,11 +665,11 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   return {
     screen, pass: names.length > 0 && notRun.length === 0 && captures.every((c) => c.pass),
     captures, notRun, notRunReasons, extra, thresholds: t, timings, platform, removed: [...removed!].sort(),
-    animations: animationStrips(entries.filter((e) => known.has(e.name))), notes,
+    animations: animationStrips(entries.filter((e) => known.has(e.name))), warnings, notes,
   };
 }
 
-const KIND_RANK: IssueKind[] = ["size", "missing", "visibility", "lines", "box", "baseline", "ssim", "color", "shadow"];
+const KIND_RANK: IssueKind[] = ["size", "missing", "extra", "visibility", "lines", "box", "baseline", "ssim", "edge", "color", "ink", "inkCoverage", "shadow"];
 
 /** Short issue lines (`<capture>: <element>: <detail>`), most structural first, then (unless left out) not-run captures. */
 export function summarizeIssues(v: ScreenVerdict, limit = 20, opts: { notRun?: boolean } = {}): string[] {

@@ -43,28 +43,37 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       }
 
       const exportDir = exportDirOf(dir), unityDir = unityDirOf(dir), reportPath = reportPathOf(dir);
-      // a fresh capture folder: captures left from an earlier run are never compared
-      fs.rmSync(unityDir, { recursive: true, force: true });
+      // the capture goes to a fresh staging folder: captures left from an earlier run are never compared, and the
+      // previous report, its captures and last-verify.json stay as they are until there is a new verdict
+      const staging = `${unityDir}.next`;
+      const dropStaging = () => fs.rmSync(staging, { recursive: true, force: true });
+      dropStaging();
       let run;
       try {
-        run = await t.async("capture", () => runUnity(cfg, "capture", { exportDir, outDir: unityDir }, ctx.runnerOptions));
+        run = await t.async("capture", () => runUnity(cfg, "capture", { exportDir, outDir: staging }, ctx.runnerOptions));
       } catch (e) {
+        dropStaging();
         if (!(e instanceof UnityRunnerError)) throw e;
         return toolResult(`Verify of ${screen} not run: ${e.message}. No verdict.`, { screen, verdict: null, timings: t.done() }, true);
       }
       if (run.code !== 0) {
+        dropStaging();
         return toolResult(`Unity capture of ${screen} failed (exit ${run.code}, via ${run.via}); no verdict. Log tail:\n${run.logTail}`, {
           screen, verdict: null, code: run.code, logTail: run.logTail, timings: t.done(),
         }, true);
       }
       const steps: Record<string, number> = { ...(imp.timings ?? {}), capture: t.steps.capture };
-      const v = await t.async("compare", () => compareScreen(exportDir, unityDir, reportPath, { timings: steps }));
+      const v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir }));
       if (v.compared === 0) {
-        const none = !fs.existsSync(path.join(unityDir, "boxes.json"));
-        return toolResult(`Unity capture of ${screen} (via ${run.via}) ${none ? `wrote no boxes.json in ${unityDir}` : "produced none of the design's captures"}; no verdict. ` +
-          `Report: ${reportPath}`, { screen, verdict: null, reportPath, notRun: v.notRun, logTail: run.logTail, timings: t.done() }, true);
+        const none = !fs.existsSync(path.join(staging, "boxes.json"));
+        v.discard?.();
+        dropStaging();
+        return toolResult(`Unity capture of ${screen} (via ${run.via}) ${none ? "wrote no boxes.json" : "produced none of the design's captures"}; no verdict. ` +
+          "The previous report and verdict are unchanged.", { screen, verdict: null, notRun: v.notRun, logTail: run.logTail, timings: t.done() }, true);
       }
       const verdict = v.pass && v.notRun.length === 0 ? "pass" : "fail";
+      // the report and last-verify.json are written together, only now that the verdict is decided
+      if (v.publish) v.publish(); else dropStaging();
       writeLastVerify(dir, {
         screen, sourceSha: imp.sourceSha, irSha: imp.irSha, verdict, reportPath, verifiedAt: new Date().toISOString(),
         topIssues: v.topIssues, notRun: v.notRun,
@@ -74,10 +83,12 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         ...v.topIssues.slice(0, 10).map((i) => `- ${i}`),
         ...(v.notRun.length ? [`Not run: ${v.notRun.join(", ")}`] : []),
         ...(v.extra?.length ? [`Extra Unity captures (not compared): ${v.extra.join(", ")}`] : []),
+        ...(v.warnings ?? []).map((w) => `Warning: ${w}`),
+        ...(v.notSampled ? [`Backgrounds not sampled (every point covered or on text): ${v.notSampled}`] : []),
       ];
       return toolResult(lines.join("\n"), {
         screen, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun,
-        extra: v.extra ?? [], steps: v.timings ?? steps, timings: t.done(),
+        extra: v.extra ?? [], warnings: v.warnings ?? [], notSampled: v.notSampled ?? 0, steps: v.timings ?? steps, timings: t.done(),
       }, verdict !== "pass");
     });
   });

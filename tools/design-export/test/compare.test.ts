@@ -15,7 +15,7 @@ import { blockSsimMap, maskRects, regionSsim, ssimMasked, unionRect } from "../s
 import { runCli } from "../src/commands.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const T: Thresholds = { boxPx: 1, baselinePx: 1, deltaE2000: 1, ssimNonText: 0.99, ssimElement: 0.99 };
+const T: Thresholds = { boxPx: 1, baselinePx: 1, deltaE2000: 1, ssimNonText: 0.99, ssimElement: 0.99, textInkDeltaE: 3, textInkRatio: 0.76, textInkCoverage: 0.15 };
 const tmpDirs: string[] = [];
 const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), "compare-")); tmpDirs.push(d); return d; };
 afterAll(() => { for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });
@@ -226,15 +226,17 @@ describe("compareCapture", () => {
     const g = mk([30, 140, 90]);
     expect(compareCapture(g, mk([30, 140, 90]), [], T).pass).toBe(true);
     const v = compareCapture(g, mk([30, 150, 90]), [], T);
-    expect(v.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["btn:color"]);
-    // a text element's box is copied from the design before SSIM (the pinned definition): no element SSIM for it
-    expect(v.elements.find((r) => r.id === "btn")!.ssim).toBeNull();
+    expect(v.issues.map((i) => `${i.id}:${i.kind}`).sort()).toEqual(["btn:color", "btn:edge", "btn:ssim"]);
+    // measured with only its text lines copied from the design
+    expect(v.elements.find((r) => r.id === "btn")!.ssim).toBeLessThan(0.99);
   });
 
   it("masks text glyphs and external regions from SSIM and colour", () => {
+    // the same glyphs rasterised 1 px to the right
     const g = scene(), u = scene();
+    fill(u.png, { x: 48, y: 48, w: 96, h: 20 }, [180, 60, 60]);
     glyphs(u.png, { x: 51, y: 52, w: 80, h: 12 }, [250, 250, 250]);
-    expect(compareCapture(g, u, [], T)).toMatchObject({ pass: true, ssim: 1 });
+    expect(compareCapture(g, u, [], T)).toMatchObject({ pass: true, ssim: 1, issues: [] });
 
     const g2 = scene(), u2 = scene();
     g2.boxes.elements.video = el(208, 48, 64, 64); g2.boxes.external = ["video"];
@@ -294,6 +296,146 @@ describe("compareCapture", () => {
     fill(u.png, { x: 0, y: 140, w: 320, h: 52 }, [240, 240, 240]);
     const v = compareCapture(g, u, [], T);
     expect(v.issues.some((i) => i.id === WHOLE && i.kind === "ssim")).toBe(true);
+  });
+});
+
+describe("compareCapture: fix round checks", () => {
+  /** 320×192, a card with a child panel covering its whole inset grid. */
+  const covered = (cardColour: Rgb) => {
+    const png = canvas(320, 192, [16, 24, 32]);
+    fill(png, { x: 40, y: 40, w: 200, h: 100 }, cardColour);
+    fill(png, { x: 48, y: 48, w: 184, h: 84 }, [200, 200, 200]);
+    return { png, boxes: { capture: "c", viewport: [320, 192] as [number, number], scale: 1, external: [],
+      elements: { root: el(0, 0, 320, 192), card: el(40, 40, 200, 100), panel: el(48, 48, 184, 84) } } };
+  };
+
+  it("never skips a background silently: covered grid points fall back to samples inside the border", () => {
+    const ctx: CaptureContext = { order: ["root", "card", "panel"], backgrounds: new Set(["root", "card", "panel"]), painters: new Set(["root", "card", "panel"]) };
+    const g = covered([120, 40, 160]);
+    expect(compareCapture(g, covered([120, 40, 160]), [], T, ctx)).toMatchObject({ pass: true, notSampled: [] });
+    const v = compareCapture(g, covered([40, 120, 160]), [], T, ctx);
+    expect(v.issues.find((i) => i.id === "card" && i.kind === "color")!.detail).toMatch(/inside the (top|bottom|left|right) edge/);
+    expect(v.elements.find((r) => r.id === "card")!.samples).toBeGreaterThan(0);
+  });
+
+  it("reports an element with no sample left as not sampled", () => {
+    const mk = () => {
+      const s = covered([120, 40, 160]);
+      fill(s.png, { x: 40, y: 40, w: 200, h: 100 }, [200, 200, 200]);
+      s.boxes.elements.panel = el(40, 40, 200, 100);
+      return s;
+    };
+    const ctx: CaptureContext = { order: ["root", "card", "panel"], backgrounds: new Set(["root", "card", "panel"]), painters: new Set(["root", "card", "panel"]) };
+    const v = compareCapture(mk(), mk(), [], T, ctx);
+    expect(v.notSampled).toEqual(["card"]);
+    expect(v.elements.find((r) => r.id === "card")).toMatchObject({ samples: 0, deltaE: null });
+  });
+
+  it("does not let an element that paints nothing cover another's samples", () => {
+    const g = covered([120, 40, 160]), u = covered([40, 120, 160]);
+    for (const s of [g, u]) fill(s.png, { x: 48, y: 48, w: 184, h: 84 }, s === g ? [120, 40, 160] : [40, 120, 160]);
+    // the panel is a transparent wrapper: the card's own colour shows through it and is sampled on the grid
+    const ctx: CaptureContext = { order: ["root", "card", "panel"], backgrounds: new Set(["root", "card"]), painters: new Set(["root", "card"]) };
+    const v = compareCapture(g, u, [], T, ctx);
+    expect(v.issues.find((i) => i.id === "card" && i.kind === "color")!.detail).toMatch(/^ΔE2000 [\d.]+ at \(\d+, \d+\)/);
+  });
+
+  /** A 160×48 badge on a dark background: radius r (0 = square), a border, its text in the middle. */
+  const badge = (o: { r?: number; border?: Rgb; text?: Rgb; thick?: number; bg?: Rgb } = {}) => {
+    const png = canvas(320, 192, [16, 24, 32]);
+    const r = o.r ?? 0, x0 = 80, y0 = 72, w = 160, h = 48;
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+      const cx = Math.min(Math.max(x + 0.5, x0 + r), x0 + w - r), cy = Math.min(Math.max(y + 0.5, y0 + r), y0 + h - r);
+      if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) > r) continue;
+      const edge = x < x0 + 2 || x >= x0 + w - 2 || y < y0 + 2 || y >= y0 + h - 2;
+      fill(png, { x, y, w: 1, h: 1 }, edge && !r ? (o.border ?? [90, 200, 120]) : (o.bg ?? [30, 140, 90]));
+    }
+    for (let x = 120; x < 200; x += 4) fill(png, { x, y: 90, w: o.thick ?? 1, h: 12 }, o.text ?? [250, 250, 250]);
+    return { png, boxes: { capture: "c", viewport: [320, 192] as [number, number], scale: 1, external: [],
+      elements: { root: el(0, 0, 320, 192), badge: el(x0, y0, w, h, { text: true, lines: [{ x: 118, y: 88, w: 84, h: 16, baseline: 100 }] }) } } };
+  };
+  const bctx: CaptureContext = { order: ["root", "badge"], backgrounds: new Set(["root", "badge"]), painters: new Set(["root", "badge"]), borders: { badge: [2, 2, 2, 2] } };
+
+  it("checks a text-carrying element's corners, border and background around its text", () => {
+    expect(compareCapture(badge(), badge(), [], T, bctx)).toMatchObject({ pass: true, issues: [] });
+    const round = compareCapture(badge(), badge({ r: 24 }), [], T, bctx);
+    expect(round.issues.map((i) => i.kind)).toEqual(expect.arrayContaining(["edge", "ssim"]));
+    expect(round.issues.find((i) => i.kind === "edge")!.detail).toMatch(/corner|border/);
+    const border = compareCapture(badge(), badge({ border: [200, 90, 120] }), [], T, bctx);
+    expect(border.issues.find((i) => i.kind === "edge")!.detail).toMatch(/border/);
+  });
+
+  it("checks the text ink: colour and amount", () => {
+    expect(compareCapture(badge(), badge(), [], T, bctx).elements.find((r) => r.id === "badge")).toMatchObject({ ink: 0, inkRatio: 1 });
+    const colour = compareCapture(badge(), badge({ text: [250, 210, 60] }), [], T, bctx);
+    expect(colour.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["badge:ink"]);
+    expect(colour.issues[0].detail).toMatch(/^line 1 of 1: text colour ΔE2000 [\d.]+, design #fafafa, Unity #fad23c \(limit 3\)$/);
+    const bold = compareCapture(badge(), badge({ thick: 2 }), [], T, bctx);
+    expect(bold.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["badge:inkCoverage"]);
+    expect(bold.issues[0].detail).toMatch(/Unity draws 2\.00× the design's text ink \(expected 0\.65–1\.15×\)/);
+    // a thinner renderer within the measured ratio passes
+    expect(compareCapture(badge({ thick: 2 }), badge({ thick: 2, text: [250, 250, 250] }), [], T, bctx).pass).toBe(true);
+  });
+
+  it("compares a line's ink with the capture's median ratio when there are 3 or more lines", () => {
+    const mk = (thick: number[]) => {
+      const png = canvas(320, 192, [16, 24, 32]);
+      const elements: Record<string, Box> = { root: el(0, 0, 320, 192) };
+      thick.forEach((t, k) => {
+        const y = 20 + k * 40;
+        for (let x = 40; x < 200; x += 12) fill(png, { x, y: y + 2, w: t, h: 12 }, [250, 250, 250]);
+        elements[`t${k}`] = el(36, y - 2, 200, 20, { text: true, lines: [{ x: 38, y, w: 164, h: 16, baseline: y + 12 }] });
+      });
+      return { png, boxes: { capture: "c", viewport: [320, 192] as [number, number], scale: 1, external: [], elements } };
+    };
+    // a renderer drawing every line at 4/5 of the ink passes; one line at the design's own weight among them stands out
+    expect(compareCapture(mk([5, 5, 5, 5]), mk([4, 4, 4, 4]), [], T).pass).toBe(true);
+    const v = compareCapture(mk([5, 5, 5, 5]), mk([4, 4, 5, 4]), [], T);
+    expect(v.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["t2:inkCoverage"]);
+    expect(v.issues[0].detail).toMatch(/1\.00× the design's, \+25 % against this capture's median 0\.80×/);
+  });
+
+  it("flags an element only Unity shows and does not mask its text", () => {
+    const g = scene(), u = scene();
+    u.boxes.elements.stray = el(200, 140, 80, 24, { text: true, lines: [{ x: 204, y: 144, w: 60, h: 16, baseline: 156 }] });
+    glyphs(u.png, { x: 204, y: 146, w: 60, h: 12 }, [250, 250, 250]);
+    const v = compareCapture(g, u, [], T);
+    expect(v.issues.filter((i) => i.id === "stray").map((i) => i.kind)).toEqual(["extra"]);
+    expect(v.elements.find((r) => r.id === "stray")!.status).toBe("extra");
+    expect(v.masked.some((r) => r.x >= 190 && r.y >= 130)).toBe(false);
+    expect(v.pixelsOff).toBeGreaterThan(0);
+  });
+
+  it("lets a contrasting element move by 1 px (the box allowance) but not by 2 px", () => {
+    const mk = (dx: number, dy: number, dh = 0) => {
+      const png = canvas(320, 192, [16, 24, 32]);
+      fill(png, { x: 100 + dx, y: 60 + dy, w: 96, h: 48 + dh }, [230, 230, 230]);
+      return { png, boxes: { capture: "c", viewport: [320, 192] as [number, number], scale: 1, external: [], elements: { root: el(0, 0, 320, 192), tile: el(100 + dx, 60 + dy, 96, 48 + dh) } } };
+    };
+    const one = compareCapture(mk(0, 0), mk(1, 1), [], T, { backgrounds: new Set() });
+    expect(one.pass).toBe(true);
+    const row = one.elements.find((r) => r.id === "tile")!;
+    expect(row.ssim!).toBeLessThan(0.99);
+    expect(row.ssimShifted!).toBeGreaterThan(0.99);
+    expect(compareCapture(mk(0, 0), mk(0, 0, 1), [], T, { backgrounds: new Set() }).pass).toBe(true);
+    const two = compareCapture(mk(0, 0), mk(2, 0), [], T, { backgrounds: new Set() });
+    expect(two.issues.map((i) => i.kind).sort()).toEqual(["box", "ssim"]);
+  });
+
+  it("refuses a compiler-removed element that carries text or paints", () => {
+    const g = scene(), u = scene();
+    delete u.boxes.elements.label;
+    expect(compareCapture(g, u, ["label"], T).issues.find((i) => i.id === "label")!.detail).toMatch(/listed as removed by the compiler, but it carries text/);
+  });
+
+  it("compares translucent Unity pixels premultiplied", () => {
+    const g = scene(), u = scene();
+    for (let p = 3; p < u.png.data.length; p += 4) u.png.data[p] = 254;
+    const v = compareCapture(g, u, [], T);
+    expect(v.translucent).toBe(320 * 192);
+    expect(v.pass).toBe(true);
+    for (let p = 3; p < u.png.data.length; p += 4) u.png.data[p] = 128;
+    expect(compareCapture(g, u, [], T).pass).toBe(false);
   });
 });
 
@@ -427,6 +569,20 @@ describe("compareScreen", () => {
     await expect(compareScreen(f.exportDir, f.unityDir, T)).rejects.toThrow(/Unity boxes\.json .*default@320x192 is invalid/);
   });
 
+  it("refuses capture names that could leave the folders", async () => {
+    const f = screenFixture((_, s) => s);
+    const gb = JSON.parse(fs.readFileSync(path.join(f.exportDir, "goldens", "boxes.json"), "utf8"));
+    gb["../evil"] = gb["default@320x192"];
+    fs.writeFileSync(path.join(f.exportDir, "goldens", "boxes.json"), JSON.stringify(gb));
+    await expect(compareScreen(f.exportDir, f.unityDir, T)).rejects.toThrow(/invalid capture name "\.\.\/evil"/);
+  });
+
+  it("warns, visibly, when the IR is missing", async () => {
+    const f = screenFixture((_, s) => s);
+    const v = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(v.warnings).toEqual([expect.stringMatching(/^screen\.ir\.json not found: shadow bands, paint order, background and border checks were skipped/)]);
+  });
+
   it("uses the IR's shadows (scaled) and backgrounds", async () => {
     const f = screenFixture((name, s) => s);
     const ir = { irVersion: 1, screen: "inbox", referenceViewport: [320, 192], screenMatch: 0.5, breakpoints: [], root: {
@@ -445,6 +601,7 @@ describe("compareScreen", () => {
     }
     const v = await compareScreen(f.exportDir, f.unityDir, T);
     expect(v.notes).toEqual([]);
+    expect(v.warnings).toEqual([]);
     expect(v.captures[0].issues.filter((i) => i.id === "card").map((i) => i.kind)).toContain("shadow");
   });
 });
@@ -472,8 +629,12 @@ describe("writeReport and writeVerdict", () => {
       expect(s.startsWith("/") || /^[a-z]+:/i.test(s)).toBe(false);
       expect(fs.existsSync(path.resolve(out, decodeURIComponent(s)))).toBe(true);
     }
-    // no external resources
+    // no external resources; it says the images are linked next to it, the effective tolerance and the warning
     expect(html).not.toMatch(/<(script|link)[^>]+(src|href)=/i);
+    expect(html).toMatch(/Images are linked, not embedded/);
+    expect(html).toMatch(/offset by up to 1 px/);
+    expect(html).toMatch(/class="warning"[^>]*>[\s\S]*screen\.ir\.json not found/);
+    expect(html).toContain("textInkRatio");
     expect(html).toContain("lint");
     expect(html).toContain("ssimElement");
 
@@ -509,6 +670,7 @@ describe("design-export compare", () => {
     // identical captures: no difference images
     expect(fs.readdirSync(path.join(out, "report-diff"))).toEqual([]);
     expect(o.out).toMatch(/^PASS inbox: 4\/4 captures pass/m);
+    expect(o.out).toMatch(/^warning: screen\.ir\.json not found/m);
   });
 
   it("exits 1 when a capture fails or is not run, 2 on usage errors", async () => {
@@ -523,7 +685,7 @@ describe("design-export compare", () => {
   });
 
   it("reads the thresholds from fidelity-thresholds.json", () => {
-    expect(readThresholds()).toEqual({ boxPx: 1, baselinePx: 1, deltaE2000: 1, ssimNonText: 0.99, ssimElement: 0.99 });
+    expect(readThresholds()).toEqual({ boxPx: 1, baselinePx: 1, deltaE2000: 1, ssimNonText: 0.99, ssimElement: 0.99, textInkDeltaE: 3, textInkRatio: 0.76, textInkCoverage: 0.15 });
     const bad = path.join(tmp(), "t.json");
     fs.writeFileSync(bad, JSON.stringify({ boxPx: 1 }));
     expect(() => readThresholds(bad)).toThrow(/"baselinePx" must be a number/);
@@ -567,7 +729,12 @@ describe.skipIf(!haveSpike)("M0 reference numbers (spike/out, git-ignored)", () 
     const v = compareCapture(g, u, [], { ...T, boxPx: 1e9, baselinePx: 1e9 }, ctx);
     const ref = summary.fixtures[fx];
     expect(+v.ssim!.toFixed(6)).toBe(ref.wholeCopyMask);
-    const mine = Object.fromEntries(v.elements.filter((r) => r.ssim !== null).map((r) => [r.id, +r.ssim!.toFixed(5)]));
+    // the reference measures non-text elements; text-carrying elements are measured with their lines copied (not in M0)
+    const mine = Object.fromEntries(v.elements.filter((r) => r.ssim !== null && !g.boxes.elements[r.id].text).map((r) => [r.id, +r.ssim!.toFixed(5)]));
     expect(mine).toEqual(Object.fromEntries(ref.elements.map((r: { id: string; withShadow: number }) => [r.id, r.withShadow])));
+    // the 1-px offsets never rescue a real defect: M0's failing elements still fail (missing shadows, pill as ellipse, dashed as solid)
+    const failing = v.issues.filter((i) => i.kind === "ssim").map((i) => i.id).sort();
+    const known: Record<string, string[]> = { "f12-box-shadow": ["f12-glow", "f12-grid", "f12-hard", "f12-radius"], "f14-radius-border": ["f14-dashed", "f14-pill"] };
+    if (known[fx]) expect(failing).toEqual(known[fx]);
   });
 });

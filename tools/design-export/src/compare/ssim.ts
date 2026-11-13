@@ -93,3 +93,52 @@ export const unionRect = (p: Rect, q: Rect): Rect => {
   const x = Math.min(p.x, q.x), y = Math.min(p.y, q.y);
   return { x, y, w: Math.max(p.x + p.w, q.x + q.w) - x, h: Math.max(p.y + p.h, q.y + q.h) - y };
 };
+
+/**
+ * Mean block SSIM over the blocks that overlap the rect (the same blocks as `regionSsim`), computed directly with its
+ * own copy-mask, where each block takes its best value over `b` read at offsets of up to `radius` px in x and y
+ * (radius 0: the plain value). With radius 1 a displacement of up to 1 px anywhere in the region (a moved edge, a
+ * box 1 px larger) cannot lower the result, while anything an offset cannot explain (a missing shadow, another
+ * shape, a dashed border) still does. NaN when no full block overlaps.
+ */
+export function regionSsimShifted(a: Rgba, b: Rgba, mask: Uint8Array | null, r: Rect, radius = 1): number {
+  if (a.w !== b.w || a.h !== b.h) throw new Error(`images differ in size: ${a.w}×${a.h} and ${b.w}×${b.h}`);
+  const cols = Math.floor(a.w / 8), rows = Math.floor(a.h / 8), w = a.w, h = a.h;
+  const c0 = Math.max(0, Math.floor(r.x / 8)), c1 = Math.min(cols, Math.ceil((r.x + r.w) / 8));
+  const r0 = Math.max(0, Math.floor(r.y / 8)), r1 = Math.min(rows, Math.ceil((r.y + r.h) / 8));
+  const ya = new Float64Array(64), yb = new Float64Array(64), da = a.data, db = b.data;
+  let s = 0, n = 0;
+  for (let br = r0; br < r1; br++) {
+    for (let bc = c0; bc < c1; bc++) {
+      let i = 0, ma = 0;
+      for (let y = br * 8; y < br * 8 + 8; y++) for (let x = bc * 8; x < bc * 8 + 8; x++, i++) {
+        const o = (y * w + x) * 4;
+        ma += (ya[i] = 0.299 * da[o] + 0.587 * da[o + 1] + 0.114 * da[o + 2]);
+      }
+      ma /= 64;
+      let va = 0;
+      for (let k = 0; k < 64; k++) { const p = ya[k] - ma; va += p * p; }
+      va /= 63;
+      let best = -Infinity;
+      for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+        let j = 0, mb = 0;
+        for (let y = br * 8; y < br * 8 + 8; y++) {
+          const sy = Math.min(h - 1, Math.max(0, y + dy));
+          for (let x = bc * 8; x < bc * 8 + 8; x++, j++) {
+            if (mask !== null && mask[y * w + x]) { yb[j] = ya[j]; mb += ya[j]; continue; }
+            const o = (sy * w + Math.min(w - 1, Math.max(0, x + dx))) * 4;
+            mb += (yb[j] = 0.299 * db[o] + 0.587 * db[o + 1] + 0.114 * db[o + 2]);
+          }
+        }
+        mb /= 64;
+        let vb = 0, cov = 0;
+        for (let k = 0; k < 64; k++) { const pa = ya[k] - ma, pb = yb[k] - mb; vb += pb * pb; cov += pa * pb; }
+        vb /= 63; cov /= 63;
+        const v = ((2 * ma * mb + C1) * (2 * cov + C2)) / ((ma * ma + mb * mb + C1) * (va + vb + C2));
+        if (v > best) best = v;
+      }
+      s += best; n++;
+    }
+  }
+  return n ? s / n : NaN;
+}
