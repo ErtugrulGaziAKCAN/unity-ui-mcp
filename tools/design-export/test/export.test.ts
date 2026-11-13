@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
 import { runCli } from "../src/commands.js";
-import { exportScreen, designHash } from "../src/export.js";
+import { exportScreen, designHash, MARKER_FILE } from "../src/export.js";
 import { validateBoxes } from "../src/boxes/validate.js";
 import { validateIr } from "../src/ir/validate.js";
 
@@ -118,11 +118,11 @@ describe("exportScreen: failures", () => {
     fs.mkdirSync(path.join(out, "goldens"), { recursive: true });
     fs.writeFileSync(path.join(out, "goldens", "stale.png"), "x");
     fs.writeFileSync(path.join(out, "screen.ir.json"), "{}");
-    fs.writeFileSync(path.join(out, "export-report.json"), "{}");
+    fs.writeFileSync(path.join(out, MARKER_FILE), JSON.stringify({ generator: "design-export", format: 1 }));
     const r = await exportScreen(fx("lint-error"), KIT, out, { browser });
     expect(r.ok).toBe(false);
     expect(r.findings.some((f) => f.ruleId === "U-CSS-001" && f.severity === "error")).toBe(true);
-    expect(tree(out)).toEqual(["lint-report.json"]);
+    expect(tree(out)).toEqual([MARKER_FILE, "lint-report.json"]);
     expect(readJson(out, "lint-report.json").findings.some((f: { ruleId: string }) => f.ruleId === "U-CSS-001")).toBe(true);
     expect(fs.readdirSync(path.dirname(out)).filter((n) => n.includes(".tmp-"))).toEqual([]);
   }, 120_000);
@@ -159,6 +159,19 @@ describe("output folder safety", () => {
     expect(fs.readFileSync(path.join(d, "notes.txt"), "utf8")).toBe("keep me");
     expect(fs.existsSync(path.join(d, "inbox-mini.html"))).toBe(true);
     expect(fs.existsSync(path.join(d, "assets", "logo.png"))).toBe(true);
+  });
+
+  it("refuses a foreign folder with a stray lint-report.json or export-report.json", async () => {
+    const d = copyDesign();
+    const other = path.join(tmp(), "reports");
+    fs.mkdirSync(other);
+    fs.writeFileSync(path.join(other, "a.txt"), "x");
+    fs.writeFileSync(path.join(other, "lint-report.json"), "{}");
+    fs.writeFileSync(path.join(other, "export-report.json"), "{}");
+    await expect(exportScreen(d, KIT, other, { browser })).rejects.toThrow(/not a previous export/);
+    fs.writeFileSync(path.join(other, MARKER_FILE), JSON.stringify({ generator: "something-else", format: 1 }));
+    await expect(exportScreen(d, KIT, other, { browser })).rejects.toThrow(/not a previous export/);
+    expect(fs.readFileSync(path.join(other, "a.txt"), "utf8")).toBe("x");
   });
 
   it("refuses an existing non-empty folder that is not a previous export, and an existing file", async () => {
@@ -249,11 +262,19 @@ describe("robust replace", () => {
     fs.renameSync(out, aside); // crash between the two renames
     fs.mkdirSync(`${out}.tmp-cafe0000`);
     fs.writeFileSync(`${out}.tmp-cafe0000/half.png`, "x");
+    fs.copyFileSync(path.join(aside, MARKER_FILE), path.join(`${out}.tmp-cafe0000`, MARKER_FILE));
+    // never ours: wrong name shape, or no marker
+    fs.mkdirSync(`${out}.tmp-notes`);
+    fs.writeFileSync(`${out}.tmp-notes/keep.txt`, "k");
+    fs.mkdirSync(`${out}.tmp-beef0000`);
+    fs.writeFileSync(`${out}.tmp-beef0000/keep.txt`, "k");
     const r = await exportScreen(fx("inbox-mini"), KIT, out, { browser });
     expect(r.skipped).toBe(true);
     expect(r.warnings.join(" ")).toMatch(/restored/);
     expect(fs.existsSync(path.join(out, "screen.ir.json"))).toBe(true);
-    expect(fs.readdirSync(path.dirname(out)).filter((n) => n.includes(".tmp-"))).toEqual([]);
+    expect(fs.readdirSync(path.dirname(out)).filter((n) => n.includes(".tmp-")).sort()).toEqual([`${path.basename(out)}.tmp-beef0000`, `${path.basename(out)}.tmp-notes`]);
+    expect(fs.readFileSync(`${out}.tmp-notes/keep.txt`, "utf8")).toBe("k");
+    expect(fs.readFileSync(`${out}.tmp-beef0000/keep.txt`, "utf8")).toBe("k");
   }, 120_000);
 
   it("a second export into the same folder fails clearly while the first runs; a stale lock is taken over", async () => {
@@ -308,7 +329,7 @@ describe("cli", () => {
     const out2 = path.join(tmp(), "out");
     const bad = await run("export", fx("lint-error"), "--kit", KIT, "--out", out2);
     expect(bad.code).toBe(1);
-    expect(tree(out2)).toEqual(["lint-report.json"]);
+    expect(tree(out2)).toEqual([MARKER_FILE, "lint-report.json"]);
   }, 240_000);
 
   it("exit 2 for usage and internal errors", async () => {

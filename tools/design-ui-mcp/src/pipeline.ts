@@ -11,7 +11,7 @@ export interface ExportOutcome {
   skipped?: boolean;
 }
 /** Exports one design page into `outDir` (screen.ir.json, goldens/, assets/, fixtures/, lint-report.json). */
-export type ExportScreen = (entry: string, kit: KitConfig, outDir: string, browser: Browser) => Promise<ExportOutcome>;
+export type ExportScreen = (entry: string, kit: KitConfig, outDir: string, browser: () => Promise<Browser>) => Promise<ExportOutcome>;
 
 export interface CompareOutcome {
   pass: boolean;

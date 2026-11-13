@@ -44,8 +44,8 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       const irFile = path.join(exportDir, "screen.ir.json");
 
       // one skip decision: the exporter's (design, kit and tool hashes); an unchanged export is reused as it is
-      const browser = await t.async("browser", () => ctx.runtime.browser());
-      const out = await t.async("export", () => exportScreen(entry, kit.kit, exportDir, browser));
+      // the browser is only acquired when the exporter actually exports
+      const out = await t.async("export", () => exportScreen(entry, kit.kit, exportDir, () => ctx.runtime.browser()));
       if (!out.ok) {
         const errors = out.findings.filter((f) => f.severity === "error");
         return toolResult([

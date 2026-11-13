@@ -282,6 +282,26 @@ describe("design_ui_import", () => {
     expect(third.data.timings.export).toBeLessThan(2000);
   }, 120_000);
 
+  it("does not acquire the browser when the export is unchanged", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = path.join(p.designRoot, "inbox-mini");
+    fs.cpSync(path.resolve(here, "../../design-export/test/fixtures/export/inbox-mini"), dir, { recursive: true });
+    fs.renameSync(path.join(dir, "inbox-mini.html"), path.join(dir, "screen.html"));
+    const fresh = new Runtime();
+    try {
+      const client = await connect(createServer(readConfig(p.dir), { runtime: fresh, runnerOptions: fast }));
+      await call(client, "design_ui_import", { design: "inbox-mini" });
+      expect(fresh.browserLaunches).toBe(1);
+      await fresh.close();
+      const again = new Runtime();
+      const client2 = await connect(createServer(readConfig(p.dir), { runtime: again, runnerOptions: fast }));
+      const r = await call(client2, "design_ui_import", { design: "inbox-mini" });
+      expect(r.data).toMatchObject({ exported: false });
+      expect(again.browserLaunches).toBe(0);
+      await again.close();
+    } finally { await fresh.close(); }
+  }, 120_000);
+
   it("a lint failure keeps the previous export and last-import.json", async () => {
     const p = tempProject({ prefer: "command" });
     const dir = path.join(p.designRoot, "inbox-mini");

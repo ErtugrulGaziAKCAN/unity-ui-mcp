@@ -35,7 +35,7 @@ export interface ExportResult {
 
 export interface ExportOptions {
   /** Shared browser (the MCP server keeps one warm); never closed here. Without it one is launched and closed. */
-  browser?: Browser;
+  browser?: Browser | (() => Promise<Browser>);
   /** Export even when the design and kit are unchanged. */
   force?: boolean;
   /** Viewports captured at the same time. */
@@ -50,6 +50,15 @@ export interface ExportOptions {
 export interface LintOutcome { findings: Finding[]; errors: number }
 
 const REPORT_FILE = "report.html";
+/** Written into every folder this exporter creates; the only thing that marks a folder as a previous export. */
+export const MARKER_FILE = ".design-export.json";
+const MARKER = { generator: "design-export", format: 1 };
+export const hasMarker = (dir: string): boolean => {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(dir, MARKER_FILE), "utf8")) as { generator?: string; format?: number };
+    return m.generator === MARKER.generator && m.format === MARKER.format;
+  } catch { return false; }
+};
 const OUTPUTS = ["screen.ir.json", "lint-report.json", "fixtures/sample-data.json", "goldens/matrix.json", "goldens/boxes.json"];
 const sha256 = (b: Buffer | string) => crypto.createHash("sha256").update(b).digest("hex");
 const ms = (t0: number) => Math.round((performance.now() - t0) * 10) / 10;
@@ -177,8 +186,8 @@ export function assertSafeOut(outDir: string, designPath: string): void {
   if (fs.existsSync(out)) {
     if (!fs.statSync(out).isDirectory()) refuse("it exists and is not a folder");
     const entries = fs.readdirSync(out);
-    if (entries.length && !entries.includes("export-report.json") && !entries.includes("lint-report.json")) {
-      refuse("it is a non-empty folder that is not a previous export (no export-report.json or lint-report.json)");
+    if (entries.length && !hasMarker(out)) {
+      refuse(`it is a non-empty folder that is not a previous export (no ${MARKER_FILE} written by design-export)`);
     }
   }
 }
@@ -219,9 +228,12 @@ function acquireLock(outDir: string): () => void {
 function recoverAndSweep(outDir: string, warnings: string[]): void {
   const parent = path.dirname(outDir), base = path.basename(outDir);
   if (!fs.existsSync(parent)) return;
-  const stale = fs.readdirSync(parent).filter((n) => n.startsWith(`${base}.tmp-`)).map((n) => path.join(parent, n));
+  // only folders this exporter made: the exact temp name shape, and its marker (or nothing in it yet)
+  const shape = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.tmp-(old-)?[0-9a-f]{8}$`);
+  const ours = (p: string) => { try { return fs.statSync(p).isDirectory() && (hasMarker(p) || fs.readdirSync(p).length === 0); } catch { return false; } };
+  const stale = fs.readdirSync(parent).filter((n) => shape.test(n)).map((n) => path.join(parent, n)).filter(ours);
   if (!fs.existsSync(outDir)) {
-    const olds = stale.filter((p) => path.basename(p).startsWith(`${base}.tmp-old-`))
+    const olds = stale.filter((p) => path.basename(p).startsWith(`${base}.tmp-old-`) && hasMarker(p))
       .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
     if (olds.length) {
       fs.renameSync(olds[0], outDir);
@@ -258,7 +270,8 @@ const resolveKit = (kit: string | KitConfig): KitConfig => {
   return readKit(kit);
 };
 
-async function withBrowser<T>(given: Browser | undefined, fn: (b: Browser) => Promise<T>): Promise<T> {
+async function withBrowser<T>(given: Browser | (() => Promise<Browser>) | undefined, fn: (b: Browser) => Promise<T>): Promise<T> {
+  if (typeof given === "function") return fn(await given());
   if (given) return fn(given);
   const b = await chromium.launch();
   try { return await fn(b); } finally { await b.close().catch(() => {}); }
@@ -307,6 +320,7 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
     fs.mkdirSync(path.dirname(outDir), { recursive: true });
     const fresh = `${outDir}.tmp-${crypto.randomBytes(4).toString("hex")}`;
     fs.mkdirSync(fresh);
+    fs.writeFileSync(path.join(fresh, MARKER_FILE), JSON.stringify(MARKER) + "\n");
     try {
       const result = await withBrowser(opts.browser, async (browser) => {
         const timings: Record<string, number> = { load: 0, lint: 0, extract: 0, bake: 0, capture: 0, write: 0 };
