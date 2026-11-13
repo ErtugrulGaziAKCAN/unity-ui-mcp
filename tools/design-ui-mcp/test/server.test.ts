@@ -27,9 +27,13 @@ function stubPipeline(): Pipeline & { exports: string[] } {
   return {
     exports,
     exportScreen: async (entry, _kit, outDir) => {
+      const ir = JSON.stringify({ irVersion: 1, source: fs.readFileSync(entry, "utf8").length });
+      const file = path.join(outDir, "screen.ir.json");
+      // like the real exporter: unchanged input keeps the previous export
+      if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === ir) return { ok: true, findings: [], skipped: true };
       exports.push(entry);
       fs.mkdirSync(outDir, { recursive: true });
-      fs.writeFileSync(path.join(outDir, "screen.ir.json"), JSON.stringify({ irVersion: 1, source: fs.readFileSync(entry, "utf8").length }));
+      fs.writeFileSync(file, ir);
       return { ok: true, findings: [] };
     },
     compareScreen: null,
@@ -271,6 +275,31 @@ describe("design_ui_import", () => {
     expect(runtime.browserLaunches).toBeLessThanOrEqual(launches + 1);
     const again = await call(client, "design_ui_import", { design: "inbox-mini" });
     expect(again.data).toMatchObject({ exported: false, unityCalled: false });
+    // the exporter's skip is what the tool reports, even when last-import.json is gone
+    fs.rmSync(path.join(dir, ".design-ui", "last-import.json"));
+    const third = await call(client, "design_ui_import", { design: "inbox-mini" });
+    expect(third.data).toMatchObject({ exported: false });
+    expect(third.data.timings.export).toBeLessThan(2000);
+  }, 120_000);
+
+  it("a lint failure keeps the previous export and last-import.json", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = path.join(p.designRoot, "inbox-mini");
+    fs.cpSync(path.resolve(here, "../../design-export/test/fixtures/export/inbox-mini"), dir, { recursive: true });
+    fs.renameSync(path.join(dir, "inbox-mini.html"), path.join(dir, "screen.html"));
+    const client = await serverFor(p.dir);
+    expect((await call(client, "design_ui_import", { design: "inbox-mini" })).isError).toBeFalsy();
+    const lastImport = fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8");
+    const ir = fs.readFileSync(path.join(dir, ".design-ui", "export", "screen.ir.json"), "utf8");
+    const html = fs.readFileSync(path.join(dir, "screen.html"), "utf8");
+    fs.writeFileSync(path.join(dir, "screen.html"), html.replace("display:flex;flex-direction:row;width:300px", "display:grid;width:300px"));
+    const r = await call(client, "design_ui_import", { design: "inbox-mini" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("U-CSS-001");
+    expect(fs.readFileSync(path.join(dir, ".design-ui", "export", "screen.ir.json"), "utf8")).toBe(ir);
+    expect(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8")).toBe(lastImport);
+    expect(JSON.stringify(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "lint-report.json"), "utf8")).findings)).toContain("U-CSS-001");
+    expect(p.runnerCalls()).toHaveLength(1);
   }, 120_000);
 
   it("stops at real lint errors without calling Unity", async () => {
@@ -281,7 +310,8 @@ describe("design_ui_import", () => {
     const r = await call(await serverFor(p.dir), "design_ui_import", { design: "bad" });
     expect(r.isError).toBe(true);
     expect(r.text).toContain("U-CSS-001");
-    expect(fs.readdirSync(path.join(dir, ".design-ui", "export"))).toEqual(["lint-report.json"]);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "export"))).toBe(false);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "lint-report.json"))).toBe(true);
     expect(p.runnerCalls()).toEqual([]);
   }, 120_000);
 

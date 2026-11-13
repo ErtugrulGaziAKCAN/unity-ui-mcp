@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { Browser } from "playwright";
 import { runExport, type Finding, type KitConfig } from "./exporter.js";
 
@@ -6,6 +7,8 @@ export interface ExportOutcome {
   ok: boolean;
   findings: Finding[];
   timings?: Record<string, number>;
+  /** true when the exporter found the design, kit and tool unchanged and kept the previous export. */
+  skipped?: boolean;
 }
 /** Exports one design page into `outDir` (screen.ir.json, goldens/, assets/, fixtures/, lint-report.json). */
 export type ExportScreen = (entry: string, kit: KitConfig, outDir: string, browser: Browser) => Promise<ExportOutcome>;
@@ -33,8 +36,9 @@ export interface Pipeline {
  */
 export const INSTALLED_PIPELINE: Pipeline = {
   exportScreen: async (entry, kit, outDir, browser) => {
-    const r = await runExport(entry, kit, outDir, { browser });
-    return { ok: r.ok, findings: r.findings, timings: r.timings };
+    // a lint failure keeps the previous export; its report goes next to the export folder
+    const r = await runExport(entry, kit, outDir, { browser, lintReportFile: path.join(path.dirname(outDir), "lint-report.json") });
+    return { ok: r.ok, findings: r.findings, timings: { ...r.timings, total: r.totalMs }, skipped: r.skipped };
   },
   compareScreen: null,
 };

@@ -43,19 +43,18 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       const exportDir = exportDirOf(dir);
       const irFile = path.join(exportDir, "screen.ir.json");
 
-      let exported = false;
-      if (!(last && last.sourceSha === src && last.kitSha === kit.sha && fs.existsSync(irFile))) {
-        const browser = await t.async("browser", () => ctx.runtime.browser());
-        const out = await t.async("export", () => exportScreen(entry, kit.kit, exportDir, browser));
-        if (!out.ok) {
-          const errors = out.findings.filter((f) => f.severity === "error");
-          return toolResult([
-            `Import stopped: lint found ${errors.length} error${errors.length === 1 ? "" : "s"} in ${screen}. Fix these in the design:`,
-            ...formatFindings(out.findings),
-          ].join("\n"), { screen, exported: false, unityCalled: false, findings: out.findings, timings: t.done() }, true);
-        }
-        exported = true;
+      // one skip decision: the exporter's (design, kit and tool hashes); an unchanged export is reused as it is
+      const browser = await t.async("browser", () => ctx.runtime.browser());
+      const out = await t.async("export", () => exportScreen(entry, kit.kit, exportDir, browser));
+      if (!out.ok) {
+        const errors = out.findings.filter((f) => f.severity === "error");
+        return toolResult([
+          `Import stopped: lint found ${errors.length} error${errors.length === 1 ? "" : "s"} in ${screen}. Fix these in the design` +
+          ` (the previous export and last import are untouched):`,
+          ...formatFindings(out.findings),
+        ].join("\n"), { screen, exported: false, unityCalled: false, findings: out.findings, timings: t.done() }, true);
       }
+      const exported = !out.skipped;
       if (!fs.existsSync(irFile)) throw new Error(`the export of ${screen} wrote no screen.ir.json in ${exportDir}`);
       const irSha = sha256(fs.readFileSync(irFile));
 

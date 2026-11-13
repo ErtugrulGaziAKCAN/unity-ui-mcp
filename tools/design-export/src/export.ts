@@ -7,6 +7,7 @@
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { chromium, type Browser } from "playwright";
 import { captureMatrix } from "./capture/capture.js";
@@ -22,10 +23,14 @@ export interface ExportResult {
   ok: boolean;
   findings: Finding[];
   outDir: string;
-  /** true when the design and kit hashes matched the previous export, which was left as it is. */
+  /** true when the design, kit and tool hashes matched the previous export, which was left as it is. */
   skipped?: boolean;
-  /** Milliseconds per step: load, lint, extract, bake, capture, write, total (zeros when skipped). */
+  /** Milliseconds per step: load, lint, extract, bake, capture, write (zeros when skipped). */
   timings: Record<string, number>;
+  /** Wall-clock milliseconds of the whole run, reported apart from the steps. */
+  totalMs: number;
+  /** Non-fatal problems (e.g. the replaced export folder could not be deleted). */
+  warnings: string[];
 }
 
 export interface ExportOptions {
@@ -35,11 +40,17 @@ export interface ExportOptions {
   force?: boolean;
   /** Viewports captured at the same time. */
   concurrency?: number;
+  /**
+   * When set and lint finds errors, the lint report goes to this file and the previous export folder is left as it
+   * is (instead of being replaced by a lint-only folder). A successful export removes the file.
+   */
+  lintReportFile?: string;
 }
 
 export interface LintOutcome { findings: Finding[]; errors: number }
 
 const REPORT_FILE = "report.html";
+const OUTPUTS = ["screen.ir.json", "lint-report.json", "fixtures/sample-data.json", "goldens/matrix.json", "goldens/boxes.json"];
 const sha256 = (b: Buffer | string) => crypto.createHash("sha256").update(b).digest("hex");
 const ms = (t0: number) => Math.round((performance.now() - t0) * 10) / 10;
 const rounded = (n: number) => Math.round(n * 10) / 10;
@@ -57,37 +68,188 @@ export function findDesignHtml(input: string): string {
   return path.join(p, pages[0]);
 }
 
-/** Hash of every non-hidden file of a folder (the report file and `skip` excluded). */
-function folderHash(dir: string, skip: string[] = []): string {
+// ---- hashing -----------------------------------------------------------------------------------------------------
+
+const fileSha = (file: string): string => {
+  try {
+    const st = fs.statSync(file); // follows symlinks
+    return st.isFile() ? sha256(fs.readFileSync(file)) : "not-a-file";
+  } catch { return "missing"; }
+};
+
+const REF_PATTERNS: RegExp[] = [
+  /\b(?:src|href|poster|data)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi,
+  /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi,
+  /@import\s+(?:"([^"]*)"|'([^']*)')/gi,
+];
+
+/** Relative references found in markup or CSS text (srcset candidates included); remote and data: references are skipped. */
+function referencesIn(text: string): string[] {
+  const out = new Set<string>();
+  const add = (raw: string | undefined) => {
+    if (!raw) return;
+    let r = raw.trim().replace(/[?#].*$/, "");
+    if (!r || r.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(r)) return;
+    try { r = decodeURIComponent(r); } catch { /* keep as written */ }
+    out.add(r);
+  };
+  for (const re of REF_PATTERNS) for (const m of text.matchAll(re)) add(m[1] ?? m[2] ?? m[3]);
+  for (const m of text.matchAll(/\bsrcset\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    for (const cand of (m[1] ?? m[2]).split(",")) add(cand.trim().split(/\s+/)[0]);
+  }
+  return Array.from(out);
+}
+
+/**
+ * Hash of what one design page reads: the page itself, a blobs.json next to it, and the files it references
+ * (stylesheets are followed). Referenced files that are missing count as such, so adding one changes the hash.
+ * Symlinks are followed; references that leave the design folder are not read.
+ */
+export function designHash(htmlPath: string): string {
+  const designDir = path.dirname(htmlPath);
   const lines: string[] = [];
-  const skips = skip.map((s) => path.resolve(s));
+  const seen = new Set<string>();
+  const visit = (abs: string, followRefs: boolean) => {
+    const rel = path.relative(designDir, abs).split(path.sep).join("/");
+    if (seen.has(rel)) return;
+    seen.add(rel);
+    lines.push(`${rel}\0${fileSha(abs)}`);
+    if (!followRefs || !fs.existsSync(abs)) return;
+    let text: string;
+    try { text = fs.readFileSync(abs, "utf8"); } catch { return; }
+    for (const ref of referencesIn(text)) {
+      if (ref.startsWith("/__kit/")) continue;
+      const target = path.resolve(ref.startsWith("/") ? path.join(designDir, ref) : path.join(path.dirname(abs), ref));
+      if (target !== designDir && !target.startsWith(designDir + path.sep)) continue;
+      visit(target, /\.(css|svg)$/i.test(target));
+    }
+  };
+  visit(htmlPath, true);
+  const blobs = path.join(designDir, "blobs.json");
+  if (!seen.has("blobs.json")) visit(blobs, false);
+  return sha256(lines.sort().join("\n"));
+}
+
+function folderHash(dir: string): string {
+  const lines: string[] = [];
   const walk = (abs: string, rel: string) => {
     for (const d of fs.readdirSync(abs, { withFileTypes: true })) {
-      if (d.name.startsWith(".")) continue;
       const p = path.join(abs, d.name), r = rel ? `${rel}/${d.name}` : d.name;
-      if (!rel && d.name.toLowerCase() === REPORT_FILE) continue;
-      if (skips.includes(p)) continue;
-      if (d.isDirectory()) walk(p, r);
-      else if (d.isFile()) lines.push(`${r}\0${sha256(fs.readFileSync(p))}`);
+      let isDir = d.isDirectory();
+      if (d.isSymbolicLink()) { try { isDir = fs.statSync(p).isDirectory(); } catch { continue; } }
+      if (isDir) walk(p, r); else lines.push(`${r}\0${fileSha(p)}`);
     }
   };
   walk(dir, "");
   return sha256(lines.sort().join("\n"));
 }
 
+/** Hash of the effective kit: its configuration as loaded plus every file in its folder. */
+export function kitHash(kit: KitConfig): string {
+  const { dir: _dir, ...config } = kit;
+  return sha256(`${JSON.stringify(config)}\n${folderHash(kit.dir)}`);
+}
+
+/** Hash of the tool that makes the export: exporter package version, IR schema and the Chromium build. */
+export function toolHash(): string {
+  const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+  const schema = fs.readFileSync(new URL("./ir/schema.json", import.meta.url));
+  let chromiumBuild = "unknown";
+  try { chromiumBuild = chromium.executablePath(); } catch { /* not installed: the export fails later with a clear error */ }
+  return sha256([pkg.version, sha256(schema), chromiumBuild, process.platform, process.arch].join("\n"));
+}
+
+// ---- output folder safety ----------------------------------------------------------------------------------------
+
+const isInside = (child: string, parent: string) => child === parent || child.startsWith(parent.endsWith(path.sep) ? parent : parent + path.sep);
+const real = (p: string) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+
+/** Refuses an output folder that is, contains or sits on something that must not be replaced. */
+export function assertSafeOut(outDir: string, designPath: string): void {
+  const out = real(path.resolve(outDir));
+  const design = real(designPath);
+  const refuse = (why: string) => { throw new Error(`refusing to use ${outDir} as the output folder: ${why}. Choose a new or previous-export folder (for example <design>/.design-ui/export).`); };
+  if (out === path.parse(out).root) refuse("it is a filesystem root");
+  if (out === real(os.homedir())) refuse("it is the home folder");
+  const cwd = real(process.cwd());
+  if (isInside(cwd, out)) refuse("it is the current folder or contains it");
+  if (isInside(design, out)) refuse("it is the design or contains the design");
+  if (fs.existsSync(out)) {
+    if (!fs.statSync(out).isDirectory()) refuse("it exists and is not a folder");
+    const entries = fs.readdirSync(out);
+    if (entries.length && !entries.includes("export-report.json") && !entries.includes("lint-report.json")) {
+      refuse("it is a non-empty folder that is not a previous export (no export-report.json or lint-report.json)");
+    }
+  }
+}
+
 const readJsonIf = <T>(file: string): T | null => {
   try { return JSON.parse(fs.readFileSync(file, "utf8")) as T; } catch { return null; }
 };
 
-/** Replaces `out` with `fresh` (a sibling folder): the old folder goes aside first and is restored if the rename fails. */
-function replaceDir(fresh: string, out: string): void {
+const alive = (pid: number) => {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === "EPERM"; }
+};
+
+/** `<out>.lock` holding the pid; a lock whose process is gone is stale and taken over. Returns the release function. */
+function acquireLock(outDir: string): () => void {
+  const file = `${outDir}.lock`;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const fd = fs.openSync(file, "wx");
+      fs.writeSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      return () => { try { fs.rmSync(file, { force: true }); } catch { /* left for the next run to take over */ } };
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+      const pid = Number(fs.readFileSync(file, "utf8").trim());
+      if (alive(pid)) throw new Error(`another export into ${outDir} is running (pid ${pid}); wait for it to finish`);
+      fs.rmSync(file, { force: true });
+    }
+  }
+  throw new Error(`could not lock ${outDir} (${file})`);
+}
+
+/**
+ * Under the lock nothing else writes beside `out`: restore the newest `.tmp-old-*` when `out` is missing (a crash between
+ * the two renames), then remove every other `<out>.tmp-*` left by a crashed run.
+ */
+function recoverAndSweep(outDir: string, warnings: string[]): void {
+  const parent = path.dirname(outDir), base = path.basename(outDir);
+  if (!fs.existsSync(parent)) return;
+  const stale = fs.readdirSync(parent).filter((n) => n.startsWith(`${base}.tmp-`)).map((n) => path.join(parent, n));
+  if (!fs.existsSync(outDir)) {
+    const olds = stale.filter((p) => path.basename(p).startsWith(`${base}.tmp-old-`))
+      .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    if (olds.length) {
+      fs.renameSync(olds[0], outDir);
+      stale.splice(stale.indexOf(olds[0]), 1);
+      warnings.push(`restored the previous export from ${path.basename(olds[0])}`);
+    }
+  }
+  for (const p of stale) { try { fs.rmSync(p, { recursive: true, force: true }); } catch { warnings.push(`could not remove ${p}`); } }
+}
+
+/**
+ * Replaces `out` with `fresh` (a sibling folder): the old folder goes aside first and comes back if the second rename
+ * fails. Deleting the old folder afterwards is best effort; a leftover is swept by the next run.
+ */
+function replaceDir(fresh: string, out: string, warnings: string[]): void {
   const aside = fs.existsSync(out) ? `${out}.tmp-old-${crypto.randomBytes(4).toString("hex")}` : null;
   if (aside) fs.renameSync(out, aside);
   try { fs.renameSync(fresh, out); } catch (e) {
-    if (aside) fs.renameSync(aside, out);
+    if (aside) {
+      try { fs.renameSync(aside, out); } catch (restore) {
+        throw new Error(`${(e as Error).message}; restoring the previous export also failed: ${(restore as Error).message} (it is kept in ${aside})`);
+      }
+    }
     throw e;
   }
-  if (aside) fs.rmSync(aside, { recursive: true, force: true });
+  if (aside) {
+    try { fs.rmSync(aside, { recursive: true, force: true }); } catch (e) { warnings.push(`the new export is in place, but the old one could not be deleted (${aside}): ${(e as Error).message}`); }
+  }
 }
 
 const resolveKit = (kit: string | KitConfig): KitConfig => {
@@ -95,11 +257,6 @@ const resolveKit = (kit: string | KitConfig): KitConfig => {
   if (!fs.existsSync(path.join(kit, "kit.config.json"))) throw new Error(`design kit not found: ${path.join(kit, "kit.config.json")} is missing`);
   return readKit(kit);
 };
-
-/** Hash of the kit's files (config, fonts, tokens, text styles); changes whenever anything the export reads changes. */
-export function kitHash(kit: KitConfig): string {
-  return folderHash(kit.dir);
-}
 
 async function withBrowser<T>(given: Browser | undefined, fn: (b: Browser) => Promise<T>): Promise<T> {
   if (given) return fn(given);
@@ -123,84 +280,94 @@ export async function lintScreen(input: string, kitIn: string | KitConfig, opts:
 export async function exportScreen(input: string, kitIn: string | KitConfig, outDirIn: string, opts: ExportOptions = {}): Promise<ExportResult> {
   const t0 = performance.now();
   const htmlPath = findDesignHtml(input);
-  const designDir = path.dirname(htmlPath);
-  const kit = resolveKit(kitIn);
   const outDir = path.resolve(outDirIn);
-  const sourceSha = folderHash(designDir, [outDir]);
-  const kitSha = kitHash(kit);
-
-  // unchanged design and kit: the previous export stands
-  if (!opts.force) {
-    const prev = readJsonIf<{ ok: boolean; sourceSha: string; kitSha: string; source: string }>(path.join(outDir, "export-report.json"));
-    if (prev?.ok && prev.sourceSha === sourceSha && prev.kitSha === kitSha && prev.source === path.basename(htmlPath)
-      && fs.existsSync(path.join(outDir, "screen.ir.json"))) {
-      const lintReport = readJsonIf<{ findings: Finding[] }>(path.join(outDir, "lint-report.json"));
-      return {
-        ok: true, skipped: true, findings: lintReport?.findings ?? [], outDir,
-        timings: { load: 0, lint: 0, extract: 0, bake: 0, capture: 0, write: 0, total: ms(t0) },
-      };
-    }
-  }
-
-  fs.mkdirSync(path.dirname(outDir), { recursive: true });
-  const fresh = `${outDir}.tmp-${crypto.randomBytes(4).toString("hex")}`;
-  fs.mkdirSync(fresh);
+  assertSafeOut(outDir, htmlPath); // before anything is read or written
+  const kit = resolveKit(kitIn);
+  const warnings: string[] = [];
+  const release = acquireLock(outDir);
   try {
-    const result = await withBrowser(opts.browser, async (browser) => {
-      const timings: Record<string, number> = { load: 0, lint: 0, extract: 0, bake: 0, capture: 0, write: 0, total: 0 };
-      let t = performance.now();
-      const lap = (k: string) => { const n = performance.now(); timings[k] = rounded(timings[k] + ms(t)); t = n; };
+    recoverAndSweep(outDir, warnings);
+    const sourceSha = designHash(htmlPath);
+    const kitSha = kitHash(kit);
+    const toolSha = toolHash();
 
-      const d = await openDesign(htmlPath, kit, kit.reference, browser);
-      try {
-        lap("load");
-        const snapshot = await collectSnapshot(d.page, d.cdp, kit);
-        const findings = await lint(d, kit, snapshot);
-        lap("lint");
-        const errors = findings.filter((f) => f.severity === "error");
-        fs.writeFileSync(path.join(fresh, "lint-report.json"), stableStringify({
-          source: path.basename(htmlPath), errors: errors.length, warnings: findings.length - errors.length, findings,
-        }));
-        lap("write");
-        if (errors.length) {
-          timings.total = ms(t0);
-          return { ok: false, findings, timings };
-        }
+    // unchanged design, kit and tool: the previous export stands
+    if (!opts.force) {
+      const prev = readJsonIf<{ ok: boolean; sourceSha: string; kitSha: string; toolSha: string; source: string }>(path.join(outDir, "export-report.json"));
+      if (prev?.ok && prev.sourceSha === sourceSha && prev.kitSha === kitSha && prev.toolSha === toolSha && prev.source === path.basename(htmlPath)
+        && OUTPUTS.every((f) => fs.existsSync(path.join(outDir, f)))) {
+        const lintReport = readJsonIf<{ findings: Finding[] }>(path.join(outDir, "lint-report.json"));
+        return {
+          ok: true, skipped: true, findings: lintReport?.findings ?? [], outDir, warnings,
+          timings: { load: 0, lint: 0, extract: 0, bake: 0, capture: 0, write: 0 }, totalMs: ms(t0),
+        };
+      }
+    }
 
-        const build = await buildIr(d, snapshot, kit, fresh, htmlPath);
-        const problems = validateIr(build.ir);
-        if (problems.length) throw new Error(`the extracted IR is not valid: ${problems.slice(0, 5).join("; ")}`);
-        const bake = Object.entries(build.timings).filter(([k]) => /^bake/i.test(k)).reduce((a, [, v]) => a + v, 0);
-        lap("extract");
-        timings.bake = rounded(bake);
-        timings.extract = rounded(Math.max(0, timings.extract - bake));
+    fs.mkdirSync(path.dirname(outDir), { recursive: true });
+    const fresh = `${outDir}.tmp-${crypto.randomBytes(4).toString("hex")}`;
+    fs.mkdirSync(fresh);
+    try {
+      const result = await withBrowser(opts.browser, async (browser) => {
+        const timings: Record<string, number> = { load: 0, lint: 0, extract: 0, bake: 0, capture: 0, write: 0 };
+        let t = performance.now();
+        const lap = (k: string) => { const n = performance.now(); timings[k] = rounded(timings[k] + ms(t)); t = n; };
 
-        fs.mkdirSync(path.join(fresh, "assets"), { recursive: true });
-        fs.mkdirSync(path.join(fresh, "fixtures"), { recursive: true });
-        fs.writeFileSync(path.join(fresh, "screen.ir.json"), stableStringify(build.ir));
-        fs.writeFileSync(path.join(fresh, "fixtures", "sample-data.json"), stableStringify(build.fixtures));
-        lap("write");
+        const d = await openDesign(htmlPath, kit, kit.reference, browser);
+        try {
+          lap("load");
+          const snapshot = await collectSnapshot(d.page, d.cdp, kit);
+          const findings = await lint(d, kit, snapshot);
+          lap("lint");
+          const errors = findings.filter((f) => f.severity === "error");
+          const lintJson = stableStringify({
+            source: path.basename(htmlPath), errors: errors.length, warnings: findings.length - errors.length, findings,
+          });
+          fs.writeFileSync(path.join(fresh, "lint-report.json"), lintJson);
+          lap("write");
+          if (errors.length) return { ok: false, findings, timings, lintJson };
 
-        const matrix = await captureMatrix(htmlPath, kit, build.ir, build.elements, path.join(fresh, "goldens"), {
-          browser, open: [d], concurrency: opts.concurrency,
-        });
-        lap("capture");
+          const build = await buildIr(d, snapshot, kit, fresh, htmlPath);
+          const problems = validateIr(build.ir);
+          if (problems.length) throw new Error(`the extracted IR is not valid: ${problems.slice(0, 5).join("; ")}`);
+          const bake = Object.entries(build.timings).filter(([k]) => /^bake/i.test(k)).reduce((a, [, v]) => a + v, 0);
+          lap("extract");
+          timings.bake = rounded(bake);
+          timings.extract = rounded(Math.max(0, timings.extract - bake));
 
-        timings.total = ms(t0);
-        fs.writeFileSync(path.join(fresh, "export-report.json"), stableStringify({
-          ok: true, source: path.basename(htmlPath), sourceSha, kitSha, screen: build.ir.screen,
-          warnings: findings.length, captures: matrix.jobs.length, timings,
-          detail: { extract: build.timings, capture: matrix.timings },
-        }));
-        lap("write");
-        timings.total = ms(t0);
-        return { ok: true, findings, timings };
-      } finally { await d.close(); }
-    });
-    replaceDir(fresh, outDir);
-    return { ...result, outDir };
-  } catch (e) {
-    fs.rmSync(fresh, { recursive: true, force: true });
-    throw e;
-  }
+          fs.mkdirSync(path.join(fresh, "assets"), { recursive: true });
+          fs.mkdirSync(path.join(fresh, "fixtures"), { recursive: true });
+          fs.writeFileSync(path.join(fresh, "screen.ir.json"), stableStringify(build.ir));
+          fs.writeFileSync(path.join(fresh, "fixtures", "sample-data.json"), stableStringify(build.fixtures));
+          lap("write");
+
+          const matrix = await captureMatrix(htmlPath, kit, build.ir, build.elements, path.join(fresh, "goldens"), {
+            browser, open: [d], concurrency: opts.concurrency,
+          });
+          lap("capture");
+
+          fs.writeFileSync(path.join(fresh, "export-report.json"), stableStringify({
+            ok: true, source: path.basename(htmlPath), sourceSha, kitSha, toolSha, screen: build.ir.screen,
+            warnings: findings.length, captures: matrix.jobs.length, timings, totalMs: ms(t0),
+            detail: { extract: build.timings, capture: matrix.timings },
+          }));
+          lap("write");
+          return { ok: true, findings, timings, lintJson };
+        } finally { await d.close(); }
+      });
+      if (!result.ok && opts.lintReportFile) {
+        // keep the previous export; the lint result goes next to it
+        fs.rmSync(fresh, { recursive: true, force: true });
+        fs.mkdirSync(path.dirname(opts.lintReportFile), { recursive: true });
+        fs.writeFileSync(opts.lintReportFile, result.lintJson);
+        return { ok: false, findings: result.findings, outDir, timings: result.timings, totalMs: ms(t0), warnings };
+      }
+      replaceDir(fresh, outDir, warnings);
+      if (result.ok && opts.lintReportFile) fs.rmSync(opts.lintReportFile, { force: true });
+      return { ok: result.ok, findings: result.findings, outDir, timings: result.timings, totalMs: ms(t0), warnings };
+    } catch (e) {
+      fs.rmSync(fresh, { recursive: true, force: true });
+      throw e;
+    }
+  } finally { release(); }
 }

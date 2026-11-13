@@ -31,7 +31,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     }
   };
 
-  program.command("lint").argument("<designDir>").requiredOption("--kit <kitDir>").description("Lint a design")
+  program.command("lint").allowExcessArguments(false).argument("<designDir>").requiredOption("--kit <kitDir>").description("Lint a design")
     .action(guard(async (dir: string, o: { kit: string }) => {
       const r = await lintScreen(dir, path.resolve(o.kit));
       for (const f of r.findings) io.out(line(f) + "\n");
@@ -39,7 +39,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       return r.errors ? 1 : 0;
     }) as never);
 
-  program.command("export").argument("<designDir>").requiredOption("--kit <kitDir>").requiredOption("--out <dir>")
+  program.command("export").allowExcessArguments(false).argument("<designDir>").requiredOption("--kit <kitDir>").requiredOption("--out <dir>")
     .option("--force", "export even when the design and kit are unchanged").description("Export a design")
     .action(guard(async (dir: string, o: { kit: string; out: string; force?: boolean }) => {
       const r = await exportScreen(dir, path.resolve(o.kit), path.resolve(o.out), { force: o.force });
@@ -47,12 +47,12 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       else if (!r.ok) {
         for (const f of r.findings) io.out(line(f) + "\n");
         io.out(`lint found errors; wrote ${path.join(r.outDir, "lint-report.json")} only\n`);
-      } else io.out(`exported to ${r.outDir} in ${r.timings.total} ms ` +
+      } else io.out(`exported to ${r.outDir} in ${r.totalMs} ms ` +
         `(${["load", "lint", "extract", "bake", "capture", "write"].map((k) => `${k} ${r.timings[k]}`).join(", ")})\n`);
       return r.ok ? 0 : 1;
     }) as never);
 
-  program.command("compare").description("Compare a Unity capture against the golden")
+  program.command("compare").allowExcessArguments(false).description("Compare a Unity capture against the golden")
     .action(guard(async () => { io.err("design-export: compare is not available yet\n"); return 2; }) as never);
 
   if (argv.length === 0) { io.err(USAGE); return 2; }

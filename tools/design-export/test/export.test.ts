@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
 import { runCli } from "../src/commands.js";
-import { exportScreen } from "../src/export.js";
+import { exportScreen, designHash } from "../src/export.js";
 import { validateBoxes } from "../src/boxes/validate.js";
 import { validateIr } from "../src/ir/validate.js";
 
@@ -61,9 +61,12 @@ describe("exportScreen: inbox-mini", () => {
 
   it("reports per-step timings in the result and in export-report.json", () => {
     for (const t of [res.timings, readJson(out, "export-report.json").timings]) {
-      for (const k of ["load", "lint", "extract", "bake", "capture", "write", "total"]) expect(typeof t[k], k).toBe("number");
+      for (const k of ["load", "lint", "extract", "bake", "capture", "write"]) expect(typeof t[k], k).toBe("number");
     }
+    expect(typeof res.totalMs).toBe("number");
     const rep = readJson(out, "export-report.json");
+    expect(typeof rep.totalMs).toBe("number");
+    expect(rep.toolSha).toMatch(/^[0-9a-f]{64}$/);
     expect(rep.sourceSha).toMatch(/^[0-9a-f]{64}$/);
     expect(rep.kitSha).toMatch(/^[0-9a-f]{64}$/);
     expect(rep.ok).toBe(true);
@@ -115,6 +118,7 @@ describe("exportScreen: failures", () => {
     fs.mkdirSync(path.join(out, "goldens"), { recursive: true });
     fs.writeFileSync(path.join(out, "goldens", "stale.png"), "x");
     fs.writeFileSync(path.join(out, "screen.ir.json"), "{}");
+    fs.writeFileSync(path.join(out, "export-report.json"), "{}");
     const r = await exportScreen(fx("lint-error"), KIT, out, { browser });
     expect(r.ok).toBe(false);
     expect(r.findings.some((f) => f.ruleId === "U-CSS-001" && f.severity === "error")).toBe(true);
@@ -139,7 +143,149 @@ describe("exportScreen: failures", () => {
   });
 });
 
+describe("output folder safety", () => {
+  const copyDesign = () => {
+    const d = path.join(tmp(), "design");
+    fs.cpSync(fx("inbox-mini"), d, { recursive: true });
+    fs.writeFileSync(path.join(d, "notes.txt"), "keep me");
+    return d;
+  };
+
+  it("refuses out == design folder, out == the design file and out == an ancestor, and deletes nothing", async () => {
+    const d = copyDesign();
+    for (const out of [d, path.join(d, "inbox-mini.html"), path.dirname(d), path.dirname(path.dirname(d)), path.parse(d).root, os.homedir()]) {
+      await expect(exportScreen(d, KIT, out, { browser }), out).rejects.toThrow(/refusing to use/);
+    }
+    expect(fs.readFileSync(path.join(d, "notes.txt"), "utf8")).toBe("keep me");
+    expect(fs.existsSync(path.join(d, "inbox-mini.html"))).toBe(true);
+    expect(fs.existsSync(path.join(d, "assets", "logo.png"))).toBe(true);
+  });
+
+  it("refuses an existing non-empty folder that is not a previous export, and an existing file", async () => {
+    const d = copyDesign();
+    const other = path.join(tmp(), "documents");
+    fs.mkdirSync(other);
+    fs.writeFileSync(path.join(other, "thesis.txt"), "x");
+    await expect(exportScreen(d, KIT, other, { browser })).rejects.toThrow(/not a previous export/);
+    expect(fs.readFileSync(path.join(other, "thesis.txt"), "utf8")).toBe("x");
+    const file = path.join(tmp(), "f.txt");
+    fs.writeFileSync(file, "x");
+    await expect(exportScreen(d, KIT, file, { browser })).rejects.toThrow(/not a folder/);
+    // an empty folder and a path inside the design folder are fine
+    const empty = path.join(tmp(), "empty");
+    fs.mkdirSync(empty);
+    expect((await exportScreen(d, KIT, empty, { browser })).ok).toBe(true);
+    expect((await exportScreen(d, KIT, path.join(d, "out"), { browser })).ok).toBe(true);
+  }, 120_000);
+
+  it("cli: out == design exits 2 and keeps the design", async () => {
+    const d = copyDesign();
+    let err = "";
+    const code = await runCli(["export", d, "--kit", KIT, "--out", d], { out: () => {}, err: (s) => { err += s; } });
+    expect(code).toBe(2);
+    expect(err).toMatch(/refusing/);
+    expect(fs.existsSync(path.join(d, "inbox-mini.html"))).toBe(true);
+  });
+});
+
+describe("skip hash", () => {
+  it("covers the design file, blobs.json, referenced assets and the kit, and ignores unrelated files", async () => {
+    const d = path.join(tmp(), "design");
+    fs.cpSync(fx("inbox-mini"), d, { recursive: true });
+    const kitCopy = path.join(tmp(), "kit");
+    fs.cpSync(KIT, kitCopy, { recursive: true });
+    const out = path.join(tmp(), "out");
+    await exportScreen(path.join(d, "inbox-mini.html"), kitCopy, out, { browser });
+    const again = async () => (await exportScreen(entry, kitCopy, out, { browser })).skipped === true;
+
+    fs.writeFileSync(path.join(d, "unrelated.txt"), "x");
+    fs.writeFileSync(path.join(d, "other-screen.html"), "<p>other</p>");
+    const entry = path.join(d, "inbox-mini.html");
+    fs.mkdirSync(path.join(d, "inbox-mini.html.tmp-abc"));
+    expect(await again()).toBe(true);
+
+    // blobs.json next to the design
+    fs.writeFileSync(path.join(d, "blobs.json"), "{}");
+    expect(await again()).toBe(false);
+    expect(await again()).toBe(true);
+
+    // a referenced asset
+    fs.appendFileSync(path.join(d, "assets", "logo.png"), Buffer.from([0]));
+    expect(await again()).toBe(false);
+    expect(await again()).toBe(true);
+
+    // a kit file
+    fs.appendFileSync(path.join(kitCopy, "tokens.css"), "\n:root{--x:1px}\n");
+    expect(await again()).toBe(false);
+    expect(await again()).toBe(true);
+
+    // a changed tool (the recorded hash) is not skipped
+    const rep = readJson(out, "export-report.json");
+    fs.writeFileSync(path.join(out, "export-report.json"), JSON.stringify({ ...rep, toolSha: "0".repeat(64) }));
+    expect(await again()).toBe(false);
+  }, 300_000);
+
+  it("a lone html file hashes its references, not the folder; a symlinked asset is followed", () => {
+    const d = path.join(tmp(), "design");
+    fs.cpSync(fx("inbox-mini"), d, { recursive: true });
+    const h = designHash(path.join(d, "inbox-mini.html"));
+    fs.writeFileSync(path.join(d, "x.bin"), "1");
+    expect(designHash(path.join(d, "inbox-mini.html"))).toBe(h);
+    const real = path.join(tmp(), "real.png");
+    fs.copyFileSync(path.join(d, "assets", "logo.png"), real);
+    fs.rmSync(path.join(d, "assets", "logo.png"));
+    fs.symlinkSync(real, path.join(d, "assets", "logo.png"));
+    expect(designHash(path.join(d, "inbox-mini.html"))).toBe(h);
+    fs.appendFileSync(real, Buffer.from([1]));
+    expect(designHash(path.join(d, "inbox-mini.html"))).not.toBe(h);
+  });
+});
+
+describe("robust replace", () => {
+  it("restores an orphaned previous export, sweeps stale temp folders", async () => {
+    const out = path.join(tmp(), "out");
+    await exportScreen(fx("inbox-mini"), KIT, out, { browser });
+    const aside = `${out}.tmp-old-deadbeef`;
+    fs.renameSync(out, aside); // crash between the two renames
+    fs.mkdirSync(`${out}.tmp-cafe0000`);
+    fs.writeFileSync(`${out}.tmp-cafe0000/half.png`, "x");
+    const r = await exportScreen(fx("inbox-mini"), KIT, out, { browser });
+    expect(r.skipped).toBe(true);
+    expect(r.warnings.join(" ")).toMatch(/restored/);
+    expect(fs.existsSync(path.join(out, "screen.ir.json"))).toBe(true);
+    expect(fs.readdirSync(path.dirname(out)).filter((n) => n.includes(".tmp-"))).toEqual([]);
+  }, 120_000);
+
+  it("a second export into the same folder fails clearly while the first runs; a stale lock is taken over", async () => {
+    const out = path.join(tmp(), "out");
+    fs.writeFileSync(`${out}.lock`, String(process.pid));
+    await expect(exportScreen(fx("inbox-mini"), KIT, out, { browser })).rejects.toThrow(/another export.*running/);
+    expect(fs.existsSync(`${out}.lock`)).toBe(true);
+    fs.writeFileSync(`${out}.lock`, "999999");
+    expect((await exportScreen(fx("inbox-mini"), KIT, out, { browser })).ok).toBe(true);
+    expect(fs.existsSync(`${out}.lock`)).toBe(false);
+  }, 120_000);
+
+  it("with lintReportFile a lint failure keeps the previous export", async () => {
+    const out = path.join(tmp(), "out");
+    const report = path.join(path.dirname(out), "lint-report.json");
+    await exportScreen(fx("inbox-mini"), KIT, out, { browser });
+    const r = await exportScreen(fx("lint-error"), KIT, out, { browser, lintReportFile: report });
+    expect(r.ok).toBe(false);
+    expect(fs.existsSync(path.join(out, "screen.ir.json"))).toBe(true);
+    expect(readJson(report).findings.some((f: { ruleId: string }) => f.ruleId === "U-CSS-001")).toBe(true);
+    const ok = await exportScreen(fx("inbox-mini"), KIT, out, { browser, lintReportFile: report, force: true });
+    expect(ok.ok).toBe(true);
+    expect(fs.existsSync(report)).toBe(false);
+  }, 120_000);
+});
+
 describe("cli", () => {
+  it("rejects excess arguments", async () => {
+    const code = await runCli(["lint", fx("inbox-mini"), "extra", "--kit", KIT], { out: () => {}, err: () => {} });
+    expect(code).toBe(2);
+  });
+
   const run = async (...argv: string[]) => {
     let stdout = "", stderr = "";
     const code = await runCli(argv, { out: (s) => { stdout += s; }, err: (s) => { stderr += s; } });
