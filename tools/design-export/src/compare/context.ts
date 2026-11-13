@@ -30,6 +30,8 @@ export interface CaptureContext {
   painters?: ReadonlySet<string> | null;
   /** Painted border widths per element in device px (top, right, bottom, left); absent: no border known. */
   borders?: Record<string, [number, number, number, number]>;
+  /** Font size of each text element in device px (its `font-size` in this capture times the capture scale). */
+  fontPx?: Record<string, number>;
 }
 
 /** The screen setup of a capture: state, viewport and what is applied (matrix.json `captures[]`). */
@@ -39,6 +41,7 @@ interface LooseShadow { offset: BoxRect }
 interface LooseNode {
   id: string;
   kind?: string;
+  text?: unknown;
   asset?: unknown;
   insetShadow?: unknown;
   insetShadowLayers?: Record<string, unknown>;
@@ -136,6 +139,7 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
   const shadows: Record<string, Rect> = {};
   const backgrounds = new Set<string>(), painters = new Set<string>();
   const borders: Record<string, [number, number, number, number]> = {};
+  const fontPx: Record<string, number> = {};
   for (const id of ix.order) {
     const n = ix.nodes.get(id)!;
     const holds = (key: string) => key.split("+").every((d) => test(d, id));
@@ -157,7 +161,11 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
       return Number.isFinite(px) ? px * golden.scale : 0;
     }) as [number, number, number, number];
     if (widths.some((x) => x > 0)) borders[id] = widths;
+    if (n.kind === "text" || n.text) {
+      const size = parseFloat(styleValue(n, "font-size", holds) ?? "");
+      if (Number.isFinite(size) && size > 0) fontPx[id] = size * golden.scale;
+    }
     if (backgrounds.has(id) || borders[id] || sh || inset || n.asset || n.kind === "image" || n.kind === "vector") painters.add(id);
   }
-  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, borders };
+  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, borders, fontPx };
 }

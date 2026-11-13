@@ -27,7 +27,10 @@ namespace DesignUi.Editor.Tests
 
         // ---- batch entry points ------------------------------------------------------------------------------
 
-        /// <summary>Imports <c>$DESIGN_UI_EXPORT_DIR</c> with the profile <c>$DESIGN_UI_PROFILE</c> (Assets/…).</summary>
+        /// <summary>
+        /// Imports <c>$DESIGN_UI_EXPORT_DIR</c> with the profile <c>$DESIGN_UI_PROFILE</c> (Assets/…); several export folders
+        /// as a PATH-style list (<see cref="DesignUiBatch.ImportEach"/>: each is imported, the test fails when any failed).
+        /// </summary>
         [Test]
         public void ImportFromEnv()
         {
@@ -36,7 +39,7 @@ namespace DesignUi.Editor.Tests
             var profile = Env("DESIGN_UI_PROFILE");
             Assert.IsNotNull(profile, "DESIGN_UI_PROFILE names the DesignUiProfile asset (Assets/…)");
             var discard = string.Equals(Env("DESIGN_UI_DISCARD_MANUAL_EDITS"), "true", StringComparison.OrdinalIgnoreCase);
-            var r = DesignUiOps.Import(profile, export, discard);
+            var r = DesignUiBatch.ImportEach(profile, DesignUiBatch.PathList(export), discard);
             Debug.Log("Design UI import (code " + r.Code + "):\n" + r.Log);
             Assert.AreEqual(0, r.Code, r.Log);
         }

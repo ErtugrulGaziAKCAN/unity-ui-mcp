@@ -261,6 +261,44 @@ namespace DesignUi.Editor
             });
         }
 
+        /// <summary>
+        /// <see cref="CaptureAll"/> for several exports in one run, the i-th export into the i-th output folder, each with
+        /// its default compiled screen (<see cref="DefaultScreenFolder"/>). An export that cannot be captured (not compiled,
+        /// no matrix) adds <c>&lt;export&gt;: &lt;reason&gt;</c> to <paramref name="errors"/>, has no done marker, and does not
+        /// stop the next; job errors of a captured export are added the same way.
+        /// </summary>
+        public static IEnumerator CaptureEach(IReadOnlyList<string> exportDirs, IReadOnlyList<string> outDirs, DesignUiProfile profile, List<string> errors)
+        {
+            if (errors == null) throw new ArgumentNullException(nameof(errors));
+            int n = exportDirs?.Count ?? 0, m = outDirs?.Count ?? 0;
+            if (n == 0 || n != m)
+            {
+                errors.Add(n + (n == 1 ? " export folder" : " export folders") + " but " + m + (m == 1 ? " output folder" : " output folders") + ": give one output folder per export");
+                yield break;
+            }
+            for (int i = 0; i < n; i++)
+            {
+                var export = exportDirs[i];
+                var result = new CaptureResult();
+                IEnumerator run = null;
+                string failure = null;
+                try { run = CaptureAll(export, DefaultScreenFolder(export, profile), profile, outDirs[i], result); }
+                catch (Exception e) { failure = e.Message; }
+                while (run != null)
+                {
+                    bool more;
+                    try { more = run.MoveNext(); }
+                    catch (Exception e) { failure = e.Message; break; }
+                    if (!more) break;
+                    yield return run.Current;
+                }
+                if (failure != null) errors.Add(export + ": " + failure);
+                foreach (var e in result.Errors) errors.Add(export + ": " + e);
+                UnityEngine.Debug.Log("Design UI capture " + (i + 1) + "/" + n + " " + export + ": " + (failure != null ? "not captured: " + failure
+                    : result.Captured.Count + " captured, " + result.NotCaptured.Count + " not captured into " + outDirs[i]));
+            }
+        }
+
         /// <summary>The profile asset at <paramref name="assetPath"/>, or the project's only DesignUiProfile when it is empty.</summary>
         public static DesignUiProfile LoadProfile(string assetPath)
         {

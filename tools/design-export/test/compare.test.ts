@@ -15,7 +15,10 @@ import { blockSsimMap, maskRects, regionSsim, ssimMasked, unionRect } from "../s
 import { runCli } from "../src/commands.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const T: Thresholds = { boxPx: 1, baselinePx: 1, deltaE2000: 1, ssimNonText: 0.99, ssimElement: 0.99, textInkDeltaE: 3, textInkRatio: 0.76, textInkCoverage: 0.15 };
+const T: Thresholds = {
+  boxPx: 1, baselinePx: 1, deltaE2000: 1, ssimNonText: 0.99, ssimElement: 0.99, textInkDeltaE: 3, textInkRatio: 0.76, textInkCoverage: 0.15,
+  textInkFullPx: 14, textInkDeltaESmall: [[12, 5], [9, 10], [0, 14]], textInkMedianTolerance: 0.2,
+};
 const tmpDirs: string[] = [];
 const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), "compare-")); tmpDirs.push(d); return d; };
 afterAll(() => { for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });
@@ -369,12 +372,54 @@ describe("compareCapture: fix round checks", () => {
     expect(compareCapture(badge(), badge(), [], T, bctx).elements.find((r) => r.id === "badge")).toMatchObject({ ink: 0, inkRatio: 1 });
     const colour = compareCapture(badge(), badge({ text: [250, 210, 60] }), [], T, bctx);
     expect(colour.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["badge:ink"]);
-    expect(colour.issues[0].detail).toMatch(/^line 1 of 1: text colour ΔE2000 [\d.]+, design #fafafa, Unity #fad23c \(limit 3\)$/);
+    expect(colour.issues[0].detail).toMatch(/^line 1 of 1: text colour ΔE2000 [\d.]+, design #fafafa, Unity #fad23c \(limit 5 at 12\.8 px\)$/);
     const bold = compareCapture(badge(), badge({ thick: 2 }), [], T, bctx);
     expect(bold.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["badge:inkCoverage"]);
     expect(bold.issues[0].detail).toMatch(/Unity draws 2\.00× the design's text ink \(expected 0\.65–1\.15×\)/);
     // a thinner renderer within the measured ratio passes
     expect(compareCapture(badge({ thick: 2 }), badge({ thick: 2, text: [250, 250, 250] }), [], T, bctx).pass).toBe(true);
+  });
+
+  it("limits a line's ink colour by its device font size: textInkDeltaE from textInkFullPx, the measured table below", () => {
+    // Unity's thinner stems never reach the design's colour at small sizes (macOS font smoothing in the golden)
+    const lighter = badge({ text: [222, 222, 222] });
+    const at = (px: number): CaptureContext => ({ ...bctx, fontPx: { badge: px } });
+    const de = compareCapture(badge(), lighter, [], T, at(16)).elements.find((r) => r.id === "badge")!.ink!;
+    expect(de).toBeGreaterThan(5);
+    expect(de).toBeLessThan(10);
+    const full = compareCapture(badge(), lighter, [], T, at(16));
+    expect(full.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["badge:ink"]);
+    expect(full.issues[0].detail).toMatch(/\(limit 3 at 16 px\)$/);
+    expect(compareCapture(badge(), lighter, [], T, at(12)).issues[0].detail).toMatch(/\(limit 5 at 12 px\)$/);
+    expect(compareCapture(badge(), lighter, [], T, at(9)).pass).toBe(true);
+    expect(compareCapture(badge(), lighter, [], T, at(6)).pass).toBe(true);
+    // a wrong colour still fails at any size
+    expect(compareCapture(badge(), badge({ text: [250, 210, 60] }), [], T, at(6)).issues.map((i) => i.kind)).toEqual(["ink"]);
+    // without the IR's font size the line box height stands in (16 px line / 1.25: 12.8 px)
+    expect(compareCapture(badge(), lighter, [], T, bctx).issues[0].detail).toMatch(/\(limit 5 at 12\.8 px\)$/);
+  });
+
+  it("compares light text and dark text each with its own median ink ratio (font smoothing differs by polarity)", () => {
+    const mk = (lines: { thick: number; dark: boolean }[]) => {
+      const png = canvas(320, 320, [16, 24, 32]);
+      const elements: Record<string, Box> = { root: el(0, 0, 320, 320) };
+      lines.forEach((l, k) => {
+        const y = 20 + k * 48;
+        if (l.dark) fill(png, { x: 30, y: y - 8, w: 220, h: 32 }, [240, 242, 244]);
+        for (let x = 40; x < 200; x += 24) fill(png, { x, y: y + 2, w: l.thick, h: 12 }, l.dark ? [12, 30, 38] : [250, 250, 250]);
+        elements[`t${k}`] = el(36, y - 2, 200, 20, { text: true, lines: [{ x: 38, y, w: 164, h: 16, baseline: y + 12 }] });
+      });
+      return { png, boxes: { capture: "c", viewport: [320, 320] as [number, number], scale: 1, external: [], elements } };
+    };
+    const design = [...[0, 1, 2].map(() => ({ thick: 10, dark: false })), ...[0, 1, 2].map(() => ({ thick: 10, dark: true }))];
+    // light text at 0.7 of the design's ink, dark text at the design's: one capture-wide median (0.85) would fail both groups
+    const unity = [...[0, 1, 2].map(() => ({ thick: 7, dark: false })), ...[0, 1, 2].map(() => ({ thick: 10, dark: true }))];
+    expect(compareCapture(mk(design), mk(unity), [], T).issues.filter((i) => i.kind === "inkCoverage")).toEqual([]);
+    // within its group a line still stands out
+    const odd = unity.map((l, k) => (k === 1 ? { ...l, thick: 10 } : l));
+    const v = compareCapture(mk(design), mk(odd), [], T);
+    expect(v.issues.filter((i) => i.kind === "inkCoverage").map((i) => i.id)).toEqual(["t1"]);
+    expect(v.issues.find((i) => i.kind === "inkCoverage")!.detail).toMatch(/against the median 0\.70× of this capture's light text \(limit ±20 %\)/);
   });
 
   it("compares a line's ink with the capture's median ratio when there are 3 or more lines", () => {
@@ -392,7 +437,7 @@ describe("compareCapture: fix round checks", () => {
     expect(compareCapture(mk([5, 5, 5, 5]), mk([4, 4, 4, 4]), [], T).pass).toBe(true);
     const v = compareCapture(mk([5, 5, 5, 5]), mk([4, 4, 5, 4]), [], T);
     expect(v.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["t2:inkCoverage"]);
-    expect(v.issues[0].detail).toMatch(/1\.00× the design's, \+25 % against this capture's median 0\.80×/);
+    expect(v.issues[0].detail).toMatch(/1\.00× the design's, \+25 % against the median 0\.80× of this capture's light text \(limit ±20 %\)/);
   });
 
   it("flags an element only Unity shows and does not mask its text", () => {
@@ -474,6 +519,16 @@ describe("IR context", () => {
   it("knows which elements paint a background in the capture", () => {
     expect([...captureContext(ix, { state: "default", viewport: [1280, 720], apply: [] }, boxes).backgrounds!].sort()).toEqual(["btn", "root"]);
     expect([...captureContext(ix, { state: "busy", viewport: [1280, 720], apply: [] }, boxes).backgrounds!].sort()).toEqual(["btn", "card", "root"]);
+  });
+
+  it("gives each text element its font size in device px, from the layer that holds", () => {
+    const text = indexIr({ ...ir, root: { ...ir.root, children: [
+      { id: "t", kind: "text", style: { base: { "font-size": "16px" }, "state:busy": { "font-size": "24px" } }, text: { tr: "a" }, children: [] },
+      { id: "box", kind: "container", style: { base: { "font-size": "16px" } }, children: [] },
+    ] } });
+    const tb: CaptureBoxes = { ...boxes, elements: { root: el(0, 0, 1280, 720), t: el(10, 10, 50, 10, { text: true }), box: el(0, 40, 50, 10) } };
+    expect(captureContext(text, { state: "default", viewport: [1280, 720], apply: [] }, tb).fontPx).toEqual({ t: 8 });
+    expect(captureContext(text, { state: "busy", viewport: [1280, 720], apply: [] }, tb).fontPx).toEqual({ t: 12 });
   });
 });
 
@@ -705,10 +760,14 @@ describe("design-export compare", () => {
   });
 
   it("reads the thresholds from fidelity-thresholds.json", () => {
-    expect(readThresholds()).toEqual({ boxPx: 1, baselinePx: 1, deltaE2000: 1, ssimNonText: 0.99, ssimElement: 0.99, textInkDeltaE: 3, textInkRatio: 0.76, textInkCoverage: 0.15 });
+    expect(readThresholds()).toEqual(T);
     const bad = path.join(tmp(), "t.json");
     fs.writeFileSync(bad, JSON.stringify({ boxPx: 1 }));
     expect(() => readThresholds(bad)).toThrow(/"baselinePx" must be a number/);
+    const table = (v: unknown) => { fs.writeFileSync(bad, JSON.stringify({ ...T, textInkDeltaESmall: v })); return () => readThresholds(bad); };
+    expect(table([[9, 10], [12, 5], [0, 14]])).toThrow(/"textInkDeltaESmall" must be \[device px, ΔE2000\] pairs from the largest size down to 0/);
+    expect(table([[12, 5], [9, 10]])).toThrow(/textInkDeltaESmall/);
+    expect(table("5")).toThrow(/textInkDeltaESmall/);
   });
 });
 

@@ -39,6 +39,9 @@ namespace DesignUi.Editor.Tests
         /// Captures every job of <c>$DESIGN_UI_EXPORT/goldens/matrix.json</c> into <c>$DESIGN_UI_OUT</c>, named like the
         /// goldens, with the compiled screen <c>$DESIGN_UI_SCREEN</c> (default: the profile's output folder and the
         /// screen's name) and the profile <c>$DESIGN_UI_PROFILE</c> (default: the project's only DesignUiProfile).
+        /// Several exports in one run: <c>DESIGN_UI_EXPORT</c> and <c>DESIGN_UI_OUT</c> are PATH-style lists
+        /// (<see cref="System.IO.Path.PathSeparator"/>) paired by position, each export with its default compiled screen
+        /// (<see cref="DesignCapture.CaptureEach"/>); one that cannot be captured fails the test but not the others.
         /// </summary>
         [UnityTest]
         public IEnumerator CaptureFromEnv()
@@ -49,6 +52,15 @@ namespace DesignUi.Editor.Tests
             var outDir = Env("DESIGN_UI_OUT", "DESIGN_UI_OUT_DIR");
             Assert.IsNotNull(outDir, "DESIGN_UI_OUT names the folder the captures are written to");
             var profile = DesignCapture.LoadProfile(Env("DESIGN_UI_PROFILE"));
+            var exports = DesignUiBatch.PathList(export);
+            if (exports.Count > 1)
+            {
+                Assert.IsNull(Env("DESIGN_UI_SCREEN"), "DESIGN_UI_SCREEN names one compiled screen; with several exports each uses its default");
+                var errors = new List<string>();
+                yield return DesignCapture.CaptureEach(exports, DesignUiBatch.PathList(outDir), profile, errors);
+                Assert.IsEmpty(errors, string.Join("\n", errors));
+                yield break;
+            }
             var screen = Env("DESIGN_UI_SCREEN") ?? DesignCapture.DefaultScreenFolder(export, profile);
             var result = new CaptureResult();
             yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result);
@@ -550,6 +562,50 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(2, (int)done["jobs"]);
             Assert.AreEqual(1, (int)done["captured"]);
             Assert.AreEqual(1, (int)done["notCaptured"]);
+        }
+
+        [UnityTest]
+        public IEnumerator CaptureEach_CapturesEveryExportIntoItsOwnFolder_AndAFailingExportDoesNotStopTheNext()
+        {
+            string Named(string screen, string color)
+            {
+                var ir = Small(BlackRoot(Box("tile", color)));
+                ir.Screen = screen;
+                return Export(ir, null, "{ \"captures\": [" + Job("default@320x180", "default", 320, 180) + "] }");
+            }
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var a = Named("capture.a", "#112233");
+            var b = Named("capture.b", "#445566");
+            var notCompiled = Named("capture.none", "#778899");
+            foreach (var export in new[] { a, b }) Assert.IsTrue(ScreenCompiler.Compile(export, profile, false, NoView()).Ok);
+            var outs = new[] { TempDir(), TempDir(), TempDir() };
+
+            var errors = new List<string>();
+            yield return DesignCapture.CaptureEach(new[] { a, notCompiled, b }, outs, profile, errors);
+
+            Assert.AreEqual(1, errors.Count, string.Join("\n", errors));
+            StringAssert.StartsWith(notCompiled + ": ", errors[0]);
+            StringAssert.Contains("not a compiled screen", errors[0]);
+            foreach (var i in new[] { 0, 2 })
+            {
+                Assert.IsTrue(File.Exists(Path.Combine(outs[i], DesignCapture.DoneFileName)), "captured " + i);
+                Assert.IsTrue(File.Exists(Path.Combine(outs[i], "default@320x180.png")), "png " + i);
+            }
+            Assert.IsFalse(File.Exists(Path.Combine(outs[1], DesignCapture.DoneFileName)), "the export that failed has no done marker");
+            AssertNear("#112233", Pixel(LoadPng(outs[0]), 20, 10), 1, "first export's own screen");
+            AssertNear("#445566", Pixel(LoadPng(outs[2]), 20, 10), 1, "third export's own screen");
+
+            var mismatch = new List<string>();
+            yield return DesignCapture.CaptureEach(new[] { a, b }, new[] { outs[0] }, profile, mismatch);
+            StringAssert.Contains("2 export folders but 1 output folder", mismatch.Single());
+        }
+
+        Texture2D LoadPng(string outDir)
+        {
+            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false, true);
+            _objects.Add(tex);
+            Assert.IsTrue(tex.LoadImage(File.ReadAllBytes(Path.Combine(outDir, "default@320x180.png"))));
+            return tex;
         }
 
         [Test]

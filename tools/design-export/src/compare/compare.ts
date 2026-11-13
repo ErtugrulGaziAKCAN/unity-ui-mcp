@@ -18,9 +18,12 @@
  *   as "not sampled", never skipped silently. Elements that carry text and paint also get ring samples (background
  *   inside the border, the border, the corner diagonals for the radius). Every sample is ΔE2000 ≤ `deltaE2000` against
  *   the closest Unity colour within 1 px;
- * - text ink per line: the ink colour (ΔE2000 ≤ `textInkDeltaE`) and the ink amount: Unity's relative to the
- *   design's between `textInkRatio` and 1 (each ± `textInkCoverage`), and within ±`textInkCoverage` of the capture's
- *   median ratio when it has 3 or more lines; this catches a wrong text colour, weight or size;
+ * - text ink per line: the ink colour (ΔE2000 ≤ `textInkDeltaE` for text of at least `textInkFullPx` device px, the
+ *   measured `textInkDeltaESmall` limit below that size) and the ink amount: Unity's relative to the design's between
+ *   `textInkRatio` and 1 (each ± `textInkCoverage`), and within ±`textInkMedianTolerance` of the capture's median ratio
+ *   for text of the same polarity (light on dark, dark on light) when it has 3 or more such lines; this catches a wrong
+ *   text colour, weight or size. The macOS golden's font smoothing makes the design's stems heavier than Unity's, more
+ *   for light text and at small sizes (docs/findings/text-ink.md), which these limits absorb;
  * - shadow band: the mean colour of each active outer shadow's band (shadow rect minus element box), ΔE2000 ≤
  *   `deltaE2000`, so a faint missing shadow fails although SSIM dilutes it.
  * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows.
@@ -51,16 +54,39 @@ export interface Thresholds {
   textInkRatio: number;
   /** Allowed deviation of a line's ink amount from the expected ratio (weight, size, glyph errors). */
   textInkCoverage: number;
+  /** Device font size (px) from which a line's ink colour is held to `textInkDeltaE`. */
+  textInkFullPx: number;
+  /**
+   * Ink colour limits below `textInkFullPx`: `[device px, ΔE2000]` pairs from the largest size down to 0; a line takes
+   * the limit of the first pair whose size it reaches.
+   */
+  textInkDeltaESmall: [number, number][];
+  /** Allowed deviation of a line's ink amount from the capture's median ratio of text of the same polarity. */
+  textInkMedianTolerance: number;
 }
 
 /** `tools/design-export/fidelity-thresholds.json`, the only place the thresholds live (keys starting with `$` are comments). */
 export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.json", import.meta.url));
-const THRESHOLD_KEYS: (keyof Thresholds)[] = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage"];
+const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage",
+  "textInkFullPx", "textInkMedianTolerance"] as const;
 
 export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
   const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
   for (const k of THRESHOLD_KEYS) if (typeof raw[k] !== "number" || !Number.isFinite(raw[k])) throw new Error(`${file}: "${k}" must be a number`);
-  return Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as unknown as Thresholds;
+  const table = raw.textInkDeltaESmall;
+  const pairs = Array.isArray(table) && table.length > 0 && table.every((p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0));
+  const ordered = pairs && (table as number[][]).every((p, i, a) => i === 0 || p[0] < a[i - 1][0]) && (table as number[][]).at(-1)![0] === 0;
+  if (!ordered) throw new Error(`${file}: "textInkDeltaESmall" must be [device px, ΔE2000] pairs from the largest size down to 0`);
+  return {
+    ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall">),
+    textInkDeltaESmall: (table as number[][]).map(([px, de]) => [px, de] as [number, number]),
+  };
+}
+
+/** The ink colour limit for text of `px` device px (font size). */
+export function inkColourLimit(t: Thresholds, px: number): number {
+  if (px >= t.textInkFullPx) return t.textInkDeltaE;
+  return (t.textInkDeltaESmall.find(([min]) => px >= min) ?? t.textInkDeltaESmall[t.textInkDeltaESmall.length - 1])[1];
 }
 
 export type IssueKind = "size" | "missing" | "extra" | "visibility" | "lines" | "box" | "baseline" | "ssim" | "edge" | "color" | "ink" | "inkCoverage" | "shadow";
@@ -189,6 +215,7 @@ const FX = [0.1, 0.3, 0.5, 0.7, 0.9], FY = [0.25, 0.5, 0.75];
 const fmt = (n: number, d = 2) => (n >= 0 ? "+" : "") + n.toFixed(d);
 const pct = (n: number) => `${n >= 0 ? "+" : ""}${Math.round(n * 100)} %`;
 const r6 = (n: number) => Math.round(n * 1e6) / 1e6;
+const lumaOf = (c: readonly number[]) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
 const inside = (r: Rect, x: number, y: number, pad = 0) => x >= r.x - pad && x < r.x + r.w + pad && y >= r.y - pad && y < r.y + r.h + pad;
 const grow = (r: Rect, d: number): Rect => ({ x: r.x - d, y: r.y - d, w: r.w + 2 * d, h: r.h + 2 * d });
 
@@ -370,7 +397,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) if (lineMask[yy * w + xx]) return true;
       return false;
     };
-    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect }
+    /** `light`: the design's ink is lighter than its background (font smoothing thickens such text most). */
+    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean }
     const inkLines: InkLine[] = [];
     const usable = (p: RingPoint, cover: Rect[]) => p.gx >= 0 && p.gy >= 0 && p.gx < w && p.gy < h && p.ux >= 0 && p.uy >= 0 && p.ux < w && p.uy < h
       && !cover.some((l) => inside(l, p.gx, p.gy, 1)) && !onText(p.gx, p.gy) && !onText(p.ux, p.uy);
@@ -447,19 +475,24 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
 
       // text ink per line: colour now; the amount after all lines of the capture are measured
       if (carriesText && ue.lines.length === ge.lines.length) {
+        // the font size in device px: the IR's, else the line box over the kit's larger ratio (1.25)
+        const px = ctx.fontPx?.[id] ?? ge.lines[0].h / 1.25;
+        const limit = inkColourLimit(t, px);
         let wDe: { de: number; i: number; a: number[]; b: number[] } | null = null;
         ge.lines.forEach((gl, i) => {
           const win = grow(unionRect(gl, ue.lines[i]), 1);
           const a = inkIn(gp, win);
           if (!a) return;
           const b = inkIn(up, win);
-          inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl });
+          inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg) });
           if (b) { const de = deltaE2000(a.ink, b.ink); if (!wDe || de > wDe.de) wDe = { de, i, a: a.ink, b: b.ink }; }
         });
         if (wDe) {
           const x = wDe as { de: number; i: number; a: number[]; b: number[] };
           row.ink = r6(x.de);
-          if (x.de > t.textInkDeltaE + EPS) issue(id, "ink", `line ${x.i + 1} of ${ge.lines.length}: text colour ΔE2000 ${x.de.toFixed(2)}, design ${hex(x.a)}, Unity ${hex(x.b)} (limit ${t.textInkDeltaE})`, ge.lines[x.i]);
+          if (x.de > limit + EPS) {
+            issue(id, "ink", `line ${x.i + 1} of ${ge.lines.length}: text colour ΔE2000 ${x.de.toFixed(2)}, design ${hex(x.a)}, Unity ${hex(x.b)} (limit ${limit} at ${Number(px.toFixed(2))} px)`, ge.lines[x.i]);
+          }
         }
       }
 
@@ -474,16 +507,21 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       }
     }
 
-    // text ink amount: UI Toolkit draws thinner anti-aliased stems than Chromium, by a ratio that depends on the
-    // renderer (M0: 0.69-0.83 for correct text). A line's Unity/design ratio must lie between the measured ratio and
-    // identity (each with the tolerance), and, when the capture has 3 or more measured lines, within the tolerance of
-    // the capture's median ratio, which cancels the renderer and leaves a wrong weight, size or glyph run
-    const ratios = inkLines.map((l) => l.ratio).filter((r): r is number => r !== null).sort((a, b) => a - b);
-    const median = ratios.length >= 3 ? ratios[(ratios.length - 1) >> 1] / 2 + ratios[ratios.length >> 1] / 2 : null;
+    // text ink amount: UI Toolkit draws thinner anti-aliased stems than the macOS golden, whose font smoothing thickens
+    // light text more than dark text (Unity/design 0.69-1.03 for correct text, docs/findings/text-ink.md). A line's ratio
+    // must lie between the measured ratio and identity (each with the tolerance), and, when the capture has 3 or more
+    // measured lines of the same polarity, within the tolerance of their median ratio, which cancels the renderer and
+    // leaves a wrong weight, size or glyph run
+    const medianOf = (light: boolean) => {
+      const ratios = inkLines.filter((l) => l.light === light).map((l) => l.ratio).filter((r): r is number => r !== null).sort((a, b) => a - b);
+      return ratios.length >= 3 ? ratios[(ratios.length - 1) >> 1] / 2 + ratios[ratios.length >> 1] / 2 : null;
+    };
+    const medians = { light: medianOf(true), dark: medianOf(false) };
     const lo = t.textInkRatio * (1 - t.textInkCoverage), hi = 1 + t.textInkCoverage;
     const worstInk = new Map<string, { l: InkLine; score: number }>();
     for (const l of inkLines) {
-      const score = l.ratio === null ? Infinity : Math.max(lo - l.ratio, l.ratio - hi, median === null ? -Infinity : Math.abs(l.ratio / median - 1) - t.textInkCoverage);
+      const median = l.light ? medians.light : medians.dark;
+      const score = l.ratio === null ? Infinity : Math.max(lo - l.ratio, l.ratio - hi, median === null ? -Infinity : Math.abs(l.ratio / median - 1) - t.textInkMedianTolerance);
       const prev = worstInk.get(l.id);
       if (!prev || score > prev.score) worstInk.set(l.id, { l, score });
     }
@@ -495,7 +533,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       else if (l.ratio < lo - EPS || l.ratio > hi + EPS) {
         issue(id, "inkCoverage", `${head}: Unity draws ${l.ratio.toFixed(2)}× the design's text ink (expected ${lo.toFixed(2)}–${hi.toFixed(2)}×): ${tail}`, l.at);
       } else {
-        issue(id, "inkCoverage", `${head}: text ink ${l.ratio.toFixed(2)}× the design's, ${pct(l.ratio / median! - 1)} against this capture's median ${median!.toFixed(2)}× (limit ±${Math.round(t.textInkCoverage * 100)} %): ${tail}`, l.at);
+        const median = (l.light ? medians.light : medians.dark)!;
+        issue(id, "inkCoverage", `${head}: text ink ${l.ratio.toFixed(2)}× the design's, ${pct(l.ratio / median - 1)} against the median ${median.toFixed(2)}× of this capture's ${l.light ? "light" : "dark"} text (limit ±${Math.round(t.textInkMedianTolerance * 100)} %): ${tail}`, l.at);
       }
     }
 
