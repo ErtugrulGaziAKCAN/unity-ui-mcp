@@ -36,6 +36,8 @@ export interface CaptureContext {
   radii?: Record<string, [number, number, number, number]>;
   /** Elements that draw a raster picture (IR asset kind `image`) at another size than its own, in device px. */
   pictures?: ReadonlySet<string>;
+  /** Text elements whose `text-shadow` in this capture has a blur radius above 0 (a glow around the glyphs). */
+  textShadows?: ReadonlySet<string>;
 }
 
 /** The screen setup of a capture: state, viewport and what is applied (matrix.json `captures[]`). */
@@ -145,7 +147,7 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
   const borders: Record<string, [number, number, number, number]> = {};
   const fontPx: Record<string, number> = {};
   const radii: Record<string, [number, number, number, number]> = {};
-  const pictures = new Set<string>();
+  const pictures = new Set<string>(), textShadows = new Set<string>();
   for (const id of ix.order) {
     const n = ix.nodes.get(id)!;
     const holds = (key: string) => key.split("+").every((d) => test(d, id));
@@ -175,10 +177,13 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     if (n.kind === "text" || n.text) {
       const size = parseFloat(styleValue(n, "font-size", holds) ?? "");
       if (Number.isFinite(size) && size > 0) fontPx[id] = size * golden.scale;
+      // offset-x offset-y blur: the third length (the colour may come first or last)
+      const lengths = (styleValue(n, "text-shadow", holds) ?? "none").replace(/(rgba?|hsla?)\([^)]*\)|#[0-9a-f]+/gi, " ").match(/-?(?:\d+\.?\d*|\.\d+)(?:px)?(?=\s|$)/g) ?? [];
+      if (lengths.length >= 3 && parseFloat(lengths[2]) > 0) textShadows.add(id);
     }
     if (backgrounds.has(id) || borders[id] || sh || inset || n.asset || n.kind === "image" || n.kind === "vector") painters.add(id);
     // a raster picture is resampled unless its element box is its own size in device px
     if (isObj(n.asset) && n.asset.kind === "image" && b && (Math.abs(b.w - Number(n.asset.width)) > 0.5 || Math.abs(b.h - Number(n.asset.height)) > 0.5)) pictures.add(id);
   }
-  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, borders, fontPx, radii, pictures };
+  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, borders, fontPx, radii, pictures, textShadows };
 }

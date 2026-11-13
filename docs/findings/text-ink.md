@@ -226,6 +226,26 @@ style, how many elements use it and the device size, and its fix points to the s
 The rule judges the kit's table, so it does not ask for another font size than the kit has; it is a prompt to choose
 larger styles where the design allows it.
 
+## 8. Text with a blurred shadow
+
+A text shadow with a blur puts a glow around the glyphs, and the part of it inside the line's window counts as ink: the
+ink amount is the sum of every pixel on the ink side of the background, weighted by how far it is. Unity's glow edge is a
+little softer than Chromium's, so it leaves a little more of the glow inside the window. Measured over the suite (the
+text-shadow fixture is the only page with text shadows; every state, hover and viewport):
+
+| Shadow | Unity's ink relative to the design's |
+|---|---|
+| `0 4px 12px` cyan, 0.9 (the title's hover glow, 36 px bold) | 1.108, 1.109, 1.111 at 2560, 1920, 1280 |
+| `0 0 16px` green, 0.9 (the state glow) | 1.022–1.037 |
+| `0 2px 4px`, `0 6px 8px`, `0 0 12px`, `-4px 0 2px`, `0 1px 2px` | 0.94–1.00 |
+
+**Policy** (`textInkShadowHigh` in `fidelity-thresholds.json`): a line whose text has a blurred text-shadow in the
+capture (the compare reads it from the IR's style layers) may draw up to **1.15×** the design's ink: the measured 1.111
+plus 0.04. Everything else stays: the lower end of the band, the median check and the ink colour (the median of the most
+covered pixels, the glyphs themselves) are unchanged, so a wrong text colour, a lighter weight or a missing glow
+(0.94–1.00 is what the glyphs alone give) still fail; a bolder weight (+30 % ink or more) still fails above 1.15. A
+shadow without blur (an offset copy) keeps the usual band.
+
 ## Reproduction
 
 ```

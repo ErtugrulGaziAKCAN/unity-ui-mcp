@@ -20,7 +20,7 @@ const T: Thresholds = {
   boxPx: 1, baselinePx: 1, deltaE2000: 1, ssimNonText: 0.99, ssimElement: 0.99, textInkDeltaE: 3, textInkRatio: 0.76, textInkCoverage: 0.15,
   textInkFullPx: 14, textInkDeltaESmall: [[12, 5], [9, 10], [0, 14]], textInkMedianTolerance: 0.2, ssimElementSmall: [], ssimPicture: 0.99,
   textInkDeltaELater: [], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
-  textInkSmallPx: 0, textInkDeltaEFirstSmall: 3, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.2,
+  textInkSmallPx: 0, textInkDeltaEFirstSmall: 3, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.2, textInkShadowHigh: 1.15,
 };
 const tmpDirs: string[] = [];
 const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), "compare-")); tmpDirs.push(d); return d; };
@@ -413,6 +413,27 @@ describe("compareCapture: fix round checks", () => {
     expect(compareCapture(badge(), lighter, [], T, bctx).issues[0].detail).toMatch(/\(limit 5 at 12 px\)$/);
   });
 
+  it("lets a line whose text has a blurred shadow draw up to textInkShadowHigh of the design's ink, and holds its colour as usual", () => {
+    // the glow's pixels inside the line count as ink, and Unity's glow edge puts a little more of it there
+    const mk = (stripes: number, ink: Rgb = [250, 250, 250]) => {
+      const png = canvas(320, 192, [16, 24, 32]);
+      for (let k = 0; k < stripes; k++) fill(png, { x: 50 + 2 * k, y: 52, w: 1, h: 12 }, ink);
+      return { png, boxes: { capture: "c", viewport: [320, 192] as [number, number], scale: 1, external: [], elements: {
+        root: el(0, 0, 320, 192), label: el(46, 48, 160, 20, { text: true, lines: [{ x: 48, y: 50, w: 150, h: 16, baseline: 62 }] }),
+      } } };
+    };
+    const t: Thresholds = { ...T, textInkRatio: 1, textInkCoverage: 0.1, textInkShadowHigh: 1.15 };
+    const plain: CaptureContext = { fontPx: { label: 24 }, backgrounds: new Set(), painters: new Set() };
+    const glow: CaptureContext = { ...plain, textShadows: new Set(["label"]) };
+    // 45 stripes for the design's 40: 1.125×
+    expect(compareCapture(mk(40), mk(45), [], t, plain).issues.map((i) => i.kind)).toEqual(["inkCoverage"]);
+    expect(compareCapture(mk(40), mk(45), [], t, glow).issues).toEqual([]);
+    // more than the limit, a colour error and too little ink still fail
+    expect(compareCapture(mk(40), mk(48), [], t, glow).issues.map((i) => i.kind)).toEqual(["inkCoverage"]);
+    expect(compareCapture(mk(40), mk(45, [250, 210, 60]), [], t, glow).issues.map((i) => i.kind)).toEqual(["ink"]);
+    expect(compareCapture(mk(40), mk(34), [], t, glow).issues.map((i) => i.kind)).toEqual(["inkCoverage"]);
+  });
+
   it("holds text of at most textInkSmallPx device px to the measured small-text limits and text above it to the usual ones", () => {
     // small text: the renderer's stems differ by fractions of a pixel, so the ink colour and amount scatter more than at larger sizes
     const t: Thresholds = { ...T, textInkFullPx: 9, textInkDeltaE: 2, textInkDeltaESmall: [[8, 3], [0, 10]], textInkSmallPx: 12, textInkDeltaEFirstSmall: 4.5, textInkBandSmall: [0.8, 1.25] };
@@ -782,6 +803,18 @@ describe("IR context", () => {
     expect([...ctx.pictures!].sort()).toEqual(["photo"]);
   });
 
+  it("knows which text has a blurred text-shadow in the capture", () => {
+    const shadowed = indexIr({ ...ir, root: { ...ir.root, children: [
+      { id: "soft", kind: "text", text: { tr: "a" }, style: { base: { "text-shadow": "0px 2px 4px rgba(0, 0, 0, 0.6)" } }, children: [] },
+      { id: "hard", kind: "text", text: { tr: "b" }, style: { base: { "text-shadow": "3px 3px 0px #f0605d" } }, children: [] },
+      { id: "hover", kind: "text", text: { tr: "c" }, style: { base: { "text-shadow": "none" }, hover: { "text-shadow": "0px 4px 12px rgba(22, 194, 213, 0.9)" } }, children: [] },
+    ] } });
+    const b: CaptureBoxes = { ...boxes, elements: { root: el(0, 0, 1280, 720), soft: el(0, 0, 100, 20), hard: el(0, 40, 100, 20), hover: el(0, 80, 100, 20) } };
+    const at = (apply: CaptureJob["apply"]) => [...captureContext(shadowed, { state: "default", viewport: [1280, 720], apply }, b).textShadows!].sort();
+    expect(at([])).toEqual(["soft"]);
+    expect(at([{ kind: "pseudo", pseudo: "hover", elementId: "hover" }])).toEqual(["hover", "soft"]);
+  });
+
   it("knows each element's corner radii in device px in the capture", () => {
     expect(captureContext(ix, { state: "default", viewport: [1280, 720], apply: [] }, boxes).radii).toEqual({ card: [8, 0, 4, 0] });
     expect(captureContext(ix, { state: "busy", viewport: [1280, 720], apply: [] }, boxes).radii).toEqual({ card: [0, 0, 4, 0] });
@@ -1077,7 +1110,7 @@ describe("design-export compare", () => {
     expect(readThresholds()).toEqual({
       ...T, textInkDeltaE: 2, textInkRatio: 1, textInkCoverage: 0.1, textInkFullPx: 9, textInkDeltaESmall: [[8, 3], [0, 10]], textInkMedianTolerance: 0.15,
       ssimElementSmall: [[32768, 0.984]], ssimPicture: 0.985, textInkDeltaELater: [[9, 4.5], [8, 6]], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
-      textInkSmallPx: 12, textInkDeltaEFirstSmall: 4.5, textInkBandSmall: [0.8, 1.25], textInkMedianToleranceSmall: 0.25,
+      textInkSmallPx: 12, textInkDeltaEFirstSmall: 4.5, textInkBandSmall: [0.8, 1.25], textInkMedianToleranceSmall: 0.25, textInkShadowHigh: 1.15,
     });
     const bad = path.join(tmp(), "t.json");
     fs.writeFileSync(bad, JSON.stringify({ boxPx: 1 }));
@@ -1093,6 +1126,7 @@ describe("design-export compare", () => {
     expect(small({ textInkBandSmall: [0.6, 1.1] })).toThrow(/"textInkBandSmall"/);
     expect(small({ textInkMedianToleranceSmall: 0.1 })).toThrow(/"textInkMedianToleranceSmall" must be at least textInkMedianTolerance/);
     expect(small({ textInkDeltaEFirstSmall: 1 })).toThrow(/"textInkDeltaEFirstSmall" must be at least textInkDeltaE/);
+    expect(small({ textInkShadowHigh: 1.1 })).toThrow(/"textInkShadowHigh" must be at least 1 \+ textInkCoverage/);
     const areas = (v: unknown, picture = 0.98) => { fs.writeFileSync(bad, JSON.stringify({ ...T, ssimElementSmall: v, ssimPicture: picture })); return () => readThresholds(bad); };
     expect(areas([[1024, 0.975], [4096, 0.985]])()).toMatchObject({ ssimElementSmall: [[1024, 0.975], [4096, 0.985]], ssimPicture: 0.98 });
     expect(areas([[4096, 0.985], [1024, 0.975]])).toThrow(/"ssimElementSmall" must be \[area in device px², SSIM\] pairs by growing area and limit/);

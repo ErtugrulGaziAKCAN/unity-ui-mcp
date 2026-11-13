@@ -30,7 +30,8 @@
  *   for text of the same polarity (light on dark, dark on light) when it has 3 or more such lines; this catches a wrong
  *   text colour, weight or size. The limits are the measured renderer difference with designs that render
  *   `-webkit-font-smoothing: antialiased` (docs/findings/text-ink.md): exact from 9 device px, wider only below; text of at most
- *   `textInkSmallPx` device px gets the suite-wide measured small-text limits (`textInkDeltaEFirstSmall`, `textInkBandSmall`, `textInkMedianToleranceSmall`);
+ *   `textInkSmallPx` device px gets the suite-wide measured small-text limits (`textInkDeltaEFirstSmall`, `textInkBandSmall`, `textInkMedianToleranceSmall`),
+ *   and a line whose text has a blurred text-shadow may draw up to `textInkShadowHigh` of the design's ink (its glow counts);
  * - shadow band: the mean colour of each active outer shadow's band (shadow rect minus element box), ΔE2000 ≤
  *   `deltaE2000`, so a faint missing shadow fails although SSIM dilutes it.
  * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows. The
@@ -101,12 +102,17 @@ export interface Thresholds {
   textInkBandSmall: [number, number];
   /** The deviation from the capture's median ink ratio such text may have, at least `textInkMedianTolerance`. */
   textInkMedianToleranceSmall: number;
+  /**
+   * The highest ink ratio of a line whose text has a blurred text-shadow (the glow's pixels inside the line count as
+   * ink; measured, docs/findings/text-ink.md section 8), at least 1 + `textInkCoverage`. The colour check is unchanged.
+   */
+  textInkShadowHigh: number;
 }
 
 /** `tools/design-export/fidelity-thresholds.json`, the only place the thresholds live (keys starting with `$` are comments). */
 export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.json", import.meta.url));
 const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage",
-  "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater", "textInkSmallPx", "textInkDeltaEFirstSmall", "textInkMedianToleranceSmall"] as const;
+  "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater", "textInkSmallPx", "textInkDeltaEFirstSmall", "textInkMedianToleranceSmall", "textInkShadowHigh"] as const;
 /** No measured policy may accept an element SSIM below this. */
 export const SSIM_FLOOR = 0.97;
 
@@ -139,6 +145,7 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
   if (!bandOk) throw new Error(`${file}: "textInkBandSmall" must be [lowest, highest] ink ratios that contain the band of textInkRatio and textInkCoverage`);
   if ((raw.textInkMedianToleranceSmall as number) < (raw.textInkMedianTolerance as number)) throw new Error(`${file}: "textInkMedianToleranceSmall" must be at least textInkMedianTolerance`);
   if ((raw.textInkDeltaEFirstSmall as number) < (raw.textInkDeltaE as number)) throw new Error(`${file}: "textInkDeltaEFirstSmall" must be at least textInkDeltaE`);
+  if ((raw.textInkShadowHigh as number) < 1 + (raw.textInkCoverage as number) - 1e-9) throw new Error(`${file}: "textInkShadowHigh" must be at least 1 + textInkCoverage`);
   return {
     ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater" | "textInkBandSmall">),
     textInkBandSmall: [bandSmall[0], bandSmall[1]],
@@ -539,7 +546,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return false;
     };
     /** `light`: the design's ink is lighter than its background (font smoothing thickens such text most). */
-    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean; later: boolean; small: boolean }
+    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean; later: boolean; small: boolean; glow: boolean }
     const inkLines: InkLine[] = [];
     const inImage = (p: RingPoint) => p.gx >= 0 && p.gy >= 0 && p.gx < w && p.gy < h && p.ux >= 0 && p.uy >= 0 && p.ux < w && p.uy < h;
     const usable = (p: RingPoint, cover: Rect[]) => inImage(p)
@@ -666,7 +673,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           const a = inkIn(gp, win);
           if (!a) return;
           const b = inkIn(up, win);
-          inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx });
+          inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow: !!ctx.textShadows?.has(id) });
           if (b) {
             const de = deltaE2000(a.ink, b.ink), limit = inkColourLimit(t, px, i);
             maxDe = Math.max(maxDe, de);
@@ -705,8 +712,12 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const medians = { light: medianOf(true), dark: medianOf(false) };
     const medianTolerance = (l: InkLine) => (l.small ? Math.max(t.textInkMedianTolerance, t.textInkMedianToleranceSmall) : t.textInkMedianTolerance);
     const band = (l: InkLine) => {
-      const c = l.later ? t.textInkCoverageLater : t.textInkCoverage, lo = t.textInkRatio * (1 - c), hi = 1 + c;
-      return l.small ? { lo: Math.min(lo, t.textInkBandSmall[0]), hi: Math.max(hi, t.textInkBandSmall[1]) } : { lo, hi };
+      const c = l.later ? t.textInkCoverageLater : t.textInkCoverage;
+      let lo = t.textInkRatio * (1 - c), hi = 1 + c;
+      if (l.small) { lo = Math.min(lo, t.textInkBandSmall[0]); hi = Math.max(hi, t.textInkBandSmall[1]); }
+      // a blurred text-shadow's glow inside the line counts as ink (measured)
+      if (l.glow) hi = Math.max(hi, t.textInkShadowHigh);
+      return { lo, hi };
     };
     const worstInk = new Map<string, { l: InkLine; score: number }>();
     for (const l of inkLines) {

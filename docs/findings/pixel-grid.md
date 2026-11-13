@@ -145,6 +145,5 @@ Resolved in the second round: group opacity (U-CSS-039 and the kit's disabled co
 fractional borders (U-CSS-040, [borders.md](borders.md)), small elements and pictures
 ([ssim-small-elements.md](ssim-small-elements.md)), later-line baselines ([text-baselines.md](text-baselines.md)).
 
-Still open: single lines of text at 6 to 12 device px whose ink colour or amount misses the limits calibrated on one
-30-character line per style (the suite's short labels: ΔE up to 3.67 at 8 px and 2.37 at 12 px, ink 0.84–0.90× at 6–8
-px), and text shadows whose ink amount is 1.11–1.17× the design's.
+Resolved later: single lines of text at 6 to 12 device px (the measured small-text limits, text-ink.md section 7) and
+text shadows whose glow adds ink (text-ink.md section 8).
