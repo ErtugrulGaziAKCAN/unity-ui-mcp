@@ -27,6 +27,21 @@ describe("logicalViewport", () => {
     expect(logicalViewport([1920, 1080], [2560, 1440], 0.5)).toEqual({ width: 2560, height: 1440, scale: 0.75 });
     expect(logicalViewport([1280, 720], [2560, 1440], 0.5)).toEqual({ width: 2560, height: 1440, scale: 0.5 });
   });
+
+  it("uses Unity's linear width/height blend off the reference aspect", () => {
+    // PanelSettings.ResolveScale: scale = lerp(W/refW, H/refH, match); the CanvasScaler log formula would differ.
+    const narrow = logicalViewport([1437, 1440], [2560, 1440], 0.5);
+    expect(narrow.scale).toBeCloseTo((1437 / 2560 + 1) / 2, 8);
+    expect(narrow.width).toBeCloseTo(1437 / narrow.scale, 6);
+    expect(narrow.height).toBeCloseTo(1440 / narrow.scale, 6);
+    expect(logicalViewport([2400, 1440], [2560, 1440], 0.5).scale).toBe(0.96875);
+    const wide = logicalViewport([2560, 1080], [2560, 1440], 0.5);
+    expect(wide.scale).toBe(0.875);
+    expect(wide.width).toBeCloseTo(2560 / 0.875, 6);
+    expect(wide.height).toBeCloseTo(1080 / 0.875, 6);
+    expect(logicalViewport([1437, 1440], [2560, 1440], 0).scale).toBeCloseTo(1437 / 2560, 9);
+    expect(logicalViewport([1437, 1440], [2560, 1440], 1).scale).toBe(1);
+  });
 });
 
 describe("unwrapDcHtml", () => {

@@ -373,8 +373,10 @@ Animations follow the same rule as static styling: one-to-one, or rejected by li
 - PanelSettings: Scale With Screen Size, reference 2560×1440, screen match mode from the profile. One design px
   equals one reference px.
 - The exporter reproduces that scaling: for a viewport W×H it renders the page at the panel's logical size
-  (W/scale × H/scale) with `deviceScaleFactor = scale`, using the same scale formula as Unity
-  (`scale = 2^lerp(log2(W/refW), log2(H/refH), match)`). Boxes are compared in device pixels.
+  (W/scale × H/scale) with `deviceScaleFactor = scale`, using Unity's own formula
+  (`PanelSettings.ResolveScale`, 6000.3: `scale = lerp(W/refW, H/refH, match)`, a linear blend, no rounding). It equals
+  the UGUI CanvasScaler log formula `2^lerp(log2(W/refW), log2(H/refH), match)` only at the reference aspect (16:9);
+  e.g. 2400×1440 at match 0.5 is 0.96875, not 0.96825. Boxes are compared in device pixels.
 - `BreakpointController` listens to geometry changes on the root and toggles `.bp-*` classes only when the
   active set changes.
 - Every declared viewport is compiled from the same IR and verified separately.
