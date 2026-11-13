@@ -152,7 +152,7 @@ describe("buildIr: styles", () => {
   it("records inherited text properties on text nodes, with the ancestor layers that change them", () => {
     const t = byId(r.ir.root, "title").style.base;
     expect(t).toMatchObject({ color: "#ffffff", "font-family": '"Inter UI"', "font-weight": "400" });
-    expect(t["font-size"]).toMatch(/^16\.51\d*px$/);
+    expect(t["font-size"]).toBe("16px");
     const label = byId(r.ir.root, "play").children[0];
     expect(label.style.base).toMatchObject({ "text-align": "center", color: "#ffffff" });
     expect(label.style["anc(play):hover"]).toEqual({ color: "#16c2d5" });
@@ -296,7 +296,7 @@ describe("buildIr: layers, text runs and lossless values", () => {
   const write = (css: string, body: string) => {
     const p = path.join(tmp(), "s.html");
     fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}
-      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16.515625px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:19.359375px;color:#ffffff;background-color:#0b1f26}
       p{margin:0}${css}</style></head><body><div class="screen" data-u-screen="s">${body}</div></body></html>`);
     return p;
   };
@@ -482,7 +482,7 @@ describe("buildIr: layers, text runs and lossless values", () => {
 
   it("revert, per-layer blockification, text inputs, play-state modifiers, id collisions", async () => {
     const r = await build(fx("compound.html"));
-    expect(byId(r.ir.root, "rv").style.base["margin-top"]).toBe("16.5156px");
+    expect(byId(r.ir.root, "rv").style.base["margin-top"]).toBe("16px");
     expect(byId(r.ir.root, "m").style["state:loading"]).toEqual({ display: "flex" });
     expect(byId(r.ir.root, "k").anims.map((a) => [a.trigger, a.restart, a.playState])).toEqual([["show", true, "running"], ["hover", false, "paused"]]);
     expect(byId(r.ir.root, "list").children.map((c) => c.id)).toEqual(["list__0", "list__1", "list__2_1"]);
@@ -498,7 +498,7 @@ describe("buildIr: speed", () => {
       `<p data-l10n="big.role" data-en="Role">Rol <b>A</b></p><div class="dot"></div></div>`).join("\n");
     const p = path.join(tmp(), "big.html");
     fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}
-      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:16.515625px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:16px;line-height:19.359375px;color:#ffffff;background-color:#0b1f26}
       .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:1px solid #16c2d5;transition:background-color 150ms ease}
       .row:hover{background-color:#123c47} p{margin:0;flex-shrink:0} .dot{width:8px;height:8px;border-radius:4px;background-color:#16c2d5}
       .state-loading .dot{opacity:0.5} @media (max-width: 1919px){.row{height:20px}}</style></head>

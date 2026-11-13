@@ -3,7 +3,7 @@ import path from "node:path";
 import type { KitConfig } from "../kit.js";
 import { sameLength } from "./css-values.js";
 
-/** A kit text style (design-kit/text-styles.json). Sizes may be fractional (e.g. 16.515625). */
+/** A kit text style (design-kit/text-styles.json). Sizes are whole pixels (multiples of 4); line heights are fractional (e.g. 19.359375). */
 export interface TextStyle { name: string; fontSize: number; lineHeight: number; weight: number }
 
 /** Reads the kit's text styles at call time (never cached: the file is edited by kit sync). */

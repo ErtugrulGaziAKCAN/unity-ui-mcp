@@ -7,7 +7,7 @@ import { at, Collector, inFlow, resolved, sources, targetOf, textElements } from
 
 const WEIGHT_KW: Record<string, number> = { normal: 400, bold: 700 };
 
-/** Text styles come from text-styles.json, matched numerically (fractional sizes, Blink rounding). */
+/** Text styles come from text-styles.json, matched numerically (fractional line heights, Blink serialisation). */
 export const rule: Rule = {
   id: "U-CSS-016", severity: "error",
   check(s, kit, _b, ctx) {
