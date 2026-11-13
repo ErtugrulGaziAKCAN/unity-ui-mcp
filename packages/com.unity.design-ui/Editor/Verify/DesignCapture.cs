@@ -510,13 +510,10 @@ namespace DesignUi.Editor
         }
 
         /// <summary>
-        /// Device pixels per panel pixel as the panel resolved them (PanelSettings.ResolveScale): the viewport width over
-        /// the panel's laid-out width.
-        /// </summary>
-        /// <summary>
         /// The IR breakpoints that hold at a viewport, as the exporter decides them (capture/matrix.ts breakpointsHold): the
         /// panel's logical size under Scale With Screen Size (<c>scale = lerp(W/refW, H/refH, match)</c>, the IR's reference
-        /// and match), rounded to whole px, against each breakpoint's min/max width and aspect ratio, in IR order.
+        /// and match), rounded to whole px, against each breakpoint's min/max width and aspect ratio, in IR order. It mirrors
+        /// the exporter for the capture; the runtime breakpoint controller should replace it once it exists.
         /// </summary>
         public static IEnumerable<string> ActiveBreakpoints(IrScreen ir, Vector2Int viewport)
         {
@@ -531,6 +528,10 @@ namespace DesignUi.Editor
                     yield return b.Name;
         }
 
+        /// <summary>
+        /// Device pixels per panel pixel as the panel resolved them (PanelSettings.ResolveScale): the viewport width over
+        /// the panel's laid-out width.
+        /// </summary>
         static double PanelScale(IPanel panel, Vector2Int viewport)
         {
             var width = panel?.visualTree.layout.width ?? float.NaN;

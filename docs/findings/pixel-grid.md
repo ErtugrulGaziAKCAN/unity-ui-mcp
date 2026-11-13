@@ -99,6 +99,12 @@ The near-whole fallback stays for steps that do not exist. Such a viewport has a
 colour, so the comparison leaves the area outside the screen root out (`outsideScreen` in the verdict); every element of
 the effects screen passes there.
 
+Limits of that choice. A fixed 2560-wide root at 640×1080 shows only its left half (1280 device px of 2560): elements to
+the right of the image are checked by their boxes only, and the verdict does not list them. Real devices of that aspect
+run at the off-step scale the old viewport had (0.5417 here), where every box drifts by a fraction of a pixel; no capture
+measures that any more. Breakpoints that only a portrait aspect reaches are a product limitation until a runtime
+breakpoint capture at real device sizes exists.
+
 **Disabled and focused.** Unions of `:disabled` with `:focus` or `:active` on the same element are not captured: no
 browser and no UI Toolkit panel focuses or presses a disabled control (the capture said so for every such job).
 

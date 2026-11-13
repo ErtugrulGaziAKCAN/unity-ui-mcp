@@ -103,7 +103,7 @@ Every text uses exactly one of these size / line-height / weight combinations (U
 
 UI Toolkit cannot set a line height, so the kit's Unity font twins carry each style's CSS line box (whole pixels at every supported viewport): a text block is exactly lines × line height tall on both sides. Weights are 400 and 700 only, each with a real face in the reference locale's font (U-FONT-001); no italic unless the kit font has an italic face. Inside one line of text, `<b>`/`<strong>` and `<span>` with another colour or kit size are rich text; `<br>` breaks the line. The table is `text-styles.json`; every listing of it (this table, the base stylesheet's classes, the design system's type styles) is generated from that file.
 
-Readability: caption and label are under 10 device px at 1280×720: keep them for secondary text (kit build and kit sync warn once; designs are not linted for it).
+Readability: caption and label are under 10 device px at 1280×720: keep them for secondary text (kit build and kit sync warn once).
 
 ## Fonts
 
@@ -141,7 +141,7 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 | `--color-disabled-line` | `#183b45` | Disabled lines. |
 | `--color-disabled-text` | `#6d797d` | Disabled text. |
 | `--color-disabled-accent` | `#0f606c` | Disabled accent. |
-| `--color-disabled-on-accent` | `#091c22` | On it. |
+| `--color-disabled-on-accent` | `#091c22` | Text and icons on disabled accent. |
 | `--color-disabled-negative` | `#67393c` | Disabled danger. |
 
 **Spacing**

@@ -31,7 +31,7 @@
   --color-disabled-line: #183b45; /* Disabled lines. */
   --color-disabled-text: #6d797d; /* Disabled text. */
   --color-disabled-accent: #0f606c; /* Disabled accent. */
-  --color-disabled-on-accent: #091c22; /* On it. */
+  --color-disabled-on-accent: #091c22; /* Text and icons on disabled accent. */
   --color-disabled-negative: #67393c; /* Disabled danger. */
   --space-1: 4px; /* Icon gaps, hairline insets. */
   --space-2: 8px; /* Gaps inside controls. */

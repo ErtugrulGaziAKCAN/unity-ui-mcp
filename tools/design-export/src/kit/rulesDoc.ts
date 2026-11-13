@@ -118,7 +118,7 @@ function textStylesMarkdown(styles: readonly TextStyle[], kit: KitConfig): strin
     "`<b>`/`<strong>` and `<span>` with another colour or kit size are rich text; `<br>` breaks the line. The table is `text-styles.json`; " +
     "every listing of it (this table, the base stylesheet's classes, the design system's type styles) is generated from that file.",
     ...(roles.length ? ["", `Readability: ${join(roles)} ${roles.length > 1 ? "are" : "is"} under ${MIN_READABLE_DEVICE_PX} device px at ${small.viewport[0]}×${small.viewport[1]}: ` +
-      "keep them for secondary text (kit build and kit sync warn once; designs are not linted for it)."] : []),
+      "keep them for secondary text (kit build and kit sync warn once)."] : []),
   ].join("\n");
 }
 

@@ -51,8 +51,8 @@ textarea { resize: none; }
 .switch { width: 64px; height: 32px; flex-shrink: 0; border-radius: 16px; background-color: var(--color-surface-600); background-image: radial-gradient(circle 12px at 16px 16px, #ffffff 10px, rgba(255, 255, 255, 0) 11px); }
 .switch:hover { background-color: var(--color-surface-500); }
 .switch:checked { background-color: var(--color-accent); background-image: radial-gradient(circle 12px at 48px 16px, #ffffff 10px, rgba(255, 255, 255, 0) 11px); }
-.switch:disabled { background-color: var(--color-disabled-surface); background-image: radial-gradient(circle 12px at 16px 16px, #6d797d 10px, rgba(109, 121, 125, 0) 11px); }
-.switch:checked:disabled { background-color: var(--color-disabled-accent); background-image: radial-gradient(circle 12px at 48px 16px, #6d797d 10px, rgba(109, 121, 125, 0) 11px); }
+.switch:disabled { background-color: var(--color-disabled-surface); background-image: radial-gradient(circle 12px at 16px 16px, var(--color-disabled-text) 10px, rgba(109, 121, 125, 0) 11px); }
+.switch:checked:disabled { background-color: var(--color-disabled-accent); background-image: radial-gradient(circle 12px at 48px 16px, var(--color-disabled-text) 10px, rgba(109, 121, 125, 0) 11px); }
 </style>
 </head>
 <body>

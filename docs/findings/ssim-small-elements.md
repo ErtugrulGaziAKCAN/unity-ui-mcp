@@ -58,5 +58,9 @@ px² up nothing in the suite falls below 0.99.
   thresholds file is read. The report shows the limit an element met (`≥ 0.984`) next to its SSIM.
 
 What it still catches: a wrong shape or a missing or extra detail (they change whole 8-px blocks, not one anti-aliased
-pixel row), a shifted element (box check), a wrong colour (colour samples), and every difference in elements of 32 768
-px² and more.
+pixel row), a shifted element (box check), a wrong colour where the element has colour samples, and every difference in
+elements of 32 768 px² and more.
+
+Exception: an element that paints no background (an inline SVG icon, a picture) has no colour sample, so "every other
+check passes" holds with its box check alone. In the suite two icons met the 0.984 limit that way (5 captures each), and
+SSIM is computed on luma only, so a recoloured icon of the same lightness would pass. Icon colours get no sample yet.

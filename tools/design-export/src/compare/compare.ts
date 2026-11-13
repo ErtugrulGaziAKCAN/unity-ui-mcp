@@ -502,7 +502,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     for (const m of [mask, lineMask, edgeBand]) maskRects(w, h, offGrid, 0, m);
     edgeMasked = offGrid.length;
     // outside the screen root nothing is designed: a breakpoint's coverage viewport of another aspect shows the page's
-    // own background in the golden and the panel's clear colour in Unity there
+    // own background in the golden and the panel's clear colour in Unity there. It applies to any capture whose root
+    // does not fill the image (in the default suite only coverage viewports); the report does not draw this mask
     const rootBox = ctx.root ? g.elements[ctx.root] : undefined;
     if (rootBox?.visible) {
       const r0 = rootBox, outside: Rect[] = [];

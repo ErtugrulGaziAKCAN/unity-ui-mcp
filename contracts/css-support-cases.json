@@ -29454,6 +29454,1403 @@
       "property": "background-color",
       "unity": "reject",
       "value": "#ffffff"
+    },
+    {
+      "context": "block-child-box",
+      "export": "ok",
+      "id": "block-child-box--opacity--0-5",
+      "ir": {
+        "breakpoints": [],
+        "fonts": [],
+        "irVersion": 1,
+        "referenceViewport": [
+          2560,
+          1440
+        ],
+        "root": {
+          "action": null,
+          "anims": [],
+          "asset": null,
+          "attrTexts": {},
+          "background": null,
+          "backgroundLayers": {},
+          "bind": null,
+          "children": [
+            {
+              "action": null,
+              "anims": [],
+              "asset": null,
+              "attrTexts": {},
+              "background": null,
+              "backgroundLayers": {},
+              "bind": null,
+              "children": [
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [
+                    {
+                      "action": null,
+                      "anims": [],
+                      "asset": null,
+                      "attrTexts": {},
+                      "background": null,
+                      "backgroundLayers": {},
+                      "bind": null,
+                      "children": [],
+                      "classes": [
+                        "i"
+                      ],
+                      "external": false,
+                      "id": "case__0",
+                      "initial": null,
+                      "insetShadow": null,
+                      "insetShadowLayers": {},
+                      "kind": "container",
+                      "repeat": null,
+                      "shadow": null,
+                      "shadowLayers": {},
+                      "style": {
+                        "base": {
+                          "background-color": "#ffffff",
+                          "display": "block",
+                          "height": "20px",
+                          "width": "20px"
+                        }
+                      },
+                      "text": null
+                    }
+                  ],
+                  "classes": [
+                    "c"
+                  ],
+                  "external": false,
+                  "id": "case",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "opacity": "0.5"
+                    }
+                  },
+                  "text": null
+                }
+              ],
+              "classes": [
+                "p"
+              ],
+              "external": false,
+              "id": "root__0",
+              "initial": null,
+              "insetShadow": null,
+              "insetShadowLayers": {},
+              "kind": "container",
+              "repeat": null,
+              "shadow": null,
+              "shadowLayers": {},
+              "style": {
+                "base": {
+                  "display": "block",
+                  "flex-shrink": "0",
+                  "height": "200px",
+                  "position": "relative",
+                  "width": "400px"
+                }
+              },
+              "text": null
+            }
+          ],
+          "classes": [
+            "screen"
+          ],
+          "external": false,
+          "id": "root",
+          "initial": null,
+          "insetShadow": null,
+          "insetShadowLayers": {},
+          "kind": "container",
+          "repeat": null,
+          "shadow": null,
+          "shadowLayers": {},
+          "style": {
+            "base": {
+              "background-color": "#0b1f26",
+              "color": "#ffffff",
+              "display": "flex",
+              "flex-direction": "column",
+              "font-family": "\"Inter UI\"",
+              "font-size": "16px",
+              "height": "1440px",
+              "line-height": "20px",
+              "position": "relative",
+              "width": "2560px"
+            }
+          },
+          "text": null
+        },
+        "screen": "cases",
+        "screenMatch": 0.5,
+        "source": {
+          "path": "block-child-box--opacity--0-5.html",
+          "sha256": "4db6e2f5a67d90135b0ee6e01907dd60eafda10709a467792ae912b1e72d25d3"
+        },
+        "states": [
+          "default"
+        ],
+        "tokens": {},
+        "viewports": [
+          [
+            2560,
+            1440
+          ],
+          [
+            1920,
+            1080
+          ],
+          [
+            1280,
+            720
+          ]
+        ]
+      },
+      "lint": [
+        "U-CSS-039"
+      ],
+      "property": "opacity",
+      "unity": "compile",
+      "value": "0.5"
+    },
+    {
+      "context": "child-hover",
+      "export": "ok",
+      "id": "child-hover--opacity--0",
+      "ir": {
+        "breakpoints": [],
+        "fonts": [],
+        "irVersion": 1,
+        "referenceViewport": [
+          2560,
+          1440
+        ],
+        "root": {
+          "action": null,
+          "anims": [],
+          "asset": null,
+          "attrTexts": {},
+          "background": null,
+          "backgroundLayers": {},
+          "bind": null,
+          "children": [
+            {
+              "action": null,
+              "anims": [],
+              "asset": null,
+              "attrTexts": {},
+              "background": null,
+              "backgroundLayers": {},
+              "bind": null,
+              "children": [
+                {
+                  "action": null,
+                  "anims": [
+                    {
+                      "delay": 0,
+                      "direction": "normal",
+                      "duration": 200,
+                      "fillMode": "none",
+                      "iterations": 1,
+                      "keyframes": [],
+                      "kind": "transition",
+                      "name": null,
+                      "phase": "enter",
+                      "playState": "running",
+                      "properties": [
+                        "opacity"
+                      ],
+                      "restart": true,
+                      "timing": "linear",
+                      "trigger": "hover"
+                    },
+                    {
+                      "delay": 0,
+                      "direction": "normal",
+                      "duration": 200,
+                      "fillMode": "none",
+                      "iterations": 1,
+                      "keyframes": [],
+                      "kind": "transition",
+                      "name": null,
+                      "phase": "leave",
+                      "playState": "running",
+                      "properties": [
+                        "opacity"
+                      ],
+                      "restart": true,
+                      "timing": "linear",
+                      "trigger": "hover"
+                    }
+                  ],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [
+                    {
+                      "action": null,
+                      "anims": [],
+                      "asset": null,
+                      "attrTexts": {},
+                      "background": null,
+                      "backgroundLayers": {},
+                      "bind": null,
+                      "children": [],
+                      "classes": [
+                        "i"
+                      ],
+                      "external": false,
+                      "id": "case__0",
+                      "initial": null,
+                      "insetShadow": null,
+                      "insetShadowLayers": {},
+                      "kind": "container",
+                      "repeat": null,
+                      "shadow": null,
+                      "shadowLayers": {},
+                      "style": {
+                        "base": {
+                          "background-color": "#ffffff",
+                          "display": "block",
+                          "height": "20px",
+                          "width": "20px"
+                        }
+                      },
+                      "text": null
+                    }
+                  ],
+                  "classes": [
+                    "c"
+                  ],
+                  "external": false,
+                  "id": "case",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "height": "50px",
+                      "width": "100px"
+                    },
+                    "hover": {
+                      "opacity": "0"
+                    }
+                  },
+                  "text": null
+                }
+              ],
+              "classes": [
+                "p"
+              ],
+              "external": false,
+              "id": "root__0",
+              "initial": null,
+              "insetShadow": null,
+              "insetShadowLayers": {},
+              "kind": "container",
+              "repeat": null,
+              "shadow": null,
+              "shadowLayers": {},
+              "style": {
+                "base": {
+                  "display": "block",
+                  "flex-shrink": "0",
+                  "height": "200px",
+                  "position": "relative",
+                  "width": "400px"
+                }
+              },
+              "text": null
+            }
+          ],
+          "classes": [
+            "screen"
+          ],
+          "external": false,
+          "id": "root",
+          "initial": null,
+          "insetShadow": null,
+          "insetShadowLayers": {},
+          "kind": "container",
+          "repeat": null,
+          "shadow": null,
+          "shadowLayers": {},
+          "style": {
+            "base": {
+              "background-color": "#0b1f26",
+              "color": "#ffffff",
+              "display": "flex",
+              "flex-direction": "column",
+              "font-family": "\"Inter UI\"",
+              "font-size": "16px",
+              "height": "1440px",
+              "line-height": "20px",
+              "position": "relative",
+              "width": "2560px"
+            }
+          },
+          "text": null
+        },
+        "screen": "cases",
+        "screenMatch": 0.5,
+        "source": {
+          "path": "child-hover--opacity--0.html",
+          "sha256": "fa18ea497ebe79c7b53eb55919b0cd82491a65444b52d125a0a7149b79321b9d"
+        },
+        "states": [
+          "default"
+        ],
+        "tokens": {},
+        "viewports": [
+          [
+            2560,
+            1440
+          ],
+          [
+            1920,
+            1080
+          ],
+          [
+            1280,
+            720
+          ]
+        ]
+      },
+      "lint": [
+        "U-CSS-039"
+      ],
+      "property": "opacity",
+      "unity": "compile",
+      "value": "0"
+    },
+    {
+      "context": "child-hover",
+      "export": "ok",
+      "id": "child-hover--background-color--ffffff",
+      "ir": {
+        "breakpoints": [],
+        "fonts": [],
+        "irVersion": 1,
+        "referenceViewport": [
+          2560,
+          1440
+        ],
+        "root": {
+          "action": null,
+          "anims": [],
+          "asset": null,
+          "attrTexts": {},
+          "background": null,
+          "backgroundLayers": {},
+          "bind": null,
+          "children": [
+            {
+              "action": null,
+              "anims": [],
+              "asset": null,
+              "attrTexts": {},
+              "background": null,
+              "backgroundLayers": {},
+              "bind": null,
+              "children": [
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [
+                    {
+                      "action": null,
+                      "anims": [],
+                      "asset": null,
+                      "attrTexts": {},
+                      "background": null,
+                      "backgroundLayers": {},
+                      "bind": null,
+                      "children": [],
+                      "classes": [
+                        "i"
+                      ],
+                      "external": false,
+                      "id": "case__0",
+                      "initial": null,
+                      "insetShadow": null,
+                      "insetShadowLayers": {},
+                      "kind": "container",
+                      "repeat": null,
+                      "shadow": null,
+                      "shadowLayers": {},
+                      "style": {
+                        "base": {
+                          "background-color": "#ffffff",
+                          "display": "block",
+                          "height": "20px",
+                          "width": "20px"
+                        }
+                      },
+                      "text": null
+                    }
+                  ],
+                  "classes": [
+                    "c"
+                  ],
+                  "external": false,
+                  "id": "case",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "height": "50px",
+                      "width": "100px"
+                    },
+                    "hover": {
+                      "background-color": "#ffffff"
+                    }
+                  },
+                  "text": null
+                }
+              ],
+              "classes": [
+                "p"
+              ],
+              "external": false,
+              "id": "root__0",
+              "initial": null,
+              "insetShadow": null,
+              "insetShadowLayers": {},
+              "kind": "container",
+              "repeat": null,
+              "shadow": null,
+              "shadowLayers": {},
+              "style": {
+                "base": {
+                  "display": "block",
+                  "flex-shrink": "0",
+                  "height": "200px",
+                  "position": "relative",
+                  "width": "400px"
+                }
+              },
+              "text": null
+            }
+          ],
+          "classes": [
+            "screen"
+          ],
+          "external": false,
+          "id": "root",
+          "initial": null,
+          "insetShadow": null,
+          "insetShadowLayers": {},
+          "kind": "container",
+          "repeat": null,
+          "shadow": null,
+          "shadowLayers": {},
+          "style": {
+            "base": {
+              "background-color": "#0b1f26",
+              "color": "#ffffff",
+              "display": "flex",
+              "flex-direction": "column",
+              "font-family": "\"Inter UI\"",
+              "font-size": "16px",
+              "height": "1440px",
+              "line-height": "20px",
+              "position": "relative",
+              "width": "2560px"
+            }
+          },
+          "text": null
+        },
+        "screen": "cases",
+        "screenMatch": 0.5,
+        "source": {
+          "path": "child-hover--background-color--ffffff.html",
+          "sha256": "7dcffaa7e26ee9b6ad66e653c485567981a91f043bb99ebdb1a2ff0555cdb8c5"
+        },
+        "states": [
+          "default"
+        ],
+        "tokens": {},
+        "viewports": [
+          [
+            2560,
+            1440
+          ],
+          [
+            1920,
+            1080
+          ],
+          [
+            1280,
+            720
+          ]
+        ]
+      },
+      "lint": [],
+      "property": "background-color",
+      "unity": "compile",
+      "value": "#ffffff"
+    },
+    {
+      "context": "child-keyframes",
+      "export": "ok",
+      "id": "child-keyframes--animation--appear-200ms-linear",
+      "ir": {
+        "breakpoints": [],
+        "fonts": [],
+        "irVersion": 1,
+        "referenceViewport": [
+          2560,
+          1440
+        ],
+        "root": {
+          "action": null,
+          "anims": [],
+          "asset": null,
+          "attrTexts": {},
+          "background": null,
+          "backgroundLayers": {},
+          "bind": null,
+          "children": [
+            {
+              "action": null,
+              "anims": [],
+              "asset": null,
+              "attrTexts": {},
+              "background": null,
+              "backgroundLayers": {},
+              "bind": null,
+              "children": [
+                {
+                  "action": null,
+                  "anims": [
+                    {
+                      "delay": 0,
+                      "direction": "normal",
+                      "duration": 200,
+                      "fillMode": "none",
+                      "iterations": 1,
+                      "keyframes": [
+                        {
+                          "easing": null,
+                          "offset": 0,
+                          "values": {
+                            "opacity": "0"
+                          }
+                        },
+                        {
+                          "easing": null,
+                          "offset": 1,
+                          "values": {
+                            "opacity": "1"
+                          }
+                        }
+                      ],
+                      "kind": "keyframes",
+                      "name": "appear",
+                      "phase": "enter",
+                      "playState": "running",
+                      "properties": [
+                        "opacity"
+                      ],
+                      "restart": true,
+                      "timing": "linear",
+                      "trigger": "show"
+                    }
+                  ],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [
+                    {
+                      "action": null,
+                      "anims": [],
+                      "asset": null,
+                      "attrTexts": {},
+                      "background": null,
+                      "backgroundLayers": {},
+                      "bind": null,
+                      "children": [],
+                      "classes": [
+                        "i"
+                      ],
+                      "external": false,
+                      "id": "case__0",
+                      "initial": null,
+                      "insetShadow": null,
+                      "insetShadowLayers": {},
+                      "kind": "container",
+                      "repeat": null,
+                      "shadow": null,
+                      "shadowLayers": {},
+                      "style": {
+                        "base": {
+                          "background-color": "#ffffff",
+                          "display": "block",
+                          "height": "20px",
+                          "width": "20px"
+                        }
+                      },
+                      "text": null
+                    }
+                  ],
+                  "classes": [
+                    "c"
+                  ],
+                  "external": false,
+                  "id": "case",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "height": "50px",
+                      "width": "100px"
+                    }
+                  },
+                  "text": null
+                }
+              ],
+              "classes": [
+                "p"
+              ],
+              "external": false,
+              "id": "root__0",
+              "initial": null,
+              "insetShadow": null,
+              "insetShadowLayers": {},
+              "kind": "container",
+              "repeat": null,
+              "shadow": null,
+              "shadowLayers": {},
+              "style": {
+                "base": {
+                  "display": "block",
+                  "flex-shrink": "0",
+                  "height": "200px",
+                  "position": "relative",
+                  "width": "400px"
+                }
+              },
+              "text": null
+            }
+          ],
+          "classes": [
+            "screen"
+          ],
+          "external": false,
+          "id": "root",
+          "initial": null,
+          "insetShadow": null,
+          "insetShadowLayers": {},
+          "kind": "container",
+          "repeat": null,
+          "shadow": null,
+          "shadowLayers": {},
+          "style": {
+            "base": {
+              "background-color": "#0b1f26",
+              "color": "#ffffff",
+              "display": "flex",
+              "flex-direction": "column",
+              "font-family": "\"Inter UI\"",
+              "font-size": "16px",
+              "height": "1440px",
+              "line-height": "20px",
+              "position": "relative",
+              "width": "2560px"
+            }
+          },
+          "text": null
+        },
+        "screen": "cases",
+        "screenMatch": 0.5,
+        "source": {
+          "path": "child-keyframes--animation--appear-200ms-linear.html",
+          "sha256": "ccdb60601daa63c7a4c4416fdd0fba1879610a7adc767e664f0a2f64400648e4"
+        },
+        "states": [
+          "default"
+        ],
+        "tokens": {},
+        "viewports": [
+          [
+            2560,
+            1440
+          ],
+          [
+            1920,
+            1080
+          ],
+          [
+            1280,
+            720
+          ]
+        ]
+      },
+      "lint": [
+        "U-CSS-039"
+      ],
+      "property": "animation",
+      "unity": "compile",
+      "value": "appear 200ms linear"
+    },
+    {
+      "context": "shadow-before-static",
+      "export": "ok",
+      "id": "shadow-before-static--position--relative",
+      "ir": {
+        "breakpoints": [],
+        "fonts": [],
+        "irVersion": 1,
+        "referenceViewport": [
+          2560,
+          1440
+        ],
+        "root": {
+          "action": null,
+          "anims": [],
+          "asset": null,
+          "attrTexts": {},
+          "background": null,
+          "backgroundLayers": {},
+          "bind": null,
+          "children": [
+            {
+              "action": null,
+              "anims": [],
+              "asset": null,
+              "attrTexts": {},
+              "background": null,
+              "backgroundLayers": {},
+              "bind": null,
+              "children": [
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [],
+                  "classes": [
+                    "c"
+                  ],
+                  "external": false,
+                  "id": "case",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": {
+                    "file": "assets/31a742c9f9f58f8935e8d61ee363183ac7c4a95f74f79d12a1cd8a51de41f850.png",
+                    "height": 90,
+                    "kind": "shadow9",
+                    "offset": {
+                      "h": 40,
+                      "w": 40,
+                      "x": -20,
+                      "y": -20
+                    },
+                    "sha256": "31a742c9f9f58f8935e8d61ee363183ac7c4a95f74f79d12a1cd8a51de41f850",
+                    "slice": [
+                      39,
+                      40,
+                      39,
+                      40
+                    ],
+                    "stopGap": null,
+                    "tint": false,
+                    "width": 90
+                  },
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "flex-shrink": "0",
+                      "height": "50px",
+                      "position": "relative",
+                      "width": "50px"
+                    }
+                  },
+                  "text": null
+                },
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [],
+                  "classes": [
+                    "s"
+                  ],
+                  "external": false,
+                  "id": "root__0__1",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "flex-shrink": "0",
+                      "height": "50px",
+                      "width": "50px"
+                    }
+                  },
+                  "text": null
+                }
+              ],
+              "classes": [
+                "p"
+              ],
+              "external": false,
+              "id": "root__0",
+              "initial": null,
+              "insetShadow": null,
+              "insetShadowLayers": {},
+              "kind": "container",
+              "repeat": null,
+              "shadow": null,
+              "shadowLayers": {},
+              "style": {
+                "base": {
+                  "column-gap": "8px",
+                  "display": "flex",
+                  "flex-direction": "row",
+                  "flex-shrink": "0",
+                  "height": "100px",
+                  "position": "relative",
+                  "row-gap": "8px",
+                  "width": "400px"
+                }
+              },
+              "text": null
+            }
+          ],
+          "classes": [
+            "screen"
+          ],
+          "external": false,
+          "id": "root",
+          "initial": null,
+          "insetShadow": null,
+          "insetShadowLayers": {},
+          "kind": "container",
+          "repeat": null,
+          "shadow": null,
+          "shadowLayers": {},
+          "style": {
+            "base": {
+              "background-color": "#0b1f26",
+              "color": "#ffffff",
+              "display": "flex",
+              "flex-direction": "column",
+              "font-family": "\"Inter UI\"",
+              "font-size": "16px",
+              "height": "1440px",
+              "line-height": "20px",
+              "position": "relative",
+              "width": "2560px"
+            }
+          },
+          "text": null
+        },
+        "screen": "cases",
+        "screenMatch": 0.5,
+        "source": {
+          "path": "shadow-before-static--position--relative.html",
+          "sha256": "7308b101d853a5b15983374bd89d6e38dc7c6a06304353e7b78a31c0b9394d35"
+        },
+        "states": [
+          "default"
+        ],
+        "tokens": {},
+        "viewports": [
+          [
+            2560,
+            1440
+          ],
+          [
+            1920,
+            1080
+          ],
+          [
+            1280,
+            720
+          ]
+        ]
+      },
+      "lint": [
+        "U-CSS-041"
+      ],
+      "property": "position",
+      "unity": "compile",
+      "value": "relative"
+    },
+    {
+      "context": "shadow-before-static",
+      "export": "ok",
+      "id": "shadow-before-static--margin-right--16px",
+      "ir": {
+        "breakpoints": [],
+        "fonts": [],
+        "irVersion": 1,
+        "referenceViewport": [
+          2560,
+          1440
+        ],
+        "root": {
+          "action": null,
+          "anims": [],
+          "asset": null,
+          "attrTexts": {},
+          "background": null,
+          "backgroundLayers": {},
+          "bind": null,
+          "children": [
+            {
+              "action": null,
+              "anims": [],
+              "asset": null,
+              "attrTexts": {},
+              "background": null,
+              "backgroundLayers": {},
+              "bind": null,
+              "children": [
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [],
+                  "classes": [
+                    "c"
+                  ],
+                  "external": false,
+                  "id": "case",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": {
+                    "file": "assets/31a742c9f9f58f8935e8d61ee363183ac7c4a95f74f79d12a1cd8a51de41f850.png",
+                    "height": 90,
+                    "kind": "shadow9",
+                    "offset": {
+                      "h": 40,
+                      "w": 40,
+                      "x": -20,
+                      "y": -20
+                    },
+                    "sha256": "31a742c9f9f58f8935e8d61ee363183ac7c4a95f74f79d12a1cd8a51de41f850",
+                    "slice": [
+                      39,
+                      40,
+                      39,
+                      40
+                    ],
+                    "stopGap": null,
+                    "tint": false,
+                    "width": 90
+                  },
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "flex-shrink": "0",
+                      "height": "50px",
+                      "margin-right": "16px",
+                      "width": "50px"
+                    }
+                  },
+                  "text": null
+                },
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [],
+                  "classes": [
+                    "s"
+                  ],
+                  "external": false,
+                  "id": "root__0__1",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "flex-shrink": "0",
+                      "height": "50px",
+                      "width": "50px"
+                    }
+                  },
+                  "text": null
+                }
+              ],
+              "classes": [
+                "p"
+              ],
+              "external": false,
+              "id": "root__0",
+              "initial": null,
+              "insetShadow": null,
+              "insetShadowLayers": {},
+              "kind": "container",
+              "repeat": null,
+              "shadow": null,
+              "shadowLayers": {},
+              "style": {
+                "base": {
+                  "column-gap": "8px",
+                  "display": "flex",
+                  "flex-direction": "row",
+                  "flex-shrink": "0",
+                  "height": "100px",
+                  "position": "relative",
+                  "row-gap": "8px",
+                  "width": "400px"
+                }
+              },
+              "text": null
+            }
+          ],
+          "classes": [
+            "screen"
+          ],
+          "external": false,
+          "id": "root",
+          "initial": null,
+          "insetShadow": null,
+          "insetShadowLayers": {},
+          "kind": "container",
+          "repeat": null,
+          "shadow": null,
+          "shadowLayers": {},
+          "style": {
+            "base": {
+              "background-color": "#0b1f26",
+              "color": "#ffffff",
+              "display": "flex",
+              "flex-direction": "column",
+              "font-family": "\"Inter UI\"",
+              "font-size": "16px",
+              "height": "1440px",
+              "line-height": "20px",
+              "position": "relative",
+              "width": "2560px"
+            }
+          },
+          "text": null
+        },
+        "screen": "cases",
+        "screenMatch": 0.5,
+        "source": {
+          "path": "shadow-before-static--margin-right--16px.html",
+          "sha256": "eb1badbefb6b36ccf79ff965240b864141c2131c2caec519ef82a33b173fd998"
+        },
+        "states": [
+          "default"
+        ],
+        "tokens": {},
+        "viewports": [
+          [
+            2560,
+            1440
+          ],
+          [
+            1920,
+            1080
+          ],
+          [
+            1280,
+            720
+          ]
+        ]
+      },
+      "lint": [],
+      "property": "margin-right",
+      "unity": "compile",
+      "value": "16px"
+    },
+    {
+      "context": "gap-first-hover",
+      "export": "ok",
+      "id": "gap-first-hover--box-shadow--0-0-24px-000000-scale-1-1",
+      "ir": {
+        "breakpoints": [],
+        "fonts": [],
+        "irVersion": 1,
+        "referenceViewport": [
+          2560,
+          1440
+        ],
+        "root": {
+          "action": null,
+          "anims": [],
+          "asset": null,
+          "attrTexts": {},
+          "background": null,
+          "backgroundLayers": {},
+          "bind": null,
+          "children": [
+            {
+              "action": null,
+              "anims": [],
+              "asset": null,
+              "attrTexts": {},
+              "background": null,
+              "backgroundLayers": {},
+              "bind": null,
+              "children": [
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [],
+                  "classes": [
+                    "c"
+                  ],
+                  "external": false,
+                  "id": "case",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {
+                    "hover": {
+                      "file": "assets/186da2c05eec590329027a9100c0eba15ab81373d80b186ddfb0b00239e58947.png",
+                      "height": 114,
+                      "kind": "shadow9",
+                      "offset": {
+                        "h": 64,
+                        "w": 64,
+                        "x": -32,
+                        "y": -32
+                      },
+                      "sha256": "186da2c05eec590329027a9100c0eba15ab81373d80b186ddfb0b00239e58947",
+                      "slice": [
+                        56,
+                        56,
+                        57,
+                        56
+                      ],
+                      "stopGap": null,
+                      "tint": false,
+                      "width": 114
+                    }
+                  },
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "flex-shrink": "0",
+                      "height": "50px",
+                      "width": "50px"
+                    },
+                    "hover": {
+                      "scale": "1.1"
+                    }
+                  },
+                  "text": null
+                },
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [],
+                  "classes": [
+                    "s"
+                  ],
+                  "external": false,
+                  "id": "root__0__1",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "flex-shrink": "0",
+                      "height": "50px",
+                      "width": "50px"
+                    }
+                  },
+                  "text": null
+                }
+              ],
+              "classes": [
+                "p"
+              ],
+              "external": false,
+              "id": "root__0",
+              "initial": null,
+              "insetShadow": null,
+              "insetShadowLayers": {},
+              "kind": "container",
+              "repeat": null,
+              "shadow": null,
+              "shadowLayers": {},
+              "style": {
+                "base": {
+                  "column-gap": "8px",
+                  "display": "flex",
+                  "flex-direction": "row",
+                  "flex-shrink": "0",
+                  "height": "100px",
+                  "position": "relative",
+                  "row-gap": "8px",
+                  "width": "400px"
+                }
+              },
+              "text": null
+            }
+          ],
+          "classes": [
+            "screen"
+          ],
+          "external": false,
+          "id": "root",
+          "initial": null,
+          "insetShadow": null,
+          "insetShadowLayers": {},
+          "kind": "container",
+          "repeat": null,
+          "shadow": null,
+          "shadowLayers": {},
+          "style": {
+            "base": {
+              "background-color": "#0b1f26",
+              "color": "#ffffff",
+              "display": "flex",
+              "flex-direction": "column",
+              "font-family": "\"Inter UI\"",
+              "font-size": "16px",
+              "height": "1440px",
+              "line-height": "20px",
+              "position": "relative",
+              "width": "2560px"
+            }
+          },
+          "text": null
+        },
+        "screen": "cases",
+        "screenMatch": 0.5,
+        "source": {
+          "path": "gap-first-hover--box-shadow--0-0-24px-000000-scale-1-1.html",
+          "sha256": "7764715a2f0f614e1cba004195fec97cd48efbdf58fc84aa4bf9542acbb3d92e"
+        },
+        "states": [
+          "default"
+        ],
+        "tokens": {},
+        "viewports": [
+          [
+            2560,
+            1440
+          ],
+          [
+            1920,
+            1080
+          ],
+          [
+            1280,
+            720
+          ]
+        ]
+      },
+      "lint": [
+        "U-CSS-041"
+      ],
+      "property": "box-shadow",
+      "unity": "compile",
+      "value": "0 0 24px #000000; scale: 1.1"
     }
   ],
   "contexts": {
@@ -29521,6 +30918,16 @@
       "css": ".p{position:relative;display:block;width:400px;height:200px;flex-shrink:0} .i{height:120px;background-color:#16c2d5} .o{position:absolute;left:0px;top:0px;right:0px;height:120px;background-color:#0b1f26} .c{position:relative;height:40px;background-color:#123c47} .c{{decl}}",
       "description": "a relative caption after a static image and an absolute overlay in a block card (common card markup)",
       "html": "<div class=\"p\"><div class=\"i\"></div><div class=\"o\"></div><div class=\"c\" data-u-id=\"case\"></div></div>"
+    },
+    "child-hover": {
+      "css": ".p{position:relative;display:block;width:400px;height:200px;flex-shrink:0} .c{width:100px;height:50px;background-color:#16c2d5;transition:opacity 200ms linear} .c:hover{{decl}} .i{display:block;width:20px;height:20px;background-color:#ffffff}",
+      "description": "a box with a painted child and an opacity transition; the case declaration is its :hover style",
+      "html": "<div class=\"p\"><div class=\"c\" data-u-id=\"case\"><div class=\"i\"></div></div></div>"
+    },
+    "child-keyframes": {
+      "css": ".p{position:relative;display:block;width:400px;height:200px;flex-shrink:0} .c{width:100px;height:50px;background-color:#16c2d5} .c{{decl}} .i{display:block;width:20px;height:20px;background-color:#ffffff} @keyframes appear{from{opacity:0}to{opacity:1}}",
+      "description": "a box with a painted child and an opacity fade @keyframes appear",
+      "html": "<div class=\"p\"><div class=\"c\" data-u-id=\"case\"><div class=\"i\"></div></div></div>"
     },
     "container": {
       "css": ".c{position:relative;display:flex;flex-direction:row;width:400px;height:100px;flex-shrink:0} .c{{decl}} .i{width:50px;height:50px;flex-shrink:0;background-color:#16c2d5}",
@@ -29607,6 +31014,11 @@
       "description": "a 200×100 flex column holding a taller child",
       "html": "<div class=\"p\"><div class=\"c\" data-u-id=\"case\"><div class=\"i\"></div></div></div>"
     },
+    "shadow-before-static": {
+      "css": ".p{position:relative;display:flex;flex-direction:row;gap:8px;width:400px;height:100px;flex-shrink:0} .c,.s{width:50px;height:50px;flex-shrink:0;background-color:#16c2d5} .c{box-shadow:0 0 16px #000000} .c{{decl}}",
+      "description": "a box whose outer shadow reaches the next static sibling across an 8px gap",
+      "html": "<div class=\"p\"><div class=\"c\" data-u-id=\"case\"></div><div class=\"s\"></div></div>"
+    },
     "sized-padded": {
       "css": ".p{position:relative;display:flex;flex-direction:row;width:400px;height:200px;flex-shrink:0} .c{width:100px;height:50px;flex-shrink:0;background-color:#16c2d5} .c{padding:4px} .c{{decl}}",
       "description": "a 100×50 flex item with 4px padding",
@@ -29669,7 +31081,9 @@
     "U-CSS-030": "collapsing margins and anonymous flex items need the rendered layout",
     "U-CSS-032": "overlap of siblings needs the rendered boxes; the compiler keeps in-flow siblings in layout order",
     "U-CSS-033": "which elements a press or focus reaches is runtime behaviour, not a value",
-    "U-CSS-040": "border widths on the device grid need the kit's viewport scales; the compiler writes the width the design gives"
+    "U-CSS-039": "which painted parts of a subtree overlap needs the rendered boxes; the compiler fades each part, as UI Toolkit does",
+    "U-CSS-040": "border widths on the device grid need the kit's viewport scales; the compiler writes the width the design gives",
+    "U-CSS-041": "what a box, translate or shadow reaches needs the rendered boxes; the compiler keeps the hierarchy order"
   },
   "note": [
     "Shared verdicts of css-support.json for the exporter's lint and the Unity compiler.",
