@@ -86,6 +86,8 @@ namespace DesignUi.Editor
                 var filler = new SampleFiller(screen);
                 filler.FillScreen(docRoot);
                 if (req.State != DefaultState) root.AddToClassList(ScreenBuilder.StateClassPrefix + req.State);
+                // the breakpoints that hold at this viewport, as classes on the screen root (the golden's @media rules)
+                foreach (var name in ActiveBreakpoints(screen.Ir, req.Viewport)) root.AddToClassList(ScreenBuilder.BreakpointClassPrefix + name);
                 for (int i = 0; i < MountFrames; i++) yield return null;
                 var panel = mount.Panel;
                 var scale = PanelScale(panel, req.Viewport);
@@ -511,6 +513,24 @@ namespace DesignUi.Editor
         /// Device pixels per panel pixel as the panel resolved them (PanelSettings.ResolveScale): the viewport width over
         /// the panel's laid-out width.
         /// </summary>
+        /// <summary>
+        /// The IR breakpoints that hold at a viewport, as the exporter decides them (capture/matrix.ts breakpointsHold): the
+        /// panel's logical size under Scale With Screen Size (<c>scale = lerp(W/refW, H/refH, match)</c>, the IR's reference
+        /// and match), rounded to whole px, against each breakpoint's min/max width and aspect ratio, in IR order.
+        /// </summary>
+        public static IEnumerable<string> ActiveBreakpoints(IrScreen ir, Vector2Int viewport)
+        {
+            if (ir?.Breakpoints == null || ir.Breakpoints.Length == 0) yield break;
+            var reference = ir.ReferenceViewport != null && ir.ReferenceViewport.Length == 2 ? ir.ReferenceViewport : new[] { 2560, 1440 };
+            double rw = viewport.x / (double)reference[0], rh = viewport.y / (double)reference[1];
+            double scale = rw + (rh - rw) * ir.ScreenMatch;
+            double w = Math.Round(viewport.x / scale, MidpointRounding.AwayFromZero), h = Math.Round(viewport.y / scale, MidpointRounding.AwayFromZero);
+            foreach (var b in ir.Breakpoints)
+                if ((b.MinWidth == null || w >= b.MinWidth) && (b.MaxWidth == null || w <= b.MaxWidth) &&
+                    (b.MinAspect == null || w / h >= b.MinAspect) && (b.MaxAspect == null || w / h <= b.MaxAspect))
+                    yield return b.Name;
+        }
+
         static double PanelScale(IPanel panel, Vector2Int viewport)
         {
             var width = panel?.visualTree.layout.width ?? float.NaN;

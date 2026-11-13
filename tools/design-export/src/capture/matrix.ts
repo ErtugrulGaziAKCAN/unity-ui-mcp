@@ -11,8 +11,9 @@
  *   the same change starts playing on the same clock (`runs`) and all other animations frozen.
  *
  * Pseudo-states follow a real pointer (findings R6, O-5): hover on an element also hovers its ancestors, active implies
- * hover, so `hover` on an ancestor of the hovered or pressed element is implied and dropped. Captures with the same
- * state, viewport and applied set are one capture.
+ * hover, so `hover` on an ancestor of the hovered or pressed element is implied and dropped; a disabled control is never
+ * focused or pressed, so such unions are not captured. Captures with the same state, viewport and applied set are one
+ * capture.
  */
 import type { IrAnim, IrNode, IrScreen } from "../ir/types.js";
 import { dimKind, dimsOf } from "../extract/layers.js";
@@ -96,12 +97,41 @@ export function breakpointsHold(bps: readonly Bp[], viewport: [number, number], 
 }
 
 /**
+ * The largest step 1/q (q up to 64) that every declared viewport's scale is a multiple of (0.25 for 1, 0.75 and 0.5), or
+ * null. A design whose lengths are whole device px at every declared scale (kit text styles, U-CSS-040 borders) is whole
+ * at any scale that is a multiple of it too.
+ */
+export function scaleStep(ir: Pick<IrScreen, "referenceViewport" | "screenMatch">, declared: readonly [number, number][]): number | null {
+  const scales = declared.map((v) => logicalViewport(v, ir.referenceViewport, ir.screenMatch).scale);
+  for (let q = 1; q <= 64; q++) if (scales.every((x) => Math.abs(x * q - Math.round(x * q)) < 1e-9)) return 1 / q;
+  return null;
+}
+
+/**
  * A viewport where every breakpoint holds, close to a declared one. Scale With Screen Size makes the logical size a
  * function of the aspect ratio alone, so a width or aspect breakpoint is reached by changing the aspect: the declared
- * viewport's height is kept and its width moves just inside the range (among the nearest 32 widths, the one whose
- * logical size is closest to whole pixels). The declared viewport needing the smallest relative change wins.
+ * viewport's height is kept and its width changes. Preferred: a width whose panel scale is a multiple of the declared
+ * scales' step (scaleStep), so the design's lengths stay whole device px as at the declared viewports (at 853×1080,
+ * scale 0.5417, a 16 px font is 8.67 device px, which UI Toolkit rounds to 9); the one nearest the declared width.
+ * Else just inside the range (among the nearest 32 widths, the one whose logical size is closest to whole pixels). The
+ * declared viewport needing the smallest relative change wins.
  */
 export function coverageViewport(bps: readonly Bp[], ir: Pick<IrScreen, "referenceViewport" | "screenMatch">, declared: readonly [number, number][]): [number, number] | null {
+  const step = scaleStep(ir, declared);
+  if (step !== null) {
+    let onGrid: { vp: [number, number]; rel: number } | null = null;
+    for (const [w0, h0] of declared) {
+      for (let w = 1; w <= 4 * w0; w++) {
+        const lv = logicalViewport([w, h0], ir.referenceViewport, ir.screenMatch);
+        const k = lv.scale / step;
+        if (Math.abs(k - Math.round(k)) > 1e-9 || !breakpointsHold(bps, [w, h0], ir)) continue;
+        if (Math.abs(lv.width - Math.round(lv.width)) > 1e-6 || Math.abs(lv.height - Math.round(lv.height)) > 1e-6) continue;
+        const rel = Math.abs(w - w0) / w0;
+        if (!onGrid || rel < onGrid.rel) onGrid = { vp: [w, h0], rel };
+      }
+    }
+    if (onGrid) return onGrid.vp;
+  }
   let best: { vp: [number, number]; rel: number } | null = null;
   for (const [w0, h0] of declared) {
     const inside: { w: number; d: number; err: number }[] = [];
@@ -187,6 +217,10 @@ function normalize(t: Tree, list: CaptureApply[]): CaptureApply[] {
     && pointer.some((b) => b !== a && isAncestorOrSelf(t, a.elementId, b.elementId)))));
 }
 
+/** A disabled element that is also focused or pressed: a state no screen can reach. */
+const unreachable = (apply: CaptureApply[]) => apply.some((a) => a.kind === "pseudo" && a.pseudo === "disabled"
+  && apply.some((b) => b.kind === "pseudo" && (b.pseudo === "focus" || b.pseudo === "active") && b.elementId === a.elementId));
+
 const setupKey = (s: ScreenSetup) => `${s.state}${s.apply.map((a) => `.${a.kind}.${applyLabel(a)}.${a.elementId}`).join("")}`;
 
 /**
@@ -267,10 +301,12 @@ export function buildMatrix(ir: IrScreen): CaptureJob[] {
   // state baselines at every declared viewport
   for (const vp of declared) for (const st of ir.states) addJob(job(st, vp, []));
 
-  // every layer key, including layers that change only baked effects (shadow, inset shadow, background image)
+  // every layer key, including layers that change only baked effects (shadow, inset shadow, background image); a
+  // union that focuses or presses a disabled control is never shown (neither browsers nor UI Toolkit focus or press one)
   for (const id of t.order) {
     for (const key of layerKeys(t.nodes.get(id)!)) {
       const s = setupOfKey(t, ir, id, key);
+      if (unreachable(s.apply)) continue;
       for (const vp of viewportsFor(s.bps, `${id}: layer ${key}`)) addJob(job(s.state, vp, s.apply));
     }
   }

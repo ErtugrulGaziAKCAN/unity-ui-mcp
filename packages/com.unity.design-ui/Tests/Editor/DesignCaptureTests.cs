@@ -500,6 +500,35 @@ namespace DesignUi.Editor.Tests
         }
 
         [UnityTest]
+        public IEnumerator Run_Breakpoints_HoldAtTheViewportsLogicalWidth_AndTheirLayersApply()
+        {
+            // 320×180 reference at match 0.5: 240×180 renders at scale lerp(0.75, 1, 0.5) = 0.875, a logical width of 274 px
+            var hero = Box("hero", "#16c2d5").With("bp:narrow", ("height", "24px")).With("bp:narrow+state:loading", ("background-color", "#ff8800"));
+            var ir = Small(BlackRoot(hero));
+            ir.States = new[] { "default", "loading" };
+            ir.Breakpoints = new[] { new IrBreakpoint { Name = "narrow", MaxWidth = 300 }, new IrBreakpoint { Name = "tall", MaxAspect = 1.2f } };
+            var export = Export(ir);
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+
+            CollectionAssert.AreEqual(new[] { "narrow" }, DesignCapture.ActiveBreakpoints(ir, new Vector2Int(240, 180)).ToArray());
+            CollectionAssert.AreEqual(new string[0], DesignCapture.ActiveBreakpoints(ir, new Vector2Int(320, 180)).ToArray());
+            CollectionAssert.AreEqual(new[] { "narrow", "tall" }, DesignCapture.ActiveBreakpoints(ir, new Vector2Int(160, 180)).ToArray(), "160×180: 213 × 240 logical px, aspect 0.89");
+
+            var wide = Request(export, screen, "default@320x180", 320, 180);
+            yield return DesignCapture.Run(wide, profile);
+            Assert.AreEqual(40.0, (double)Boxes(wide)["elements"]["hero"]["h"], 1e-3, "no breakpoint holds at the reference");
+
+            var narrow = Request(export, screen, "default@240x180", 240, 180);
+            yield return DesignCapture.Run(narrow, profile);
+            Assert.AreEqual(24 * 0.875, (double)Boxes(narrow)["elements"]["hero"]["h"], 0.5, "the bp:narrow height");
+
+            var both = Request(export, screen, "loading@240x180", 240, 180);
+            yield return DesignCapture.Run(both, profile);
+            Assert.AreEqual("#ff8800", Hex(Pixel(Png(both), 20, 10)), "a breakpoint and a state together");
+        }
+
+        [UnityTest]
         public IEnumerator Run_ViewportOfAnotherAspect_BoxesUseThePanelsScale_AndMatchThePng()
         {
             // 400×180 against a 320×180 reference at match 0.5: Unity scales by lerp(1.25, 1, 0.5) = 1.125

@@ -12,7 +12,7 @@ import { buildIr, type IrBuild } from "../src/extract/tree.js";
 import type { IrAnim, IrNode, IrScreen } from "../src/ir/types.js";
 import { validateBoxes } from "../src/boxes/validate.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
-import { breakpointsHold, buildMatrix, captureName, sampleTimes, unsampledAnims, type CaptureJob } from "../src/capture/matrix.js";
+import { breakpointsHold, scaleStep, buildMatrix, captureName, sampleTimes, unsampledAnims, type CaptureJob } from "../src/capture/matrix.js";
 import { CaptureSession, captureMatrix, runCapture, type ElementMap } from "../src/capture/capture.js";
 import { logicalViewport } from "../src/viewport.js";
 
@@ -100,6 +100,23 @@ describe("buildMatrix", () => {
     expect(byName.get("loading@2560x1440.hover.btn")!.state).toBe("loading");
   });
 
+  it("skips unions a disabled control cannot reach: focus or a press on the disabled element itself", () => {
+    const ir = screen(node("root", { children: [
+      node("btn", { style: layers("disabled", "focus", "active", "disabled+focus", "active+disabled", "disabled+hover") }),
+      node("card", { style: layers("hover"), children: [node("inp", { style: layers("disabled", "anc(card):hover+disabled") })] }),
+    ] }), { viewports: [[2560, 1440]] });
+    expect(names(buildMatrix(ir))).toEqual([
+      "default@2560x1440",
+      "default@2560x1440.active.btn",
+      "default@2560x1440.disabled.btn",
+      "default@2560x1440.disabled.btn.hover.btn", // a pointer still hovers a disabled control
+      "default@2560x1440.disabled.inp",
+      "default@2560x1440.focus.btn",
+      "default@2560x1440.hover.card",
+      "default@2560x1440.hover.card.disabled.inp",
+    ]);
+  });
+
   it("adds a viewport just inside a breakpoint no declared viewport reaches, and marks it", () => {
     const ir = screen(node("root", { children: [node("x", { style: layers("bp:max-width-1919", "bp:max-width-1919+hover", "bp:wide+hover") })] }), {
       breakpoints: [{ name: "max-width-1919", maxWidth: 1919 }, { name: "wide", minWidth: 2000 }],
@@ -111,10 +128,12 @@ describe("buildMatrix", () => {
     expect(extra.every((j) => j.viewport[0] === vp[0] && j.viewport[1] === vp[1] && j.coverage!.join() === "max-width-1919")).toBe(true);
     expect([[2560, 1440], [1920, 1080], [1280, 720]]).not.toContainEqual(vp);
     expect(breakpointsHold([{ name: "max-width-1919", maxWidth: 1919 }], vp, ir)).toBe(true);
-    // just inside: one more device pixel of width leaves the range or is not whole-pixel exact, and the height is a declared one
+    // a declared height, and a panel scale on the declared scales' step (0.25), so the design's lengths stay whole device px:
+    // 640×1080 renders at 0.5 (1280×2160 logical px), where 853×1080 would be 0.5417
     expect([1440, 1080, 720]).toContain(vp[1]);
-    expect(Math.round(logicalViewport(vp, [2560, 1440], 0.5).width)).toBeLessThanOrEqual(1919);
-    expect(Math.round(logicalViewport([vp[0] + 40, vp[1]], [2560, 1440], 0.5).width)).toBeGreaterThan(1919);
+    expect(vp).toEqual([640, 1080]);
+    expect(logicalViewport(vp, [2560, 1440], 0.5)).toEqual({ width: 1280, height: 2160, scale: 0.5 });
+    expect(scaleStep({ referenceViewport: [2560, 1440], screenMatch: 0.5 }, [[2560, 1440], [1920, 1080], [1280, 720]])).toBe(0.25);
     // a breakpoint the declared viewports reach needs no extra viewport
     expect(names(jobs.filter((j) => !j.coverage && j.apply.length))).toEqual(["default@2560x1440.hover.x", "default@1920x1080.hover.x", "default@1280x720.hover.x"]);
     expect(jobs.filter((j) => !j.coverage).every((j) => j.coverage === null)).toBe(true);
