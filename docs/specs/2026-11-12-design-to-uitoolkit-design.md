@@ -164,7 +164,8 @@ rows that cite them; items marked *unmeasured* are allowed by the reference but 
 siblings in layout order and moves only absolute siblings, each into the gap that gives it its CSS stacking level
 (negative z, in-flow, positioned auto/0, positive z; a flex item with a z-index stacks like a relative element). So
 `z-index` is allowed in the base layer on absolute siblings, and on relative siblings and flex items where the markup
-order already is the CSS paint order (U-CSS-004). Overlapping siblings whose paint order still differs (a relative
+order already is the CSS paint order; an absolute sibling that has no such gap, with or without a z-index (an absolute
+badge before a relative header that precedes a static body), is rejected too (U-CSS-004). Overlapping siblings whose paint order still differs (a relative
 sibling before a static one, an absolute sibling before a faded or transformed one) are U-CSS-032, and pseudo-state
 combinations a pointer or focus cannot produce in UI Toolkit (`:active` on an ancestor and on the element, two focused
 elements) are U-CSS-033.
@@ -226,13 +227,20 @@ The compiler makes every CSS default that differs from UI Toolkit explicit befor
 that do not shrink, gap only on flex containers, insets ignored on static elements, border-box sizing, and CSS paint
 order (negative z-index, then in-flow siblings, then positioned siblings). Lint rejects what it cannot make explicit:
 an absolute element whose parent is static (UI Toolkit anchors to the parent, CSS to the nearest positioned ancestor;
-U-CSS-035), `content-box` on a sized element with padding or border (U-CSS-036), an inline-level box as the only
-content of a block container (U-CSS-009), a gap container whose earlier child shows or hides itself by its own
+U-CSS-035), `content-box` on a sized element with padding or border (U-CSS-036), an inline element in a block container
+that the exporter cannot write as a block (U-CSS-009; see below), a gap container whose earlier child shows or hides itself by its own
 pseudo-state or `is-*` class (the first visible child takes no gap margin, and USS has no sibling combinator; U-CSS-034),
 and baked effects that cannot share one element (U-CSS-037): an inset shadow (an overlay child above the background,
 below the content) under the element's own text, on a form control or on a scroll area; a url() image beside a gradient
 in another layer, or only in a layer (one background image with one geometry per element); a background image or an
 inset shadow on a tintable icon (the icon is the element's own tinted background image).
+
+UI Toolkit has no inline flow. An inline element in a block container is written as a block only when it is the
+container's only design child (siblings hidden in the default state count, since the compiler keeps them), holds text,
+and renders the same as a block: no background, border, shadow, radius, padding, margin or outline, no transform or
+opacity change in any layer, and the parent's font family, size, weight, line height and letter spacing in every layer
+(the CSS line box keeps the parent's strut). Otherwise lint reports U-CSS-009 with the fix "set display: block on the
+child, or make the parent display: flex".
 
 ### 5.5 Claude Design canvases
 

@@ -6,7 +6,7 @@ import { breakpointsOf, MediaError, type Breakpoint } from "../lint/resolve/medi
 import { CORNERS, cornerProperty, lengthPx, resolveRadii, type Corner } from "../lint/resolve/radius.js";
 import { splitTransform, type TransformSplit } from "../lint/resolve/transform.js";
 import { declsAt, lookup, sourcesOf } from "../lint/rules/util.js";
-import { designChildren } from "../lint/repeat.js";
+import { onlyDesignChild, promotionDifferences, type LayerValues } from "../lint/promote.js";
 import { isTextElement } from "../lint/text-runs.js";
 import { DYNAMIC_PSEUDO_CLASSES } from "../lint/selectors.js";
 import type { DomSnapshot, SnapElement, SnapRule, SnapSelector, Size } from "../lint/snapshot.js";
@@ -526,6 +526,14 @@ export class StyleExtractor {
     return out;
   }
 
+  /** A lone inline text element that renders the same as a block (lint/promote.ts, shared with U-CSS-009). */
+  promotesToBlock(i: number): boolean {
+    const e = this.s.elements[i];
+    if (!onlyDesignChild(this.s, e) || !isTextElement(this.s, e)) return false;
+    const values: LayerValues = (k, prop) => this.cands(k).filter((c) => c.prop === prop).map((c) => ({ layer: c.key, value: resolveVars(c.entry.value, lookup(this.s, k)) }));
+    return promotionDifferences(this.s, e, values).length === 0;
+  }
+
   /** Element needs per-layer boxes: border radii or a transform (resolved against the layer's box). */
   needsBoxes(i: number): boolean {
     return Array.from(this.byProp(i).keys()).some((p) => RADII.includes(p) || p === "transform");
@@ -670,10 +678,10 @@ export class StyleExtractor {
     }
 
     // display, blockified like CSS in every layer (flex item or absolute); explicit in base (default state). The only
-    // content of a block container, an inline element holding text, lays out like a block (lint U-CSS-009 rejects one
-    // that draws an inline box, an atomic inline box and an inline holding blocks)
+    // content of a block container, an inline element holding text, becomes a block where that renders the same
+    // (lint/promote.ts; lint U-CSS-009 rejects the rest, and the compiler rejects an inline it is left with)
     const parent = e.parent >= 0 ? s.elements[e.parent] : null;
-    const lone = !!parent && parent.texts.length === 0 && designChildren(s, parent).length === 1 && isTextElement(s, e);
+    const lone = this.promotesToBlock(i);
     const blockify = (d: string) => ((parent && /flex/.test(parent.computed.display)) || e.computed.position === "absolute"
       ? ({ inline: "block", "inline-block": "block", "inline-flex": "flex", "list-item": "block" } as Record<string, string>)[d] ?? d
       : d === "list-item" || (d === "inline" && lone) ? "block" : d);

@@ -226,7 +226,8 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     if (p.run?.kind === "row") {
       for (const [k, v] of [["display", "flex"], ["flex-direction", "row"], ["justify-content", p.run.justify], ["align-items", "flex-start"]]) base.set(k, { value: v, refs: [] });
     }
-    if (p.promoted) base.set("display", { value: "block", refs: [] });
+    // a keyed run in a row is a flex item; one alone in its paragraph becomes a block only where that renders the same
+    if (p.promoted && (runPlans(s).get(e.parent)?.kind === "row" || ex.promotesToBlock(p.i))) base.set("display", { value: "block", refs: [] });
     const text = textual(p) ? irText(s, p.i, page.seqs, styles, page.rendered) : null;
     const tint = p.kind === "vector" && e.svgPaint === "current";
     const copies = text ? ex.addInherited(p.i, layers, TEXT_INHERITED) : tint ? ex.addInherited(p.i, layers, ["color"]) : [];
