@@ -760,7 +760,10 @@ describe("design-export compare", () => {
   });
 
   it("reads the thresholds from fidelity-thresholds.json", () => {
-    expect(readThresholds()).toEqual(T);
+    // measured with smoothing-off goldens (docs/findings/text-ink.md) plus the documented margins
+    expect(readThresholds()).toEqual({
+      ...T, textInkDeltaE: 2, textInkRatio: 1, textInkCoverage: 0.1, textInkFullPx: 9, textInkDeltaESmall: [[8, 3], [0, 10]], textInkMedianTolerance: 0.15,
+    });
     const bad = path.join(tmp(), "t.json");
     fs.writeFileSync(bad, JSON.stringify({ boxPx: 1 }));
     expect(() => readThresholds(bad)).toThrow(/"baselinePx" must be a number/);

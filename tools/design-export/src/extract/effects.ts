@@ -191,7 +191,8 @@ export async function nodeEffects(i: number, c: EffectContext, where: string): P
       // one url() is an asset; anything else is baked as gradients (the bake rejects what it cannot reproduce)
       if (!/^url\(/i.test(bg.value.trim()) || splitTopLevel(bg.value, ",").length > 1) {
         const b = box ?? { w: 1, h: 1 };
-        const gopts = { borders, color, ...lctx, repeat: eff("background-repeat")?.value };
+        const gopts = { borders, color, ...lctx, repeat: eff("background-repeat")?.value,
+          radii: [radii["top-left"].x, radii["top-right"].x, radii["bottom-right"].x, radii["bottom-left"].x] as [number, number, number, number] };
         const svg = gradientToSvg(bg.value, b.w, b.h, gopts);
         background = writeAsset(c.outDir, Buffer.from(svg, "utf8"), "svg", "svg", b.w, b.h, false, gradientStopGap(bg.value, b.w, b.h, gopts));
       } else {

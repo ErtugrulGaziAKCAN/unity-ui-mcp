@@ -22,8 +22,8 @@
  *   measured `textInkDeltaESmall` limit below that size) and the ink amount: Unity's relative to the design's between
  *   `textInkRatio` and 1 (each ± `textInkCoverage`), and within ±`textInkMedianTolerance` of the capture's median ratio
  *   for text of the same polarity (light on dark, dark on light) when it has 3 or more such lines; this catches a wrong
- *   text colour, weight or size. The macOS golden's font smoothing makes the design's stems heavier than Unity's, more
- *   for light text and at small sizes (docs/findings/text-ink.md), which these limits absorb;
+ *   text colour, weight or size. The limits are the measured renderer difference with designs that render
+ *   `-webkit-font-smoothing: antialiased` (docs/findings/text-ink.md): exact from 9 device px, wider only below;
  * - shadow band: the mean colour of each active outer shadow's band (shadow rect minus element box), ΔE2000 ≤
  *   `deltaE2000`, so a faint missing shadow fails although SSIM dilutes it.
  * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows.
@@ -510,8 +510,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       }
     }
 
-    // text ink amount: UI Toolkit draws thinner anti-aliased stems than the macOS golden, whose font smoothing thickens
-    // light text more than dark text (Unity/design 0.69-1.03 for correct text, docs/findings/text-ink.md). A line's ratio
+    // text ink amount: with smoothing-off designs Unity draws 0.92-1.08 of the design's ink for correct text
+    // (docs/findings/text-ink.md; with macOS font smoothing on it was 0.69-1.03, more for light text). A line's ratio
     // must lie between the measured ratio and identity (each with the tolerance), and, when the capture has 3 or more
     // measured lines of the same polarity, within the tolerance of their median ratio, which cancels the renderer and
     // leaves a wrong weight, size or glyph run

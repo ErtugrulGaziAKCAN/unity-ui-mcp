@@ -24,6 +24,30 @@ export interface GradientOptions {
   rootFontSize?: number;
   /** `background-repeat` (a list for several gradients): how the image repeats into the border area. Default repeat. */
   repeat?: string;
+  /**
+   * Resolved corner radii in px (top-left, top-right, bottom-right, bottom-left; circular, U-CSS-020): the image is cut to
+   * the rounded border box, as CSS clips a background. UI Toolkit draws a vector background image unclipped by the
+   * element's border-radius, and its anti-aliased tessellation ignores SVG clip paths, so the painted shapes themselves
+   * are rounded (docs/findings/filters.md, gradients).
+   */
+  radii?: [number, number, number, number];
+}
+
+/**
+ * A painted rect (x0, y0)–(x1, y1) of a w × h border box as SVG: a `<rect>`, or a path whose corners that lie on a rounded
+ * corner of the box are arcs. A rect that reaches into a corner's r × r square without covering it stays a rect (only
+ * repeated gradient tiles smaller than the radius do that).
+ */
+function shape(x0: number, y0: number, x1: number, y1: number, w: number, h: number, radii: [number, number, number, number] | undefined, fill: string): string {
+  const [tl, tr, br, bl] = radii ?? [0, 0, 0, 0];
+  const on = (r: number, cx: boolean, cy: boolean) => r > 0 && cx && cy && x1 - x0 >= r && y1 - y0 >= r;
+  const TL = on(tl, x0 <= 0, y0 <= 0) ? tl : 0, TR = on(tr, x1 >= w, y0 <= 0) ? tr : 0;
+  const BR = on(br, x1 >= w, y1 >= h) ? br : 0, BL = on(bl, x0 <= 0, y1 >= h) ? bl : 0;
+  if (!TL && !TR && !BR && !BL) return `<rect x="${fmt(x0)}" y="${fmt(y0)}" width="${fmt(x1 - x0)}" height="${fmt(y1 - y0)}" fill="${fill}"/>`;
+  const arc = (r: number, x: number, y: number) => (r > 0 ? `A${fmt(r)} ${fmt(r)} 0 0 1 ${fmt(x)} ${fmt(y)}` : "");
+  const d = `M${fmt(x0 + TL)} ${fmt(y0)}H${fmt(x1 - TR)}${arc(TR, x1, y0 + TR)}V${fmt(y1 - BR)}${arc(BR, x1 - BR, y1)}` +
+    `H${fmt(x0 + BL)}${arc(BL, x0, y1 - BL)}V${fmt(y0 + TL)}${arc(TL, x0 + TL, y0)}Z`;
+  return `<path d="${d}" fill="${fill}"/>`;
 }
 
 type Rgba = [number, number, number, number];
@@ -259,7 +283,7 @@ export function gradientToSvg(value: string, width: number, height: number, opts
       const id = n === 0 ? `g${k}` : `g${k}_${n}`;
       n++;
       defs.push(`<${piece.kind}Gradient id="${id}" gradientUnits="userSpaceOnUse" ${piece.attrs(ox, oy)}>${svgStops(piece.stops).map(stopXml).join("")}</${piece.kind}Gradient>`);
-      rects.push(`<rect x="${fmt(x0)}" y="${fmt(y0)}" width="${fmt(x1 - x0)}" height="${fmt(y1 - y0)}" fill="url(#${id})"/>`);
+      rects.push(shape(x0, y0, x1, y1, width, height, opts.radii, `url(#${id})`));
     }
     if (pw > 0 && ph > 0 && (rx || (bl <= 0 && br <= 0)) && (ry || (bt <= 0 && bb <= 0))) covered = true;
     layers.push(rects);

@@ -31,8 +31,9 @@ other is rejected as U-CSS-015 with the property's fix. The lint reads the same 
 ## Measured
 
 Element SSIM (plain / with 1-px offsets) and largest colour ΔE2000 per tile, all three viewports, with every function
-enabled for the measurement. The unfiltered gradient tile is the baseline: its 64-step ramp alone gives 0.984 / 0.992 at
-2560, 0.988 / 0.992 at 1920 and 0.981 / **0.988** at 1280 (it fails 1280 without any filter).
+enabled for the measurement. The unfiltered gradient tile is the baseline: 0.984 / 0.992 at 2560, 0.988 / 0.992 at
+1920 and 0.981 / **0.988** at 1280 (it failed 1280 without any filter: the baked gradient ignored the tile's rounded
+corners, fixed since, see [gradients.md](gradients.md); the tile is now 0.997 at every viewport).
 
 | Function | Solid tile with text | Gradient tile | Result |
 |---|---|---|---|
@@ -44,6 +45,11 @@ enabled for the measurement. The unfiltered gradient tile is the baseline: its 6
 | `opacity(0.5)` | SSIM ≥ 0.9974; text ink ΔE **3.14** at 2560 and 1920 (limit 3) | ΔE **1.02** at 2560 (limit 1) | fails at 2560 and 1920 |
 | `contrast(1.6)` | SSIM **0.966–0.982**; the dark text comes out `#340c09` against Chromium's `#000000` (ΔE 16–19) | 0.977–0.984 / 0.986–0.990 | fails everywhere |
 | chain, `:hover` grayscale | SSIM ≥ 0.9993 | – | pass (but use disabled functions) |
+
+**Opacity, re-measured** with the rounded-gradient fix and the smoothing-off ink thresholds (an `opacity(0.5)` text tile,
+gradient tile and hover): the text comes out darker than Chromium's (`#06151c` against `#081b21`, ΔE 3.14, limit 2)
+with 0.81–0.87× of its ink at 1920 and 1280 (band 0.90–1.10×), and the gradient tile's colour is ΔE 1.02 at 2560
+(limit 1). It stays rejected.
 
 **Decision.** `filter.functions` in `css-support.json` is `["invert"]`: the only function whose tiles pass at all three
 viewports. A screen with just the invert tiles and an `invert(1)` hover passes 6/6 captures. The others stay rejected

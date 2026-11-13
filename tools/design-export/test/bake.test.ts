@@ -289,6 +289,22 @@ describe("gradientToSvg", () => {
     expect(gradientStopGap("radial-gradient(circle 100px, red 0px, blue 50px, green 200px)", 400, 100)).toBeCloseTo(0.25, 9);
   });
 
+  it("cuts the gradient to the rounded border box, as CSS clips a background (UI Toolkit ignores border-radius and clip paths for vector images)", () => {
+    const g = "linear-gradient(135deg, #f2b544 0%, #f0605d 50%, #16c2d5 100%)";
+    const svg = gradientToSvg(g, 280, 200, { radii: [16, 16, 16, 16] });
+    expect(svg).toContain('<path d="M16 0H264A16 16 0 0 1 280 16V184A16 16 0 0 1 264 200H16A16 16 0 0 1 0 184V16A16 16 0 0 1 16 0Z" fill="url(#g0)"/>');
+    expect(svg).not.toContain("<rect");
+    // per-corner radii, a square corner draws no arc
+    expect(gradientToSvg(g, 100, 50, { radii: [8, 0, 4, 0] })).toContain('<path d="M8 0H100V46A4 4 0 0 1 96 50H0V8A8 8 0 0 1 8 0Z" fill="url(#g0)"/>');
+    // repeated tiles: only a tile on a box corner gets that corner's arc
+    const tiled = gradientToSvg("linear-gradient(90deg, #000, #fff)", 100, 100, { borders: [10, 10, 10, 10], radii: [8, 8, 8, 8] });
+    expect(tiled.match(/<path /g)?.length).toBe(4); // the four 10×10 corner tiles
+    expect(tiled).toContain("<rect"); // the tile in the middle of the border area touches no corner
+    // without radii nothing changes
+    expect(gradientToSvg(g, 280, 200, { radii: [0, 0, 0, 0] })).toBe(gradientToSvg(g, 280, 200));
+    expect(gradientToSvg(g, 280, 200)).not.toContain("<path");
+  });
+
   it("is deterministic and rejects syntax it cannot reproduce", () => {
     const g = "radial-gradient(circle at 25% 25%, #8e44ad, #0b1f26 70%)";
     expect(gradientToSvg(g, 400, 200)).toBe(gradientToSvg(g, 400, 200));

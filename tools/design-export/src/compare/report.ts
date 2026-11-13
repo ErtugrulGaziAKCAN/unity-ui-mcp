@@ -33,8 +33,8 @@ function thresholdRows(t: Thresholds): string {
     ["ssimNonText", `≥ ${t.ssimNonText}`, "SSIM of the whole capture, text element boxes and external regions copied from the design"],
     ["ssimElement", `≥ ${t.ssimElement}`, "SSIM per visible element of at least 16×16 px over its box joined with its baked shadow (an element that carries text: only its lines copied); when it fails, each block may use the Unity image offset by up to 1 px"],
     ["textInkDeltaE", `≤ ${t.textInkDeltaE}`, `text colour per line, from ${t.textInkFullPx} device px font size: median of the 10 % ink pixels most different from the background`],
-    ["textInkDeltaESmall", t.textInkDeltaESmall.map(([px, de]) => `≥ ${px} px: ≤ ${de}`).join(", "), `text colour per line below ${t.textInkFullPx} device px: the golden's font smoothing (macOS) makes thin stems reach a deeper colour than Unity's; measured limits by font size`],
-    ["textInkRatio", `${t.textInkRatio}`, "Unity's text ink amount relative to the design's for correct text (the golden's font smoothing draws heavier stems)"],
+    ["textInkDeltaESmall", t.textInkDeltaESmall.map(([px, de]) => `≥ ${px} px: ≤ ${de}`).join(", "), `text colour per line below ${t.textInkFullPx} device px, where no stem pixel is fully covered and the two renderers' anti-aliasing differs most; measured limits by font size`],
+    ["textInkRatio", `${t.textInkRatio}`, "Unity's text ink amount relative to the design's for correct text (measured with smoothing-off designs)"],
     ["textInkCoverage", `±${Math.round(t.textInkCoverage * 100)} %`, `text ink amount per line: between ${lo.toFixed(2)}× and ${hi.toFixed(2)}× the design's`],
     ["textInkMedianTolerance", `±${Math.round(t.textInkMedianTolerance * 100)} %`, "text ink amount per line against the capture's median ratio of text of the same polarity (light on dark, dark on light), when it has 3 or more such lines"],
   ];

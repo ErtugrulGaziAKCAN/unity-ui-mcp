@@ -11,7 +11,8 @@
 
 ## Result
 
-**Cause: the golden's macOS font smoothing, not Unity.** Chromium on macOS draws text with CoreText font smoothing
+**Cause: the golden's macOS font smoothing, not Unity.** (Designs now render with the smoothing off; the thresholds of
+section 4 are measured that way.) Chromium on macOS draws text with CoreText font smoothing
 (the default `-webkit-font-smoothing`), which thickens stems. Unity's SDF text is drawn without it. With the smoothing
 switched off in the golden (`-webkit-font-smoothing: antialiased`, layout unchanged), Unity's text matches Chromium's:
 ink amount 0.92–1.05× and ink colour within ΔE2000 1.3 for every line of 9 device px or more. No Unity setting that was
@@ -82,23 +83,40 @@ ratio: Unity's ink amount relative to the golden's, all lines at 2560.
 
 ## 4. Calibration (`tools/design-export/fidelity-thresholds.json`)
 
-| Key | Value | Measured |
-|---|---|---|
-| `textInkDeltaE` | 3, from `textInkFullPx` = 14 device px | 0 for every line of 14 px and more |
-| `textInkDeltaESmall` | ≥ 12 px: 5; ≥ 9 px: 10; below: 14 | largest 3.90 at 12 px, 7.96 at 9 px, 11.32 at 8 px, 9.46 at 6 px |
-| `textInkRatio`, `textInkCoverage` | 0.76, ±15 % (unchanged): 0.65–1.15× | 0.69–1.03× for correct text |
-| `textInkMedianTolerance` | ±20 % of the median ratio of the capture's text of the same polarity | −12 % to +16 % around the light-text and the dark-text median (one capture-wide median: up to +26 %) |
+Since the measurement above, the kit's base stylesheet sets `-webkit-font-smoothing: antialiased` on `:root` and lint
+U-CSS-038 requires it, so designs render in Chromium the way Unity draws text. The thresholds come from a second
+measurement with that rule: [`text-ink/ink.html`](text-ink/ink.html) (regenerated from the current table, font sizes
+and line heights in multiples of 4 px), every kit style in the three columns, 126 lines per viewport, 2560 / 1920 /
+1280.
 
+| Device px | Ink colour ΔE2000, largest (white / dark / cyan) | Ink amount, Unity ÷ design (white / dark / cyan) |
+|---|---|---|
+| 6 | 6.11 / 8.23 / 5.31 | 0.99–1.04 / 0.96–1.08 / 1.00–1.08 |
+| 8 | 1.17 / 2.12 / 1.86 | 0.94–0.96 / 0.92–0.93 / 0.95–0.96 |
+| 9 | 0.47 / 1.04 / 0.62 | 0.99–1.00 / 0.99 / 1.00 |
+| 12 | 0.41 / 0.93 / 0.66 | 0.94–0.96 / 0.94–0.96 / 0.95–0.97 |
+| 16–64 | 0 | 0.96–0.99 |
+
+Per capture and polarity, a line's ink amount lies within −5 % and +11.7 % of the median (the extremes are 6 px
+bold). The first, smoothing-off comparison of section 1 gave up to 1.26 at 9 px.
+
+| Key | Value | Measured, margin |
+|---|---|---|
+| `textInkDeltaE`, `textInkFullPx` | 2 from 9 device px | 1.26 at most; +0.74 |
+| `textInkDeltaESmall` | 8 px: 3; below: 10 | 2.12 at 8 px, 8.23 at 6 px; about +0.9 and +1.8 |
+| `textInkRatio`, `textInkCoverage` | 1, ±10 %: 0.90–1.10× | 0.92–1.08×; 0.02 each side |
+| `textInkMedianTolerance` | ±15 % of the median of the capture's text of the same polarity | −5 % to +11.7 %; +3.3 points |
+
+- Size-dependent limits remain only below 9 device px, where no stem pixel is fully covered (the kit's smallest style,
+  12 px, is 6 device px at 1280).
 - The font size is the element's `font-size` in the capture (the IR's layer that holds) times the capture scale; an
-  export without IR uses the line box height ÷ 1.25.
-- The median comparison groups lines by polarity (ink lighter or darker than its background), because the smoothing
-  thickens light text more: one capture-wide median put correct dark text 26 % above it.
-- What the calibration still catches: a wrong hue or a clearly wrong lightness at any size (yellow drawn for white is
-  ΔE 29), any colour error on text of 14 device px and more, a regular face drawn where the design has bold (0.74× of
-  the bold ink in Chromium; with the renderer's own ratio below the band's 0.65×) and a wrong size. What it gives up: a
-  slightly lighter or darker text colour on text below 12 device px.
-- Effect on the screens measured before: `squad` and `effects` pass at all three viewports (their only failures were
-  small-text ink); `clock` still fails only in its `busy` state, whose keyframe animation is not played yet.
+  export without IR uses ¾ of the line box height (never more than the size for the kit's ratios 1.25 and 4/3).
+- The polarity split of the median no longer changes anything measurable (light and dark medians are 0.97–0.98 and
+  0.97–0.98); it stays because other fonts may differ by polarity.
+- What it catches now: any colour error above ΔE 2 on text of 9 device px and more, above 3 at 8 px; a regular face
+  drawn for bold (0.74× the ink) and a wrong size fall below the 0.90× band.
+- Under the first calibration (macOS smoothing on) the limits were ΔE 3 from 14 px, 5 / 10 / 14 below, the ink band
+  0.65–1.15× and the median ±20 %; they are superseded.
 
 ## 5. Other differences the fixture exposed
 
