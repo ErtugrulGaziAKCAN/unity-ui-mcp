@@ -5,6 +5,7 @@ import { readTextStyles, type TextStyle } from "../lint/text-styles.js";
 import { readKitComponents, type KitComponent } from "./components.js";
 import { LICENCE_FILE, readKitFontFiles, type KitFontFile } from "./kitFonts.js";
 import { DEFAULT_TITLE, kitStylesheetFrom, renderRules, tokensCssBlock } from "./rulesDoc.js";
+import { assertWholeDevicePixels } from "./textStyles.js";
 import { readKitTokens, type KitToken } from "./tokens.js";
 
 /**
@@ -218,8 +219,11 @@ export function coverHtml(title: string, tokens: readonly KitToken[]): string {
 }
 
 /** A component card's preview: the marker line, then the component's screen with the kit tokens inlined at the top of its style. */
+/** A value for the @dsCard marker: no quote that ends the attribute, no `--` that ends the comment. */
+const markerValue = (s: string) => s.replace(/"/g, "'").replace(/-{2,}/g, "–").replace(/[<>]/g, "");
+
 export function previewHtml(c: KitComponent, screenHtml: string, tokens: readonly KitToken[]): string {
-  const marker = `<!-- @dsCard group="${c.group}" width=2560 height=1440 subtitle="${c.summary.replace(/"/g, "'")}" -->`;
+  const marker = `<!-- @dsCard group="${markerValue(c.group)}" width=2560 height=1440 subtitle="${markerValue(c.summary)}" -->`;
   const i = screenHtml.indexOf("<style>");
   const body = i < 0 ? screenHtml : screenHtml.slice(0, i + 7) + "\n" + tokensCssBlock(tokens) + screenHtml.slice(i + 7);
   return `${marker}\n${body}`;
@@ -235,6 +239,7 @@ export function writeClaudeDesignSystem(kitDir: string, outDir: string, opts: Cl
   if (!faces || faces.length === 0) throw new Error(`the kit at ${kit.dir} has no synced fonts (${kit.fontsCss}): run kit sync in the Unity project first, so the design system carries the font files Unity renders with`);
   const tokens = readKitTokens(kit);
   const styles = readTextStyles(kit);
+  assertWholeDevicePixels(styles, kit);
   const components = readKitComponents(kit.dir);
 
   // everything is read and rendered before anything is written
@@ -245,7 +250,11 @@ export function writeClaudeDesignSystem(kitDir: string, outDir: string, opts: Cl
   if (problems.length) throw new Error(`tokens.json would lose entries in the Design System: ${problems.join("; ")}`);
   files.push(["tokens.json", JSON.stringify(tokensJson, null, 2) + "\n"]);
   const fontDir = path.join(kit.dir, path.dirname(kit.fontsCss));
+  const byName = new Map<string, string>();
   for (const f of Array.from(new Set(faces.map((x) => x.file)))) {
+    const other = byName.get(path.basename(f));
+    if (other) throw new Error(`font files ${other} and ${f} share the name ${path.basename(f)}; the design system keeps fonts in one folder`);
+    byName.set(path.basename(f), f);
     const src = path.join(kit.dir, f);
     if (!fs.existsSync(src)) throw new Error(`font file ${f} named in ${kit.fontsCss} is missing`);
     files.push([`fonts/${path.basename(f)}`, fs.readFileSync(src)]);

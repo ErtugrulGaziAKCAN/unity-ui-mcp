@@ -89,7 +89,7 @@ use the command runner with projects whose `design-ui.config.json` you trust.
 
 | Tool | Does | This version |
 |---|---|---|
-| `design_ui_rules` | Design contract: kit rules, attributes, text styles, fonts, allowed CSS, lint rules (also resource `design-ui://rules`) | live |
+| `design_ui_rules` | Design contract: the kit's `RULES.md` plus the same rules, allowed CSS, text styles and fonts as compact JSON; `section` returns one part (also resource `design-ui://rules`) | live |
 | `design_ui_list` | Screens under `designRoot` with their state, and the Unity bridge state | live |
 | `design_ui_lint` | Lints a design folder, `.html`, `.dc.html` or `.zip` in Chromium with the kit fonts | live |
 | `design_ui_status` | Server capabilities, or one screen's hashes, last import and verdict | live |
@@ -182,7 +182,8 @@ its Assembly Definition References (the compiler stops with an error naming the 
   screen with its guidelines (`<name>.md`); `components.json` names and groups them.
 - `fixtures/fidelity/`: one screen per feature group (layout, text styles, colours and gradients, shadows, radii and
   borders, filters, states, pseudo-states, controls, text shadow, object fit, icons, transitions, keyframes) for the
-  fidelity suite. The filters screen lints clean only once `filterFunctions` lists the functions it uses.
+  fidelity suite. `pending.json` lists screens the suite skips for now, with the reason: the filters screen fails lint
+  (U-CSS-015) until `css-support.json` enables the filter functions it uses.
 - `fonts/` is written by kit sync from the Unity project; the kit has no fonts until a sync ran.
 
 `design-export kit build design-kit` regenerates `base.css`, `RULES.md` and the base block of every kit page after a

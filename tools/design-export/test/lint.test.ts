@@ -99,7 +99,7 @@ describe("lint engine", () => {
   const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "lint-"));
   const write = (dir: string, body: string, css = "") => {
     const p = path.join(dir, "s.html");
-    fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0} *,*::before,*::after{box-sizing:border-box}
+    fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
       .screen{display:flex;flex-direction:column;width:2560px;height:1440px;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff}
       p{margin:0}${css}</style></head><body><div class="screen" data-u-screen="s">${body}</div></body></html>`);
     return p;
@@ -246,7 +246,7 @@ describe("collectSnapshot", () => {
         `<div class="row"${i === 0 ? ' data-u-repeat="rows"' : ""} data-u-id="row"><p data-u-id="name" data-u-bind="name">Oyuncu ${i}</p>` +
         `<p data-l10n="big.role" data-en="Role">Rol</p><div class="dot"></div></div>`).join("\n");
       const p = path.join(dir, "big.html");
-      fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0} *,*::before,*::after{box-sizing:border-box}
+      fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
         .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
         .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:1px solid #16c2d5}
         .row:hover{background-color:#123c47} p{margin:0;flex-shrink:0} .dot{width:8px;height:8px;border-radius:4px;background-color:#16c2d5}

@@ -26,7 +26,7 @@ When a screen is drawn in Claude Design, the kit is attached as a Design System 
 
 ## Base stylesheet
 
-`base.css` (generated from `text-styles.json`). Copy it unchanged to the top of every screen's style. It turns on grayscale font smoothing on the root (`-webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale`), so browsers on macOS draw glyph stems as thin as UI Toolkit does; writes out every browser default lint would report (U-CSS-026); sizes every box as `border-box` (U-CSS-036); sets the kit font with the `label` style as the page default; and defines one class per text style. The kit's tokens (`tokens.css`) are loaded by the exporter; a Claude Design artboard pastes them too.
+`base.css` (generated from `text-styles.json`). Copy it unchanged to the top of every screen's style. It turns on grayscale font smoothing on the root (`-webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale`), so browsers on macOS draw glyph stems as thin as UI Toolkit does (lint requires it on every text, U-CSS-038); writes out every browser default lint would report (U-CSS-026); sizes every box as `border-box` (U-CSS-036); sets the kit font with the `label` style as the page default; and defines one class per text style. The kit's tokens (`tokens.css`) are loaded by the exporter; a Claude Design artboard pastes them too.
 
 ```css
 /* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
@@ -42,20 +42,20 @@ a { color: inherit; text-decoration: none; }
 button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
 textarea { resize: none; }
 ::placeholder { color: var(--color-text-muted); }
-.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
-.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
+.text-caption { font-size: 12px; line-height: 16px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 16px; font-weight: 700; }
 .text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
 .text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
-.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
-.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
-.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
-.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
-.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
-.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
-.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
-.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
-.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
-.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
+.text-subtitle-bold { font-size: 32px; line-height: 40px; font-weight: 700; }
+.text-title { font-size: 36px; line-height: 48px; font-weight: 400; }
+.text-title-bold { font-size: 36px; line-height: 48px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 60px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 60px; font-weight: 700; }
+.text-display { font-size: 64px; line-height: 80px; font-weight: 400; }
+.text-display-bold { font-size: 64px; line-height: 80px; font-weight: 700; }
 /* kit-base: end */
 ```
 
@@ -86,20 +86,20 @@ Every text uses exactly one of these size / line-height / weight combinations (U
 
 | Style | Class | font-size (px) | line-height (px) | font-weight |
 |---|---|---|---|---|
-| caption | `.text-caption` | 12 | 15 | 400 |
-| caption-bold | `.text-caption-bold` | 12 | 15 | 700 |
+| caption | `.text-caption` | 12 | 16 | 400 |
+| caption-bold | `.text-caption-bold` | 12 | 16 | 700 |
 | label | `.text-label` | 16 | 20 | 400 |
 | label-bold | `.text-label-bold` | 16 | 20 | 700 |
-| body | `.text-body` | 24 | 30 | 400 |
-| body-bold | `.text-body-bold` | 24 | 30 | 700 |
-| subtitle | `.text-subtitle` | 28 | 35 | 400 |
-| subtitle-bold | `.text-subtitle-bold` | 28 | 35 | 700 |
-| title | `.text-title` | 32 | 36 | 400 |
-| title-bold | `.text-title-bold` | 32 | 36 | 700 |
-| headline | `.text-headline` | 48 | 54 | 400 |
-| headline-bold | `.text-headline-bold` | 48 | 54 | 700 |
-| display | `.text-display` | 56 | 63 | 400 |
-| display-bold | `.text-display-bold` | 56 | 63 | 700 |
+| body | `.text-body` | 24 | 32 | 400 |
+| body-bold | `.text-body-bold` | 24 | 32 | 700 |
+| subtitle | `.text-subtitle` | 32 | 40 | 400 |
+| subtitle-bold | `.text-subtitle-bold` | 32 | 40 | 700 |
+| title | `.text-title` | 36 | 48 | 400 |
+| title-bold | `.text-title-bold` | 36 | 48 | 700 |
+| headline | `.text-headline` | 48 | 60 | 400 |
+| headline-bold | `.text-headline-bold` | 48 | 60 | 700 |
+| display | `.text-display` | 64 | 80 | 400 |
+| display-bold | `.text-display-bold` | 64 | 80 | 700 |
 
 UI Toolkit cannot set a line height, so the kit's Unity font twins carry each style's CSS line box (whole pixels at every supported viewport): a text block is exactly lines × line height tall on both sides. Weights are 400 and 700 only, each with a real face in the reference locale's font (U-FONT-001); no italic unless the kit font has an italic face. Inside one line of text, `<b>`/`<strong>` and `<span>` with another colour or kit size are rich text; `<br>` breaks the line. The table is `text-styles.json`; every listing of it (this table, the base stylesheet's classes, the design system's type styles) is generated from that file.
 
@@ -115,61 +115,61 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 
 | Token | Value | Use |
 |---|---|---|
-| `var(--color-surface-900)` | `#0b1f26` | Screen background. |
-| `var(--color-surface-800)` | `#0f2a33` | Panels and sidebars on the screen background. |
-| `var(--color-surface-700)` | `#123c47` | Raised surfaces: cards, controls, list rows. |
-| `var(--color-surface-600)` | `#19505d` | Hover on raised surfaces. |
-| `var(--color-surface-500)` | `#216372` | Pressed raised surfaces, selected rows. |
-| `var(--color-line)` | `#2b6573` | Borders and dividers. |
-| `var(--color-text-primary)` | `#ffffff` | Primary text on every surface. |
-| `var(--color-text-secondary)` | `#b9d0d6` | Secondary text, captions. |
-| `var(--color-text-muted)` | `#86a7b0` | Placeholders and disabled text. |
-| `var(--color-accent)` | `#16c2d5` | Primary actions, the checked toggle, the selected tab. |
-| `var(--color-accent-hover)` | `#3fd3e3` | Hover on accent surfaces. |
-| `var(--color-accent-pressed)` | `#0f9fb0` | Pressed accent surfaces. |
-| `var(--color-on-accent)` | `#06171c` | Text and icons on accent surfaces. |
-| `var(--color-focus)` | `#9be9f2` | Focus rings (a border, UI Toolkit has no outline). |
-| `var(--color-positive)` | `#3ccf7a` | Positive values and success states. |
-| `var(--color-warning)` | `#f2b544` | Warnings. |
-| `var(--color-negative)` | `#f0605d` | Errors, destructive actions, negative values. |
-| `var(--color-negative-hover)` | `#f47d7a` | Hover on destructive actions. |
-| `var(--color-negative-pressed)` | `#d94a47` | Pressed destructive actions. |
-| `var(--color-scrim)` | `rgba(3, 12, 15, 0.72)` | Backdrop behind dialogs. |
+| `--color-surface-900` | `#0b1f26` | Screen background. |
+| `--color-surface-800` | `#0f2a33` | Panels and sidebars on the screen background. |
+| `--color-surface-700` | `#123c47` | Raised surfaces: cards, controls, list rows. |
+| `--color-surface-600` | `#19505d` | Hover on raised surfaces. |
+| `--color-surface-500` | `#216372` | Pressed raised surfaces, selected rows. |
+| `--color-line` | `#2b6573` | Borders and dividers. |
+| `--color-text-primary` | `#ffffff` | Primary text on every surface. |
+| `--color-text-secondary` | `#b9d0d6` | Secondary text, captions. |
+| `--color-text-muted` | `#86a7b0` | Placeholders and disabled text. |
+| `--color-accent` | `#16c2d5` | Primary actions, the checked toggle, the selected tab. |
+| `--color-accent-hover` | `#3fd3e3` | Hover on accent surfaces. |
+| `--color-accent-pressed` | `#0f9fb0` | Pressed accent surfaces. |
+| `--color-on-accent` | `#06171c` | Text and icons on accent surfaces. |
+| `--color-focus` | `#9be9f2` | Focus rings (a border, UI Toolkit has no outline). |
+| `--color-positive` | `#3ccf7a` | Positive values and success states. |
+| `--color-warning` | `#f2b544` | Warnings. |
+| `--color-negative` | `#f0605d` | Errors, destructive actions, negative values. |
+| `--color-negative-hover` | `#f47d7a` | Hover on destructive actions. |
+| `--color-negative-pressed` | `#d94a47` | Pressed destructive actions. |
+| `--color-scrim` | `rgba(3, 12, 15, 0.72)` | Backdrop behind dialogs. |
 
 **Spacing**
 
 | Token | Value | Use |
 |---|---|---|
-| `var(--space-1)` | `4px` | Icon gaps, hairline insets. |
-| `var(--space-2)` | `8px` | Gaps inside controls. |
-| `var(--space-3)` | `12px` | Control padding. |
-| `var(--space-4)` | `16px` | Gaps between controls, card padding. |
-| `var(--space-6)` | `24px` | Section gaps, dialog padding. |
-| `var(--space-8)` | `32px` | Screen padding. |
-| `var(--space-12)` | `48px` | Large section gaps. |
+| `--space-1` | `4px` | Icon gaps, hairline insets. |
+| `--space-2` | `8px` | Gaps inside controls. |
+| `--space-3` | `12px` | Control padding. |
+| `--space-4` | `16px` | Gaps between controls, card padding. |
+| `--space-6` | `24px` | Section gaps, dialog padding. |
+| `--space-8` | `32px` | Screen padding. |
+| `--space-12` | `48px` | Large section gaps. |
 
 **Radii**
 
 | Token | Value | Use |
 |---|---|---|
-| `var(--radius-sm)` | `4px` | Small controls: checkboxes, tags. |
-| `var(--radius-md)` | `8px` | Buttons, fields, list rows. |
-| `var(--radius-lg)` | `16px` | Cards and dialogs. |
+| `--radius-sm` | `4px` | Small controls: checkboxes, tags. |
+| `--radius-md` | `8px` | Buttons, fields, list rows. |
+| `--radius-lg` | `16px` | Cards and dialogs. |
 
 **Shadows**
 
 | Token | Value | Use |
 |---|---|---|
-| `var(--shadow-raised)` | `0 2px 4px rgba(0, 0, 0, 0.3)` | Controls that sit above the surface. |
-| `var(--shadow-card)` | `0 8px 24px rgba(0, 0, 0, 0.4)` | Cards. |
-| `var(--shadow-dialog)` | `0 24px 64px rgba(0, 0, 0, 0.5)` | Dialogs above the scrim. |
-| `var(--shadow-well)` | `inset 0 2px 4px rgba(0, 0, 0, 0.4)` | Sunken wells (never on an element with its own text). |
+| `--shadow-raised` | `0 2px 4px rgba(0, 0, 0, 0.3)` | Controls that sit above the surface. |
+| `--shadow-card` | `0 8px 24px rgba(0, 0, 0, 0.4)` | Cards. |
+| `--shadow-dialog` | `0 24px 64px rgba(0, 0, 0, 0.5)` | Dialogs above the scrim. |
+| `--shadow-well` | `inset 0 2px 4px rgba(0, 0, 0, 0.4)` | Sunken wells (never on an element with its own text). |
 
 **Font families**
 
 | Token | Value | Use |
 |---|---|---|
-| `var(--font-ui)` | `"Inter UI"` | The kit font family (font files come from the Unity project through kit sync). |
+| `--font-ui` | `"Inter UI"` | The kit font family (font files come from the Unity project through kit sync). |
 
 ## Layout
 
@@ -194,7 +194,7 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 - `linear-gradient()` and `radial-gradient()` are baked into a vector image that fills the element; colour stops at least 1/64 of the gradient line apart (U-CSS-022), sRGB stops only (U-CSS-014). One background image per element (U-CSS-037).
 - `text-shadow`: one shadow, `x y blur colour` (several are U-CSS-023). `border-style`: `solid` or `none` (U-CSS-021). Corner radii are circular, one px value per corner (U-CSS-020; % only on squares, a pill uses half the height).
 - `object-fit`: `fill`, `contain` or `cover`, centred, on images. Icons are inline `<svg>`: paint every shape with `currentColor` to follow the text colour in every state, or every shape with fixed colours (U-CSS-031).
-- `filter`: only the functions the kit enables in `kit.config.json` `filterFunctions` (U-CSS-015); currently none, until a function passes the fidelity suite. No `backdrop-filter` (U-CSS-007), no `outline` (draw focus with a border).
+- `filter`: only the functions css-support.json enables, each once its fidelity fixture passes in Unity (U-CSS-015; `kit.config.json` `filterFunctions` mirrors the list); currently none. No `backdrop-filter` (U-CSS-007), no `outline` (draw focus with a border).
 
 ## Animation
 
@@ -311,9 +311,6 @@ Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `
 
 **Accepted and left out of USS (baked by the exporter, or no effect in UI Toolkit):**
 
-- `-webkit-font-smoothing`
-- `-webkit-tap-highlight-color`
-- `-webkit-text-size-adjust`
 - `appearance`: none
 - `background-image`: none (comma list)
 - `border-bottom-style`: solid | none
@@ -323,33 +320,20 @@ Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `
 - `border-top-style`: solid | none
 - `box-shadow` (U-CSS-014)
 - `box-sizing`: border-box | content-box
-- `cursor`
-- `justify-items`
-- `justify-self`
 - `line-height` (U-CSS-016)
 - `list-style-image` (U-CSS-002)
 - `list-style-position` (U-CSS-002)
 - `list-style-type` (U-CSS-002)
 - `object-position`: center | 50%
-- `outline-color`
-- `outline-offset`
 - `outline-style`: none
 - `outline-width`: 0 | 0px | medium
 - `resize`: none
-- `text-rendering`
-- `text-size-adjust`
 - `transition-behavior`: normal (comma list)
-- `user-select`
-- `will-change`
+- any value: `-webkit-font-smoothing`, `-webkit-tap-highlight-color`, `-webkit-text-size-adjust`, `cursor`, `justify-items`, `justify-self`, `outline-color`, `outline-offset`, `text-rendering`, `text-size-adjust`, `user-select`, `will-change`
 
 **Never supported:**
 
-- `backdrop-filter`: U-CSS-007. Remove backdrop-filter; use a semi-transparent background colour or a pre-blurred image.
-- `content`: U-CSS-002. Use a real element instead of generated content (::before/::after content, list markers): an icon, bullet or divider element; set list-style: none on list items.
-- `filter`: U-CSS-015. Remove it, or list the function in kit.config.json filterFunctions once it passes the fidelity suite.
-- `float`: U-CSS-017. Use flex layout instead of float.
-- `outline`: U-CSS-023. Use a border, or draw the focus ring with an element; UI Toolkit has no outline.
-- `text-transform`: U-CSS-023. Write the text in its final case; UI Toolkit has no text-transform.
+- `backdrop-filter` (U-CSS-007), `content` (U-CSS-002), `filter` (U-CSS-015), `float` (U-CSS-017), `outline` (U-CSS-023), `text-transform` (U-CSS-023): the rule's fix is in the lint table
 
 **Units:** `px`, `%`, `deg`, `rad`, `grad`, `turn`, `s`, `ms`, `rem`. **Colours:** hex, `rgb()`, `rgba()`, `hsl()`, `hsla()`, keywords `transparent`, `white`, `black`, `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `gray`, `grey`, `orange`, `purple`, `pink`, `brown`, `silver`, `gold`, `navy`, `teal`, `lime`, `maroon`, `olive`, `aqua`, `fuchsia`.
 **Value functions:** `var()`, `rgb()`, `rgba()`, `hsl()`, `hsla()`, `linear-gradient()`, `radial-gradient()`, `url()`. **Transform functions:** `translate`, `translatex`, `translatey`, `scale`, `scalex`, `scaley`, `rotate`.
@@ -378,7 +362,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-012 | error | `@media` features other than min/max-width and min/max-aspect-ratio, media types other than screen/all, `not` | the allowed features only |
 | U-CSS-013 | error | `@keyframes` animating properties other than transform, translate, rotate, scale, opacity and colours | animate allowed properties |
 | U-CSS-014 | error | a transition of `box-shadow` or `background-image`, a url() image beside another image, a gradient that does not fill the element or uses a colour space | transition opacity or transform; one image per element; gradients over the whole element in sRGB stops |
-| U-CSS-015 | error | a `filter` function not enabled in the kit (`filterFunctions`) | remove the filter |
+| U-CSS-015 | error | a `filter` function css-support.json does not enable (one is enabled once its fidelity fixture passes in Unity) | remove the filter |
 | U-CSS-016 | error | text size, line height or weight that is not a kit text style | the nearest kit text style (a `.text-<style>` class) |
 | U-CSS-017 | error | `position: fixed/sticky`, `float` | absolute positioning or flex |
 | U-CSS-018 | error | `baseline` in align-items/align-self/align-content | flex-start, center or flex-end (top margin to line up baselines) |
@@ -401,6 +385,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-035 | error | an absolute element whose parent is static, or that changes position between layers | `position: relative` on the parent; one position in every layer |
 | U-CSS-036 | error | `box-sizing: content-box` on an element with a width or height and padding or border | `box-sizing: border-box` (the kit base stylesheet sets it everywhere) |
 | U-CSS-037 | error | baked effects that cannot share one element: an inset shadow under the element's own text, on a form control or a scroll area; a url() image beside a gradient or only in a layer; a background image or inset shadow on a tintable icon | move the text, image, gradient or icon into a child element, or the shadow onto a wrapper |
+| U-CSS-038 | error | text that renders without `-webkit-font-smoothing: antialiased` (macOS browsers then thicken glyph stems, which UI Toolkit does not) | the kit base stylesheet (it sets the smoothing on `:root`); never override it on text |
 | U-DC-001 | error | `{{…}}` holes in a Claude Design artboard | static sample text |
 | U-DC-002 | error | `<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import` | write rows out, `data-u-repeat` on the first |
 | U-DC-003 | error | UI built by script | static markup |
@@ -453,7 +438,7 @@ Each component is a lint-clean screen in `components/` with its guidelines next 
 
 ## Example
 
-A complete screen that lints clean:
+A complete screen; with the base stylesheet pasted at the marked line it lints clean:
 
 ```html
 <!doctype html>
@@ -462,34 +447,7 @@ A complete screen that lints clean:
 <meta charset="utf-8">
 <title>squad.overview</title>
 <style>
-/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
-:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-*, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; }
-body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
-body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
-h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
-b, strong { font-weight: 700; }
-ul, ol { list-style: none; }
-a { color: inherit; text-decoration: none; }
-button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
-textarea { resize: none; }
-::placeholder { color: var(--color-text-muted); }
-.text-caption { font-size: 12px; line-height: 15px; font-weight: 400; }
-.text-caption-bold { font-size: 12px; line-height: 15px; font-weight: 700; }
-.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
-.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
-.text-body { font-size: 24px; line-height: 30px; font-weight: 400; }
-.text-body-bold { font-size: 24px; line-height: 30px; font-weight: 700; }
-.text-subtitle { font-size: 28px; line-height: 35px; font-weight: 400; }
-.text-subtitle-bold { font-size: 28px; line-height: 35px; font-weight: 700; }
-.text-title { font-size: 32px; line-height: 36px; font-weight: 400; }
-.text-title-bold { font-size: 32px; line-height: 36px; font-weight: 700; }
-.text-headline { font-size: 48px; line-height: 54px; font-weight: 400; }
-.text-headline-bold { font-size: 48px; line-height: 54px; font-weight: 700; }
-.text-display { font-size: 56px; line-height: 63px; font-weight: 400; }
-.text-display-bold { font-size: 56px; line-height: 63px; font-weight: 700; }
-/* kit-base: end */
+/* paste the base stylesheet from above here, unchanged */
 .screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 64px; background-color: var(--color-surface-900); }
 .heading { margin-bottom: 32px; }
 .start { display: flex; flex-direction: row; align-items: center; justify-content: center; height: 64px; padding: 0 32px; margin-bottom: 32px; align-self: flex-start; border-radius: var(--radius-md); background-color: var(--color-accent); color: var(--color-on-accent); }

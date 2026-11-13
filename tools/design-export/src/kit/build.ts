@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readKit } from "../kit.js";
+import { enabledFilterFunctions } from "../lint/allowed-css.js";
 import { readTextStyles } from "../lint/text-styles.js";
 import { renderBaseCss, withBaseBlock } from "./baseCss.js";
 import { renderRules } from "./rulesDoc.js";
+import { assertWholeDevicePixels } from "./textStyles.js";
 
 /**
  * Kit build: regenerates what the kit derives from its sources and the lint's data, so nothing drifts:
@@ -24,11 +26,20 @@ function pages(dir: string): string[] {
 
 export function buildKit(kitDir: string, opts: { check?: boolean } = {}): KitBuildResult {
   const kit = readKit(kitDir);
-  const base = renderBaseCss(readTextStyles(kit));
+  const styles = readTextStyles(kit);
+  assertWholeDevicePixels(styles, kit);
+  const base = renderBaseCss(styles);
   const outputs: [string, string][] = [
     ["base.css", base],
     ["RULES.md", renderRules(kit, "kit")],
   ];
+  // kit.config.json's filterFunctions mirror css-support.json (U-CSS-015 reads only that); the other keys stay as written
+  const cfgFile = path.join(kit.dir, "kit.config.json");
+  const cfgText = fs.readFileSync(cfgFile, "utf8");
+  const filters = enabledFilterFunctions();
+  if (JSON.stringify(JSON.parse(cfgText).filterFunctions) !== JSON.stringify(filters)) {
+    outputs.push(["kit.config.json", cfgText.replace(/"filterFunctions"\s*:\s*\[[^\]]*\]/, `"filterFunctions":${JSON.stringify(filters)}`)]);
+  }
   for (const file of [...pages(path.join(kit.dir, "components")), ...pages(path.join(kit.dir, "fixtures"))]) {
     const next = withBaseBlock(fs.readFileSync(file, "utf8"), base);
     if (next !== null) outputs.push([path.relative(kit.dir, file).split(path.sep).join("/"), next]);

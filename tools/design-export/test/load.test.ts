@@ -49,7 +49,7 @@ describe("unwrapDcHtml", () => {
   it("moves helmet to head, x-dc to body, drops runtime, rewrites blobs", () => {
     const { html, dynamic } = unwrapDcHtml(src, blobs);
     const [head, body] = html.split("<body");
-    expect(head).toContain("<style>body{margin:0");
+    expect(head).toContain("<style>:root{-webkit-font-smoothing:antialiased}body{margin:0");
     expect(head).toContain("url(assets/logo.png)");
     expect(body).toContain('id="root"');
     expect(html).not.toContain("support.js");

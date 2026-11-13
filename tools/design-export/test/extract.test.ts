@@ -298,7 +298,7 @@ describe("buildIr: animations", () => {
 describe("buildIr: layers, text runs and lossless values", () => {
   const write = (css: string, body: string) => {
     const p = path.join(tmp(), "s.html");
-    fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}
+    fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0}
       .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
       p{margin:0}${css}</style></head><body><div class="screen" data-u-screen="s">${body}</div></body></html>`);
     return p;
@@ -500,7 +500,7 @@ describe("buildIr: speed", () => {
       `<div class="row" data-u-id="row-${i}"><p data-u-id="name-${i}" data-u-bind="name-${i}">Oyuncu ${i}</p>` +
       `<p data-l10n="big.role" data-en="Role">Rol <b>A</b></p><div class="dot"></div></div>`).join("\n");
     const p = path.join(tmp(), "big.html");
-    fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0} *,*::before,*::after{box-sizing:border-box}
+    fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
       .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
       .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:1px solid #16c2d5;transition:background-color 150ms ease}
       .row:hover{background-color:#123c47} p{margin:0;flex-shrink:0} .dot{width:8px;height:8px;border-radius:4px;background-color:#16c2d5}

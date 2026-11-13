@@ -135,6 +135,7 @@ export const SNAP_COMPUTED = [
   "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
   "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius",
   "padding-top", "padding-right", "padding-bottom", "padding-left", "margin-top", "margin-right", "margin-bottom", "margin-left",
+  "-webkit-font-smoothing",
 ] as const;
 
 const PSEUDO_PROPS = ["content", "display", "font-family", "font-size", "line-height", "font-weight", "font-style", "color"];

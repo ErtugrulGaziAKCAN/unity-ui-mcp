@@ -130,18 +130,75 @@ describe("server surface", () => {
   });
 });
 
+const REPO_KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../design-kit");
+
 describe("design_ui_rules", () => {
-  it("returns RULES.md, the allowed CSS, attributes, text styles, fonts and every lint rule", async () => {
+  /** The two text parts of an answer: the Markdown contract and the compact machine JSON. */
+  const parts = (r: { content: unknown }) => (r.content as { type: string; text: string }[]).map((c) => c.text);
+  const headings = (md: string) => md.split("\n").filter((l) => l.startsWith("## "));
+
+  it("returns the kit's RULES.md once plus one compact JSON: rules with severity and fix, allowed CSS, text styles, fonts", async () => {
     const p = tempProject();
+    p.writeConfig({ kitDir: REPO_KIT });
     const r = await call(await serverFor(p.dir), "design_ui_rules");
     expect(r.isError).toBeFalsy();
-    expect(r.text).toContain("U-CSS-001");
-    for (const rule of RULES) expect(r.text).toContain(rule.id);
-    expect(r.text).toContain("data-u-screen");
-    expect(r.text).toContain("label-bold");
-    expect(r.text).toContain("Inter UI");
-    expect(r.text).toMatch(/display/);
+    const [md, json] = parts(r);
+    expect(md).toContain(fs.readFileSync(path.join(REPO_KIT, "RULES.md"), "utf8").trim());
+    const hs = headings(md);
+    expect(new Set(hs).size).toBe(hs.length); // no section twice
+    const data = JSON.parse(json);
+    expect(Object.keys(data.rules)).toEqual(RULES.map((x) => x.id));
+    for (const [id, [severity, fix]] of Object.entries(data.rules) as [string, [string, string]][]) {
+      expect(severity).toBe(RULES.find((x) => x.id === id)!.severity);
+      expect(fix.length).toBeGreaterThan(0);
+    }
+    expect(data.css.properties.direct).toContain("width");
+    expect(data.css.properties.rejected.filter).toBe("U-CSS-015");
+    expect(data.textStyles).toContainEqual({ name: "body", fontSize: 24, lineHeight: 32, weight: 400, class: ".text-body" });
+    expect(json).not.toContain("\n  "); // compact
+    expect(r.data.rulesSource).toBe("file");
+    expect(r.data.sections).toContain("text-styles");
     expect(r.data.timings.total).toBeGreaterThanOrEqual(0);
+  });
+
+  it("stays well under the old 60 KB answer", async () => {
+    const p = tempProject();
+    p.writeConfig({ kitDir: REPO_KIT });
+    const r = await call(await serverFor(p.dir), "design_ui_rules");
+    const size = parts(r).join("\n").length;
+    expect(size).toBeLessThan(50_000);
+  });
+
+  it("a kit without RULES.md gets one generated from its own files, never the repository's text styles", async () => {
+    const p = tempProject(); // the lint test kit: no RULES.md, the previous text-style table (caption 12/15)
+    const r = await call(await serverFor(p.dir), "design_ui_rules");
+    const [md, json] = parts(r);
+    expect(r.data.rulesSource).toBe("generated");
+    expect(md).toContain("| caption | `.text-caption` | 12 | 15 | 400 |");
+    expect(md).not.toContain("| caption | `.text-caption` | 12 | 16 | 400 |");
+    for (const rule of RULES) expect(md).toContain(rule.id);
+    expect(md).toContain("data-u-screen");
+    expect(JSON.parse(json).textStyles).toContainEqual({ name: "caption", fontSize: 12, lineHeight: 15, weight: 400, class: ".text-caption" });
+    expect(JSON.parse(json).fonts).toMatchObject({ "Inter UI": ["400", "700"] });
+    const hs = headings(md);
+    expect(new Set(hs).size).toBe(hs.length);
+  });
+
+  it("answers one section: a Markdown section by name, or only the JSON; an unknown name lists the sections", async () => {
+    const p = tempProject();
+    p.writeConfig({ kitDir: REPO_KIT });
+    const client = await serverFor(p.dir);
+    const ts = await call(client, "design_ui_rules", { section: "text-styles" });
+    expect(ts.isError).toBeFalsy();
+    expect(parts(ts)).toHaveLength(1);
+    expect(parts(ts)[0].startsWith("## Text styles")).toBe(true);
+    expect(parts(ts)[0]).not.toContain("## Lint rules");
+    const js = await call(client, "design_ui_rules", { section: "json" });
+    expect(parts(js)).toHaveLength(1);
+    expect(Object.keys(JSON.parse(parts(js)[0]).rules)).toHaveLength(RULES.length);
+    const bad = await call(client, "design_ui_rules", { section: "nope" });
+    expect(bad.isError).toBe(true);
+    expect(bad.text).toMatch(/lint-rules/);
   });
 
   it("has a summary only for rules the linter has", () => {

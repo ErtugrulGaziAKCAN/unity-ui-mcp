@@ -172,6 +172,15 @@ export function cssSupportDataFrom(f: CssSupportFile): CssSupportData {
 export const CSS_SUPPORT_JSON: CssSupportFile = readCssSupportFile();
 export const CSS_SUPPORT_DATA: CssSupportData = cssSupportDataFrom(CSS_SUPPORT_JSON);
 
+/**
+ * The filter functions css-support.json enables (the Unity mapper writes them): `filter`'s `functions`, none while its
+ * handling is "error". The only source of U-CSS-015's allow-list; kit build mirrors it into kit.config.json.
+ */
+export function enabledFilterFunctions(f: CssSupportFile = CSS_SUPPORT_JSON): string[] {
+  const e = f.properties.filter;
+  return !e || e.handling === "error" ? [] : (e.functions ?? []).map((x) => x.toLowerCase());
+}
+
 /** U-CSS-023's fix when the property names none of its own. */
 export const GENERIC_FIX = "Remove the property or value, or express it with supported CSS: the properties, keywords and units of RULES.md in the design kit (spec §5.3); lengths in px, % or rem; colours as hex, rgb()/rgba(), hsl()/hsla() or the basic named colours.";
 

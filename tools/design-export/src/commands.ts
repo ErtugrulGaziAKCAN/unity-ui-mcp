@@ -101,10 +101,12 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
 
   kitCmd.command("claude").allowExcessArguments(false).argument("<kitDir>").argument("<outDir>")
     .option("--title <title>", "design system name", DEFAULT_TITLE).option("--by <name>", "lastChange.by of the index", "design-export")
-    .option("--force", "replace an existing <outDir>/project")
+    .option("--force", "replace an existing <outDir>/project").option("--now <iso>", "the index's createdOnFiles.at and lastChange.at (default: now)")
     .description("Write the kit as a Claude Design System artifact folder (<outDir>/project)")
-    .action(guard(async (kitDir: string, outDir: string, o: { title: string; by: string; force?: boolean }) => {
-      const r = writeClaudeDesignSystem(path.resolve(kitDir), path.resolve(outDir), { title: o.title, by: o.by, force: o.force });
+    .action(guard(async (kitDir: string, outDir: string, o: { title: string; by: string; force?: boolean; now?: string }) => {
+      const now = o.now === undefined ? undefined : new Date(o.now);
+      if (now && Number.isNaN(now.getTime())) throw new Error(`--now ${o.now} is not an ISO date`);
+      const r = writeClaudeDesignSystem(path.resolve(kitDir), path.resolve(outDir), { title: o.title, by: o.by, force: o.force, now });
       io.out(`wrote ${r.files.length} files to ${r.projectDir} (design-system.json last)\n`);
       return 0;
     }) as never);

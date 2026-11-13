@@ -1,5 +1,5 @@
 import type { KitConfig } from "../kit.js";
-import { CSS_SUPPORT_DATA, type CssSupportData, type PropertySupport } from "../lint/allowed-css.js";
+import { CSS_SUPPORT_DATA, enabledFilterFunctions, type CssSupportData, type PropertySupport } from "../lint/allowed-css.js";
 import { RULES } from "../lint/index.js";
 import { RULE_SUMMARIES } from "../lint/rule-table.js";
 import { readTextStyles, type TextStyle } from "../lint/text-styles.js";
@@ -38,7 +38,7 @@ export const MARKUP_ATTRIBUTES: { name: string; meaning: string; required: strin
 
 /** What the base stylesheet does, for both audiences. */
 const BASE_WHAT = "It turns on grayscale font smoothing on the root (`-webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale`), " +
-  "so browsers on macOS draw glyph stems as thin as UI Toolkit does; writes out every browser default lint would report (U-CSS-026); " +
+  "so browsers on macOS draw glyph stems as thin as UI Toolkit does (lint requires it on every text, U-CSS-038); writes out every browser default lint would report (U-CSS-026); " +
   "sizes every box as `border-box` (U-CSS-036); sets the kit font with the `label` style as the page default; and defines one class per text style.";
 
 const code = (xs: readonly string[]) => xs.map((x) => `\`${x}\``).join(", ");
@@ -55,8 +55,13 @@ export function allowedCssMarkdown(d: CssSupportData = CSS_SUPPORT_DATA): string
     const rule = p.rule ? ` (${p.rule})` : "";
     return `- \`${name}\`${values}${p.list ? " (comma list)" : ""}${rule}`;
   };
-  const group = (h: string) => props.filter(([, p]) => p.handling === h).map(describe);
-  const errors = props.filter(([, p]) => p.handling === "error").map(([n, p]) => `- \`${n}\`: ${p.rule ?? "U-CSS-023"}. ${p.fix ?? p.valueFix ?? ""}`.trimEnd());
+  // constrained properties one per line with their values; properties that take any value in one line
+  const group = (h: string) => {
+    const list = props.filter(([, p]) => p.handling === h);
+    const free = list.filter(([, p]) => !p.keywords?.length && !p.types?.length && !p.rule && !p.list).map(([n]) => `\`${n}\``);
+    return [...list.filter(([, p]) => p.keywords?.length || p.types?.length || p.rule || p.list).map(describe), ...(free.length ? [`- any value: ${free.join(", ")}`] : [])];
+  };
+  const errors = [`- ${props.filter(([, p]) => p.handling === "error").map(([n, p]) => `\`${n}\` (${p.rule ?? "U-CSS-023"})`).join(", ")}: the rule's fix is in the lint table`];
   return [
     "Lint is a whitelist generated from the same data the Unity style mapper reads (`css-support.json`): anything not listed here fails (U-CSS-023 for properties, keywords and units, U-CSS-024 for value functions).",
     "Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `flex`, `gap`, `inset`, `overflow`, `transition`, `animation`, `background`, `list-style`) are fine when every longhand they set is allowed.",
@@ -87,7 +92,7 @@ function tokensMarkdown(tokens: readonly KitToken[]): string {
     const list = tokens.filter((t) => t.family === fam);
     if (!list.length) continue;
     out.push(`**${FAMILY_TITLE[fam]}**`, "", "| Token | Value | Use |", "|---|---|---|",
-      ...list.map((t) => `| \`var(--${t.name})\` | \`${cell(t.value)}\` | ${cell(t.usage)} |`), "");
+      ...list.map((t) => `| \`--${t.name}\` | \`${cell(t.value)}\` | ${cell(t.usage)} |`), "");
   }
   return out.join("\n").trimEnd();
 }
@@ -178,7 +183,12 @@ const EXAMPLE_BODY = [
   "</div>",
 ];
 
-function example(audience: RulesAudience, stylesheet: string): string {
+/** The line of the example that stands for the stylesheet shown above it (no second copy in the document). */
+export const EXAMPLE_STYLESHEET_LINE = (audience: RulesAudience) =>
+  `/* paste the ${audience === "claude" ? "kit stylesheet" : "base stylesheet"} from above here, unchanged */`;
+
+function example(audience: RulesAudience): string {
+  const stylesheet = EXAMPLE_STYLESHEET_LINE(audience);
   if (audience === "kit") {
     return ["<!doctype html>", '<html lang="tr">', "<head>", '<meta charset="utf-8">', "<title>squad.overview</title>", "<style>",
       stylesheet, ...EXAMPLE_CSS, "</style>", "</head>", "<body>", ...EXAMPLE_BODY, "</body>", "</html>"].join("\n");
@@ -191,13 +201,15 @@ function example(audience: RulesAudience, stylesheet: string): string {
 
 export function renderRules(kit: KitConfig, audience: RulesAudience, opts: RulesOptions = {}): string {
   const styles = readTextStyles(kit);
-  const tokens = readKitTokens(kit);
+  let tokens: KitToken[] = [], tokenProblem: string | null = null;
+  try { tokens = readKitTokens(kit); } catch (e) { tokenProblem = (e as Error).message; }
   const components = readKitComponents(kit.dir);
   const base = renderBaseCss(styles).trimEnd();
   const [rw, rh] = kit.reference;
   const ref = `${rw}×${rh}`;
   const viewports = kit.viewports.map((v) => `${v[0]}×${v[1]}`).join(", ");
   const claude = audience === "claude";
+  const filters = enabledFilterFunctions();
   const fontTokens = tokens.filter((t) => t.family === "font");
   const fontVar = fontTokens[0] ? `var(--${fontTokens[0].name})` : "the kit family";
   const L: string[] = [];
@@ -271,7 +283,7 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
   L.push(claude
     ? "The same names and values as the kit's `tokens.css` (and `tokens.json` here); write them as `var(--name)` so a token change reaches every screen."
     : "`tokens.css`: one token per line with its use as a comment; the prefix sets the family (`color-`, `space-`, `radius-`, `shadow-`, `font-`). Write them as `var(--name)`; the exporter records the tokens a screen uses and the compiler writes them to `DesignTokens.uss`.",
-  "", tokensMarkdown(tokens));
+  "", tokenProblem ? `The kit's tokens could not be listed: ${tokenProblem}.` : tokensMarkdown(tokens));
 
   h("Layout");
   L.push(
@@ -298,7 +310,7 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
     "- `linear-gradient()` and `radial-gradient()` are baked into a vector image that fills the element; colour stops at least 1/64 of the gradient line apart (U-CSS-022), sRGB stops only (U-CSS-014). One background image per element (U-CSS-037).",
     "- `text-shadow`: one shadow, `x y blur colour` (several are U-CSS-023). `border-style`: `solid` or `none` (U-CSS-021). Corner radii are circular, one px value per corner (U-CSS-020; % only on squares, a pill uses half the height).",
     "- `object-fit`: `fill`, `contain` or `cover`, centred, on images. Icons are inline `<svg>`: paint every shape with `currentColor` to follow the text colour in every state, or every shape with fixed colours (U-CSS-031).",
-    `- \`filter\`: only the functions the kit enables in \`kit.config.json\` \`filterFunctions\` (U-CSS-015); currently ${kit.filterFunctions.length ? code(kit.filterFunctions) : "none, until a function passes the fidelity suite"}. No \`backdrop-filter\` (U-CSS-007), no \`outline\` (draw focus with a border).`,
+    `- \`filter\`: only the functions css-support.json enables, each once its fidelity fixture passes in Unity (U-CSS-015; \`kit.config.json\` \`filterFunctions\` mirrors the list); currently ${filters.length ? code(filters) : "none"}. No \`backdrop-filter\` (U-CSS-007), no \`outline\` (draw focus with a border).`,
   );
 
   h("Animation");
@@ -318,7 +330,8 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
   L.push(componentsMarkdown(components, audience));
 
   h("Example");
-  L.push(claude ? "A complete artboard (`.dc.html`) that lints clean:" : "A complete screen that lints clean:", "", "```html", example(audience, claude ? kitStylesheetFrom(tokens, styles) : base), "```");
+  L.push(claude ? "A complete artboard (`.dc.html`); with the kit stylesheet pasted at the marked line it lints clean:"
+    : "A complete screen; with the base stylesheet pasted at the marked line it lints clean:", "", "```html", example(audience), "```");
 
   return L.join("\n") + "\n";
 }

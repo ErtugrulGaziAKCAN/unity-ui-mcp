@@ -7,11 +7,11 @@ import { runCli } from "../src/commands.js";
 import { readKit } from "../src/kit.js";
 import { renderBaseCss } from "../src/kit/baseCss.js";
 import { buildKit } from "../src/kit/build.js";
-import { CLAUDE_TOKEN_NAME, validateTokensJson, writeClaudeDesignSystem } from "../src/kit/claudeDesignSystem.js";
+import { CLAUDE_TOKEN_NAME, previewHtml, validateTokensJson, writeClaudeDesignSystem } from "../src/kit/claudeDesignSystem.js";
 import { readKitComponents } from "../src/kit/components.js";
 import { renderRules } from "../src/kit/rulesDoc.js";
 import { parseTokensCss } from "../src/kit/tokens.js";
-import { CSS_SUPPORT_DATA } from "../src/lint/allowed-css.js";
+import { CSS_SUPPORT_DATA, enabledFilterFunctions } from "../src/lint/allowed-css.js";
 import { RULES } from "../src/lint/index.js";
 import { RULE_SUMMARIES } from "../src/lint/rule-table.js";
 import { readTextStyles } from "../src/lint/text-styles.js";
@@ -132,6 +132,30 @@ describe("kit build", () => {
     expect(fs.readFileSync(path.join(dir, "RULES.md"), "utf8")).toBe("# Design Kit Rules\n"); // check writes nothing
     expect(buildKit(dir).changed.sort()).toEqual(["RULES.md", "base.css", "components/button.html"]);
     expect(buildKit(dir, { check: true }).changed).toEqual([]);
+  });
+
+  it("refuses text styles that are not whole device pixels at a declared viewport scale (CLI exit 2)", async () => {
+    const dir = kitCopy({ fonts: true });
+    const file = path.join(dir, "text-styles.json");
+    const table = JSON.parse(fs.readFileSync(file, "utf8"));
+    table.label = { fontSize: 16, lineHeight: 22, weight: 400 };
+    fs.writeFileSync(file, JSON.stringify(table));
+    expect(() => buildKit(dir, { check: true })).toThrow(/label: line height 22 px is 16\.5 device px at 1920×1080/);
+    expect(() => writeClaudeDesignSystem(dir, tmp("claude-ds-"), { now: new Date(0) })).toThrow(/whole device px/);
+    const r = io();
+    expect(await runCli(["kit", "build", dir], r.io)).toBe(2);
+    expect(r.err.join("")).toMatch(/line height 22 px/);
+  });
+
+  it("mirrors css-support.json's filter functions into kit.config.json, keeping the other keys", () => {
+    const dir = kitCopy();
+    const file = path.join(dir, "kit.config.json");
+    const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
+    fs.writeFileSync(file, JSON.stringify({ ...cfg, filterFunctions: ["blur"] }));
+    expect(buildKit(dir, { check: true }).changed).toContain("kit.config.json");
+    buildKit(dir);
+    expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual({ ...cfg, filterFunctions: enabledFilterFunctions() });
+    expect(buildKit(KIT_DIR, { check: true }).changed).not.toContain("kit.config.json");
   });
 
   it("CLI: kit build --check exits 0 when current and 1 when stale", async () => {
@@ -262,6 +286,32 @@ describe("Claude design system export (kit claude)", () => {
     expect(md).toContain(fs.readFileSync(path.join(kitDir, "base.css"), "utf8").trim());
     for (const c of readKitComponents(kitDir)) expect(md).toContain(`components/${c.name}/README.md`);
     expect(md).toBe(renderRules(readKit(kitDir), "claude", { title: "Unity UI Kit" }));
+  });
+
+  it("is deterministic: two runs with the same --now give byte-identical folders", async () => {
+    const kitDir = kitCopy({ fonts: true });
+    const [a, b] = [tmp("claude-ds-"), tmp("claude-ds-")];
+    for (const out of [a, b]) expect(await runCli(["kit", "claude", kitDir, out, "--now", "2026-11-13T12:00:00Z"], io().io)).toBe(0);
+    const tree = (d: string): string[] => fs.readdirSync(d, { recursive: true, withFileTypes: false }).map(String).sort();
+    expect(tree(a)).toEqual(tree(b));
+    for (const f of tree(a)) if (fs.statSync(path.join(a, f)).isFile()) expect(fs.readFileSync(path.join(a, f)).equals(fs.readFileSync(path.join(b, f))), f).toBe(true);
+    expect(JSON.parse(fs.readFileSync(path.join(a, "project", "design-system.json"), "utf8")).createdOnFiles.at).toBe("2026-11-13T12:00:00.000Z");
+    expect(await runCli(["kit", "claude", kitDir, tmp("claude-ds-"), "--now", "yesterday"], io().io)).toBe(2);
+  });
+
+  it("keeps the @dsCard marker one comment even when a summary has quotes or dashes", () => {
+    const c = { name: "X", file: "x.html", group: 'A "g" --> b', guide: "", summary: 'Say "hi" -- then stop -->.' };
+    const line = previewHtml(c, "<!doctype html><style></style>", []).split("\n")[0];
+    expect(line).toBe('<!-- @dsCard group="A \'g\' – b" width=2560 height=1440 subtitle="Say \'hi\' – then stop –." -->');
+    expect(line.match(/-->/g)).toHaveLength(1);
+  });
+
+  it("refuses two font files with the same name in different folders", () => {
+    const kitDir = kitCopy({ fonts: true });
+    fs.mkdirSync(path.join(kitDir, "fonts", "b"));
+    fs.copyFileSync(path.join(kitDir, "fonts", "Inter_18pt-Bold.ttf"), path.join(kitDir, "fonts", "b", "Inter_18pt-Regular.ttf"));
+    fs.appendFileSync(path.join(kitDir, "fonts", "fonts.css"), '@font-face { font-family: "Inter UI"; font-weight: 700; font-style: italic; src: url("b/Inter_18pt-Regular.ttf") format("truetype"); }\n');
+    expect(() => writeClaudeDesignSystem(kitDir, tmp("claude-ds-"), { now })).toThrow(/share the name Inter_18pt-Regular\.ttf/);
   });
 
   it("refuses a kit without synced fonts, and an existing project folder unless forced", async () => {

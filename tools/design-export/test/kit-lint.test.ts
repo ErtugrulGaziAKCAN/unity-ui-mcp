@@ -6,9 +6,10 @@ import type { Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { launchChromium } from "../src/browser.js";
 import { lintScreen } from "../src/export.js";
+import { openDesign } from "../src/load.js";
 import { readKit, type KitConfig } from "../src/kit.js";
 import { kitStylesheet } from "../src/kit/claudeDesignSystem.js";
-import { renderRules } from "../src/kit/rulesDoc.js";
+import { EXAMPLE_STYLESHEET_LINE, renderRules } from "../src/kit/rulesDoc.js";
 import type { Finding } from "../src/lint/index.js";
 
 // Every kit component, every fidelity fixture and the examples in RULES.md / the Claude README lint clean against the
@@ -18,8 +19,8 @@ import type { Finding } from "../src/lint/index.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const KIT_DIR = path.resolve(here, "../../../design-kit");
 const TEST_FONTS = path.join(here, "fixtures", "lint", "kit", "fonts");
-/** CSS filter functions UI Toolkit 6.3 also offers: the filters fixture's candidates. */
-const FILTER_CANDIDATES = ["blur", "contrast", "grayscale", "hue-rotate", "invert", "opacity", "sepia"];
+/** Fixtures the fidelity suite skips for now, with the reason (fidelity's fixture list reads the same file). */
+const PENDING: Record<string, string> = JSON.parse(fs.readFileSync(path.join(KIT_DIR, "fixtures", "fidelity", "pending.json"), "utf8"));
 
 const tmpDirs: string[] = [];
 const tmp = () => { const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "kit-lint-"))); tmpDirs.push(d); return d; };
@@ -64,29 +65,39 @@ describe("fidelity fixtures lint clean", () => {
       "shadows-radii-borders", "states", "text-shadow", "text-styles", "transitions",
     ]);
   });
-  for (const file of fixtures.filter((f) => !f.endsWith("filters.html"))) {
+  for (const file of fixtures.filter((f) => !PENDING[path.basename(f)])) {
     it(path.basename(file), async () => { expect(show(await lintFile(file))).toEqual([]); });
   }
 
-  it("filters.html: clean once the kit lists UI Toolkit's filter functions; until then only U-CSS-015 with its fix", async () => {
-    const file = fixtures.find((f) => f.endsWith("filters.html"))!;
-    expect(show(await lintFile(file, { ...kit, filterFunctions: FILTER_CANDIDATES }))).toEqual([]);
-    const shipped = await lintFile(file, { ...kit, filterFunctions: readKit(KIT_DIR).filterFunctions });
-    expect(shipped.length).toBeGreaterThan(0);
-    for (const f of shipped) { expect(f.ruleId).toBe("U-CSS-015"); expect(f.fix).toMatch(/filter/); }
+  it("pending.json names only fixtures, each with a note", () => {
+    for (const [name, note] of Object.entries(PENDING)) {
+      expect(fixtures.map((f) => path.basename(f)), name).toContain(name);
+      expect(note).toMatch(/pending/);
+    }
   });
 
-  it("CSS filter functions UI Toolkit lacks stay rejected with U-CSS-015 even with the candidates enabled", async () => {
+  it("filters.html is pending while css-support.json enables none of its functions: only U-CSS-015, each with its fix", async () => {
+    const file = fixtures.find((f) => f.endsWith("filters.html"))!;
+    const found = await lintFile(file);
+    if (found.length === 0) throw new Error("filters.html lints clean now: remove it from design-kit/fixtures/fidelity/pending.json");
+    expect(PENDING["filters.html"]).toMatch(/^filters pending/);
+    for (const f of found) { expect(f.ruleId).toBe("U-CSS-015"); expect(f.fix).toMatch(/filter/); }
+    // the kit's filterFunctions cannot widen what css-support.json enables
+    const widened = await lintFile(file, { ...kit, filterFunctions: ["blur", "contrast", "grayscale", "hue-rotate", "invert", "opacity", "sepia"] });
+    expect(widened.map((f) => f.ruleId)).toEqual(found.map((f) => f.ruleId));
+  });
+
+  it("CSS filter functions UI Toolkit lacks stay rejected with U-CSS-015", async () => {
     const dir = tmp();
     const file = path.join(dir, "screen.html");
     const src = fs.readFileSync(fixtures.find((f) => f.endsWith("filters.html"))!, "utf8")
       .replace(".f-blur { filter: blur(4px); }", ".f-blur { filter: brightness(1.2) saturate(2) drop-shadow(0 2px 4px #000000); }");
     fs.writeFileSync(file, src);
-    const found = await lintFile(file, { ...kit, filterFunctions: FILTER_CANDIDATES });
-    // one finding for the rule (its two elements are named in the detail)
-    expect(found.map((f) => f.ruleId)).toEqual(["U-CSS-015"]);
-    expect(found[0].detail).toMatch(/\(brightness, saturate, drop-shadow\)/);
-    expect(found[0].fix).toMatch(/blur, contrast, grayscale, hue-rotate, invert, opacity, sepia/);
+    const found = await lintFile(file);
+    const lacking = found.filter((f) => /brightness/.test(f.detail));
+    expect(lacking).toHaveLength(1);
+    expect(lacking[0].ruleId).toBe("U-CSS-015");
+    expect(lacking[0].detail).toMatch(/\(brightness, saturate, drop-shadow\)/);
   });
 });
 
@@ -117,6 +128,23 @@ describe("the kit base stylesheet", () => {
   });
 });
 
+describe("kit pages fit the reference artboard with the kit's text styles", () => {
+  for (const file of [...components, ...fixtures]) {
+    it(path.relative(KIT_DIR, file), async () => {
+      const d = await openDesign(file, kit, kit.reference, browser);
+      try {
+        const r = await d.page.evaluate(() => {
+          const root = document.querySelector("[data-u-screen]") as HTMLElement;
+          // a text sample wider than its own box would overlap its neighbour
+          const spill = Array.from(document.querySelectorAll<HTMLElement>(".sample")).filter((e) => e.scrollWidth > e.clientWidth).map((e) => e.dataset.uId);
+          return { w: root.scrollWidth, h: root.scrollHeight, spill };
+        });
+        expect(r).toEqual({ w: kit.reference[0], h: kit.reference[1], spill: [] });
+      } finally { await d.close(); }
+    });
+  }
+});
+
 /** The ```html block after the "## Example" heading. */
 const exampleOf = (md: string): string => {
   const at = md.indexOf("## Example");
@@ -130,13 +158,15 @@ describe("documented examples lint clean", () => {
     const md = renderRules(readKit(KIT_DIR), "kit");
     expect(md).toBe(fs.readFileSync(path.join(KIT_DIR, "RULES.md"), "utf8"));
     const dir = tmp();
-    fs.writeFileSync(path.join(dir, "example.html"), exampleOf(md));
+    // the example names the base stylesheet shown above it instead of repeating it
+    expect(md.split(fs.readFileSync(path.join(KIT_DIR, "base.css"), "utf8").trim())).toHaveLength(2);
+    fs.writeFileSync(path.join(dir, "example.html"), exampleOf(md).replace(EXAMPLE_STYLESHEET_LINE("kit"), fs.readFileSync(path.join(KIT_DIR, "base.css"), "utf8").trim()));
     expect(show(await lintFile(path.join(dir, "example.html")))).toEqual([]);
   });
 
   it("the Claude README example artboard (.dc.html)", async () => {
     const dir = tmp();
-    fs.writeFileSync(path.join(dir, "example.dc.html"), exampleOf(renderRules(kit, "claude")));
+    fs.writeFileSync(path.join(dir, "example.dc.html"), exampleOf(renderRules(kit, "claude")).replace(EXAMPLE_STYLESHEET_LINE("claude"), kitStylesheet(kit)));
     expect(show(await lintFile(path.join(dir, "example.dc.html")))).toEqual([]);
   });
 

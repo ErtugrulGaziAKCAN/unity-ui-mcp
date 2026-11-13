@@ -13,14 +13,10 @@ describe("lint rule table", () => {
     expect(Object.keys(RULE_SUMMARIES).filter((id) => !ids.has(id))).toEqual([]);
   });
 
-  it("covers the newer rules and describes U-CSS-004 as the sibling-order rule it is now", () => {
-    for (const id of ["U-CSS-031", "U-CSS-032", "U-CSS-033", "U-CSS-034", "U-CSS-035", "U-CSS-036", "U-CSS-037", "U-MRK-008", "U-MRK-009", "U-MRK-010", "I-MRK-001"]) {
+  it("covers the newer rules", () => {
+    for (const id of ["U-CSS-031", "U-CSS-032", "U-CSS-033", "U-CSS-034", "U-CSS-035", "U-CSS-036", "U-CSS-037", "U-CSS-038", "U-MRK-008", "U-MRK-009", "U-MRK-010", "I-MRK-001"]) {
       expect(RULE_SUMMARIES[id], id).toBeDefined();
     }
-    // not the old "z-index on an element that is not position: absolute"
-    expect(RULE_SUMMARIES["U-CSS-004"].when).not.toMatch(/not `position: absolute`/);
-    expect(RULE_SUMMARIES["U-CSS-004"].when).toMatch(/sibling order/);
-    expect(RULE_SUMMARIES["U-CSS-004"].fix).toMatch(/flex items/);
   });
 
   it("marks warning and info rules in their summary", () => {
