@@ -229,6 +229,45 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Compile_ViewUnderAnAssemblyWithoutDesignUiRuntime_FailsNamingTheAsmdef()
+        {
+            var game = TempDir();
+            File.WriteAllText(game + "/Game.UI.asmdef", "{ \"name\": \"Game.UI\", \"references\": [\"Unity.TextMeshPro\"] }");
+            var output = game + "/Screens";
+            var result = ScreenCompiler.Compile(ShowcaseExport(), Profile(output));
+            Assert.IsFalse(result.Ok);
+            var error = string.Join("\n", result.Errors);
+            StringAssert.Contains("Game.UI.asmdef", error);
+            StringAssert.Contains("DesignUi.Runtime", error);
+            Assert.IsFalse(Directory.Exists(output), "nothing is written");
+
+            foreach (var reference in new[] { "DesignUi.Runtime", "GUID:" + AssetDatabase.AssetPathToGUID("Packages/com.unity.design-ui/Runtime/DesignUi.Runtime.asmdef") })
+            {
+                File.WriteAllText(game + "/Game.UI.asmdef", "{ \"name\": \"Game.UI\", \"references\": [\"" + reference + "\"] }");
+                var ok = ScreenCompiler.Compile(ShowcaseExport(), Profile(output));
+                Assert.IsTrue(ok.Ok, reference + ": " + string.Join("\n", ok.Errors));
+            }
+        }
+
+        [Test]
+        public void Compile_ViewUnderAnAssemblyWithoutEngineReferences_Fails()
+        {
+            var game = TempDir();
+            File.WriteAllText(game + "/Pure.asmdef", "{ \"name\": \"Pure\", \"references\": [\"DesignUi.Runtime\"], \"noEngineReferences\": true }");
+            var result = ScreenCompiler.Compile(ShowcaseExport(), Profile(game + "/Screens"));
+            Assert.IsFalse(result.Ok);
+            StringAssert.Contains("noEngineReferences", string.Join("\n", result.Errors));
+        }
+
+        [Test]
+        public void Compile_ViewStepThatWritesNoView_NeedsNoAssemblyCheck()
+        {
+            var game = TempDir();
+            File.WriteAllText(game + "/Game.UI.asmdef", "{ \"name\": \"Game.UI\" }");
+            Assert.IsTrue(ScreenCompiler.Compile(ShowcaseExport(), Profile(game + "/Screens"), false, NoView()).Ok);
+        }
+
+        [Test]
         public void Compile_ElementIdsThatClashInTheView_FailBeforeWriting()
         {
             var output = TempDir();

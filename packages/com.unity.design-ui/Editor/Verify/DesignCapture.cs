@@ -60,7 +60,12 @@ namespace DesignUi.Editor
         const int ChangeFrames = 5;
         static readonly Color Sentinel = new Color(1f, 0f, 1f, 1f);
 
-        /// <summary>Captures one request; throws when the screen, the export or the request does not fit.</summary>
+        /// <summary>
+        /// Captures one request; throws when the screen, the export or the request does not fit, and
+        /// <see cref="NotCapturableException"/> when the job cannot be made as the golden shows it. Notes about how a
+        /// capture was made (for example a pointer target whose children were made transparent to the pointer) go to
+        /// <see cref="CaptureRequest.Notes"/>.
+        /// </summary>
         public static IEnumerator Run(CaptureRequest req, DesignUiProfile profile)
         {
             var screen = Prepare(req, profile);
@@ -77,6 +82,8 @@ namespace DesignUi.Editor
                 filler.FillScreen(docRoot);
                 if (req.State != DefaultState) root.AddToClassList(ScreenBuilder.StateClassPrefix + req.State);
                 for (int i = 0; i < MountFrames; i++) yield return null;
+                var panel = mount.Panel;
+                var scale = PanelScale(panel, req.Viewport);
 
                 var applied = Applied(req);
                 var pointer = new List<CaptureApply>();
@@ -125,27 +132,44 @@ namespace DesignUi.Editor
                 if (pointer.Count == 1)
                 {
                     var target = BoxesWriter.Find(docRoot, pointer[0].ElementId);
-                    var at = PointOn(mount.Panel, target) ?? throw new NotCapturableException(
-                        "no point of '" + pointer[0].ElementId + "' picks it (it ignores the pointer or other elements cover it), so a real pointer cannot " + pointer[0].Name + " it");
-                    SendPointer(mount.Panel, EventType.MouseMove, at);
+                    var at = PointOn(panel, target);
+                    if (at == null && Untouchable(target, out var covering))
+                    {
+                        // children cover every point: they stop taking the pointer, so only the element and its ancestors hover, as in the golden
+                        at = PointOn(panel, target);
+                        if (at != null) req.Notes.Add("the pointer is on '" + target.name + "' with its descendants ignoring the pointer (" + string.Join(", ", covering) + "): they cover it everywhere");
+                    }
+                    if (at == null)
+                        throw new NotCapturableException("no point of '" + pointer[0].ElementId + "' picks it (it ignores the pointer or other elements cover it), so a real pointer cannot " +
+                                                         pointer[0].Name + " it");
+                    SendPointer(panel, EventType.MouseMove, at.Value);
                     mount.PointerAt = at;
                     for (int i = 0; i < ChangeFrames; i++) yield return null;
                     if (pointer[0].Name == "active")
                     {
-                        SendPointer(mount.Panel, EventType.MouseDown, at);
+                        SendPointer(panel, EventType.MouseDown, at.Value);
                         mount.Pressed = true;
                         for (int i = 0; i < ChangeFrames; i++) yield return null;
+                        // UI Toolkit focuses a focusable element on press; the golden forces :active (and :hover) only
+                        if (panel.focusController.focusedElement is VisualElement pressed && pressed != focus)
+                        {
+                            pressed.Blur();
+                            for (int i = 0; i < ChangeFrames; i++) yield return null;
+                        }
                     }
                 }
                 if (focus != null)
                 {
                     focus.Focus();
                     for (int i = 0; i < ChangeFrames; i++) yield return null;
+                    var focused = panel.focusController.focusedElement as VisualElement;
+                    if (focused == null || focused != focus && !focus.Contains(focused))
+                        throw new NotCapturableException("'" + focus.name + "' does not take focus in Unity (not focusable, disabled or hidden; focused: " +
+                                                         (focused?.name ?? "nothing") + ")");
                 }
 
                 Directory.CreateDirectory(req.OutDir);
                 File.WriteAllBytes(Path.Combine(req.OutDir, req.CaptureName + ".png"), mount.ReadPng());
-                var scale = BoxesWriter.Scale(req.Viewport, profile.referenceResolution, profile.screenMatch);
                 BoxesWriter.Merge(Path.Combine(req.OutDir, BoxesWriter.FileName), BoxesWriter.Measure(req.CaptureName, docRoot, req.Viewport, scale, screen.Ir));
                 req.Inspect?.Invoke(root);
             }
@@ -158,20 +182,24 @@ namespace DesignUi.Editor
         /// <summary>
         /// Captures every job of <c>&lt;exportDir&gt;/goldens/matrix.json</c> into <paramref name="outDir"/> with the goldens'
         /// names, copies the compiled <c>.design-ui.json</c> (removed wrappers) next to them and writes
-        /// <see cref="MetaFileName"/>. Animation samples are listed as not captured until the animation player exists; a job
-        /// that cannot be made, or fails, is listed with its reason and leaves no PNG or boxes entry behind.
+        /// <see cref="MetaFileName"/>. The files a capture owns (PNGs, boxes.json, the meta file, the copied manifest) are
+        /// deleted first, so nothing of an earlier run can be compared; the meta file says <c>running</c> until the run
+        /// completes. Animation samples are listed as not captured until the animation player exists; a job that cannot be
+        /// made, or fails, is listed with its reason and leaves no PNG or boxes entry behind.
         /// </summary>
         public static IEnumerator CaptureAll(string exportDir, string screenFolder, DesignUiProfile profile, string outDir, CaptureResult result)
         {
             if (result == null) throw new ArgumentNullException(nameof(result));
             if (string.IsNullOrEmpty(outDir)) throw new ArgumentException("no output folder", nameof(outDir));
             var total = Stopwatch.StartNew();
+            var run = new RunInfo { Id = Guid.NewGuid().ToString("N"), Started = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture) };
+            Clear(outDir);
+            WriteMeta(outDir, exportDir, screenFolder, result, run, "running", total.Elapsed.TotalMilliseconds);
             var jobs = CaptureJob.ReadMatrix(Path.Combine(exportDir, MatrixPath));
-            Directory.CreateDirectory(outDir);
             var manifest = Path.Combine(screenFolder, ScreenCompiler.ManifestFileName);
             if (!File.Exists(manifest)) throw new InvalidOperationException("'" + screenFolder + "' is not a compiled screen (no " + ScreenCompiler.ManifestFileName + ")");
             File.Copy(manifest, Path.Combine(outDir, ScreenCompiler.ManifestFileName), true);
-            var times = new JObject();
+            var animated = AnimatedOnShow(IrReader.Read(Path.Combine(exportDir, ScreenCompiler.IrFileName)));
             foreach (var job in jobs)
             {
                 if (job.Animation)
@@ -185,27 +213,40 @@ namespace DesignUi.Editor
                     OutDir = outDir, CaptureName = job.Name,
                 };
                 var watch = Stopwatch.StartNew();
-                var run = Run(req, profile);
+                var capture = Run(req, profile);
                 string failure = null, skipped = null;
-                while (true)
+                try
                 {
-                    bool more;
-                    try { more = run.MoveNext(); }
-                    catch (NotCapturableException e) { skipped = e.Message; break; }
-                    catch (Exception e) { failure = e.GetType().Name + ": " + e.Message; break; }
-                    if (!more) break;
-                    yield return run.Current;
+                    while (true)
+                    {
+                        bool more;
+                        try { more = capture.MoveNext(); }
+                        catch (NotCapturableException e) { skipped = e.Message; break; }
+                        catch (Exception e) { failure = e.GetType().Name + ": " + e.Message; break; }
+                        if (!more) break;
+                        yield return capture.Current;
+                    }
                 }
-                times[job.Name] = Math.Round(watch.Elapsed.TotalMilliseconds, 1);
+                finally
+                {
+                    (capture as IDisposable)?.Dispose(); // an abandoned run still destroys its panel
+                }
+                run.Times[job.Name] = Math.Round(watch.Elapsed.TotalMilliseconds, 1);
                 if (failure != null)
                 {
                     result.Errors.Add(job.Name + ": " + failure);
                     NotCaptured(result, outDir, job.Name, "error: " + failure);
                 }
                 else if (skipped != null) NotCaptured(result, outDir, job.Name, skipped);
-                else result.Captured.Add(job.Name);
+                else
+                {
+                    result.Captured.Add(job.Name);
+                    if (animated.Count > 0)
+                        req.Notes.Add("animations are not played yet: " + string.Join(", ", animated) + " show their unanimated style, the golden a frozen frame");
+                    if (req.Notes.Count > 0) run.Notes[job.Name] = new JArray(req.Notes);
+                }
             }
-            WriteMeta(Path.Combine(outDir, MetaFileName), exportDir, screenFolder, result, times, total.Elapsed.TotalMilliseconds);
+            WriteMeta(outDir, exportDir, screenFolder, result, run, "complete", total.Elapsed.TotalMilliseconds);
         }
 
         /// <summary>The profile asset at <paramref name="assetPath"/>, or the project's only DesignUiProfile when it is empty.</summary>
@@ -322,6 +363,7 @@ namespace DesignUi.Editor
                 Settings.clearColor = true;
                 Settings.colorClearValue = Sentinel;
                 Settings.forceGammaRendering = true;
+                Settings.scale = 1f; // a consumer's PanelSettings may scale on top of Scale With Screen Size
                 Host = new GameObject("DesignCapture") { hideFlags = HideFlags.DontSave };
                 Host.SetActive(false); // the document registers once, with its settings and tree already set
                 Document = Host.AddComponent<UIDocument>();
@@ -378,6 +420,39 @@ namespace DesignUi.Editor
             }
         }
 
+        /// <summary>
+        /// Makes the element's pickable descendants ignore the pointer (picking mode is not drawn) when they cover every
+        /// point of it; returns whether any did and names them.
+        /// </summary>
+        static bool Untouchable(VisualElement target, out List<string> covering)
+        {
+            covering = new List<string>();
+            var stack = new Stack<VisualElement>();
+            for (int i = 0; i < target.hierarchy.childCount; i++) stack.Push(target.hierarchy[i]);
+            while (stack.Count > 0)
+            {
+                var e = stack.Pop();
+                if (e.pickingMode == PickingMode.Position)
+                {
+                    e.pickingMode = PickingMode.Ignore;
+                    covering.Add(string.IsNullOrEmpty(e.name) ? e.GetType().Name : e.name);
+                }
+                for (int i = 0; i < e.hierarchy.childCount; i++) stack.Push(e.hierarchy[i]);
+            }
+            return covering.Count > 0;
+        }
+
+        /// <summary>
+        /// Device pixels per panel pixel as the panel resolved them (PanelSettings.ResolveScale): the viewport width over
+        /// the panel's laid-out width.
+        /// </summary>
+        static double PanelScale(IPanel panel, Vector2Int viewport)
+        {
+            var width = panel?.visualTree.layout.width ?? float.NaN;
+            if (float.IsNaN(width) || width <= 0) throw new InvalidOperationException("the panel has no layout after mounting the screen");
+            return Math.Round(viewport.x / (double)width, 9);
+        }
+
         /// <summary>A pointer event built from an IMGUI event, sent to the panel's tree at panel coordinates.</summary>
         static void SendPointer(IPanel panel, EventType type, Vector2 at)
         {
@@ -393,16 +468,15 @@ namespace DesignUi.Editor
             using (evt) panel.visualTree.SendEvent(evt);
         }
 
-        /// <summary>A panel point where picking finds the element or one of its descendants: its centre, else a 5×5 grid inside it.</summary>
+        /// <summary>
+        /// A panel point where picking finds the element itself (not a descendant, which would hover too, unlike the
+        /// golden): its centre, else the centres of a 5×5 grid over it.
+        /// </summary>
         static Vector2? PointOn(IPanel panel, VisualElement target)
         {
             var b = target.worldBound;
             if (float.IsNaN(b.width) || b.width <= 0 || b.height <= 0) return null;
-            bool Hits(Vector2 p)
-            {
-                var picked = panel.Pick(p);
-                return picked != null && (picked == target || target.Contains(picked));
-            }
+            bool Hits(Vector2 p) => panel.Pick(p) == target;
             if (Hits(b.center)) return b.center;
             for (int iy = 0; iy < 5; iy++)
                 for (int ix = 0; ix < 5; ix++)
@@ -641,6 +715,39 @@ namespace DesignUi.Editor
 
         // ---- output ---------------------------------------------------------------------------------------------
 
+        sealed class RunInfo
+        {
+            public string Id;
+            public string Started;
+            public readonly JObject Times = new JObject();
+            public readonly JObject Notes = new JObject();
+        }
+
+        /// <summary>Deletes what a capture run writes into the folder (PNGs, boxes, meta, manifest copy); other files stay.</summary>
+        static void Clear(string outDir)
+        {
+            Directory.CreateDirectory(outDir);
+            foreach (var png in Directory.GetFiles(outDir, "*.png")) File.Delete(png);
+            foreach (var name in new[] { BoxesWriter.FileName, MetaFileName, ScreenCompiler.ManifestFileName })
+            {
+                var path = Path.Combine(outDir, name);
+                if (File.Exists(path)) File.Delete(path);
+            }
+        }
+
+        /// <summary>Elements whose keyframe animations start when the screen opens (the capture does not play them yet).</summary>
+        static List<string> AnimatedOnShow(IrScreen ir)
+        {
+            var ids = new List<string>();
+            void Walk(IrNode n)
+            {
+                if ((n.Anims ?? new List<IrAnim>()).Any(a => a.Kind == IrAnim.KeyframesKind && a.Trigger == LayerKey.ShowTrigger)) ids.Add(n.Id);
+                foreach (var c in n.Children ?? new IrNode[0]) Walk(c);
+            }
+            Walk(ir.Root);
+            return ids;
+        }
+
         static void NotCaptured(CaptureResult result, string outDir, string name, string reason)
         {
             result.NotCaptured.Add(new NotCaptured { Capture = name, Reason = reason });
@@ -649,7 +756,7 @@ namespace DesignUi.Editor
             BoxesWriter.Remove(Path.Combine(outDir, BoxesWriter.FileName), name);
         }
 
-        static void WriteMeta(string path, string exportDir, string screenFolder, CaptureResult result, JObject times, double totalMs)
+        static void WriteMeta(string outDir, string exportDir, string screenFolder, CaptureResult result, RunInfo run, string status, double totalMs)
         {
             var meta = new JObject
             {
@@ -657,8 +764,12 @@ namespace DesignUi.Editor
                 ["errors"] = new JArray(result.Errors),
                 ["export"] = exportDir,
                 ["notCaptured"] = new JArray(result.NotCaptured.Select(n => new JObject { ["capture"] = n.Capture, ["reason"] = n.Reason })),
+                ["notes"] = run.Notes,
+                ["runId"] = run.Id,
                 ["screen"] = screenFolder,
-                ["timings"] = new JObject { ["captures"] = times, ["totalMs"] = Math.Round(totalMs, 1) },
+                ["started"] = run.Started,
+                ["status"] = status,
+                ["timings"] = new JObject { ["captures"] = run.Times, ["totalMs"] = Math.Round(totalMs, 1) },
                 ["unity"] = new JObject
                 {
                     ["colorSpace"] = QualitySettings.activeColorSpace.ToString(),
@@ -670,7 +781,7 @@ namespace DesignUi.Editor
             using (var sw = new StringWriter { NewLine = "\n" })
             {
                 using (var writer = new JsonTextWriter(sw) { Formatting = Formatting.Indented, Indentation = 2 }) meta.WriteTo(writer);
-                File.WriteAllText(path, sw.ToString().Replace("\r\n", "\n") + "\n", new UTF8Encoding(false));
+                File.WriteAllText(Path.Combine(outDir, MetaFileName), sw.ToString().Replace("\r\n", "\n") + "\n", new UTF8Encoding(false));
             }
         }
     }

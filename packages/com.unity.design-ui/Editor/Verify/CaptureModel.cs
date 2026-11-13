@@ -44,6 +44,8 @@ namespace DesignUi.Editor
         public List<CaptureApply> Apply = new List<CaptureApply>();
         public string OutDir;
         public string CaptureName;
+        /// <summary>Filled by the capture: how it was made where that differs from the plain route (written to the meta file).</summary>
+        public readonly List<string> Notes = new List<string>();
         /// <summary>Tests: called with the screen root after the capture is written, before the panel is destroyed.</summary>
         internal Action<VisualElement> Inspect;
     }

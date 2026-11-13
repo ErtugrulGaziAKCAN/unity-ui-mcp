@@ -135,7 +135,13 @@ namespace DesignUi.Editor
                 foreach (var repeat in compiled.Repeats)
                     if (repeat.TemplateFile != null) Add(outputs, repeat.TemplateFile, UxmlWriter.WriteItemTemplate(repeat));
                 var view = hooks?.ViewCode != null ? hooks.ViewCode(compiled) : ViewCodeWriter.Write(compiled, profile.generatedNamespace, folderName + "View");
-                if (view != null) Add(outputs, ViewFileName(folderName), view);
+                if (view != null)
+                {
+                    // a view under an assembly definition that lacks DesignUi.Runtime would break that whole assembly's compile
+                    var assemblyError = ViewAssembly.Check(GeneratedManifest.Combine(screenDir, ViewFileName(folderName)));
+                    if (assemblyError != null) return Fail(assemblyError);
+                    Add(outputs, ViewFileName(folderName), view);
+                }
                 Add(outputs, GitAttributesFileName, GitAttributes);
             }
             catch (Exception e) when (e is IrFormatException || e is UnsupportedStyleException || e is FontSetupException || e is IOException || e is UnauthorizedAccessException)

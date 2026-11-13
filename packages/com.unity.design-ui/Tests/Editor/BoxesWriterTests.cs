@@ -36,16 +36,17 @@ namespace DesignUi.Editor.Tests
         [TestCase(2560, 1440, 1.0)]
         [TestCase(1920, 1080, 0.75)]
         [TestCase(1280, 720, 0.5)]
-        public void Scale_IsTheExportersScaleWithScreenSizeFormula(int w, int h, double expected)
+        public void Scale_At16By9_IsTheViewportOverTheReference(int w, int h, double expected)
         {
             Assert.AreEqual(expected, BoxesWriter.Scale(new Vector2Int(w, h), new Vector2Int(2560, 1440), 0.5f), 1e-12);
         }
 
         [Test]
-        public void Scale_OfAnotherAspect_LerpsTheLogarithms()
+        public void Scale_OfAnotherAspect_LerpsTheRatiosLinearly_AsPanelSettingsDoes()
         {
-            double lw = Math.Log(2000 / 2560.0, 2), lh = Math.Log(1000 / 1440.0, 2);
-            Assert.AreEqual(Math.Round(Math.Pow(2, lw + (lh - lw) * 0.25) * 1e9) / 1e9, BoxesWriter.Scale(new Vector2Int(2000, 1000), new Vector2Int(2560, 1440), 0.25f), 1e-12);
+            // PanelSettings.ResolveScale (6000.3): Mathf.Lerp(W / refW, H / refH, match), not a lerp of the logarithms
+            Assert.AreEqual(Math.Round((2400 / 2560.0 + 1.0) / 2 * 1e9) / 1e9, BoxesWriter.Scale(new Vector2Int(2400, 1440), new Vector2Int(2560, 1440), 0.5f), 1e-12);
+            Assert.AreEqual(Math.Round((0.75 * 2000 / 2560.0 + 0.25 * 1000 / 1440.0) * 1e9) / 1e9, BoxesWriter.Scale(new Vector2Int(2000, 1000), new Vector2Int(2560, 1440), 0.25f), 1e-12);
         }
 
         /// <summary>A panel at 1 panel px = 1 RenderTexture px with the given tree under its document root.</summary>
@@ -165,7 +166,7 @@ namespace DesignUi.Editor.Tests
         }
 
         [UnityTest]
-        public IEnumerator Measure_FractionalFontSize_UsesTheWholePixelSizeUiToolkitSetsTheTextAt()
+        public IEnumerator Measure_FractionalFontSize_UsesTheWholePixelSizeTheStandardGeneratorSetsTheTextAt()
         {
             var twin = FontTwinGenerator.GetOrCreateTwin(FontFixture.Regular, FontFixture.TwinFolder);
             var root = new VisualElement { name = "root" };
@@ -182,7 +183,7 @@ namespace DesignUi.Editor.Tests
             var ir = TestIr.Screen(Root(TextNode("label", "text", "x")));
             var lines = (JArray)BoxesWriter.Measure("default@400x300", root, new Vector2Int(400, 300), 1, ir)["elements"]["label"]["lines"];
             Assert.Greater(lines.Count, 1);
-            Assert.AreEqual(Math.Ceiling(lines.Count * 17 * ratio), label.worldBound.height, 1e-3, "measured on 6000.3: 16.515625 px is laid out at 17 px");
+            Assert.AreEqual(Math.Ceiling(lines.Count * 17 * ratio), label.worldBound.height, 1e-3, "measured on 6000.3: the standard text generator lays 16.515625 px out at 17 px");
             Assert.AreEqual(label.worldBound.y, (double)lines[0]["y"], 0.01, "the first line starts at the top of the label");
             Assert.AreEqual(label.worldBound.y + face.ascentLine * 17.0 / face.pointSize, (double)lines[0]["baseline"], 0.01);
             Assert.AreEqual(17 * ratio, (double)lines[1]["baseline"] - (double)lines[0]["baseline"], 0.01);

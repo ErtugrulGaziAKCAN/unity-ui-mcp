@@ -17,14 +17,14 @@ namespace DesignUi.Editor.Tests
     /// <summary>
     /// The Unity capture of a compiled screen (spec 15) and its batch entry point. <see cref="CaptureFromEnv"/> runs every
     /// job of an export's <c>goldens/matrix.json</c> when <c>DESIGN_UI_EXPORT</c> is set (see the repository README);
-    /// otherwise it does nothing.
+    /// otherwise its result is inconclusive ("not configured").
     /// </summary>
     public class DesignCaptureTests
     {
         const string Out = "Assets/DesignUiCaptureTests";
-        const string Labels = "{ \"label\": { \"fontSize\": 16.515625, \"lineHeight\": 20, \"weight\": 400 }, " +
-                              "\"body\": { \"fontSize\": 23.125, \"lineHeight\": 28, \"weight\": 400 }, " +
-                              "\"title\": { \"fontSize\": 46.28125, \"lineHeight\": 56, \"weight\": 400 } }";
+        const string Labels = "{ \"label\": { \"fontSize\": 16, \"lineHeight\": 19.359375, \"weight\": 400 }, " +
+                              "\"body\": { \"fontSize\": 24, \"lineHeight\": 29.046875, \"weight\": 400 }, " +
+                              "\"title\": { \"fontSize\": 32, \"lineHeight\": 38.71875, \"weight\": 400 } }";
 
         readonly List<string> _temp = new List<string>();
         readonly List<UnityEngine.Object> _objects = new List<UnityEngine.Object>();
@@ -43,12 +43,8 @@ namespace DesignUi.Editor.Tests
         public IEnumerator CaptureFromEnv()
         {
             var export = Env("DESIGN_UI_EXPORT", "DESIGN_UI_EXPORT_DIR");
-            if (export == null)
-            {
-                // not a capture run: nothing to do (an ignored test would mark every filtered run as not passed)
-                Debug.Log("DesignCaptureTests.CaptureFromEnv: DESIGN_UI_EXPORT is not set; nothing captured");
-                yield break;
-            }
+            // not a capture run: inconclusive, never a pass, so a runner never reads an unconfigured run as captured
+            if (export == null) Assert.Inconclusive("not configured: DESIGN_UI_EXPORT is not set, so nothing was captured (set DESIGN_UI_EXPORT and DESIGN_UI_OUT)");
             var outDir = Env("DESIGN_UI_OUT", "DESIGN_UI_OUT_DIR");
             Assert.IsNotNull(outDir, "DESIGN_UI_OUT names the folder the captures are written to");
             var profile = DesignCapture.LoadProfile(Env("DESIGN_UI_PROFILE"));
@@ -108,9 +104,32 @@ namespace DesignUi.Editor.Tests
         static IrNode Box(string id, string color, params (string k, string v)[] more) =>
             Node(id, "container", new[] { ("height", "40px"), ("width", "100px"), ("flex-shrink", "0"), ("background-color", color) }.Concat(more).ToArray());
 
+        /// <summary>A baked 9-slice shadow below the element: the compiler wraps it in a shadow host.</summary>
+        static IrNode Shadowed(IrNode n)
+        {
+            n.Shadow = new IrShadow
+            {
+                Kind = "shadow9", File = ShadowFile, Sha256 = new string('d', 64), Width = 8, Height = 8,
+                Slice = new float[] { 2, 2, 2, 2 }, Offset = new BoxRect { X = 0, Y = 4, W = 0, H = 0 },
+            };
+            return n;
+        }
+
+        /// <summary>A screen root that paints the whole panel black.</summary>
+        static IrNode BlackRoot(params IrNode[] kids) =>
+            Root(kids).With("base", ("background-color", "#000000"), ("display", "flex"), ("flex-direction", "column"), ("width", "100%"), ("height", "100%"));
+
+        static void AssertNear(string expected, Color32 actual, int tolerance, string message = null)
+        {
+            Assert.IsTrue(ColorUtility.TryParseHtmlString(expected, out var e));
+            var c = (Color32)e;
+            Assert.IsTrue(Math.Abs(c.r - actual.r) <= tolerance && Math.Abs(c.g - actual.g) <= tolerance && Math.Abs(c.b - actual.b) <= tolerance,
+                (message ?? "") + ": expected " + expected + ", got " + Hex(actual));
+        }
+
         static IrNode Words(string id, string tr, params (string k, string v)[] more)
         {
-            var n = Text(id, tr, new[] { ("color", "#ffffff"), ("font-family", "Inter"), ("font-size", "16.5156px") }.Concat(more).ToArray());
+            var n = Text(id, tr, new[] { ("color", "#ffffff"), ("font-family", "Inter"), ("font-size", "16px") }.Concat(more).ToArray());
             n.Text.Style = "label";
             return n;
         }
@@ -119,6 +138,16 @@ namespace DesignUi.Editor.Tests
         string Export(IrScreen ir, string fixtures = null, string matrix = null)
         {
             var dir = TempDir();
+            if (Assets(ir.Root).Any(a => a.File == ShadowFile))
+            {
+                var tex = new Texture2D(8, 8, TextureFormat.RGBA32, false);
+                tex.SetPixels32(Enumerable.Repeat(new Color32(0, 0, 0, 128), 64).ToArray());
+                var png = tex.EncodeToPNG();
+                UnityEngine.Object.DestroyImmediate(tex);
+                Directory.CreateDirectory(Path.Combine(dir, "assets"));
+                File.WriteAllBytes(Path.Combine(dir, ShadowFile), png);
+                SetHash(ir, ShadowFile, png);
+            }
             File.WriteAllText(Path.Combine(dir, ScreenCompiler.IrFileName), JsonConvert.SerializeObject(ir, Formatting.Indented));
             File.WriteAllText(Path.Combine(dir, KitTextStyles.FileName), Labels);
             if (fixtures != null)
@@ -331,11 +360,12 @@ namespace DesignUi.Editor.Tests
         [UnityTest]
         public IEnumerator Run_DisabledAndChecked_UseTheControlsAndReachTheShadowHostMirror()
         {
-            var go = Node("go", "button", ("height", "30px"), ("width", "80px"), ("flex-shrink", "0"), ("background-color", "#2fd1c5"))
-                .With("disabled", ("opacity", "0.4"));
-            var check = Node("check", "toggle", ("height", "20px"), ("width", "20px"), ("flex-shrink", "0"));
-            var ir = Small(Root(go, check));
-            var export = Export(ir);
+            // opacity of a shadowed element moves to its shadow host, which shows the element's states as dui-* classes
+            var go = Shadowed(Node("go", "button", ("height", "30px"), ("width", "80px"), ("flex-shrink", "0"), ("background-color", "#2fd1c5"))
+                .With("disabled", ("opacity", "0.4")));
+            var check = Shadowed(Node("check", "toggle", ("height", "20px"), ("width", "20px"), ("flex-shrink", "0"), ("margin-top", "20px"),
+                ("background-color", "#ffffff")).With("checked", ("opacity", "0.5")));
+            var export = Export(Small(BlackRoot(go, check)));
             var profile = Profile(new Vector2Int(320, 180), 0.5f);
             var screen = Compile(export, profile);
             var req = Request(export, screen, "default@320x180.disabled.go.checked.check", 320, 180,
@@ -346,9 +376,96 @@ namespace DesignUi.Editor.Tests
                 seen = true;
                 Assert.IsFalse(tree.Q<Button>("go").enabledSelf, "SetEnabled(false)");
                 Assert.IsTrue(tree.Q<Toggle>("check").value, "value = true");
+                Assert.IsTrue(tree.Q("go__shadowhost").ClassListContains(PseudoStateMirror.DisabledClass), "the host mirrors :disabled");
+                Assert.IsTrue(tree.Q("check__shadowhost").ClassListContains(PseudoStateMirror.CheckedClass), "the host mirrors :checked");
             };
             yield return DesignCapture.Run(req, profile);
             Assert.IsTrue(seen);
+            var els = (JObject)Boxes(req)["elements"];
+            var tex = Png(req);
+            AssertNear("#13544f", Pixel(tex, 40, (int)(double)els["go"]["y"] + 15), 2, "the button at the host's 0.4 opacity over black");
+            AssertNear("#808080", Pixel(tex, 10, (int)(double)els["check"]["y"] + 10), 2, "the toggle at the host's 0.5 opacity over black");
+        }
+
+        [UnityTest]
+        public IEnumerator Run_Focus_IsTakenByTheElement_AndShowsItsFocusStyle()
+        {
+            var field = Box("field", "#112233").With("focus", ("background-color", "#ff0000"));
+            var export = Export(Small(BlackRoot(field)));
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var req = Request(export, screen, "default@320x180.focus.field", 320, 180, CaptureApply.Pseudo("focus", "field"));
+            var seen = false;
+            req.Inspect = tree =>
+            {
+                seen = true;
+                Assert.AreSame(tree.Q("field"), tree.panel.focusController.focusedElement);
+            };
+            yield return DesignCapture.Run(req, profile);
+            Assert.IsTrue(seen);
+            Assert.AreEqual("#ff0000", Hex(Pixel(Png(req), 50, 20)));
+        }
+
+        [UnityTest]
+        public IEnumerator Run_Active_DoesNotAlsoFocusThePressedControl()
+        {
+            // a press focuses a focusable element in UI Toolkit; the golden forces :active (and :hover) only
+            var go = Node("go", "button", ("height", "40px"), ("width", "100px"), ("flex-shrink", "0"), ("background-color", "#112233"))
+                .With("active", ("background-color", "#778899")).With("focus", ("opacity", "0.5"));
+            var export = Export(Small(BlackRoot(go)));
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var req = Request(export, screen, "default@320x180.active.go", 320, 180, CaptureApply.Pseudo("active", "go"));
+            var seen = false;
+            req.Inspect = tree =>
+            {
+                seen = true;
+                Assert.IsNull(tree.panel.focusController.focusedElement, "nothing is focused");
+            };
+            yield return DesignCapture.Run(req, profile);
+            Assert.IsTrue(seen);
+            Assert.AreEqual("#778899", Hex(Pixel(Png(req), 50, 20)), ":active without :focus");
+        }
+
+        [UnityTest]
+        public IEnumerator Run_Hover_PointsAtTheElementItself_NotAtAChildWithItsOwnHover()
+        {
+            var badge = Node("badge", "container", ("position", "absolute"), ("left", "40px"), ("top", "10px"), ("width", "20px"), ("height", "20px"),
+                ("background-color", "#aa0000")).With("hover", ("background-color", "#00aa00"));
+            var card = Box("card", "#112233", ("position", "relative")).With("hover", ("background-color", "#445566")).Add(badge);
+            var export = Export(Small(BlackRoot(card)));
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var req = Request(export, screen, "default@320x180.hover.card", 320, 180, CaptureApply.Pseudo("hover", "card"));
+            yield return DesignCapture.Run(req, profile);
+            var tex = Png(req);
+            Assert.AreEqual("#445566", Hex(Pixel(tex, 5, 5)), "the card is hovered");
+            Assert.AreEqual("#aa0000", Hex(Pixel(tex, 50, 20)), "the badge at the card's centre is not");
+        }
+
+        [UnityTest]
+        public IEnumerator Run_ViewportOfAnotherAspect_BoxesUseThePanelsScale_AndMatchThePng()
+        {
+            // 400×180 against a 320×180 reference at match 0.5: Unity scales by lerp(1.25, 1, 0.5) = 1.125
+            var mark = Node("mark", "container", ("position", "absolute"), ("left", "180px"), ("top", "40px"), ("width", "100px"), ("height", "40px"),
+                ("background-color", "#ff8800"));
+            var export = Export(Small(BlackRoot(mark)));
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var req = Request(export, screen, "default@400x180", 400, 180);
+            yield return DesignCapture.Run(req, profile);
+
+            var boxes = Boxes(req);
+            Assert.AreEqual(1.125, (double)boxes["scale"], 1e-6, "the panel's own scale");
+            var box = (JObject)boxes["elements"]["mark"];
+            Assert.AreEqual(202.5, (double)box["x"], 0.501, "180 × 1.125 (UI Toolkit snaps the layout to device pixels)");
+            Assert.AreEqual(112.5, (double)box["w"], 1.0, "100 × 1.125");
+            var tex = Png(req);
+            var y = (int)((double)box["y"] + (double)box["h"] / 2);
+            var orange = Enumerable.Range(0, tex.width).Where(x => Hex(Pixel(tex, x, y)) == "#ff8800").ToList();
+            Assert.IsNotEmpty(orange);
+            Assert.AreEqual((double)box["x"], orange.First(), 1.0, "the box starts where the PNG shows the element");
+            Assert.AreEqual((double)box["x"] + (double)box["w"], orange.Last() + 1, 1.0, "and ends there");
         }
 
         [UnityTest]
@@ -386,6 +503,72 @@ namespace DesignUi.Editor.Tests
             var copied = GeneratedManifest.Load(Path.Combine(outDir, ScreenCompiler.ManifestFileName));
             Assert.IsNotNull(copied, "the compiled manifest (removed wrappers) is next to the captures");
             Assert.AreEqual("capture.test", copied.screen);
+        }
+
+        static string Job(string name, string state, int w, int h, params string[] apply) =>
+            "{ \"name\": \"" + name + "\", \"state\": \"" + state + "\", \"viewport\": [" + w + ", " + h + "], \"apply\": [" + string.Join(", ", apply) +
+            "], \"pseudo\": null, \"coverage\": null, \"anim\": null }";
+
+        static string Pseudo(string pseudo, string id) => "{ \"kind\": \"pseudo\", \"pseudo\": \"" + pseudo + "\", \"elementId\": \"" + id + "\" }";
+
+        static string ClassApply(string name, string id) => "{ \"kind\": \"class\", \"name\": \"" + name + "\", \"elementId\": \"" + id + "\" }";
+
+        [UnityTest]
+        public IEnumerator CaptureAll_ClearsThePreviousRun_SoAJobThatFailsNowLeavesNothingStale()
+        {
+            var export = Export(Small(BlackRoot(Box("tile", "#112233"))), null,
+                "{ \"captures\": [" + Job("default@320x180", "default", 320, 180) + ", " +
+                Job("default@320x180.is-x.ghost", "default", 320, 180, ClassApply("is-x", "ghost")) + "] }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outDir = TempDir();
+            foreach (var stale in new[] { "default@320x180.is-x.ghost", "old@10x10" })
+            {
+                File.WriteAllBytes(Path.Combine(outDir, stale + ".png"), new byte[] { 1, 2, 3 });
+                BoxesWriter.Merge(Path.Combine(outDir, BoxesWriter.FileName), new JObject
+                {
+                    ["capture"] = stale, ["viewport"] = new JArray(10, 10), ["scale"] = 1.0, ["external"] = new JArray(), ["elements"] = new JObject(),
+                });
+            }
+            File.WriteAllText(Path.Combine(outDir, "notes.txt"), "a file the capture does not own");
+
+            var result = new CaptureResult();
+            yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result);
+
+            CollectionAssert.AreEqual(new[] { "default@320x180" }, result.Captured);
+            StringAssert.Contains("ghost", result.Errors.Single(), "a class on an element the screen does not have is an error");
+            CollectionAssert.AreEquivalent(new[] { "default@320x180.png" }, Directory.GetFiles(outDir, "*.png").Select(Path.GetFileName), "no PNG of an earlier run");
+            CollectionAssert.AreEqual(new[] { "default@320x180" }, JObject.Parse(File.ReadAllText(Path.Combine(outDir, BoxesWriter.FileName))).Properties().Select(p => p.Name));
+            Assert.IsTrue(File.Exists(Path.Combine(outDir, "notes.txt")), "files the capture does not own stay");
+            var meta = JObject.Parse(File.ReadAllText(Path.Combine(outDir, DesignCapture.MetaFileName)));
+            Assert.AreEqual("complete", (string)meta["status"]);
+            Assert.IsFalse(string.IsNullOrEmpty((string)meta["runId"]));
+        }
+
+        [UnityTest]
+        public IEnumerator CaptureAll_JobsThatCannotBeMadeAsTheGoldenShowsThem_AreListedWithTheirReasons()
+        {
+            var ghost = Box("ghost", "#202020", ("pointer-events", "none"));
+            var export = Export(Small(BlackRoot(Box("tile", "#112233"), Box("tab", "#203040"), ghost)), null,
+                "{ \"captures\": [" +
+                Job("default@320x180.hover.tab.hover.tile", "default", 320, 180, Pseudo("hover", "tab"), Pseudo("hover", "tile")) + ", " +
+                Job("default@320x180.hover.ghost", "default", 320, 180, Pseudo("hover", "ghost")) + ", " +
+                Job("default@320x180.checked.tile", "default", 320, 180, Pseudo("checked", "tile")) + ", " +
+                Job("default@320x180.focus.tab", "default", 320, 180, Pseudo("focus", "tab")) + "] }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outDir = TempDir();
+            var result = new CaptureResult();
+            yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result);
+
+            Assert.IsEmpty(result.Errors, string.Join("\n", result.Errors));
+            CollectionAssert.IsEmpty(result.Captured);
+            var reasons = result.NotCaptured.ToDictionary(n => n.Capture, n => n.Reason);
+            StringAssert.Contains("one pointer", reasons["default@320x180.hover.tab.hover.tile"]);
+            StringAssert.Contains("picks it", reasons["default@320x180.hover.ghost"]);
+            StringAssert.Contains("not a toggle", reasons["default@320x180.checked.tile"]);
+            StringAssert.Contains("focus", reasons["default@320x180.focus.tab"]);
+            CollectionAssert.IsEmpty(Directory.GetFiles(outDir, "*.png"));
         }
 
         [Test]

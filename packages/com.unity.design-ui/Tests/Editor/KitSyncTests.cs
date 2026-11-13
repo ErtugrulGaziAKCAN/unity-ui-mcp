@@ -20,24 +20,18 @@ namespace DesignUi.Editor.Tests
             "\"allowedScriptOrigins\":[\"https://unpkg.com\",\"https://cdn.jsdelivr.net\"],\"reference\":[2560,1440]," +
             "\"viewports\":[[2560,1440],[1920,1080],[1280,720]],\"screenMatch\":0.5,\"filterFunctions\":[],\"locales\":[\"tr\"]}\n";
 
-        /// <summary>The 1/64 px text styles of docs/findings/m0.md (Inter, 400 and 700).</summary>
-        const string FractionalStyles = @"{
-  ""caption"": { ""fontSize"": 13.21875, ""lineHeight"": 16, ""weight"": 400 },
-  ""label-bold"": { ""fontSize"": 16.515625, ""lineHeight"": 20, ""weight"": 700 },
-  ""body"": { ""fontSize"": 23.125, ""lineHeight"": 28, ""weight"": 400 },
-  ""subtitle"": { ""fontSize"": 26.4375, ""lineHeight"": 32, ""weight"": 400 },
-  ""title-bold"": { ""fontSize"": 33.046875, ""lineHeight"": 40, ""weight"": 700 },
-  ""headline"": { ""fontSize"": 46.28125, ""lineHeight"": 56, ""weight"": 400 },
-  ""display"": { ""fontSize"": 56.1875, ""lineHeight"": 68, ""weight"": 400 }
-}
-";
-
-        /// <summary>The integer fallback table of docs/findings/m0.md: valid too (every line fits, with more slack).</summary>
-        const string IntegerStyles = @"{
-  ""caption"": { ""fontSize"": 13, ""lineHeight"": 16, ""weight"": 400 },
-  ""label"": { ""fontSize"": 16, ""lineHeight"": 20, ""weight"": 400 },
-  ""body-bold"": { ""fontSize"": 23, ""lineHeight"": 28, ""weight"": 700 },
-  ""display"": { ""fontSize"": 56, ""lineHeight"": 68, ""weight"": 400 }
+        /// <summary>
+        /// Whole-pixel text styles (Inter, 400 and 700): font sizes that are multiples of 4 px, line heights = fontSize ×
+        /// (ascent − descent) / pointSize of the font, rounded to 1/64 px (the kit's design-kit/text-styles.json rows).
+        /// </summary>
+        const string WholePixelStyles = @"{
+  ""caption"": { ""fontSize"": 12, ""lineHeight"": 14.515625, ""weight"": 400 },
+  ""label-bold"": { ""fontSize"": 16, ""lineHeight"": 19.359375, ""weight"": 700 },
+  ""body"": { ""fontSize"": 24, ""lineHeight"": 29.046875, ""weight"": 400 },
+  ""subtitle"": { ""fontSize"": 28, ""lineHeight"": 33.875, ""weight"": 400 },
+  ""title-bold"": { ""fontSize"": 32, ""lineHeight"": 38.71875, ""weight"": 700 },
+  ""headline"": { ""fontSize"": 48, ""lineHeight"": 58.078125, ""weight"": 400 },
+  ""display"": { ""fontSize"": 56, ""lineHeight"": 67.765625, ""weight"": 400 }
 }
 ";
 
@@ -67,7 +61,7 @@ namespace DesignUi.Editor.Tests
             FontFixture.Delete();
         }
 
-        string Kit(string styles = FractionalStyles)
+        string Kit(string styles = WholePixelStyles)
         {
             var dir = Path.Combine(Path.GetTempPath(), "design-ui-kit-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
             Directory.CreateDirectory(dir);
@@ -188,43 +182,57 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(r.Warnings.Any(w => w.StartsWith("Multiple TMP Settings", StringComparison.Ordinal)));
         }
 
-        [TestCase(13.25, 16, "13.21875")]   // pitch 16.0317 does not fit a 16 px line
-        [TestCase(13.2, 16, "13.21875")]    // not on the 1/64 px grid
-        [TestCase(10, 16, "13.21875")]      // pitch 12.0996: a line is 13 px tall, not 16
-        [TestCase(23.140625, 28, "23.125")] // fits by 0.00075 px only: below the 0.001 px margin
-        public void Run_TextStyleThatDoesNotFitItsLine_FailsWithTheComputedSize(double size, int line, string fix)
+        [TestCase(13, 16, "use fontSize 12 with lineHeight 14.515625")]           // the standard generator rounds sizes to whole device px
+        [TestCase(16.515625, 20, "use fontSize 16 with lineHeight 19.359375")]    // the earlier fractional table
+        [TestCase(18, 21.78125, "use fontSize 20 with lineHeight 24.203125")]     // whole, but not whole at the 0.75 and 0.5 scales
+        public void Run_FontSizeThatIsNotAMultipleOf4_FailsWithTheComputedFix(double size, double line, string fix)
         {
-            var kit = Kit("{ \"x\": { \"fontSize\": " + size.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + ", \"lineHeight\": " + line + ", \"weight\": 400 } }");
+            var kit = Kit("{ \"x\": { \"fontSize\": " + Num(size) + ", \"lineHeight\": " + Num(line) + ", \"weight\": 400 } }");
             var profile = Profile();
             var r = KitSync.Run(profile, kit, Resolver(profile));
             Assert.IsFalse(r.Ok);
             var error = r.Errors.Single();
             StringAssert.Contains("text style 'x'", error);
-            StringAssert.Contains("use fontSize " + fix, error);
+            StringAssert.Contains("multiple of 4", error);
+            StringAssert.Contains(fix, error);
             Assert.IsFalse(File.Exists(kit + "/fonts/fonts.css"), "nothing is written when the kit is invalid");
             Assert.AreEqual(KitConfig, File.ReadAllText(kit + "/kit.config.json"));
             Assert.IsFalse(AssetDatabase.IsValidFolder(FontFixture.TwinFolder), "no twin is created or changed by a failed sync");
             CollectionAssert.IsEmpty(r.Twins);
         }
 
-        [Test]
-        public void Run_LineHeightNotAMultipleOf4_FailsWithTheComputedFix()
+        [TestCase(16, 20, "19.359375")]   // the integer line height of the earlier table
+        [TestCase(24, 29, "29.046875")]   // 0.039 px off the pitch 29.0390625
+        public void Run_LineHeightOffTheUiToolkitPitch_FailsWithTheComputedLineHeight(double size, double line, string fix)
         {
-            var kit = Kit("{ \"odd\": { \"fontSize\": 14.875, \"lineHeight\": 18, \"weight\": 400 } }");
+            var kit = Kit("{ \"x\": { \"fontSize\": " + Num(size) + ", \"lineHeight\": " + Num(line) + ", \"weight\": 400 } }");
             var profile = Profile();
             var r = KitSync.Run(profile, kit, Resolver(profile));
             Assert.IsFalse(r.Ok);
             var error = r.Errors.Single();
-            StringAssert.Contains("lineHeight 18", error);
-            StringAssert.Contains("multiple of 4", error);
-            StringAssert.Contains("lineHeight 20 with fontSize 16.515625", error);
+            StringAssert.Contains("lineHeight " + Num(line), error);
+            StringAssert.Contains("use lineHeight " + fix, error);
         }
 
         [Test]
-        public void Run_TheMeasuredTablesAreValid()
+        public void Run_LineHeightWithinHalfOf1_64PxOfThePitch_IsValid()
+        {
+            // 24 px: exact pitch 29.0390625, the 1/64 px grid gives 29.046875 (1/128 px above)
+            var profile = Profile();
+            var r = KitSync.Run(profile, Kit("{ \"x\": { \"fontSize\": 24, \"lineHeight\": 29.046875, \"weight\": 400 } }"), Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+        }
+
+        static string Num(double v) => v.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+
+        [Test]
+        public void Run_TheKitTablesAreValid()
         {
             var profile = Profile();
-            foreach (var styles in new[] { FractionalStyles, IntegerStyles })
+            var tables = new List<string> { WholePixelStyles };
+            var repoKit = IrReaderTests.PackagePath("..", "..", "design-kit", "text-styles.json");
+            if (File.Exists(repoKit)) tables.Add(File.ReadAllText(repoKit));
+            foreach (var styles in tables)
             {
                 var r = KitSync.Run(profile, Kit(styles), Resolver(profile));
                 Assert.IsTrue(r.Ok, Errors(r));
@@ -350,7 +358,7 @@ namespace DesignUi.Editor.Tests
             Directory.CreateDirectory(dir);
             _temp.Add(dir);
             File.WriteAllText(dir + "/kit.config.json", KitConfig);
-            File.WriteAllText(dir + "/text-styles.json", FractionalStyles);
+            File.WriteAllText(dir + "/text-styles.json", WholePixelStyles);
             var profile = Profile();
             var r = KitSync.Run(profile, relative, Resolver(profile));
             Assert.IsTrue(r.Ok, Errors(r));

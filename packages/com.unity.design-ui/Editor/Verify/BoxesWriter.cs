@@ -13,7 +13,7 @@ namespace DesignUi.Editor
     /// <summary>
     /// Boxes of a Unity capture in the exporter's <c>boxes.json</c> schema (<c>tools/design-export/src/boxes/schema.json</c>),
     /// so the comparison reads both sides alike: one entry per IR element Unity has (compiler-removed wrappers are left
-    /// out), in device pixels (panel px times the exporter's scale), rounded to 1e-6.
+    /// out), in device pixels (panel px times the panel's scale, which the capture measures), rounded to 1e-6.
     /// <list type="bullet">
     /// <item>Box: <c>worldBound</c>; an element that is not displayed (display none on it or an ancestor) has a zero box.</item>
     /// <item><c>visible</c>: displayed, visibility visible, and neither it nor an ancestor at opacity 0.</item>
@@ -21,10 +21,11 @@ namespace DesignUi.Editor
     /// <item><c>lines</c> (docs/findings/m0.md, text lines): the caret positions
     /// <c>TextElement.selection.GetCursorPositionFromStringIndex(i)</c> of every string index, grouped by their y (the
     /// bottom of the caret's line); a line's top is its bottom minus UI Toolkit's line pitch
-    /// (<c>size × faceInfo.lineHeight / pointSize</c>), its baseline the top plus the font's ascent
-    /// (<c>faceInfo.ascentLine × size / pointSize</c>), its x and width the smallest and largest caret x. <c>size</c> is the
-    /// size the text is set at: UI Toolkit (6000.3) rounds the font size to whole device pixels (16.515625 px renders at
-    /// 17 px at scale 1 and at 12 device px at scale 0.75), so it is <c>round(fontSize × scale) / scale</c>. Text fields and
+    /// (<c>size × faceInfo.lineHeight / pointSize</c>), its height the font's ascent plus descent and its baseline the top
+    /// plus the ascent (<c>faceInfo.ascentLine × size / pointSize</c>), its x and width the smallest and largest caret x.
+    /// <c>size</c> is the size the text is set at: the standard text generator rounds font sizes to whole device pixels
+    /// (16.515625 px is set at 17 px at scale 1 and at 12 device px at scale 0.75), the advanced generator keeps 1/64 px.
+    /// Text fields and
     /// dropdowns report no lines (the golden's form controls have none), nor does empty text or text without a font asset.</item>
     /// </list>
     /// </summary>
@@ -33,14 +34,15 @@ namespace DesignUi.Editor
         public const string FileName = "boxes.json";
 
         /// <summary>
-        /// The panel scale of Scale With Screen Size, as the exporter computes it:
-        /// <c>2^lerp(log2(W/refW), log2(H/refH), match)</c>, rounded to 1e-9.
+        /// Device pixels per panel pixel of Scale With Screen Size (match width or height) as UI Toolkit resolves it
+        /// (<c>PanelSettings.ResolveScale</c>, 6000.3): the linear blend <c>lerp(W/refW, H/refH, match)</c>, rounded to 1e-9.
+        /// Equal to the logarithmic blend at the reference aspect only. A capture measures the panel's own scale instead.
         /// </summary>
         public static double Scale(Vector2Int viewport, Vector2Int reference, float match)
         {
             double m = (double)(decimal)match; // 0.99f reads as 0.99, the exporter's JSON number
-            double lw = Math.Log(viewport.x / (double)reference.x, 2), lh = Math.Log(viewport.y / (double)reference.y, 2);
-            return Clean(Math.Pow(2, lw + (lh - lw) * m), 1e9);
+            double w = viewport.x / (double)reference.x, h = viewport.y / (double)reference.y;
+            return Clean(w + (h - w) * m, 1e9);
         }
 
         /// <summary>The boxes of one capture: every element of <paramref name="ir"/> found by name below <paramref name="root"/>.</summary>
@@ -169,11 +171,15 @@ namespace DesignUi.Editor
             if (string.IsNullOrEmpty(text)) yield break;
             var font = te.resolvedStyle.unityFontDefinition.fontAsset;
             if (font == null || font.faceInfo.pointSize <= 0) yield break;
-            // the generator sets text at whole device pixels (measured: caret line pitch and label height of 16.515625 px)
-            double size = Math.Round(te.resolvedStyle.fontSize * scale, MidpointRounding.AwayFromZero) / scale;
+            // the standard text generator rounds font sizes to whole device pixels (measured: caret line pitch and label height
+            // of 16.515625 px); the advanced generator keeps 1/64 px (6000.3 source; not measured here)
+            double size = te.resolvedStyle.unityTextGenerator == TextGeneratorType.Advanced
+                ? Math.Round(te.resolvedStyle.fontSize * scale * 64, MidpointRounding.AwayFromZero) / 64 / scale
+                : Math.Round(te.resolvedStyle.fontSize * scale, MidpointRounding.AwayFromZero) / scale;
             if (size <= 0) yield break;
             double pitch = font.faceInfo.lineHeight * size / font.faceInfo.pointSize;
             double ascent = font.faceInfo.ascentLine * size / font.faceInfo.pointSize;
+            double glyphs = (font.faceInfo.ascentLine - font.faceInfo.descentLine) * size / font.faceInfo.pointSize; // the schema's line height
             var selection = te.selection;
             var groups = new List<(float bottom, float minX, float maxX)>();
             for (int i = 0; i <= text.Length; i++)
@@ -187,7 +193,7 @@ namespace DesignUi.Editor
             foreach (var g in groups)
             {
                 var top = te.LocalToWorld(new Vector2(g.minX, g.bottom - (float)pitch));
-                var right = te.LocalToWorld(new Vector2(g.maxX, g.bottom));
+                var right = te.LocalToWorld(new Vector2(g.maxX, g.bottom - (float)pitch + (float)glyphs));
                 var baseline = te.LocalToWorld(new Vector2(g.minX, g.bottom - (float)pitch + (float)ascent));
                 yield return new JObject
                 {
