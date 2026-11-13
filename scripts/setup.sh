@@ -6,7 +6,8 @@
 #
 # Idempotent: a second run changes nothing. --dry-run prints every change without making it.
 # In the Unity project it only adds the com.unity.design-ui entry to Packages/manifest.json (when absent) and writes
-# design-ui.config.json (when absent). It never commits or pushes anything.
+# design-ui.config.json (when absent). It never commits or pushes anything. Bash only (macOS, Linux; on Windows use
+# WSL or Git Bash, or the manual steps in INSTALL.md).
 set -euo pipefail
 
 usage() {
@@ -23,13 +24,17 @@ Usage: scripts/setup.sh --project <UnityProjectDir> [options]
   --package git|local   Unity package reference: git URL of this repository at its current branch (default), or a
                         file: path to this clone.
   --dry-run             Print what would change; change nothing.
-  --no-build            Skip npm ci, the server build and the Chromium check (already done, or tests).
+  --no-build            Skip npm ci, the server build, the Chromium check and the final server check.
   -h, --help            Show this help.
+
+Environment:
+  CLAUDE_BIN            The claude CLI to use when `claude` is not on PATH (e.g. the CLI inside the Claude desktop app).
 EOF
 }
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER_JS="$REPO/tools/design-ui-mcp/dist/server.js"
+SMOKE_JS="$REPO/tools/design-ui-mcp/scripts/smoke.mjs"
 PROJECT=""
 CLIENT="claude-code"
 CLIENT_DIR=""
@@ -38,13 +43,16 @@ PACKAGE="git"
 DRY=0
 BUILD=1
 
+die() { echo "setup: $*" >&2; exit 2; }
+need_value() { [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value"; }
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --project) PROJECT="${2:-}"; shift 2 ;;
-    --client) CLIENT="${2:-}"; shift 2 ;;
-    --client-dir) CLIENT_DIR="${2:-}"; shift 2 ;;
-    --design-root) DESIGN_ROOT="${2:-}"; shift 2 ;;
-    --package) PACKAGE="${2:-}"; shift 2 ;;
+    --project) need_value "$@"; PROJECT="$2"; shift 2 ;;
+    --client) need_value "$@"; CLIENT="$2"; shift 2 ;;
+    --client-dir) need_value "$@"; CLIENT_DIR="$2"; shift 2 ;;
+    --design-root) need_value "$@"; DESIGN_ROOT="$2"; shift 2 ;;
+    --package) need_value "$@"; PACKAGE="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     --no-build) BUILD=0; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -52,13 +60,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-die() { echo "setup: $*" >&2; exit 2; }
 CHANGES=()
-change() { # change "<description>": records and prints one change (or planned change)
+change() { # change "<imperative description>": records and prints one change (or planned change)
   CHANGES+=("$1")
-  if [ "$DRY" = 1 ]; then echo "  would: $1"; else echo "  changed: $1"; fi
+  if [ "$DRY" = 1 ]; then echo "  would $1"; else echo "  change: $1"; fi
 }
 info() { echo "  $*"; }
+quoted() { # a command as one shell-quoted line that can be pasted into a shell
+  local out="" a
+  for a in "$@"; do out="$out$(printf '%q' "$a") "; done
+  printf '%s' "${out% }"
+}
 
 [ -n "$PROJECT" ] || { usage >&2; die "--project is required"; }
 [ -d "$PROJECT" ] || die "Unity project folder not found: $PROJECT"
@@ -75,7 +87,7 @@ echo "unity-ui-mcp clone: $REPO"
 echo "Unity project:      $PROJECT"
 
 # 1. Node -------------------------------------------------------------------------------------------------------------
-echo "[1/5] Node.js"
+echo "[1/6] Node.js"
 command -v node >/dev/null 2>&1 || die "Node.js 20 or later is required (https://nodejs.org)"
 NODE="$(command -v node)"
 NODE_MAJOR="$("$NODE" -p 'process.versions.node.split(".")[0]')"
@@ -83,11 +95,11 @@ NODE_MAJOR="$("$NODE" -p 'process.versions.node.split(".")[0]')"
 info "node $("$NODE" --version) at $NODE"
 
 # 2. MCP server -------------------------------------------------------------------------------------------------------
-echo "[2/5] MCP server (tools/design-ui-mcp)"
+echo "[2/6] MCP server (tools/design-ui-mcp)"
 if [ "$BUILD" = 1 ]; then
   command -v npm >/dev/null 2>&1 || die "npm is required"
   if [ ! -d "$REPO/node_modules" ] || [ "$REPO/package-lock.json" -nt "$REPO/node_modules/.package-lock.json" ]; then
-    change "npm ci in $REPO (installs node_modules from package-lock.json)"
+    change "run npm ci in $REPO (installs node_modules from package-lock.json)"
     [ "$DRY" = 1 ] || (cd "$REPO" && npm ci --no-audit --no-fund)
   else
     info "node_modules up to date"
@@ -110,7 +122,7 @@ else
 fi
 
 # 3. Unity package ----------------------------------------------------------------------------------------------------
-echo "[3/5] Unity package com.unity.design-ui"
+echo "[3/6] Unity package com.unity.design-ui"
 if [ "$PACKAGE" = local ]; then
   PKG_VALUE="file:$REPO/packages/com.unity.design-ui"
 else
@@ -127,37 +139,51 @@ fi
 MANIFEST_RESULT="$("$NODE" - "$PROJECT/Packages/manifest.json" "com.unity.design-ui" "$PKG_VALUE" "$DRY" <<'NODE'
 const fs = require("fs");
 const [file, name, value, dry] = process.argv.slice(2);
-const text = fs.readFileSync(file, "utf8");
-const json = JSON.parse(text);
-if (json.dependencies && Object.prototype.hasOwnProperty.call(json.dependencies, name)) {
-  console.log(`kept existing entry "${name}": ${JSON.stringify(json.dependencies[name])}`);
+const fail = (msg) => { console.log(`FAIL ${msg}`); process.exit(0); };
+const raw = fs.readFileSync(file, "utf8");
+const bom = raw.startsWith("﻿") ? "﻿" : "";
+const text = raw.slice(bom.length);
+let json;
+try { json = JSON.parse(text); } catch (e) { fail(`Packages/manifest.json is not valid JSON: ${e.message}`); }
+if (!json || typeof json.dependencies !== "object" || json.dependencies === null || Array.isArray(json.dependencies)) {
+  fail(`Packages/manifest.json has no top-level "dependencies" object`);
+}
+if (Object.prototype.hasOwnProperty.call(json.dependencies, name)) {
+  console.log(`KEEP kept existing entry "${name}": ${JSON.stringify(json.dependencies[name])}`);
   process.exit(0);
 }
-// insert one line right after `"dependencies": {`, keeping the rest of the file byte for byte
-const m = /"dependencies"\s*:\s*\{/.exec(text);
-if (!m) { console.error(`no "dependencies" object in ${file}`); process.exit(3); }
-const at = m.index + m[0].length;
-const rest = text.slice(at);
-const indent = (/^\r?\n([ \t]+)\S/.exec(rest) || [null, "    "])[1];
-const empty = /^\s*\}/.test(rest);
+// insert one line right after the top-level `"dependencies": {`, keeping the rest of the file byte for byte; a key
+// of the same name nested earlier (e.g. inside a registry entry) is skipped by the check below
 const eol = text.includes("\r\n") ? "\r\n" : "\n";
-const line = `${eol}${indent}${JSON.stringify(name)}: ${JSON.stringify(value)}${empty ? "" : ","}`;
-const out = text.slice(0, at) + line + (empty ? eol + rest.replace(/^\s*/, "") : rest);
-JSON.parse(out);
-if (dry !== "1") fs.writeFileSync(file, out);
-console.log(`CHANGE added "${name}": ${JSON.stringify(value)} to Packages/manifest.json`);
+let out = null;
+for (const m of text.matchAll(/"dependencies"\s*:\s*\{/g)) {
+  const at = m.index + m[0].length;
+  const rest = text.slice(at);
+  const indent = (/^\r?\n([ \t]+)\S/.exec(rest) || [null, "    "])[1];
+  const empty = /^\s*\}/.test(rest);
+  const line = `${eol}${indent}${JSON.stringify(name)}: ${JSON.stringify(value)}${empty ? "" : ","}`;
+  const candidate = text.slice(0, at) + line + (empty ? eol + rest.replace(/^\s*/, "") : rest);
+  let parsed;
+  try { parsed = JSON.parse(candidate); } catch { continue; }
+  if (parsed.dependencies && parsed.dependencies[name] === value) { out = candidate; break; }
+}
+if (out === null) fail(`could not add "${name}" to the top-level "dependencies" of Packages/manifest.json`);
+if (dry !== "1") fs.writeFileSync(file, bom + out);
+console.log(`CHANGE add "${name}": ${JSON.stringify(value)} to Packages/manifest.json`);
 NODE
 )"
 case "$MANIFEST_RESULT" in
   CHANGE*) change "${MANIFEST_RESULT#CHANGE }" ;;
-  *) info "$MANIFEST_RESULT" ;;
+  KEEP*) info "${MANIFEST_RESULT#KEEP }" ;;
+  FAIL*) die "${MANIFEST_RESULT#FAIL }" ;;
+  *) die "unexpected manifest result: $MANIFEST_RESULT" ;;
 esac
 if [ "$PACKAGE" = git ] && [ "${DESIGN_UI_SETUP_OFFLINE:-0}" != 1 ] && ! git -C "$REPO" ls-remote --exit-code origin "$REV" >/dev/null 2>&1 && ! git -C "$REPO" ls-remote --exit-code origin "refs/heads/$REV" >/dev/null 2>&1; then
   info "warning: $REV was not found on origin; Unity can resolve the git URL only after it is pushed (or use --package local)"
 fi
 
 # 4. design-ui.config.json --------------------------------------------------------------------------------------------
-echo "[4/5] design-ui.config.json"
+echo "[4/6] design-ui.config.json"
 CONFIG="$PROJECT/design-ui.config.json"
 if [ -f "$CONFIG" ]; then
   info "kept existing $CONFIG"
@@ -179,60 +205,78 @@ NODE
 fi
 
 # 5. MCP client -------------------------------------------------------------------------------------------------------
-echo "[5/5] MCP client: $CLIENT"
-ARGS_JSON="$("$NODE" -p 'JSON.stringify(process.argv.slice(1))' "$SERVER_JS" --project "$PROJECT")"
-print_json_snippet() { # $1 = file the snippet belongs in
-  info "add this to $1:"
-  cat <<EOF
-{
-  "mcpServers": {
-    "design-ui": { "command": "$NODE", "args": $ARGS_JSON }
-  }
+echo "[5/6] MCP client: $CLIENT"
+snippet() { # snippet json|toml: the client configuration, built by node so every value is escaped
+  "$NODE" - "$1" "$NODE" "$SERVER_JS" "$PROJECT" <<'NODE'
+const [kind, command, server, project] = process.argv.slice(2);
+const args = [server, "--project", project];
+if (kind === "toml") {
+  // TOML basic strings use the same escapes as JSON strings
+  console.log(`[mcp_servers.design-ui]\ncommand = ${JSON.stringify(command)}\nargs = ${JSON.stringify(args)}`);
+} else {
+  console.log(JSON.stringify({ mcpServers: { "design-ui": { command, args } } }, null, 2));
 }
-EOF
+NODE
 }
+ADD_CMD=(mcp add --scope local design-ui -- "$NODE" "$SERVER_JS" --project "$PROJECT")
 case "$CLIENT" in
   none) info "skipped" ;;
   codex)
     info "add this to ~/.codex/config.toml (automatic registration for Codex arrives with the skill installer):"
-    cat <<EOF
-[mcp_servers.design-ui]
-command = "$NODE"
-args = $ARGS_JSON
-EOF
+    snippet toml
     ;;
-  cursor) print_json_snippet "$CLIENT_DIR/.cursor/mcp.json (or ~/.cursor/mcp.json)" ;;
-  claude-desktop) print_json_snippet "claude_desktop_config.json (Claude Desktop > Settings > Developer > Edit Config)" ;;
+  cursor)
+    info "add this to $CLIENT_DIR/.cursor/mcp.json (or ~/.cursor/mcp.json):"
+    snippet json
+    ;;
+  claude-desktop)
+    info "add this to claude_desktop_config.json (Claude Desktop > Settings > Developer > Edit Config):"
+    snippet json
+    ;;
   claude-code)
-    CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude 2>/dev/null || true)}"
-    if [ -z "$CLAUDE_BIN" ] && [ "$(uname)" = Darwin ]; then
-      # Claude Code inside the Claude desktop app ships its own CLI
-      CLAUDE_BIN="$(ls -t "$HOME"/Library/Application\ Support/Claude/claude-code/*/*/claude.app/Contents/MacOS/claude 2>/dev/null | head -1 || true)"
-    fi
-    ADD_CMD=(mcp add --scope local design-ui -- "$NODE" "$SERVER_JS" --project "$PROJECT")
-    if [ -z "$CLAUDE_BIN" ]; then
-      info "the claude CLI was not found; run this in $CLIENT_DIR:"
-      echo "  claude ${ADD_CMD[*]}"
+    CLAUDE="${CLAUDE_BIN:-}"
+    [ -n "$CLAUDE" ] || CLAUDE="$(command -v claude 2>/dev/null || true)"
+    if [ -n "$CLAUDE" ] && [ ! -x "$CLAUDE" ]; then die "CLAUDE_BIN is not an executable file: $CLAUDE"; fi
+    if [ -z "$CLAUDE" ]; then
+      info "claude CLI: not found on PATH (set CLAUDE_BIN to use another one); nothing was registered."
+      info "Run this in $CLIENT_DIR:"
+      echo "    cd $(quoted "$CLIENT_DIR") && $(quoted claude "${ADD_CMD[@]}")"
+      if [ "$(uname)" = Darwin ]; then
+        BUNDLED="$(ls -t "$HOME"/Library/Application\ Support/Claude/claude-code/*/*/claude.app/Contents/MacOS/claude 2>/dev/null | head -1 || true)"
+        [ -z "$BUNDLED" ] || info "The Claude desktop app has a CLI at $BUNDLED; to let setup use it, rerun with CLAUDE_BIN=$(quoted "$BUNDLED")"
+      fi
     else
+      info "claude CLI: $CLAUDE"
       REGISTERED=0
-      EXISTING="$(cd "$CLIENT_DIR" && "$CLAUDE_BIN" mcp get design-ui 2>&1)" && REGISTERED=1 || true
+      EXISTING="$(cd "$CLIENT_DIR" && "$CLAUDE" mcp get design-ui 2>&1)" && REGISTERED=1 || true
       if [ "$REGISTERED" = 1 ] && printf '%s' "$EXISTING" | grep -qF -- "$SERVER_JS" && printf '%s' "$EXISTING" | grep -qF -- "$PROJECT"; then
         info "already registered in $CLIENT_DIR"
       else
         if [ "$REGISTERED" = 1 ]; then
-          change "replace the design-ui MCP server registered for $CLIENT_DIR (it points elsewhere)"
-          [ "$DRY" = 1 ] || (cd "$CLIENT_DIR" && "$CLAUDE_BIN" mcp remove --scope local design-ui >/dev/null)
+          change "replace the design-ui MCP server registered for $CLIENT_DIR (it points elsewhere): $(quoted "$CLAUDE" mcp remove --scope local design-ui)"
+          [ "$DRY" = 1 ] || (cd "$CLIENT_DIR" && "$CLAUDE" mcp remove --scope local design-ui >/dev/null)
         fi
-        change "register MCP server design-ui for Claude Code in $CLIENT_DIR: claude ${ADD_CMD[*]}"
+        change "register MCP server design-ui for Claude Code in $CLIENT_DIR: $(quoted "$CLAUDE" "${ADD_CMD[@]}")"
         if [ "$DRY" != 1 ]; then
-          (cd "$CLIENT_DIR" && "$CLAUDE_BIN" "${ADD_CMD[@]}")
-          STATUS="$(cd "$CLIENT_DIR" && "$CLAUDE_BIN" mcp get design-ui 2>&1 | grep -i 'status' | head -1 || true)"
+          (cd "$CLIENT_DIR" && "$CLAUDE" "${ADD_CMD[@]}")
+          STATUS="$(cd "$CLIENT_DIR" && "$CLAUDE" mcp get design-ui 2>&1 | grep -i 'status' | head -1 || true)"
           [ -z "$STATUS" ] || info "claude mcp get design-ui: $STATUS"
         fi
       fi
     fi
     ;;
 esac
+
+# 6. Server check -----------------------------------------------------------------------------------------------------
+echo "[6/6] Server check (stdio: initialize, tools/list, design_ui_list)"
+if [ "$DRY" = 1 ] || [ "$BUILD" = 0 ]; then
+  info "skipped$([ "$DRY" = 1 ] && echo " (dry run)" || echo " (--no-build)"); run it later with:"
+  echo "    $(quoted "$NODE" "$SMOKE_JS" --project "$PROJECT")"
+elif "$NODE" "$SMOKE_JS" --project "$PROJECT" 2>&1 | sed 's/^/    /'; then
+  info "server answers"
+else
+  die "the server check failed (output above)"
+fi
 
 echo
 if [ "${#CHANGES[@]}" -eq 0 ]; then
@@ -242,5 +286,6 @@ elif [ "$DRY" = 1 ]; then
 else
   echo "${#CHANGES[@]} change(s) made."
 fi
-echo "Next: open the project in Unity (the package's bridge starts by itself), restart or reload the MCP servers of your"
-echo "client, then call design_ui_list: unity.bridge should be \"connected\"."
+echo "Next: open the project in Unity (the package's bridge starts by itself), start a NEW session of your MCP client"
+echo "(the server is not visible in sessions that were already running), and call design_ui_list there:"
+echo "unity.bridge should be \"connected\"."

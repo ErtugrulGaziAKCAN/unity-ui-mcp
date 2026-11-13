@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Manual stdio handshake with the built server, without any MCP client library: newline-delimited JSON-RPC.
-// Usage: node scripts/smoke.mjs --project <UnityProjectDir> [--call <tool> [--args '<json>']]...
-// Prints the server info, the tool names, and a short view of each call's result. Exit 1 if a step fails.
+// Out-of-band check of the built server, without any MCP client: newline-delimited JSON-RPC over stdio.
+// Usage: node tools/design-ui-mcp/scripts/smoke.mjs --project <UnityProjectDir> [--call <tool> [--args '<json>']]... [--allow-errors]
+// Runs initialize, tools/list, resources/list and the calls (default: design_ui_list), printing a short view of each.
+// Exit 1 if a step fails or a call returns isError (unless --allow-errors).
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,14 +12,18 @@ const server = path.resolve(here, "../dist/server.js");
 
 const argv = process.argv.slice(2);
 let project = null;
+let allowErrors = false;
 const calls = [];
+const usage = "usage: node smoke.mjs --project <UnityProjectDir> [--call <tool> [--args '<json>']]... [--allow-errors]";
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--project") project = argv[++i];
   else if (argv[i] === "--call") calls.push({ name: argv[++i], args: {} });
-  else if (argv[i] === "--args") calls[calls.length - 1].args = JSON.parse(argv[++i]);
-  else { console.error(`unknown argument ${argv[i]}`); process.exit(2); }
+  else if (argv[i] === "--args" && calls.length) calls[calls.length - 1].args = JSON.parse(argv[++i]);
+  else if (argv[i] === "--allow-errors") allowErrors = true;
+  else { console.error(`unknown argument ${argv[i]}\n${usage}`); process.exit(2); }
 }
-if (!project) { console.error("usage: node scripts/smoke.mjs --project <UnityProjectDir> [--call <tool> [--args '<json>']]..."); process.exit(2); }
+if (!project) { console.error(usage); process.exit(2); }
+if (!calls.length) calls.push({ name: "design_ui_list", args: {} });
 
 const child = spawn(process.execPath, [server, "--project", project], { stdio: ["pipe", "pipe", "inherit"] });
 let buf = "";
@@ -65,6 +70,7 @@ try {
     if (r.error) { failed = true; console.log(`tools/call ${c.name}: protocol error ${JSON.stringify(r.error)}`); continue; }
     const text = r.result.content.find((x) => x.type === "text")?.text ?? "";
     const lines = text.split("\n");
+    if (r.result.isError && !allowErrors) failed = true;
     console.log(`tools/call ${c.name} ${JSON.stringify(c.args)}: isError=${!!r.result.isError} (${ms} ms), ${text.length} chars, timings ${JSON.stringify(r.result.structuredContent?.timings ?? {})}`);
     for (const l of lines.slice(0, 12)) console.log(`  | ${l}`);
     if (lines.length > 12) console.log(`  | … ${lines.length - 12} more lines`);

@@ -44,6 +44,7 @@ export async function bridgeRequest(info: BridgeInfo, method: "GET" | "POST", ro
       method,
       headers: { authorization: `Bearer ${info.token}`, ...(body === undefined ? {} : { "content-type": "application/json" }) },
       body: body === undefined ? undefined : JSON.stringify(body),
+      redirect: "error", // the bridge never redirects; the token must not follow one anywhere
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {

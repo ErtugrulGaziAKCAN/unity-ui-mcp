@@ -79,7 +79,8 @@ its bookkeeping in `<screen>/.design-ui/`. `unityRunner.prefer: "editor"` sends 
 Editor's bridge and fails if it does not answer (no silent fallback); `"command"` runs the argv templates instead
 (placeholders `{projectDir}` `{profile}` `{exportDir}` `{outDir}` `{kitDir}`, also passed as `DESIGN_UI_*`
 environment variables; relative paths start from the Unity project folder). Captures for verification use the
-command route unless `captureVia` is `"editor"`.
+command route unless `captureVia` is `"editor"`. Command templates run as programs with your user's rights: only
+use the command runner with projects whose `design-ui.config.json` you trust.
 
 | Tool | Does | This version |
 |---|---|---|
@@ -92,8 +93,10 @@ command route unless `captureVia` is `"editor"`.
 | `design_ui_kit_sync` | Syncs fonts and settings from Unity into the kit | forwarded; Unity answers "not available yet" |
 
 Every result has a short text summary, the same data as JSON (with per-step `timings`), and `isError` with the
-reason when a step fails or is not available. `node tools/design-ui-mcp/scripts/smoke.mjs --project <dir> --call
-design_ui_status` runs a raw stdio handshake against the built server.
+reason when a step fails or is not available. `node tools/design-ui-mcp/scripts/smoke.mjs --project <dir>` checks the
+built server without a client (stdio: initialize, tools/list, design_ui_list; `--call <tool>` for others).
+
+`scripts/setup.sh` is bash (macOS, Linux; on Windows use WSL or Git Bash, or the manual steps above).
 
 ## Install the Unity package
 

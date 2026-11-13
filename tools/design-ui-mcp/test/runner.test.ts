@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { findBridge, bridgeStatus } from "../src/bridge.js";
@@ -139,6 +140,26 @@ describe("bridgeStatus", () => {
     await bridge.close();
     bridge = null;
     expect((await bridgeStatus(p.dir)).bridge).toBe("not-responding");
+  });
+
+  it("does not follow a redirect (the token never leaves for another address)", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const hits: string[] = [];
+    const target = http.createServer((req, res) => { hits.push(String(req.headers.authorization)); res.end("{}"); });
+    await new Promise<void>((r) => target.listen(0, "127.0.0.1", r));
+    const tport = (target.address() as { port: number }).port;
+    const redirect = http.createServer((_req, res) => { res.writeHead(302, { location: `http://127.0.0.1:${tport}/status` }); res.end(); });
+    await new Promise<void>((r) => redirect.listen(0, "127.0.0.1", r));
+    const rport = (redirect.address() as { port: number }).port;
+    fs.mkdirSync(path.join(p.dir, "Library", "DesignUi"), { recursive: true });
+    fs.writeFileSync(path.join(p.dir, "Library", "DesignUi", "bridge.json"), JSON.stringify({ port: rport, token: "e".repeat(64), projectPath: p.dir }));
+    try {
+      expect((await bridgeStatus(p.dir)).bridge).not.toBe("connected");
+      expect(hits).toEqual([]);
+    } finally {
+      await new Promise((r) => target.close(r));
+      await new Promise((r) => redirect.close(r));
+    }
   });
 
   it("reports unauthorized for a token the bridge rejects", async () => {

@@ -24,7 +24,7 @@ export function registerLint(server: McpServer, ctx: ServerContext): void {
     description:
       "Checks one design against the contract in a real browser (the same Chromium and kit fonts the exporter uses) and " +
       "returns findings with rule id, element path and fix. Errors are design-side fixes: change the HTML/CSS (or tell the " +
-      "design tool), never the Unity output. A ZIP is unpacked into a fresh temp folder; unsafe entries are rejected.",
+      "design tool), never the Unity output. A ZIP is unpacked into a fresh temp folder (removed afterwards); unsafe entries are rejected.",
     inputSchema: { design: designArg },
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async ({ design }) => {
