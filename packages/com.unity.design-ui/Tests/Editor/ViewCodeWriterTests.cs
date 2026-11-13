@@ -102,7 +102,7 @@ namespace DesignUi.Editor.Tests
         {
             var title = Text("title", "Hoş geldin {name}, {club.name}", ("font-size", "16.515625px"));
             title.Text.Args = new[] { "name", "club.name" };
-            var club = Text("club", "Galatasaray", ("font-size", "16.515625px"));
+            var club = Text("club", "Kuzey Yıldızları", ("font-size", "16.515625px"));
             club.Bind = "club.name";
             var field = Node("search", "input", ("height", "30px"));
             field.Bind = "query";
@@ -120,7 +120,7 @@ namespace DesignUi.Editor.Tests
             StringAssert.Contains("if (string.Equals(value, m_Value", code, "an unchanged value writes nothing");
             StringAssert.Contains("global::DesignUi.DesignView.SetText(Club, value, m_Context);", code, "texts go through DesignText");
             StringAssert.Contains("public void SetQuery(string value)", code);
-            StringAssert.Contains("global::DesignUi.DesignView.SetText(Search, value, m_Context);", code, "an input's value");
+            StringAssert.Contains("global::DesignUi.DesignView.SetValue(Search, value, m_Context);", code, "an input's value, compared with what it shows (driven in GeneratedViewTests)");
             StringAssert.Contains("public void SetClubCrest(Background value)", code, "an image takes a Background");
             StringAssert.Contains("global::DesignUi.DesignView.SetImage(Crest, value);", code);
         }
@@ -138,17 +138,44 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(1, Regex.Matches(code, @"public void SetClubName\(").Count);
         }
 
-        [Test]
-        public void Write_ImageBind_PaintsTheContentChild_WhenTheImageMovedToOne()
+        /// <summary>
+        /// Image binds whose picture is painted by the compiler's content child (<c>&lt;id&gt;__image</c>, an element the view
+        /// does not expose) because the element also paints a gradient: on the screen and in a repeat's item.
+        /// </summary>
+        internal static IrScreen ImagesInChildren()
         {
-            var ir = Values();
-            var crest = ir.Root.Children.Single(c => c.Id == "crest");
-            crest.Style["base"]["background-color"] = "#101010";
-            crest.Background = new IrAsset { Kind = "svg", File = "assets/grad.svg", Sha256 = new string('f', 64), Width = 32, Height = 32 };
-            var s = Build(ir);
+            IrNode Crest(string id, string bind)
+            {
+                var crest = Node(id, "image", ("width", "32px"), ("height", "32px"), ("background-color", "#101010"));
+                crest.Asset = new IrAsset { Kind = "image", File = "assets/crest.png", Sha256 = new string('e', 64), Width = 32, Height = 32 };
+                crest.Background = new IrAsset { Kind = "svg", File = "assets/grad.svg", Sha256 = new string('f', 64), Width = 32, Height = 32 };
+                crest.Bind = bind;
+                return crest;
+            }
+            var badges = Node("badges", "container", ("display", "flex"), ("flex-direction", "row")).Add(Crest("badge", "badge.image"));
+            badges.Repeat = new IrRepeat { Name = "badge", Mode = "inline", Count = 2 };
+            return TestIr.Screen(Root(Crest("crest", "club.crest"), badges));
+        }
+
+        [Test]
+        public void Write_ImageBindsPaintedByAContentChild_ResolveTheChildOnceInTheConstructor()
+        {
+            var s = Build(ImagesInChildren());
             Assert.IsNotNull(s.Find("crest__image"), "fixture: a gradient moves the content image to a child");
             var code = ViewCodeWriter.Write(s, Ns, "TestScreenView");
-            StringAssert.Contains("global::DesignUi.DesignView.SetImage(Find<VisualElement>(root, \"crest__image\"), value);", code);
+            var setter = code.Substring(code.IndexOf("public void SetClubCrest(Background value)", System.StringComparison.Ordinal));
+            setter = setter.Substring(0, setter.IndexOf("\n        }\n", System.StringComparison.Ordinal));
+            StringAssert.DoesNotContain("Find<", setter, "a setter cannot look elements up: root is a constructor parameter (compiled and driven in GeneratedViewTests)");
+        }
+
+        [Test]
+        public void Write_SmartStringArgumentsOnABoundElement_Throw()
+        {
+            var title = Text("title", "Hoş geldin {name}", ("font-size", "16.515625px"));
+            title.Text.Args = new[] { "name" };
+            title.Bind = "title";
+            var e = Assert.Throws<IrFormatException>(() => ViewCodeWriter.Write(Build(TestIr.Screen(Root(title))), Ns, "TestScreenView"));
+            StringAssert.Contains("'title'", e.Message);
         }
 
         [Test]

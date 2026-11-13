@@ -106,6 +106,31 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Steps_TwinALayerThatSwitchesTheLineBoxFont_EvenWithoutASize()
+        {
+            // the hover layer names the family again (another face of it): its line-box variable must be scaled too, or the
+            // base twin (one class more than .s-t, later) wins over it under a step
+            var t = Styled("t", "Metin", "label").With("hover", ("font-family", "Inter"));
+            var s = Build(Root(t), Options(null, new DesignTextSize { key = "large", scale = 1.5f }));
+            var cls = Cls(s, "t");
+            Assert.That(Decl(Rule(s, "." + cls + ":hover"), "-unity-font-definition"), Does.Contain(FontTwinGenerator.LineBox.KeyOf(16, 20)), "fixture");
+            var twin = Rule(s, ".text-size-large ." + cls + ":hover");
+            Assert.AreEqual("var(--font-inter-" + FontTwinGenerator.LineBox.KeyOf(24, 30) + ")", Decl(twin, "-unity-font-definition"));
+            Assert.IsFalse(twin.Declarations.Any(d => d.Property == "font-size"), "the layer sets no size; the base twin's applies");
+        }
+
+        [Test]
+        public void Steps_WithAFloatScale_WriteTheDecimalSize()
+        {
+            var s = Build(Root(Styled("t", "Metin", "label")), Options(null, new DesignTextSize { key = "large", scale = 1.1f }));
+            var twin = Rule(s, ".text-size-large ." + Cls(s, "t"));
+            Assert.AreEqual("17.6px", Decl(twin, "font-size"), "16 x 1.1, not the float's binary expansion");
+            Assert.AreEqual("var(--font-inter-" + FontTwinGenerator.LineBox.KeyOf(17.6, 22) + ")", Decl(twin, "-unity-font-definition"));
+            CollectionAssert.Contains(ScreenCompiler.ScaledLineBoxes(FontTwinGenerator.LineBox.Of(new[] { (16.0, 20.0) }), new[] { new DesignTextSize { key = "large", scale = 1.1f } })
+                .Select(b => b.Key).ToArray(), FontTwinGenerator.LineBox.KeyOf(17.6, 22), "the twin the compiler makes has the same key");
+        }
+
+        [Test]
         public void Steps_ThatAreNotWholeDevicePixelsAtAViewport_AreNoted()
         {
             var s = Build(Root(Styled("t", "Metin", "label")), Options(null, new DesignTextSize { key = "large", scale = 1.25f }, new DesignTextSize { key = "x2", scale = 2f }));
@@ -142,6 +167,16 @@ namespace DesignUi.Editor.Tests
 
             var kept = Build(Root(Styled("start", "Başla", "label", ("text-align", "left"))), Options(DesignUi.RtlTextAlignment.Keep));
             Assert.IsFalse(kept.Rules.Any(r => r.Selector.Contains(".rtl")), "keep: no rules");
+        }
+
+        [Test]
+        public void Rtl_TheRootFlipsTheInheritedStart_WhenOnlyAStateLayerOfItAligns()
+        {
+            var root = Styled("root", "Kök", "label", ("width", "100%")).With("state:loading", ("text-align", "center"));
+            var s = Build(root, Options(DesignUi.RtlTextAlignment.StartToEnd));
+            var cls = Cls(s, "root");
+            Assert.AreEqual("upper-center", Decl(Rule(s, "." + cls + ".rtl.state-loading"), "-unity-text-align"));
+            Assert.AreEqual("upper-right", Decl(Rule(s, "." + cls + ".rtl"), "-unity-text-align"), "the default state still flips the inherited start");
         }
 
         // ---- the compiler -----------------------------------------------------------------------------------------------

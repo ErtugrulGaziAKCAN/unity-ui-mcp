@@ -150,6 +150,21 @@ namespace DesignUi
             }
         }
 
+        /// <summary>
+        /// Shows a value on a control the user edits (a TextField's text, a DropdownField's choice) through
+        /// <see cref="DesignText"/>, compared with what the control shows now, not with what the view wrote last: a reset
+        /// after the user typed clears the field. Written without a change event, so the presenter hears only the user;
+        /// nothing is written (or allocated) when the control already shows it.
+        /// </summary>
+        public static void SetValue(VisualElement element, string value, DesignViewContext context)
+        {
+            if (!(element is INotifyValueChanged<string> control))
+                throw new ArgumentException("element '" + element?.name + "' (" + element?.GetType().Name + ") has no text value", nameof(element));
+            if (string.Equals(control.value, value, StringComparison.Ordinal)) return;
+            DesignText.Prepare(element, value, context?.Fonts);
+            control.SetValueWithoutNotify(value);
+        }
+
         /// <summary>The text a text-carrying control shows now (see <see cref="SetText"/>), or null.</summary>
         public static string GetText(VisualElement element)
         {

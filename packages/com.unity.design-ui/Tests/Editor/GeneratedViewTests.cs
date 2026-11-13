@@ -80,9 +80,23 @@ namespace DesignUi.Editor.Tests
             var rows = Node("rows", "list", ("display", "flex"), ("flex-direction", "column"), ("overflow-y", "auto"), ("height", "100px")).Add(row);
             rows.Repeat = new IrRepeat { Name = "row", Mode = "list", Count = 4 };
 
+            var query = Inter(Node("query", "input", ("width", "200px"), ("height", "30px")), "16px");
+            query.Bind = "query";
+            query.Initial = new IrInitial();
+            var choice = Inter(Node("choice", "dropdown", ("width", "200px"), ("height", "30px")), "16px");
+            choice.Text = new IrText { Key = "test.choice", Tr = "Bir", En = "One" };
+            choice.Bind = "choice";
+            choice.Initial = new IrInitial();
+
+            // the element paints a background image too, so its picture moves to a content child (crest__image)
+            var crest = Node("crest", "image", ("width", "32px"), ("height", "32px"), ("background-color", "#101010"));
+            crest.Asset = new IrAsset { Kind = "image", File = "assets/crest.png", Width = 32, Height = 32 };
+            crest.Background = new IrAsset { Kind = "image", File = "assets/back.png", Width = 32, Height = 32 };
+            crest.Bind = "crest";
+
             var root = Node("root", "container", ("display", "flex"), ("flex-direction", "column"), ("width", "800px"), ("height", "600px"))
                 .With("state:loading", ("opacity", "0.5"))
-                .Add(club, title, play, card, save, chips, rows);
+                .Add(club, title, play, card, save, query, choice, crest, chips, rows);
             return TestIr.Screen(root, "view.sample");
         }
 
@@ -99,9 +113,12 @@ namespace DesignUi.Editor.Tests
         RenderTexture _rt;
         DesignFontSet _previousFonts;
 
+        Func<IPanel, AdvancedTextState> _advancedCheck;
+
         [SetUp]
         public void Remember()
         {
+            _advancedCheck = LocaleFontController.AdvancedTextCheck;
             _previousFonts = DesignText.Fonts;
             DesignText.Fonts = null; // the view must find the font set itself
         }
@@ -119,6 +136,7 @@ namespace DesignUi.Editor.Tests
             if (AssetDatabase.IsValidFolder(Out)) AssetDatabase.DeleteAsset(Out);
             FontFixture.Delete(); // fresh twins for every test: their atlas starts empty
             DesignText.Fonts = _previousFonts;
+            LocaleFontController.AdvancedTextCheck = _advancedCheck;
         }
 
         string TempDir()
@@ -134,6 +152,14 @@ namespace DesignUi.Editor.Tests
         {
             var dir = TempDir();
             File.WriteAllText(Path.Combine(dir, ScreenCompiler.IrFileName), JsonConvert.SerializeObject(SampleIr(), Formatting.Indented));
+            Directory.CreateDirectory(Path.Combine(dir, "assets"));
+            foreach (var (file, color) in new[] { ("crest.png", new Color32(200, 30, 30, 255)), ("back.png", new Color32(30, 30, 200, 255)) })
+            {
+                var tex = new Texture2D(32, 32, TextureFormat.RGBA32, false);
+                tex.SetPixels32(Enumerable.Repeat(color, 32 * 32).ToArray());
+                File.WriteAllBytes(Path.Combine(dir, "assets", file), tex.EncodeToPNG());
+                Object.DestroyImmediate(tex);
+            }
             var profile = ScriptableObject.CreateInstance<DesignUiProfile>();
             profile.outputFolder = Out;
             FontFixture.Use(profile);
@@ -243,27 +269,87 @@ namespace DesignUi.Editor.Tests
             var view = new ViewSampleView(tree);
             yield return Frames(3);
             Assert.AreEqual("Hoş geldin {name}", view.Title.text, "the design text is the template");
-            view.SetClubName("Galatasaray");
+            view.SetClubName("Kuzey Yıldızları");
             view.SetName("Ali");
-            Assert.AreEqual("Galatasaray", view.Club.text);
+            Assert.AreEqual("Kuzey Yıldızları", view.Club.text);
             Assert.AreEqual("Hoş geldin Ali", view.Title.text, "the argument is filled into the template");
             Assert.IsFalse(view.Club.enableRichText, "a bound value is plain text");
 
             view.Club.text = "changed elsewhere";
-            view.SetClubName("Galatasaray");
+            view.SetClubName("Kuzey Yıldızları");
             Assert.AreEqual("changed elsewhere", view.Club.text, "an unchanged value writes nothing");
-            view.SetClubName("Beşiktaş");
-            Assert.AreEqual("Beşiktaş", view.Club.text);
+            view.SetClubName("Güney Kartalları");
+            Assert.AreEqual("Güney Kartalları", view.Club.text);
             view.SetName(null);
             Assert.AreEqual("Hoş geldin ", view.Title.text, "null is an empty value");
 
             view.SetName("Ali");
-            TestDelegate sameBind = () => view.SetClubName("Beşiktaş");
+            TestDelegate sameBind = () => view.SetClubName("Güney Kartalları");
             TestDelegate sameArgument = () => view.SetName("Ali");
             sameBind(); // first calls compile the delegates
             sameArgument();
             Assert.That(sameBind, UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory(), "an unchanged bind");
             Assert.That(sameArgument, UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory(), "an unchanged argument");
+        }
+
+        [UnityTest]
+        public IEnumerator Setters_OfAnImageBind_PaintTheElementThatShowsThePicture()
+        {
+            Compile();
+            var root = Panel();
+            yield return Frames(2);
+            var tree = Instantiate();
+            root.Add(tree);
+            var view = new ViewSampleView(tree);
+            yield return Frames(2);
+            var painter = tree.Q("crest__image");
+            Assert.IsNotNull(painter, "the picture is painted by the content child the view does not expose");
+            var tex = new Texture2D(4, 4);
+            try
+            {
+                view.SetCrest(Background.FromTexture2D(tex));
+                yield return Frames(2);
+                Assert.AreSame(tex, painter.resolvedStyle.backgroundImage.texture, "the bound image");
+                Assert.AreNotSame(tex, view.Crest.resolvedStyle.backgroundImage.texture, "the element keeps its own background image");
+                TestDelegate same = () => view.SetCrest(Background.FromTexture2D(tex));
+                same();
+                Assert.That(same, UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory(), "an unchanged image writes nothing");
+            }
+            finally { Object.DestroyImmediate(tex); }
+        }
+
+        [UnityTest]
+        public IEnumerator Setters_OnInputs_CompareWithWhatTheControlShows_AndRaiseNoChangeEvent()
+        {
+            Compile();
+            var root = Panel();
+            yield return Frames(2);
+            var tree = Instantiate();
+            root.Add(tree);
+            var view = new ViewSampleView(tree);
+            yield return Frames(3);
+            var changes = new List<string>();
+            view.Query.RegisterValueChangedCallback(e => changes.Add("query:" + e.newValue));
+            view.Choice.RegisterValueChangedCallback(e => changes.Add("choice:" + e.newValue));
+
+            view.SetQuery("");
+            view.SetChoice("İki");
+            Assert.AreEqual("İki", view.Choice.value);
+            CollectionAssert.IsEmpty(changes, "the presenter's writes raise no change event back into its loop");
+
+            view.Query.value = "abc"; // the user types
+            view.Choice.value = "Üç"; // and picks another option
+            CollectionAssert.AreEqual(new[] { "query:abc", "choice:Üç" }, changes);
+            changes.Clear();
+            view.SetQuery("");
+            view.SetChoice("İki");
+            Assert.AreEqual("", view.Query.value, "a reset after the user typed clears the field");
+            Assert.AreEqual("İki", view.Choice.value);
+            CollectionAssert.IsEmpty(changes);
+
+            TestDelegate same = () => view.SetQuery("");
+            same();
+            Assert.That(same, UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory(), "a value the field already shows writes nothing");
         }
 
         [UnityTest]
@@ -460,6 +546,41 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(screen.ClassListContains("locale-en"), "a detached screen is forgotten");
         }
 
+        [UnityTest]
+        public IEnumerator Screen_ReAttachedAfterTheStepAndLocaleChanged_CarriesExactlyTheCurrentClasses()
+        {
+            LocaleFontController.AdvancedTextCheck = _ => AdvancedTextState.Off; // no generator request in this Editor's project
+            Compile(p => p.textSizes = new[] { new DesignTextSize { key = "large", scale = 2f }, new DesignTextSize { key = "huge", scale = 3f } });
+            var root = Panel();
+            yield return Frames(2);
+            var locales = new LocaleFontControllerTests.Locales("en");
+            var controller = new LocaleFontController(root, null, new DesignLocaleRules(), locales);
+            _controllers.Add(controller);
+            controller.SetTextSize("large", 2f);
+            var tree = Instantiate();
+            root.Add(tree);
+            var screen = tree.Q("root");
+            Assert.IsTrue(screen.ClassListContains("text-size-large"));
+
+            tree.RemoveFromHierarchy(); // a pooled screen, put away
+            controller.SetTextSize("huge", 3f);
+            locales.Set("ar");
+            root.Add(tree); // and shown again
+            string[] Classes(string prefix) => screen.GetClasses().Where(c => c.StartsWith(prefix, StringComparison.Ordinal)).ToArray();
+            CollectionAssert.AreEqual(new[] { "text-size-huge" }, Classes("text-size-"), "exactly the current step");
+            CollectionAssert.AreEqual(new[] { "locale-ar" }, Classes("locale-"), "exactly the current locale");
+            Assert.IsTrue(screen.ClassListContains(LocaleFontController.RtlClass));
+            yield return Frames(3);
+            Assert.AreEqual(96f, screen.Q<Label>("club").resolvedStyle.fontSize, 1e-4f, "32 px x 3, whatever the profile order of the steps");
+
+            tree.RemoveFromHierarchy();
+            controller.SetTextSize(null, 1f);
+            locales.Set("en");
+            root.Add(tree);
+            CollectionAssert.IsEmpty(Classes("text-size-"), "no step: no step class");
+            Assert.IsFalse(screen.ClassListContains(LocaleFontController.RtlClass));
+        }
+
         // ---- generated code of other shapes compiles ---------------------------------------------------------------------
 
         [UnityTest]
@@ -472,6 +593,7 @@ namespace DesignUi.Editor.Tests
                 ("Gen.Showcase", "TestShowcaseView", Showcase()),
                 ("Gen.Values", "ValuesView", ViewCodeWriterTests.Values()),
                 ("Gen.Repeats", "RepeatsView", ViewCodeWriterTests.Repeats()),
+                ("Gen.Images", "ImagesView", ViewCodeWriterTests.ImagesInChildren()),
             };
             var kit = new Dictionary<string, double> { { "label", 16.515625 }, { "body", 23.125 }, { "title", 46.28125 } };
             var files = new List<string>();

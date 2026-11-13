@@ -23,8 +23,11 @@ namespace DesignUi.Editor.Tests.Generated
         readonly global::DesignUi.DesignTextArgs m_Args0;
         readonly global::DesignUi.DesignInlineRepeat<ChipItemView> m_Repeat0;
         readonly global::DesignUi.DesignListRepeat<RowItemView> m_Repeat1;
+        readonly VisualElement m_Element0;
         string m_Value0;
         string m_Value1;
+        Background m_Value4;
+        bool m_Value4Set;
 
         public VisualElement Root { get; }
         public Label Club { get; }
@@ -33,6 +36,9 @@ namespace DesignUi.Editor.Tests.Generated
         public Label PlayLabel { get; }
         public VisualElement Card { get; }
         public Button Save { get; }
+        public TextField Query { get; }
+        public DropdownField Choice { get; }
+        public VisualElement Crest { get; }
         public VisualElement Chips { get; }
         public ListView Rows { get; }
 
@@ -43,7 +49,8 @@ namespace DesignUi.Editor.Tests.Generated
         public event Action OpenCardRequested;
 
         /// <summary>Finds every element once below <paramref name="root"/> (the screen's tree, or an element that contains it) and adds
-        /// the manipulators and callbacks the screen needs. Throws InvalidOperationException naming a missing element.</summary>
+        /// the manipulators and callbacks the screen needs: create one view per cloned tree. Throws InvalidOperationException naming a
+        /// missing element.</summary>
         public ViewSampleView(VisualElement root)
         {
             if (root == null) throw new ArgumentNullException(nameof(root));
@@ -54,8 +61,12 @@ namespace DesignUi.Editor.Tests.Generated
             PlayLabel = Find<Label>(root, "play-label");
             Card = Find<VisualElement>(root, "card");
             Save = Find<Button>(root, "save");
+            Query = Find<TextField>(root, "query");
+            Choice = Find<DropdownField>(root, "choice");
+            Crest = Find<VisualElement>(root, "crest");
             Chips = Find<VisualElement>(root, "chips");
             Rows = Find<ListView>(root, "rows");
+            m_Element0 = Find<VisualElement>(root, "crest__image");
             ScreenRoot = Root;
             m_Context = new global::DesignUi.DesignViewContext(ScreenRoot, "ViewSampleView");
             Card.AddManipulator(new Clickable(() => { }));
@@ -84,6 +95,29 @@ namespace DesignUi.Editor.Tests.Generated
             if (string.Equals(value, m_Value1, global::System.StringComparison.Ordinal)) return;
             m_Value1 = value;
             m_Args0.Set(0, value);
+        }
+
+        /// <summary>Sets the value 'query': the value of 'query'. An input is compared with the value it shows and written without a change event.</summary>
+        public void SetQuery(string value)
+        {
+            if (value == null) value = "";
+            global::DesignUi.DesignView.SetValue(Query, value, m_Context);
+        }
+
+        /// <summary>Sets the value 'choice': the value of 'choice'. An input is compared with the value it shows and written without a change event.</summary>
+        public void SetChoice(string value)
+        {
+            if (value == null) value = "";
+            global::DesignUi.DesignView.SetValue(Choice, value, m_Context);
+        }
+
+        /// <summary>Sets the value 'crest': the image of 'crest'. An unchanged value writes nothing.</summary>
+        public void SetCrest(Background value)
+        {
+            if (m_Value4Set && value == m_Value4) return;
+            m_Value4Set = true;
+            m_Value4 = value;
+            global::DesignUi.DesignView.SetImage(m_Element0, value);
         }
 
         /// <summary>Shows <paramref name="count"/> items of the repeat 'chip' (pooled items: <paramref name="bind"/> runs for each item, in order).</summary>

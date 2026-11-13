@@ -14,7 +14,9 @@ namespace DesignUi.Editor
     /// name in the constructor, which throws InvalidOperationException naming a missing element;</item>
     /// <item>one setter per value name, <c>Set&lt;Name&gt;</c>: every <c>data-u-bind</c> of that name (a text through
     /// <see cref="DesignUi.DesignText"/>, so its first layout is kerned; an image's background) and every Smart String
-    /// argument <c>{name}</c> of a design text. An unchanged value writes nothing and allocates nothing;</item>
+    /// argument <c>{name}</c> of a design text. An unchanged value writes nothing and allocates nothing; an input
+    /// (TextField, DropdownField) is compared with the value it shows, since the user edits it, and written without a
+    /// change event;</item>
     /// <item>one <c>event Action &lt;Action&gt;Requested</c> per <c>data-u-action</c> (ids often equal their action, so the
     /// event names never take an element's name): a Button raises it from <c>clicked</c> (pointer, keyboard and gamepad),
     /// any other element from <c>ClickEvent</c>;</item>
@@ -139,6 +141,22 @@ namespace DesignUi.Editor
             /// <summary>The C# expression of an element in the constructor: its property, else a lookup.</summary>
             public string Ref(string name, string type = "VisualElement") =>
                 ByName.TryGetValue(name, out var m) ? m : "Find<" + type + ">(" + Scope + ", " + Quote(name) + ")";
+
+            /// <summary>Elements the setters write that the view does not expose: private fields found in the constructor.</summary>
+            public readonly List<(string name, string type, string field)> Lookups = new List<(string, string, string)>();
+
+            /// <summary>
+            /// The C# expression of an element outside the constructor (a setter): its property, else a private field the
+            /// constructor fills (<c>root</c> and <c>roots</c> are constructor parameters).
+            /// </summary>
+            public string Member(string name, string type = "VisualElement")
+            {
+                if (ByName.TryGetValue(name, out var m)) return m;
+                foreach (var l in Lookups) if (l.name == name) return l.field;
+                var field = "m_Element" + Lookups.Count;
+                Lookups.Add((name, type, field));
+                return field;
+            }
         }
 
         /// <param name="s">The compiled screen.</param>
@@ -278,13 +296,18 @@ namespace DesignUi.Editor
             {
                 var node = e.Source;
                 if (node == null) continue;
+                var args = node.Text?.Args;
                 if (node.Bind != null)
                 {
+                    if (args != null && args.Length > 0)
+                        throw new IrFormatException("'" + e.Name + "' has data-u-bind '" + node.Bind + "' and Smart String arguments (" + string.Join(", ", args) +
+                                                    "); a bound value replaces the whole text. Bind the element or mark arguments in a localized text, not both");
                     var kind = BindKind(e);
-                    Get(node.Bind, kind, e).Binds.Add(e);
+                    var value = Get(node.Bind, kind, e);
+                    value.Binds.Add(e);
+                    v.Member(kind == ValueKind.Image ? Painter(e).Name : e.Name);
                 }
-                var args = node.Text?.Args;
-                if (args != null && args.Length > 0 && node.Bind == null)
+                if (args != null && args.Length > 0)
                 {
                     if (!IsText(e))
                         throw new IrFormatException("'" + e.Name + "' (" + e.Tag + ") has Smart String arguments but shows no text");
@@ -297,6 +320,9 @@ namespace DesignUi.Editor
 
         static bool IsText(CompiledElement e) =>
             e.Tag == "ui:Label" || e.Tag == "ui:Button" || e.Tag == "ui:Toggle" || e.Tag == "ui:TextField" || e.Tag == "ui:DropdownField";
+
+        /// <summary>A control whose value the user edits (its bound value is compared with what it shows, not with a cache).</summary>
+        static bool IsValueControl(CompiledElement e) => e.Tag == "ui:TextField" || e.Tag == "ui:DropdownField";
 
         static ValueKind BindKind(CompiledElement e)
         {
@@ -349,9 +375,13 @@ namespace DesignUi.Editor
             foreach (var a in v.ArgTexts) sb.Append(ind).Append("readonly ").Append(Rt).Append("DesignTextArgs ").Append(a.Field).Append(";\n");
             foreach (var r in v.Repeats)
                 sb.Append(ind).Append("readonly ").Append(Rt).Append(r.Repeat.Mode == "list" ? "DesignListRepeat<" : "DesignInlineRepeat<").Append(r.ItemClass).Append("> ").Append(r.Field).Append(";\n");
+            foreach (var l in v.Lookups) sb.Append(ind).Append("readonly ").Append(l.type).Append(' ').Append(l.field).Append(";\n");
             foreach (var value in v.Values)
             {
-                if (value.Kind == ValueKind.Text) sb.Append(ind).Append("string ").Append(value.Field).Append(";\n");
+                if (value.Kind == ValueKind.Text)
+                {
+                    if (value.Args.Count > 0 || value.Binds.Any(e => !IsValueControl(e))) sb.Append(ind).Append("string ").Append(value.Field).Append(";\n");
+                }
                 else
                 {
                     sb.Append(ind).Append("Background ").Append(value.Field).Append(";\n");
@@ -386,7 +416,8 @@ namespace DesignUi.Editor
             else
             {
                 sb.Append(ind).Append("/// <summary>Finds every element once below <paramref name=\"root\"/> (the screen's tree, or an element that contains it) and adds\n");
-                sb.Append(ind).Append("/// the manipulators and callbacks the screen needs. Throws InvalidOperationException naming a missing element.</summary>\n");
+                sb.Append(ind).Append("/// the manipulators and callbacks the screen needs: create one view per cloned tree. Throws InvalidOperationException naming a\n");
+                sb.Append(ind).Append("/// missing element.</summary>\n");
                 sb.Append(ind).Append("public ").Append(v.ClassName).Append("(VisualElement root)\n");
                 sb.Append(ind).Append("{\n");
                 sb.Append(ind).Append("    if (root == null) throw new ArgumentNullException(nameof(root));\n");
@@ -394,6 +425,8 @@ namespace DesignUi.Editor
             var b = ind + "    ";
             foreach (var p in v.Props)
                 sb.Append(b).Append(p.member).Append(" = Find<").Append(p.type).Append(">(").Append(v.Scope).Append(", ").Append(Quote(p.e.Name)).Append(");\n");
+            foreach (var l in v.Lookups)
+                sb.Append(b).Append(l.field).Append(" = Find<").Append(l.type).Append(">(").Append(v.Scope).Append(", ").Append(Quote(l.name)).Append(");\n");
             if (!v.IsItem)
             {
                 sb.Append(b).Append("ScreenRoot = ").Append(v.Ref(s.Root.Name)).Append(";\n");
@@ -460,18 +493,26 @@ namespace DesignUi.Editor
             foreach (var value in v.Values)
             {
                 sb.Append('\n');
-                var targets = value.Binds.Select(e => (value.Kind == ValueKind.Image ? "the image of '" : "the text of '") + Xml(e.Name) + "'")
+                var targets = value.Binds.Select(e => (value.Kind == ValueKind.Image ? "the image of '" : IsValueControl(e) ? "the value of '" : "the text of '") + Xml(e.Name) + "'")
                     .Concat(value.Args.Select(a => "{" + Xml(value.Name) + "} in the text of '" + Xml(a.text.Element.Name) + "'"));
                 sb.Append(ind).Append("/// <summary>Sets the value '").Append(Xml(value.Name)).Append("': ").Append(string.Join("; ", targets))
-                  .Append(". An unchanged value writes nothing.</summary>\n");
+                  .Append(value.Binds.Any(IsValueControl) ? ". An input is compared with the value it shows and written without a change event." : ". An unchanged value writes nothing.")
+                  .Append("</summary>\n");
                 if (value.Kind == ValueKind.Text)
                 {
                     sb.Append(ind).Append("public void ").Append(value.Member).Append("(string value)\n").Append(ind).Append("{\n");
                     sb.Append(b).Append("if (value == null) value = \"\";\n");
-                    sb.Append(b).Append("if (string.Equals(value, ").Append(value.Field).Append(", global::System.StringComparison.Ordinal)) return;\n");
-                    sb.Append(b).Append(value.Field).Append(" = value;\n");
-                    foreach (var e in value.Binds)
-                        sb.Append(b).Append(Rt).Append("DesignView.SetText(").Append(v.Ref(e.Name)).Append(", value, m_Context);\n");
+                    // an input shows what the user typed: it is compared with its own value, and written without a change event
+                    foreach (var e in value.Binds.Where(IsValueControl))
+                        sb.Append(b).Append(Rt).Append("DesignView.SetValue(").Append(v.Member(e.Name)).Append(", value, m_Context);\n");
+                    var texts = value.Binds.Where(e => !IsValueControl(e)).ToList();
+                    if (texts.Count > 0 || value.Args.Count > 0)
+                    {
+                        sb.Append(b).Append("if (string.Equals(value, ").Append(value.Field).Append(", global::System.StringComparison.Ordinal)) return;\n");
+                        sb.Append(b).Append(value.Field).Append(" = value;\n");
+                    }
+                    foreach (var e in texts)
+                        sb.Append(b).Append(Rt).Append("DesignView.SetText(").Append(v.Member(e.Name)).Append(", value, m_Context);\n");
                     foreach (var (text, index) in value.Args)
                         sb.Append(b).Append(text.Field).Append(".Set(").Append(index).Append(", value);\n");
                 }
@@ -482,7 +523,7 @@ namespace DesignUi.Editor
                     sb.Append(b).Append(value.Field).Append("Set = true;\n");
                     sb.Append(b).Append(value.Field).Append(" = value;\n");
                     foreach (var e in value.Binds)
-                        sb.Append(b).Append(Rt).Append("DesignView.SetImage(").Append(v.Ref(Painter(e).Name)).Append(", value);\n");
+                        sb.Append(b).Append(Rt).Append("DesignView.SetImage(").Append(v.Member(Painter(e).Name)).Append(", value);\n");
                 }
                 sb.Append(ind).Append("}\n");
             }

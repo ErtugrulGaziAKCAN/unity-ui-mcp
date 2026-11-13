@@ -455,6 +455,53 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.AreEqual(new[] { "locale-en" }, LocaleClasses(later), "a screen added later follows the locale");
         }
 
+        /// <summary>The controllers that hear about screens being attached (the controller's private registry).</summary>
+        static IList LiveControllers() =>
+            (IList)typeof(LocaleFontController).GetField("s_Live", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+
+        /// <summary>A controller over a root that was attached and then detached, never disposed; only a weak reference survives.</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static WeakReference DetachedAndDropped(VisualElement panelRoot)
+        {
+            var root = new VisualElement();
+            panelRoot.Add(root);
+            var controller = new LocaleFontController(root, null, new DesignLocaleRules(), new Locales("en"));
+            Assert.IsTrue(LiveControllers().Contains(controller));
+            root.RemoveFromHierarchy();
+            return new WeakReference(controller);
+        }
+
+        [UnityTest]
+        public IEnumerator Controller_IsListedOnlyWhileItsRootIsInAPanel_AndADetachedDroppedOneIsCollected()
+        {
+            var screen = Root();
+            var panelRoot = screen.parent;
+            var controller = new LocaleFontController(screen, null, new DesignLocaleRules(), new Locales("en"));
+            try
+            {
+                Assert.IsTrue(LiveControllers().Contains(controller), "attached: it hears about screens");
+                screen.RemoveFromHierarchy();
+                Assert.IsFalse(LiveControllers().Contains(controller), "detached: no static list keeps it or its tree");
+                var later = CompiledScreen(screen); // added while out of a panel
+                panelRoot.Add(screen);
+                Assert.IsTrue(LiveControllers().Contains(controller), "attached again");
+                Assert.IsTrue(later.ClassListContains("locale-en"), "and it gives the screens it finds its classes at once");
+            }
+            finally { controller.Dispose(); }
+            Assert.IsFalse(LiveControllers().Contains(controller), "disposed");
+
+            var weak = DetachedAndDropped(panelRoot);
+            yield return null;
+            yield return null;
+            for (int i = 0; i < 3 && weak.IsAlive; i++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                yield return null;
+            }
+            Assert.IsFalse(weak.IsAlive, "a detached controller nobody holds is collected");
+        }
+
         [UnityTest]
         public IEnumerator PerFrameTick_InSteadyState_AllocatesNothing()
         {

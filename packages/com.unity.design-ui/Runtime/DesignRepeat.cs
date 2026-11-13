@@ -6,8 +6,9 @@ using UnityEngine.UIElements;
 namespace DesignUi
 {
     /// <summary>
-    /// A generated item view of a repeat (<c>data-u-repeat</c>). Before every bind the repeat tells the item its index;
-    /// the item clears its action events then, so the bind callback subscribes the item's actions for the data it shows.
+    /// A generated item view of a repeat (<c>data-u-repeat</c>). Before every bind the repeat tells the item its index
+    /// (-1 when a list slot leaves the screen); the item clears its action events then, so the bind callback subscribes the
+    /// item's actions for the data it shows.
     /// </summary>
     public interface IDesignRepeatItem
     {
@@ -144,6 +145,9 @@ namespace DesignUi
             m_Create = create ?? throw new ArgumentNullException(nameof(create));
             list.makeItem = MakeItem;
             list.bindItem = BindItem;
+            // a slot that leaves the screen drops the game's subscribers; a destroyed one is forgotten
+            list.unbindItem = (e, i) => (e.userData as Slot)?.Item.BeginBind(-1);
+            list.destroyItem = e => { if (e.userData is Slot slot) m_Made.Remove(slot.Item); };
         }
 
         /// <summary>The number of items in the list.</summary>

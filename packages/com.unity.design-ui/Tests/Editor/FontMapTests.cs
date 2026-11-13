@@ -130,6 +130,9 @@ namespace DesignUi.Editor.Tests
             var screen = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/FontsScreen/FontsScreen.uxml");
             Assert.IsFalse(screen.importedWithErrors || screen.importedWithWarnings, "the font set reference resolves at import");
             Assert.AreSame(AssetDatabase.LoadAssetAtPath<DesignFontSet>(Out + "/" + DesignFontSet.FileName), (screen.Instantiate().Q("root") as DesignScreen)?.Fonts);
+            AssetDatabase.ImportAsset(Out + "/FontsScreen/FontsScreen.uxml", ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+            screen = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/FontsScreen/FontsScreen.uxml");
+            Assert.IsNotNull((screen.Instantiate().Q("root") as DesignScreen)?.Fonts, "a reimport resolves the reference again");
 
             foreach (var name in new[] { "Inter Fixture", "Fonts Alt", "Inter Fixture Bold" })
                 foreach (var suffix in new[] { "", " r125s16", " r13333s12" })

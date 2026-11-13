@@ -1289,10 +1289,13 @@ namespace DesignUi.Editor
                 foreach (var step in _steps)
                     foreach (var layer in d.Layers.Where(l => !l.Content && l.Part == null))
                     {
+                        // a layer that sets a size or a line-box font (a font switch) needs its twin, or the base twin outranks it
                         var size = layer.Declarations.FirstOrDefault(x => x.Property == "font-size");
-                        if (size.Property == null) continue;
-                        var px = Px(size.Value, "font-size of '" + d.Name + "' (layer '" + layer.Key + "'), which the text-size steps scale,");
-                        var scaled = new List<UssDeclaration> { new UssDeclaration("font-size", Number(px * step.scale) + "px") };
+                        bool lineBoxFont = layer.Declarations.Any(x => x.Property == "-unity-font-definition" && LineBoxKeyOf(x.Value) != null);
+                        if (size.Property == null && !lineBoxFont) continue;
+                        double k = StepScale(step), px = size.Property == null ? double.NaN : Px(size.Value, "font-size of '" + d.Name + "' (layer '" + layer.Key + "'), which the text-size steps scale,");
+                        var scaled = new List<UssDeclaration>();
+                        if (size.Property != null) scaled.Add(new UssDeclaration("font-size", Number(px * k) + "px"));
                         FontTwinGenerator.LineBox box = null;
                         foreach (var decl in layer.Declarations.Where(x => x.Property == "-unity-font-definition"))
                         {
@@ -1300,10 +1303,10 @@ namespace DesignUi.Editor
                             if (key == null) continue;
                             if (!_boxesByKey.TryGetValue(key, out box))
                                 throw new IrFormatException("'" + d.Name + "' uses the line box '" + key + "', which the kit's text styles do not list; the text-size steps cannot scale it");
-                            var scaledBox = FontTwinGenerator.LineBox.For(box.FontSize * step.scale, box.LineHeight * step.scale);
+                            var scaledBox = FontTwinGenerator.LineBox.For(box.FontSize * k, box.LineHeight * k);
                             scaled.Add(new UssDeclaration(decl.Property, decl.Value.Substring(0, decl.Value.Length - key.Length - 1) + scaledBox.Key + ")"));
                         }
-                        NoteInexact(step, px, box);
+                        if (size.Property != null) NoteInexact(step, px, box);
                         _rules.Add(new UssRule(Selector(LayerKey.Parse(layer.Key), cls, d, ancestors, "." + TextSizeClassPrefix + step.key), Sorted(scaled, d.Name)));
                     }
             }
@@ -1321,12 +1324,12 @@ namespace DesignUi.Editor
             {
                 foreach (var (viewport, scale) in _options.Viewports ?? new (UnityEngine.Vector2Int, double)[0])
                 {
-                    double size = px * step.scale * scale, line = box != null ? box.LineHeight * step.scale * scale : 0;
+                    double k = StepScale(step), size = px * k * scale, line = box != null ? box.LineHeight * k * scale : 0;
                     bool sizeWhole = WholePx(size), lineWhole = box == null || WholePx(line);
                     if (sizeWhole && lineWhole) continue;
                     var what = box != null ? Number(px) + "/" + Number(box.LineHeight) + " px text (font size/line box)" : Number(px) + " px text";
-                    var note = "text size '" + step.key + "' (x" + Number(step.scale) + ") is not exact for " + what + ": " +
-                               (box != null ? Number(px * step.scale) + "/" + Number(box.LineHeight * step.scale) : Number(px * step.scale)) + " px is " +
+                    var note = "text size '" + step.key + "' (x" + Number(k) + ") is not exact for " + what + ": " +
+                               (box != null ? Number(px * k) + "/" + Number(box.LineHeight * k) : Number(px * k)) + " px is " +
                                (box != null ? Number(Math.Round(size, 4)) + "/" + Number(Math.Round(line, 4)) : Number(Math.Round(size, 4))) + " device px at " +
                                viewport.x + "x" + viewport.y + " (scale " + Number(Math.Round(scale, 6)) + "). Unity sets text at whole device pixels, so it renders rounded " +
                                "and stacked lines drift; choose a scale that keeps the kit's sizes and line boxes whole at every declared viewport.";
@@ -1337,6 +1340,9 @@ namespace DesignUi.Editor
 
             static bool WholePx(double v) => Math.Abs(v - Math.Round(v)) < 1e-6;
 
+            /// <summary>A step's scale as the decimal the profile shows (a float 1.1 is 1.1, not 1.100000023841858).</summary>
+            internal static double StepScale(DesignUi.DesignTextSize step) => (double)(decimal)step.scale;
+
             /// <summary>
             /// Right to left: under the root class <c>rtl</c>, a twin of each of the element's own rules that sets a text
             /// alignment, with the profile's rule applied (start to end: left becomes right; mirror: left and right swap), the
@@ -1346,7 +1352,7 @@ namespace DesignUi.Editor
             void RtlRules(Draft d, string cls, List<Ancestor> ancestors)
             {
                 if (!FlipsRtl) return;
-                if (d.IsRoot && !d.Layers.Any(l => l.Declarations.Any(x => x.Property == "-unity-text-align")))
+                if (d.IsRoot && !d.Layers.Any(l => l.Key == Base && !l.Content && l.Part == null && l.Declarations.Any(x => x.Property == "-unity-text-align")))
                     _rules.Add(new UssRule(Selector(LayerKey.Parse(Base), cls, d, ancestors, "." + RtlClass),
                         new List<UssDeclaration> { new UssDeclaration("-unity-text-align", FlipAlign("upper-left")) }));
                 foreach (var layer in d.Layers.Where(l => !l.Content && l.Part == null))

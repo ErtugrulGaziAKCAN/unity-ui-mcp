@@ -39,8 +39,9 @@ namespace DesignUi
     /// compile time), so state and class layers keep working under a step. A key or scale the font set does not list as
     /// compiled is reported in <see cref="Issues"/>.</item>
     /// </list>
-    /// Nothing runs per frame but a check of the root's direct children (no allocation). Disposing unsubscribes and
-    /// removes the text-size class; the screens keep their last locale.
+    /// Nothing runs per frame but a check of the root's direct children (no allocation). The controller hears about
+    /// attached screens only while its root is in a panel (no static list holds a detached tree). Disposing unsubscribes
+    /// and removes the text-size class; the screens keep their last locale.
     /// Never blocks on a locale: a source that does not know it yet (null) keeps the screen as it is.
     /// </summary>
     public sealed class LocaleFontController : IDisposable
@@ -101,8 +102,9 @@ namespace DesignUi
             m_Locales = locales;
             m_TextSizes = textSizes;
             m_Root.RegisterCallback<AttachToPanelEvent>(OnAttach);
+            m_Root.RegisterCallback<DetachFromPanelEvent>(OnDetach);
             m_Tick = m_Root.schedule.Execute(Tick).Every(0);
-            s_Live.Add(this);
+            if (m_Root.panel != null) s_Live.Add(this); // listed only while its root is in a panel: no static list keeps a detached tree
             FindLocaleRoots();
             if (m_Locales != null)
             {
@@ -204,6 +206,7 @@ namespace DesignUi
             if (m_SizeClass != null)
                 foreach (var e in m_LocaleRoots) e.RemoveFromClassList(m_SizeClass); // the sizes go back to the design's
             m_Root.UnregisterCallback<AttachToPanelEvent>(OnAttach);
+            m_Root.UnregisterCallback<DetachFromPanelEvent>(OnDetach);
             if (m_Locales != null) m_Locales.LocaleChanged -= SetLocale;
             if (m_TextSizes != null) m_TextSizes.TextSizeChanged -= OnTextSizeChanged;
         }
@@ -212,8 +215,17 @@ namespace DesignUi
 
         void OnAttach(AttachToPanelEvent e)
         {
+            if (m_Disposed) return;
+            if (!s_Live.Contains(this)) s_Live.Add(this);
+            FindLocaleRoots(); // the tree may have changed while it was out of a panel
             if (RequestedLocale != null) ApplyGenerator();
         }
+
+        void OnDetach(DetachFromPanelEvent e) => s_Live.Remove(this);
+
+        /// <summary>Entering Play mode without a domain reload keeps statics: start with no listed controller.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetLive() => s_Live.Clear();
 
         /// <summary>Every frame: screens added directly below the root get the classes (allocates nothing when nothing changed).</summary>
         internal void Tick()
@@ -335,6 +347,11 @@ namespace DesignUi
                 e.AddToClassList(m_LocaleClass);
             }
             if (RequestedLocale != null && e.ClassListContains(RtlClass) != IsRightToLeft) e.EnableInClassList(RtlClass, IsRightToLeft);
+            // exactly the current step: a screen detached while the step changed still carries the old one
+            s_Remove.Clear();
+            foreach (var c in e.GetClasses())
+                if (c != m_SizeClass && c.StartsWith(TextSizeClassPrefix, StringComparison.Ordinal)) s_Remove.Add(c);
+            foreach (var c in s_Remove) e.RemoveFromClassList(c);
             if (m_SizeClass != null && !e.ClassListContains(m_SizeClass)) e.AddToClassList(m_SizeClass);
         }
 
