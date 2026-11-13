@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -46,7 +45,7 @@ namespace DesignUi.Editor
             if (plan.Errors.Count > 0) throw new FontSetupException(string.Join("\n", plan.Errors));
             if (!plan.Families.ContainsKey(StyleMapper.FamilyNameSlug(family)))
                 throw new FontSetupException("font family '" + family + "' is not a font of the project's locales (" + string.Join(", ", plan.Families.Values) + ")");
-            var twin = FontTwinGenerator.GetOrCreateTwin(font.Primary, p.fontTwinFolder);
+            var twin = FontTwinGenerator.GetOrCreateTwin(font.Primary, p.fontTwinFolder, plan.Globals.Concat(font.Fallbacks ?? new TMP_FontAsset[0]));
             return Url(AssetDatabase.GetAssetPath(twin));
         }
 
@@ -69,6 +68,11 @@ namespace DesignUi.Editor
             public readonly Dictionary<string, List<string>> LocaleFamilies = new Dictionary<string, List<string>>(StringComparer.Ordinal);
             /// <summary>Locales no font resolves for.</summary>
             public readonly List<string> Missing = new List<string>();
+            /// <summary>
+            /// The resolver's fallbacks of every locale, in locale order without duplicates: TMP searches them after any
+            /// font, so every twin gets them after its own fallbacks (with TMP Settings they are one project-wide list).
+            /// </summary>
+            public readonly List<TMP_FontAsset> Globals = new List<TMP_FontAsset>();
             /// <summary>Every family of the resolved locales: USS variable slug to family name.</summary>
             public readonly SortedDictionary<string, string> Families = new SortedDictionary<string, string>(StringComparer.Ordinal);
             public readonly List<string> Errors = new List<string>();
@@ -118,6 +122,8 @@ namespace DesignUi.Editor
                     continue;
                 }
                 plan.Fonts[locale] = font;
+                foreach (var g in font.Fallbacks ?? new TMP_FontAsset[0])
+                    if (g != null && !plan.Globals.Contains(g)) plan.Globals.Add(g);
                 var chain = Chain(font);
                 plan.Chains[locale] = chain;
                 plan.LocaleFamilies[locale] = chain.Select(f => f.faceInfo.familyName).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList();
@@ -181,21 +187,15 @@ namespace DesignUi.Editor
         }
 
         /// <summary>
-        /// Creates or updates the twin of every resolved locale's font (with its fallbacks and weight faces). When a twin
-        /// was regenerated (new GUID), an existing <c>&lt;outputFolder&gt;/DesignFonts.uss</c> is re-imported so its urls
-        /// resolve again even when its text does not change.
+        /// Creates or updates the twin of every resolved locale's font, with its own fallbacks, the plan's global fallbacks
+        /// and its weight faces. Twins keep their GUIDs, so <c>DesignFonts.uss</c> never needs a re-import for them.
         /// </summary>
-        internal static FontTwinGenerator.TwinRun EnsureTwins(FontsPlan plan, string outputFolder)
+        internal static FontTwinGenerator.TwinRun EnsureTwins(FontsPlan plan)
         {
-            var run = new FontTwinGenerator.TwinRun();
+            var run = new FontTwinGenerator.TwinRun(plan.Globals);
             foreach (var locale in plan.Locales)
                 if (plan.Fonts.TryGetValue(locale, out var font))
                     FontTwinGenerator.GetOrCreateTwin(font.Primary, plan.TwinFolder, run);
-            if (run.Regenerated && !string.IsNullOrEmpty(outputFolder))
-            {
-                var uss = ScreenCompiler.ProjectPath(outputFolder.Replace('\\', '/').TrimEnd('/') + "/" + FileName);
-                if (uss != null && File.Exists(uss)) AssetDatabase.ImportAsset(uss, ImportAssetOptions.ForceUpdate);
-            }
             return run;
         }
     }

@@ -1,9 +1,13 @@
+using System.Collections;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 using UnityEngine.TextCore.LowLevel;
+using UnityEngine.UIElements;
 using FontAsset = UnityEngine.TextCore.Text.FontAsset;
 
 namespace DesignUi.Editor.Tests
@@ -12,8 +16,32 @@ namespace DesignUi.Editor.Tests
     {
         const string Twins = FontFixture.TwinFolder;
 
+        GameObject _go;
+        PanelSettings _settings;
+        RenderTexture _rt;
+
         [TearDown]
-        public void Cleanup() => FontFixture.Delete();
+        public void Cleanup()
+        {
+            if (_go != null) Object.DestroyImmediate(_go);
+            if (_settings != null) Object.DestroyImmediate(_settings);
+            if (_rt != null) Object.DestroyImmediate(_rt);
+            FontFixture.Delete();
+        }
+
+        /// <summary>A panel on a copy of the shipped design PanelSettings, rendering into a RenderTexture.</summary>
+        VisualElement Panel()
+        {
+            _rt = new RenderTexture(256, 64, 24);
+            _settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+            _settings.scaleMode = PanelScaleMode.ConstantPixelSize;
+            _settings.scale = 1f;
+            _settings.targetTexture = _rt;
+            _go = new GameObject("FontTwinGeneratorTests");
+            var doc = _go.AddComponent<UIDocument>();
+            doc.panelSettings = _settings;
+            return doc.rootVisualElement;
+        }
 
         [Test]
         public void Twin_IsADynamicTextCoreFontAssetWithTheTmpSettingsAndFamily()
@@ -107,19 +135,103 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void Twin_ChangedTmpAtlasSettings_RegenerateTheTwin()
+        public void Twin_ChangedTmpAtlasSettings_RebuildTheTwinInPlace_KeepingItsGuidAndReferences()
         {
             var tmp = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Settings", padding: 7);
-            FontTwinGenerator.GetOrCreateTwin(tmp, Twins);
+            var user = FontFixture.CreateTmp(FontFixture.BoldTtf, "Twin Settings User");
+            FontFixture.SetFallbacks(user, tmp);
+            var userTwin = FontTwinGenerator.GetOrCreateTwin(user, Twins);
+            const string path = Twins + "/Twin Settings UITK.asset";
+            var twin = AssetDatabase.LoadAssetAtPath<FontAsset>(path);
+            var guid = AssetDatabase.AssetPathToGUID(path);
+            Assert.AreSame(twin, userTwin.fallbackFontAssetTable.Single());
+
             using (var so = new SerializedObject(tmp))
             {
                 so.FindProperty("m_AtlasPadding").intValue = 9;
                 so.ApplyModifiedPropertiesWithoutUndo();
             }
             FontFixture.Save(tmp);
-            var twin = FontTwinGenerator.GetOrCreateTwin(tmp, Twins);
-            Assert.AreEqual(9, twin.atlasPadding);
-            Assert.AreEqual(Twins + "/Twin Settings UITK.asset", AssetDatabase.GetAssetPath(twin));
+            var rebuilt = FontTwinGenerator.GetOrCreateTwin(tmp, Twins);
+
+            Assert.AreSame(twin, rebuilt, "the same asset object is rebuilt");
+            Assert.AreEqual(guid, AssetDatabase.AssetPathToGUID(path), "the GUID stays");
+            Assert.AreEqual(9, rebuilt.atlasPadding);
+            Assert.AreSame(rebuilt, userTwin.fallbackFontAssetTable.Single(), "references to the twin survive");
+            var stored = AssetDatabase.LoadAllAssetsAtPath(path);
+            Assert.AreEqual(1, stored.OfType<Texture2D>().Count(), "the old atlas texture is gone, the new one stored");
+            Assert.AreEqual(1, stored.OfType<Material>().Count());
+            // the same native object (a deserialized reference can be another managed wrapper of it)
+            Assert.AreEqual(stored.OfType<Texture2D>().Single().GetInstanceID(), rebuilt.atlasTextures[0].GetInstanceID(), "the stored atlas is the twin's");
+            Assert.AreEqual(rebuilt.atlasTextures[0].GetInstanceID(), rebuilt.material.mainTexture.GetInstanceID(), "the material samples the new atlas");
+            Assert.IsFalse(EditorUtility.IsDirty(rebuilt), "saved");
+            if (EditorSettings.serializationMode == SerializationMode.ForceText)
+                StringAssert.Contains("guid: " + guid, File.ReadAllText(Twins + "/Twin Settings User UITK.asset"), "the other twin's file still names the GUID");
+
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+            var reloaded = AssetDatabase.LoadAssetAtPath<FontAsset>(path);
+            Assert.AreEqual(9, reloaded.atlasPadding, "the rebuilt state is on disk");
+            Assert.IsNotNull(reloaded.atlasTextures[0]);
+            Assert.IsNotNull(reloaded.material);
+        }
+
+        [Test]
+        public void Twin_GlobalFallbacksFollowTheOwnFallbacks_WithoutDuplicatesOrItself()
+        {
+            var own = FontFixture.CreateTmp(FontFixture.BoldTtf, "Twin Own");
+            var global = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Global");
+            var tmp = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Ordered");
+            FontFixture.SetFallbacks(tmp, own);
+            var twin = FontTwinGenerator.GetOrCreateTwin(tmp, Twins, new[] { global, own, tmp, null });
+            CollectionAssert.AreEqual(new[] { "Twin Own UITK", "Twin Global UITK" }, twin.fallbackFontAssetTable.Select(f => f.name).ToArray(),
+                "TMP's search order: the asset's own fallbacks, then the global ones");
+        }
+
+        [UnityTest]
+        public IEnumerator Twin_GlyphMissingFromThePrimary_RendersFromTheGlobalFallbackTwin()
+        {
+            // fonts that render multi-material text stay until the end of the session (see FontFixture.KeptFolder)
+            var mono = FontFixture.Kept(FontFixture.MonoTtf(FontFixture.KeptFolder), "Kept Mono"); // RobotoMono has no U+203D
+            var inter = FontFixture.Kept(FontFixture.RegularTtf, "Kept Global Inter");
+            var twin = FontTwinGenerator.GetOrCreateTwin(mono, FontFixture.KeptTwinFolder, new[] { inter });
+            var global = AssetDatabase.LoadAssetAtPath<FontAsset>(FontFixture.KeptTwinFolder + "/Kept Global Inter UITK.asset");
+            CollectionAssert.AreEqual(new[] { global }, twin.fallbackFontAssetTable);
+
+            var root = Panel();
+            yield return null;
+            var label = new Label("A\u203D");
+            label.style.unityFontDefinition = new StyleFontDefinition(FontDefinition.FromSDFFont(twin));
+            root.Add(label);
+            for (int i = 0; i < 5; i++) yield return null;
+
+            Assert.Greater(label.layout.width, 0f);
+            Assert.AreEqual(twin.GetInstanceID(), twin.characterLookupTable['A'].textAsset.GetInstanceID(), "A renders from the primary twin");
+            Assert.IsTrue(global.characterLookupTable.ContainsKey(0x203D), "\u203D is in the global fallback twin's atlas");
+            // the primary caches characters it found through its fallbacks; the cached \u203D belongs to the global twin
+            if (twin.characterLookupTable.TryGetValue(0x203D, out var cached))
+                Assert.AreEqual(global.GetInstanceID(), cached.textAsset.GetInstanceID(), "\u203D renders from the global fallback twin");
+            Assert.IsTrue(twin.HasCharacter('\u203D', true, false), "found through the fallback list");
+
+        }
+
+        [Test]
+        public void Twin_OfABitmapTmpAsset_UsesSdfaa_AndSaysSo()
+        {
+            var raster = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Raster", renderMode: GlyphRenderMode.RASTER_HINTED);
+            LogAssert.Expect(LogType.Warning, new Regex("Twin Raster.*RASTER_HINTED.*SDFAA"));
+            var twin = FontTwinGenerator.GetOrCreateTwin(raster, Twins);
+            Assert.AreEqual(GlyphRenderMode.SDFAA, twin.atlasRenderMode);
+            var path = AssetDatabase.GetAssetPath(twin);
+            var bytes = File.ReadAllBytes(path);
+            Assert.AreSame(twin, FontTwinGenerator.GetOrCreateTwin(raster, Twins));
+            Assert.AreEqual(bytes, File.ReadAllBytes(path), "the substituted mode is up to date: no rebuild");
+
+            var smooth = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Smooth", renderMode: GlyphRenderMode.SMOOTH);
+            Assert.AreEqual(GlyphRenderMode.SDFAA, FontTwinGenerator.TwinRenderMode(smooth));
+            var color = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Color", renderMode: GlyphRenderMode.COLOR);
+            Assert.AreEqual(GlyphRenderMode.COLOR, FontTwinGenerator.TwinRenderMode(color), "colour fonts keep their mode");
+            var sdf = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Sdf16", renderMode: GlyphRenderMode.SDF16);
+            Assert.AreEqual(GlyphRenderMode.SDF16, FontTwinGenerator.TwinRenderMode(sdf));
         }
 
         [Test]

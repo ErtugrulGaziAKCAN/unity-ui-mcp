@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TMPro;
 using UnityEditor;
 using UnityEngine;
@@ -31,14 +32,27 @@ namespace DesignUi.Editor
             {
                 var primary = so.FindProperty("m_defaultFontAsset")?.objectReferenceValue as TMP_FontAsset;
                 if (primary == null) return null;
-                var fallbacks = new List<TMP_FontAsset>();
-                var list = so.FindProperty("m_fallbackFontAssets");
-                if (list != null && list.isArray)
-                    for (int i = 0; i < list.arraySize; i++)
-                        if (list.GetArrayElementAtIndex(i).objectReferenceValue is TMP_FontAsset f && f != primary && !fallbacks.Contains(f))
-                            fallbacks.Add(f);
-                return new ResolvedFont { Primary = primary, Fallbacks = fallbacks };
+                return new ResolvedFont { Primary = primary, Fallbacks = Globals(so).Where(f => f != primary).ToList() };
             }
+        }
+
+        /// <summary>TMP Settings' global fallback font assets (empty without TMP Settings), in order, without duplicates.</summary>
+        internal static IReadOnlyList<TMP_FontAsset> GlobalFallbacks()
+        {
+            var settings = Load();
+            if (settings == null) return new TMP_FontAsset[0];
+            using (var so = new SerializedObject(settings)) return Globals(so);
+        }
+
+        static List<TMP_FontAsset> Globals(SerializedObject settings)
+        {
+            var fallbacks = new List<TMP_FontAsset>();
+            var list = settings.FindProperty("m_fallbackFontAssets");
+            if (list != null && list.isArray)
+                for (int i = 0; i < list.arraySize; i++)
+                    if (list.GetArrayElementAtIndex(i).objectReferenceValue is TMP_FontAsset f && !fallbacks.Contains(f))
+                        fallbacks.Add(f);
+            return fallbacks;
         }
 
         /// <summary>

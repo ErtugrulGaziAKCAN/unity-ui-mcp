@@ -186,7 +186,7 @@ namespace DesignUi.Editor
                 };
 
             // ---- the locales' font twins (assets DesignFonts.uss references), then what changed in one batch ------
-            try { FontMap.EnsureTwins(fonts, outFolder); }
+            try { FontMap.EnsureTwins(fonts); }
             catch (FontSetupException e) { return Fail(e.Message); }
 
             var writes = new List<KeyValuePair<string, byte[]>>();

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using NUnit.Framework;
 using TMPro;
 using UnityEditor;
@@ -17,6 +18,14 @@ namespace DesignUi.Editor.Tests
     {
         public const string Folder = "Assets/DesignUiFontFixture";
         public const string TwinFolder = Folder + "/Twins";
+
+        /// <summary>
+        /// Fonts that render multi-material text (a glyph from a fallback) live here until the end of the test session
+        /// (<see cref="FontFixtureSession"/>): UI Toolkit keeps a pooled TextInfo whose unused mesh slots still hold the
+        /// fallback's material, and deleting that font while later tests render text makes them hit the destroyed material.
+        /// </summary>
+        public const string KeptFolder = "Assets/DesignUiFontFixtureKept";
+        public const string KeptTwinFolder = KeptFolder + "/Twins";
         public const string RegularTtf = "Assets/Fonts/Inter/Inter_18pt-Regular.ttf";
         public const string BoldTtf = "Assets/Fonts/Inter/Inter_18pt-Bold.ttf";
         public const string Licence = "Assets/Fonts/Inter/OFL.txt";
@@ -58,10 +67,11 @@ namespace DesignUi.Editor.Tests
         /// Resources (no TMP shaders), and nothing here renders TMP text. <paramref name="family"/> renames the TMP face's
         /// family (the fixture has one font family only; kit tests need several).
         /// </summary>
-        public static TMP_FontAsset CreateTmp(string ttf, string name, int pointSize = 72, int padding = 7, int atlas = 1024, string family = null)
+        public static TMP_FontAsset CreateTmp(string ttf, string name, int pointSize = 72, int padding = 7, int atlas = 1024, string family = null,
+            GlyphRenderMode renderMode = GlyphRenderMode.SDFAA, string folder = Folder)
         {
             RequireInter();
-            EnsureFolder(Folder);
+            EnsureFolder(folder);
             var font = AssetDatabase.LoadAssetAtPath<Font>(ttf);
             FontEngine.InitializeFontEngine();
             Assert.AreEqual(FontEngineError.Success, FontEngine.LoadFontFace(font, pointSize), "load " + ttf);
@@ -70,7 +80,7 @@ namespace DesignUi.Editor.Tests
             var face = FontEngine.GetFaceInfo();
             if (family != null) face.familyName = family;
             tmp.faceInfo = face;
-            var path = Folder + "/" + name + ".asset";
+            var path = folder + "/" + name + ".asset";
             AssetDatabase.CreateAsset(tmp, path);
             using (var so = new SerializedObject(tmp))
             {
@@ -80,12 +90,42 @@ namespace DesignUi.Editor.Tests
                 so.FindProperty("m_AtlasWidth").intValue = atlas;
                 so.FindProperty("m_AtlasHeight").intValue = atlas;
                 so.FindProperty("m_AtlasPadding").intValue = padding;
-                so.FindProperty("m_AtlasRenderMode").intValue = (int)GlyphRenderMode.SDFAA;
+                so.FindProperty("m_AtlasRenderMode").intValue = (int)renderMode;
                 so.FindProperty("m_IsMultiAtlasTexturesEnabled").boolValue = true;
                 so.ApplyModifiedPropertiesWithoutUndo();
             }
             Save(tmp);
             return tmp;
+        }
+
+        /// <summary>
+        /// RobotoMono Regular from the Unity Editor's own fonts, copied with its licence into <c>&lt;Folder&gt;/Mono/</c>:
+        /// a second family, without U+203D '‽', which Inter has. Ignores the test when the Editor has no such file.
+        /// </summary>
+        public static string MonoTtf(string root = Folder)
+        {
+            var source = Path.Combine(EditorApplication.applicationContentsPath, "Resources", "Fonts");
+            var ttf = Path.Combine(source, "RobotoMono-Regular.ttf");
+            if (!File.Exists(ttf)) Assert.Ignore("needs the Unity Editor's RobotoMono-Regular.ttf (" + ttf + ")");
+            var folder = root + "/Mono";
+            var path = folder + "/RobotoMono-Regular.ttf";
+            if (AssetDatabase.LoadAssetAtPath<Font>(path) != null) return path;
+            EnsureFolder(folder);
+            File.Copy(ttf, path, true);
+            var licence = Path.Combine(source, "RobotoMono-LICENSE.txt");
+            if (File.Exists(licence)) File.Copy(licence, folder + "/RobotoMono-LICENSE.txt", true);
+            AssetDatabase.ImportAsset(folder, ImportAssetOptions.ImportRecursive);
+            Assert.IsNotNull(AssetDatabase.LoadAssetAtPath<Font>(path), "imported " + path);
+            return path;
+        }
+
+        /// <summary>A TMP font asset in <see cref="KeptFolder"/>, made once per test session.</summary>
+        public static TMP_FontAsset Kept(string ttf, string name) =>
+            AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(KeptFolder + "/" + name + ".asset") ?? CreateTmp(ttf, name, folder: KeptFolder);
+
+        public static void DeleteKept()
+        {
+            if (AssetDatabase.IsValidFolder(KeptFolder)) AssetDatabase.DeleteAsset(KeptFolder);
         }
 
         /// <summary>A TMP font asset whose source font GUID is empty (as a static atlas-only asset can be).</summary>
@@ -139,6 +179,18 @@ namespace DesignUi.Editor.Tests
             var slash = folder.LastIndexOf('/');
             EnsureFolder(folder.Substring(0, slash));
             AssetDatabase.CreateFolder(folder.Substring(0, slash), folder.Substring(slash + 1));
+        }
+    }
+
+    /// <summary>Deletes the fonts kept for the whole test session once every test of this namespace has run.</summary>
+    [SetUpFixture]
+    public class FontFixtureSession
+    {
+        [OneTimeTearDown]
+        public void End()
+        {
+            FontFixture.DeleteKept();
+            Debug.Log("FontFixtureSession: deleted " + FontFixture.KeptFolder);
         }
     }
 }

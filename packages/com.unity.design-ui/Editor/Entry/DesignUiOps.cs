@@ -22,7 +22,8 @@ namespace DesignUi.Editor
     {
         /// <summary>
         /// Font sync into the kit folder (<c>KitSync.Run</c>) with the profile's resolver (per-locale fonts
-        /// over TMP Settings). <paramref name="profilePath"/> is the profile's asset path (Assets/…).
+        /// over TMP Settings). <paramref name="profilePath"/> is the profile's asset path (Assets/…); a relative
+        /// <paramref name="kitDir"/> is resolved against the Unity project root, and the log says so.
         /// </summary>
         public static OpResult KitSync(string profilePath, string kitDir)
         {
@@ -36,8 +37,11 @@ namespace DesignUi.Editor
             }
 
             var log = new StringBuilder();
-            if (r.Ok) log.Append("Kit synced into ").Append(kitDir).Append(": ").Append(r.Files.Count).Append(" files, ").Append(r.Written.Count).Append(" written.\n");
-            else log.Append("Kit sync failed; nothing was written into ").Append(kitDir).Append(".\n");
+            var dir = r.KitDir ?? kitDir;
+            if (r.Ok) log.Append("Kit synced into ").Append(dir).Append(": ").Append(r.Files.Count).Append(" files, ").Append(r.Written.Count).Append(" written.\n");
+            else if (r.Written.Count == 0 && r.Twins.Count == 0) log.Append("Kit sync failed; nothing was written into ").Append(dir).Append(" and no font twin was changed.\n");
+            else log.Append("Kit sync failed while writing into ").Append(dir).Append(".\n");
+            foreach (var n in r.Notes) log.Append("note: ").Append(n).Append('\n');
             foreach (var e in r.Errors) log.Append("error: ").Append(e).Append('\n');
             foreach (var w in r.Warnings) log.Append("warning: ").Append(w).Append('\n');
             if (r.Written.Count > 0) log.Append("written: ").Append(string.Join(", ", r.Written)).Append('\n');

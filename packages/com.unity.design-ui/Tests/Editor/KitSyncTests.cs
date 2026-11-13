@@ -203,6 +203,8 @@ namespace DesignUi.Editor.Tests
             StringAssert.Contains("use fontSize " + fix, error);
             Assert.IsFalse(File.Exists(kit + "/fonts/fonts.css"), "nothing is written when the kit is invalid");
             Assert.AreEqual(KitConfig, File.ReadAllText(kit + "/kit.config.json"));
+            Assert.IsFalse(AssetDatabase.IsValidFolder(FontFixture.TwinFolder), "no twin is created or changed by a failed sync");
+            CollectionAssert.IsEmpty(r.Twins);
         }
 
         [Test]
@@ -277,6 +279,85 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(r.Ok, Errors(r));
             Assert.IsTrue(r.Warnings.Any(w => w.Contains("Old.ttf")), string.Join("\n", r.Warnings));
             Assert.IsTrue(File.Exists(kit + "/fonts/Old.ttf"));
+        }
+
+        /// <summary>A resolver with fixed answers (TMP Settings' global fallbacks stand in as every locale's fallbacks).</summary>
+        sealed class FixedResolver : IFontResolver
+        {
+            readonly Dictionary<string, ResolvedFont> _fonts;
+            public FixedResolver(Dictionary<string, ResolvedFont> fonts) => _fonts = fonts;
+            public ResolvedFont Resolve(string locale) => _fonts.TryGetValue(locale, out var f) ? f : null;
+        }
+
+        [Test]
+        public void Run_GlobalFallbacksReachTheTwins_AfterTheirOwnFallbacks()
+        {
+            var global = FontFixture.CreateTmp(FontFixture.BoldTtf, "Kit Global", family: "Kit Global Sans");
+            var resolver = new FixedResolver(new Dictionary<string, ResolvedFont>
+            {
+                ["tr"] = new ResolvedFont { Primary = _regular, Fallbacks = new[] { global } },
+                ["ar"] = new ResolvedFont { Primary = _arabic, Fallbacks = new[] { global } },
+            });
+            var kit = Kit();
+            var r = KitSync.Run(Profile(), kit, resolver);
+            Assert.IsTrue(r.Ok, Errors(r));
+            Assert.IsFalse(r.Warnings.Any(w => w.Contains("global")), string.Join("\n", r.Warnings));
+
+            var twin = AssetDatabase.LoadAssetAtPath<UnityEngine.TextCore.Text.FontAsset>(FontFixture.TwinFolder + "/Kit Regular UITK.asset");
+            CollectionAssert.AreEqual(new[] { "Kit Fallback UITK", "Kit Global UITK" }, twin.fallbackFontAssetTable.Select(f => f.name).ToArray());
+            var arabic = AssetDatabase.LoadAssetAtPath<UnityEngine.TextCore.Text.FontAsset>(FontFixture.TwinFolder + "/Kit Arabic UITK.asset");
+            CollectionAssert.AreEqual(new[] { "Kit Global UITK" }, arabic.fallbackFontAssetTable.Select(f => f.name).ToArray());
+
+            var json = JObject.Parse(File.ReadAllText(kit + "/fonts/fonts.json"));
+            Assert.AreEqual("Kit Global Sans", json["tr"].Last.Value<string>(), "TMP searches the global fallbacks last");
+            StringAssert.Contains("font-family: \"Kit Global Sans\"", File.ReadAllText(kit + "/fonts/fonts.css"));
+        }
+
+        [Test]
+        public void Run_WeightTable400NamingAnotherFile_Fails()
+        {
+            FontFixture.SetWeight(_regular, 400, _bold);
+            var profile = Profile();
+            var r = KitSync.Run(profile, Kit(), Resolver(profile));
+            Assert.IsFalse(r.Ok);
+            StringAssert.Contains("weight 400", Errors(r));
+            StringAssert.Contains("Kit Bold", Errors(r));
+        }
+
+        [Test]
+        public void Run_CopiesTheLicencesOfTheSyncedFontsOnly()
+        {
+            var mono = FontFixture.CreateTmp(FontFixture.MonoTtf(), "Kit Mono", family: "Kit Mono");
+            File.WriteAllText(FontFixture.Folder + "/Mono/Other-LICENSE.txt", "another family's licence");
+            var profile = Profile();
+            profile.localeFonts = new[] { new LocaleFont { locale = "tr", font = _regular }, new LocaleFont { locale = "ar", font = mono } };
+            var kit = Kit();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            Assert.IsTrue(File.Exists(kit + "/fonts/RobotoMono-Regular.ttf"));
+            if (File.Exists(FontFixture.Folder + "/Mono/RobotoMono-LICENSE.txt"))
+                Assert.IsTrue(File.Exists(kit + "/fonts/RobotoMono-LICENSE.txt"), "the family's own licence next to its font");
+            Assert.IsTrue(File.Exists(kit + "/fonts/OFL.txt"));
+            Assert.IsFalse(File.Exists(kit + "/fonts/Other-LICENSE.txt"), "another family's licence in the same folder is not copied");
+        }
+
+        [Test]
+        public void Run_RelativeKitFolder_IsResolvedAgainstTheProjectRoot()
+        {
+            var root = Path.GetDirectoryName(Application.dataPath);
+            var relative = "Temp/design-ui-kit-" + Guid.NewGuid().ToString("N");
+            var dir = Path.Combine(root, relative);
+            Directory.CreateDirectory(dir);
+            _temp.Add(dir);
+            File.WriteAllText(dir + "/kit.config.json", KitConfig);
+            File.WriteAllText(dir + "/text-styles.json", FractionalStyles);
+            var profile = Profile();
+            var r = KitSync.Run(profile, relative, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            Assert.AreEqual(Path.GetFullPath(dir).Replace('\\', '/'), r.KitDir);
+            Assert.IsTrue(File.Exists(dir + "/fonts/fonts.css"));
+            StringAssert.Contains("relative", r.Notes.Single());
+            StringAssert.Contains(r.KitDir, r.Notes.Single());
         }
 
         [Test]
