@@ -53,14 +53,15 @@ namespace DesignUi.Editor
 
     /// <summary>
     /// Compiles an export folder (<c>screen.ir.json</c>, assets, optional <c>text-styles.json</c>) into
-    /// <c>&lt;outputFolder&gt;/&lt;Screen&gt;/</c>: <c>&lt;Screen&gt;.uxml</c>, <c>&lt;Screen&gt;.uss</c>, list item
+    /// <c>&lt;outputFolder&gt;/&lt;Screen&gt;/</c>: <c>&lt;Screen&gt;.uxml</c>, <c>&lt;Screen&gt;.uss</c>, the repeats' item
     /// templates, the generated view class (<c>&lt;Screen&gt;View.g.cs</c>, <see cref="ViewCodeWriter"/>), assets,
     /// <c>.gitattributes</c> and <c>.design-ui.json</c>, plus the shared
     /// <c>&lt;outputFolder&gt;/DesignTokens.uss</c> (spec 8) and <c>&lt;outputFolder&gt;/DesignFonts.uss</c>: the font
     /// variables per locale (<see cref="FontMap"/>), which the screen's style sheet imports; the screen root carries the
     /// reference locale's class. A screen that names a font family fails when a locale has no font or the family is not
-    /// a font of the locales (spec 18). The locales' UI Toolkit font twins are created or updated after the manual-edit
-    /// guard, before the write batch (asset-specific saves).
+    /// a font of the locales (spec 18). The locales' UI Toolkit font twins (with a variant per kit line box and per line
+    /// box scaled by each of the profile's text-size steps) and <c>DesignFonts.asset</c>, which the screen root references,
+    /// are created or updated after the manual-edit guard, before the write batch (asset-specific saves).
     /// Incremental (spec 14): every output is compared with the file on disk (text with CRLF read as LF) and written only
     /// when it differs; folder creation, writes, deletes and the imports of the written project paths run in one
     /// asset-editing batch (no refresh, no save). A generated file whose content matches neither its recorded hash nor
@@ -140,15 +141,29 @@ namespace DesignUi.Editor
                                 "); export it with the design or set the profile's kit folder");
                 var textStyles = stylesPath != null ? KitTextStyles.Load(stylesPath) : null;
                 var lineBoxes = stylesPath != null ? KitTextStyles.LoadLineBoxes(stylesPath) : null;
+                var kitBoxes = stylesPath != null ? KitTextStyles.LineBoxesOf(stylesPath) : new FontTwinGenerator.LineBox[0];
 
                 // default asset step: the build only plans the assets (paths, checks); they are copied and imported in the write batch
                 plan = hooks?.AssetPath == null ? new AssetPlan(exportDir, outFolder, profile) : null;
                 var assetPath = hooks?.AssetPath ?? plan.Add;
-                compiled = ScreenBuilder.Build(ir, assetPath, hooks?.FontDefinition, textStyles, lineBoxes);
+                var options = new ScreenBuildOptions
+                {
+                    TextStyleSizes = textStyles,
+                    TextStyleLineBoxes = lineBoxes,
+                    LineBoxes = kitBoxes,
+                    TextSizes = profile.textSizes,
+                    RtlAlignment = (profile.localeRules ?? new DesignUi.DesignLocaleRules()).rtlAlignment,
+                    Viewports = (profile.viewports ?? new UnityEngine.Vector2Int[0])
+                        .Select(v => (v, BoxesWriter.Scale(v, profile.referenceResolution, profile.screenMatch))).ToList(),
+                    // the screen root's own reference to the locales' twins (DesignFonts.asset next to DesignFonts.uss, project only)
+                    FontSet = FontSetFolder(outFolder) != null ? "../" + DesignUi.DesignFontSet.FileName : null,
+                };
+                compiled = ScreenBuilder.Build(ir, options, assetPath, hooks?.FontDefinition);
 
-                // fonts per locale: element rules keep var(--font-…); DesignFonts.uss defines them per .locale-<code>
+                // fonts per locale: element rules keep var(--font-…); DesignFonts.uss defines them per .locale-<code>; every kit
+                // line box has a twin variant, and so has each of them scaled by a text-size step
                 fonts = FontMap.Plan(profile, hooks?.Fonts ?? FontMap.DefaultResolver(profile));
-                if (stylesPath != null) fonts.LineBoxes = KitTextStyles.LineBoxesOf(stylesPath);
+                fonts.LineBoxes = ScaledLineBoxes(kitBoxes, profile.textSizes);
                 var fontErrors = fonts.Errors.Concat(FontMap.ScreenErrors(fonts, compiled)).ToList();
                 if (fontErrors.Count > 0) return new CompileResult { Ok = false, Errors = fontErrors };
                 compiled.Root.Classes.Add(FontMap.LocaleClass(fonts.ReferenceLocale));
@@ -221,12 +236,18 @@ namespace DesignUi.Editor
 
             // ---- the locales' font twins (assets DesignFonts.uss references), then what changed in one batch ------
             FontTwinGenerator.TwinRun twins;
-            var notes = new List<string>();
+            var notes = new List<string>(compiled.Notes);
+            string fontSet;
             try
             {
                 twins = FontMap.EnsureTwins(fonts);
                 var missingGlyphs = FontMap.PrepareTwins(fonts, twins, ScreenStrings(ir.Root));
                 if (missingGlyphs.Length > 0) notes.Add("no font of the locales' chains has these characters of the screen: " + missingGlyphs);
+                // the locales' twins for DesignText at runtime, next to DesignFonts.uss (inside the project only); written before
+                // the screen's UXML is imported, whose root references it
+                var setFolder = FontSetFolder(outFolder);
+                if (setFolder != null) EnsureAssetFolder(setFolder);
+                fontSet = FontMap.WriteFontSet(fonts, twins, outFolder, profile.textSizes);
             }
             catch (FontSetupException e) { return Fail(e.Message); }
 
@@ -294,20 +315,14 @@ namespace DesignUi.Editor
                 {
                     failure = "writing generated files failed: " + e.Message;
                 }
-                if (batch) QueueImports(folders, written);
+                if (batch) QueueImports(folders, written, GeneratedManifest.Combine(screenDir, folderName + ".uxml"));
             }
             finally
             {
                 if (batch) AssetDatabase.StopAssetEditing(); // imports everything queued in this batch
             }
+            if (fontSet != null) written.Add(fontSet);
             if (failure != null) return new CompileResult { Ok = false, Written = written, Errors = new[] { failure }, Screen = ir.Screen, Folder = screenDir };
-            // the locales' twins for DesignText at runtime, next to DesignFonts.uss (inside the project only)
-            try
-            {
-                var set = FontMap.WriteFontSet(fonts, twins, outFolder);
-                if (set != null) written.Add(set);
-            }
-            catch (FontSetupException e) { return new CompileResult { Ok = false, Written = written, Errors = new[] { e.Message }, Screen = ir.Screen, Folder = screenDir }; }
             return new CompileResult
             {
                 Ok = true, Written = written, Orphans = FindOrphans(outFolder, folderName, profile.designRoot), StaleAssets = plan?.StaleAssets ?? new string[0],
@@ -429,12 +444,46 @@ namespace DesignUi.Editor
             return p == "Assets" || p.StartsWith("Assets/", StringComparison.Ordinal) || p.StartsWith("Packages/", StringComparison.Ordinal) ? p : null;
         }
 
-        /// <summary>Queues the new folders, then the written project files (assets, style sheets, templates, code) in the open batch.</summary>
-        static void QueueImports(List<string> folders, IEnumerable<string> written)
+        /// <summary>
+        /// The project folder of the compiled font set (the output folder), or null when the output folder is outside
+        /// Assets/ (no font set is written there).
+        /// </summary>
+        static string FontSetFolder(string outFolder)
         {
-            // shared style sheets (tokens, fonts) before the screen sheets that import them
+            var folder = ProjectPath(outFolder?.Replace('\\', '/').TrimEnd('/'));
+            return folder != null && (folder == "Assets" || folder.StartsWith("Assets/", StringComparison.Ordinal)) ? folder : null;
+        }
+
+        /// <summary>Creates a project folder under Assets/ with its parents, through the AssetDatabase (outside any batch).</summary>
+        static void EnsureAssetFolder(string folder)
+        {
+            if (AssetDatabase.IsValidFolder(folder)) return;
+            var slash = folder.LastIndexOf('/');
+            if (slash <= 0) return;
+            var parent = folder.Substring(0, slash);
+            EnsureAssetFolder(parent);
+            if (Directory.Exists(folder)) AssetDatabase.ImportAsset(folder);
+            else AssetDatabase.CreateFolder(parent, folder.Substring(slash + 1));
+        }
+
+        /// <summary>The kit's line boxes and each of them scaled by every text-size step (each key once).</summary>
+        internal static IReadOnlyList<FontTwinGenerator.LineBox> ScaledLineBoxes(IReadOnlyList<FontTwinGenerator.LineBox> kit, IEnumerable<DesignUi.DesignTextSize> steps)
+        {
+            var sizes = kit.Select(b => (b.FontSize, b.LineHeight)).ToList();
+            foreach (var step in steps ?? Enumerable.Empty<DesignUi.DesignTextSize>())
+                if (step != null && step.scale > 0 && step.scale != 1f)
+                    sizes.AddRange(kit.Select(b => (b.FontSize * step.scale, b.LineHeight * step.scale)));
+            return FontTwinGenerator.LineBox.Of(sizes);
+        }
+
+        /// <summary>Queues the new folders, then the written project files (assets, style sheets, templates, code) in the open batch.</summary>
+        static void QueueImports(List<string> folders, IEnumerable<string> written, string screenUxml)
+        {
+            // shared style sheets (tokens, fonts) before the screen sheets that import them; item templates before the screen
+            // UXML that declares them
+            var screen = ProjectPath(screenUxml);
             int Rank(string p) => p.EndsWith(".uss", StringComparison.Ordinal) ? (IsShared(p) ? 1 : 2)
-                : p.EndsWith(".uxml", StringComparison.Ordinal) ? 3 : p.EndsWith(".cs", StringComparison.Ordinal) ? 4 : 0;
+                : p.EndsWith(".uxml", StringComparison.Ordinal) ? (p == screen ? 4 : 3) : p.EndsWith(".cs", StringComparison.Ordinal) ? 5 : 0;
             bool IsShared(string p) => Path.GetFileName(p) == TokensFileName || Path.GetFileName(p) == FontMap.FileName;
             foreach (var folder in folders) AssetDatabase.ImportAsset(folder);
             foreach (var p in written.Select(ProjectPath).Where(p => p != null && !Path.GetFileName(p).StartsWith(".", StringComparison.Ordinal)).OrderBy(Rank))

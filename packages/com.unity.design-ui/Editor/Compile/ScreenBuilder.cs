@@ -41,6 +41,18 @@ namespace DesignUi.Editor
         /// <summary>Marks a shadow host: the view attaches a PseudoStateMirror to its element, targeting the host.</summary>
         public const string MirrorHostClass = "dui-mirror-host";
 
+        /// <summary>The UXML tag of a compiled screen root (a container): <see cref="DesignUi.DesignScreen"/>, which carries the font set reference.</summary>
+        public const string ScreenTag = "dui:DesignScreen";
+
+        /// <summary>The UXML namespace prefix of the package's runtime elements (<c>xmlns:dui="DesignUi"</c>).</summary>
+        public const string RuntimeNamespace = "DesignUi";
+
+        /// <summary>Root class of a text-size step: <c>text-size-&lt;key&gt;</c> (the locale controller sets it on screen roots).</summary>
+        public const string TextSizeClassPrefix = DesignUi.LocaleFontController.TextSizeClassPrefix;
+
+        /// <summary>Root class of a right-to-left locale (the locale controller sets it on screen roots).</summary>
+        public const string RtlClass = DesignUi.LocaleFontController.RtlClass;
+
         public const string StateClassPrefix = "state-";
         public const string BreakpointClassPrefix = "bp-";
 
@@ -70,6 +82,9 @@ namespace DesignUi.Editor
         const string ContentSuffix = ">content";
 
         static readonly Regex ClassIdent = new Regex(@"^-?[A-Za-z_][A-Za-z0-9_-]*$", RegexOptions.Compiled);
+        static readonly Regex TextSizeKey = new Regex(@"^[a-z0-9_-]+$", RegexOptions.Compiled);
+        /// <summary>A font variable with a line-box key: <c>inter-r125s16</c>, <c>inter-r13333s16p5</c> (group 1: the key).</summary>
+        static readonly Regex LineBoxVariable = new Regex(@"-(r\d+s\d+(?:p\d+)?)$", RegexOptions.Compiled);
         static readonly Regex NameIdent = new Regex(@"^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
         static readonly Regex PxValue = new Regex(@"^(-?\d+(?:\.\d+)?)px$|^0$", RegexOptions.Compiled);
         static readonly Regex ZeroLength = new Regex(@"^-?(?:0+(?:\.0*)?|\.0+)(?:px|%)?$", RegexOptions.Compiled);
@@ -99,14 +114,19 @@ namespace DesignUi.Editor
         /// a text node in such a style names its family's variant variable, <c>var(--font-&lt;family&gt;-&lt;key&gt;)</c>, whose
         /// twin lays a line out at the style's CSS line height.</param>
         public static CompiledScreen Build(IrScreen ir, Func<IrAsset, string> assetPath, Func<string, string> fontDefinition,
-            IReadOnlyDictionary<string, double> textStyleSizes, IReadOnlyDictionary<string, string> textStyleLineBoxes)
+            IReadOnlyDictionary<string, double> textStyleSizes, IReadOnlyDictionary<string, string> textStyleLineBoxes) =>
+            Build(ir, new ScreenBuildOptions { TextStyleSizes = textStyleSizes, TextStyleLineBoxes = textStyleLineBoxes }, assetPath, fontDefinition);
+
+        /// <param name="options">Kit text styles, text-size steps, the right-to-left alignment rule and the font set reference.</param>
+        public static CompiledScreen Build(IrScreen ir, ScreenBuildOptions options, Func<IrAsset, string> assetPath, Func<string, string> fontDefinition)
         {
             if (ir == null) throw new ArgumentNullException(nameof(ir));
             if (assetPath == null) throw new ArgumentNullException(nameof(assetPath));
             if (ir.Root == null) throw new IrFormatException("IR has no root node");
+            options = options ?? new ScreenBuildOptions();
             var className = Pascal(ir.Screen, "screen id");
             var lowered = Lowering.Apply(ir.Root, ir.Breakpoints);
-            var builder = new Builder(assetPath, fontDefinition, textStyleSizes, AncestorTargets(lowered), textStyleLineBoxes, InheritedFamilies(lowered));
+            var builder = new Builder(assetPath, fontDefinition, options, AncestorTargets(lowered), InheritedFamilies(lowered));
             var root = builder.Draft(lowered, true, false);
             builder.RemoveWrappers(root);
             return builder.Finish(root, ir, className);
@@ -306,21 +326,47 @@ namespace DesignUi.Editor
             readonly IReadOnlyDictionary<string, double> _textStyles;
             readonly IReadOnlyDictionary<string, string> _lineBoxes;
             readonly Dictionary<IrNode, string> _families;
+            readonly ScreenBuildOptions _options;
+            readonly List<DesignUi.DesignTextSize> _steps;
+            readonly Dictionary<string, FontTwinGenerator.LineBox> _boxesByKey = new Dictionary<string, FontTwinGenerator.LineBox>(StringComparer.Ordinal);
+            readonly List<string> _notes = new List<string>();
+            readonly HashSet<string> _noted = new HashSet<string>(StringComparer.Ordinal);
             readonly List<string> _removed = new List<string>();
             readonly List<UssRule> _rules = new List<UssRule>();
             readonly Dictionary<string, string> _canonical = new Dictionary<string, string>(StringComparer.Ordinal);
             readonly List<CompiledRepeat> _repeats = new List<CompiledRepeat>();
             readonly HashSet<string> _ancestorTargets;
 
-            public Builder(Func<IrAsset, string> assetPath, Func<string, string> fontDefinition, IReadOnlyDictionary<string, double> textStyles,
-                HashSet<string> ancestorTargets, IReadOnlyDictionary<string, string> lineBoxes, Dictionary<IrNode, string> families)
+            public Builder(Func<IrAsset, string> assetPath, Func<string, string> fontDefinition, ScreenBuildOptions options,
+                HashSet<string> ancestorTargets, Dictionary<IrNode, string> families)
             {
                 _assetPath = assetPath;
                 _fontDefinition = fontDefinition;
-                _textStyles = textStyles;
+                _options = options;
+                _textStyles = options.TextStyleSizes;
                 _ancestorTargets = ancestorTargets;
-                _lineBoxes = lineBoxes;
+                _lineBoxes = options.TextStyleLineBoxes;
                 _families = families;
+                _steps = TextSizeSteps(options.TextSizes);
+                foreach (var b in options.LineBoxes ?? new FontTwinGenerator.LineBox[0]) _boxesByKey[b.Key] = b;
+            }
+
+            /// <summary>The profile's text-size steps, checked: valid class keys, positive scales, no duplicates; scale 1 needs no rules.</summary>
+            static List<DesignUi.DesignTextSize> TextSizeSteps(IReadOnlyList<DesignUi.DesignTextSize> steps)
+            {
+                var result = new List<DesignUi.DesignTextSize>();
+                var keys = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var step in steps ?? new DesignUi.DesignTextSize[0])
+                {
+                    if (step == null) continue;
+                    if (string.IsNullOrEmpty(step.key) || !TextSizeKey.IsMatch(step.key))
+                        throw new IrFormatException("text size '" + step.key + "' of the profile cannot be a USS class (lower-case ASCII letters, digits, '-' and '_')");
+                    if (!(step.scale > 0) || float.IsInfinity(step.scale))
+                        throw new IrFormatException("text size '" + step.key + "' of the profile has scale " + step.scale.ToString(CultureInfo.InvariantCulture) + "; a scale is a positive number");
+                    if (!keys.Add(step.key)) throw new IrFormatException("the profile lists text size '" + step.key + "' twice");
+                    if (step.scale != 1f) result.Add(step);
+                }
+                return result;
             }
 
             // ---- drafts: tags and mapped layers -------------------------------------------------------------
@@ -438,6 +484,7 @@ namespace DesignUi.Editor
             Draft Start(IrNode node, bool isRoot)
             {
                 var d = new Draft { Node = node, Name = node.Id, Tag = TagFor(node), IsRoot = isRoot };
+                if (isRoot && d.Tag == "ui:VisualElement") d.Tag = ScreenTag; // the screen root carries the font set reference
                 foreach (var c in node.Classes ?? new string[0])
                 {
                     if (!c.StartsWith("is-", StringComparison.Ordinal)) continue; // design classes have no rules here; is-* are view-toggled states
@@ -765,8 +812,11 @@ namespace DesignUi.Editor
                 }
                 if (merged) CheckBoxlessList(box, list);
 
-                var gap = UndoListGap(list);
-                var slot = SlotHeight(list, gap);
+                // items of one px height sit in fixed-height slots; any other item is measured by the ListView (dynamic
+                // height), and keeps its gap margins with the first-item class, which the view keeps on the first item
+                bool fixedHeight = FixedHeight(list);
+                double? slot = null;
+                if (fixedHeight) slot = SlotHeight(list, UndoListGap(list));
 
                 var d = Start(box, isRoot);
                 d.Tag = "ui:ListView";
@@ -779,7 +829,13 @@ namespace DesignUi.Editor
                                 "The content layout of list repeat '" + name + "' cannot be reproduced by a ListView, which stacks fixed-height items from the top of its box; move it to the items.");
                 d.Layers.RemoveAll(l => l.Content);
                 if (slot.HasValue) d.Attributes.Add(new KeyValuePair<string, string>("fixed-item-height", Number(slot.Value)));
+                else if (!fixedHeight) d.Attributes.Add(new KeyValuePair<string, string>("virtualization-method", "DynamicHeight"));
                 d.TemplateItems = list.Children.Select(c => Draft(c, false, true)).ToList();
+                if (!fixedHeight)
+                {
+                    var first = d.TemplateItems.FirstOrDefault(c => Get(c.Node, Base, "position") != "absolute");
+                    if (first != null) first.FirstItem = true;
+                }
                 if (merged) _removed.Add(list.Id);
                 return d;
             }
@@ -839,6 +895,32 @@ namespace DesignUi.Editor
                     first = false;
                 }
                 return gap;
+            }
+
+            /// <summary>
+            /// Whether a list repeat's items fit fixed-height slots: each has a px height and px (or no) vertical margins in its
+            /// base layer, and no other layer changes them or its display (the gap's first-item layer aside).
+            /// </summary>
+            static bool FixedHeight(IrNode list)
+            {
+                var firstItem = LayerKey.Parse(Lowering.FirstItemLayer).Dims[0];
+                foreach (var item in list.Children)
+                {
+                    var height = Get(item, Base, "height");
+                    if (height == null || !PxValue.IsMatch(height)) return false;
+                    foreach (var prop in new[] { "margin-top", "margin-bottom" })
+                    {
+                        var v = Get(item, Base, prop);
+                        if (v != null && !PxValue.IsMatch(v)) return false;
+                    }
+                    foreach (var pair in item.Style)
+                    {
+                        if (pair.Key == Base || LayerKey.Parse(pair.Key).Contains(firstItem)) continue;
+                        foreach (var key in new[] { "height", "min-height", "max-height", "margin-top", "margin-bottom", "display" })
+                            if (pair.Value.ContainsKey(key)) return false;
+                    }
+                }
+                return true;
             }
 
             /// <summary>Fixed slot height of a list repeat's items: margin-top + height + margin-bottom + gap, the same for every item.</summary>
@@ -1023,7 +1105,7 @@ namespace DesignUi.Editor
             {
                 var p = parent.Node;
                 var w = wrapper.Node;
-                if (p.Kind != "container" || p.Repeat != null || parent.Tag != "ui:VisualElement") return false;
+                if (p.Kind != "container" || p.Repeat != null || (parent.Tag != "ui:VisualElement" && parent.Tag != ScreenTag)) return false;
                 foreach (var layer in p.Style.Keys.Concat(new[] { Base }))
                     if ((Get(p, layer, "flex-direction") ?? "column") != "column") return false;
 
@@ -1092,6 +1174,7 @@ namespace DesignUi.Editor
                     Repeats = _repeats.ToList(),
                     States = (ir.States ?? new string[0]).ToList(),
                     Breakpoints = (ir.Breakpoints ?? new IrBreakpoint[0]).Select(b => b.Name).ToList(),
+                    Notes = _notes.ToList(),
                 };
             }
 
@@ -1108,7 +1191,7 @@ namespace DesignUi.Editor
                 var node = d.Node;
                 var e = new CompiledElement { Tag = d.Tag, Name = d.Name, PickingIgnore = node.PickingIgnore, Source = node };
                 string cls = null;
-                if (d.Layers.Count > 0 || _ancestorTargets.Contains(d.Name)) e.Classes.Add(cls = ClassFor(d, ancestors));
+                if (d.Layers.Count > 0 || _ancestorTargets.Contains(d.Name) || (d.IsRoot && FlipsRtl)) e.Classes.Add(cls = ClassFor(d, ancestors));
                 e.Classes.AddRange(d.IrClasses);
                 if (d.FirstItem) e.Classes.Add(FirstItemClass);
                 if (node.MirrorPseudoState || (node.MirrorClasses != null && node.MirrorClasses.Length > 0))
@@ -1129,12 +1212,15 @@ namespace DesignUi.Editor
                     foreach (var id in LayerKey.Parse(trigger).AncestorIds)
                         if (ancestors.FindIndex(a => a.Id == id) < 0)
                             throw new IrFormatException("an animation of '" + d.Name + "' is triggered by '" + trigger + "', which names '" + id + "', not its ancestor in the compiled tree");
+                if (d.IsRoot && d.Tag == ScreenTag && _options.FontSet != null) e.Attributes.Add(new KeyValuePair<string, string>("fonts", _options.FontSet));
                 e.Attributes.AddRange(d.Attributes);
                 if (node.Text != null && d.Tag != "ui:DropdownField") // a dropdown's text is its value attribute
                 {
                     e.Text = node.Text.Tr ?? "";
-                    if (!node.Text.Rich && e.Text.IndexOf('<') >= 0) e.EnableRichText = false;
+                    // plain text stays plain: a '<' in it, a bound value or a filled-in argument (runtime values) is never read as a tag
+                    if (!node.Text.Rich && (e.Text.IndexOf('<') >= 0 || node.Bind != null || node.Text.Args.Length > 0)) e.EnableRichText = false;
                 }
+                else if (node.Bind != null && (d.Tag == "ui:Label" || d.Tag == "ui:Button")) e.EnableRichText = false;
 
                 // a repeat registers before its items so repeats are listed in document order
                 CompiledRepeat repeat = null;
@@ -1145,7 +1231,8 @@ namespace DesignUi.Editor
                         Name = d.Repeat.Name,
                         Mode = d.TemplateItems != null ? "list" : "inline",
                         Container = d.Name,
-                        TemplateFile = d.TemplateItems != null ? Pascal(d.Repeat.Name, "repeat name") + "Item.uxml" : null,
+                        // both modes: list slots and the inline pool's further items are cloned from it
+                        TemplateFile = Pascal(d.Repeat.Name, "repeat name") + "Item.uxml",
                     };
                     _repeats.Add(repeat);
                 }
@@ -1180,13 +1267,107 @@ namespace DesignUi.Editor
                 _canonical[cls] = canonical;
                 foreach (var layer in d.Layers)
                     _rules.Add(new UssRule(Selector(LayerKey.Parse(layer.Key), cls, d, ancestors) + (layer.Content ? ScrollContentChain : "") + (layer.Part ?? ""), layer.Declarations));
+                TextSizeRules(d, cls, ancestors);
+                RtlRules(d, cls, ancestors);
                 return cls;
             }
 
-            /// <summary>The selector of one layer (see the class summary for the forms).</summary>
-            static string Selector(LayerKey key, string cls, Draft d, List<Ancestor> ancestors)
+            // ---- text-size steps and right to left: rules under a root class ------------------------------------
+
+            bool FlipsRtl => _options.RtlAlignment.HasValue && _options.RtlAlignment.Value != DesignUi.RtlTextAlignment.Keep;
+
+            /// <summary>
+            /// For every text-size step, a twin of each of the element's own rules that sets a font size, under the step's
+            /// root class (<c>.text-size-large.state-loading .s-x:hover</c>): the size times the step's scale and a kit line box's
+            /// scaled twin variable. The extra root class makes each twin win over its rule and keeps the twins in the rules'
+            /// order, so the state and class layers that change a size keep working under a step. Sizes and line boxes that
+            /// are not whole device pixels at a declared viewport are noted (Unity rounds them; stacked lines drift).
+            /// </summary>
+            void TextSizeRules(Draft d, string cls, List<Ancestor> ancestors)
             {
-                var rootPart = string.Concat(key.OfKind(LayerDimKind.Breakpoint).Select(x => "." + BreakpointClassPrefix + x.Name)
+                if (_steps.Count == 0) return;
+                foreach (var step in _steps)
+                    foreach (var layer in d.Layers.Where(l => !l.Content && l.Part == null))
+                    {
+                        var size = layer.Declarations.FirstOrDefault(x => x.Property == "font-size");
+                        if (size.Property == null) continue;
+                        var px = Px(size.Value, "font-size of '" + d.Name + "' (layer '" + layer.Key + "'), which the text-size steps scale,");
+                        var scaled = new List<UssDeclaration> { new UssDeclaration("font-size", Number(px * step.scale) + "px") };
+                        FontTwinGenerator.LineBox box = null;
+                        foreach (var decl in layer.Declarations.Where(x => x.Property == "-unity-font-definition"))
+                        {
+                            var key = LineBoxKeyOf(decl.Value);
+                            if (key == null) continue;
+                            if (!_boxesByKey.TryGetValue(key, out box))
+                                throw new IrFormatException("'" + d.Name + "' uses the line box '" + key + "', which the kit's text styles do not list; the text-size steps cannot scale it");
+                            var scaledBox = FontTwinGenerator.LineBox.For(box.FontSize * step.scale, box.LineHeight * step.scale);
+                            scaled.Add(new UssDeclaration(decl.Property, decl.Value.Substring(0, decl.Value.Length - key.Length - 1) + scaledBox.Key + ")"));
+                        }
+                        NoteInexact(step, px, box);
+                        _rules.Add(new UssRule(Selector(LayerKey.Parse(layer.Key), cls, d, ancestors, "." + TextSizeClassPrefix + step.key), Sorted(scaled, d.Name)));
+                    }
+            }
+
+            /// <summary>The line-box key of a <c>var(--font-&lt;family&gt;-&lt;key&gt;)</c> value, or null.</summary>
+            static string LineBoxKeyOf(string value)
+            {
+                const string prefix = "var(--font-";
+                if (!value.StartsWith(prefix, StringComparison.Ordinal) || !value.EndsWith(")", StringComparison.Ordinal)) return null;
+                var m = LineBoxVariable.Match(value.Substring(prefix.Length, value.Length - prefix.Length - 1));
+                return m.Success ? m.Groups[1].Value : null;
+            }
+
+            void NoteInexact(DesignUi.DesignTextSize step, double px, FontTwinGenerator.LineBox box)
+            {
+                foreach (var (viewport, scale) in _options.Viewports ?? new (UnityEngine.Vector2Int, double)[0])
+                {
+                    double size = px * step.scale * scale, line = box != null ? box.LineHeight * step.scale * scale : 0;
+                    bool sizeWhole = WholePx(size), lineWhole = box == null || WholePx(line);
+                    if (sizeWhole && lineWhole) continue;
+                    var what = box != null ? Number(px) + "/" + Number(box.LineHeight) + " px text (font size/line box)" : Number(px) + " px text";
+                    var note = "text size '" + step.key + "' (x" + Number(step.scale) + ") is not exact for " + what + ": " +
+                               (box != null ? Number(px * step.scale) + "/" + Number(box.LineHeight * step.scale) : Number(px * step.scale)) + " px is " +
+                               (box != null ? Number(Math.Round(size, 4)) + "/" + Number(Math.Round(line, 4)) : Number(Math.Round(size, 4))) + " device px at " +
+                               viewport.x + "x" + viewport.y + " (scale " + Number(Math.Round(scale, 6)) + "). Unity sets text at whole device pixels, so it renders rounded " +
+                               "and stacked lines drift; choose a scale that keeps the kit's sizes and line boxes whole at every declared viewport.";
+                    if (_noted.Add(note)) _notes.Add(note);
+                    break;
+                }
+            }
+
+            static bool WholePx(double v) => Math.Abs(v - Math.Round(v)) < 1e-6;
+
+            /// <summary>
+            /// Right to left: under the root class <c>rtl</c>, a twin of each of the element's own rules that sets a text
+            /// alignment, with the profile's rule applied (start to end: left becomes right; mirror: left and right swap), the
+            /// same twin order and precedence as the text-size rules; and on the screen root the theme's start alignment, which
+            /// text without an alignment of its own inherits. The layout is not mirrored.
+            /// </summary>
+            void RtlRules(Draft d, string cls, List<Ancestor> ancestors)
+            {
+                if (!FlipsRtl) return;
+                if (d.IsRoot && !d.Layers.Any(l => l.Declarations.Any(x => x.Property == "-unity-text-align")))
+                    _rules.Add(new UssRule(Selector(LayerKey.Parse(Base), cls, d, ancestors, "." + RtlClass),
+                        new List<UssDeclaration> { new UssDeclaration("-unity-text-align", FlipAlign("upper-left")) }));
+                foreach (var layer in d.Layers.Where(l => !l.Content && l.Part == null))
+                    foreach (var decl in layer.Declarations.Where(x => x.Property == "-unity-text-align"))
+                        _rules.Add(new UssRule(Selector(LayerKey.Parse(layer.Key), cls, d, ancestors, "." + RtlClass),
+                            new List<UssDeclaration> { new UssDeclaration(decl.Property, FlipAlign(decl.Value)) }));
+            }
+
+            string FlipAlign(string value)
+            {
+                var mirror = _options.RtlAlignment == DesignUi.RtlTextAlignment.Mirror;
+                if (value.EndsWith("-left", StringComparison.Ordinal)) return value.Substring(0, value.Length - 4) + "right";
+                if (mirror && value.EndsWith("-right", StringComparison.Ordinal)) return value.Substring(0, value.Length - 5) + "left";
+                return value;
+            }
+
+            /// <summary>The selector of one layer (see the class summary for the forms).</summary>
+            /// <param name="rootClass">A further class on the screen root (<c>.text-size-large</c>, <c>.rtl</c>), first in its compound, or null.</param>
+            static string Selector(LayerKey key, string cls, Draft d, List<Ancestor> ancestors, string rootClass = null)
+            {
+                var rootPart = (rootClass ?? "") + string.Concat(key.OfKind(LayerDimKind.Breakpoint).Select(x => "." + BreakpointClassPrefix + x.Name)
                     .Concat(key.OfKind(LayerDimKind.State).Select(x => "." + StateClassPrefix + x.Name)));
                 var compounds = new List<string>();
                 bool rootPlaced = d.IsRoot;

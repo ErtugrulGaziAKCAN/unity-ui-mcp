@@ -239,7 +239,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("item", repeat.Name);
             Assert.AreEqual("inline", repeat.Mode);
             Assert.AreEqual("items", repeat.Container);
-            Assert.IsNull(repeat.TemplateFile);
+            Assert.AreEqual("ItemItem.uxml", repeat.TemplateFile, "the view clones further items from the template");
             CollectionAssert.AreEqual(new[] { "item-a", "item-b" }, repeat.Items.Select(i => i.Name).ToArray());
         }
 
@@ -516,6 +516,25 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void ListRepeat_ItemsWithoutOnePxHeight_AreMeasured_AndKeepTheirGapWithTheFirstItemClass()
+        {
+            var loose = ListContainer("l", Node("message", "container", ("background-color", "#202020")));
+            loose.Style["base"]["overflow-y"] = "auto";
+            loose.Style["base"]["gap"] = "6px";
+            var s = Build(Screen(Root(loose)));
+            var list = s.Find("l");
+            Assert.AreEqual("ui:ListView", list.Tag);
+            CollectionAssert.Contains(list.Attributes, new KeyValuePair<string, string>("virtualization-method", "DynamicHeight"), "the ListView measures each item");
+            Assert.IsFalse(list.Attributes.Any(a => a.Key == "fixed-item-height"));
+            var item = s.Find("message");
+            CollectionAssert.Contains(item.Classes, ScreenBuilder.FirstItemClass, "the template starts as the first item; the view keeps the class on item 0 only");
+            var cls = Cls(s, "message");
+            Assert.AreEqual("6px", Decl(Rule(s, "." + cls), "margin-top"), "the gap stays on the items");
+            Assert.AreEqual("0px", Decl(Rule(s, "." + cls + ".__first"), "margin-top"));
+            Assert.AreEqual("MessageItem.uxml", s.Repeats.Single().TemplateFile);
+        }
+
+        [Test]
         public void List_UnsupportedShapes_AreErrors()
         {
             // not a scroll area and not inside one
@@ -531,11 +550,6 @@ namespace DesignUi.Editor.Tests
             row.Style["base"]["flex-direction"] = "row";
             row.Style["base"]["overflow-y"] = "auto";
             Assert.Throws<UnsupportedStyleException>(() => Build(Screen(Root(row))));
-            // items without a fixed height
-            var loose = ListContainer("l", Node("message", "container", ("background-color", "#202020")));
-            loose.Style["base"]["overflow-y"] = "auto";
-            var ex = Assert.Throws<IrFormatException>(() => Build(Screen(Root(loose))));
-            StringAssert.Contains("height", ex.Message);
             // padding on the scrolling list
             var padded = ListContainer("l", Item());
             padded.Style["base"]["overflow-y"] = "auto";

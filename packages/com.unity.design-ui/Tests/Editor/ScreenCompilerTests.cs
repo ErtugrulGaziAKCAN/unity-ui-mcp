@@ -435,7 +435,8 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("test.showcase", m.screen);
             Assert.AreEqual("root", m.root);
             Assert.AreEqual("TestShowcaseView.g.cs", m.view, "the view class");
-            CollectionAssert.AreEquivalent(new[] { "TestShowcase.uxml", "TestShowcase.uss", "TestShowcaseView.g.cs", ".gitattributes" }, m.files.Keys);
+            CollectionAssert.AreEquivalent(new[] { "TestShowcase.uxml", "TestShowcase.uss", "ItemItem.uxml", "TestShowcaseView.g.cs", ".gitattributes" }, m.files.Keys,
+                "the inline repeat's item template, which the view clones further items from");
             foreach (var kv in m.files) Assert.AreEqual(GeneratedManifest.Sha256Hex(File.ReadAllBytes(dir + "/" + kv.Key)), kv.Value, kv.Key);
             CollectionAssert.AreEqual(new[] { "tile" }, m.clickable);
             Assert.AreEqual(1, m.mirrors.Length);
@@ -446,6 +447,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("inline", m.repeats[0].mode);
             Assert.AreEqual("items", m.repeats[0].container);
             CollectionAssert.AreEqual(new[] { "item-a", "item-b" }, m.repeats[0].items);
+            Assert.AreEqual("ItemItem.uxml", m.repeats[0].template);
             CollectionAssert.IsEmpty(m.removedElements);
             Assert.IsEmpty(m.FindManualEdits(dir));
         }

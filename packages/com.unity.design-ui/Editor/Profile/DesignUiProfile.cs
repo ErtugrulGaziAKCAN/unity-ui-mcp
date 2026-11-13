@@ -44,8 +44,10 @@ namespace DesignUi.Editor
         public PanelSettings panelSettings;
         [Tooltip("How design screens sit in a uGUI shell (DesignUiPanelRegion): the panel's sort order and the screen's order on its panel. A region added in the Editor copies these values.")]
         public DesignUi.DesignUiHostSettings host = new DesignUi.DesignUiHostSettings();
-        [Tooltip("Right-to-left and complex-script locales and the RTL alignment rule of design screens at runtime (LocaleFontController). A region added in the Editor copies them.")]
+        [Tooltip("Right-to-left and complex-script locales and the RTL alignment rule of design screens. The compiler writes the alignment rule into the screens' .rtl rules (recompile after changing it); the runtime LocaleFontController uses the locale lists. A region added in the Editor copies them.")]
         public DesignUi.DesignLocaleRules localeRules = new DesignUi.DesignLocaleRules();
+        [Tooltip("The game's text-size steps (key and scale, matching its IDesignTextSizeSource). The compiler writes each step's rules (.text-size-<key> on the screen root) and scaled line-box twins, and reports a step that is not whole device pixels at a declared viewport.")]
+        public DesignUi.DesignTextSize[] textSizes = new DesignUi.DesignTextSize[0];
 
         /// <summary>PanelSettings for design screens: <see cref="panelSettings"/>, or the package's settings when empty.</summary>
         public PanelSettings DesignPanelSettings => panelSettings != null ? panelSettings : LoadDefaultPanelSettings();
