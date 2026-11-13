@@ -23,12 +23,14 @@
     "action": null,
     "anims": [],
     "asset": null,
+    "attrTexts": {},
     "background": {
       "file": "assets/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.svg",
       "height": 1440,
       "kind": "svg",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "slice": null,
+      "tint": false,
       "width": 2560
     },
     "bind": null,
@@ -37,18 +39,21 @@
         "action": null,
         "anims": [],
         "asset": null,
+        "attrTexts": {},
         "background": null,
-        "bind": "playerName",
+        "bind": null,
         "children": [],
         "classes": [],
         "external": false,
         "id": "title",
+        "initial": null,
         "kind": "text",
         "repeat": null,
         "shadow": null,
         "style": {
           "base": {
             "color": "#ffffff",
+            "display": "block",
             "font-size": "48px"
           }
         },
@@ -56,29 +61,74 @@
           "args": [
             "name"
           ],
-          "en": "Welcome {0}",
+          "en": "Welcome {name}",
           "key": "sample.title",
           "rich": false,
-          "tr": "Hoş geldin {0}"
+          "style": "title",
+          "tr": "Hoş geldin {name}"
         }
       },
       {
         "action": null,
-        "anims": [],
+        "anims": [
+          {
+            "delay": 0,
+            "direction": "alternate",
+            "duration": 1200,
+            "fillMode": "both",
+            "iterations": "infinite",
+            "keyframes": [
+              {
+                "easing": null,
+                "offset": 0,
+                "values": {
+                  "opacity": "1"
+                }
+              },
+              {
+                "easing": "linear",
+                "offset": 0.5,
+                "values": {
+                  "opacity": "0.6"
+                }
+              },
+              {
+                "easing": null,
+                "offset": 1,
+                "values": {
+                  "opacity": "0.8"
+                }
+              }
+            ],
+            "kind": "keyframes",
+            "name": "pulse",
+            "phase": "enter",
+            "playState": "running",
+            "properties": [
+              "opacity"
+            ],
+            "restart": true,
+            "timing": "ease-in-out",
+            "trigger": "show"
+          }
+        ],
         "asset": {
           "file": "assets/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.png",
           "height": 300,
           "kind": "image",
           "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "slice": null,
+          "tint": false,
           "width": 600
         },
+        "attrTexts": {},
         "background": null,
         "bind": null,
         "children": [],
         "classes": [],
         "external": false,
         "id": "card",
+        "initial": null,
         "kind": "container",
         "repeat": null,
         "shadow": {
@@ -98,11 +148,13 @@
             40,
             40
           ],
+          "tint": false,
           "width": 96
         },
         "style": {
           "base": {
             "border-radius": "24px",
+            "display": "block",
             "height": "300px",
             "width": "600px"
           }
@@ -111,8 +163,55 @@
       },
       {
         "action": "play",
-        "anims": [],
+        "anims": [
+          {
+            "delay": 0,
+            "direction": "normal",
+            "duration": 200,
+            "fillMode": "none",
+            "iterations": 1,
+            "keyframes": [],
+            "kind": "transition",
+            "name": null,
+            "phase": "enter",
+            "playState": "running",
+            "properties": [
+              "background-color"
+            ],
+            "restart": true,
+            "timing": "cubic-bezier(0.4, 0, 0.2, 1)",
+            "trigger": "hover"
+          },
+          {
+            "delay": 0,
+            "direction": "normal",
+            "duration": 200,
+            "fillMode": "none",
+            "iterations": 1,
+            "keyframes": [],
+            "kind": "transition",
+            "name": null,
+            "phase": "leave",
+            "playState": "running",
+            "properties": [
+              "background-color"
+            ],
+            "restart": true,
+            "timing": "cubic-bezier(0.4, 0, 0.2, 1)",
+            "trigger": "hover"
+          }
+        ],
         "asset": null,
+        "attrTexts": {
+          "title": {
+            "args": [],
+            "en": "Start the match",
+            "key": "sample.play.title",
+            "rich": false,
+            "style": null,
+            "tr": "Maçı başlat"
+          }
+        },
         "background": null,
         "bind": null,
         "children": [
@@ -120,23 +219,28 @@
             "action": null,
             "anims": [],
             "asset": null,
+            "attrTexts": {},
             "background": null,
             "bind": null,
             "children": [],
             "classes": [],
             "external": false,
             "id": "play-label",
+            "initial": null,
             "kind": "text",
             "repeat": null,
             "shadow": null,
             "style": {
-              "base": {}
+              "base": {
+                "display": "block"
+              }
             },
             "text": {
               "args": [],
               "en": "Play",
               "key": "sample.play",
               "rich": false,
+              "style": "label",
               "tr": "Oyna"
             }
           }
@@ -144,6 +248,10 @@
         "classes": [],
         "external": false,
         "id": "play",
+        "initial": {
+          "checked": false,
+          "disabled": false
+        },
         "kind": "button",
         "repeat": null,
         "shadow": null,
@@ -152,13 +260,17 @@
             "background-color": "#1fa89e"
           },
           "base": {
-            "background-color": "#2fd1c5"
+            "background-color": "#2fd1c5",
+            "display": "flex"
           },
           "disabled": {
             "opacity": "0.4"
           },
           "hover": {
             "background-color": "#5fe3d8"
+          },
+          "state:loading+hover": {
+            "background-color": "#2fd1c5"
           }
         },
         "text": null
@@ -167,6 +279,7 @@
         "action": null,
         "anims": [],
         "asset": null,
+        "attrTexts": {},
         "background": null,
         "bind": null,
         "children": [
@@ -174,20 +287,60 @@
             "action": null,
             "anims": [],
             "asset": null,
+            "attrTexts": {},
             "background": null,
             "bind": null,
-            "children": [],
+            "children": [
+              {
+                "action": null,
+                "anims": [],
+                "asset": null,
+                "attrTexts": {},
+                "background": null,
+                "bind": "player-name",
+                "children": [],
+                "classes": [],
+                "external": false,
+                "id": "row-name",
+                "initial": null,
+                "kind": "text",
+                "repeat": null,
+                "shadow": null,
+                "style": {
+                  "anc(row):class:is-selected": {
+                    "color": "#0b1f26"
+                  },
+                  "base": {
+                    "color": "#ffffff",
+                    "display": "block"
+                  }
+                },
+                "text": {
+                  "args": [],
+                  "en": null,
+                  "key": null,
+                  "rich": false,
+                  "style": "label",
+                  "tr": "Ali"
+                }
+              }
+            ],
             "classes": [
               "row"
             ],
             "external": false,
             "id": "row",
+            "initial": null,
             "kind": "container",
             "repeat": null,
             "shadow": null,
             "style": {
               "base": {
+                "display": "flex",
                 "height": "64px"
+              },
+              "class:is-selected": {
+                "background-color": "#123c47"
               }
             },
             "text": null
@@ -196,15 +349,19 @@
         "classes": [],
         "external": false,
         "id": "rows",
+        "initial": null,
         "kind": "list",
         "repeat": {
+          "count": 3,
           "mode": "list",
           "name": "row"
         },
         "shadow": null,
         "style": {
           "base": {
-            "flex-direction": "column"
+            "display": "flex",
+            "flex-direction": "column",
+            "overflow-y": "auto"
           }
         },
         "text": null
@@ -215,6 +372,7 @@
     ],
     "external": false,
     "id": "root",
+    "initial": null,
     "kind": "container",
     "repeat": null,
     "shadow": null,

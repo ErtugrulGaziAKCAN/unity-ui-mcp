@@ -9,11 +9,16 @@ using Newtonsoft.Json.Linq;
 
 namespace DesignUi.Editor
 {
-    /// <summary>A shadow host and the element whose pseudo-states it mirrors (the view attaches a PseudoStateMirror).</summary>
+    /// <summary>
+    /// A shadow host and its element. When the host has the <c>dui-mirror-host</c> class the view attaches a
+    /// PseudoStateMirror to the element targeting the host; <c>classes</c> (null when none) are the element's <c>is-*</c>
+    /// classes the view toggles on the host together with the element.
+    /// </summary>
     public sealed class MirrorEntry
     {
         public string element;
         public string host;
+        public string[] classes;
     }
 
     /// <summary>A repeat: container, mode, list-mode template file and item names.</summary>

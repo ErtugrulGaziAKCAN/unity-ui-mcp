@@ -42,7 +42,8 @@
     "components": "[min,max] space-separated components per list item (default [1,1]); list = comma separated list allowed",
     "dropValues": "keyword values that are accepted and omitted",
     "mapValues": "keyword aliases rewritten before mapping",
-    "loweredValues": "keyword values valid only where the compiler lowers them (see the property's note); the mapper rejects them elsewhere"
+    "loweredValues": "keyword values valid only where the compiler lowers them (see the property's note); the mapper rejects them elsewhere",
+    "loweredFunctions": "value functions only the compiler consumes (see the property's note); the mapper rejects them elsewhere"
   },
   "properties": {
     "-webkit-font-smoothing": {
@@ -87,7 +88,8 @@
       ],
       "types": [
         "ratio"
-      ]
+      ],
+      "note": "a / b is written as one number (USS <ratio> is a number); auto together with a ratio is the ratio (no compiled element has a natural ratio of its own)"
     },
     "backdrop-filter": {
       "handling": "error",
@@ -109,7 +111,78 @@
         "linear-gradient",
         "radial-gradient"
       ],
-      "list": true
+      "list": true,
+      "loweredFunctions": [
+        "url"
+      ],
+      "note": "url() images are IR assets (the node's background or image asset): the compiler writes the base one from the asset with CSS background geometry, a layer may switch to another image file or to none; gradients are baked from the base layer"
+    },
+    "background-position-x": {
+      "handling": "direct",
+      "keywords": [
+        "left",
+        "center",
+        "right"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ],
+      "components": [
+        1,
+        2
+      ],
+      "note": "USS grammar [ center | [ [ left | right ]? <length-percentage>? ] ]"
+    },
+    "background-position-y": {
+      "handling": "direct",
+      "keywords": [
+        "top",
+        "center",
+        "bottom"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ],
+      "components": [
+        1,
+        2
+      ],
+      "note": "USS grammar [ center | [ [ top | bottom ]? <length-percentage>? ] ]"
+    },
+    "background-repeat": {
+      "handling": "direct",
+      "keywords": [
+        "repeat",
+        "no-repeat",
+        "repeat-x",
+        "repeat-y",
+        "space",
+        "round"
+      ],
+      "components": [
+        1,
+        2
+      ],
+      "note": "USS grammar repeat-x | repeat-y | [ repeat | space | round | no-repeat ]{1,2}"
+    },
+    "background-size": {
+      "handling": "direct",
+      "keywords": [
+        "auto",
+        "cover",
+        "contain"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ],
+      "components": [
+        1,
+        2
+      ],
+      "note": "USS grammar [ <length-percentage> | auto ]{1,2} | cover | contain; on a CSS background image auto becomes the asset's natural size in px"
     },
     "border-bottom-color": {
       "handling": "direct",
@@ -422,9 +495,15 @@
     },
     "letter-spacing": {
       "handling": "direct",
+      "keywords": [
+        "normal"
+      ],
       "types": [
         "length"
-      ]
+      ],
+      "mapValues": {
+        "normal": "0px"
+      }
     },
     "line-height": {
       "handling": "dropped"
@@ -828,9 +907,15 @@
     },
     "word-spacing": {
       "handling": "direct",
+      "keywords": [
+        "normal"
+      ],
       "types": [
         "length"
-      ]
+      ],
+      "mapValues": {
+        "normal": "0px"
+      }
     },
     "z-index": {
       "handling": "lowered",

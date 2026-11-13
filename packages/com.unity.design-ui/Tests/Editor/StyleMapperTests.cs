@@ -240,7 +240,6 @@ namespace DesignUi.Editor.Tests
         [TestCase("white-space", "pre-line")]
         [TestCase("white-space-collapse", "preserve-breaks")]
         [TestCase("flex-basis", "content")]
-        [TestCase("aspect-ratio", "auto 16 / 9")]
         [TestCase("letter-spacing", "0.02em")]
         [TestCase("font-size", "1.2em")]
         [TestCase("width", "min(100px, 50%)")]
@@ -320,6 +319,8 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("2", Get(Map(("aspect-ratio", "2 / 1")), "aspect-ratio"));
             Assert.AreEqual("1.5", Get(Map(("aspect-ratio", "1.5")), "aspect-ratio"));
             Assert.AreEqual("auto", Get(Map(("aspect-ratio", "auto")), "aspect-ratio"));
+            Assert.AreEqual("2", Get(Map(("aspect-ratio", "auto 64 / 32")), "aspect-ratio"), "auto with a ratio is the ratio");
+            Assert.AreEqual("1.777778", Get(Map(("aspect-ratio", "16/9 auto")), "aspect-ratio"));
         }
 
         [Test]

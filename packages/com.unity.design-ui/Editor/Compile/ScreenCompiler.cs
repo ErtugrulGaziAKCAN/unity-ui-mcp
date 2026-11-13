@@ -189,7 +189,8 @@ namespace DesignUi.Editor
                 root = compiled.Root.Name,
                 view = viewFile,
                 clickable = compiled.AllElements().Where(e => e.Clickable).Select(e => e.Name).ToArray(),
-                mirrors = compiled.AllElements().Where(e => e.MirrorHost).Select(e => new MirrorEntry { element = e.MirrorElement, host = e.Name }).ToArray(),
+                mirrors = compiled.AllElements().Where(e => e.MirrorElement != null)
+                    .Select(e => new MirrorEntry { element = e.MirrorElement, host = e.Name, classes = e.MirrorClasses.Count > 0 ? e.MirrorClasses.ToArray() : null }).ToArray(),
                 repeats = compiled.Repeats.Select(r => new RepeatEntry
                 {
                     name = r.Name, mode = r.Mode, container = r.Container, template = r.TemplateFile, items = r.Items.Select(i => i.Name).ToArray(),

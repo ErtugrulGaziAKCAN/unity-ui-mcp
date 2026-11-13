@@ -12,19 +12,26 @@ namespace DesignUi.Editor
     /// <summary>
     /// Turns an IR screen into a <see cref="CompiledScreen"/> (spec 8): lowers it, maps every style layer to USS, gives
     /// each element one content-hash class (<c>s-</c> + the first 8 hex of the SHA-256 of its canonical declaration
-    /// list, so elements with identical styles share a class and an unchanged element keeps its class), and writes the
-    /// selectors of the selector policy:
+    /// list, so elements with identical styles share a class and an unchanged element keeps its class), and writes one
+    /// selector per layer key (<see cref="LayerKey"/>), its dimensions in compounds from the outside in:
     /// <list type="bullet">
-    /// <item><c>.s-x</c> base; <c>.s-x:hover</c> (and active, focus, checked, disabled);</item>
-    /// <item><c>.state-n .s-x</c> / <c>.bp-n .s-x</c> for descendants of the screen root, which carries the state and
-    /// breakpoint classes; <c>.s-x.state-n</c> / <c>.s-x.bp-n</c> for the root itself;</item>
-    /// <item><c>.s-x.c</c> for a class layer <c>class:c</c>: <c>is-*</c> view states, <c>__first</c> (the view toggles
-    /// it on the first item of an inline repeat) and the <c>dui-*</c> classes a PseudoStateMirror sets on a shadow host;</item>
-    /// <item>any of these followed by <see cref="ScrollContentChain"/> for the content layout of a scroll area, which
-    /// CSS applies to the scrolled content and UI Toolkit to the ScrollView's content container.</item>
+    /// <item>breakpoints and states: classes on the screen root (<c>.bp-n</c>, <c>.state-n</c>, both in one compound
+    /// when both are named), which is a descendant compound before the element, or part of the root's own compound;</item>
+    /// <item>ancestor conditions <c>anc(id):…</c>: the ancestor's class with its pseudo-classes or view-toggled classes
+    /// (<c>.s-card:hover .s-title</c>, <c>.s-row.is-selected .s-name</c>), outermost ancestor first; an ancestor named this
+    /// way always has a class of its own;</item>
+    /// <item>the element: its class, its <c>class:</c> dimensions (<c>is-*</c> view states, <c>__first</c> on the first
+    /// item of an inline repeat, the <c>dui-*</c> classes a PseudoStateMirror sets on a shadow host), then its own
+    /// pseudo-classes;</item>
+    /// <item>followed by <see cref="ScrollContentChain"/> for the content layout of a scroll area, which CSS applies to
+    /// the scrolled content and UI Toolkit to the ScrollView's content container.</item>
     /// </list>
-    /// Rules are ordered by the first element that uses their class (document order), and within a class: base,
-    /// breakpoints, states, classes, then hover, focus, checked, active, disabled (each followed by its content rule).
+    /// For example <c>.s-x</c>, <c>.s-x:hover</c>, <c>.state-loading .s-x:hover</c>, <c>.bp-narrow.state-loading .s-x</c>,
+    /// <c>.s-root.state-loading</c>, <c>.s-x.is-selected:hover</c>. A key with more dimensions always has the higher
+    /// specificity, so a union layer wins over the layers it combines, as the IR requires.
+    /// Rules are ordered by the first element that uses their class (document order), and within a class by
+    /// <see cref="LayerKey.RuleOrder"/>: base, then single dimensions (breakpoints, states, classes, ancestors, then hover,
+    /// focus, checked, active, disabled), then pairs and so on (each followed by its content rule).
     /// </summary>
     public static class ScreenBuilder
     {
@@ -37,6 +44,12 @@ namespace DesignUi.Editor
         public const string StateClassPrefix = "state-";
         public const string BreakpointClassPrefix = "bp-";
 
+        /// <summary>The TextField placeholder's UXML attribute (TextInputBaseField in UnityEngine.UIElementsModule 6000.3).</summary>
+        public const string PlaceholderAttribute = "placeholder-text";
+
+        /// <summary>USS property that tints a background image (a tintable SVG is written white and tinted with the node's color).</summary>
+        public const string TintProperty = "-unity-background-image-tint-color";
+
         /// <summary>
         /// Child-combinator chain from a ScrollView to its content container (Unity 6000.3 hierarchy: ScrollView,
         /// content-and-vertical-scroll container, content viewport, content container). Child combinators keep nested
@@ -47,12 +60,8 @@ namespace DesignUi.Editor
 
         const string Base = "base";
         const string HostSuffix = "__shadowhost";
-        const string BreakpointLayer = "bp:";
-        const string StateLayer = "state:";
-        const string ClassLayer = "class:";
         const string ContentSuffix = ">content";
 
-        static readonly string[] PseudoOrder = { "hover", "focus", "checked", "active", "disabled" };
         static readonly Regex ClassIdent = new Regex(@"^-?[A-Za-z_][A-Za-z0-9_-]*$", RegexOptions.Compiled);
         static readonly Regex NameIdent = new Regex(@"^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
         static readonly Regex PxValue = new Regex(@"^(-?\d+(?:\.\d+)?)px$|^0$", RegexOptions.Compiled);
@@ -82,11 +91,24 @@ namespace DesignUi.Editor
             if (assetPath == null) throw new ArgumentNullException(nameof(assetPath));
             if (ir.Root == null) throw new IrFormatException("IR has no root node");
             var className = Pascal(ir.Screen, "screen id");
-            var lowered = Lowering.Apply(ir.Root);
-            var builder = new Builder(assetPath, fontDefinition, textStyleSizes);
+            var lowered = Lowering.Apply(ir.Root, ir.Breakpoints);
+            var builder = new Builder(assetPath, fontDefinition, textStyleSizes, AncestorTargets(lowered));
             var root = builder.Draft(lowered, true, false);
             builder.RemoveWrappers(root);
             return builder.Finish(root, ir, className);
+        }
+
+        /// <summary>The ids of the elements a layer key names as an ancestor (<c>anc(id):…</c>) anywhere in the tree.</summary>
+        static HashSet<string> AncestorTargets(IrNode root)
+        {
+            var result = new HashSet<string>(StringComparer.Ordinal);
+            void Visit(IrNode n)
+            {
+                foreach (var key in n.Style.Keys) foreach (var id in LayerKey.Parse(key).AncestorIds) result.Add(id);
+                foreach (var c in n.Children) Visit(c);
+            }
+            Visit(root);
+            return result;
         }
 
         /// <summary>Whether any node of the tree names a kit text style.</summary>
@@ -115,6 +137,8 @@ namespace DesignUi.Editor
 
         /// <summary>Invariant, round-trip formatting for numbers written into USS (a Turkish culture never adds a comma).</summary>
         internal static string Number(double value) => value.ToString("R", CultureInfo.InvariantCulture);
+
+        internal static string Number(float value) => value.ToString("R", CultureInfo.InvariantCulture);
 
         /// <summary>
         /// A path as written inside <c>url("…")</c>: <c>%</c>, <c>#</c> and <c>?</c> are percent-encoded, because the USS
@@ -234,12 +258,15 @@ namespace DesignUi.Editor
             readonly List<UssRule> _rules = new List<UssRule>();
             readonly Dictionary<string, string> _canonical = new Dictionary<string, string>(StringComparer.Ordinal);
             readonly List<CompiledRepeat> _repeats = new List<CompiledRepeat>();
+            readonly HashSet<string> _ancestorTargets;
 
-            public Builder(Func<IrAsset, string> assetPath, Func<string, string> fontDefinition, IReadOnlyDictionary<string, double> textStyles)
+            public Builder(Func<IrAsset, string> assetPath, Func<string, string> fontDefinition, IReadOnlyDictionary<string, double> textStyles,
+                HashSet<string> ancestorTargets)
             {
                 _assetPath = assetPath;
                 _fontDefinition = fontDefinition;
                 _textStyles = textStyles;
+                _ancestorTargets = ancestorTargets;
             }
 
             // ---- drafts: tags and mapped layers -------------------------------------------------------------
@@ -292,31 +319,73 @@ namespace DesignUi.Editor
                 }
                 if (node.Text != null && d.Tag != "ui:Label" && d.Tag != "ui:Button" && d.Tag != "ui:Toggle")
                     throw new IrFormatException("node '" + node.Id + "' of kind '" + node.Kind + "' has text; only text, button and toggle nodes carry text");
+                foreach (var kv in (node.AttrTexts ?? new Dictionary<string, IrText>()).OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                {
+                    switch (kv.Key)
+                    {
+                        case "placeholder":
+                            if (d.Tag != "ui:TextField")
+                                throw new IrFormatException("node '" + node.Id + "' of kind '" + node.Kind + "' has a placeholder; only input nodes show one");
+                            d.Attributes.Add(new KeyValuePair<string, string>(PlaceholderAttribute, kv.Value?.Tr ?? ""));
+                            break;
+                        case "title":
+                            d.Attributes.Add(new KeyValuePair<string, string>("tooltip", kv.Value?.Tr ?? ""));
+                            break;
+                        default:
+                            throw new IrFormatException("node '" + node.Id + "' has " + kv.Key + " text; UI Toolkit has no alternative text or accessible label to show it. " +
+                                                        "Remove the attribute, or show the text in the design.");
+                    }
+                }
+                if (node.Initial != null)
+                {
+                    // UXML: VisualElement enabled, BaseField<bool> value (UnityEngine.UIElementsModule 6000.3)
+                    if (node.Initial.Disabled) d.Attributes.Add(new KeyValuePair<string, string>("enabled", "false"));
+                    if (node.Initial.Checked)
+                    {
+                        if (d.Tag != "ui:Toggle") throw new IrFormatException("node '" + node.Id + "' of kind '" + node.Kind + "' starts checked; only toggle nodes can");
+                        d.Attributes.Add(new KeyValuePair<string, string>("value", "true"));
+                    }
+                }
                 return d;
             }
 
             /// <summary>
-            /// Maps every layer of <paramref name="node"/> into <paramref name="d"/>. With <paramref name="content"/>, those
-            /// properties go to a content rule (<c>&lt;layer&gt;&gt;content</c>) instead of the element's own rule; the
-            /// extra declarations are added to the base layer's element and content rules.
+            /// Maps every layer of <paramref name="node"/> into <paramref name="d"/>, each over its basis (base and the
+            /// node's other layers inside its key, <see cref="Lowering.Basis"/>). With <paramref name="content"/>, those
+            /// properties go to a content rule (<c>&lt;layer&gt;&gt;content</c>) instead of the element's own rule; the extra
+            /// declarations are added to the base layer's element and content rules. The element's background image comes
+            /// from its asset (<see cref="BackgroundImages"/>); a tintable asset is tinted with the layer's color.
             /// </summary>
             void MapLayers(Draft d, IrNode node, bool isText, HashSet<string> content, UssDeclaration[] extraOuter, UssDeclaration[] extraContent)
             {
                 if (!node.Style.TryGetValue(Base, out var baseCss)) node.Style[Base] = baseCss = new Dictionary<string, string>();
                 ApplyTextStyle(node);
+                var painted = node.Background ?? node.Asset;
+                if (node.Background != null && node.Asset != null && node.Asset.Tint)
+                    throw new UnsupportedStyleException("background-image", node.Background.File, null,
+                        "Tintable vector '" + node.Id + "' also has a background image; put the icon in a child element of the background.");
+                bool tint = painted != null && painted.Tint;
+                if (tint && !baseCss.ContainsKey("color"))
+                    throw new IrFormatException("tintable vector '" + node.Id + "' has no color in its base layer");
+                var images = BackgroundImages(node, painted, out var cssBackground);
                 foreach (var key in OrderedLayers(node.Style.Keys))
                 {
                     ValidateLayer(key, node.Id);
                     var css = node.Style[key];
-                    var decls = StyleMapper.Map(css, baseCss, isText, key == Base).ToList();
+                    var basis = key == Base ? css : Lowering.Basis(node, key);
+                    var decls = StyleMapper.Map(css, basis, isText, key == Base).ToList();
                     ResolveFont(decls, css);
+                    if (images.TryGetValue(key, out var image)) decls.AddRange(image);
+                    if (tint)
+                        foreach (var color in decls.Where(x => x.Property == "color").ToList())
+                            decls.Add(new UssDeclaration(TintProperty, color.Value));
+                    if (cssBackground) BackgroundGeometry(decls, painted, node, key, image != null && image.Any(x => x.Value != "none"));
                     var inner = content == null ? new List<UssDeclaration>() : decls.Where(x => content.Contains(x.Property)).ToList();
                     var outer = content == null ? decls : decls.Where(x => !content.Contains(x.Property)).ToList();
                     if (key == Base)
                     {
                         // a content image paints above a baked gradient: the gradient stays the background, the image moves to a child
-                        if (node.Background != null) outer.AddRange(AssetDeclarations(node.Background, node.Id));
-                        else if (node.Asset != null) outer.AddRange(AssetDeclarations(node.Asset, node.Id));
+                        if (painted != null) outer.AddRange(AssetDeclarations(painted, node.Id));
                         if (extraOuter != null) outer.AddRange(extraOuter);
                         if (extraContent != null) inner.AddRange(extraContent);
                     }
@@ -324,6 +393,104 @@ namespace DesignUi.Editor
                     inner = Sorted(inner, node.Id);
                     if (outer.Count > 0) d.Layers.Add(new LayerRules { Key = key, Declarations = outer });
                     if (inner.Count > 0) d.Layers.Add(new LayerRules { Key = key, Content = true, Declarations = inner });
+                }
+            }
+
+            static readonly Regex UrlItem = new Regex(@"^url\(\s*(?:""([^""]*)""|'([^']*)'|([^)""']*?))\s*\)$", RegexOptions.Compiled);
+
+            /// <summary>
+            /// Takes <c>url()</c> images out of the layers' <c>background-image</c> (the IR rewrites them to its asset files).
+            /// The base image is the element's asset, whose declarations <see cref="MapLayers"/> writes; a layer may switch
+            /// to another image file or to <c>none</c>, which become that layer's declarations (returned per layer); a layer
+            /// repeating the base value is dropped. One image per element: a url beside a gradient or a second url is an
+            /// error. Gradients stay for the mapper (baked from the base layer only). <paramref name="cssBackground"/> says
+            /// whether the base image is a CSS background (sized, repeated and positioned like one) rather than an
+            /// <c>img</c>, an icon or a baked gradient, which fill the element.
+            /// </summary>
+            Dictionary<string, List<UssDeclaration>> BackgroundImages(IrNode node, IrAsset painted, out bool cssBackground)
+            {
+                var result = new Dictionary<string, List<UssDeclaration>>(StringComparer.Ordinal);
+                cssBackground = false;
+                string Url(string item)
+                {
+                    var m = UrlItem.Match(item.Trim());
+                    return m.Success ? (m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value.Trim()) : null;
+                }
+                node.Style[Base].TryGetValue("background-image", out var baseValue);
+                foreach (var key in node.Style.Keys.ToList())
+                {
+                    var layer = node.Style[key];
+                    if (!layer.TryGetValue("background-image", out var raw)) continue;
+                    var value = raw.Trim();
+                    var items = CssSupport.SplitTop(value, ',').Select(x => x.Trim()).ToList();
+                    var urls = items.Select(Url).Where(u => u != null).ToList();
+                    if (urls.Count > 0 && items.Count > 1)
+                        throw new UnsupportedStyleException("background-image", raw, null,
+                            "Element '" + node.Id + "' has several background images (layer '" + key + "'); UI Toolkit draws one. Put the others in child elements.");
+                    if (key == Base)
+                    {
+                        if (urls.Count == 0) continue;
+                        if (painted == null || painted.File != urls[0])
+                            throw new IrFormatException("the base background image '" + urls[0] + "' of node '" + node.Id + "' is not its asset ('" + (painted?.File ?? "none") + "')");
+                        layer.Remove("background-image");
+                        cssBackground = true;
+                        continue;
+                    }
+                    if (baseValue != null && value == baseValue.Trim()) { layer.Remove("background-image"); continue; }
+                    if (value == "none")
+                    {
+                        layer.Remove("background-image");
+                        result[key] = new List<UssDeclaration> { new UssDeclaration("background-image", "none") };
+                        continue;
+                    }
+                    if (urls.Count == 0) continue; // a gradient: the mapper rejects it outside the base layer
+                    var file = urls[0];
+                    var asset = new IrAsset
+                    {
+                        Kind = file.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) ? "svg" : "image",
+                        File = file,
+                        Sha256 = System.IO.Path.GetFileNameWithoutExtension(file),
+                    };
+                    layer.Remove("background-image");
+                    result[key] = AssetDeclarations(asset, node.Id).ToList();
+                }
+                return result;
+            }
+
+            /// <summary>
+            /// CSS background geometry for a CSS background image. USS starts from a stretched, unrepeated, centred image,
+            /// CSS from the image's natural size, repeated from the top left, so the base layer writes CSS's initial values
+            /// where the IR leaves them out, and <c>auto</c> sizes become the asset's natural size in px. A layer that
+            /// switches to another image must size it explicitly: the IR knows only the base asset's natural size.
+            /// </summary>
+            static void BackgroundGeometry(List<UssDeclaration> decls, IrAsset painted, IrNode node, string key, bool switchesImage)
+            {
+                if (switchesImage)
+                {
+                    var size = Lowering.Resolve(node, LayerKey.Parse(key), "background-size", true);
+                    if (size == null || size.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).All(x => x == "auto"))
+                        throw new UnsupportedStyleException("background-size", size ?? "auto", null,
+                            "Layer '" + key + "' of '" + node.Id + "' switches to another background image whose natural size is not known; give it an explicit background-size.");
+                }
+                if (key == Base)
+                {
+                    void Default(string prop, string value)
+                    {
+                        if (!decls.Any(x => x.Property == prop)) decls.Add(new UssDeclaration(prop, value));
+                    }
+                    Default("background-size", "auto");
+                    Default("background-repeat", "repeat");
+                    Default("background-position-x", "0%");
+                    Default("background-position-y", "0%");
+                }
+                for (int i = 0; i < decls.Count; i++)
+                {
+                    if (decls[i].Property != "background-size") continue;
+                    var parts = decls[i].Value.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (!parts.All(x => x == "auto")) continue;
+                    if (painted.Width <= 0 || painted.Height <= 0)
+                        throw new IrFormatException("the background image of '" + node.Id + "' has no natural size");
+                    decls[i] = new UssDeclaration("background-size", Number(painted.Width) + "px " + Number(painted.Height) + "px");
                 }
             }
 
@@ -425,11 +592,15 @@ namespace DesignUi.Editor
                     }
             }
 
-            /// <summary>Removes the gap margins Lowering gave the items of a list repeat and returns the gap in px.</summary>
+            /// <summary>
+            /// Removes the gap margins Lowering gave the items of a list repeat and returns the gap in px: every layer with
+            /// the first-item class goes, every other margin on the gap's side loses the gap.
+            /// </summary>
             static double UndoListGap(IrNode list)
             {
                 double gap = 0;
                 bool first = true;
+                var firstItem = LayerKey.Parse(Lowering.FirstItemLayer).Dims[0];
                 foreach (var item in list.Children)
                 {
                     if (!item.Style.TryGetValue(Lowering.FirstItemLayer, out var own))
@@ -442,7 +613,7 @@ namespace DesignUi.Editor
                     var prop = own.Keys.Single();
                     var g = Px(Get(item, Base, prop), prop + " of '" + item.Id + "'") - Px(own[prop], prop + " of '" + item.Id + "'");
                     if (!first && Math.Abs(g - gap) > 1e-9) throw new IrFormatException("items of list repeat '" + list.Id + "' do not share one gap");
-                    item.Style.Remove(Lowering.FirstItemLayer);
+                    foreach (var key in item.Style.Keys.Where(k => LayerKey.Parse(k).Contains(firstItem)).ToList()) item.Style.Remove(key);
                     foreach (var layer in item.Style.Values)
                         if (layer.TryGetValue(prop, out var v) && v.Trim() != "auto")
                             layer[prop] = Number(Px(v, prop + " of '" + item.Id + "'") - g) + "px";
@@ -501,31 +672,36 @@ namespace DesignUi.Editor
                 }
             }
 
-            static IEnumerable<string> OrderedLayers(IEnumerable<string> keys)
-            {
-                var list = keys.ToList();
-                int Rank(string k)
-                {
-                    if (k == Base) return 0;
-                    if (k.StartsWith(BreakpointLayer, StringComparison.Ordinal)) return 1;
-                    if (k.StartsWith(StateLayer, StringComparison.Ordinal)) return 2;
-                    if (k.StartsWith(ClassLayer, StringComparison.Ordinal)) return 3;
-                    var p = Array.IndexOf(PseudoOrder, k);
-                    return p >= 0 ? 4 + p : 100;
-                }
-                return list.OrderBy(Rank).ThenBy(k => k, StringComparer.Ordinal);
-            }
+            static IEnumerable<string> OrderedLayers(IEnumerable<string> keys) =>
+                keys.Select(LayerKey.Parse).OrderBy(k => k, LayerKey.RuleOrder).Select(k => k.Text).ToList();
 
+            /// <summary>Every name a key writes into a selector must be a USS class name (breakpoint and state names: letters, digits, - and _).</summary>
             static void ValidateLayer(string key, string id)
             {
-                if (key == Base || Array.IndexOf(PseudoOrder, key) >= 0) return;
-                string name = null;
-                Regex rule = NameIdent;
-                if (key.StartsWith(BreakpointLayer, StringComparison.Ordinal)) name = key.Substring(BreakpointLayer.Length);
-                else if (key.StartsWith(StateLayer, StringComparison.Ordinal)) name = key.Substring(StateLayer.Length);
-                else if (key.StartsWith(ClassLayer, StringComparison.Ordinal)) { name = key.Substring(ClassLayer.Length); rule = ClassIdent; }
-                if (name == null || !rule.IsMatch(name))
-                    throw new IrFormatException("node '" + id + "' has unsupported style layer '" + key + "'");
+                LayerKey parsed;
+                try { parsed = LayerKey.Parse(key); }
+                catch (IrFormatException e) { throw new IrFormatException("node '" + id + "' has unsupported style layer '" + key + "': " + e.Message); }
+                foreach (var dim in parsed.Dims)
+                {
+                    bool ok;
+                    switch (dim.Kind)
+                    {
+                        case LayerDimKind.Breakpoint:
+                        case LayerDimKind.State:
+                            ok = NameIdent.IsMatch(dim.Name);
+                            break;
+                        case LayerDimKind.Class:
+                            ok = ClassIdent.IsMatch(dim.Name);
+                            break;
+                        case LayerDimKind.Ancestor:
+                            ok = !string.IsNullOrEmpty(dim.AncestorId) && (!dim.AncestorClass || ClassIdent.IsMatch(dim.Name));
+                            break;
+                        default:
+                            ok = true;
+                            break;
+                    }
+                    if (!ok) throw new IrFormatException("node '" + id + "' has unsupported style layer '" + key + "' ('" + dim.Text + "' is not a valid USS class name)");
+                }
             }
 
             void ResolveFont(List<UssDeclaration> decls, Dictionary<string, string> css)
@@ -582,7 +758,7 @@ namespace DesignUi.Editor
                 for (int i = 0; i < d.Children.Count; i++)
                 {
                     var w = d.Children[i];
-                    if (!IsRemovableWrapper(d, w)) continue;
+                    if (_ancestorTargets.Contains(w.Name) || !IsRemovableWrapper(d, w)) continue;
                     d.Children[i] = w.Children[0];
                     _removed.Add(w.Name);
                 }
@@ -652,7 +828,7 @@ namespace DesignUi.Editor
 
             public CompiledScreen Finish(Draft root, IrScreen ir, string className)
             {
-                var compiledRoot = Emit(root);
+                var compiledRoot = Emit(root, new List<Ancestor>());
                 var names = new Dictionary<string, CompiledElement>(StringComparer.Ordinal);
                 foreach (var e in compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf()))))
                 {
@@ -672,17 +848,30 @@ namespace DesignUi.Editor
                 };
             }
 
-            CompiledElement Emit(Draft d)
+            /// <summary>An emitted ancestor of the element being emitted: its name (IR id), style class and whether it is the screen root.</summary>
+            sealed class Ancestor
+            {
+                public string Id;
+                public string Class;
+                public bool IsRoot;
+            }
+
+            CompiledElement Emit(Draft d, List<Ancestor> ancestors)
             {
                 var node = d.Node;
                 var e = new CompiledElement { Tag = d.Tag, Name = d.Name, PickingIgnore = node.PickingIgnore, Source = node };
-                if (d.Layers.Count > 0) e.Classes.Add(ClassFor(d));
+                string cls = null;
+                if (d.Layers.Count > 0 || _ancestorTargets.Contains(d.Name)) e.Classes.Add(cls = ClassFor(d, ancestors));
                 e.Classes.AddRange(d.IrClasses);
                 if (d.FirstItem) e.Classes.Add(FirstItemClass);
-                if (node.MirrorPseudoState)
+                if (node.MirrorPseudoState || (node.MirrorClasses != null && node.MirrorClasses.Length > 0))
                 {
-                    e.Classes.Add(MirrorHostClass);
-                    e.MirrorHost = true;
+                    if (node.MirrorPseudoState)
+                    {
+                        e.Classes.Add(MirrorHostClass);
+                        e.MirrorHost = true;
+                    }
+                    e.MirrorClasses.AddRange(node.MirrorClasses ?? new string[0]);
                     e.MirrorElement = d.Children.Select(c => c.Name).FirstOrDefault(id => id + HostSuffix == node.Id)
                                       ?? throw new IrFormatException("shadow host '" + node.Id + "' has no element to mirror");
                 }
@@ -707,19 +896,21 @@ namespace DesignUi.Editor
                     };
                     _repeats.Add(repeat);
                 }
-                foreach (var child in d.Children) e.Children.Add(Emit(child));
-                if (repeat != null)
-                {
-                    if (d.TemplateItems != null) foreach (var item in d.TemplateItems) repeat.Items.Add(Emit(item));
-                    else repeat.Items.AddRange(e.Children.Where(c => c.Name != node.Id + "__image"));
-                }
+                // descendants (list items included: the ListView instantiates them inside itself) see this element as an ancestor
+                ancestors.Add(new Ancestor { Id = d.Name, Class = cls, IsRoot = d.IsRoot });
+                foreach (var child in d.Children) e.Children.Add(Emit(child, ancestors));
+                if (d.TemplateItems != null) foreach (var item in d.TemplateItems) repeat.Items.Add(Emit(item, ancestors));
+                ancestors.RemoveAt(ancestors.Count - 1);
+                if (repeat != null && d.TemplateItems == null) repeat.Items.AddRange(e.Children.Where(c => c.Name != node.Id + "__image"));
                 return e;
             }
 
-            string ClassFor(Draft d)
+            string ClassFor(Draft d, List<Ancestor> ancestors)
             {
                 var sb = new StringBuilder();
                 if (d.IsRoot) sb.Append("root\n"); // the root's state and breakpoint selectors differ, so it never shares a class
+                // an element a descendant's layer names keeps a class of its own, so the descendant's selector names only it
+                if (_ancestorTargets.Contains(d.Name)) sb.Append("ancestor ").Append(d.Name).Append('\n');
                 foreach (var layer in d.Layers)
                 {
                     sb.Append('[').Append(layer.Key).Append(layer.Content ? ContentSuffix : "").Append("]\n");
@@ -734,23 +925,37 @@ namespace DesignUi.Editor
                 }
                 _canonical[cls] = canonical;
                 foreach (var layer in d.Layers)
-                    _rules.Add(new UssRule(Selector(layer.Key, cls, d.IsRoot) + (layer.Content ? ScrollContentChain : ""), layer.Declarations));
+                    _rules.Add(new UssRule(Selector(LayerKey.Parse(layer.Key), cls, d, ancestors) + (layer.Content ? ScrollContentChain : ""), layer.Declarations));
                 return cls;
             }
 
-            static string Selector(string layer, string cls, bool isRoot)
+            /// <summary>The selector of one layer (see the class summary for the forms).</summary>
+            static string Selector(LayerKey key, string cls, Draft d, List<Ancestor> ancestors)
             {
-                var self = "." + cls;
-                if (layer == Base) return self;
-                if (Array.IndexOf(PseudoOrder, layer) >= 0) return self + ":" + layer;
-                if (layer.StartsWith(BreakpointLayer, StringComparison.Ordinal))
-                    return RootClass(BreakpointClassPrefix + layer.Substring(BreakpointLayer.Length), self, isRoot);
-                if (layer.StartsWith(StateLayer, StringComparison.Ordinal))
-                    return RootClass(StateClassPrefix + layer.Substring(StateLayer.Length), self, isRoot);
-                return self + "." + layer.Substring(ClassLayer.Length);
+                var rootPart = string.Concat(key.OfKind(LayerDimKind.Breakpoint).Select(x => "." + BreakpointClassPrefix + x.Name)
+                    .Concat(key.OfKind(LayerDimKind.State).Select(x => "." + StateClassPrefix + x.Name)));
+                var compounds = new List<string>();
+                bool rootPlaced = d.IsRoot;
+                foreach (var group in key.OfKind(LayerDimKind.Ancestor).GroupBy(x => x.AncestorId)
+                             .Select(g => (dims: g.ToList(), at: ancestors.FindIndex(a => a.Id == g.Key))).OrderBy(g => g.at))
+                {
+                    if (group.at < 0)
+                        throw new IrFormatException("layer '" + key.Text + "' of '" + d.Name + "' names '" + group.dims[0].AncestorId + "', which is not its ancestor in the compiled tree");
+                    var target = ancestors[group.at];
+                    var sb = new StringBuilder(".").Append(target.Class);
+                    if (target.IsRoot) { sb.Append(rootPart); rootPlaced = true; }
+                    foreach (var x in group.dims.Where(x => x.AncestorClass)) sb.Append('.').Append(x.Name);
+                    foreach (var x in group.dims.Where(x => !x.AncestorClass)) sb.Append(':').Append(x.Name);
+                    compounds.Add(sb.ToString());
+                }
+                if (!rootPlaced && rootPart.Length > 0) compounds.Insert(0, rootPart);
+                var self = new StringBuilder(".").Append(cls);
+                if (d.IsRoot) self.Append(rootPart);
+                foreach (var x in key.OfKind(LayerDimKind.Class)) self.Append('.').Append(x.Name);
+                foreach (var x in key.OfKind(LayerDimKind.Pseudo)) self.Append(':').Append(x.Name);
+                compounds.Add(self.ToString());
+                return string.Join(" ", compounds);
             }
-
-            static string RootClass(string rootClass, string self, bool isRoot) => isRoot ? self + "." + rootClass : "." + rootClass + " " + self;
         }
     }
 }

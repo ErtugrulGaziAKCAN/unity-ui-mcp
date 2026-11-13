@@ -625,6 +625,87 @@ namespace DesignUi.Editor.Tests
             Assert.IsNull(listView.GetFirstAncestorOfType<ScrollView>(), "not nested in another ScrollView");
         }
 
+        [UnityTest]
+        public IEnumerator Compiled_CompoundLayersAndNewIrFields_ImportCleanlyAndResolveOnAPanel()
+        {
+            var title = Text("title", "Başlık", ("color", "#ffffff"))
+                .With("anc(card):class:is-selected", ("color", "#111111"))
+                .With("state:loading+anc(card):class:is-selected", ("color", "#222222"));
+            var card = Node("card", "container", ("height", "20px"), ("background-color", "#333333"))
+                .With("state:loading+class:is-selected", ("background-color", "#444444"))
+                .Add(title);
+            var hov = Node("hov", "container", ("height", "4px")).With("state:loading+hover", ("opacity", "0.3"));
+            var icon = Node("icon", "vector", ("width", "8px"), ("height", "8px"), ("color", "#ff0000")).With("state:loading", ("color", "#00ff00"));
+            icon.Asset = new IrAsset { Kind = "image", File = ShadowFile, Sha256 = new string('d', 64), Width = 8, Height = 8, Tint = true };
+            var banner = Node("banner", "container", ("width", "40px"), ("height", "20px"), ("background-image", "url(\"" + ShadowFile + "\")"),
+                ("background-repeat", "no-repeat"), ("background-position-x", "right 2px"));
+            banner.Background = new IrAsset { Kind = "image", File = ShadowFile, Sha256 = new string('d', 64), Width = 8, Height = 6 };
+            var go = Node("go", "button", ("height", "10px")).With("disabled", ("opacity", "0.4"));
+            go.Initial = new IrInitial { Disabled = true };
+            go.AttrTexts["title"] = new IrText { Key = "t.go", Tr = "Başla", En = "Start" };
+            var check = Node("check", "toggle", ("height", "10px"));
+            check.Initial = new IrInitial { Checked = true };
+            var search = Node("search", "input", ("height", "20px"));
+            search.AttrTexts["placeholder"] = new IrText { Key = "t.find", Tr = "Ara", En = "Search" };
+            var result = ScreenCompiler.Compile(Export(TestIr.Screen(Root(card, hov, icon, banner, go, check, search))), Profile(AssetsRoot));
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            var vta = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(AssetsRoot + "/TestScreen/TestScreen.uxml");
+            var sheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(AssetsRoot + "/TestScreen/TestScreen.uss");
+            Assert.IsFalse(vta.importedWithErrors || vta.importedWithWarnings, "the UXML attributes are known to UI Toolkit");
+            Assert.IsFalse(sheet.importedWithErrors || sheet.importedWithWarnings, "the compound selectors and new properties parse:\n" + File.ReadAllText(AssetsRoot + "/TestScreen/TestScreen.uss"));
+
+            var doc = Panel(256);
+            for (int i = 0; i < 2; i++) yield return null;
+            var tree = vta.Instantiate();
+            doc.rootVisualElement.Add(tree);
+            for (int i = 0; i < 10; i++) yield return null;
+
+            var root = tree.Q("root");
+            var cardEl = tree.Q("card");
+            var titleEl = tree.Q<Label>("title");
+            var iconEl = tree.Q("icon");
+            var bannerEl = tree.Q("banner");
+            var goEl = tree.Q<Button>("go");
+            var hovEl = tree.Q("hov");
+
+            AssertColor("#ffffff", titleEl.resolvedStyle.color);
+            AssertColor("#ff0000", iconEl.resolvedStyle.unityBackgroundImageTintColor);
+            Assert.IsNotNull(iconEl.resolvedStyle.backgroundImage.texture);
+            var size = bannerEl.resolvedStyle.backgroundSize;
+            Assert.AreEqual(BackgroundSizeType.Length, size.sizeType);
+            Assert.AreEqual(8f, size.x.value);
+            Assert.AreEqual(6f, size.y.value, "auto is the asset's natural size");
+            Assert.AreEqual(Repeat.NoRepeat, bannerEl.resolvedStyle.backgroundRepeat.x);
+            Assert.AreEqual(BackgroundPositionKeyword.Right, bannerEl.resolvedStyle.backgroundPositionX.keyword);
+            Assert.AreEqual(2f, bannerEl.resolvedStyle.backgroundPositionX.offset.value);
+            var y = bannerEl.resolvedStyle.backgroundPositionY;
+            Assert.IsTrue(y.keyword != BackgroundPositionKeyword.Center && y.keyword != BackgroundPositionKeyword.Bottom, "CSS starts at the top, not centred: " + y.keyword);
+            Assert.AreEqual(0f, y.offset.value);
+
+            Assert.IsFalse(goEl.enabledSelf, "initial disabled");
+            Assert.AreEqual(0.4f, goEl.resolvedStyle.opacity, 1e-4f, ":disabled applies");
+            Assert.AreEqual("Başla", goEl.tooltip);
+            Assert.IsTrue(tree.Q<Toggle>("check").value, "initial checked");
+            var field = tree.Q<TextField>("search");
+            Assert.AreEqual("Ara", field.textEdition.placeholder);
+            Assert.IsFalse(field.textEdition.hidePlaceholderOnFocus, "CSS keeps a placeholder while the empty field has focus");
+
+            cardEl.AddToClassList("is-selected");
+            for (int i = 0; i < 3; i++) yield return null;
+            AssertColor("#111111", titleEl.resolvedStyle.color);
+            AssertColor("#333333", cardEl.resolvedStyle.backgroundColor);
+
+            root.AddToClassList("state-loading");
+            var pseudo = typeof(VisualElement).GetProperty("pseudoStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.IsNotNull(pseudo, "VisualElement.pseudoStates");
+            pseudo.SetValue(hovEl, Enum.Parse(pseudo.PropertyType, "Hover"));
+            for (int i = 0; i < 3; i++) yield return null;
+            AssertColor("#222222", titleEl.resolvedStyle.color);
+            AssertColor("#444444", cardEl.resolvedStyle.backgroundColor);
+            AssertColor("#00ff00", iconEl.resolvedStyle.unityBackgroundImageTintColor);
+            Assert.AreEqual(0.3f, hovEl.resolvedStyle.opacity, 1e-4f, ".state-loading .s-x:hover");
+        }
+
         static void AssertColor(string hex, Color actual)
         {
             Assert.IsTrue(ColorUtility.TryParseHtmlString(hex, out var c));

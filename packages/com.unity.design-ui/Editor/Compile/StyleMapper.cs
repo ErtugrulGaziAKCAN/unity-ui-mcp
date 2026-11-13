@@ -93,6 +93,11 @@ namespace DesignUi.Editor
                 var value = (css[key] ?? "").Trim();
                 if (!support.TryGet(key, out var spec))
                     throw new UnsupportedStyleException(key, value, CssSupport.UnknownPropertyRule, "Property '" + key + "' is not in css-support.json.");
+                foreach (var fn in spec.LoweredFunctions)
+                    if (CssSupport.SplitTop(value, ',').Any(item => item.Trim().StartsWith(fn + "(", StringComparison.OrdinalIgnoreCase)))
+                        throw new UnsupportedStyleException(key, value, null,
+                            "'" + fn + "()' in '" + key + "' is compiled only on the node it belongs to" + (spec.Note != null ? " (" + spec.Note + ")" : "") + ".");
+                if (key == "aspect-ratio") value = AspectRatioValue(value);
                 switch (spec.Handling)
                 {
                     case CssHandling.Error:
@@ -137,12 +142,12 @@ namespace DesignUi.Editor
                 }
             }
 
-            // overflow: the shorthand, or equal overflow-x / overflow-y longhands
+            // overflow: the shorthand, or equal overflow-x / overflow-y longhands (the other axis from the basis)
             if (Has("overflow")) result.Add(new UssDeclaration("overflow", Normalize(support, "overflow", css["overflow"])));
             else if (Has("overflow-x") || Has("overflow-y"))
             {
-                var x = Normalize(support, "overflow-x", Has("overflow-x") ? css["overflow-x"] : "visible");
-                var y = Normalize(support, "overflow-y", Has("overflow-y") ? css["overflow-y"] : "visible");
+                var x = Normalize(support, "overflow-x", Merged("overflow-x") ?? "visible");
+                var y = Normalize(support, "overflow-y", Merged("overflow-y") ?? "visible");
                 if (x != y) throw new UnsupportedStyleException("overflow-x/overflow-y", x + " / " + y, null, "Use the same overflow on both axes.");
                 result.Add(new UssDeclaration("overflow", x));
             }
@@ -234,6 +239,19 @@ namespace DesignUi.Editor
             var slug = Slug.Replace(first, "-").Trim('-');
             if (slug.Length == 0) throw new UnsupportedStyleException("font-family", value);
             return slug;
+        }
+
+        /// <summary>
+        /// <c>auto &amp;&amp; &lt;ratio&gt;</c> uses the ratio for every element the compiler writes (none is a replaced element
+        /// with its own natural ratio: images are backgrounds), so <c>auto 16 / 9</c> and <c>16 / 9 auto</c> are the ratio.
+        /// </summary>
+        static string AspectRatioValue(string value)
+        {
+            var v = value.Trim();
+            if (v == "auto") return v;
+            if (v.StartsWith("auto ", StringComparison.Ordinal)) return v.Substring(5).Trim();
+            if (v.EndsWith(" auto", StringComparison.Ordinal)) return v.Substring(0, v.Length - 5).Trim();
+            return v;
         }
 
         static string AspectRatio(string value)

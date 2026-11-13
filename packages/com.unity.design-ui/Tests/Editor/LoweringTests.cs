@@ -177,14 +177,28 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("12px", r.Children[1].Style["hover"]["margin-left"]);
         }
 
-        [TestCase("gap", "4px")]
-        [TestCase("flex-direction", "column")]
-        [TestCase("flex-wrap", "wrap")]
-        public void Gap_ParentPseudoStateChange_Throws(string prop, string value)
+        [Test]
+        public void Gap_ParentPseudoStateChange_BecomesAnAncestorLayerOfTheChildren()
         {
             var p = Flex("p", "row", ("gap", "4px"));
-            p.Style["hover"] = Layer((prop, value));
-            Assert.Throws<UnsupportedStyleException>(() => Lowering.Apply(WithChildren(p, Node("a"), Node("b"))));
+            p.Style["hover"] = Layer(("gap", "10px"));
+            p.Style["class:is-open"] = Layer(("flex-direction", "column"));
+            var r = Lowering.Apply(WithChildren(p, Node("a"), Node("b")));
+            var b = r.Children[1];
+            Assert.AreEqual("4px", B(b)["margin-left"]);
+            Assert.AreEqual("10px", b.Style["anc(p):hover"]["margin-left"], "the container's hover, seen from the child");
+            Assert.AreEqual("0px", b.Style["anc(p):class:is-open"]["margin-left"]);
+            Assert.AreEqual("4px", b.Style["anc(p):class:is-open"]["margin-top"]);
+            Assert.AreEqual("10px", b.Style["anc(p):class:is-open+anc(p):hover"]["margin-top"], "union of both container layers");
+            Assert.IsFalse(r.Children[0].Style.Keys.Any(k => k != "base"), "the first child never gets the gap");
+        }
+
+        [Test]
+        public void Gap_ParentPseudoStateWrap_Throws()
+        {
+            var p = Flex("p", "row", ("gap", "4px"));
+            p.Style["hover"] = Layer(("flex-wrap", "wrap"));
+            Assert.Throws<IrFormatException>(() => Lowering.Apply(WithChildren(p, Node("a"), Node("b"))));
         }
 
         [Test]
@@ -765,7 +779,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("inner__shadowhost", r.Children[0].Children[1].Children[0].Id);
         }
 
-        // ---- visible display (C1) --------------------------------------------------------------------------
+        // ---- visible display -------------------------------------------------------------------------------
 
         [Test]
         public void Display_BaseHiddenStateShown_Flex_Compiles_AndWritesFlexInTheStateLayer()
@@ -867,7 +881,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("10px", r.Children[1].Style["state:loading"]["margin-left"]);
         }
 
-        // ---- positioned siblings and containing block (N1, N2) ---------------------------------------------
+        // ---- positioned siblings and containing block -------------------------------------------------------
 
         [Test]
         public void PaintOrder_AbsoluteBackgroundBeforeRelativeContent_StaysBelowIt()
@@ -922,7 +936,7 @@ namespace DesignUi.Editor.Tests
             Assert.DoesNotThrow(() => Lowering.Apply(WithChildren(Node("screen"), Node("badge", ("position", "absolute")))));
         }
 
-        // ---- pointer-events (N6) ---------------------------------------------------------------------------
+        // ---- pointer-events ---------------------------------------------------------------------------------
 
         [Test]
         public void PointerEventsNone_IsInheritedUntilAuto_AndReachesTheShadowHost()
@@ -943,7 +957,7 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(host.Children[0].PickingIgnore);
         }
 
-        // ---- fix round 4: shadowed flex text alignment (I-A) -------------------------------------------------
+        // ---- shadowed flex text alignment ------------------------------------------------------------------
 
         static IrNode Text(string id, params (string k, string v)[] style)
         {
@@ -1015,7 +1029,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("upper-center", EffectiveTextAlign(el, "base"));
         }
 
-        // ---- fix round 4: absolutely positioned inline-level children are blockified (I-B) ---------------------
+        // ---- absolutely positioned inline-level children are blockified ------------------------------------
 
         [TestCase("inline-flex", "flex")]
         [TestCase("inline-block", null)]
@@ -1042,7 +1056,7 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(B(r.Children.Single(c => c.Id == "dot")).ContainsKey("display"));
         }
 
-        // ---- fix round 4: CSS stacking order among siblings (I-C) --------------------------------------------
+        // ---- CSS stacking order among siblings -------------------------------------------------------------
 
         [Test]
         public void PaintOrder_AbsoluteAfterRelativeWithPositiveZ_PaintsBelowIt()
@@ -1163,11 +1177,17 @@ namespace DesignUi.Editor.Tests
             Visit(r);
         }
 
+        /// <summary>Maps every layer over its basis; a scroll area's or list's overflow is consumed by the compiler, not mapped.</summary>
         static void Visit(IrNode n)
         {
             foreach (var layer in n.Style)
-                if (layer.Key != Lowering.FirstItemLayer)
-                    Assert.DoesNotThrow(() => StyleMapper.Map(layer.Value, n.Style["base"], n.Kind == "text", layer.Key == "base"), n.Id + "/" + layer.Key);
+            {
+                var css = layer.Value;
+                if (n.Kind == "scroll" || n.Kind == "list")
+                    css = css.Where(kv => !kv.Key.StartsWith("overflow", System.StringComparison.Ordinal)).ToDictionary(kv => kv.Key, kv => kv.Value);
+                var basis = layer.Key == "base" ? css : Lowering.Basis(n, layer.Key);
+                Assert.DoesNotThrow(() => StyleMapper.Map(css, basis, n.Kind == "text", layer.Key == "base"), n.Id + "/" + layer.Key);
+            }
             foreach (var c in n.Children) Visit(c);
         }
     }

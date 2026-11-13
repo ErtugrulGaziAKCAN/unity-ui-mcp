@@ -20,6 +20,8 @@ namespace DesignUi.Editor
         public string[] DropValues = new string[0];
         /// <summary>Keyword values that only a lowering consumes (e.g. overflow auto on a scroll area); the mapper rejects them.</summary>
         public string[] LoweredValues = new string[0];
+        /// <summary>Value functions that only the compiler consumes (e.g. url() of a background image asset); the mapper rejects them.</summary>
+        public string[] LoweredFunctions = new string[0];
         public Dictionary<string, string> MapValues = new Dictionary<string, string>();
         public int MinComponents = 1;
         public int MaxComponents = 1;
@@ -81,6 +83,7 @@ namespace DesignUi.Editor
                     Functions = Strings(v["functions"]),
                     DropValues = Strings(v["dropValues"]),
                     LoweredValues = Strings(v["loweredValues"]),
+                    LoweredFunctions = Strings(v["loweredFunctions"]),
                     List = v["list"] != null && (bool)v["list"],
                     Rule = (string)v["rule"],
                     Fix = (string)v["fix"],

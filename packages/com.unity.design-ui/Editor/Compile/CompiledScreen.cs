@@ -28,11 +28,15 @@ namespace DesignUi.Editor
         /// <summary>The style class (<c>s-xxxxxxxx</c>) first, then IR <c>is-*</c> classes and marker classes.</summary>
         public readonly List<string> Classes = new List<string>();
         public readonly List<CompiledElement> Children = new List<CompiledElement>();
-        /// <summary>Static text (M1: the reference-locale text, R3), or null.</summary>
+        /// <summary>Static text (the reference-locale text, spec 13), or null.</summary>
         public string Text;
         /// <summary>False when plain text contains '&lt;' (rich text would read it as a tag); null keeps the default.</summary>
         public bool? EnableRichText;
-        /// <summary>Control attributes written to UXML in order: ScrollView <c>mode</c> and scroller visibility, ListView <c>fixed-item-height</c>.</summary>
+        /// <summary>
+        /// Attributes written to UXML in order: <c>placeholder-text</c> and <c>tooltip</c> from attribute texts, <c>enabled</c>
+        /// and <c>value</c> from the initial disabled and checked states, ScrollView <c>mode</c> and scroller visibility,
+        /// ListView <c>fixed-item-height</c>.
+        /// </summary>
         public readonly List<KeyValuePair<string, string>> Attributes = new List<KeyValuePair<string, string>>();
         /// <summary>picking-mode Ignore (baked shadows, pointer-events: none).</summary>
         public bool PickingIgnore;
@@ -40,8 +44,13 @@ namespace DesignUi.Editor
         public bool Clickable;
         /// <summary>A shadow host: the view attaches a PseudoStateMirror to <see cref="MirrorElement"/> that targets this host.</summary>
         public bool MirrorHost;
-        /// <summary>Name of the element whose pseudo-states this host mirrors, or null.</summary>
+        /// <summary>Name of the element whose pseudo-states or classes this host mirrors, or null.</summary>
         public string MirrorElement;
+        /// <summary>
+        /// A shadow host: the <c>is-*</c> classes of <see cref="MirrorElement"/> that its rules depend on. The view toggles
+        /// each of them on the host whenever it toggles it on the element.
+        /// </summary>
+        public readonly List<string> MirrorClasses = new List<string>();
         /// <summary>The lowered IR node (bind, action, text key and args, anims, transitions), for the view writer and later tasks.</summary>
         public IrNode Source;
 
