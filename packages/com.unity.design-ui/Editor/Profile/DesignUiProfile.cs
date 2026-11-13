@@ -42,6 +42,8 @@ namespace DesignUi.Editor
         public TextureImporterCompression textureCompression = TextureImporterCompression.Uncompressed;
         [Tooltip("PanelSettings that render design screens, in the verifier and in game. Empty uses the package's DesignUiPanelSettings (minimal runtime theme, 2560x1440 reference).")]
         public PanelSettings panelSettings;
+        [Tooltip("How design screens sit in a uGUI shell (DesignUiPanelRegion): the panel's sort order and the screen's order on its panel. A region added in the Editor copies these values.")]
+        public DesignUi.DesignUiHostSettings host = new DesignUi.DesignUiHostSettings();
 
         /// <summary>PanelSettings for design screens: <see cref="panelSettings"/>, or the package's settings when empty.</summary>
         public PanelSettings DesignPanelSettings => panelSettings != null ? panelSettings : LoadDefaultPanelSettings();
