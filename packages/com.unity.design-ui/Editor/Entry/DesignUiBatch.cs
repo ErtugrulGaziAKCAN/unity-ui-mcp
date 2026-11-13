@@ -44,7 +44,7 @@ namespace DesignUi.Editor
         public static void KitSync() => Exit(Run(KitSyncCommand, Environment.GetCommandLineArgs()));
 
         /// <summary><c>-executeMethod DesignUi.Editor.DesignUiBatch.Import</c>: <see cref="DesignUiOps.Import"/> per export folder, then exits.</summary>
-        public static void Import() => Exit(Run(ImportCommand, Environment.GetCommandLineArgs()));
+        public static void Import() => Exit(Run(ImportCommand, Environment.GetCommandLineArgs(), Environment.GetEnvironmentVariable(ImportDoneVariable)));
 
         static void Exit(OpResult r)
         {
@@ -57,13 +57,16 @@ namespace DesignUi.Editor
         /// The whole entry without exiting: parses <paramref name="args"/> (a Unity command line; arguments that do not start
         /// with <c>-designUi</c> belong to Unity and are skipped) for <paramref name="command"/> and runs it.
         /// </summary>
-        public static OpResult Run(string command, string[] args)
+        public static OpResult Run(string command, string[] args) => Run(command, args, null);
+
+        /// <summary><see cref="Run(string, string[])"/>; an import writes <paramref name="importDone"/> (see <see cref="ImportEach"/>).</summary>
+        public static OpResult Run(string command, string[] args, string importDone)
         {
-            try { return RunUnguarded(command, args); }
+            try { return RunUnguarded(command, args, importDone); }
             catch (Exception e) { return new OpResult(1, "Design UI " + command + " stopped: " + e.GetType().Name + ": " + e.Message); }
         }
 
-        static OpResult RunUnguarded(string command, string[] args)
+        static OpResult RunUnguarded(string command, string[] args, string importDone)
         {
             var allowed = command == ImportCommand ? new[] { Profile, Export, Discard }
                 : command == KitSyncCommand ? new[] { Profile, Kit }
@@ -89,15 +92,38 @@ namespace DesignUi.Editor
             if (command == KitSyncCommand) return DesignUiOps.KitSync(values[Profile], values[Kit]);
             var exports = PathList(values[Export]);
             if (exports.Count == 0) return UsageError(Export + " needs a value");
-            return ImportEach(values[Profile], exports, values.ContainsKey(Discard));
+            return ImportEach(values[Profile], exports, values.ContainsKey(Discard), null, importDone);
         }
+
+        /// <summary>The environment variable naming the import done marker a command runner checks (see <see cref="ImportEach"/>).</summary>
+        public const string ImportDoneVariable = "DESIGN_UI_IMPORT_DONE";
 
         /// <summary>
         /// <see cref="DesignUiOps.Import"/> for each folder, in order; a failure does not stop the next. One folder answers
         /// with its own log; several prefix each log with <c>== &lt;folder&gt;</c> and end with a count of the failed ones.
+        /// <paramref name="doneFile"/> (a command runner's <c>DESIGN_UI_IMPORT_DONE</c>): written last, <c>{ "imports": [ {
+        /// exportDir, code, irSha } ] }</c> with the SHA-256 of each folder's screen.ir.json, so the runner knows which design
+        /// this run imported.
         /// </summary>
-        public static OpResult ImportEach(string profilePath, IReadOnlyList<string> exportDirs, bool discardManualEdits, Action<string, OpResult> each = null)
+        public static OpResult ImportEach(string profilePath, IReadOnlyList<string> exportDirs, bool discardManualEdits, Action<string, OpResult> each = null, string doneFile = null)
         {
+            if (!string.IsNullOrEmpty(doneFile))
+            {
+                var done = new Newtonsoft.Json.Linq.JArray();
+                var r = ImportEach(profilePath, exportDirs, discardManualEdits, (dir, one) =>
+                {
+                    var ir = Path.Combine(dir, ScreenCompiler.IrFileName);
+                    string sha = null;
+                    if (File.Exists(ir))
+                        using (var h = System.Security.Cryptography.SHA256.Create())
+                            sha = string.Concat(h.ComputeHash(File.ReadAllBytes(ir)).Select(b => b.ToString("x2")));
+                    done.Add(new Newtonsoft.Json.Linq.JObject { ["exportDir"] = dir, ["code"] = one.Code, ["irSha"] = sha });
+                    each?.Invoke(dir, one);
+                });
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(doneFile)));
+                File.WriteAllText(doneFile, new Newtonsoft.Json.Linq.JObject { ["imports"] = done }.ToString() + "\n");
+                return r;
+            }
             if (exportDirs == null || exportDirs.Count == 0) return new OpResult(1, "No export folder.");
             if (exportDirs.Count == 1)
             {

@@ -199,7 +199,8 @@ async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<str
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) if (!k.startsWith("DESIGN_UI_")) env[k] = v;
   // the same values as environment variables (DESIGN_UI_EXPORT_DIR, …), for runners such as an EditMode capture test
-  for (const k of [...PLACEHOLDERS, "discardManualEdits"]) {
+  // DESIGN_UI_IMPORT_DONE: where the import writes its done marker (the IR SHA-256 it imported), checked by design_ui_import
+  for (const k of [...PLACEHOLDERS, "discardManualEdits", "importDone"]) {
     if (vars[k]) env[`DESIGN_UI_${k.replace(/[A-Z]/g, (c) => "_" + c).toUpperCase()}`] = vars[k];
   }
   const timeoutMs = cfg.unityRunner.timeoutSec * 1000;

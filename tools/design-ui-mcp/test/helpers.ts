@@ -27,14 +27,17 @@ export interface TempProject {
   runnerCalls(): string[];
 }
 
-/** A temp Unity project folder with design-ui.config.json, a designs folder and a stub command runner log. */
-export function tempProject(opts: { prefer?: "editor" | "command"; exit?: number } = {}): TempProject {
+/**
+ * A temp Unity project folder with design-ui.config.json, a designs folder and a stub command runner log. `importDone`:
+ * what the stub's import writes as import-done.json (default: a confirmation of the export's IR).
+ */
+export function tempProject(opts: { prefer?: "editor" | "command"; exit?: number; importDone?: "ok" | "none" | "wrong" } = {}): TempProject {
   const dir = tempDir();
   fs.mkdirSync(path.join(dir, "Assets"));
   const designRoot = path.join(dir, "Designs");
   fs.mkdirSync(designRoot);
   const runnerLog = path.join(dir, "runner.log");
-  const stub = (exit: number) => ["sh", STUB_RUNNER, "--log", runnerLog, "--exit", String(exit)];
+  const stub = (exit: number) => ["sh", STUB_RUNNER, "--log", runnerLog, "--exit", String(exit), "--import-done", opts.importDone ?? "ok"];
   const p: TempProject = {
     dir, designRoot, runnerLog,
     writeConfig(extra = {}) {

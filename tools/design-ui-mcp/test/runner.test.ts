@@ -174,6 +174,18 @@ describe("runUnity: command route", () => {
     expect(p.runnerCalls()).toEqual([`import|${p.dir}|${cfg.profileAsset}|/x/export| env=/x/export`]);
   });
 
+  it("passes the import done marker's path as DESIGN_UI_IMPORT_DONE", async () => {
+    const p = tempProject({ prefer: "command" });
+    const exportDir = path.join(p.dir, "export");
+    fs.mkdirSync(exportDir);
+    fs.writeFileSync(path.join(exportDir, "screen.ir.json"), "{}");
+    const done = path.join(p.dir, "import-done.json");
+    const r = await runUnity(readConfig(p.dir), "import", { exportDir, importDone: done }, fast);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(fs.readFileSync(done, "utf8"))).toEqual({
+      imports: [{ exportDir, code: 0, irSha: "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a" }],
+    });
+  });
 
   it("returns the exit code of a failing command", async () => {
     const p = tempProject({ prefer: "command", exit: 3 });

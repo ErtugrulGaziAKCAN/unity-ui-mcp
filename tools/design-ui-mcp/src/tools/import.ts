@@ -7,7 +7,7 @@ import { findEntry, resolveScreen, sha256, sourceSha } from "../design.js";
 import { MISSING } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { runUnity, UnityRunnerError } from "../runner.js";
-import { exportDirOf, readLastImport, unityDirOf, writeLastImport } from "../status.js";
+import { bookkeepingDir, exportDirOf, readLastImport, unityDirOf, writeLastImport } from "../status.js";
 import { designArg, formatFindings } from "./lint.js";
 
 export function registerImport(server: McpServer, ctx: ServerContext): void {
@@ -66,9 +66,14 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         });
       }
 
+      // the command route's done marker: Unity names the IR it imported (a command's exit code alone proves nothing)
+      const doneFile = path.join(bookkeepingDir(dir), "import-done.json");
+      fs.rmSync(doneFile, { force: true });
       let run;
       try {
-        run = await t.async("unity", () => runUnity(cfg, "import", { exportDir, outDir: unityDirOf(dir), discardManualEdits: String(discard) }, ctx.runnerOptions));
+        run = await t.async("unity", () => runUnity(cfg, "import", {
+          exportDir, outDir: unityDirOf(dir), discardManualEdits: String(discard), importDone: doneFile,
+        }, ctx.runnerOptions));
       } catch (e) {
         if (!(e instanceof UnityRunnerError)) throw e;
         return toolResult(`Import of ${screen} not run: ${e.message}`, { screen, exported, unityCalled: false, exportDir, timings: t.done() }, true);
@@ -84,6 +89,11 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
 
       const unity = { ...(run.answer ? { unity: run.answer } : {}), ...(run.compile ? { compile: run.compile } : {}) };
       const base = { screen, exported, unityCalled: true, via: run.via, code: 0, irSha, sourceSha: src, exportDir, logTail: run.logTail, ...unity };
+      if (run.via === "command" && !confirmsImport(doneFile, irSha)) {
+        return toolResult(`Unity import of ${screen} (via command) exited 0 but did not confirm this export: ${fs.existsSync(doneFile) ? "import-done.json names another IR or a failed import" : "no import-done.json"} ` +
+          "(the import command must run DesignUiOpsTests.ImportFromEnv or DesignUiBatch.Import, which write it). Nothing was recorded. Log tail:\n" + run.logTail,
+        { ...base, unityTimings: run.timings, timings: t.done() }, true);
+      }
       if (run.compile && run.compile.state !== "reloaded" && run.compile.state !== "unknown") {
         const why = run.compile.state === "failed" ? "the generated scripts did not compile" : "Unity did not start compiling the changed scripts";
         return toolResult([
@@ -112,3 +122,10 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
   });
 }
 
+/** Whether the command route's import-done.json confirms a successful import of this IR. */
+function confirmsImport(file: string, irSha: string): boolean {
+  try {
+    const done = JSON.parse(fs.readFileSync(file, "utf8"));
+    return Array.isArray(done?.imports) && done.imports.some((e: any) => e?.irSha === irSha && e?.code === 0);
+  } catch { return false; }
+}

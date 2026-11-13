@@ -11,7 +11,7 @@ import { Runtime } from "../src/runtime.js";
 import { createServer, createUnconfiguredServer, TOOL_NAMES, VERSION } from "../src/server.js";
 import { screenStatus } from "../src/status.js";
 import { fileURLToPath } from "node:url";
-import { call, connect, startStubBridge, tempDir, tempProject, writeZip, type StubBridge } from "./helpers.js";
+import { call, connect, startStubBridge, STUB_RUNNER, tempDir, tempProject, writeZip, type StubBridge } from "./helpers.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fast = { pollIntervalMs: 10, settleMs: 20, compileTimeoutMs: 5000 };
@@ -42,6 +42,8 @@ function stubPipeline(): Pipeline & { exports: string[] } {
 }
 
 const NO_EXPORT: Pipeline = { exportScreen: null, compareScreen: null };
+/** An import command that only confirms the export it was given (import-done.json with the IR's SHA-256), like Unity's. */
+const CONFIRMING_IMPORT = ["sh", STUB_RUNNER, "--log", "/dev/null", "import", "{exportDir}"];
 
 async function serverFor(dir: string, pipeline?: Pipeline): Promise<Client> {
   return connect(createServer(readConfig(dir), { runtime, pipeline, runnerOptions: fast }));
@@ -358,6 +360,31 @@ describe("design_ui_import", () => {
     expect(p.runnerCalls()).toEqual([]);
   });
 
+  it("on the command route records an import only when Unity confirms this IR in import-done.json", async () => {
+    for (const mode of ["none", "wrong"] as const) {
+      const p = tempProject({ prefer: "command", importDone: mode });
+      const dir = p.addScreen("clean-screen", "clean-screen");
+      const r = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+      expect(r.isError, mode).toBe(true);
+      expect(r.text).toContain("import-done.json");
+      expect(r.data).toMatchObject({ unityCalled: true, via: "command", code: 0 });
+      expect(fs.existsSync(path.join(dir, ".design-ui", "last-import.json"))).toBe(false);
+    }
+  });
+
+  it("on the command route never accepts a marker left by an earlier run", async () => {
+    const p = tempProject({ prefer: "command", importDone: "none" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const pipeline = stubPipeline();
+    await pipeline.exportScreen!(path.join(dir, "screen.html"), {} as never, path.join(dir, ".design-ui", "export"), async () => { throw new Error("no browser"); });
+    const ir = fs.readFileSync(path.join(dir, ".design-ui", "export", "screen.ir.json"));
+    const sha = (await import("node:crypto")).createHash("sha256").update(ir).digest("hex");
+    fs.writeFileSync(path.join(dir, ".design-ui", "import-done.json"), JSON.stringify({ imports: [{ exportDir: "x", code: 0, irSha: sha }] }));
+    const r = await call(await serverFor(p.dir, pipeline), "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("import-done.json");
+  });
+
   it("on the editor route reports what changed, waits for the script compile and records the import", async () => {
     const p = tempProject({ prefer: "editor" });
     const dir = p.addScreen("clean-screen", "clean-screen");
@@ -569,7 +596,7 @@ describe("design_ui_verify", () => {
   it("gives no verdict for a capture that exits 0 without its done marker, and never compares it", async () => {
     const p = tempProject({ prefer: "command" });
     p.addScreen("clean-screen", "clean-screen");
-    p.writeConfig({ unityRunner: { prefer: "command", command: { import: ["sh", "-c", "exit 0"], capture: ["sh", "-c", "mkdir -p \"$0\"", "{outDir}"], kitSync: [] } } });
+    p.writeConfig({ unityRunner: { prefer: "command", command: { import: CONFIRMING_IMPORT, capture: ["sh", "-c", "mkdir -p \"$0\"", "{outDir}"], kitSync: [] } } });
     let compared = 0;
     const pipeline = { ...stubPipeline(), unityCapture: true };
     pipeline.compareScreen = async () => { compared++; return { pass: true, topIssues: [], notRun: [], compared: 1 }; };
@@ -660,7 +687,7 @@ const copyCapture = (without: string[] = []) => ({
   unityRunner: {
     prefer: "command",
     command: {
-      import: ["sh", "-c", "exit 0"],
+      import: CONFIRMING_IMPORT,
       capture: ["sh", "-c", `mkdir -p "$1" && cp "$0"/goldens/*.png "$0"/goldens/boxes.json "$1"/ && echo '{"runId":"t","jobs":2,"captured":2,"notCaptured":0}' > "$1"/capture-done.json && rm -f ${without.map((f) => `"$1/${f}"`).join(" ") || '"$1/none"'}`, "{exportDir}", "{outDir}"],
       kitSync: ["sh", "-c", "exit 0"],
     },
