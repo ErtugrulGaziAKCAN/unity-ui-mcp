@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://unity-ui-mcp/schemas/boxes.schema.json",
   "title": "CaptureBoxes",
+  "description": "Boxes of one capture (spec §7, §15). All rects are in device pixels: CSS px of the page rendered at the panel's logical size, times `scale`. Both sides (exporter goldens and Unity captures) follow the rules in the property descriptions.",
   "type": "object",
   "additionalProperties": false,
   "required": ["capture", "viewport", "scale", "elements", "external"],
@@ -10,16 +11,19 @@
     "viewport": { "$ref": "#/$defs/size" },
     "scale": { "type": "number", "exclusiveMinimum": 0 },
     "elements": {
+      "description": "One entry per IR element id.",
       "type": "object",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
         "required": ["x", "y", "w", "h", "visible", "text", "lines"],
         "properties": {
-          "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" },
-          "visible": { "type": "boolean" },
-          "text": { "type": "boolean" },
+          "x": { "type": "number", "description": "Border box: the axis-aligned bounds after transforms (Chromium getBoundingClientRect, Unity worldBound). An element without a box (display: none on it or an ancestor, display: contents) has x = y = w = h = 0." },
+          "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" },
+          "visible": { "type": "boolean", "description": "The element has a box, its computed visibility is visible, and neither it nor an ancestor has a computed opacity of 0 (so an animation sample at opacity 0 is not visible). Clipping by overflow and placement outside the viewport are ignored. A display: contents element is not visible and has a zero box." },
+          "text": { "type": "boolean", "description": "The IR element carries text (IrNode.text is not null)." },
           "lines": {
+            "description": "Text lines of the element's own text (text inside nested IR elements is excluded), top to bottom: one per baseline (text fragments whose baselines are within 0.5 device px form one line, whatever the line height). The lines are the laid-out lines, also those clipped by overflow. A line's rect is the union of its text fragments' boxes (font ascent + descent, not the line-height box); its width is the laid-out width (for text-overflow: ellipsis, the whole text's width). Empty for elements without a box and for form controls whose text is not in DOM text (input, select, textarea): compare their lines as not compared.",
             "type": "array",
             "items": {
               "type": "object",
@@ -27,14 +31,14 @@
               "required": ["x", "y", "w", "h", "baseline"],
               "properties": {
                 "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" },
-                "baseline": { "type": "number" }
+                "baseline": { "type": "number", "description": "Line top plus the rendered ascent of the line's font at its size (findings R7)." }
               }
             }
           }
         }
       }
     },
-    "external": { "type": "array", "items": { "type": "string" } }
+    "external": { "description": "Ids of data-u-external elements, sorted; their regions are masked in comparisons.", "type": "array", "items": { "type": "string" } }
   },
   "$defs": {
     "size": { "type": "array", "prefixItems": [{ "type": "integer", "minimum": 1 }, { "type": "integer", "minimum": 1 }], "items": false, "minItems": 2 }

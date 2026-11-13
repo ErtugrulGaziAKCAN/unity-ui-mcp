@@ -17,7 +17,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { chromium, type Browser } from "playwright";
+import { chromium, type Browser, type CDPSession } from "playwright";
 import type { CaptureBoxes } from "../boxes/types.js";
 import type { IrAnim, IrNode, IrScreen } from "../ir/types.js";
 import { stableStringify } from "../ir/stableStringify.js";
@@ -56,17 +56,19 @@ const vpName = (v: [number, number]) => `${v[0]}x${v[1]}`;
 // ---- page functions (run in the page; plain data in and out) -------------------------------------------------------
 
 type Mutation = { add: [number, string][]; remove: [number, string][]; set: [number, "disabled" | "checked", boolean][] };
-/** Adds/removes classes and sets disabled/checked; returns the classes it added (absent before) and the previous property values. */
-function pageMutate(m: Mutation): { added: [number, string][]; previous: [number, "disabled" | "checked", boolean][] } {
+/**
+ * Adds/removes classes and sets disabled/checked. Never throws midway: it reports exactly what it did (classes
+ * removed, classes added that were absent before, previous property values) so the caller's record stays exact.
+ */
+function pageMutate(m: Mutation): { removed: [number, string][]; added: [number, string][]; previous: [number, "disabled" | "checked", boolean][] } {
   const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
-  const added: [number, string][] = [], previous: [number, "disabled" | "checked", boolean][] = [];
-  for (const [i, c] of m.remove) els[i].classList.remove(c);
-  for (const [i, c] of m.add) if (!els[i].classList.contains(c)) { els[i].classList.add(c); added.push([i, c]); }
+  const removed: [number, string][] = [], added: [number, string][] = [], previous: [number, "disabled" | "checked", boolean][] = [];
+  for (const [i, c] of m.remove) { try { els[i].classList.remove(c); removed.push([i, c]); } catch { /* reported by omission */ } }
+  for (const [i, c] of m.add) { try { if (!els[i].classList.contains(c)) { els[i].classList.add(c); added.push([i, c]); } } catch { /* idem */ } }
   for (const [i, p, v] of m.set) {
-    const el = els[i] as HTMLInputElement;
-    if (p in el) { previous.push([i, p, el[p]]); el[p] = v; }
+    try { const el = els[i] as HTMLInputElement; if (p in el) { const before = el[p]; el[p] = v; previous.push([i, p, before]); } } catch { /* idem */ }
   }
-  return { added, previous };
+  return { removed, added, previous };
 }
 
 /** Sets inline `!important` declarations; returns each element's style attribute from before. */
@@ -121,6 +123,13 @@ function pageFlush(): void {
   document.documentElement.getBoundingClientRect();
 }
 
+/** Lays out the current state and waits for any font face it started loading (e.g. a unicode-range subset a state shows). */
+async function pageSettle(): Promise<boolean> {
+  document.documentElement.getBoundingClientRect();
+  await document.fonts.ready;
+  return true;
+}
+
 /** Every animation jumps to its end (frozen ones are finite); infinite ones are left as they are. */
 function pageFinishAll(): void {
   for (const a of document.getAnimations()) { try { a.finish(); } catch { /* infinite */ } }
@@ -128,15 +137,21 @@ function pageFinishAll(): void {
 
 type LineBox = { x: number; y: number; w: number; h: number; baseline: number };
 type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; lines: LineBox[] };
-/** Boxes of the IR elements in device px: border box, visibility, text lines with baselines. */
-function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]; scale: number }): [string, ElBox][] {
+/**
+ * Boxes of the IR elements in device px: border box, visibility, text lines with baselines (see the boxes schema for
+ * the rules). Ascents are cached per font and per state of the page's font set (faces added or loaded since).
+ */
+async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]; scale: number }): Promise<[string, ElBox][]> {
+  await document.fonts.ready;
   const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
   const irEls = new Set(arg.ir.map((i) => els[i]));
   const dev = (v: number) => { const r = Math.round(v * arg.scale * 1e6) / 1e6; return Object.is(r, -0) ? 0 : r; };
   const w = window as unknown as { __designUiAscent?: Map<string, number> };
   const ascents = (w.__designUiAscent ??= new Map<string, number>());
+  const faces = Array.from(document.fonts);
+  const fontSet = `${document.fonts.size}/${faces.filter((f) => f.status === "loaded").length}`;
   const ascent = (cs: CSSStyleDeclaration) => {
-    const key = [cs.fontFamily, cs.fontSize, cs.fontWeight, cs.fontStyle, cs.fontStretch, cs.fontVariationSettings, cs.fontSynthesis].join("|");
+    const key = [fontSet, cs.fontFamily, cs.fontSize, cs.fontWeight, cs.fontStyle, cs.fontStretch, cs.fontVariationSettings, cs.fontSynthesis].join("|");
     let a = ascents.get(key);
     if (a === undefined) {
       // a zero-size inline-block sits on the baseline: its bottom minus the text box top is the rendered ascent
@@ -190,10 +205,12 @@ function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]; scal
         const a = ascent(getComputedStyle(n.parentElement!));
         for (const r of Array.from(range.getClientRects())) if (r.width > 0 && r.height > 0) frags.push({ l: r.left, t: r.top, r: r.right, b: r.bottom, base: r.top + a });
       }
-      // fragments share a line when the line's baseline crosses them
+      // fragments on one line share its baseline (to half a device pixel); with a line height below the ascent,
+      // neighbouring lines' text boxes overlap, so overlap cannot be the test
+      const tol = 0.5 / arg.scale;
       const lines: Frag[] = [];
       for (const f of frags.sort((p, q) => p.base - q.base || p.l - q.l)) {
-        const line = lines.find((x) => f.t < x.base && x.base < f.b);
+        const line = lines.find((x) => Math.abs(f.base - x.base) <= tol);
         if (line) { line.l = Math.min(line.l, f.l); line.r = Math.max(line.r, f.r); line.t = Math.min(line.t, f.t); line.b = Math.max(line.b, f.b); }
         else lines.push({ ...f });
       }
@@ -211,8 +228,12 @@ interface DomEl { nodeId: number; backendNodeId: number; parent: number; attrs: 
 interface Desired { classes: Map<string, [number, string]>; props: Map<string, [number, "disabled" | "checked"]>; forced: Map<number, string[]> }
 const emptyDesired = (): Desired => ({ classes: new Map(), props: new Map(), forced: new Map() });
 
-/** One page at one viewport, reused across jobs. Close it to give the page back as it was. */
+/**
+ * One page at one viewport, reused across jobs. It works through its own CDP session, so its DOM node ids, forced
+ * pseudo-states and agents never touch the caller's session; close it to give the page back as it was.
+ */
 export class CaptureSession {
+  private cdp: CDPSession | null = null;
   private dom: DomEl[] = [];
   private nodes = new Map<string, IrNode>();
   private items: [string, number, boolean][] = [];
@@ -242,8 +263,13 @@ export class CaptureSession {
   /** Checks the page renders `viewport` and that the element map fits its DOM, then freezes the animation timeline. */
   static async open(d: LoadedDesign, ir: IrScreen, elements: ElementMap, viewport: [number, number]): Promise<CaptureSession> {
     const s = new CaptureSession(d, ir, elements, viewport);
-    await s.init();
+    try { await s.init(); } catch (e) { await s.close().catch(() => {}); throw e; }
     return s;
+  }
+
+  private send<T = unknown>(method: string, params?: object): Promise<T> {
+    if (!this.cdp) throw new Error("the capture session is closed");
+    return (this.cdp.send as unknown as (m: string, p?: object) => Promise<T>)(method, params);
   }
 
   private async init(): Promise<void> {
@@ -258,9 +284,11 @@ export class CaptureSession {
     walk(ir.root);
 
     // DOM elements in document order with CDP ids (one call), checked against the element map
-    await d.cdp.send("DOM.enable");
-    await d.cdp.send("CSS.enable");
-    const { root } = (await d.cdp.send("DOM.getDocument", { depth: -1 })) as { root: CdpNode };
+    this.cdp = await d.page.context().newCDPSession(d.page);
+    this.cdp.on("Animation.animationStarted", this.onStarted);
+    await this.send("DOM.enable");
+    await this.send("CSS.enable");
+    const { root } = await this.send<{ root: CdpNode }>("DOM.getDocument", { depth: -1 });
     const html = root.children?.find((c) => c.nodeType === 1);
     const body = html?.children?.find((c) => c.nodeType === 1 && c.nodeName === "BODY");
     if (!body) throw new Error("the page has no body");
@@ -288,9 +316,8 @@ export class CaptureSession {
     }
     this.external.sort();
 
-    d.cdp.on("Animation.animationStarted", this.onStarted);
-    await d.cdp.send("Animation.enable");
-    await d.cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+    await this.send("Animation.enable");
+    await this.send("Animation.setPlaybackRate", { playbackRate: 0 });
   }
 
   private index(id: string): number {
@@ -328,26 +355,36 @@ export class CaptureSession {
     return want;
   }
 
-  /** Moves the page from the current applied set to `setup` (null: nothing applied). */
+  /**
+   * Moves the page from the current applied set to `setup` (null: nothing applied). The record is updated step by
+   * step with what the page reports, so after a failure midway `close()` still undoes exactly what was applied.
+   */
   private async goTo(setup: ScreenSetup | null): Promise<void> {
     const want = this.desiredOf(setup), cur = this.current;
     const m: Mutation = { add: [], remove: [], set: [] };
-    for (const [k, v] of cur.classes) if (!want.classes.has(k) && this.added.has(k)) { m.remove.push(v); this.added.delete(k); }
+    for (const [k, v] of cur.classes) if (!want.classes.has(k)) { if (this.added.has(k)) m.remove.push(v); else cur.classes.delete(k); }
     for (const [k, v] of want.classes) if (!cur.classes.has(k)) m.add.push(v);
-    for (const [k, [i, p]] of cur.props) if (!want.props.has(k)) { m.set.push([i, p, this.originals.get(k)!]); this.originals.delete(k); }
-    const setting: string[] = [];
-    for (const [k, [i, p]] of want.props) if (!cur.props.has(k)) { m.set.push([i, p, true]); setting.push(k); }
+    for (const [k, [i, p]] of cur.props) if (!want.props.has(k)) m.set.push([i, p, this.originals.get(k) ?? false]);
+    for (const [k, [i, p]] of want.props) if (!cur.props.has(k)) m.set.push([i, p, true]);
     if (m.add.length || m.remove.length || m.set.length) {
       const r = await this.d.page.evaluate(pageMutate, m);
-      for (const [i, c] of r.added) this.added.add(`${i}|${c}`);
-      for (const [i, p, v] of r.previous) { const k = `${i}|${p}`; if (setting.includes(k) && !this.originals.has(k)) this.originals.set(k, v); }
+      for (const [i, c] of r.removed) { const k = `${i}|${c}`; this.added.delete(k); cur.classes.delete(k); }
+      for (const [i, c] of m.add) { const k = `${i}|${c}`; if (r.added.some(([x, y]) => x === i && y === c)) this.added.add(k); cur.classes.set(k, [i, c]); }
+      for (const [i, p, v] of r.previous) {
+        const k = `${i}|${p}`;
+        if (want.props.has(k)) { if (!this.originals.has(k)) this.originals.set(k, v); cur.props.set(k, [i, p]); }
+        else { this.originals.delete(k); cur.props.delete(k); }
+      }
+      // properties the element does not have (no effect) are dropped from the record either way
+      for (const [i, p] of m.set.map(([i, p]) => [i, p] as const)) { const k = `${i}|${p}`; if (!r.previous.some(([x, y]) => x === i && y === p)) { cur.props.delete(k); this.originals.delete(k); } }
     }
     const targets = new Set([...cur.forced.keys(), ...want.forced.keys()]);
     for (const i of Array.from(targets).sort((a, b) => a - b)) {
-      const before = (cur.forced.get(i) ?? []).join(), after = want.forced.get(i) ?? [];
-      if (before !== after.join()) await this.d.cdp.send("CSS.forcePseudoState", { nodeId: this.dom[i].nodeId, forcedPseudoClasses: after });
+      const after = want.forced.get(i) ?? [];
+      if ((cur.forced.get(i) ?? []).join() === after.join()) continue;
+      await this.send("CSS.forcePseudoState", { nodeId: this.dom[i].nodeId, forcedPseudoClasses: after });
+      if (after.length) cur.forced.set(i, after); else cur.forced.delete(i);
     }
-    this.current = want;
   }
 
   private anim(ref: AnimRef): IrAnim {
@@ -420,13 +457,15 @@ export class CaptureSession {
         await this.endSeries();
         this.series = { key, ids: await this.startSeries(job), time: 0 };
       }
-      if (this.series.ids.length) await this.d.cdp.send("Animation.seekAnimations", { animations: this.series.ids, currentTime: job.anim.time });
+      if (this.series.ids.length) await this.send("Animation.seekAnimations", { animations: this.series.ids, currentTime: job.anim.time });
       this.series.time = job.anim.time;
     } else {
       await this.endSeries();
       await this.goTo({ state: job.state, apply: job.apply });
     }
-    const png = await this.d.page.screenshot({ type: "png" });
+    await this.d.page.evaluate(pageSettle);
+    // caret "initial": the loader's freeze rule already hides carets; Playwright's own hiding leaves style="" on inputs
+    const png = await this.d.page.screenshot({ type: "png", caret: "initial" });
     const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
     if (w !== job.viewport[0] || h !== job.viewport[1]) throw new Error(`${name}: the capture is ${w}x${h}, not ${vpName(job.viewport)}`);
     const els = await this.d.page.evaluate(pageBoxes, { items: this.items, ir: this.irIndices, scale: this.scale });
@@ -435,16 +474,35 @@ export class CaptureSession {
     return { capture: name, viewport: [job.viewport[0], job.viewport[1]], scale: this.scale, elements: Object.fromEntries(els), external: [...this.external] };
   }
 
-  /** Gives the page back: nothing applied, animations finished, timeline running, CDP Animation domain off. */
+  /**
+   * Gives the page back, also after a failure midway: overrides removed, every class it added removed, disabled/checked
+   * restored, animations finished, forced pseudo-states cleared, the timeline running, its window global deleted and
+   * its CDP agents disabled (its own CDP session detached).
+   */
   async close(): Promise<void> {
-    try {
-      await this.endSeries();
-      await this.goTo(null);
-    } finally {
-      this.d.cdp.off("Animation.animationStarted", this.onStarted);
-      await this.d.cdp.send("Animation.setPlaybackRate", { playbackRate: 1 }).catch(() => {});
-      await this.d.cdp.send("Animation.disable").catch(() => {});
+    const errors: unknown[] = [];
+    const attempt = async (f: () => Promise<unknown>) => { try { await f(); } catch (e) { errors.push(e); } };
+    if (this.savedStyles.size) await attempt(() => this.d.page.evaluate(pageRestoreStyle, Array.from(this.savedStyles)));
+    this.savedStyles.clear();
+    this.series = null;
+    const m: Mutation = {
+      add: [], remove: Array.from(this.added, (k) => this.current.classes.get(k) ?? (k.split("|").map((x, n) => (n ? x : Number(x))) as [number, string])),
+      set: Array.from(this.originals, ([k, v]) => { const [i, p] = k.split("|"); return [Number(i), p as "disabled" | "checked", v]; }),
+    };
+    if (m.remove.length || m.set.length) await attempt(() => this.d.page.evaluate(pageMutate, m));
+    this.added.clear(); this.originals.clear();
+    if (this.cdp) for (const i of this.current.forced.keys()) await attempt(() => this.send("CSS.forcePseudoState", { nodeId: this.dom[i].nodeId, forcedPseudoClasses: [] }));
+    await attempt(() => this.d.page.evaluate(pageFinishAll));
+    await attempt(() => this.d.page.evaluate(() => { delete (window as unknown as { __designUiAscent?: unknown }).__designUiAscent; }));
+    if (this.cdp) {
+      await attempt(() => this.send("Animation.setPlaybackRate", { playbackRate: 1 }));
+      for (const agent of ["Animation", "CSS", "DOM"]) await attempt(() => this.send(`${agent}.disable`));
+      this.cdp.off("Animation.animationStarted", this.onStarted);
+      await attempt(() => this.cdp!.detach());
+      this.cdp = null;
     }
+    this.current = emptyDesired();
+    if (errors.length) throw errors[0];
   }
 }
 
@@ -494,6 +552,8 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
     }
     return undefined;
   };
+  /** The first error of any viewport; the others stop at their next job. */
+  let failure: { error: unknown } | null = null;
   const runGroup = async (key: string, list: CaptureJob[]) => {
     const t1 = performance.now();
     const vp = list[0].viewport;
@@ -505,6 +565,7 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
       const s = await CaptureSession.open(d, ir, elements, vp);
       try {
         for (const j of list) {
+          if (failure) return;
           const t3 = performance.now();
           const b = await s.capture(j, goldensDir);
           boxes[b.capture] = b;
@@ -515,11 +576,16 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
     } finally { if (!given) await d.close(); }
   };
   try {
+    // every worker ends (and closes its page) before the first error is rethrown, so no capture runs on a closed
+    // browser and no rejection is left unhandled
     const queue = Array.from(groups.entries());
     const workers = Array.from({ length: Math.max(1, Math.min(opts.concurrency ?? 4, queue.length)) }, async () => {
-      for (let next = queue.shift(); next; next = queue.shift()) await runGroup(next[0], next[1]);
+      for (let next = queue.shift(); next && !failure; next = queue.shift()) {
+        try { await runGroup(next[0], next[1]); } catch (e) { failure ??= { error: e }; }
+      }
     });
-    await Promise.all(workers);
+    await Promise.allSettled(workers);
+    if (failure) throw (failure as { error: unknown }).error;
     writeBoxes(goldensDir, boxes);
     fs.writeFileSync(path.join(goldensDir, "matrix.json"), stableStringify({
       chromium: browser.version(),

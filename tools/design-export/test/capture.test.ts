@@ -13,7 +13,7 @@ import type { IrAnim, IrNode, IrScreen } from "../src/ir/types.js";
 import { validateBoxes } from "../src/boxes/validate.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
 import { breakpointsHold, buildMatrix, captureName, sampleTimes, unsampledAnims, type CaptureJob } from "../src/capture/matrix.js";
-import { captureMatrix, runCapture } from "../src/capture/capture.js";
+import { CaptureSession, captureMatrix, runCapture, type ElementMap } from "../src/capture/capture.js";
 import { logicalViewport } from "../src/viewport.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -357,13 +357,127 @@ describe("captures", () => {
     } finally { await d.close(); }
   });
 
+  it("text lines: one per baseline, also with a line height below the ascent; laid-out lines whatever the clipping", async () => {
+    const d0 = await openDesign(fx("text.html"), kit, [2560, 1440], browser);
+    let text: IrBuild;
+    try { text = await buildIr(d0, await collectSnapshot(d0.page, d0.cdp, kit), kit, tmp(), fx("text.html")); } finally { await d0.close(); }
+    for (const vp of [[2560, 1440], [1280, 720]] as [number, number][]) {
+      const s = logicalViewport(vp, [2560, 1440], 0.5).scale;
+      const d = await openDesign(fx("text.html"), kit, vp, browser);
+      let b: CaptureBoxes;
+      try { b = await runCapture(d, text.ir, job({ viewport: vp }), tmp(), text.elements); } finally { await d.close(); }
+      // one word per line at 32px with line-height 0.7, 0.8, 0.9: neighbouring text boxes overlap, still 4 lines one line-height apart
+      for (const [id, lh] of [["lh7", 0.7], ["lh8", 0.8], ["lh9", 0.9]] as const) {
+        const lines = b.elements[id].lines;
+        expect(lines, `${id} at ${vp[0]}`).toHaveLength(4);
+        for (let k = 1; k < 4; k++) expect(Math.abs(lines[k].baseline - lines[k - 1].baseline - 32 * lh * s), `${id} ${k}`).toBeLessThan(0.05);
+      }
+      // a 2-line clamp lays out 3 lines; lines are the laid-out lines (clipping ignored, as Unity's caret route reports them)
+      expect(b.elements.clamp.lines).toHaveLength(3);
+      // an ellipsis line is one line, with the laid-out width of the whole text
+      expect(b.elements.ellipsis.lines).toHaveLength(1);
+      expect(b.elements.ellipsis.lines[0].w).toBeGreaterThan(b.elements.ellipsis.w);
+      // regular, bold and a larger span share the first line's baseline
+      const mixed = b.elements.mixed.lines;
+      expect(mixed).toHaveLength(2);
+      expect(mixed[0].h).toBeGreaterThan(mixed[1].h);
+    }
+  });
+
+  describe("controls, ancestor classes and late fonts", () => {
+    let ctl: IrBuild;
+    beforeAll(async () => {
+      const d = await openDesign(fx("controls.html"), kit, [2560, 1440], browser);
+      try { ctl = await buildIr(d, await collectSnapshot(d.page, d.cdp, kit), kit, tmp(), fx("controls.html")); } finally { await d.close(); }
+    });
+    const shoot = async (j: CaptureJob) => {
+      const dir = tmp();
+      const d = await openDesign(fx("controls.html"), kit, j.viewport, browser);
+      try {
+        const boxes = await runCapture(d, ctl.ir, j, dir, ctl.elements);
+        const after = await d.page.evaluate(() => {
+          const q = (s: string) => document.querySelector(s) as HTMLInputElement;
+          return [q("[data-u-id=chk]").checked, q("[data-u-id=off]").disabled, q("[data-u-id=card]").className];
+        });
+        return { boxes, png: decodePng(fs.readFileSync(path.join(dir, `${captureName(j)}.png`))), after };
+      } finally { await d.close(); }
+    };
+
+    it("captures disabled, checked and an ancestor's is-* class, and gives the controls back", async () => {
+      const names = buildMatrix(ctl.ir).filter((j) => j.viewport[0] === 2560).map(captureName);
+      expect(names).toEqual(expect.arrayContaining(["default@2560x1440.checked.chk", "default@2560x1440.disabled.off", "default@2560x1440.is-open.card"]));
+      const at = (n: string) => buildMatrix(ctl.ir).find((j) => captureName(j) === n)!;
+      const chk = await shoot(at("default@2560x1440.checked.chk"));
+      expect(near(centre(chk.png, chk.boxes, "chk"), [0x16, 0xc2, 0xd5])).toBe(true);
+      const off = await shoot(at("default@2560x1440.disabled.off"));
+      expect(near(centre(off.png, off.boxes, "off"), [255, 0, 0])).toBe(true);
+      const open = await shoot(at("default@2560x1440.is-open.card"));
+      const t = open.boxes.elements.title;
+      let red = false;
+      for (let y = Math.floor(t.y); y < t.y + t.h && !red; y++) for (let x = Math.floor(t.x); x < t.x + t.w && !red; x++) red = near(open.png.px(x, y), [255, 0, 0], 3);
+      expect(red).toBe(true);
+      for (const r of [chk, off, open]) expect(r.after).toEqual([false, false, "card"]);
+    });
+
+    it("text a state shows in a face loaded only then is measured in that face", async () => {
+      const r = await shoot(job({ state: "late" }));
+      expect(r.boxes.elements.late.w).toBe(r.boxes.elements.ref.w);
+      expect(r.boxes.elements.late.lines.map((l) => l.baseline - l.y)).toEqual(r.boxes.elements.ref.lines.map((l) => l.baseline - l.y));
+    });
+
+    it("a failure midway still gives the page back on close: classes, forced states, timeline, global, caller's CDP session", async () => {
+      const d = await openDesign(fx("controls.html"), kit, [2560, 1440], browser);
+      try {
+        const before = await d.page.evaluate(() => [document.documentElement.outerHTML, getComputedStyle(document.querySelector("[data-u-id=off]")!).backgroundColor]);
+        const s = await CaptureSession.open(d, ctl.ir, ctl.elements, [2560, 1440]);
+        await s.capture(job({ state: "late" }), tmp()); // fills the ascent cache
+        // make the second forced pseudo-state fail: the class and the first forced state are applied by then
+        const real = (s as unknown as { send: (m: string, p?: object) => Promise<unknown> }).send.bind(s);
+        let forced = 0;
+        (s as unknown as { send: unknown }).send = (m: string, p?: object) => {
+          if (m === "CSS.forcePseudoState" && ++forced === 2) return Promise.reject(new Error("injected failure"));
+          return real(m, p);
+        };
+        const fail = job({ apply: [{ kind: "class", name: "is-open", elementId: "card" }, { kind: "pseudo", pseudo: "active", elementId: "title" }, { kind: "pseudo", pseudo: "checked", elementId: "chk" }] });
+        await expect(s.capture(fail, tmp())).rejects.toThrow(/injected failure/);
+        await s.close();
+        const after = await d.page.evaluate(async () => {
+          const a = document.body.animate([{ opacity: 0 }, { opacity: 1 }], 1000);
+          await new Promise((r) => setTimeout(r, 60));
+          const t = Number(a.currentTime);
+          a.cancel();
+          return [document.documentElement.outerHTML, getComputedStyle(document.querySelector("[data-u-id=off]")!).backgroundColor,
+            (document.querySelector("[data-u-id=chk]") as HTMLInputElement).checked, document.querySelector(":hover, :active") === null,
+            "__designUiAscent" in window, t > 0];
+        });
+        expect(after).toEqual([before[0], before[1], false, true, false, true]);
+        // the caller's CDP session keeps working (the capture used its own)
+        await expect(d.cdp.send("DOM.getDocument", { depth: 0 })).resolves.toBeTruthy();
+      } finally { await d.close(); }
+    });
+  });
+
+  it("a failing viewport stops the others and fails the matrix once every page is closed", async () => {
+    const all = buildMatrix(built.ir);
+    const bad = job({ apply: [{ kind: "pseudo", pseudo: "hover", elementId: "ghost" }] });
+    const jobs = [bad, ...all.filter((j) => j.viewport[0] === 1920)];
+    const dir = tmp();
+    const contextsBefore = browser.contexts().length;
+    await expect(captureMatrix(fx("screen.html"), kit, built.ir, built.elements as ElementMap, dir, { browser, jobs, concurrency: 2 })).rejects.toThrow(/ghost/);
+    expect(browser.contexts().length).toBe(contextsBefore);
+    const files = fs.readdirSync(dir).length;
+    await new Promise((r) => setTimeout(r, 300));
+    expect(fs.readdirSync(dir).length).toBe(files);
+    expect(fs.existsSync(path.join(dir, "boxes.json"))).toBe(false);
+  });
+
   describe("the whole matrix", () => {
     let dirA: string, dirB: string;
     let runA: Awaited<ReturnType<typeof captureMatrix>>;
     beforeAll(async () => {
       dirA = tmp(); dirB = tmp();
-      runA = await captureMatrix(fx("screen.html"), kit, built.ir, built.elements, dirA, { browser });
-      await captureMatrix(fx("screen.html"), kit, built.ir, built.elements, dirB, { browser });
+      runA = await captureMatrix(fx("screen.html"), kit, built.ir, built.elements, dirA, { browser, concurrency: 1 });
+      await captureMatrix(fx("screen.html"), kit, built.ir, built.elements, dirB, { browser, concurrency: 2 });
     }, 120000);
 
     it("captures every job: exact PNG sizes, boxes for every capture, the job list with sample times", () => {
@@ -384,7 +498,12 @@ describe("captures", () => {
       expect(matrix.chromium).toBe(browser.version());
       // the breakpoint layer got its own viewport
       expect(jobs.filter((j) => j.coverage).map((j) => j.coverage)).toEqual([["max-width-1919"]]);
-      const cov = boxes[captureName(jobs.find((j) => j.coverage)!)];
+      const covJob = jobs.find((j) => j.coverage)!;
+      const cov = boxes[captureName(covJob)];
+      const covPng = fs.readFileSync(path.join(dirA, `${captureName(covJob)}.png`));
+      expect([[2560, 1440], [1920, 1080], [1280, 720]]).not.toContainEqual(covJob.viewport);
+      expect([covPng.readUInt32BE(16), covPng.readUInt32BE(20)]).toEqual(covJob.viewport);
+      expect(cov.scale).toBe(logicalViewport(covJob.viewport, [2560, 1440], 0.5).scale);
       expect(cov.elements.box.w).toBeCloseTo(80 * cov.scale, 5);
       expect(runA.timings.totalMs).toBeGreaterThan(0);
       expect(Object.keys(runA.timings.jobs).sort()).toEqual([...all].sort());
@@ -392,7 +511,7 @@ describe("captures", () => {
         `per viewport ${JSON.stringify(runA.timings.viewports)}`);
     });
 
-    it("is deterministic: byte-identical PNGs, boxes.json and matrix.json", () => {
+    it("is deterministic, whatever the concurrency: byte-identical PNGs, boxes.json and matrix.json (1 vs 2 pages at a time)", () => {
       const files = fs.readdirSync(dirA).sort();
       expect(fs.readdirSync(dirB).sort()).toEqual(files);
       const differ = files.filter((f) => !fs.readFileSync(path.join(dirA, f)).equals(fs.readFileSync(path.join(dirB, f))));
