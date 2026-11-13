@@ -383,7 +383,7 @@ async function build(file: string, outDir = tmp()): Promise<IrBuild & { outDir: 
 }
 async function lintIds(file: string): Promise<string[]> {
   const d = await openDesign(file, kit, [2560, 1440], browser);
-  try { return (await lint(d, kit)).map((f) => `${f.ruleId} ${f.path}: ${f.detail}`); } finally { await d.close(); }
+  try { return (await lint(d, kit)).filter((f) => f.ruleId !== "W-TXT-001").map((f) => `${f.ruleId} ${f.path}: ${f.detail}`); } finally { await d.close(); }
 }
 const flat = (n: IrNode): IrNode[] => [n, ...n.children.flatMap(flat)];
 const byId = (root: IrNode, id: string) => flat(root).find((x) => x.id === id)!;

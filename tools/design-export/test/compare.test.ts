@@ -20,6 +20,7 @@ const T: Thresholds = {
   boxPx: 1, baselinePx: 1, deltaE2000: 1, ssimNonText: 0.99, ssimElement: 0.99, textInkDeltaE: 3, textInkRatio: 0.76, textInkCoverage: 0.15,
   textInkFullPx: 14, textInkDeltaESmall: [[12, 5], [9, 10], [0, 14]], textInkMedianTolerance: 0.2, ssimElementSmall: [], ssimPicture: 0.99,
   textInkDeltaELater: [], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
+  textInkSmallPx: 0, textInkDeltaEFirstSmall: 3, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.2,
 };
 const tmpDirs: string[] = [];
 const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), "compare-")); tmpDirs.push(d); return d; };
@@ -401,6 +402,25 @@ describe("compareCapture: fix round checks", () => {
     expect(compareCapture(badge(), lighter, [], T, bctx).issues[0].detail).toMatch(/\(limit 5 at 12 px\)$/);
   });
 
+  it("holds text of at most textInkSmallPx device px to the measured small-text limits and text above it to the usual ones", () => {
+    // small text: the renderer's stems differ by fractions of a pixel, so the ink colour and amount scatter more than at larger sizes
+    const t: Thresholds = { ...T, textInkFullPx: 9, textInkDeltaE: 2, textInkDeltaESmall: [[8, 3], [0, 10]], textInkSmallPx: 12, textInkDeltaEFirstSmall: 4.5, textInkBandSmall: [0.8, 1.25] };
+    const at = (px: number): CaptureContext => ({ ...bctx, fontPx: { badge: px } });
+    const text: Rgb = [232, 232, 232];
+    const de = compareCapture(badge(), badge({ text }), [], t, at(12)).elements.find((r) => r.id === "badge")!.ink!;
+    // inside the small-text limit (4.5), over the usual one (2)
+    expect(de).toBeGreaterThan(2);
+    expect(de).toBeLessThan(4.5);
+    expect(compareCapture(badge(), badge({ text }), [], t, at(12)).issues).toEqual([]);
+    expect(compareCapture(badge(), badge({ text }), [], t, at(9)).issues).toEqual([]);
+    // the same colour error on text above the small-text size still fails
+    const big = compareCapture(badge(), badge({ text }), [], t, at(14));
+    expect(big.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["badge:ink"]);
+    expect(big.issues[0].detail).toMatch(/\(limit 2 at 14 px\)$/);
+    // and a wrong colour fails at the small size too
+    expect(compareCapture(badge(), badge({ text: [250, 210, 60] }), [], t, at(12)).issues.map((i) => i.kind)).toEqual(["ink"]);
+  });
+
   it("compares light text and dark text each with its own median ink ratio (font smoothing differs by polarity)", () => {
     const mk = (lines: { thick: number; dark: boolean }[]) => {
       const png = canvas(320, 320, [16, 24, 32]);
@@ -422,6 +442,29 @@ describe("compareCapture: fix round checks", () => {
     const v = compareCapture(mk(design), mk(odd), [], T);
     expect(v.issues.filter((i) => i.kind === "inkCoverage").map((i) => i.id)).toEqual(["t1"]);
     expect(v.issues.find((i) => i.kind === "inkCoverage")!.detail).toMatch(/against the median 0\.70× of this capture's light text \(limit ±20 %\)/);
+  });
+
+  it("lets text of at most textInkSmallPx device px deviate further from the capture's median ink ratio (textInkMedianToleranceSmall)", () => {
+    const mk = (thick: number[]) => {
+      const png = canvas(320, 224, [16, 24, 32]);
+      const elements: Record<string, Box> = { root: el(0, 0, 320, 224) };
+      thick.forEach((w, k) => {
+        const y = 20 + k * 48;
+        for (let x = 40; x < 200; x += 40) fill(png, { x, y: y + 2, w, h: 12 }, [250, 250, 250]);
+        elements[`t${k}`] = el(36, y - 2, 200, 20, { text: true, lines: [{ x: 38, y, w: 164, h: 16, baseline: y + 12 }] });
+      });
+      return { png, boxes: { capture: "c", viewport: [320, 224] as [number, number], scale: 1, external: [], elements } };
+    };
+    // Unity draws 0.8 of the design's ink on three lines and 0.96 on the fourth: +20 % against the median
+    const design = mk([25, 25, 25, 25]), unity = mk([20, 20, 20, 24]);
+    const t: Thresholds = { ...T, textInkMedianTolerance: 0.15, textInkSmallPx: 12, textInkDeltaEFirstSmall: 4.5, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.25 };
+    const px = (n: number): CaptureContext => ({ fontPx: { t0: n, t1: n, t2: n, t3: n }, backgrounds: new Set(), painters: new Set() });
+    expect(compareCapture(design, unity, [], t, px(8)).issues.filter((i) => i.kind === "inkCoverage")).toEqual([]);
+    const big = compareCapture(design, unity, [], t, px(14));
+    expect(big.issues.filter((i) => i.kind === "inkCoverage").map((i) => i.id)).toEqual(["t3"]);
+    expect(big.issues[0].detail).toMatch(/\(limit ±15 %\)/);
+    // a line that stands out by more than the small-text tolerance still fails
+    expect(compareCapture(design, mk([20, 20, 20, 26]), [], t, px(8)).issues.filter((i) => i.kind === "inkCoverage").map((i) => i.id)).toEqual(["t3"]);
   });
 
   it("compares a line's ink with the capture's median ratio when there are 3 or more lines", () => {
@@ -966,6 +1009,7 @@ describe("design-export compare", () => {
     expect(readThresholds()).toEqual({
       ...T, textInkDeltaE: 2, textInkRatio: 1, textInkCoverage: 0.1, textInkFullPx: 9, textInkDeltaESmall: [[8, 3], [0, 10]], textInkMedianTolerance: 0.15,
       ssimElementSmall: [[32768, 0.984]], ssimPicture: 0.985, textInkDeltaELater: [[9, 4.5], [8, 6]], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
+      textInkSmallPx: 12, textInkDeltaEFirstSmall: 4.5, textInkBandSmall: [0.8, 1.25], textInkMedianToleranceSmall: 0.25,
     });
     const bad = path.join(tmp(), "t.json");
     fs.writeFileSync(bad, JSON.stringify({ boxPx: 1 }));
@@ -976,6 +1020,11 @@ describe("design-export compare", () => {
     expect(table("5")).toThrow(/textInkDeltaESmall/);
     expect(table([[16, 5], [0, 14]])).toThrow(/must start below textInkFullPx/);
     expect(table([[12, 2], [0, 14]])).toThrow(/limits of at least textInkDeltaE/);
+    const small = (o: object) => { fs.writeFileSync(bad, JSON.stringify({ ...T, ...o })); return () => readThresholds(bad); };
+    expect(small({ textInkBandSmall: [0.9, 1.2] })).toThrow(/"textInkBandSmall" must be \[lowest, highest\]/);
+    expect(small({ textInkBandSmall: [0.6, 1.1] })).toThrow(/"textInkBandSmall"/);
+    expect(small({ textInkMedianToleranceSmall: 0.1 })).toThrow(/"textInkMedianToleranceSmall" must be at least textInkMedianTolerance/);
+    expect(small({ textInkDeltaEFirstSmall: 1 })).toThrow(/"textInkDeltaEFirstSmall" must be at least textInkDeltaE/);
     const areas = (v: unknown, picture = 0.98) => { fs.writeFileSync(bad, JSON.stringify({ ...T, ssimElementSmall: v, ssimPicture: picture })); return () => readThresholds(bad); };
     expect(areas([[1024, 0.975], [4096, 0.985]])()).toMatchObject({ ssimElementSmall: [[1024, 0.975], [4096, 0.985]], ssimPicture: 0.98 });
     expect(areas([[4096, 0.985], [1024, 0.975]])).toThrow(/"ssimElementSmall" must be \[area in device px², SSIM\] pairs by growing area and limit/);

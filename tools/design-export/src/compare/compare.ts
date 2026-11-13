@@ -27,7 +27,8 @@
  *   `textInkRatio` and 1 (each ± `textInkCoverage`), and within ±`textInkMedianTolerance` of the capture's median ratio
  *   for text of the same polarity (light on dark, dark on light) when it has 3 or more such lines; this catches a wrong
  *   text colour, weight or size. The limits are the measured renderer difference with designs that render
- *   `-webkit-font-smoothing: antialiased` (docs/findings/text-ink.md): exact from 9 device px, wider only below;
+ *   `-webkit-font-smoothing: antialiased` (docs/findings/text-ink.md): exact from 9 device px, wider only below; text of at most
+ *   `textInkSmallPx` device px gets the suite-wide measured small-text limits (`textInkDeltaEFirstSmall`, `textInkBandSmall`, `textInkMedianToleranceSmall`);
  * - shadow band: the mean colour of each active outer shadow's band (shadow rect minus element box), ΔE2000 ≤
  *   `deltaE2000`, so a faint missing shadow fails although SSIM dilutes it.
  * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows. The
@@ -85,12 +86,23 @@ export interface Thresholds {
   textInkDeltaELater: [number, number][];
   textInkLaterBelowPx: number;
   textInkCoverageLater: number;
+  /**
+   * Text of at most `textInkSmallPx` device px (first lines and others): the measured scatter of the renderers at small
+   * sizes, as the suite-wide maximum plus a margin (docs/findings/text-ink.md, section 7). The ink colour limit is at
+   * least `textInkDeltaEFirstSmall`, the ink amount band at least `textInkBandSmall` (`[lowest, highest]` ratio of
+   * Unity's ink to the design's; it covers the ink of a text shadow too). Above that size nothing changes. 0 turns it off.
+   */
+  textInkSmallPx: number;
+  textInkDeltaEFirstSmall: number;
+  textInkBandSmall: [number, number];
+  /** The deviation from the capture's median ink ratio such text may have, at least `textInkMedianTolerance`. */
+  textInkMedianToleranceSmall: number;
 }
 
 /** `tools/design-export/fidelity-thresholds.json`, the only place the thresholds live (keys starting with `$` are comments). */
 export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.json", import.meta.url));
 const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage",
-  "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater"] as const;
+  "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater", "textInkSmallPx", "textInkDeltaEFirstSmall", "textInkMedianToleranceSmall"] as const;
 /** No measured policy may accept an element SSIM below this. */
 export const SSIM_FLOOR = 0.97;
 
@@ -117,8 +129,15 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
     && (i === 0 || p[0] < a[i - 1][0]) && p[0] < (raw.textInkLaterBelowPx as number));
   if (!laterOk) throw new Error(`${file}: "textInkDeltaELater" must be [device px, ΔE2000] pairs from the largest size down, below textInkLaterBelowPx`);
   if ((raw.textInkCoverageLater as number) < (raw.textInkCoverage as number)) throw new Error(`${file}: "textInkCoverageLater" must be at least textInkCoverage`);
+  const bandSmall = raw.textInkBandSmall;
+  const bandOk = Array.isArray(bandSmall) && bandSmall.length === 2 && bandSmall.every((v) => typeof v === "number" && Number.isFinite(v) && v > 0)
+    && bandSmall[0] <= (raw.textInkRatio as number) * (1 - (raw.textInkCoverage as number)) && bandSmall[1] >= 1 + (raw.textInkCoverage as number);
+  if (!bandOk) throw new Error(`${file}: "textInkBandSmall" must be [lowest, highest] ink ratios that contain the band of textInkRatio and textInkCoverage`);
+  if ((raw.textInkMedianToleranceSmall as number) < (raw.textInkMedianTolerance as number)) throw new Error(`${file}: "textInkMedianToleranceSmall" must be at least textInkMedianTolerance`);
+  if ((raw.textInkDeltaEFirstSmall as number) < (raw.textInkDeltaE as number)) throw new Error(`${file}: "textInkDeltaEFirstSmall" must be at least textInkDeltaE`);
   return {
-    ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater">),
+    ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater" | "textInkBandSmall">),
+    textInkBandSmall: [bandSmall[0], bandSmall[1]],
     textInkDeltaESmall: (table as number[][]).map(([px, de]) => [px, de] as [number, number]),
     ssimElementSmall: (areas as number[][]).map(([a, v]) => [a, v] as [number, number]),
     textInkDeltaELater: (later as number[][]).map(([px, de]) => [px, de] as [number, number]),
@@ -140,8 +159,9 @@ export function relaxedSsimLimit(t: Thresholds, areaPx2: number, picture: boolea
 
 /** The ink colour limit for text of `px` device px (font size); `line` counts from 0 (later lines of small text: textInkDeltaELater). */
 export function inkColourLimit(t: Thresholds, px: number, line = 0): number {
-  const usual = px >= t.textInkFullPx ? t.textInkDeltaE
+  let usual = px >= t.textInkFullPx ? t.textInkDeltaE
     : (t.textInkDeltaESmall.find(([min]) => px >= min) ?? t.textInkDeltaESmall[t.textInkDeltaESmall.length - 1])[1];
+  if (px <= t.textInkSmallPx) usual = Math.max(usual, t.textInkDeltaEFirstSmall);
   if (line < 1 || px >= t.textInkLaterBelowPx) return usual;
   const later = t.textInkDeltaELater.find(([min]) => px >= min);
   return later ? Math.max(usual, later[1]) : usual;
@@ -501,7 +521,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return false;
     };
     /** `light`: the design's ink is lighter than its background (font smoothing thickens such text most). */
-    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean; later: boolean }
+    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean; later: boolean; small: boolean }
     const inkLines: InkLine[] = [];
     const usable = (p: RingPoint, cover: Rect[]) => p.gx >= 0 && p.gy >= 0 && p.gx < w && p.gy < h && p.ux >= 0 && p.uy >= 0 && p.ux < w && p.uy < h
       && !cover.some((l) => inside(l, p.gx, p.gy, 1)) && !onText(p.gx, p.gy) && !onText(p.ux, p.uy);
@@ -591,7 +611,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           const a = inkIn(gp, win);
           if (!a) return;
           const b = inkIn(up, win);
-          inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx });
+          inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx });
           if (b) {
             const de = deltaE2000(a.ink, b.ink), limit = inkColourLimit(t, px, i);
             maxDe = Math.max(maxDe, de);
@@ -628,12 +648,16 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return ratios.length >= 3 ? ratios[(ratios.length - 1) >> 1] / 2 + ratios[ratios.length >> 1] / 2 : null;
     };
     const medians = { light: medianOf(true), dark: medianOf(false) };
-    const band = (l: InkLine) => { const c = l.later ? t.textInkCoverageLater : t.textInkCoverage; return { lo: t.textInkRatio * (1 - c), hi: 1 + c }; };
+    const medianTolerance = (l: InkLine) => (l.small ? Math.max(t.textInkMedianTolerance, t.textInkMedianToleranceSmall) : t.textInkMedianTolerance);
+    const band = (l: InkLine) => {
+      const c = l.later ? t.textInkCoverageLater : t.textInkCoverage, lo = t.textInkRatio * (1 - c), hi = 1 + c;
+      return l.small ? { lo: Math.min(lo, t.textInkBandSmall[0]), hi: Math.max(hi, t.textInkBandSmall[1]) } : { lo, hi };
+    };
     const worstInk = new Map<string, { l: InkLine; score: number }>();
     for (const l of inkLines) {
       const { lo, hi } = band(l);
       const median = l.light ? medians.light : medians.dark;
-      const score = l.ratio === null ? Infinity : Math.max(lo - l.ratio, l.ratio - hi, median === null ? -Infinity : Math.abs(l.ratio / median - 1) - t.textInkMedianTolerance);
+      const score = l.ratio === null ? Infinity : Math.max(lo - l.ratio, l.ratio - hi, median === null ? -Infinity : Math.abs(l.ratio / median - 1) - medianTolerance(l));
       const prev = worstInk.get(l.id);
       if (!prev || score > prev.score) worstInk.set(l.id, { l, score });
     }
@@ -647,7 +671,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         issue(id, "inkCoverage", `${head}: Unity draws ${l.ratio.toFixed(2)}× the design's text ink (expected ${lo.toFixed(2)}–${hi.toFixed(2)}×): ${tail}`, l.at);
       } else {
         const median = (l.light ? medians.light : medians.dark)!;
-        issue(id, "inkCoverage", `${head}: text ink ${l.ratio.toFixed(2)}× the design's, ${pct(l.ratio / median - 1)} against the median ${median.toFixed(2)}× of this capture's ${l.light ? "light" : "dark"} text (limit ±${Math.round(t.textInkMedianTolerance * 100)} %): ${tail}`, l.at);
+        issue(id, "inkCoverage", `${head}: text ink ${l.ratio.toFixed(2)}× the design's, ${pct(l.ratio / median - 1)} against the median ${median.toFixed(2)}× of this capture's ${l.light ? "light" : "dark"} text (limit ±${Math.round(medianTolerance(l) * 100)} %): ${tail}`, l.at);
       }
     }
 

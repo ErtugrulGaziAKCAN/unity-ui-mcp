@@ -70,6 +70,7 @@ import { rule as U_NET_002 } from "./rules/U-NET-002.js";
 import { rule as W_CSS_001 } from "./rules/W-CSS-001.js";
 import { rule as W_FONT_001 } from "./rules/W-FONT-001.js";
 import { rule as W_FONT_002 } from "./rules/W-FONT-002.js";
+import { rule as W_TXT_001 } from "./rules/W-TXT-001.js";
 
 export type { Finding, LintContext, Rule, Severity } from "./types.js";
 export { collectSnapshot, SNAP_COMPUTED, type DomSnapshot, type SnapElement, type SnapRule, type SnapSelector } from "./snapshot.js";
@@ -141,6 +142,7 @@ export const RULES: readonly Rule[] = [
   W_CSS_001,
   W_FONT_001,
   W_FONT_002,
+  W_TXT_001,
   I_MRK_001,
 ];
 

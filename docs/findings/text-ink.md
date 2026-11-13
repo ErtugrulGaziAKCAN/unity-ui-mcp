@@ -177,6 +177,55 @@ exactly n × L, baselines within 0.32 px) (`Tests/Editor/Data/chromium-kerning-l
 Chromium's widths per font size and weight of the kit's table, rebuilt by `Tests/Editor/Data/tools~/chromium-kerning-line.mts`
 whenever the table changes).
 
+## 7. Small text: measured limits and a readability warning
+
+**Measured over the whole suite** (22 screens, every state, hover, breakpoint and viewport at 2560, 1920 and 1280; 953
+static jobs), after the line boxes follow Chromium's baselines ([text-baselines.md](text-baselines.md)). The text that
+failed the limits of section 4 is all of 6 to 12 device px, short labels, hints and values rather than the 30-character
+calibration line. Largest values by device font size, first lines:
+
+| Device px | Ink colour ΔE2000, largest | Limit before |
+|---|---|---|
+| 12 | 2.37 | 2 |
+| 9 | 3.49 | 2 |
+| 8 | 3.83 | 3 |
+| 6 | under 10 (8.23 in section 4) | 10 |
+
+The ink amount of Unity's text relative to the design's lay between **0.84 and 1.17** (limits 0.90–1.10). Its upper end
+is text with a text shadow: the shadow's ink adds to the text's, and Unity's softer shadow edge puts a little more of it
+inside the measured window.
+
+**Cause.** The renderers differ by fractions of a pixel at these sizes: Unity's glyphs sit about 0.15 px lower, stems
+differ by up to 0.3 px horizontally, and a short string has no long run in which the differences average out. At 8 to 12
+device px a stem is one or two pixels wide, so 0.3 px is a third of its coverage and moves the ink colour (the median
+of the most covered pixels) by a few ΔE. This is a rasterisation limit, not a layout difference: boxes, baselines and
+line counts of the same texts pass at 1 px.
+
+**Policy** (`textInkSmallPx`, `textInkDeltaEFirstSmall`, `textInkBandSmall` in `fidelity-thresholds.json`):
+
+| Key | Value | Measured, margin |
+|---|---|---|
+| `textInkSmallPx` | 12 | the largest size with the scatter above |
+| `textInkDeltaEFirstSmall` | 4.5 (text of at most 12 device px takes the larger of this and its size's limit) | 3.83 at most; +0.67 |
+| `textInkBandSmall` | 0.80–1.25 (the wider of this and the usual band) | 0.84–1.17; −0.04 and +0.08 |
+| `textInkMedianToleranceSmall` | ±25 % of the capture's median (the larger of this and `textInkMedianTolerance`) | up to +19 % (a bold caption of 6 device px with a text shadow, against the median of its capture's light text); +6 points |
+
+- **Above 12 device px nothing changes**: the ink colour is exact there (ΔE 0 from 14 px, within 1.3 from 9 px in
+  section 1), so a wrong colour on larger text still fails at ΔE 2.
+- A wrong colour on small text still fails above 4.5 (a design colour a step off is ΔE 5 or more), and a regular face drawn
+  for bold (0.74× the ink) or a size one style off stays below 0.80×.
+- The median check of section 4 (±15 %) applies to text above 12 device px unchanged. For small text a line with a text
+  shadow lay up to 19 % from the median of its capture, so it takes the wider tolerance above.
+- The cost: a colour error of up to ΔE 4.5 on text of 12 device px or less passes (at 1280 wide that is any kit style up
+  to 24 px). The same text at 2560 wide is 14 device px or more for the kit's larger styles and keeps the ΔE 2 limit there.
+
+**Readability warning W-TXT-001.** Text this small is also hard to read, and no renderer measures it exactly, so lint
+warns (a warning, never an error) for every kit text style a design uses that comes out under 10 device px at the
+smallest viewport the kit declares: at 1280 wide, the 12 px caption (6 device px) and the 16 px label (8). It names the
+style, how many elements use it and the device size, and its fix points to the smallest kit styles that stay readable.
+The rule judges the kit's table, so it does not ask for another font size than the kit has; it is a prompt to choose
+larger styles where the design allows it.
+
 ## Reproduction
 
 ```
