@@ -1,0 +1,420 @@
+{
+  "breakpoints": [
+    {
+      "maxWidth": 1600,
+      "name": "narrow"
+    }
+  ],
+  "fonts": [
+    {
+      "family": "Inter",
+      "file": "fonts/Inter-Regular.ttf",
+      "locale": "tr",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "weight": 400
+    }
+  ],
+  "irVersion": 1,
+  "referenceViewport": [
+    2560,
+    1440
+  ],
+  "root": {
+    "action": null,
+    "anims": [],
+    "asset": null,
+    "attrTexts": {},
+    "background": {
+      "file": "assets/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.svg",
+      "height": 1440,
+      "kind": "svg",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "slice": null,
+      "tint": false,
+      "width": 2560
+    },
+    "bind": null,
+    "children": [
+      {
+        "action": null,
+        "anims": [],
+        "asset": null,
+        "attrTexts": {},
+        "background": null,
+        "bind": null,
+        "children": [],
+        "classes": [],
+        "external": false,
+        "id": "title",
+        "initial": null,
+        "kind": "text",
+        "repeat": null,
+        "shadow": null,
+        "style": {
+          "base": {
+            "color": "#ffffff",
+            "display": "block",
+            "font-size": "48px"
+          }
+        },
+        "text": {
+          "args": [
+            "name"
+          ],
+          "en": "Welcome {name}",
+          "key": "sample.title",
+          "rich": false,
+          "style": "title",
+          "tr": "Hoş geldin {name}"
+        }
+      },
+      {
+        "action": null,
+        "anims": [
+          {
+            "delay": 0,
+            "direction": "alternate",
+            "duration": 1200,
+            "fillMode": "both",
+            "iterations": "infinite",
+            "keyframes": [
+              {
+                "easing": null,
+                "offset": 0,
+                "values": {
+                  "opacity": "1"
+                }
+              },
+              {
+                "easing": "linear",
+                "offset": 0.5,
+                "values": {
+                  "opacity": "0.6"
+                }
+              },
+              {
+                "easing": null,
+                "offset": 1,
+                "values": {
+                  "opacity": "0.8"
+                }
+              }
+            ],
+            "kind": "keyframes",
+            "name": "pulse",
+            "phase": "enter",
+            "playState": "running",
+            "properties": [
+              "opacity"
+            ],
+            "restart": true,
+            "timing": "ease-in-out",
+            "trigger": "show"
+          }
+        ],
+        "asset": {
+          "file": "assets/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.png",
+          "height": 300,
+          "kind": "image",
+          "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "slice": null,
+          "tint": false,
+          "width": 600
+        },
+        "attrTexts": {},
+        "background": null,
+        "bind": null,
+        "children": [],
+        "classes": [],
+        "external": false,
+        "id": "card",
+        "initial": null,
+        "kind": "container",
+        "repeat": null,
+        "shadow": {
+          "file": "assets/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.png",
+          "height": 96,
+          "kind": "shadow9",
+          "offset": {
+            "h": 0,
+            "w": 0,
+            "x": 0,
+            "y": 8
+          },
+          "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "slice": [
+            40,
+            40,
+            40,
+            40
+          ],
+          "tint": false,
+          "width": 96
+        },
+        "style": {
+          "base": {
+            "border-radius": "24px",
+            "display": "block",
+            "height": "300px",
+            "width": "600px"
+          }
+        },
+        "text": null
+      },
+      {
+        "action": "play",
+        "anims": [
+          {
+            "delay": 0,
+            "direction": "normal",
+            "duration": 200,
+            "fillMode": "none",
+            "iterations": 1,
+            "keyframes": [],
+            "kind": "transition",
+            "name": null,
+            "phase": "enter",
+            "playState": "running",
+            "properties": [
+              "background-color"
+            ],
+            "restart": true,
+            "timing": "cubic-bezier(0.4, 0, 0.2, 1)",
+            "trigger": "hover"
+          },
+          {
+            "delay": 0,
+            "direction": "normal",
+            "duration": 200,
+            "fillMode": "none",
+            "iterations": 1,
+            "keyframes": [],
+            "kind": "transition",
+            "name": null,
+            "phase": "leave",
+            "playState": "running",
+            "properties": [
+              "background-color"
+            ],
+            "restart": true,
+            "timing": "cubic-bezier(0.4, 0, 0.2, 1)",
+            "trigger": "hover"
+          }
+        ],
+        "asset": null,
+        "attrTexts": {
+          "title": {
+            "args": [],
+            "en": "Start the match",
+            "key": "sample.play.title",
+            "rich": false,
+            "style": null,
+            "tr": "Maçı başlat"
+          }
+        },
+        "background": null,
+        "bind": null,
+        "children": [
+          {
+            "action": null,
+            "anims": [],
+            "asset": null,
+            "attrTexts": {},
+            "background": null,
+            "bind": null,
+            "children": [],
+            "classes": [],
+            "external": false,
+            "id": "play-label",
+            "initial": null,
+            "kind": "text",
+            "repeat": null,
+            "shadow": null,
+            "style": {
+              "base": {
+                "display": "block"
+              }
+            },
+            "text": {
+              "args": [],
+              "en": "Play",
+              "key": "sample.play",
+              "rich": false,
+              "style": "label",
+              "tr": "Oyna"
+            }
+          }
+        ],
+        "classes": [],
+        "external": false,
+        "id": "play",
+        "initial": {
+          "checked": false,
+          "disabled": false
+        },
+        "kind": "button",
+        "repeat": null,
+        "shadow": null,
+        "style": {
+          "active": {
+            "background-color": "#1fa89e"
+          },
+          "base": {
+            "background-color": "#2fd1c5",
+            "display": "flex"
+          },
+          "disabled": {
+            "opacity": "0.4"
+          },
+          "hover": {
+            "background-color": "#5fe3d8"
+          },
+          "state:loading+hover": {
+            "background-color": "#2fd1c5"
+          }
+        },
+        "text": null
+      },
+      {
+        "action": null,
+        "anims": [],
+        "asset": null,
+        "attrTexts": {},
+        "background": null,
+        "bind": null,
+        "children": [
+          {
+            "action": null,
+            "anims": [],
+            "asset": null,
+            "attrTexts": {},
+            "background": null,
+            "bind": null,
+            "children": [
+              {
+                "action": null,
+                "anims": [],
+                "asset": null,
+                "attrTexts": {},
+                "background": null,
+                "bind": "player-name",
+                "children": [],
+                "classes": [],
+                "external": false,
+                "id": "row-name",
+                "initial": null,
+                "kind": "text",
+                "repeat": null,
+                "shadow": null,
+                "style": {
+                  "anc(row):class:is-selected": {
+                    "color": "#0b1f26"
+                  },
+                  "base": {
+                    "color": "#ffffff",
+                    "display": "block"
+                  }
+                },
+                "text": {
+                  "args": [],
+                  "en": null,
+                  "key": null,
+                  "rich": false,
+                  "style": "label",
+                  "tr": "Ali"
+                }
+              }
+            ],
+            "classes": [
+              "row"
+            ],
+            "external": false,
+            "id": "row",
+            "initial": null,
+            "kind": "container",
+            "repeat": null,
+            "shadow": null,
+            "style": {
+              "base": {
+                "display": "flex",
+                "height": "64px"
+              },
+              "class:is-selected": {
+                "background-color": "#123c47"
+              }
+            },
+            "text": null
+          }
+        ],
+        "classes": [],
+        "external": false,
+        "id": "rows",
+        "initial": null,
+        "kind": "list",
+        "repeat": {
+          "count": 3,
+          "mode": "list",
+          "name": "row"
+        },
+        "shadow": null,
+        "style": {
+          "base": {
+            "display": "flex",
+            "flex-direction": "column",
+            "overflow-y": "auto"
+          }
+        },
+        "text": null
+      }
+    ],
+    "classes": [
+      "screen"
+    ],
+    "external": false,
+    "id": "root",
+    "initial": null,
+    "kind": "container",
+    "repeat": null,
+    "shadow": null,
+    "style": {
+      "base": {
+        "background-color": "#0b1f26",
+        "display": "flex",
+        "flex-direction": "column",
+        "height": "100%",
+        "width": "100%"
+      },
+      "bp:narrow": {
+        "flex-direction": "column"
+      },
+      "state:loading": {
+        "opacity": "0.5"
+      }
+    },
+    "text": null
+  },
+  "screen": "sample.screen",
+  "screenMatch": 0.99,
+  "source": {
+    "path": "sample.dc.html",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "states": [
+    "default",
+    "loading"
+  ],
+  "tokens": {
+    "color.accent": "#2fd1c5",
+    "color.surface": "#0b1f26"
+  },
+  "viewports": [
+    [
+      2560,
+      1440
+    ],
+    [
+      1280,
+      720
+    ]
+  ]
+}

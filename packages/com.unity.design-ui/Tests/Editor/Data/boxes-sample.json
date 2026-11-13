@@ -1,0 +1,37 @@
+{
+  "capture": "default@2560x1440",
+  "elements": {
+    "root": {
+      "h": 1440,
+      "lines": [],
+      "text": false,
+      "visible": true,
+      "w": 2560,
+      "x": 0,
+      "y": 0
+    },
+    "title": {
+      "h": 56,
+      "lines": [
+        {
+          "baseline": 98,
+          "h": 56,
+          "w": 380.5,
+          "x": 80,
+          "y": 60
+        }
+      ],
+      "text": true,
+      "visible": true,
+      "w": 400,
+      "x": 80,
+      "y": 60
+    }
+  },
+  "external": [],
+  "scale": 1,
+  "viewport": [
+    2560,
+    1440
+  ]
+}

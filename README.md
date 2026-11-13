@@ -125,9 +125,48 @@ delete the `com.unity.design-ui` entry from `packages-lock.json`.
 Unity verification runs on an isolated copy of the sample project made by the maintainer's local clone tool
 (`~/unity-clone-test`, not part of this repository). Because the copy lives outside this repo, use the wrapper,
 which temporarily makes the package reference in `samples/FidelityProject/Packages/manifest.json` absolute and
-restores it on exit: `scripts/unity-check.sh --warm --editmode "" --assembly DesignUi.Editor.Tests`. When the task
+restores it on exit: `scripts/unity-check.sh --warm --editmode "DesignUi"`. When the task
 is finished run `scripts/unity-check.sh --done`. Never edit the manifest entry by hand; the wrapper refuses to start
 (exit 2) if it is not the relative value.
+
+## Capturing a compiled screen
+
+The Unity capture renders a compiled screen the way the design's goldens show it (every job of the export's
+`goldens/matrix.json`, filled with `fixtures/sample-data.json`) so that `design-export compare` can judge it. It is
+an EditMode test of the package's test assembly, `DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv`:
+
+1. Make the package's tests visible in the consuming project: add `"testables": ["com.unity.design-ui"]` to
+   `Packages/manifest.json` (the sample project has it). This exposes all of the package's tests, which create and
+   delete assets of their own; always run with the `-testFilter` below.
+2. Run it in batchmode on a copy of the project, never in the open Editor:
+
+   ```
+   DESIGN_UI_EXPORT=<export folder> DESIGN_UI_OUT=<capture folder> \
+     <Unity> -batchmode -projectPath <project copy> -runTests -testPlatform EditMode \
+     -testFilter DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv -testResults <results.xml>
+   ```
+
+   - `DESIGN_UI_EXPORT`: the export folder (`screen.ir.json`, `fixtures/sample-data.json`, `goldens/matrix.json`).
+   - `DESIGN_UI_OUT`: where the captures go: `<capture>.png` and `boxes.json` named like the goldens, the compiled
+     `.design-ui.json` (removed wrappers), `boxes.meta.json` (`status` `running` until the run completes, what was
+     not captured and why, notes, timings) and, written last, `capture-done.json` (run id, job count, captured and
+     not-captured counts). The files of an earlier run in this folder are deleted first. Runners and the comparison
+     treat a folder without `capture-done.json` as not captured.
+   - `DESIGN_UI_SCREEN` (optional): the compiled screen folder; default `<profile output folder>/<Screen>`.
+   - `DESIGN_UI_PROFILE` (optional): the DesignUiProfile asset; default the project's only profile.
+   - `DESIGN_UI_EXPORT_DIR` and `DESIGN_UI_OUT_DIR` are accepted as well. Without `DESIGN_UI_EXPORT` the test passes
+     with "not configured; nothing captured" and writes nothing, so only `capture-done.json` says a capture ran.
+3. `design-export compare <export folder> --unity <capture folder> --report report.html`.
+
+Animation samples are listed in `boxes.meta.json` as not captured until the animation player exists, so a screen
+with animations does not pass yet. Maintainers run the capture with `scripts/unity-check.sh --warm --wait --editmode
+"CaptureFromEnv"` and the variables above.
+
+## Generated view classes
+
+The compiler writes `<Screen>View.g.cs` next to each screen. Its assembly must reference `DesignUi.Runtime`: in
+Assembly-CSharp this is automatic; when the output folder is under an assembly definition, add `DesignUi.Runtime` to
+its Assembly Definition References (the compiler stops with an error naming the asmdef otherwise).
 
 ## Fonts
 

@@ -1,3 +1,7 @@
+using System;
+using System.Text;
+using UnityEditor;
+
 namespace DesignUi.Editor
 {
     /// <summary>Result of an operation: 0 ok, 1 failed, 2 usage or unavailable.</summary>
@@ -13,12 +17,37 @@ namespace DesignUi.Editor
         }
     }
 
-    /// <summary>Entry points of the import pipeline. Both operations are filled in with the pipeline.</summary>
+    /// <summary>Entry points of the import pipeline (bridge, menu, batchmode).</summary>
     public static class DesignUiOps
     {
+        /// <summary>
+        /// Font sync into the kit folder (<c>KitSync.Run</c>) with the profile's resolver (per-locale fonts
+        /// over TMP Settings). <paramref name="profilePath"/> is the profile's asset path (Assets/…); a relative
+        /// <paramref name="kitDir"/> is resolved against the Unity project root, and the log says so.
+        /// </summary>
         public static OpResult KitSync(string profilePath, string kitDir)
         {
-            return new OpResult(2, "Not available yet: kit sync arrives with the import pipeline.");
+            var profile = string.IsNullOrEmpty(profilePath) ? null : AssetDatabase.LoadAssetAtPath<DesignUiProfile>(profilePath);
+            if (profile == null) return new OpResult(1, "No DesignUiProfile at '" + profilePath + "'.");
+            KitSyncResult r;
+            try { r = global::DesignUi.Editor.KitSync.Run(profile, kitDir, FontMap.DefaultResolver(profile)); }
+            catch (Exception e) when (e is FontSetupException || e is System.IO.IOException || e is UnauthorizedAccessException)
+            {
+                return new OpResult(1, "Kit sync failed: " + e.Message);
+            }
+
+            var log = new StringBuilder();
+            var dir = r.KitDir ?? kitDir;
+            if (r.Ok) log.Append("Kit synced into ").Append(dir).Append(": ").Append(r.Files.Count).Append(" files, ").Append(r.Written.Count).Append(" written.\n");
+            else if (r.Written.Count == 0 && r.Twins.Count == 0) log.Append("Kit sync failed; nothing was written into ").Append(dir).Append(" and no font twin was changed.\n");
+            else log.Append("Kit sync failed while writing into ").Append(dir).Append(".\n");
+            foreach (var n in r.Notes) log.Append("note: ").Append(n).Append('\n');
+            foreach (var e in r.Errors) log.Append("error: ").Append(e).Append('\n');
+            foreach (var w in r.Warnings) log.Append("warning: ").Append(w).Append('\n');
+            if (r.Written.Count > 0) log.Append("written: ").Append(string.Join(", ", r.Written)).Append('\n');
+            if (r.Files.Count > 0) log.Append("files: ").Append(string.Join(", ", r.Files)).Append('\n');
+            if (r.Twins.Count > 0) log.Append("font twins: ").Append(string.Join(", ", r.Twins)).Append('\n');
+            return new OpResult(r.Ok ? 0 : 1, log.ToString().TrimEnd('\n'));
         }
 
         public static OpResult Import(string profilePath, string exportDir, bool discardManualEdits)

@@ -1,0 +1,925 @@
+{
+  "version": 1,
+  "units": [
+    "px",
+    "%"
+  ],
+  "colors": {
+    "hex": true,
+    "functions": [
+      "rgb",
+      "rgba"
+    ],
+    "keywords": [
+      "transparent",
+      "white",
+      "black",
+      "red",
+      "green",
+      "blue",
+      "yellow",
+      "cyan",
+      "magenta",
+      "gray",
+      "grey",
+      "orange",
+      "purple",
+      "pink",
+      "brown",
+      "silver",
+      "gold",
+      "navy",
+      "teal",
+      "lime",
+      "maroon",
+      "olive",
+      "aqua",
+      "fuchsia"
+    ]
+  },
+  "notes": {
+    "handling": "direct = written to USS (value validated); lowered = Lowering removes it, the mapper rejects leftovers; dropped = accepted and omitted; error = rejected with rule and fix. Properties not listed are U-CSS-023, value functions not listed are U-CSS-024.",
+    "components": "[min,max] space-separated components per list item (default [1,1]); list = comma separated list allowed",
+    "dropValues": "keyword values that are accepted and omitted",
+    "mapValues": "keyword aliases rewritten before mapping",
+    "loweredValues": "keyword values valid only where the compiler lowers them (see the property's note); the mapper rejects them elsewhere",
+    "loweredFunctions": "value functions only the compiler consumes (see the property's note); the mapper rejects them elsewhere"
+  },
+  "properties": {
+    "-webkit-font-smoothing": {
+      "handling": "dropped"
+    },
+    "-webkit-tap-highlight-color": {
+      "handling": "dropped"
+    },
+    "align-content": {
+      "handling": "direct",
+      "keywords": [
+        "auto",
+        "flex-start",
+        "flex-end",
+        "center",
+        "stretch"
+      ]
+    },
+    "align-items": {
+      "handling": "direct",
+      "keywords": [
+        "flex-start",
+        "flex-end",
+        "center",
+        "stretch"
+      ]
+    },
+    "align-self": {
+      "handling": "direct",
+      "keywords": [
+        "auto",
+        "flex-start",
+        "flex-end",
+        "center",
+        "stretch"
+      ]
+    },
+    "aspect-ratio": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "ratio"
+      ],
+      "note": "a / b is written as one number (USS <ratio> is a number); auto together with a ratio is the ratio (no compiled element has a natural ratio of its own)"
+    },
+    "backdrop-filter": {
+      "handling": "error",
+      "rule": "U-CSS-023",
+      "fix": "UI Toolkit has no backdrop filter; draw the blur as a baked image."
+    },
+    "background-color": {
+      "handling": "direct",
+      "types": [
+        "color"
+      ]
+    },
+    "background-image": {
+      "handling": "dropped",
+      "keywords": [
+        "none"
+      ],
+      "functions": [
+        "linear-gradient",
+        "radial-gradient"
+      ],
+      "list": true,
+      "loweredFunctions": [
+        "url"
+      ],
+      "note": "url() images are IR assets (the node's background or image asset): the compiler writes the base one from the asset with CSS background geometry, a layer may switch to another image file or to none; gradients are baked from the base layer"
+    },
+    "background-position-x": {
+      "handling": "direct",
+      "keywords": [
+        "left",
+        "center",
+        "right"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ],
+      "components": [
+        1,
+        2
+      ],
+      "note": "USS grammar [ center | [ [ left | right ]? <length-percentage>? ] ]"
+    },
+    "background-position-y": {
+      "handling": "direct",
+      "keywords": [
+        "top",
+        "center",
+        "bottom"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ],
+      "components": [
+        1,
+        2
+      ],
+      "note": "USS grammar [ center | [ [ top | bottom ]? <length-percentage>? ] ]"
+    },
+    "background-repeat": {
+      "handling": "direct",
+      "keywords": [
+        "repeat",
+        "no-repeat",
+        "repeat-x",
+        "repeat-y",
+        "space",
+        "round"
+      ],
+      "components": [
+        1,
+        2
+      ],
+      "note": "USS grammar repeat-x | repeat-y | [ repeat | space | round | no-repeat ]{1,2}"
+    },
+    "background-size": {
+      "handling": "direct",
+      "keywords": [
+        "auto",
+        "cover",
+        "contain"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ],
+      "components": [
+        1,
+        2
+      ],
+      "note": "USS grammar [ <length-percentage> | auto ]{1,2} | cover | contain; on a CSS background image auto becomes the asset's natural size in px"
+    },
+    "border-bottom-color": {
+      "handling": "direct",
+      "types": [
+        "color"
+      ]
+    },
+    "border-bottom-left-radius": {
+      "handling": "direct",
+      "types": [
+        "length"
+      ]
+    },
+    "border-bottom-right-radius": {
+      "handling": "direct",
+      "types": [
+        "length"
+      ]
+    },
+    "border-bottom-style": {
+      "handling": "dropped",
+      "keywords": [
+        "solid",
+        "none"
+      ]
+    },
+    "border-bottom-width": {
+      "handling": "direct",
+      "types": [
+        "length"
+      ]
+    },
+    "border-color": {
+      "handling": "direct",
+      "types": [
+        "color"
+      ],
+      "components": [
+        1,
+        4
+      ]
+    },
+    "border-left-color": {
+      "handling": "direct",
+      "types": [
+        "color"
+      ]
+    },
+    "border-left-style": {
+      "handling": "dropped",
+      "keywords": [
+        "solid",
+        "none"
+      ]
+    },
+    "border-left-width": {
+      "handling": "direct",
+      "types": [
+        "length"
+      ]
+    },
+    "border-radius": {
+      "handling": "direct",
+      "types": [
+        "length"
+      ],
+      "components": [
+        1,
+        4
+      ]
+    },
+    "border-right-color": {
+      "handling": "direct",
+      "types": [
+        "color"
+      ]
+    },
+    "border-right-style": {
+      "handling": "dropped",
+      "keywords": [
+        "solid",
+        "none"
+      ]
+    },
+    "border-right-width": {
+      "handling": "direct",
+      "types": [
+        "length"
+      ]
+    },
+    "border-style": {
+      "handling": "dropped",
+      "keywords": [
+        "solid",
+        "none"
+      ],
+      "components": [
+        1,
+        4
+      ]
+    },
+    "border-top-color": {
+      "handling": "direct",
+      "types": [
+        "color"
+      ]
+    },
+    "border-top-left-radius": {
+      "handling": "direct",
+      "types": [
+        "length"
+      ]
+    },
+    "border-top-right-radius": {
+      "handling": "direct",
+      "types": [
+        "length"
+      ]
+    },
+    "border-top-style": {
+      "handling": "dropped",
+      "keywords": [
+        "solid",
+        "none"
+      ]
+    },
+    "border-top-width": {
+      "handling": "direct",
+      "types": [
+        "length"
+      ]
+    },
+    "border-width": {
+      "handling": "direct",
+      "types": [
+        "length"
+      ],
+      "components": [
+        1,
+        4
+      ]
+    },
+    "bottom": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "box-shadow": {
+      "handling": "dropped"
+    },
+    "box-sizing": {
+      "handling": "dropped",
+      "keywords": [
+        "border-box"
+      ]
+    },
+    "color": {
+      "handling": "direct",
+      "types": [
+        "color"
+      ]
+    },
+    "column-gap": {
+      "handling": "lowered",
+      "note": "Lowering: child margins on flex containers"
+    },
+    "cursor": {
+      "handling": "dropped"
+    },
+    "display": {
+      "handling": "direct",
+      "keywords": [
+        "flex",
+        "none"
+      ]
+    },
+    "filter": {
+      "handling": "error",
+      "rule": "U-CSS-015",
+      "fix": "Remove it, or list the function in kit.config.json filterFunctions once it passes the fidelity suite."
+    },
+    "flex": {
+      "handling": "direct",
+      "keywords": [
+        "auto",
+        "none"
+      ],
+      "types": [
+        "number",
+        "length",
+        "percent"
+      ],
+      "components": [
+        1,
+        3
+      ]
+    },
+    "flex-basis": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "flex-direction": {
+      "handling": "direct",
+      "keywords": [
+        "row",
+        "column",
+        "row-reverse",
+        "column-reverse"
+      ]
+    },
+    "flex-grow": {
+      "handling": "direct",
+      "types": [
+        "number"
+      ]
+    },
+    "flex-shrink": {
+      "handling": "direct",
+      "types": [
+        "number"
+      ]
+    },
+    "flex-wrap": {
+      "handling": "direct",
+      "keywords": [
+        "nowrap",
+        "wrap",
+        "wrap-reverse"
+      ]
+    },
+    "font-family": {
+      "handling": "direct",
+      "types": [
+        "string",
+        "ident"
+      ],
+      "list": true,
+      "components": [
+        1,
+        6
+      ]
+    },
+    "font-size": {
+      "handling": "direct",
+      "types": [
+        "length"
+      ]
+    },
+    "font-style": {
+      "handling": "direct",
+      "keywords": [
+        "normal",
+        "italic"
+      ]
+    },
+    "font-weight": {
+      "handling": "direct",
+      "keywords": [
+        "normal",
+        "bold",
+        "400",
+        "700"
+      ]
+    },
+    "gap": {
+      "handling": "lowered",
+      "note": "Lowering: child margins on flex containers"
+    },
+    "height": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "justify-content": {
+      "handling": "direct",
+      "keywords": [
+        "flex-start",
+        "flex-end",
+        "center",
+        "space-between",
+        "space-around",
+        "space-evenly"
+      ]
+    },
+    "left": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "letter-spacing": {
+      "handling": "direct",
+      "keywords": [
+        "normal"
+      ],
+      "types": [
+        "length"
+      ],
+      "mapValues": {
+        "normal": "0px"
+      }
+    },
+    "line-height": {
+      "handling": "dropped"
+    },
+    "margin": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ],
+      "components": [
+        1,
+        4
+      ]
+    },
+    "margin-bottom": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "margin-left": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "margin-right": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "margin-top": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "max-height": {
+      "handling": "direct",
+      "keywords": [
+        "none"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "max-width": {
+      "handling": "direct",
+      "keywords": [
+        "none"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "min-height": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ],
+      "dropValues": [
+        "auto"
+      ]
+    },
+    "min-width": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ],
+      "dropValues": [
+        "auto"
+      ]
+    },
+    "opacity": {
+      "handling": "direct",
+      "types": [
+        "number"
+      ]
+    },
+    "outline": {
+      "handling": "error",
+      "rule": "U-CSS-023",
+      "fix": "Use a border, or draw the focus ring with an element; UI Toolkit has no outline."
+    },
+    "overflow": {
+      "handling": "direct",
+      "keywords": [
+        "visible",
+        "hidden"
+      ],
+      "loweredValues": [
+        "auto",
+        "scroll"
+      ],
+      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected.",
+      "mapValues": {
+        "clip": "hidden"
+      }
+    },
+    "overflow-x": {
+      "handling": "direct",
+      "keywords": [
+        "visible",
+        "hidden"
+      ],
+      "loweredValues": [
+        "auto",
+        "scroll"
+      ],
+      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected.",
+      "mapValues": {
+        "clip": "hidden"
+      }
+    },
+    "overflow-y": {
+      "handling": "direct",
+      "keywords": [
+        "visible",
+        "hidden"
+      ],
+      "loweredValues": [
+        "auto",
+        "scroll"
+      ],
+      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected.",
+      "mapValues": {
+        "clip": "hidden"
+      }
+    },
+    "padding": {
+      "handling": "direct",
+      "types": [
+        "length",
+        "percent"
+      ],
+      "components": [
+        1,
+        4
+      ]
+    },
+    "padding-bottom": {
+      "handling": "direct",
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "padding-left": {
+      "handling": "direct",
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "padding-right": {
+      "handling": "direct",
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "padding-top": {
+      "handling": "direct",
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "pointer-events": {
+      "handling": "lowered",
+      "note": "Lowering: none becomes the picking-ignore flag"
+    },
+    "position": {
+      "handling": "direct",
+      "keywords": [
+        "relative",
+        "absolute"
+      ]
+    },
+    "right": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "rotate": {
+      "handling": "direct",
+      "keywords": [
+        "none"
+      ],
+      "types": [
+        "angle"
+      ]
+    },
+    "row-gap": {
+      "handling": "lowered",
+      "note": "Lowering: child margins on flex containers"
+    },
+    "scale": {
+      "handling": "direct",
+      "keywords": [
+        "none"
+      ],
+      "types": [
+        "number"
+      ],
+      "components": [
+        1,
+        3
+      ]
+    },
+    "text-align": {
+      "handling": "direct",
+      "keywords": [
+        "left",
+        "center",
+        "right"
+      ],
+      "mapValues": {
+        "start": "left",
+        "end": "right"
+      }
+    },
+    "text-overflow": {
+      "handling": "direct",
+      "keywords": [
+        "clip",
+        "ellipsis"
+      ]
+    },
+    "text-shadow": {
+      "handling": "direct",
+      "keywords": [
+        "none"
+      ],
+      "types": [
+        "length",
+        "color"
+      ],
+      "components": [
+        2,
+        4
+      ]
+    },
+    "text-transform": {
+      "handling": "error",
+      "rule": "U-CSS-023",
+      "fix": "Write the text in its final case; UI Toolkit has no text-transform."
+    },
+    "text-wrap-mode": {
+      "handling": "direct",
+      "keywords": [
+        "wrap",
+        "nowrap"
+      ]
+    },
+    "top": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "transform": {
+      "handling": "error",
+      "rule": "U-CSS-023",
+      "fix": "Use translate, rotate and scale; the exporter splits transform into them."
+    },
+    "transform-origin": {
+      "handling": "direct",
+      "keywords": [
+        "left",
+        "center",
+        "right",
+        "top",
+        "bottom"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ],
+      "components": [
+        1,
+        3
+      ]
+    },
+    "transition": {
+      "handling": "lowered",
+      "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
+    },
+    "transition-behavior": {
+      "handling": "dropped",
+      "keywords": [
+        "normal"
+      ],
+      "list": true
+    },
+    "transition-delay": {
+      "handling": "lowered",
+      "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
+    },
+    "transition-duration": {
+      "handling": "lowered",
+      "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
+    },
+    "transition-property": {
+      "handling": "lowered",
+      "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
+    },
+    "transition-timing-function": {
+      "handling": "lowered",
+      "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
+    },
+    "translate": {
+      "handling": "direct",
+      "keywords": [
+        "none"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ],
+      "components": [
+        1,
+        2
+      ]
+    },
+    "user-select": {
+      "handling": "dropped"
+    },
+    "visibility": {
+      "handling": "direct",
+      "keywords": [
+        "visible",
+        "hidden"
+      ]
+    },
+    "white-space": {
+      "handling": "direct",
+      "keywords": [
+        "normal",
+        "nowrap",
+        "pre",
+        "pre-wrap"
+      ]
+    },
+    "white-space-collapse": {
+      "handling": "direct",
+      "keywords": [
+        "collapse",
+        "preserve"
+      ]
+    },
+    "width": {
+      "handling": "direct",
+      "keywords": [
+        "auto"
+      ],
+      "types": [
+        "length",
+        "percent"
+      ]
+    },
+    "word-spacing": {
+      "handling": "direct",
+      "keywords": [
+        "normal"
+      ],
+      "types": [
+        "length"
+      ],
+      "mapValues": {
+        "normal": "0px"
+      }
+    },
+    "z-index": {
+      "handling": "lowered",
+      "note": "Lowering: sibling order"
+    }
+  }
+}
