@@ -22,7 +22,7 @@ namespace DesignUi.Editor.Tests
     /// descent; each further line one line box lower. Each style also sets one line with kerned pairs whose width must be
     /// Chromium's (<c>Data/chromium-kerning-line.json</c>, from the exporter's goldens) within <c>boxPx</c> on its first
     /// layout: its characters reach the twins through <see cref="DesignText.Prepare"/> before it is laid out, as a bound text's
-    /// do. Skips when the package is not inside the repository.
+    /// do. The line-box variants are the table's own ratios. Skips when the package is not inside the repository.
     /// </summary>
     public class LineBoxStyleTableTests
     {
@@ -74,14 +74,16 @@ namespace DesignUi.Editor.Tests
                 .Select(p => new Style { Name = p.Name, Size = (double)p.Value["fontSize"], Line = (double)p.Value["lineHeight"], Weight = (int?)p.Value["weight"] ?? 400 })
                 .ToList();
             Assert.IsNotEmpty(styles);
+            // every ratio the table holds gets its line-box variant (table-driven: no fixed ratio list)
             var ratios = styles.Select(s => FontTwinGenerator.LineBox.ForRatio(s.Line / s.Size)).ToList();
-            for (int i = 0; i < styles.Count; i++) Assert.IsNotNull(ratios[i], styles[i].Name + ": " + styles[i].Line + "/" + styles[i].Size + " is no kit line box");
-            Assert.That(ratios.Select(r => r.Key).Distinct().Count(), Is.EqualTo(FontTwinGenerator.LineBox.Kit.Count), "the kit table uses both ratios");
+            for (int i = 0; i < styles.Count; i++) Assert.IsNotNull(ratios[i], styles[i].Name + ": " + styles[i].Line + "/" + styles[i].Size + " is no line box");
+            var boxes = KitTextStyles.LineBoxesOf(stylesPath);
+            CollectionAssert.AreEquivalent(ratios.Select(r => r.Key).Distinct().ToList(), boxes.Select(b => b.Key).ToList(), "the table's line boxes");
 
             var bold = FontFixture.Kept(FontFixture.BoldTtf, "Kept Table Bold");
             var regular = FontFixture.Kept(FontFixture.RegularTtf, "Kept Table Regular");
             if (regular.fontWeightTable[7].regularTypeface != bold) FontFixture.SetWeight(regular, 700, bold);
-            var variants = FontTwinGenerator.LineBox.Kit.ToDictionary(b => b.Key, b => FontTwinGenerator.GetOrCreateTwin(regular, Twins, b));
+            var variants = boxes.ToDictionary(b => b.Key, b => FontTwinGenerator.GetOrCreateTwin(regular, Twins, b));
             // Chromium's metrics are the font's own: the plain twins' faces (equal to the TTF's)
             var plain = FontTwinGenerator.GetOrCreateTwin(regular, Twins).faceInfo;
             var plainBold = FontTwinGenerator.GetOrCreateTwin(bold, Twins).faceInfo;
@@ -165,8 +167,9 @@ namespace DesignUi.Editor.Tests
                 double worstW = 0;
                 foreach (var (label, style) in kerned)
                 {
-                    var chromium = (double?)kerning["widths"]?[style.Name]?[scale.ToString(System.Globalization.CultureInfo.InvariantCulture)];
-                    if (chromium == null) { failures.Add(style.Name + ": no Chromium width at scale " + scale); continue; }
+                    var key = style.Size.ToString(System.Globalization.CultureInfo.InvariantCulture) + "/" + style.Weight;
+                    var chromium = (double?)kerning["widths"]?[key]?[scale.ToString(System.Globalization.CultureInfo.InvariantCulture)];
+                    if (chromium == null) { failures.Add(style.Name + ": no Chromium width for " + key + " at scale " + scale + " (rebuild Data/chromium-kerning-line.json with Data/tools~/chromium-kerning-line.mts)"); continue; }
                     double w = (double)measured["elements"][label.name]["w"];
                     worstW = Math.Max(worstW, Math.Abs(w - chromium.Value));
                     if (Math.Abs(w - chromium.Value) > boxPx + 1e-6)

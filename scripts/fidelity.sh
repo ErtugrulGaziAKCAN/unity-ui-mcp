@@ -7,10 +7,12 @@
 # Steps (Unity always on an isolated copy of samples/FidelityProject through scripts/unity-check.sh, never an open Editor):
 #   1. kit       copy the kit into <out>/kit; Unity: FidelityProject.FidelitySetup.SetupFromEnv makes the sample's fonts and
 #                profile and syncs the fonts into that kit (the exporter and the compiler use the same fonts)
-#   2. export    design-export export <fixture> --kit <out>/kit --out <out>/<name>/export   (Chromium goldens, IR)
-#   3. import    one Unity run: DesignUiOpsTests.ImportFromEnv with every exported folder (DesignUiBatch.ImportEach)
-#   4. capture   one Unity run: DesignCaptureTests.CaptureFromEnv, each export into <out>/<name>/unity; a folder without
-#                capture-done.json was not captured
+#   2. export    design-export export <fixture> --kit <out>/kit --out <out>/<name>/export   (Chromium goldens, IR); every
+#                fixture's earlier export, captures, verdict and report are deleted first, and screen ids must be unique
+#   3. import    one Unity run: DesignUiOpsTests.ImportFromEnv with every exported folder (DesignUiBatch.ImportEach), each
+#                folder's result in <out>/logs/import-results.tsv
+#   4. capture   one Unity run: DesignCaptureTests.CaptureFromEnv, each imported export into <out>/<name>/unity, with this
+#                run's id (DESIGN_UI_RUN_ID): only a capture-done.json carrying it counts as captured
 #   5. compare   design-export compare <out>/<name>/export --unity <out>/<name>/unity --report <out>/<name>/report.html
 #   6. summary   one row per fixture x viewport x job (PASS, FAIL with the first issue, not captured with the reason) and
 #                the timings, printed and written to <out>/summary.md
@@ -18,15 +20,19 @@
 # not captured, or a step fails; 2 usage.
 #
 # Environment: DESIGN_UI_FIDELITY_ROOT (Assets/... folder in the project copy; default below, a folder the copy keeps
-# between runs) and the setup's measurement knobs (see samples/FidelityProject/Assets/Fidelity/Editor/FidelitySetup.cs).
+# between runs), the setup's measurement knobs (see samples/FidelityProject/Assets/Fidelity/Editor/FidelitySetup.cs) and
+# FIDELITY_UNITY_CHECK (the Unity runner, default scripts/unity-check.sh; scripts/fidelity-test.sh passes a stub).
+# If the project copy stops compiling (a generated view that does not compile), fix the cause and reset the copy with
+# scripts/unity-check.sh --stop warm.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TSX="$ROOT/node_modules/.bin/tsx"
 CLI="$ROOT/tools/design-export/src/cli.ts"
-CHECK="$ROOT/scripts/unity-check.sh"
+CHECK="${FIDELITY_UNITY_CHECK:-$ROOT/scripts/unity-check.sh}"
 UNITY_ROOT="${DESIGN_UI_FIDELITY_ROOT:-Assets/UnityCloneTest/DesignUiFidelity}"
 PROFILE="$UNITY_ROOT/DesignUiProfile.asset"
+RUN_ID="fidelity-$(date +%Y%m%d%H%M%S)-$$"
 
 usage() { sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 now() { python3 -c 'import time; print(int(time.time() * 1000))'; }
@@ -42,24 +48,32 @@ while [ $# -gt 0 ]; do
     *) FIXTURES+=("$1"); shift ;;
   esac
 done
+PENDING=() PENDING_WHY=()
 if [ ${#FIXTURES[@]} -eq 0 ]; then
+  # design-kit/fixtures/fidelity/pending.json: fixture file name -> why it cannot run yet; the default suite lists it, skipped
+  PENDING_FILE="$ROOT/design-kit/fixtures/fidelity/pending.json"
   for f in "$ROOT"/design-kit/fixtures/fidelity/*.html "$ROOT"/design-kit/components/*.html; do
-    [ -f "$f" ] && FIXTURES+=("$f")
+    [ -f "$f" ] || continue
+    why=""
+    case "$f" in "$ROOT"/design-kit/fixtures/fidelity/*)
+      [ -f "$PENDING_FILE" ] && why="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))' "$PENDING_FILE" "$(basename "$f")")" ;;
+    esac
+    if [ -n "$why" ]; then PENDING+=("$(basename "${f%.html}")"); PENDING_WHY+=("$why"); else FIXTURES+=("$f"); fi
   done
 fi
-[ ${#FIXTURES[@]} -gt 0 ] || { echo "fidelity: no fixtures (none given, none in design-kit/fixtures/fidelity or design-kit/components)" >&2; exit 2; }
-[ -x "$TSX" ] || { echo "fidelity: $TSX not found; run npm ci in the repository" >&2; exit 2; }
+[ ${#FIXTURES[@]} -gt 0 ] || [ ${#PENDING[@]} -gt 0 ] || { echo "fidelity: no fixtures (none given, none in design-kit/fixtures/fidelity or design-kit/components)" >&2; exit 2; }
 [ -d "$KIT" ] || { echo "fidelity: no kit folder $KIT" >&2; exit 2; }
-for f in "${FIXTURES[@]}"; do [ -e "$f" ] || { echo "fidelity: no such fixture: $f" >&2; exit 2; }; done
+for f in ${FIXTURES[@]+"${FIXTURES[@]}"}; do [ -e "$f" ] || { echo "fidelity: no such fixture: $f" >&2; exit 2; }; done
+[ -x "$TSX" ] || { echo "fidelity: $TSX not found; run npm ci in the repository" >&2; exit 1; }
 
 OUT="${OUT:-${TMPDIR:-/tmp}/design-ui-fidelity/$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$OUT/logs"
 OUT="$(cd "$OUT" && pwd)"
-echo "fidelity: ${#FIXTURES[@]} fixture(s) into $OUT"
+echo "fidelity: ${#FIXTURES[@]} fixture(s) into $OUT (run $RUN_ID)"
 
 # unique names: the file name without .html / .dc.html, prefixed with its folder when two fixtures share it
 NAMES=()
-for f in "${FIXTURES[@]}"; do
+for f in ${FIXTURES[@]+"${FIXTURES[@]}"}; do
   p="$f"; [ -d "$p" ] && p="$p/"
   base="$(basename "$p")"; base="${base%.html}"; base="${base%.dc}"
   [ -d "$f" ] && base="$(basename "$f")"
@@ -72,10 +86,11 @@ done
 TIMES="$OUT/timings.tsv"; : > "$TIMES"
 STATUS="$OUT/status.tsv"; : > "$STATUS"   # name <tab> step <tab> ok|failed <tab> detail
 record() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$STATUS"; }
+for i in ${PENDING[@]+"${!PENDING[@]}"}; do record "${PENDING[$i]}" pending skipped "${PENDING_WHY[$i]}"; done
 timing() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$TIMES"; }
 
-# the clone tool's output folder (unity.log, results.xml) from a unity-check log
-clone_out() { sed -n 's/^[^:]*: \(\/.*\/unity-clone-test-out\/.*\)$/\1/p' "$1" | tail -1; }
+# the clone tool's summary detail ("detay=…") of a runner log, if it printed one
+detail() { sed -n 's/.*detay=\(.*\) png=.*/\1/p' "$1" | tail -1; }
 
 unity() { # unity <log> <regex> ; runs one EditMode filter on the project copy, env already exported
   local log="$1" filter="$2" rc=0
@@ -93,7 +108,7 @@ setup_rc=0
 DESIGN_UI_FIDELITY_ROOT="$UNITY_ROOT" DESIGN_UI_KIT_DIR="$OUT/kit" unity "$OUT/logs/setup.log" "FidelityProject.FidelitySetup.SetupFromEnv" || setup_rc=$?
 timing "*" setup $(( $(now) - t0 ))
 if [ $setup_rc -ne 0 ] || [ ! -f "$OUT/kit/fonts/fonts.css" ]; then
-  echo "fidelity: setup or kit sync failed (exit $setup_rc); see $OUT/logs/setup.log and $(clone_out "$OUT/logs/setup.log")/unity.log" >&2
+  echo "fidelity: setup or kit sync failed (exit $setup_rc $(detail "$OUT/logs/setup.log")); see $OUT/logs/setup.log" >&2
   if grep -q "compile:error" "$OUT/logs/setup.log"; then
     echo "fidelity: the project copy does not compile (a generated view from an earlier run?); after fixing the cause, reset" \
       "the copy with: scripts/unity-check.sh --stop warm" >&2
@@ -102,76 +117,88 @@ if [ $setup_rc -ne 0 ] || [ ! -f "$OUT/kit/fonts/fonts.css" ]; then
 fi
 
 # ---- 2. export ----------------------------------------------------------------------------------------------------
-EXPORTS=() OUTS=() READY=()
-for i in "${!FIXTURES[@]}"; do
-  name="${NAMES[$i]}"; dir="$OUT/$name"; mkdir -p "$dir"
+EXPORTED=() SCREENS=()
+for i in ${FIXTURES[@]+"${!FIXTURES[@]}"}; do
+  name="${NAMES[$i]}"; dir="$OUT/$name"
+  # nothing of an earlier run in this folder may count for this one
+  rm -rf "$dir/export" "$dir/unity" "$dir/verdict.json" "$dir/report.html" "$dir/report-diff"
+  mkdir -p "$dir"
   t0=$(now); rc=0
   "$TSX" "$CLI" export "${FIXTURES[$i]}" --kit "$OUT/kit" --out "$dir/export" --force > "$OUT/logs/export-$name.log" 2>&1 || rc=$?
   timing "$name" export $(( $(now) - t0 ))
-  if [ $rc -eq 0 ]; then
-    record "$name" export ok ""
-    EXPORTS+=("$dir/export"); OUTS+=("$dir/unity"); READY+=("$name")
-    echo "fidelity: exported $name ($(sed -n 's/^exported to .* in \([0-9.]*\) ms.*/\1 ms/p' "$OUT/logs/export-$name.log"))"
-  else
+  if [ $rc -ne 0 ]; then
     record "$name" export failed "$(grep -m1 -E '^(error|design-export:)' "$OUT/logs/export-$name.log" || tail -1 "$OUT/logs/export-$name.log")"
     echo "fidelity: export of $name failed (exit $rc); see $OUT/logs/export-$name.log" >&2
+    continue
   fi
+  screen="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["screen"])' "$dir/export/screen.ir.json" 2>/dev/null || true)"
+  clash=""
+  for j in ${EXPORTED[@]+"${!EXPORTED[@]}"}; do [ "${SCREENS[$j]}" = "$screen" ] && clash="${EXPORTED[$j]}"; done
+  if [ -n "$clash" ]; then
+    # one compiled folder per screen id: the later import would replace the earlier fixture's screen before its capture
+    record "$name" export failed "screen id '$screen' is also the screen of $clash; give every fixture its own data-u-screen"
+    continue
+  fi
+  record "$name" export ok ""
+  EXPORTED+=("$name"); SCREENS+=("$screen")
+  echo "fidelity: exported $name ($(sed -n 's/^exported to .* in \([0-9.]*\) ms.*/\1 ms/p' "$OUT/logs/export-$name.log"))"
 done
 
 join() { local IFS=":"; echo "$*"; }
 
-if [ ${#EXPORTS[@]} -gt 0 ]; then
+if [ ${#EXPORTED[@]} -gt 0 ]; then
   # ---- 3. import --------------------------------------------------------------------------------------------------
-  echo "fidelity: importing ${#EXPORTS[@]} export(s) on the project copy"
+  echo "fidelity: importing ${#EXPORTED[@]} export(s) on the project copy"
+  EXPORT_DIRS=(); for name in "${EXPORTED[@]}"; do EXPORT_DIRS+=("$OUT/$name/export"); done
+  REPORT="$OUT/logs/import-results.tsv"; rm -f "$REPORT"
   t0=$(now); import_rc=0
-  DESIGN_UI_PROFILE="$PROFILE" DESIGN_UI_EXPORT_DIR="$(join "${EXPORTS[@]}")" \
+  DESIGN_UI_PROFILE="$PROFILE" DESIGN_UI_EXPORT_DIR="$(join "${EXPORT_DIRS[@]}")" DESIGN_UI_IMPORT_REPORT="$REPORT" \
     unity "$OUT/logs/import.log" "DesignUi.Editor.Tests.DesignUiOpsTests.ImportFromEnv" || import_rc=$?
   timing "*" import $(( $(now) - t0 ))
-  ulog="$(clone_out "$OUT/logs/import.log")/unity.log"
-  for i in "${!READY[@]}"; do
-    name="${READY[$i]}"
-    # ImportEach logs "== <export>" then the import's first line ("Imported ..." when it worked); one export logs it alone
-    if [ ${#EXPORTS[@]} -gt 1 ]; then
-      first="$(grep -A1 -F "== ${EXPORTS[$i]}" "$ulog" 2>/dev/null | sed -n 2p || true)"
-    else
-      first="$(grep -m1 -E '^(Imported |Import failed|No export folder|No DesignUiProfile|note: )' "$ulog" 2>/dev/null || true)"
-    fi
-    case "$first" in
-      Imported*|note:*) record "$name" import ok "" ;;
-      *) [ $import_rc -eq 0 ] && record "$name" import ok "" || record "$name" import failed "${first:-see $ulog}" ;;
-    esac
+  IMPORTED=()
+  for name in "${EXPORTED[@]}"; do
+    line="$(awk -F'\t' -v d="$OUT/$name/export" '$2 == d' "$REPORT" 2>/dev/null | tail -1)"
+    code="$(printf '%s' "$line" | cut -f1)"
+    if [ "$code" = "0" ]; then record "$name" import ok ""; IMPORTED+=("$name")
+    elif [ -n "$line" ]; then record "$name" import failed "$(printf '%s' "$line" | cut -f3)"
+    else record "$name" import failed "no import result (import run exit $import_rc $(detail "$OUT/logs/import.log"))"; fi
   done
 
-  # ---- 4. capture -------------------------------------------------------------------------------------------------
-  echo "fidelity: capturing on the project copy"
-  t0=$(now); capture_rc=0
-  DESIGN_UI_PROFILE="$PROFILE" DESIGN_UI_EXPORT="$(join "${EXPORTS[@]}")" DESIGN_UI_OUT="$(join "${OUTS[@]}")" \
-    unity "$OUT/logs/capture.log" "DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv" || capture_rc=$?
-  timing "*" capture $(( $(now) - t0 ))
-  [ $capture_rc -eq 0 ] || echo "fidelity: the capture run reported errors (exit $capture_rc); see $(clone_out "$OUT/logs/capture.log")/unity.log" >&2
+  if [ ${#IMPORTED[@]} -gt 0 ]; then
+    # ---- 4. capture -----------------------------------------------------------------------------------------------
+    echo "fidelity: capturing ${#IMPORTED[@]} screen(s) on the project copy"
+    CAP_EXPORTS=() CAP_OUTS=()
+    for name in "${IMPORTED[@]}"; do CAP_EXPORTS+=("$OUT/$name/export"); CAP_OUTS+=("$OUT/$name/unity"); done
+    t0=$(now); capture_rc=0
+    DESIGN_UI_PROFILE="$PROFILE" DESIGN_UI_EXPORT="$(join "${CAP_EXPORTS[@]}")" DESIGN_UI_OUT="$(join "${CAP_OUTS[@]}")" DESIGN_UI_RUN_ID="$RUN_ID" \
+      unity "$OUT/logs/capture.log" "DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv" || capture_rc=$?
+    timing "*" capture $(( $(now) - t0 ))
+    [ $capture_rc -eq 0 ] || echo "fidelity: the capture run failed (exit $capture_rc); see $OUT/logs/capture.log" >&2
 
-  # ---- 5. compare -------------------------------------------------------------------------------------------------
-  for i in "${!READY[@]}"; do
-    name="${READY[$i]}"; dir="$OUT/$name"
-    if [ ! -f "$dir/unity/capture-done.json" ]; then
-      reason="no capture-done.json"
-      [ -f "$dir/unity/boxes.meta.json" ] && reason="capture stopped (status $(sed -n 's/.*"status": "\(.*\)".*/\1/p' "$dir/unity/boxes.meta.json" | head -1))"
-      [ $capture_rc -ne 0 ] && reason="$reason; capture run: $(sed -n 's/.*detay=\(.*\) png=.*/\1/p' "$OUT/logs/capture.log" | tail -1)"
-      grep -q "^$name	import	failed" "$STATUS" && reason="not imported"
-      record "$name" capture failed "$reason"
-      continue
-    fi
-    record "$name" capture ok ""
-    t0=$(now); rc=0
-    "$TSX" "$CLI" compare "$dir/export" --unity "$dir/unity" --report "$dir/report.html" > "$OUT/logs/compare-$name.log" 2>&1 || rc=$?
-    timing "$name" compare $(( $(now) - t0 ))
-    if [ $rc -le 1 ] && [ -f "$dir/verdict.json" ]; then record "$name" compare ok ""
-    else record "$name" compare failed "$(tail -1 "$OUT/logs/compare-$name.log")"; fi
-  done
+    # ---- 5. compare -----------------------------------------------------------------------------------------------
+    for name in "${IMPORTED[@]}"; do
+      dir="$OUT/$name"; marker="$dir/unity/capture-done.json"
+      run="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("runId",""))' "$marker" 2>/dev/null || true)"
+      if [ "$run" != "$RUN_ID" ]; then
+        if [ -f "$marker" ]; then reason="capture-done.json is from another run ($run), not this one"
+        elif [ -f "$dir/unity/boxes.meta.json" ]; then reason="capture stopped (status $(sed -n 's/.*"status": "\(.*\)".*/\1/p' "$dir/unity/boxes.meta.json" | head -1))"
+        else reason="no capture-done.json"; fi
+        [ $capture_rc -ne 0 ] && reason="$reason; capture run exit $capture_rc$( d="$(detail "$OUT/logs/capture.log")"; [ -n "$d" ] && echo ": $d")"
+        record "$name" capture failed "$reason"
+        continue
+      fi
+      record "$name" capture ok ""
+      t0=$(now); rc=0
+      "$TSX" "$CLI" compare "$dir/export" --unity "$dir/unity" --report "$dir/report.html" > "$OUT/logs/compare-$name.log" 2>&1 || rc=$?
+      timing "$name" compare $(( $(now) - t0 ))
+      if [ $rc -le 1 ] && [ -f "$dir/verdict.json" ]; then record "$name" compare ok ""
+      else record "$name" compare failed "$(tail -1 "$OUT/logs/compare-$name.log")"; fi
+    done
+  fi
 fi
 
 # ---- 6. summary ---------------------------------------------------------------------------------------------------
-node --input-type=module - "$OUT" "${NAMES[@]}" <<'JS'
+node --input-type=module - "$OUT" ${NAMES[@]+"${NAMES[@]}"} ${PENDING[@]+"${PENDING[@]}"} <<'JS'
 import fs from "node:fs";
 import path from "node:path";
 const [out, ...names] = process.argv.slice(2);
@@ -181,9 +208,13 @@ const times = fs.readFileSync(path.join(out, "timings.tsv"), "utf8").split("\n")
 const rows = [], failures = [];
 let pass = 0, fail = 0, notCaptured = 0, animNotCaptured = 0;
 const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
+const ANIM = /^animation sample/;
+let pending = 0;
 for (const name of names) {
+  const skipped = status.find((s) => s[0] === name && s[2] === "skipped");
+  if (skipped) { rows.push([name, "–", "–", "pending", skipped[3]]); pending++; continue; }
   const failed = status.find((s) => s[0] === name && s[2] === "failed");
-  const verdict = read(path.join(out, name, "verdict.json"));
+  const verdict = failed ? null : read(path.join(out, name, "verdict.json"));
   if (failed || !verdict) {
     rows.push([name, "–", "–", "not captured", `${failed ? failed[1] + " failed" : "no verdict"}: ${failed?.[3] ?? ""}`]);
     failures.push(name); notCaptured++;
@@ -201,9 +232,15 @@ for (const name of names) {
   for (const n of verdict.notRun) {
     const reason = verdict.notRunReasons?.[n] ?? "not captured";
     const vp = (n.split("@")[1] ?? "").split(".")[0].replace("x", "×");
-    const anim = /\.anim\./.test(n) || /^animation sample/.test(reason);
+    const anim = ANIM.test(reason); // by the capture's reason only: an element id may contain "anim"
     jobs.push([name, vp, n.replace(/@\d+x\d+/, ""), anim ? "not captured (animation)" : "not captured", reason]);
     if (anim) animNotCaptured++; else { notCaptured++; failures.push(`${name} ${n}`); }
+  }
+  // the comparison's own verdict counts too (e.g. a screen with no capture at all is not a pass)
+  const onlyAnim = verdict.notRun.length > 0 && verdict.notRun.every((n) => ANIM.test(verdict.notRunReasons?.[n] ?? ""));
+  if (!verdict.pass && !jobs.some((j) => j[3] === "FAIL" || j[3] === "not captured") && !(onlyAnim && verdict.captures.length > 0)) {
+    jobs.push([name, "–", "–", "FAIL", `the comparison does not pass the screen (${verdict.captures.length} captures, ${verdict.notRun.length} not run)`]);
+    fail++; failures.push(name);
   }
   jobs.sort((a, b) => (b[1].split("×")[0] - a[1].split("×")[0]) || a[2].localeCompare(b[2]));
   rows.push(...jobs);
@@ -230,7 +267,7 @@ const timing = ["| Step | Time |", "|---|---|",
     return `| capture ${n} (its part of the capture run) | ${meta?.timings?.totalMs != null ? `${Math.round(meta.timings.totalMs)} ms` : "–"} |`;
   }),
   ...names.map((n) => `| compare ${n} | ${step(n, "compare")} ms |`)];
-const head = `${pass} PASS, ${fail} FAIL, ${notCaptured} not captured` + (animNotCaptured ? `, ${animNotCaptured} animation samples not captured (not a failure until the animation player exists)` : "");
+const head = `${pass} PASS, ${fail} FAIL, ${notCaptured} not captured` + (pending ? `, ${pending} fixture(s) pending (skipped, listed in pending.json)` : "") + (animNotCaptured ? `, ${animNotCaptured} animation samples not captured (not a failure until the animation player exists)` : "");
 const md = `# Fidelity summary\n\n${head}\n\n${table.join("\n")}\n\n## Timings\n\n${timing.join("\n")}\n`;
 fs.writeFileSync(path.join(out, "summary.md"), md);
 process.stdout.write(md);

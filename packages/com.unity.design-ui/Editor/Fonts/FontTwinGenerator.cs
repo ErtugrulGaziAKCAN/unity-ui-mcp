@@ -40,26 +40,34 @@ namespace DesignUi.Editor
     {
         public const string Suffix = " UITK";
 
-        /// <summary>A CSS line-height ratio that kit text styles use, with its key (twin name and USS variable suffix).</summary>
+        /// <summary>
+        /// A CSS line-height ratio (<c>lineHeight / fontSize</c>) of the kit's text styles, with its key (twin name and USS
+        /// variable suffix): <c>r</c> and the ratio's digits to 4 decimals (1.25 → <c>r125</c>, 4/3 → <c>r13333</c>). The ratios
+        /// are whatever the text-style table holds (<see cref="Of(IEnumerable{double})"/>); kit sync checks that every style is
+        /// whole device pixels at every viewport scale.
+        /// </summary>
         public sealed class LineBox
         {
             public readonly string Key;
             public readonly double Ratio;
-            /// <summary>Kit font sizes for this ratio are multiples of this (whole device pixels at 0.75 and 0.5, and a whole line box).</summary>
-            public readonly int SizeStep;
 
-            LineBox(string key, double ratio, int sizeStep)
+            LineBox(double ratio)
             {
-                Key = key;
                 Ratio = ratio;
-                SizeStep = sizeStep;
+                Key = KeyOf(ratio);
             }
 
-            /// <summary>The kit's line-height ratios: 1.25 (sizes multiples of 4) and 1.125 (sizes multiples of 8).</summary>
-            public static readonly IReadOnlyList<LineBox> Kit = new[] { new LineBox("r125", 1.25, 4), new LineBox("r1125", 1.125, 8) };
+            /// <summary>The key of a ratio: <c>r</c> and its digits to 4 decimals without the point.</summary>
+            public static string KeyOf(double ratio) =>
+                "r" + Math.Round(ratio, 4).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture).Replace(".", "");
 
-            /// <summary>The kit ratio of a line height over a font size, or null.</summary>
-            public static LineBox ForRatio(double ratio) => Kit.FirstOrDefault(b => Math.Abs(b.Ratio - ratio) < 1e-9);
+            /// <summary>The line box of a line height over a font size, or null for a ratio that is not positive and finite.</summary>
+            public static LineBox ForRatio(double ratio) => ratio > 0 && !double.IsInfinity(ratio) && !double.IsNaN(ratio) ? new LineBox(ratio) : null;
+
+            /// <summary>One line box per distinct key of <paramref name="ratios"/>, ordered by key.</summary>
+            public static IReadOnlyList<LineBox> Of(IEnumerable<double> ratios) =>
+                (ratios ?? Enumerable.Empty<double>()).Select(ForRatio).Where(b => b != null)
+                    .GroupBy(b => b.Key).Select(g => g.First()).OrderBy(b => b.Key, StringComparer.Ordinal).ToList();
 
             /// <summary>
             /// UI Toolkit ceils a text element's height, and the float arithmetic of an exact r × size line lands a hair above
@@ -314,7 +322,7 @@ namespace DesignUi.Editor
             StoreSubAssets(twin);
         }
 
-        static void StoreSubAssets(FontAsset twin)
+        internal static void StoreSubAssets(FontAsset twin)
         {
             foreach (var texture in twin.atlasTextures ?? new Texture2D[0])
                 if (texture != null && !AssetDatabase.Contains(texture))

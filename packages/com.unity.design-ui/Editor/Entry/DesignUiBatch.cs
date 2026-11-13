@@ -59,6 +59,12 @@ namespace DesignUi.Editor
         /// </summary>
         public static OpResult Run(string command, string[] args)
         {
+            try { return RunUnguarded(command, args); }
+            catch (Exception e) { return new OpResult(1, "Design UI " + command + " stopped: " + e.GetType().Name + ": " + e.Message); }
+        }
+
+        static OpResult RunUnguarded(string command, string[] args)
+        {
             var allowed = command == ImportCommand ? new[] { Profile, Export, Discard }
                 : command == KitSyncCommand ? new[] { Profile, Kit }
                 : null;
@@ -90,15 +96,21 @@ namespace DesignUi.Editor
         /// <see cref="DesignUiOps.Import"/> for each folder, in order; a failure does not stop the next. One folder answers
         /// with its own log; several prefix each log with <c>== &lt;folder&gt;</c> and end with a count of the failed ones.
         /// </summary>
-        public static OpResult ImportEach(string profilePath, IReadOnlyList<string> exportDirs, bool discardManualEdits)
+        public static OpResult ImportEach(string profilePath, IReadOnlyList<string> exportDirs, bool discardManualEdits, Action<string, OpResult> each = null)
         {
             if (exportDirs == null || exportDirs.Count == 0) return new OpResult(1, "No export folder.");
-            if (exportDirs.Count == 1) return DesignUiOps.Import(profilePath, exportDirs[0], discardManualEdits);
+            if (exportDirs.Count == 1)
+            {
+                var one = DesignUiOps.Import(profilePath, exportDirs[0], discardManualEdits);
+                each?.Invoke(exportDirs[0], one);
+                return one;
+            }
             var log = new StringBuilder();
             int failed = 0;
             foreach (var dir in exportDirs)
             {
                 var r = DesignUiOps.Import(profilePath, dir, discardManualEdits);
+                each?.Invoke(dir, r);
                 if (r.Code != 0) failed++;
                 log.Append("== ").Append(dir).Append('\n').Append(r.Log).Append('\n');
             }

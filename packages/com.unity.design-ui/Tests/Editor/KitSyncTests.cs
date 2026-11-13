@@ -21,17 +21,16 @@ namespace DesignUi.Editor.Tests
             "\"viewports\":[[2560,1440],[1920,1080],[1280,720]],\"screenMatch\":0.5,\"filterFunctions\":[],\"locales\":[\"tr\"]}\n";
 
         /// <summary>
-        /// Kit line boxes (Inter, 400 and 700): line height 1.25 × fontSize with sizes multiples of 4 px, or 1.125 × fontSize
-        /// with sizes multiples of 8 px (the kit's design-kit/text-styles.json rows).
+        /// Kit line boxes (Inter, 400 and 700) whose sizes and line heights are multiples of 4 px, so whole device pixels at
+        /// the 1, 0.75 and 0.5 viewport scales: ratio 1.25 and 4/3.
         /// </summary>
         const string LineBoxStyles = @"{
-  ""caption"": { ""fontSize"": 12, ""lineHeight"": 15, ""weight"": 400 },
+  ""caption"": { ""fontSize"": 12, ""lineHeight"": 16, ""weight"": 400 },
   ""label-bold"": { ""fontSize"": 16, ""lineHeight"": 20, ""weight"": 700 },
-  ""body"": { ""fontSize"": 24, ""lineHeight"": 30, ""weight"": 400 },
-  ""subtitle"": { ""fontSize"": 28, ""lineHeight"": 35, ""weight"": 400 },
-  ""title-bold"": { ""fontSize"": 32, ""lineHeight"": 36, ""weight"": 700 },
-  ""headline"": { ""fontSize"": 48, ""lineHeight"": 54, ""weight"": 400 },
-  ""display"": { ""fontSize"": 56, ""lineHeight"": 63, ""weight"": 400 }
+  ""body"": { ""fontSize"": 24, ""lineHeight"": 32, ""weight"": 400 },
+  ""title-bold"": { ""fontSize"": 32, ""lineHeight"": 40, ""weight"": 700 },
+  ""headline"": { ""fontSize"": 48, ""lineHeight"": 60, ""weight"": 400 },
+  ""display"": { ""fontSize"": 64, ""lineHeight"": 80, ""weight"": 400 }
 }
 ";
 
@@ -80,7 +79,7 @@ namespace DesignUi.Editor.Tests
             p.localeFonts = new[] { new LocaleFont { locale = "tr", font = _regular }, new LocaleFont { locale = "ar", font = _arabic } };
             p.fontTwinFolder = FontFixture.TwinFolder;
             p.referenceResolution = new Vector2Int(2560, 1440);
-            p.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1600, 900) };
+            p.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720) };
             p.screenMatch = 0.25f;
             return p;
         }
@@ -115,7 +114,7 @@ namespace DesignUi.Editor.Tests
             StringAssert.IsMatch("^\\{\\n  \"ar\"", json, "sorted keys, LF");
 
             var config = JObject.Parse(File.ReadAllText(kit + "/kit.config.json"));
-            Assert.IsTrue(JToken.DeepEquals(JArray.Parse("[[2560,1440],[1600,900]]"), config["viewports"]), config.ToString());
+            Assert.IsTrue(JToken.DeepEquals(JArray.Parse("[[2560,1440],[1920,1080],[1280,720]]"), config["viewports"]), config.ToString());
             Assert.IsTrue(JToken.DeepEquals(JArray.Parse("[2560,1440]"), config["reference"]));
             Assert.AreEqual(0.25, config.Value<double>("screenMatch"));
             Assert.IsTrue(JToken.DeepEquals(JArray.Parse("[\"tr\",\"ar\"]"), config["locales"]), "reference locale first");
@@ -182,18 +181,18 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(r.Warnings.Any(w => w.StartsWith("Multiple TMP Settings", StringComparison.Ordinal)));
         }
 
-        [TestCase(13, 16.25, 4, "use fontSize 12 with lineHeight 15")]   // ratio 1.25, but not a multiple of 4
-        [TestCase(18, 22.5, 4, "use fontSize 20 with lineHeight 25")]    // whole, but not whole at the 0.75 and 0.5 scales
-        [TestCase(36, 40.5, 8, "use fontSize 40 with lineHeight 45")]    // ratio 1.125 needs multiples of 8
-        public void Run_FontSizeOffItsRatiosStep_FailsWithTheComputedFix(double size, double line, int step, string fix)
+        [TestCase(12, 15, "lineHeight 15 px is not whole device pixels at the viewport 1920×1080 (scale 0.75: 11.25 px)", "fontSize 12 with lineHeight 16")]
+        [TestCase(14, 16, "fontSize 14 px is not whole device pixels at the viewport 1920×1080 (scale 0.75: 10.5 px)", "fontSize 16 with lineHeight 16")]
+        [TestCase(18, 22, "fontSize 18 px and lineHeight 22 px is not whole device pixels at the viewport 1920×1080 (scale 0.75: 13.5, 16.5 px)", "multiples of 4 px, for example fontSize 20 with lineHeight 24")]
+        [TestCase(16, 19.359375, "lineHeight 19.359375 px is not whole device pixels at the viewport 2560×1440", "fontSize 16 with lineHeight 20")]
+        public void Run_TextStyleNotWholeAtAViewportScale_FailsNamingTheViewportAndTheFix(double size, double line, string what, string fix)
         {
             var kit = Kit("{ \"x\": { \"fontSize\": " + Num(size) + ", \"lineHeight\": " + Num(line) + ", \"weight\": 400 } }");
             var profile = Profile();
             var r = KitSync.Run(profile, kit, Resolver(profile));
             Assert.IsFalse(r.Ok);
             var error = r.Errors.Single();
-            StringAssert.Contains("text style 'x'", error);
-            StringAssert.Contains("multiple of " + step + " px", error);
+            StringAssert.Contains("text style 'x': " + what, error);
             StringAssert.Contains(fix, error);
             Assert.IsFalse(File.Exists(kit + "/fonts/fonts.css"), "nothing is written when the kit is invalid");
             Assert.AreEqual(KitConfig, File.ReadAllText(kit + "/kit.config.json"));
@@ -201,18 +200,27 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.IsEmpty(r.Twins);
         }
 
-        [TestCase(16, 19.359375)]   // the whole-pixel table's UI Toolkit pitch
-        [TestCase(16, 24)]          // ratio 1.5
-        public void Run_LineHeightThatIsNoKitLineBox_FailsNamingBothRatios(double size, double line)
+        [Test]
+        public void Run_ChecksTheViewportsTheProfileDeclares()
         {
-            var kit = Kit("{ \"x\": { \"fontSize\": " + Num(size) + ", \"lineHeight\": " + Num(line) + ", \"weight\": 400 } }");
+            // 16/20 is whole at 1, 0.75 and 0.5, but not at a 1000-px-wide viewport (scale 0.390625 with match 0)
+            var kit = Kit("{ \"x\": { \"fontSize\": 16, \"lineHeight\": 20, \"weight\": 400 } }");
             var profile = Profile();
+            profile.screenMatch = 0f;
+            profile.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1000, 1440) };
             var r = KitSync.Run(profile, kit, Resolver(profile));
             Assert.IsFalse(r.Ok);
-            var error = r.Errors.Single();
-            StringAssert.Contains("not a kit line box", error);
-            StringAssert.Contains("lineHeight 20 (1.25 × fontSize", error);
-            StringAssert.Contains("lineHeight 18 (1.125 × fontSize", error);
+            StringAssert.Contains("at the viewport 1000×1440 (scale 0.390625", r.Errors.Single());
+        }
+
+        [Test]
+        public void Run_AnyRatioThatIsWholeAtEveryScale_GetsItsOwnLineBoxTwin()
+        {
+            var kit = Kit("{ \"x\": { \"fontSize\": 16, \"lineHeight\": 24, \"weight\": 400 } }"); // ratio 1.5
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            CollectionAssert.Contains(r.Twins.ToArray(), FontFixture.TwinFolder + "/Kit Regular UITK r15.asset");
         }
 
         [Test]
@@ -221,7 +229,7 @@ namespace DesignUi.Editor.Tests
             var profile = Profile();
             var r = KitSync.Run(profile, Kit(), Resolver(profile));
             Assert.IsTrue(r.Ok, Errors(r));
-            foreach (var key in new[] { "r125", "r1125" })
+            foreach (var key in new[] { "r125", "r13333" })
                 CollectionAssert.Contains(r.Twins.ToArray(), FontFixture.TwinFolder + "/Kit Regular UITK " + key + ".asset");
         }
 

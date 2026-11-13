@@ -649,8 +649,10 @@ namespace DesignUi.Editor.Tests
             Assert.IsInstanceOf<Button>(tree.Q("go"));
             Assert.AreEqual("Giriş", label.text);
             Assert.AreEqual(16.515625f, label.resolvedStyle.fontSize, 1e-4f);
-            Assert.AreSame(AssetDatabase.LoadAssetAtPath<UnityEngine.TextCore.Text.FontAsset>(FontFixture.TwinFolder + "/Inter Fixture UITK.asset"),
-                label.resolvedStyle.unityFontDefinition.fontAsset, "the label's var(--font-inter) resolves through DesignFonts.uss to the reference locale's twin");
+            // the table's label (16.515625/20) is its own line-box ratio: the label renders with that variant of the locale's twin
+            var variant = FontFixture.TwinFolder + "/Inter Fixture UITK " + FontTwinGenerator.LineBox.ForRatio(20 / 16.515625).Key + ".asset";
+            Assert.AreSame(AssetDatabase.LoadAssetAtPath<UnityEngine.TextCore.Text.FontAsset>(variant),
+                label.resolvedStyle.unityFontDefinition.fontAsset, "the label's var(--font-inter-<ratio>) resolves through DesignFonts.uss to the reference locale's twin variant");
             AssertColor("#111111", panel.resolvedStyle.backgroundColor);
             Assert.AreEqual(0f, tree.Q("item-a").resolvedStyle.marginTop, "__first restores the first item's margin");
             Assert.AreEqual(8f, tree.Q("item-b").resolvedStyle.marginTop);

@@ -77,6 +77,9 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
   const pairs = Array.isArray(table) && table.length > 0 && table.every((p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0));
   const ordered = pairs && (table as number[][]).every((p, i, a) => i === 0 || p[0] < a[i - 1][0]) && (table as number[][]).at(-1)![0] === 0;
   if (!ordered) throw new Error(`${file}: "textInkDeltaESmall" must be [device px, ΔE2000] pairs from the largest size down to 0`);
+  const small = table as number[][];
+  if (small[0][0] >= (raw.textInkFullPx as number) || small.some(([, de]) => de < (raw.textInkDeltaE as number)))
+    throw new Error(`${file}: "textInkDeltaESmall" must start below textInkFullPx with limits of at least textInkDeltaE`);
   return {
     ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall">),
     textInkDeltaESmall: (table as number[][]).map(([px, de]) => [px, de] as [number, number]),
@@ -475,8 +478,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
 
       // text ink per line: colour now; the amount after all lines of the capture are measured
       if (carriesText && ue.lines.length === ge.lines.length) {
-        // the font size in device px: the IR's, else the line box over the kit's larger ratio (1.25)
-        const px = ctx.fontPx?.[id] ?? ge.lines[0].h / 1.25;
+        // the font size in device px: the IR's, else the line box over the kit's largest ratio (4/3), never more than the real size
+        const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
         const limit = inkColourLimit(t, px);
         let wDe: { de: number; i: number; a: number[]; b: number[] } | null = null;
         ge.lines.forEach((gl, i) => {

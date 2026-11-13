@@ -100,6 +100,21 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void ImportEach_ReportsEveryFoldersResult_ToTheCaller()
+        {
+            var profile = Profile(TempDir("out"));
+            var good = Export(TempDir("good"), "batch.good", "#111111");
+            var missing = Path.Combine(TempDir("x"), "missing");
+            var seen = new List<string>();
+            var r = DesignUiBatch.ImportEach(profile, new[] { good, missing }, false, (dir, one) => seen.Add(one.Code + " " + dir));
+            Assert.AreEqual(1, r.Code);
+            CollectionAssert.AreEqual(new[] { "0 " + good, "1 " + missing }, seen);
+            var single = new List<string>();
+            DesignUiBatch.ImportEach(profile, new[] { good }, false, (dir, one) => single.Add(one.Code + " " + dir));
+            CollectionAssert.AreEqual(new[] { "0 " + good }, single, "one folder is reported too");
+        }
+
+        [Test]
         public void Import_DiscardManualEdits_OverwritesAHandEditedFile()
         {
             var output = TempDir("out");

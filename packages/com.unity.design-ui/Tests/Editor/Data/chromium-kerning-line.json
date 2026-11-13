@@ -1,76 +1,77 @@
 {
-  "$comment": "Chromium's width in device px of one line of `text` per kit text style (Inter 18pt, kerning on, macOS headless shell 158), at the viewport scales 1, 0.75 and 0.5: element widths of the exporter's goldens of docs/findings/text-ink/lines.html and lines-bold.html (scripts/fidelity.sh). The panel proof checks Unity's first layout against them.",
+  "$comment": "Chromium's width in device px of one line of `text` per kit text style (fontSize/weight) at each viewport scale, kerning on, with the kit's fonts; written by tools~/chromium-kerning-line.mts from the kit's text-style table. The panel proof checks Unity's first layout against it.",
   "text": "AVATAR Toyota Wave, Yavuz Tepe To",
+  "family": "Inter UI",
   "widths": {
-    "caption": {
+    "12/400": {
       "1": 206.984375,
       "0.75": 155.238281,
       "0.5": 103.492188
     },
-    "label": {
-      "1": 275.96875,
-      "0.75": 206.976563,
-      "0.5": 137.984375
-    },
-    "body": {
-      "1": 413.953125,
-      "0.75": 310.464844,
-      "0.5": 206.976563
-    },
-    "subtitle": {
-      "1": 482.9375,
-      "0.75": 362.203125,
-      "0.5": 241.46875
-    },
-    "title": {
-      "1": 551.921875,
-      "0.75": 413.941406,
-      "0.5": 275.960938
-    },
-    "headline": {
-      "1": 827.890625,
-      "0.75": 620.917969,
-      "0.5": 413.945313
-    },
-    "display": {
-      "1": 965.875,
-      "0.75": 724.40625,
-      "0.5": 482.9375
-    },
-    "caption-bold": {
+    "12/700": {
       "1": 213.875,
       "0.75": 160.40625,
       "0.5": 106.9375
     },
-    "label-bold": {
+    "16/400": {
+      "1": 275.96875,
+      "0.75": 206.976563,
+      "0.5": 137.984375
+    },
+    "16/700": {
       "1": 285.15625,
       "0.75": 213.867188,
       "0.5": 142.578125
     },
-    "body-bold": {
+    "24/400": {
+      "1": 413.953125,
+      "0.75": 310.464844,
+      "0.5": 206.976563
+    },
+    "24/700": {
       "1": 427.734375,
       "0.75": 320.800781,
       "0.5": 213.867188
     },
-    "subtitle-bold": {
-      "1": 499.015625,
-      "0.75": 374.261719,
-      "0.5": 249.507813
+    "32/400": {
+      "1": 551.921875,
+      "0.75": 413.941406,
+      "0.5": 275.960938
     },
-    "title-bold": {
+    "32/700": {
       "1": 570.296875,
       "0.75": 427.722656,
       "0.5": 285.148438
     },
-    "headline-bold": {
+    "36/400": {
+      "1": 620.921875,
+      "0.75": 465.691406,
+      "0.5": 310.460938
+    },
+    "36/700": {
+      "1": 641.59375,
+      "0.75": 481.195313,
+      "0.5": 320.796875
+    },
+    "48/400": {
+      "1": 827.890625,
+      "0.75": 620.917969,
+      "0.5": 413.945313
+    },
+    "48/700": {
       "1": 855.453125,
       "0.75": 641.589844,
       "0.5": 427.726563
     },
-    "display-bold": {
-      "1": 998.03125,
-      "0.75": 748.523438,
-      "0.5": 499.015625
+    "64/400": {
+      "1": 1103.84375,
+      "0.75": 827.882813,
+      "0.5": 551.921875
+    },
+    "64/700": {
+      "1": 1140.59375,
+      "0.75": 855.445313,
+      "0.5": 570.296875
     }
   }
 }

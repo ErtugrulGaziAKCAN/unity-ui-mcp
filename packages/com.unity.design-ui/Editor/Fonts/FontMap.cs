@@ -21,7 +21,7 @@ namespace DesignUi.Editor
     public static class FontMap
     {
         public const string FileName = "DesignFonts.uss";
-        public const string LocaleClassPrefix = "locale-";
+        public const string LocaleClassPrefix = DesignUi.DesignFontSet.LocaleClassPrefix;
 
         static readonly Regex LocaleCode = new Regex("^[A-Za-z0-9]+([_-][A-Za-z0-9]+)*$", RegexOptions.Compiled);
 
@@ -75,6 +75,8 @@ namespace DesignUi.Editor
             /// font, so every twin gets them after its own fallbacks (with TMP Settings they are one project-wide list).
             /// </summary>
             public readonly List<TMP_FontAsset> Globals = new List<TMP_FontAsset>();
+            /// <summary>The line boxes of the kit's text-style table: each locale's font gets a twin variant per box.</summary>
+            public IReadOnlyList<FontTwinGenerator.LineBox> LineBoxes = new FontTwinGenerator.LineBox[0];
             /// <summary>Every family of the resolved locales: USS variable slug to family name.</summary>
             public readonly SortedDictionary<string, string> Families = new SortedDictionary<string, string>(StringComparer.Ordinal);
             public readonly List<string> Errors = new List<string>();
@@ -172,13 +174,10 @@ namespace DesignUi.Editor
             return errors;
         }
 
-        /// <summary>The family slug of a font variable name: <c>inter-r125</c> → <c>inter</c> (a kit line-box key is dropped).</summary>
-        internal static string FamilySlugOf(string variable)
-        {
-            foreach (var box in FontTwinGenerator.LineBox.Kit)
-                if (variable.EndsWith("-" + box.Key, StringComparison.Ordinal)) return variable.Substring(0, variable.Length - box.Key.Length - 1);
-            return variable;
-        }
+        static readonly Regex LineBoxSuffix = new Regex(@"-r\d+$", RegexOptions.CultureInvariant);
+
+        /// <summary>The family slug of a font variable name: <c>inter-r125</c> → <c>inter</c> (a line-box key is dropped).</summary>
+        internal static string FamilySlugOf(string variable) => LineBoxSuffix.Replace(variable, "");
 
         /// <summary>
         /// DesignFonts.uss: per resolved locale, every family's variable points at the locale's twin, and its line-box
@@ -196,7 +195,7 @@ namespace DesignUi.Editor
                 foreach (var slug in plan.Families.Keys)
                 {
                     sb.Append("    --font-").Append(slug).Append(": ").Append(url).Append(";\n");
-                    foreach (var box in FontTwinGenerator.LineBox.Kit.OrderBy(b => b.Key, StringComparer.Ordinal))
+                    foreach (var box in plan.LineBoxes.OrderBy(b => b.Key, StringComparer.Ordinal))
                         sb.Append("    --font-").Append(slug).Append('-').Append(box.Key).Append(": ")
                           .Append(Url(FontTwinGenerator.TwinPath(font.Primary, plan.TwinFolder, box))).Append(";\n");
                 }
@@ -205,10 +204,6 @@ namespace DesignUi.Editor
             return sb.ToString();
         }
 
-        /// <summary>
-        /// Creates or updates the twin of every resolved locale's font and its line-box variants, with their own fallbacks,
-        /// the plan's global fallbacks and their weight faces. Twins keep their GUIDs, so <c>DesignFonts.uss</c> never needs a re-import for them.
-        /// </summary>
         /// <summary>
         /// Adds every character of <paramref name="strings"/> (the screen's texts in every locale) to each resolved locale's
         /// primary twins, plain and line-box variants, with their kerning pairs (<see cref="DesignUi.DesignText.Prepare"/>, which
@@ -226,19 +221,58 @@ namespace DesignUi.Editor
             foreach (var locale in plan.Locales)
             {
                 if (!plan.Fonts.TryGetValue(locale, out var font)) continue;
-                foreach (var key in new[] { "" }.Concat(FontTwinGenerator.LineBox.Kit.Select(b => b.Key)))
-                    if (run.Twins.TryGetValue((font.Primary, key), out var twin) && twin != null)
-                        foreach (var c in DesignUi.DesignText.Prepare(twin, text)) if (missing.ToString().IndexOf(c) < 0) missing.Append(c);
+                foreach (var twin in run.Twins.Where(kv => kv.Key.Item1 == font.Primary && kv.Value != null).Select(kv => kv.Value))
+                    foreach (var c in DesignUi.DesignText.Prepare(twin, text)) if (missing.ToString().IndexOf(c) < 0) missing.Append(c);
             }
             foreach (var t in all)
                 if (t.characterTable.Count != before[t])
                 {
+                    FontTwinGenerator.StoreSubAssets(t); // a new atlas page belongs in the twin's file too
                     UnityEditor.EditorUtility.SetDirty(t);
                     UnityEditor.AssetDatabase.SaveAssetIfDirty(t);
                 }
             return missing.ToString();
         }
 
+        /// <summary>
+        /// <c>DesignFonts.asset</c> (<see cref="DesignUi.DesignFontSet"/>) in <paramref name="outFolder"/>: per resolved locale
+        /// its primary twin and line-box variants, so <see cref="DesignUi.DesignText.SetText"/> can prepare a bound text before
+        /// the element's styles resolve. Written only inside Assets/ and only when it changes; returns its path then, else null.
+        /// </summary>
+        internal static string WriteFontSet(FontsPlan plan, FontTwinGenerator.TwinRun run, string outFolder)
+        {
+            var folder = ScreenCompiler.ProjectPath(outFolder?.Replace('\\', '/').TrimEnd('/'));
+            if (folder == null || !folder.StartsWith("Assets", StringComparison.Ordinal) || !AssetDatabase.IsValidFolder(folder)) return null;
+            var path = folder + "/" + DesignUi.DesignFontSet.FileName;
+            var wanted = plan.Locales.Where(l => plan.Fonts.ContainsKey(l)).Select(l => new DesignUi.DesignFontSet.LocaleFonts
+            {
+                locale = l,
+                fonts = new[] { "" }.Concat(plan.LineBoxes.Select(b => b.Key))
+                    .Select(k => run.Twins.TryGetValue((plan.Fonts[l].Primary, k), out var t) ? t : null).Where(t => t != null).ToArray(),
+            }).ToArray();
+            var set = AssetDatabase.LoadAssetAtPath<DesignUi.DesignFontSet>(path);
+            if (set == null && System.IO.File.Exists(path))
+                throw new FontSetupException("'" + path + "' is in the way of the generated font set: it is not a DesignFontSet. Move or delete it.");
+            if (set != null && set.referenceLocale == plan.ReferenceLocale && (set.locales ?? new DesignUi.DesignFontSet.LocaleFonts[0]).Length == wanted.Length &&
+                set.locales.Zip(wanted, (a, b) => a != null && a.locale == b.locale && (a.fonts ?? new UnityEngine.TextCore.Text.FontAsset[0]).SequenceEqual(b.fonts)).All(x => x))
+                return null;
+            bool created = set == null;
+            if (created) set = UnityEngine.ScriptableObject.CreateInstance<DesignUi.DesignFontSet>();
+            set.referenceLocale = plan.ReferenceLocale;
+            set.locales = wanted;
+            if (created) AssetDatabase.CreateAsset(set, path);
+            else
+            {
+                EditorUtility.SetDirty(set);
+                AssetDatabase.SaveAssetIfDirty(set);
+            }
+            return path;
+        }
+
+        /// <summary>
+        /// Creates or updates the twin of every resolved locale's font and its line-box variants, with their own fallbacks,
+        /// the plan's global fallbacks and their weight faces. Twins keep their GUIDs, so <c>DesignFonts.uss</c> never needs a re-import for them.
+        /// </summary>
         internal static FontTwinGenerator.TwinRun EnsureTwins(FontsPlan plan)
         {
             var run = new FontTwinGenerator.TwinRun(plan.Globals);
@@ -246,7 +280,7 @@ namespace DesignUi.Editor
                 if (plan.Fonts.TryGetValue(locale, out var font))
                 {
                     FontTwinGenerator.GetOrCreateTwin(font.Primary, plan.TwinFolder, run);
-                    foreach (var box in FontTwinGenerator.LineBox.Kit) FontTwinGenerator.GetOrCreateTwin(font.Primary, plan.TwinFolder, run, box);
+                    foreach (var box in plan.LineBoxes) FontTwinGenerator.GetOrCreateTwin(font.Primary, plan.TwinFolder, run, box);
                 }
             return run;
         }

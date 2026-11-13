@@ -192,12 +192,13 @@ namespace DesignUi.Editor
         /// run completes, and <see cref="DoneFileName"/> is written last. Animation samples are listed as not captured until the animation player exists; a job that cannot be
         /// made, or fails, is listed with its reason and leaves no PNG or boxes entry behind.
         /// </summary>
-        public static IEnumerator CaptureAll(string exportDir, string screenFolder, DesignUiProfile profile, string outDir, CaptureResult result)
+        public static IEnumerator CaptureAll(string exportDir, string screenFolder, DesignUiProfile profile, string outDir, CaptureResult result, string runId = null)
         {
             if (result == null) throw new ArgumentNullException(nameof(result));
             if (string.IsNullOrEmpty(outDir)) throw new ArgumentException("no output folder", nameof(outDir));
             var total = Stopwatch.StartNew();
-            var run = new RunInfo { Id = Guid.NewGuid().ToString("N"), Started = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture) };
+            // a runner passes its own run id, so it can tell this run's done marker from an earlier run's
+            var run = new RunInfo { Id = string.IsNullOrEmpty(runId) ? Guid.NewGuid().ToString("N") : runId, Started = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture) };
             Clear(outDir);
             WriteMeta(outDir, exportDir, screenFolder, result, run, "running", total.Elapsed.TotalMilliseconds);
             var jobs = CaptureJob.ReadMatrix(Path.Combine(exportDir, MatrixPath));
@@ -267,7 +268,7 @@ namespace DesignUi.Editor
         /// no matrix) adds <c>&lt;export&gt;: &lt;reason&gt;</c> to <paramref name="errors"/>, has no done marker, and does not
         /// stop the next; job errors of a captured export are added the same way.
         /// </summary>
-        public static IEnumerator CaptureEach(IReadOnlyList<string> exportDirs, IReadOnlyList<string> outDirs, DesignUiProfile profile, List<string> errors)
+        public static IEnumerator CaptureEach(IReadOnlyList<string> exportDirs, IReadOnlyList<string> outDirs, DesignUiProfile profile, List<string> errors, string runId = null)
         {
             if (errors == null) throw new ArgumentNullException(nameof(errors));
             int n = exportDirs?.Count ?? 0, m = outDirs?.Count ?? 0;
@@ -282,7 +283,7 @@ namespace DesignUi.Editor
                 var result = new CaptureResult();
                 IEnumerator run = null;
                 string failure = null;
-                try { run = CaptureAll(export, DefaultScreenFolder(export, profile), profile, outDirs[i], result); }
+                try { run = CaptureAll(export, DefaultScreenFolder(export, profile), profile, outDirs[i], result, runId); }
                 catch (Exception e) { failure = e.Message; }
                 while (run != null)
                 {
@@ -334,21 +335,6 @@ namespace DesignUi.Editor
             public List<UnityEngine.TextCore.Text.FontAsset> TextFonts = new List<UnityEngine.TextCore.Text.FontAsset>();
         }
 
-        /// <summary>The existing twins of the profile's reference locale font, plain and line-box variants (none are created here).</summary>
-        static List<UnityEngine.TextCore.Text.FontAsset> ReferenceTwins(DesignUiProfile profile)
-        {
-            try
-            {
-                var plan = FontMap.Plan(profile, FontMap.DefaultResolver(profile));
-                if (!plan.Fonts.TryGetValue(plan.ReferenceLocale, out var font) || font?.Primary == null || string.IsNullOrEmpty(plan.TwinFolder))
-                    return new List<UnityEngine.TextCore.Text.FontAsset>();
-                return new FontTwinGenerator.LineBox[] { null }.Concat(FontTwinGenerator.LineBox.Kit)
-                    .Select(b => AssetDatabase.LoadAssetAtPath<UnityEngine.TextCore.Text.FontAsset>(FontTwinGenerator.TwinPath(font.Primary, plan.TwinFolder, b)))
-                    .Where(f => f != null).ToList();
-            }
-            catch (FontSetupException) { return new List<UnityEngine.TextCore.Text.FontAsset>(); }
-        }
-
         static Screen Prepare(CaptureRequest req, DesignUiProfile profile)
         {
             if (req == null) throw new ArgumentNullException(nameof(req));
@@ -382,7 +368,9 @@ namespace DesignUi.Editor
                 Ir = ir, Manifest = manifest, Tree = tree, Folder = folder,
                 Fixtures = File.Exists(fixtures) ? IrFixtures.Read(fixtures) : new IrFixtures(),
                 Fonts = AssetDatabase.LoadAssetAtPath<StyleSheet>(Path.GetDirectoryName(folder)?.Replace('\\', '/') + "/" + FontMap.FileName),
-                TextFonts = ReferenceTwins(profile),
+                // the compiled screens' font set (DesignFonts.asset next to DesignFonts.uss): the reference locale's twins
+                TextFonts = AssetDatabase.LoadAssetAtPath<DesignUi.DesignFontSet>(Path.GetDirectoryName(folder)?.Replace('\\', '/') + "/" + DesignUi.DesignFontSet.FileName)
+                    ?.FontsFor(profile.referenceLocale).ToList() ?? new List<UnityEngine.TextCore.Text.FontAsset>(),
             };
         }
 

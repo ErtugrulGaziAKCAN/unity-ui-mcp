@@ -372,7 +372,7 @@ describe("compareCapture: fix round checks", () => {
     expect(compareCapture(badge(), badge(), [], T, bctx).elements.find((r) => r.id === "badge")).toMatchObject({ ink: 0, inkRatio: 1 });
     const colour = compareCapture(badge(), badge({ text: [250, 210, 60] }), [], T, bctx);
     expect(colour.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["badge:ink"]);
-    expect(colour.issues[0].detail).toMatch(/^line 1 of 1: text colour ΔE2000 [\d.]+, design #fafafa, Unity #fad23c \(limit 5 at 12\.8 px\)$/);
+    expect(colour.issues[0].detail).toMatch(/^line 1 of 1: text colour ΔE2000 [\d.]+, design #fafafa, Unity #fad23c \(limit 5 at 12 px\)$/);
     const bold = compareCapture(badge(), badge({ thick: 2 }), [], T, bctx);
     expect(bold.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["badge:inkCoverage"]);
     expect(bold.issues[0].detail).toMatch(/Unity draws 2\.00× the design's text ink \(expected 0\.65–1\.15×\)/);
@@ -395,8 +395,8 @@ describe("compareCapture: fix round checks", () => {
     expect(compareCapture(badge(), lighter, [], T, at(6)).pass).toBe(true);
     // a wrong colour still fails at any size
     expect(compareCapture(badge(), badge({ text: [250, 210, 60] }), [], T, at(6)).issues.map((i) => i.kind)).toEqual(["ink"]);
-    // without the IR's font size the line box height stands in (16 px line / 1.25: 12.8 px)
-    expect(compareCapture(badge(), lighter, [], T, bctx).issues[0].detail).toMatch(/\(limit 5 at 12\.8 px\)$/);
+    // without the IR's font size the line box height stands in (16 px line × 3/4: 12 px)
+    expect(compareCapture(badge(), lighter, [], T, bctx).issues[0].detail).toMatch(/\(limit 5 at 12 px\)$/);
   });
 
   it("compares light text and dark text each with its own median ink ratio (font smoothing differs by polarity)", () => {
@@ -768,6 +768,8 @@ describe("design-export compare", () => {
     expect(table([[9, 10], [12, 5], [0, 14]])).toThrow(/"textInkDeltaESmall" must be \[device px, ΔE2000\] pairs from the largest size down to 0/);
     expect(table([[12, 5], [9, 10]])).toThrow(/textInkDeltaESmall/);
     expect(table("5")).toThrow(/textInkDeltaESmall/);
+    expect(table([[16, 5], [0, 14]])).toThrow(/must start below textInkFullPx/);
+    expect(table([[12, 2], [0, 14]])).toThrow(/limits of at least textInkDeltaE/);
   });
 });
 

@@ -15,8 +15,33 @@ namespace DesignUi.Editor
         public const string FileName = "text-styles.json";
 
         /// <summary>
-        /// Style name to the key of its line-box variant (<see cref="FontTwinGenerator.LineBox"/>): the kit ratio of its
-        /// <c>lineHeight / fontSize</c>, or null for a style with another ratio (it keeps the plain font twin).
+        /// The text-style table a compile uses: the export folder's, else the kit folder's; null when neither has one.
+        /// </summary>
+        public static string FindTable(string exportDir, string kitDir)
+        {
+            foreach (var dir in new[] { exportDir, kitDir })
+                if (!string.IsNullOrEmpty(dir) && File.Exists(Path.Combine(dir, FileName))) return Path.Combine(dir, FileName);
+            return null;
+        }
+
+        /// <summary>The line boxes of a table: one per distinct <c>lineHeight / fontSize</c> ratio of its styles.</summary>
+        public static IReadOnlyList<FontTwinGenerator.LineBox> LineBoxesOf(string path)
+        {
+            var ratios = new List<double>();
+            foreach (var p in Read(path))
+            {
+                var size = (p.Value as JObject)?["fontSize"];
+                var line = (p.Value as JObject)?["lineHeight"];
+                double s = size != null && (size.Type == JTokenType.Float || size.Type == JTokenType.Integer) ? size.Value<double>() : 0;
+                double l = line != null && (line.Type == JTokenType.Float || line.Type == JTokenType.Integer) ? line.Value<double>() : 0;
+                if (s > 0 && l > 0) ratios.Add(l / s);
+            }
+            return FontTwinGenerator.LineBox.Of(ratios);
+        }
+
+        /// <summary>
+        /// Style name to the key of its line-box variant (<see cref="FontTwinGenerator.LineBox"/>): the ratio of its
+        /// <c>lineHeight / fontSize</c>, or null for a style without a positive size and line height.
         /// </summary>
         public static IReadOnlyDictionary<string, string> LoadLineBoxes(string path)
         {

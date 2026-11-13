@@ -19,6 +19,31 @@ namespace DesignUi.Editor.Tests
         // ---- font ------------------------------------------------------------------------------------------
 
         [Test]
+        public void Filter_EnabledFunctions_AreWrittenWithExplicitArguments_OthersAreUCss015()
+        {
+            // the shipped css-support.json enables what the fidelity suite measured (docs/findings/filters.md)
+            Assert.AreEqual("invert(1) invert(0.5)", Get(Map(("filter", "invert(1) invert(0.5)")), "filter"));
+            Assert.AreEqual("none", Get(Map(("filter", "none")), "filter"));
+            var e = Assert.Throws<UnsupportedStyleException>(() => Map(("filter", "blur(4px)")));
+            Assert.AreEqual("U-CSS-015", e.RuleId);
+            StringAssert.Contains("Use only invert()", e.Message);
+            Assert.AreEqual("U-CSS-015", Assert.Throws<UnsupportedStyleException>(() => Map(("filter", "brightness(1.2)"))).RuleId);
+            Assert.AreEqual("U-CSS-015", Assert.Throws<UnsupportedStyleException>(() => Map(("filter", "url(#f)"))).RuleId);
+            Assert.AreEqual("U-CSS-015", Assert.Throws<UnsupportedStyleException>(() => Map(("filter", "invert(1) drop-shadow(0 0 2px #000)"))).RuleId);
+
+            // every UI Toolkit function's argument form, with all of them enabled
+            var all = new CssPropertySpec { Name = "filter", ValueRule = "U-CSS-015", ValueFix = "fix",
+                Functions = new[] { "blur", "contrast", "grayscale", "hue-rotate", "invert", "opacity", "sepia" } };
+            Assert.AreEqual("blur(4px) blur(0px) blur(0px)", StyleMapper.FilterValue("blur(4px) blur(0) blur()", all));
+            Assert.AreEqual("hue-rotate(120deg) hue-rotate(180deg) hue-rotate(90deg) hue-rotate(-45deg) hue-rotate(0deg)",
+                StyleMapper.FilterValue("hue-rotate(120deg) hue-rotate(0.5turn) hue-rotate(100grad) hue-rotate(-45deg) hue-rotate(0)", all));
+            Assert.AreEqual("hue-rotate(180deg)", StyleMapper.FilterValue("hue-rotate(3.141592653589793rad)", all));
+            Assert.AreEqual("grayscale(1) contrast(1.6) sepia(80%) opacity(0.5) invert(1)", StyleMapper.FilterValue("grayscale() contrast(1.6) sepia(80%) opacity(0.5) invert(1)", all));
+            foreach (var bad in new[] { "blur(4em)", "blur(-1px)", "hue-rotate(30)", "grayscale(-1)", "grayscale(1px)", "invert", "tint(red)" })
+                Assert.AreEqual("U-CSS-015", Assert.Throws<UnsupportedStyleException>(() => StyleMapper.FilterValue(bad, all), bad).RuleId, bad);
+        }
+
+        [Test]
         public void FontWeightAndItalic_BecomeBoldAndItalic()
         {
             CollectionAssert.Contains(Map(("font-weight", "700"), ("font-style", "italic")), new UssDeclaration("-unity-font-style", "bold-and-italic"));

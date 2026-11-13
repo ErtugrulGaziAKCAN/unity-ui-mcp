@@ -888,9 +888,20 @@
       "note": "USS has flex and none. The compiler writes block as a flex column, blockifies inline-level flex items and absolute elements (inline-flex → flex, inline-block and inline → block) and rejects an in-flow inline-level child of a block container (U-CSS-009)."
     },
     "filter": {
-      "handling": "error",
-      "rule": "U-CSS-015",
-      "fix": "Remove it, or list the function in kit.config.json filterFunctions once it passes the fidelity suite."
+      "handling": "direct",
+      "keywords": [
+        "none"
+      ],
+      "functions": [
+        "invert"
+      ],
+      "components": [
+        1,
+        8
+      ],
+      "valueRule": "U-CSS-015",
+      "valueFix": "Use only invert() in filter: it is the one filter function that matches Chromium at every viewport in the fidelity suite. blur(), contrast(), grayscale(), hue-rotate(), opacity() and sepia() exist in UI Toolkit but do not match yet; brightness(), saturate(), drop-shadow() and url() have no UI Toolkit equivalent. Bake the effect into an image instead.",
+      "note": "UI Toolkit 6000.3 filter functions: tint, opacity, invert, grayscale, sepia, blur, contrast, hue-rotate (and custom FilterFunctionDefinition assets); USS filter: fn(arg) …, % becomes a fraction, deg/rad/grad/turn radians, px stays px. functions lists the ones the fidelity suite measured to match at 2560, 1920 and 1280 (docs/findings/filters.md); the compiler writes each with its argument checked and explicit."
     },
     "flex": {
       "handling": "direct",

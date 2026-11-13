@@ -71,6 +71,19 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void LineBox_AnyPositiveRatio_KeyedByItsDigits_OnePerDistinctRatio()
+        {
+            Assert.AreEqual("r125", FontTwinGenerator.LineBox.ForRatio(20.0 / 16).Key);
+            Assert.AreEqual("r13333", FontTwinGenerator.LineBox.ForRatio(16.0 / 12).Key);
+            Assert.AreEqual("r1125", FontTwinGenerator.LineBox.ForRatio(36.0 / 32).Key);
+            Assert.AreEqual("r15", FontTwinGenerator.LineBox.ForRatio(1.5).Key);
+            Assert.IsNull(FontTwinGenerator.LineBox.ForRatio(0));
+            Assert.IsNull(FontTwinGenerator.LineBox.ForRatio(double.NaN));
+            CollectionAssert.AreEqual(new[] { "r125", "r13333" },
+                FontTwinGenerator.LineBox.Of(new[] { 16.0 / 12, 1.25, 32.0 / 24, 60.0 / 48 }).Select(b => b.Key).ToArray());
+        }
+
+        [Test]
         public void LineBoxVariant_HasTheCssLineBoxFace_AndFallsBackToTheSameRatiosVariants()
         {
             var fallback = FontFixture.CreateTmp(FontFixture.BoldTtf, "Box Fallback");

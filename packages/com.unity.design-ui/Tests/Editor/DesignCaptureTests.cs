@@ -42,6 +42,7 @@ namespace DesignUi.Editor.Tests
         /// Several exports in one run: <c>DESIGN_UI_EXPORT</c> and <c>DESIGN_UI_OUT</c> are PATH-style lists
         /// (<see cref="System.IO.Path.PathSeparator"/>) paired by position, each export with its default compiled screen
         /// (<see cref="DesignCapture.CaptureEach"/>); one that cannot be captured fails the test but not the others.
+        /// <c>DESIGN_UI_RUN_ID</c> (optional) is the run id the done markers carry, so a runner accepts only this run's.
         /// </summary>
         [UnityTest]
         public IEnumerator CaptureFromEnv()
@@ -57,13 +58,13 @@ namespace DesignUi.Editor.Tests
             {
                 Assert.IsNull(Env("DESIGN_UI_SCREEN"), "DESIGN_UI_SCREEN names one compiled screen; with several exports each uses its default");
                 var errors = new List<string>();
-                yield return DesignCapture.CaptureEach(exports, DesignUiBatch.PathList(outDir), profile, errors);
+                yield return DesignCapture.CaptureEach(exports, DesignUiBatch.PathList(outDir), profile, errors, Env("DESIGN_UI_RUN_ID"));
                 Assert.IsEmpty(errors, string.Join("\n", errors));
                 yield break;
             }
             var screen = Env("DESIGN_UI_SCREEN") ?? DesignCapture.DefaultScreenFolder(export, profile);
             var result = new CaptureResult();
-            yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result);
+            yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result, Env("DESIGN_UI_RUN_ID"));
             Debug.Log("Design UI capture: " + result.Captured.Count + " captured, " + result.NotCaptured.Count + " not captured into " + outDir +
                       string.Concat(result.NotCaptured.Select(n => "\n  not captured " + n.Capture + ": " + n.Reason)));
             Assert.IsEmpty(result.Errors, string.Join("\n", result.Errors));
@@ -631,6 +632,18 @@ namespace DesignUi.Editor.Tests
             _objects.Add(tex);
             Assert.IsTrue(tex.LoadImage(File.ReadAllBytes(Path.Combine(outDir, "default@320x180.png"))));
             return tex;
+        }
+
+        [UnityTest]
+        public IEnumerator CaptureAll_WritesTheRunnersRunId_IntoTheDoneMarkerAndTheMeta()
+        {
+            var export = Export(Small(BlackRoot(Box("tile", "#112233"))), null, "{ \"captures\": [" + Job("default@320x180", "default", 320, 180) + "] }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outDir = TempDir();
+            yield return DesignCapture.CaptureAll(export, screen, profile, outDir, new CaptureResult(), "fidelity-1234");
+            Assert.AreEqual("fidelity-1234", (string)JObject.Parse(File.ReadAllText(Path.Combine(outDir, DesignCapture.DoneFileName)))["runId"]);
+            Assert.AreEqual("fidelity-1234", (string)JObject.Parse(File.ReadAllText(Path.Combine(outDir, DesignCapture.MetaFileName)))["runId"]);
         }
 
         [Test]

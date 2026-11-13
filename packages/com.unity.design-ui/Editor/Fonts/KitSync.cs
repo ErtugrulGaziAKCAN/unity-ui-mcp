@@ -105,7 +105,10 @@ namespace DesignUi.Editor
 
             // ---- every check before any write: faces and files, text styles against the twins' face metrics -------------
             var faces = Faces(plan, errors);
-            errors.AddRange(ValidateTextStyles(kitDir + "/" + textStyles, plan.Fonts[plan.ReferenceLocale].Primary));
+            var scales = (profile.viewports ?? new UnityEngine.Vector2Int[0]).Where(v => v.x > 0 && v.y > 0)
+                .Select(v => (v, BoxesWriter.Scale(v, profile.referenceResolution, profile.screenMatch))).ToList();
+            errors.AddRange(ValidateTextStyles(kitDir + "/" + textStyles, plan.Fonts[plan.ReferenceLocale].Primary, scales));
+            if (errors.Count == 0) plan.LineBoxes = KitTextStyles.LineBoxesOf(kitDir + "/" + textStyles);
             var copies = errors.Count == 0 ? FontFiles(faces, errors) : null;
             if (errors.Count > 0) return Failed(errors, warnings, notes, kitDir);
 
@@ -169,14 +172,14 @@ namespace DesignUi.Editor
         // ---- text styles (docs/findings/m0.md: line height and text styles, bold policy) ---------------------------
 
         /// <summary>
-        /// Checks every kit text style against the reference locale's font: the weight has a real face (the TMP weight
-        /// table, 400 = the font itself) whose font loads; the line height is a kit line box, <c>r × fontSize</c> for a ratio
-        /// r of <see cref="FontTwinGenerator.LineBox.Kit"/> (1.25 or 1.125), whose twin variant lays lines out exactly like
-        /// CSS; the font size is a multiple of that ratio's step (4 px for 1.25, 8 px for 1.125), so the size and the line box
-        /// are whole device pixels at the 0.75 and 0.5 viewport scales where possible (the standard text generator sets text
-        /// at whole device pixels). Errors name the computed fix.
+        /// Checks every kit text style against the reference locale's font and the profile's viewports: the weight has a real
+        /// face (the TMP weight table, 400 = the font itself) whose font loads; <c>fontSize × scale</c> and
+        /// <c>lineHeight × scale</c> are whole device pixels at every viewport scale (<paramref name="scales"/>: UI Toolkit
+        /// sets text at whole device pixels and rounds a text element's height up to them, so anything else drifts from
+        /// Chromium, most visibly in stacked text). Every ratio <c>lineHeight / fontSize</c> gets its own line-box twin
+        /// (<see cref="FontTwinGenerator.LineBox"/>). Errors name the viewport and the nearest sizes that fit.
         /// </summary>
-        internal static List<string> ValidateTextStyles(string path, TMP_FontAsset reference)
+        internal static List<string> ValidateTextStyles(string path, TMP_FontAsset reference, IReadOnlyList<(UnityEngine.Vector2Int viewport, double scale)> scales)
         {
             var errors = new List<string>();
             var metrics = new Dictionary<TMP_FontAsset, FaceInfo>();
@@ -234,19 +237,20 @@ namespace DesignUi.Editor
                 }
                 var f = size.Value;
                 var l = line.Value;
-                var box = FontTwinGenerator.LineBox.ForRatio(l / f);
-                if (box == null)
+                foreach (var (viewport, scale) in scales ?? new (UnityEngine.Vector2Int, double)[0])
                 {
-                    errors.Add(prefix + "lineHeight " + Fmt(l) + " px for fontSize " + Fmt(f) + " px is not a kit line box; use " +
-                               string.Join(" or ", FontTwinGenerator.LineBox.Kit.Select(b => "lineHeight " + Fmt(b.Ratio * f) + " (" + Fmt(b.Ratio) + " × fontSize, sizes multiples of " + b.SizeStep + " px)")));
-                    continue;
-                }
-                if (f != Math.Floor(f) || (long)f % box.SizeStep != 0)
-                {
-                    var whole = Math.Max(box.SizeStep, Math.Round(f / box.SizeStep, MidpointRounding.AwayFromZero) * box.SizeStep);
-                    errors.Add(prefix + "fontSize " + Fmt(f) + " px is not a multiple of " + box.SizeStep + " px, which line-height ratio " + Fmt(box.Ratio) +
-                               " needs (the standard text generator sets text at whole device pixels, also at the 0.75 and 0.5 viewport scales); use fontSize " +
-                               Fmt(whole) + " with lineHeight " + Fmt(box.Ratio * whole));
+                    double fs = f * scale, ls = l * scale;
+                    bool fWhole = Whole(fs), lWhole = Whole(ls);
+                    if (fWhole && lWhole) continue;
+                    var step = Step(scales);
+                    double F(double v) => Math.Max(step, Math.Round(v / step, MidpointRounding.AwayFromZero) * step);
+                    errors.Add(prefix + string.Join(" and ", new[] { fWhole ? null : "fontSize " + Fmt(f) + " px", lWhole ? null : "lineHeight " + Fmt(l) + " px" }.Where(x => x != null)) +
+                               " is not whole device pixels at the viewport " + viewport.x + "×" + viewport.y + " (scale " + Fmt(scale) + ": " +
+                               string.Join(", ", new[] { fWhole ? null : Fmt(fs), lWhole ? null : Fmt(ls) }.Where(x => x != null)) +
+                               " px). Text sizes and line heights must be whole device pixels at every viewport the profile declares (UI Toolkit sets text at " +
+                               "whole device pixels and rounds a text's height up to them, so stacked text drifts from the design); use multiples of " + step +
+                               " px, for example fontSize " + Fmt(F(f)) + " with lineHeight " + Fmt(F(l)) + ".");
+                    break;
                 }
             }
             return errors;
@@ -466,6 +470,16 @@ namespace DesignUi.Editor
         static byte[] Utf8(string text) => new UTF8Encoding(false).GetBytes(text.Replace("\r\n", "\n"));
 
         static string Fmt(double v) => v.ToString("R", CultureInfo.InvariantCulture);
+
+        static bool Whole(double v) => Math.Abs(v - Math.Round(v)) < 1e-6;
+
+        /// <summary>The smallest whole px step that is whole device pixels at every scale (searched up to 64 px).</summary>
+        static int Step(IReadOnlyList<(UnityEngine.Vector2Int viewport, double scale)> scales)
+        {
+            for (int k = 1; k <= 64; k++)
+                if (scales.All(s => Whole(k * s.scale))) return k;
+            return 64;
+        }
 
         static KitSyncResult Failed(IEnumerable<string> errors, List<string> warnings, List<string> notes, string kitDir = null) =>
             new KitSyncResult { Errors = errors.ToList(), Warnings = warnings, Notes = notes, KitDir = kitDir };

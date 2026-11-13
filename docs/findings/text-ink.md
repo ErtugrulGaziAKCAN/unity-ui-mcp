@@ -109,8 +109,10 @@ ratio: Unity's ink amount relative to the golden's, all lines at 2560.
   height up to whole device pixels (both generators), so each such element is up to 0.75 px taller than in Chromium and
   elements stacked below it drift: +12 px at the bottom of the fixture's 14-line column at 1920, +2 px at 1280. A single
   element is within the 1-px box limit (panel proof: height ≤ 0.75 px off, baselines ≤ 0.41 px for every kit style at
-  1, 2, 5 and 10 lines and scales 1, 0.75 and 0.5); the sum is not. Only line boxes that are multiples of 4 px (label
-  16/20, title 32/36 in the current table) are whole at both scales.
+  1, 2, 5 and 10 lines and scales 1, 0.75 and 0.5); the sum is not. Only line boxes that are multiples of 4 px are whole
+  at both scales. Kit sync now rejects a text-style table whose font sizes or line heights are not whole device pixels
+  at every viewport the profile declares, naming the viewport and the nearest sizes that fit; the kit's table uses
+  multiples of 4 px (ratios 1.25 and 4/3), and every ratio of the table gets its own line-box twin.
 
 ## 6. Kerning on the first layout
 
@@ -142,14 +144,19 @@ PanelSettings). The standard generator with the twins prepared holds every limit
 - at import, every character of every string of the screen (texts and attribute texts, every locale the IR carries) is
   added to each locale's primary twins, plain and line-box variants, their weight faces and, for characters a twin
   lacks, its fallbacks (`TryAddCharacters` with font features), and the twins that gained characters are saved;
-- a text assigned at runtime goes through `DesignUi.DesignText.SetText(element, text)` (or `DesignText.Prepare(font,
-  text)`), which does the same for the element's resolved font before assigning it; the verifier's sample-data fill
-  uses it for bound texts and Smart String arguments;
+- a text assigned at runtime goes through `DesignUi.DesignText.SetText(element, text[, fonts])`, which does the same
+  before assigning it, in the twins of the element's locale from the compiler's `DesignFonts.asset` (a `DesignFontSet`
+  next to `DesignFonts.uss`: per locale the primary twin and its line-box variants; the locale is the `locale-<code>`
+  class of the compiled screen root above the element). It needs no resolved style, so a bind right after the screen is
+  cloned or attached is kerned too (measured: 335 px unkerned without the set, the kerned width with it). The
+  verifier's sample-data fill prepares bound texts and Smart String arguments the same way;
 - twins keep their dynamic data in player builds (`clearDynamicDataOnBuild` off), so what the import added ships.
 
 Panel proof (`LineBoxStyleTableTests`): with the line prepared as a bound text is, every kit style's first layout is
-within 0.98 / 0.80 / 0.98 px of Chromium's width at scales 1 / 0.75 / 0.5 (`Tests/Editor/Data/chromium-kerning-line.json`,
-from the goldens above).
+within 0.84 / 0.81 / 0.85 px of Chromium's width at scales 1 / 0.75 / 0.5 with the multiple-of-4 table (heights
+exactly n × L, baselines within 0.32 px) (`Tests/Editor/Data/chromium-kerning-line.json`,
+Chromium's widths per font size and weight of the kit's table, rebuilt by `Tests/Editor/Data/tools~/chromium-kerning-line.mts`
+whenever the table changes).
 
 ## Reproduction
 

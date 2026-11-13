@@ -39,7 +39,12 @@ namespace DesignUi.Editor.Tests
             var profile = Env("DESIGN_UI_PROFILE");
             Assert.IsNotNull(profile, "DESIGN_UI_PROFILE names the DesignUiProfile asset (Assets/…)");
             var discard = string.Equals(Env("DESIGN_UI_DISCARD_MANUAL_EDITS"), "true", StringComparison.OrdinalIgnoreCase);
-            var r = DesignUiBatch.ImportEach(profile, DesignUiBatch.PathList(export), discard);
+            // DESIGN_UI_IMPORT_REPORT: one line per export folder, "<code>\t<folder>\t<first log line>", for a runner
+            var report = Env("DESIGN_UI_IMPORT_REPORT");
+            var lines = new List<string>();
+            var r = DesignUiBatch.ImportEach(profile, DesignUiBatch.PathList(export), discard,
+                (dir, one) => lines.Add(one.Code + "\t" + dir + "\t" + (one.Log ?? "").Split('\n')[0]));
+            if (report != null) File.WriteAllText(report, string.Concat(lines.Select(l => l + "\n")));
             Debug.Log("Design UI import (code " + r.Code + "):\n" + r.Log);
             Assert.AreEqual(0, r.Code, r.Log);
         }

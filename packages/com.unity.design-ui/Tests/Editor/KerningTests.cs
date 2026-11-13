@@ -136,6 +136,49 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("Wave", loose.text);
         }
 
+        [UnityTest]
+        public IEnumerator SetText_RightAfterTheScreenIsAttached_PreparesTheLocalesTwins_SoTheFirstLayoutIsKerned()
+        {
+            // the design text shares no glyph with the bound value: only the bind can have added its pairs
+            var dir = Path.Combine(Path.GetTempPath(), "design-ui-kerning-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
+            Directory.CreateDirectory(dir);
+            _temp.Add(dir);
+            var title = TestIr.Text("title", "x", ("color", "#ffffff"), ("font-family", "Inter"), ("font-size", "32px"), ("align-self", "flex-start"));
+            var other = TestIr.Text("other", "x", ("color", "#ffffff"), ("font-family", "Inter"), ("font-size", "32px"), ("align-self", "flex-start"));
+            File.WriteAllText(Path.Combine(dir, ScreenCompiler.IrFileName), JsonConvert.SerializeObject(TestIr.Screen(TestIr.Root(title, other), "kerning.bind"), Formatting.Indented));
+            var profile = ScriptableObject.CreateInstance<DesignUiProfile>();
+            profile.outputFolder = Out;
+            FontFixture.Use(profile);
+            var result = ScreenCompiler.Compile(dir, profile, false, TestIr.NoView());
+            Object.DestroyImmediate(profile);
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            var set = AssetDatabase.LoadAssetAtPath<DesignFontSet>(Out + "/" + DesignFontSet.FileName);
+            Assert.IsNotNull(set, "the compiler writes the locales' twins next to DesignFonts.uss");
+            var twin = set.FontsFor("tr")[0];
+
+            var root = Panel();
+            var tree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/KerningBind/KerningBind.uxml").Instantiate();
+            root.Add(tree);
+            var label = tree.Q<Label>("title");
+            Assert.IsNull(label.resolvedStyle.unityFontDefinition.fontAsset, "no style pass yet: the font is not resolved");
+            DesignText.SetText(label, Kerned, set); // the same frame the screen is attached
+            var second = tree.Q<Label>("other");
+            DesignText.Fonts = set;
+            try { DesignText.SetText(second, "Yavuz Tepe"); }
+            finally { DesignText.Fonts = null; }
+            for (int i = 0; i < 5; i++) yield return null;
+            var width = label.layout.width;
+            var secondWidth = second.layout.width;
+
+            Assert.AreSame(twin, label.resolvedStyle.unityFontDefinition.fontAsset, "the label renders with the set's twin");
+            Assert.Less(width, Unkerned(twin, Kerned, Size) - 4, "the first layout of the early-bound text is kerned");
+            var again = Make(root, twin, Kerned, 400);
+            var secondAgain = Make(root, twin, "Yavuz Tepe", 460);
+            for (int i = 0; i < 5; i++) yield return null;
+            Assert.AreEqual(again.layout.width, width, 0.01f);
+            Assert.AreEqual(secondAgain.layout.width, secondWidth, 0.01f, "the default set (DesignText.Fonts) prepares it the same way");
+        }
+
         [Test]
         public void Prepare_AddsTheCharactersAndTheirPairs_ToTheFontAndItsWeightFaces_AndReportsWhatNoFontHas()
         {

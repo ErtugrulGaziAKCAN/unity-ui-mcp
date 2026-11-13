@@ -132,6 +132,7 @@ namespace DesignUi.Editor
                         throw new UnsupportedStyleException(key, value, null, "'" + key + ": " + value + "' in a state or breakpoint layer cannot undo a base value.");
                     continue;
                 }
+                if (key == "filter") value = FilterValue(value, spec);
                 support.ValidateValue(spec, value);
                 if (spec.MapValues.TryGetValue(value, out var mapped)) value = mapped;
 
@@ -266,6 +267,68 @@ namespace DesignUi.Editor
         /// <c>auto &amp;&amp; &lt;ratio&gt;</c> uses the ratio for every element the compiler writes (none is a replaced element
         /// with its own natural ratio: images are backgrounds), so <c>auto 16 / 9</c> and <c>16 / 9 auto</c> are the ratio.
         /// </summary>
+        static readonly System.Text.RegularExpressions.Regex FilterFunction =
+            new System.Text.RegularExpressions.Regex(@"^([a-z-]+)\((.*)\)$", System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        static readonly System.Text.RegularExpressions.Regex FilterNumber =
+            new System.Text.RegularExpressions.Regex(@"^(\d+(\.\d+)?|\.\d+)(%)?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        static readonly System.Text.RegularExpressions.Regex FilterLength =
+            new System.Text.RegularExpressions.Regex(@"^(\d+(\.\d+)?|\.\d+)(px)?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        static readonly System.Text.RegularExpressions.Regex FilterAngle =
+            new System.Text.RegularExpressions.Regex(@"^(-?(\d+(\.\d+)?|\.\d+))(deg|rad|grad|turn)?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// CSS <c>filter</c> to USS <c>filter</c> (UI Toolkit 6000.3 has tint, opacity, invert, grayscale, sepia, blur, contrast
+        /// and hue-rotate under the same names; percentages become fractions, angles radians, px stay px). Only the functions
+        /// css-support.json enables (<c>functions</c>) pass, each with its argument checked and written explicitly: blur a
+        /// px length (CSS's standard deviation, UI Toolkit's sigma), hue-rotate an angle in deg, the others a number or %, and a
+        /// missing argument as CSS's default. Any other function is U-CSS-015 with the property's fix.
+        /// </summary>
+        internal static string FilterValue(string value, CssPropertySpec spec)
+        {
+            UnsupportedStyleException Reject() => new UnsupportedStyleException("filter", value, spec.ValueRule ?? "U-CSS-015", spec.ValueFix);
+            var v = (value ?? "").Trim();
+            if (v == "none") return v;
+            var written = new List<string>();
+            foreach (var part in CssSupport.SplitTop(v, ' '))
+            {
+                var m = FilterFunction.Match(part.Trim());
+                if (!m.Success) throw Reject();
+                var fn = m.Groups[1].Value.ToLowerInvariant();
+                var arg = m.Groups[2].Value.Trim().ToLowerInvariant();
+                if (Array.IndexOf(spec.Functions, fn) < 0) throw Reject();
+                switch (fn)
+                {
+                    case "blur":
+                        if (arg.Length == 0) arg = "0px";
+                        var len = FilterLength.Match(arg);
+                        if (!len.Success) throw Reject();
+                        arg = len.Groups[1].Value + "px";
+                        break;
+                    case "hue-rotate":
+                        if (arg.Length == 0) arg = "0deg";
+                        var ang = FilterAngle.Match(arg);
+                        if (!ang.Success) throw Reject();
+                        double a = double.Parse(ang.Groups[1].Value, CultureInfo.InvariantCulture);
+                        switch (ang.Groups[4].Value)
+                        {
+                            case "rad": a = a * 180 / Math.PI; break;
+                            case "grad": a *= 0.9; break;
+                            case "turn": a *= 360; break;
+                            case "": if (a != 0) throw Reject(); break; // CSS takes a unitless zero only
+                        }
+                        arg = Math.Round(a, 6).ToString("R", CultureInfo.InvariantCulture) + "deg";
+                        break;
+                    default: // grayscale, sepia, invert, opacity, contrast, tint has a colour and is not a CSS function
+                        if (arg.Length == 0) arg = "1";
+                        if (!FilterNumber.IsMatch(arg)) throw Reject();
+                        break;
+                }
+                written.Add(fn + "(" + arg + ")");
+            }
+            if (written.Count == 0) throw Reject();
+            return string.Join(" ", written);
+        }
+
         static string AspectRatioValue(string value)
         {
             var v = value.Trim();

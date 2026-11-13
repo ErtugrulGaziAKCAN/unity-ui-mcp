@@ -28,6 +28,8 @@ namespace DesignUi.Editor
         public string Screen;
         /// <summary>The screen's generated folder (<c>&lt;outputFolder&gt;/&lt;Screen&gt;</c>), once the IR was read; else null.</summary>
         public string Folder;
+        /// <summary>Remarks for the log (for example characters no font of a locale has); never a failure.</summary>
+        public IReadOnlyList<string> Notes = new string[0];
     }
 
     /// <summary>
@@ -131,7 +133,7 @@ namespace DesignUi.Editor
 
                 var searched = new List<string> { Path.Combine(exportDir, KitTextStyles.FileName) };
                 if (!string.IsNullOrEmpty(profile.kitDir)) searched.Add(Path.Combine(profile.kitDir, KitTextStyles.FileName));
-                var stylesPath = searched.FirstOrDefault(File.Exists);
+                var stylesPath = KitTextStyles.FindTable(exportDir, profile.kitDir);
                 if (stylesPath == null && ScreenBuilder.UsesTextStyles(ir.Root))
                     return Fail("the screen uses kit text styles but no " + KitTextStyles.FileName + " was found (searched: " + string.Join(", ", searched) +
                                 "); export it with the design or set the profile's kit folder");
@@ -145,6 +147,7 @@ namespace DesignUi.Editor
 
                 // fonts per locale: element rules keep var(--font-…); DesignFonts.uss defines them per .locale-<code>
                 fonts = FontMap.Plan(profile, hooks?.Fonts ?? FontMap.DefaultResolver(profile));
+                if (stylesPath != null) fonts.LineBoxes = KitTextStyles.LineBoxesOf(stylesPath);
                 var fontErrors = fonts.Errors.Concat(FontMap.ScreenErrors(fonts, compiled)).ToList();
                 if (fontErrors.Count > 0) return new CompileResult { Ok = false, Errors = fontErrors };
                 compiled.Root.Classes.Add(FontMap.LocaleClass(fonts.ReferenceLocale));
@@ -216,7 +219,14 @@ namespace DesignUi.Editor
                 };
 
             // ---- the locales' font twins (assets DesignFonts.uss references), then what changed in one batch ------
-            try { FontMap.PrepareTwins(fonts, FontMap.EnsureTwins(fonts), ScreenStrings(ir.Root)); }
+            FontTwinGenerator.TwinRun twins;
+            var notes = new List<string>();
+            try
+            {
+                twins = FontMap.EnsureTwins(fonts);
+                var missingGlyphs = FontMap.PrepareTwins(fonts, twins, ScreenStrings(ir.Root));
+                if (missingGlyphs.Length > 0) notes.Add("no font of the locales' chains has these characters of the screen: " + missingGlyphs);
+            }
             catch (FontSetupException e) { return Fail(e.Message); }
 
             var writes = new List<KeyValuePair<string, byte[]>>();
@@ -290,10 +300,17 @@ namespace DesignUi.Editor
                 if (batch) AssetDatabase.StopAssetEditing(); // imports everything queued in this batch
             }
             if (failure != null) return new CompileResult { Ok = false, Written = written, Errors = new[] { failure }, Screen = ir.Screen, Folder = screenDir };
+            // the locales' twins for DesignText at runtime, next to DesignFonts.uss (inside the project only)
+            try
+            {
+                var set = FontMap.WriteFontSet(fonts, twins, outFolder);
+                if (set != null) written.Add(set);
+            }
+            catch (FontSetupException e) { return new CompileResult { Ok = false, Written = written, Errors = new[] { e.Message }, Screen = ir.Screen, Folder = screenDir }; }
             return new CompileResult
             {
                 Ok = true, Written = written, Orphans = FindOrphans(outFolder, folderName, profile.designRoot), StaleAssets = plan?.StaleAssets ?? new string[0],
-                Screen = ir.Screen, Folder = screenDir,
+                Screen = ir.Screen, Folder = screenDir, Notes = notes,
             };
         }
 
