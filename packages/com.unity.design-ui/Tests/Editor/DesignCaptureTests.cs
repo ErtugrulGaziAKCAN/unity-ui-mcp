@@ -301,6 +301,31 @@ namespace DesignUi.Editor.Tests
         }
 
         [UnityTest]
+        public IEnumerator Run_ABoundText_GetsItsCharactersAndKerningBeforeItIsAssigned()
+        {
+            // the bound value shares no glyph with the design text, so only the fill can have added its kerning pairs
+            var name = Words("name", "Konu", ("align-self", "flex-start"));
+            name.Bind = "name";
+            var export = Export(Small(BlackRoot(name)), "{ \"name\": \"AVATAR Toyota Wave\" }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+
+            var req = Request(export, screen, "default@320x180", 320, 180);
+            float width = 0, unkerned = 0;
+            req.Inspect = tree =>
+            {
+                var label = tree.Q<Label>("name");
+                Assert.AreEqual("AVATAR Toyota Wave", label.text);
+                var font = label.resolvedStyle.unityFontDefinition.fontAsset;
+                width = label.layout.width;
+                unkerned = label.text.Sum(c => font.characterLookupTable[c].glyph.metrics.horizontalAdvance) * label.resolvedStyle.fontSize / font.faceInfo.pointSize;
+            };
+            yield return DesignCapture.Run(req, profile);
+            Assert.Greater(unkerned, 0);
+            Assert.Less(width, unkerned - 2, "the capture's first layout of the bound text is kerned");
+        }
+
+        [UnityTest]
         public IEnumerator Run_ListRepeat_FillsTheListViewSlotsFromTheFixtures()
         {
             var subject = Words("subject", "Konu");

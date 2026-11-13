@@ -19,7 +19,10 @@ namespace DesignUi.Editor.Tests
     /// <c>n × lineHeight</c> tall and has every line's baseline where Chromium puts it, both within the comparison's
     /// <c>boxPx</c> / <c>baselinePx</c> (device px, <c>tools/design-export/fidelity-thresholds.json</c>). Chromium's first
     /// baseline: <c>round(ascent) + (L − round(ascent) − round(descent)) / 2</c> in device px, with the font's own ascent and
-    /// descent; each further line one line box lower. Skips when the package is not inside the repository.
+    /// descent; each further line one line box lower. Each style also sets one line with kerned pairs whose width must be
+    /// Chromium's (<c>Data/chromium-kerning-line.json</c>, from the exporter's goldens) within <c>boxPx</c> on its first
+    /// layout: its characters reach the twins through <see cref="DesignText.Prepare"/> before it is laid out, as a bound text's
+    /// do. Skips when the package is not inside the repository.
     /// </summary>
     public class LineBoxStyleTableTests
     {
@@ -83,6 +86,10 @@ namespace DesignUi.Editor.Tests
             var plain = FontTwinGenerator.GetOrCreateTwin(regular, Twins).faceInfo;
             var plainBold = FontTwinGenerator.GetOrCreateTwin(bold, Twins).faceInfo;
 
+            var kerning = JObject.Parse(File.ReadAllText(IrReaderTests.PackagePath("Tests", "Editor", "Data", "chromium-kerning-line.json")));
+            var kerningText = (string)kerning["text"];
+            foreach (var v in variants.Values) Assert.AreEqual("", DesignText.Prepare(v, kerningText), "Inter has every character of the line");
+
             var failures = new List<string>();
             var summary = new List<string>();
             int checkedLabels = 0;
@@ -112,10 +119,23 @@ namespace DesignUi.Editor.Tests
                         root.Add(l);
                         labels.Add((l, style, lines));
                     }
+                var kerned = styles.Select((style, i) =>
+                {
+                    var l = new Label(kerningText) { name = "kern-" + style.Name };
+                    l.style.position = Position.Absolute;
+                    l.style.left = 8 + 96 * LineCounts.Length;
+                    l.style.top = 8 + 8 * i;
+                    l.style.fontSize = (float)style.Size;
+                    l.style.unityFontDefinition = FontDefinition.FromSDFFont(variants[ratios[i].Key]);
+                    l.style.unityFontStyleAndWeight = style.Weight >= 700 ? FontStyle.Bold : FontStyle.Normal;
+                    root.Add(l);
+                    return (label: l, style);
+                }).ToList();
                 for (int f = 0; f < 10; f++) yield return null;
 
                 var ir = TestIr.Screen(TestIr.Root(), "linebox.table");
-                ir.Root.Children = labels.Select(x => { var n = TestIr.Node(x.label.name, "text"); n.Text = new IrText { Tr = "Hg" }; return n; }).ToArray();
+                ir.Root.Children = labels.Select(x => x.label.name).Concat(kerned.Select(x => x.label.name))
+                    .Select(id => { var n = TestIr.Node(id, "text"); n.Text = new IrText { Tr = "Hg" }; return n; }).ToArray();
                 var measured = BoxesWriter.Measure("c", root, new Vector2Int(_rt.width, _rt.height), scale, ir);
                 double worstH = 0, worstB = 0;
                 foreach (var (label, style, lines) in labels)
@@ -142,8 +162,18 @@ namespace DesignUi.Editor.Tests
                             failures.Add(where + ": line " + (k + 1) + " baseline " + got.ToString("0.###") + " device px, Chromium " + expected.ToString("0.###") + " (limit ±" + baselinePx + ")");
                     }
                 }
+                double worstW = 0;
+                foreach (var (label, style) in kerned)
+                {
+                    var chromium = (double?)kerning["widths"]?[style.Name]?[scale.ToString(System.Globalization.CultureInfo.InvariantCulture)];
+                    if (chromium == null) { failures.Add(style.Name + ": no Chromium width at scale " + scale); continue; }
+                    double w = (double)measured["elements"][label.name]["w"];
+                    worstW = Math.Max(worstW, Math.Abs(w - chromium.Value));
+                    if (Math.Abs(w - chromium.Value) > boxPx + 1e-6)
+                        failures.Add(style.Name + " kerned line at scale " + scale + ": width " + w + " device px, Chromium " + chromium.Value + " (limit ±" + boxPx + ")");
+                }
                 checkedLabels += labels.Count;
-                summary.Add("scale " + scale + ": " + labels.Count + " labels, largest |height − n×L| " + worstH.ToString("0.###") + " device px, largest |baseline − Chromium| " + worstB.ToString("0.###") + " device px");
+                summary.Add("scale " + scale + ": " + labels.Count + " labels, largest |height − n×L| " + worstH.ToString("0.###") + " device px, largest |baseline − Chromium| " + worstB.ToString("0.###") + " device px, largest |kerned line width − Chromium| " + worstW.ToString("0.###") + " device px");
                 Dispose();
             }
             Debug.Log("Kit line-box styles on a panel (" + styles.Count + " styles × " + string.Join("/", LineCounts) + " lines):\n" + string.Join("\n", summary));

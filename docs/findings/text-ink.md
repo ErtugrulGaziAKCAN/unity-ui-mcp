@@ -102,13 +102,8 @@ ratio: Unity's ink amount relative to the golden's, all lines at 2560.
 
 ## 5. Other differences the fixture exposed
 
-- **Kerning.** Unity's text is wider than Chromium's by +0.95 to +6.17 px on the fixture's 30-character line, because
-  it is not kerned: Unity's widths equal the ceiling of Chromium's widths with `font-kerning: none` (−0.02 to +0.97 px).
-  The font twins are dynamic font assets; a dynamic font asset adds the kerning pairs of a new glyph in its update queue,
-  after the text that needed the glyph has been laid out, and UI Toolkit keeps that first layout. The same text is
-  kerned once its glyphs are in the atlas. The advanced text generator kerns from the first layout (its widths match
-  Chromium's except for lines that wrap). Importing every pair of the font into the twin up front is not an option
-  (Inter's class-based kerning expands to far more pairs than the twins hold today, a few megabytes per twin already).
+- **Kerning.** Unity's text was wider than Chromium's (up to +6 px on a 30-character line) because its first layout was
+  not kerned; see section 6.
 - **Stacked text at 1920×1080 and 1280×720.** Line boxes of 15, 30, 35, 54 and 63 px are not whole device pixels at
   scale 0.75 (11.25, 22.5, 26.25, 40.5, 47.25 px), nor 15, 35 and 63 px at 0.5. UI Toolkit rounds a text element's
   height up to whole device pixels (both generators), so each such element is up to 0.75 px taller than in Chromium and
@@ -117,10 +112,50 @@ ratio: Unity's ink amount relative to the golden's, all lines at 2560.
   1, 2, 5 and 10 lines and scales 1, 0.75 and 0.5); the sum is not. Only line boxes that are multiples of 4 px (label
   16/20, title 32/36 in the current table) are whole at both scales.
 
+## 6. Kerning on the first layout
+
+**Cause.** The font twins are dynamic font assets. When a text needs a glyph the twin does not have yet, the twin adds
+the glyph at once but its kerning pairs only in its update queue, after that text was laid out, and UI Toolkit keeps the
+unkerned layout (Unity 6000.3, standard text generator). The same string laid out later, once its glyphs exist, is
+kerned. Unkerned widths equal the ceiling of Chromium's widths with `font-kerning: none`.
+
+**Measured on a real panel** (the verifier capture, fresh twins) with [`text-ink/lines.html`](text-ink/lines.html) and
+[`lines-bold.html`](text-ink/lines-bold.html): every kit style, 400 and 700, at 1, 2 and 5 lines of the 33-character
+line `AVATAR Toyota Wave, Yavuz Tepe To` (pairs AV, VA, AT, TA, To, Wa, av, Ya, Te), each element absolutely placed on
+whole device pixels; 42 elements per viewport. Unity minus Chromium, device px:
+
+| | Box height | Baseline (every line) | Element width | Line width |
+|---|---|---|---|---|
+| Standard generator, first layout (2560, the first capture) | 0 | −0.18 … +0.87 | **+7.02 … +45.97** (all 42 over 1 px) | −0.00 … +0.06 |
+| Standard generator, glyphs already in the twin (1920, 1280) | 0 … +0.75 | −0.14 … +0.65 | +0.02 … +0.98 | 0.00 … +0.04 |
+| Advanced generator (`-unity-text-generator: advanced`), all three viewports | 0 … +0.75 | −0.26 … +0.86 | +0.06 … **+1.13** (30 of 126 over 1 px) | −0.05 … +0.20 |
+| Standard generator with the fix below, fresh twins, all three viewports | 0 … +0.75 | −0.18 … +0.87 | +0.02 … +0.98 | −0.00 … +0.06 |
+
+The line width is the caret route's (measured after the capture's frames); the element width is the laid-out box, which
+keeps the first layout. The advanced generator kerns from the first layout, but its lines come out up to 0.2 px wider
+than Chromium's, so the element box (UI Toolkit rounds a text's size up to whole device pixels) misses the 1-px limit by
+up to 0.13 px; it also needs Project Settings → UI Toolkit → *Enable Advanced Text* (which stores ICU data in every
+PanelSettings). The standard generator with the twins prepared holds every limit, so it stays.
+
+**Fix.** Characters reach the twins with their font features before any text that uses them is laid out:
+
+- at import, every character of every string of the screen (texts and attribute texts, every locale the IR carries) is
+  added to each locale's primary twins, plain and line-box variants, their weight faces and, for characters a twin
+  lacks, its fallbacks (`TryAddCharacters` with font features), and the twins that gained characters are saved;
+- a text assigned at runtime goes through `DesignUi.DesignText.SetText(element, text)` (or `DesignText.Prepare(font,
+  text)`), which does the same for the element's resolved font before assigning it; the verifier's sample-data fill
+  uses it for bound texts and Smart String arguments;
+- twins keep their dynamic data in player builds (`clearDynamicDataOnBuild` off), so what the import added ships.
+
+Panel proof (`LineBoxStyleTableTests`): with the line prepared as a bound text is, every kit style's first layout is
+within 0.98 / 0.80 / 0.98 px of Chromium's width at scales 1 / 0.75 / 0.5 (`Tests/Editor/Data/chromium-kerning-line.json`,
+from the goldens above).
+
 ## Reproduction
 
 ```
 scripts/fidelity.sh --out <out> docs/findings/text-ink/ink.html             # Unity against the golden as exported
+scripts/fidelity.sh --out <out-lines> docs/findings/text-ink/lines.html docs/findings/text-ink/lines-bold.html  # section 6
 cp -R <out>/ink/export <out>/smoothing-off
 npx tsx docs/findings/text-ink/smoothing-off-goldens.mts docs/findings/text-ink/ink.html <out>/kit <out>/smoothing-off
 npx tsx tools/design-export/src/cli.ts compare <out>/smoothing-off --unity <out>/ink/unity --report <out>/smoothing-off.html

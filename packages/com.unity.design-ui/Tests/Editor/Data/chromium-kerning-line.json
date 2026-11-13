@@ -1,0 +1,76 @@
+{
+  "$comment": "Chromium's width in device px of one line of `text` per kit text style (Inter 18pt, kerning on, macOS headless shell 158), at the viewport scales 1, 0.75 and 0.5: element widths of the exporter's goldens of docs/findings/text-ink/lines.html and lines-bold.html (scripts/fidelity.sh). The panel proof checks Unity's first layout against them.",
+  "text": "AVATAR Toyota Wave, Yavuz Tepe To",
+  "widths": {
+    "caption": {
+      "1": 206.984375,
+      "0.75": 155.238281,
+      "0.5": 103.492188
+    },
+    "label": {
+      "1": 275.96875,
+      "0.75": 206.976563,
+      "0.5": 137.984375
+    },
+    "body": {
+      "1": 413.953125,
+      "0.75": 310.464844,
+      "0.5": 206.976563
+    },
+    "subtitle": {
+      "1": 482.9375,
+      "0.75": 362.203125,
+      "0.5": 241.46875
+    },
+    "title": {
+      "1": 551.921875,
+      "0.75": 413.941406,
+      "0.5": 275.960938
+    },
+    "headline": {
+      "1": 827.890625,
+      "0.75": 620.917969,
+      "0.5": 413.945313
+    },
+    "display": {
+      "1": 965.875,
+      "0.75": 724.40625,
+      "0.5": 482.9375
+    },
+    "caption-bold": {
+      "1": 213.875,
+      "0.75": 160.40625,
+      "0.5": 106.9375
+    },
+    "label-bold": {
+      "1": 285.15625,
+      "0.75": 213.867188,
+      "0.5": 142.578125
+    },
+    "body-bold": {
+      "1": 427.734375,
+      "0.75": 320.800781,
+      "0.5": 213.867188
+    },
+    "subtitle-bold": {
+      "1": 499.015625,
+      "0.75": 374.261719,
+      "0.5": 249.507813
+    },
+    "title-bold": {
+      "1": 570.296875,
+      "0.75": 427.722656,
+      "0.5": 285.148438
+    },
+    "headline-bold": {
+      "1": 855.453125,
+      "0.75": 641.589844,
+      "0.5": 427.726563
+    },
+    "display-bold": {
+      "1": 998.03125,
+      "0.75": 748.523438,
+      "0.5": 499.015625
+    }
+  }
+}

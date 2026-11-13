@@ -330,6 +330,23 @@ namespace DesignUi.Editor
             public VisualTreeAsset Tree;
             public StyleSheet Fonts;
             public string Folder;
+            /// <summary>The reference locale's primary twins (plain and line-box variants): a bound text's characters go there first.</summary>
+            public List<UnityEngine.TextCore.Text.FontAsset> TextFonts = new List<UnityEngine.TextCore.Text.FontAsset>();
+        }
+
+        /// <summary>The existing twins of the profile's reference locale font, plain and line-box variants (none are created here).</summary>
+        static List<UnityEngine.TextCore.Text.FontAsset> ReferenceTwins(DesignUiProfile profile)
+        {
+            try
+            {
+                var plan = FontMap.Plan(profile, FontMap.DefaultResolver(profile));
+                if (!plan.Fonts.TryGetValue(plan.ReferenceLocale, out var font) || font?.Primary == null || string.IsNullOrEmpty(plan.TwinFolder))
+                    return new List<UnityEngine.TextCore.Text.FontAsset>();
+                return new FontTwinGenerator.LineBox[] { null }.Concat(FontTwinGenerator.LineBox.Kit)
+                    .Select(b => AssetDatabase.LoadAssetAtPath<UnityEngine.TextCore.Text.FontAsset>(FontTwinGenerator.TwinPath(font.Primary, plan.TwinFolder, b)))
+                    .Where(f => f != null).ToList();
+            }
+            catch (FontSetupException) { return new List<UnityEngine.TextCore.Text.FontAsset>(); }
         }
 
         static Screen Prepare(CaptureRequest req, DesignUiProfile profile)
@@ -365,6 +382,7 @@ namespace DesignUi.Editor
                 Ir = ir, Manifest = manifest, Tree = tree, Folder = folder,
                 Fixtures = File.Exists(fixtures) ? IrFixtures.Read(fixtures) : new IrFixtures(),
                 Fonts = AssetDatabase.LoadAssetAtPath<StyleSheet>(Path.GetDirectoryName(folder)?.Replace('\\', '/') + "/" + FontMap.FileName),
+                TextFonts = ReferenceTwins(profile),
             };
         }
 
@@ -614,11 +632,17 @@ namespace DesignUi.Editor
                 foreach (var c in node.Children ?? new IrNode[0]) Fill(c, roots, scope, source);
             }
 
-            static void FillText(IrNode node, VisualElement el, Scope scope)
+            /// <summary>
+            /// A bound text, or a text with Smart String arguments filled in: its characters reach the screen's twins with their
+            /// kerning pairs before it is assigned (<see cref="DesignUi.DesignText.Prepare"/>), as game code does with
+            /// <see cref="DesignUi.DesignText.SetText"/>, so its first layout is kerned.
+            /// </summary>
+            void FillText(IrNode node, VisualElement el, Scope scope)
             {
                 var bound = node.Bind != null ? scope.Value(node.Bind) : null;
                 if (bound != null)
                 {
+                    PrepareFonts(bound);
                     SetText(el, bound, node.Text?.Rich ?? false);
                     return;
                 }
@@ -631,7 +655,13 @@ namespace DesignUi.Editor
                     var v = scope.Value(a);
                     if (v != null) text = text.Replace("{" + a + "}", v);
                 }
+                PrepareFonts(text);
                 SetText(el, text, node.Text.Rich);
+            }
+
+            void PrepareFonts(string text)
+            {
+                foreach (var font in _screen.TextFonts) DesignUi.DesignText.Prepare(font, text);
             }
 
             static string GetText(VisualElement el)

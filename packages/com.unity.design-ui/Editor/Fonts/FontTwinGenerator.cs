@@ -222,6 +222,9 @@ namespace DesignUi.Editor
             using (var so = new SerializedObject(twin))
             {
                 if (face.HasValue) SetFace(so, face.Value);
+                // the characters (and kerning pairs) the compiler adds to a twin must reach player builds
+                var clear = so.FindProperty("m_ClearDynamicDataOnBuild") ?? throw new FontSetupException("this Unity version's TextCore FontAsset has no m_ClearDynamicDataOnBuild field");
+                if (clear.boolValue) clear.boolValue = false;
                 var list = so.FindProperty("m_FallbackFontAssetTable");
                 var table = so.FindProperty("m_FontWeightTable");
                 if (list == null || table == null) throw new FontSetupException("this Unity version's TextCore FontAsset has no fallback list or weight table field");

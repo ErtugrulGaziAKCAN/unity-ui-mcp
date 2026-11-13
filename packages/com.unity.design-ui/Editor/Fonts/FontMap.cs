@@ -209,6 +209,36 @@ namespace DesignUi.Editor
         /// Creates or updates the twin of every resolved locale's font and its line-box variants, with their own fallbacks,
         /// the plan's global fallbacks and their weight faces. Twins keep their GUIDs, so <c>DesignFonts.uss</c> never needs a re-import for them.
         /// </summary>
+        /// <summary>
+        /// Adds every character of <paramref name="strings"/> (the screen's texts in every locale) to each resolved locale's
+        /// primary twins, plain and line-box variants, with their kerning pairs (<see cref="DesignUi.DesignText.Prepare"/>, which
+        /// also covers the weight faces and, for missing characters, the fallbacks), and saves the twins that gained characters.
+        /// Without it the first layout of a text whose glyphs are new to a dynamic twin is unkerned (docs/findings/text-ink.md).
+        /// Returns the characters no font of a locale's chain has.
+        /// </summary>
+        internal static string PrepareTwins(FontsPlan plan, FontTwinGenerator.TwinRun run, IEnumerable<string> strings)
+        {
+            var text = string.Concat((strings ?? Enumerable.Empty<string>()).Where(s => !string.IsNullOrEmpty(s)));
+            if (text.Length == 0) return "";
+            var all = run.Twins.Values.Where(t => t != null).Distinct().ToList();
+            var before = all.ToDictionary(t => t, t => t.characterTable.Count);
+            var missing = new System.Text.StringBuilder();
+            foreach (var locale in plan.Locales)
+            {
+                if (!plan.Fonts.TryGetValue(locale, out var font)) continue;
+                foreach (var key in new[] { "" }.Concat(FontTwinGenerator.LineBox.Kit.Select(b => b.Key)))
+                    if (run.Twins.TryGetValue((font.Primary, key), out var twin) && twin != null)
+                        foreach (var c in DesignUi.DesignText.Prepare(twin, text)) if (missing.ToString().IndexOf(c) < 0) missing.Append(c);
+            }
+            foreach (var t in all)
+                if (t.characterTable.Count != before[t])
+                {
+                    UnityEditor.EditorUtility.SetDirty(t);
+                    UnityEditor.AssetDatabase.SaveAssetIfDirty(t);
+                }
+            return missing.ToString();
+        }
+
         internal static FontTwinGenerator.TwinRun EnsureTwins(FontsPlan plan)
         {
             var run = new FontTwinGenerator.TwinRun(plan.Globals);

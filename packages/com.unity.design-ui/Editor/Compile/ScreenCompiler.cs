@@ -92,6 +92,20 @@ namespace DesignUi.Editor
         public static CompileResult Compile(string exportDir, DesignUiProfile profile, bool discardManualEdits = false) =>
             Compile(exportDir, profile, discardManualEdits, null);
 
+        /// <summary>Every string the screen shows, in every locale the IR carries: texts and attribute texts.</summary>
+        internal static IEnumerable<string> ScreenStrings(IrNode node)
+        {
+            if (node == null) yield break;
+            foreach (var t in new[] { node.Text }.Concat((node.AttrTexts ?? new Dictionary<string, IrText>()).Values))
+            {
+                if (t == null) continue;
+                yield return t.Tr;
+                yield return t.En;
+            }
+            foreach (var c in node.Children ?? new IrNode[0])
+                foreach (var s in ScreenStrings(c)) yield return s;
+        }
+
         internal static CompileResult Compile(string exportDir, DesignUiProfile profile, bool discardManualEdits, CompileHooks hooks)
         {
             if (profile == null) return Fail("no DesignUiProfile");
@@ -202,7 +216,7 @@ namespace DesignUi.Editor
                 };
 
             // ---- the locales' font twins (assets DesignFonts.uss references), then what changed in one batch ------
-            try { FontMap.EnsureTwins(fonts); }
+            try { FontMap.PrepareTwins(fonts, FontMap.EnsureTwins(fonts), ScreenStrings(ir.Root)); }
             catch (FontSetupException e) { return Fail(e.Message); }
 
             var writes = new List<KeyValuePair<string, byte[]>>();
