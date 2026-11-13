@@ -630,6 +630,7 @@ namespace DesignUi.Editor.Tests
         [UnityTest]
         public IEnumerator Compiled_CompoundLayersAndNewIrFields_ImportCleanlyAndResolveOnAPanel()
         {
+            const string image = "assets/image.png"; // a plain image; the shadow PNG is imported as a 9-slice sprite
             var title = Text("title", "Başlık", ("color", "#ffffff"))
                 .With("anc(card):class:is-selected", ("color", "#111111"))
                 .With("state:loading+anc(card):class:is-selected", ("color", "#222222"));
@@ -638,10 +639,10 @@ namespace DesignUi.Editor.Tests
                 .Add(title);
             var hov = Node("hov", "container", ("height", "4px")).With("state:loading+hover", ("opacity", "0.3"));
             var icon = Node("icon", "vector", ("width", "8px"), ("height", "8px"), ("color", "#ff0000")).With("state:loading", ("color", "#00ff00"));
-            icon.Asset = new IrAsset { Kind = "image", File = ShadowFile, Sha256 = new string('d', 64), Width = 8, Height = 8, Tint = true };
-            var banner = Node("banner", "container", ("width", "40px"), ("height", "20px"), ("background-image", "url(\"" + ShadowFile + "\")"),
+            icon.Asset = new IrAsset { Kind = "image", File = image, Sha256 = new string('d', 64), Width = 8, Height = 8, Tint = true };
+            var banner = Node("banner", "container", ("width", "40px"), ("height", "20px"), ("background-image", "url(\"" + image + "\")"),
                 ("background-repeat", "no-repeat"), ("background-position-x", "right 2px"));
-            banner.Background = new IrAsset { Kind = "image", File = ShadowFile, Sha256 = new string('d', 64), Width = 8, Height = 6 };
+            banner.Background = new IrAsset { Kind = "image", File = image, Sha256 = new string('d', 64), Width = 8, Height = 6 };
             var go = Node("go", "button", ("height", "10px")).With("disabled", ("opacity", "0.4"));
             go.Initial = new IrInitial { Disabled = true };
             go.AttrTexts["title"] = new IrText { Key = "t.go", Tr = "Başla", En = "Start" };
@@ -649,7 +650,21 @@ namespace DesignUi.Editor.Tests
             check.Initial = new IrInitial { Checked = true };
             var search = Node("search", "input", ("height", "20px"));
             search.AttrTexts["placeholder"] = new IrText { Key = "t.find", Tr = "Ara", En = "Search" };
-            var result = ScreenCompiler.Compile(Export(TestIr.Screen(Root(card, hov, icon, banner, go, check, search))), Profile(AssetsRoot));
+            var league = Node("league", "dropdown", ("height", "20px"));
+            league.Text = new IrText { Key = "t.league", Tr = "Süper Lig", En = "Super League" };
+            var tile = Node("tile", "container", ("height", "8px")).With("focus", ("opacity", "0.6"));
+            var crest = Node("crest", "image", ("width", "8px"), ("height", "8px"));
+            crest.Asset = new IrAsset { Kind = "image", File = image, Sha256 = new string('d', 64), Width = 8, Height = 8 };
+            crest.AttrTexts["alt"] = new IrText { Key = "t.crest", Tr = "Kulüp arması", En = "Club crest" };
+            var lifted = Node("lifted", "container", ("width", "8px"), ("height", "8px")).With("class:is-selected", ("translate", "0 -2px"));
+            lifted.Shadow = new IrShadow { Kind = "shadow9", File = ShadowFile, Sha256 = new string('d', 64), Width = 8, Height = 8, Slice = new float[] { 2, 2, 2, 2 }, Offset = new BoxRect() };
+            var ir = TestIr.Screen(Root(card, hov, icon, banner, go, check, search, league, tile, crest, lifted));
+            var export = Export(ir);
+            var bytes = File.ReadAllBytes(Path.Combine(export, ShadowFile));
+            File.WriteAllBytes(Path.Combine(export, image), bytes);
+            SetHash(ir, image, bytes);
+            WriteIr(export, ir);
+            var result = ScreenCompiler.Compile(export, Profile(AssetsRoot));
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
             var vta = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(AssetsRoot + "/TestScreen/TestScreen.uxml");
             var sheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(AssetsRoot + "/TestScreen/TestScreen.uss");
@@ -691,6 +706,20 @@ namespace DesignUi.Editor.Tests
             var field = tree.Q<TextField>("search");
             Assert.AreEqual("Ara", field.textEdition.placeholder);
             Assert.IsFalse(field.textEdition.hidePlaceholderOnFocus, "CSS keeps a placeholder while the empty field has focus");
+            Assert.AreEqual("Süper Lig", tree.Q<DropdownField>("league").value, "a select's selected option");
+            var tileEl = tree.Q("tile");
+            Assert.IsTrue(tileEl.focusable, "a :focus style needs a focusable element");
+            Assert.IsFalse(cardEl.focusable);
+
+            // the manifest the compile wrote: undrawn attribute texts and a host that mirrors its element's class
+            var manifest = GeneratedManifest.Load(AssetsRoot + "/TestScreen/" + ScreenCompiler.ManifestFileName);
+            Assert.AreEqual("Kulüp arması", manifest.accessibility["crest"]["alt"].tr);
+            Assert.AreEqual("t.crest", manifest.accessibility["crest"]["alt"].key);
+            Assert.AreEqual("Club crest", manifest.accessibility["crest"]["alt"].en);
+            var mirror = manifest.mirrors.Single(m => m.host == "lifted__shadowhost");
+            Assert.AreEqual("lifted", mirror.element);
+            CollectionAssert.AreEqual(new[] { "is-selected" }, mirror.classes);
+            Assert.IsFalse(tree.Q("lifted__shadowhost").ClassListContains(ScreenBuilder.MirrorHostClass), "classes only, no pseudo-state mirror");
 
             cardEl.AddToClassList("is-selected");
             for (int i = 0; i < 3; i++) yield return null;

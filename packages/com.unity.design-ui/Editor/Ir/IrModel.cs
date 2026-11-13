@@ -204,6 +204,12 @@ namespace DesignUi.Editor
         [JsonIgnore] public bool Clickable;
 
         /// <summary>
+        /// Set by Lowering.Apply: the element has a <c>:focus</c> style (its own, or one a descendant's layer names), so it
+        /// is written focusable (UI Toolkit elements are not focusable by default). Not part of the IR file.
+        /// </summary>
+        [JsonIgnore] public bool Focusable;
+
+        /// <summary>
         /// Set by Lowering.Apply for a baked shadow image and for elements with pointer-events: none; the compiler
         /// emits picking-mode Ignore. Not part of the IR file.
         /// </summary>

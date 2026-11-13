@@ -51,6 +51,11 @@ namespace DesignUi.Editor
         /// each of them on the host whenever it toggles it on the element.
         /// </summary>
         public readonly List<string> MirrorClasses = new List<string>();
+        /// <summary>
+        /// Attribute texts UI Toolkit does not draw (<c>alt</c>, <c>aria-label</c>), by attribute name; the manifest records
+        /// them per element so assistive features and the view can use them.
+        /// </summary>
+        public readonly SortedDictionary<string, IrText> AccessibilityLabels = new SortedDictionary<string, IrText>(System.StringComparer.Ordinal);
         /// <summary>The lowered IR node (bind, action, text key and args, anims, transitions), for the view writer and later tasks.</summary>
         public IrNode Source;
 

@@ -349,6 +349,44 @@ namespace DesignUi.Editor.Tests
             Assert.AreNotEqual(Cls(twin, "p"), Cls(twin, "q"), "each named ancestor has a class only it carries");
         }
 
+        static IrAnim Pulse(string trigger) => new IrAnim
+        {
+            Kind = IrAnim.KeyframesKind, Trigger = trigger, Phase = "enter", Name = "pulse", Properties = new[] { "opacity" }, Duration = 200,
+            Timing = "ease", Iterations = 1, Direction = "normal", FillMode = "none", PlayState = "running", Restart = true,
+            Keyframes = new List<IrKeyframe> { new IrKeyframe { Offset = 0, Values = new Dictionary<string, string> { { "opacity", "0.5" } } } },
+        };
+
+        [Test]
+        public void AncestorNamedOnlyByAnAnimationTrigger_IsKeptAndChecked()
+        {
+            var icon = Node("icon", "container", ("height", "4px"));
+            icon.Anims = new List<IrAnim> { Pulse("anc(root__0):hover") };
+            var s = Build(Screen(new IrNode { Id = "root", Kind = "container" }.Add(new IrNode { Id = "root__0", Kind = "container" }.Add(icon))));
+            Assert.IsNotNull(s.Find("root__0"), "the wrapper the trigger names is not removed");
+            CollectionAssert.IsEmpty(s.RemovedElements);
+            Assert.IsNotNull(s.Find("root__0").Classes.SingleOrDefault(c => c.StartsWith("s-", StringComparison.Ordinal)), "it keeps a class of its own");
+
+            var lost = Node("lost", "container", ("height", "4px"));
+            lost.Anims = new List<IrAnim> { Pulse("anc(elsewhere):active") };
+            var e = Assert.Throws<IrFormatException>(() => Build(Screen(Root(lost, Node("elsewhere", "container", ("height", "4px"))))));
+            StringAssert.Contains("elsewhere", e.Message);
+        }
+
+        [Test]
+        public void UnionLimit_NamesTheViewClassesInvolved()
+        {
+            // eleven panels, each shown by its own tab class on the root, in a gap container with no fixed first sibling
+            var kids = new List<IrNode>();
+            for (int i = 0; i < 11; i++)
+                kids.Add(Node("panel-" + i, "container", ("height", "10px"), ("display", "none")).With("anc(root):class:is-tab-" + i, ("display", "flex")));
+            var tabs = Node("tabs", "container", ("display", "flex"), ("flex-direction", "column"), ("gap", "8px")).Add(kids.ToArray());
+            var e = Assert.Throws<UnsupportedStyleException>(() => Lowering.Apply(Root(tabs)));
+            StringAssert.Contains("view classes is-tab-0 on 'root'", e.Message);
+            StringAssert.Contains("is-tab-9 on 'root'", e.Message);
+            StringAssert.Contains("screen state", e.Message);
+            StringAssert.DoesNotContain("breakpoints", e.Message, "only the kinds that are involved");
+        }
+
         [Test]
         public void AncestorThatIsNotInTheCompiledTree_IsAnError()
         {

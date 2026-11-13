@@ -68,11 +68,51 @@ namespace DesignUi.Editor.Tests
 
         [TestCase("alt")]
         [TestCase("aria-label")]
-        public void AttrTexts_WithoutAUiToolkitCounterpart_AreErrors(string name)
+        public void AttrTexts_WithoutAUiToolkitCounterpart_AreRecordedNotDrawn(string name)
         {
             var img = Node("crest", "image", ("height", "10px"));
             img.AttrTexts[name] = T("Arma");
-            StringAssert.Contains(name, Assert.Throws<IrFormatException>(() => Build(Screen(Root(img)))).Message);
+            var s = Build(Screen(Root(img)));
+            var crest = s.Find("crest");
+            CollectionAssert.IsEmpty(crest.Attributes, "nothing in the UXML");
+            Assert.AreEqual("Arma", crest.AccessibilityLabels[name].Tr);
+            Assert.AreEqual("k.Arma", crest.AccessibilityLabels[name].Key);
+
+            // a structural wrapper with a label stays, so the manifest's element exists
+            var wrapper = new IrNode { Id = "root__0", Kind = "container" }.Add(Text("t", "T"));
+            wrapper.AttrTexts[name] = T("Bölüm");
+            var kept = Build(Screen(new IrNode { Id = "root", Kind = "container" }.Add(wrapper)));
+            Assert.IsNotNull(kept.Find("root__0"));
+        }
+
+        [Test]
+        public void Select_SelectedOptionText_IsTheDropdownsValue()
+        {
+            var select = Node("league", "dropdown", ("height", "30px"));
+            select.Text = T("Süper Lig");
+            var s = Build(Screen(Root(select)));
+            Assert.AreEqual("ui:DropdownField", s.Find("league").Tag);
+            CollectionAssert.AreEqual(new[] { A("choices", "Süper Lig"), A("index", "0") }, s.Find("league").Attributes, "UXML sets a dropdown's value only through a choice");
+            Assert.IsNull(s.Find("league").Text);
+            select.Text = T("Lig, 1. Bölüm");
+            StringAssert.Contains("comma", Assert.Throws<IrFormatException>(() => Build(Screen(Root(select)))).Message);
+        }
+
+        [Test]
+        public void Focus_StyledElementsAreFocusable_AlsoWhenTheirFocusLayerMovesToAShadowHost()
+        {
+            var plain = Node("tile", "container", ("height", "10px")).With("focus", ("background-color", "#222222"));
+            var lifted = Node("card", "container", ("width", "10px"), ("height", "10px")).With("focus", ("translate", "0 -2px"));
+            lifted.Shadow = new IrShadow { Kind = "shadow9", File = ShadowFile, Sha256 = "x", Width = 8, Height = 8, Slice = new float[] { 2, 2, 2, 2 }, Offset = new BoxRect() };
+            var named = Node("row", "container", ("height", "10px")).Add(Text("label", "L").With("anc(row):focus", ("color", "#ff0000")));
+            var other = Node("other", "container", ("height", "10px")).With("hover", ("opacity", "0.5"));
+            var s = Build(Screen(Root(plain, lifted, named, other)));
+            CollectionAssert.Contains(s.Find("tile").Attributes, A("focusable", "true"));
+            CollectionAssert.Contains(s.Find("card").Attributes, A("focusable", "true"), "the element is focused; the host mirrors it");
+            CollectionAssert.DoesNotContain(s.Find("card__shadowhost").Attributes, A("focusable", "true"));
+            CollectionAssert.Contains(s.Find("row").Attributes, A("focusable", "true"), "a descendant's layer names its focus");
+            CollectionAssert.IsEmpty(s.Find("other").Attributes);
+            CollectionAssert.IsEmpty(s.Find("label").Attributes);
         }
 
         [Test]
@@ -176,6 +216,38 @@ namespace DesignUi.Editor.Tests
 
             var unsized = Banner().With("hover", ("background-image", "url(\"assets/logo-hover.png\")"));
             StringAssert.Contains("background-size", Assert.Throws<UnsupportedStyleException>(() => Build(Screen(Root(unsized)))).Message);
+        }
+
+        [Test]
+        public void BackgroundImage_ALayerNamingTheBaseImageAgain_WinsOverAnotherImageInsideItsKey()
+        {
+            // the default icon in a busy state, another icon on hover: the union is the busy state's icon again
+            var n = Banner()
+                .With("hover", ("background-image", "url(\"assets/logo-hover.png\")"), ("background-size", "10px 10px"))
+                .With("state:x", ("background-image", "url(\"assets/logo.png\")"))
+                .With("state:x+hover", ("background-image", "url(\"assets/logo.png\")"));
+            var s = Build(Screen(Root(n)));
+            var c = Cls(s, "banner");
+            Assert.AreEqual("url(\"assets/logo-hover.png\")", Decl(Rule(s, "." + c + ":hover"), "background-image"));
+            Assert.IsFalse(s.Rules.Any(r => r.Selector == ".state-x ." + c && r.Declarations.Any(d => d.Property == "background-image")),
+                "under the state alone the base image already shows");
+            var union = Rule(s, ".state-x ." + c + ":hover");
+            Assert.AreEqual("url(\"assets/logo.png\")", Decl(union, "background-image"), "the base image wins over hover's image again");
+            Assert.IsNull(Decl(union, "background-size"), "its size comes from the rules below, as in CSS");
+        }
+
+        [Test]
+        public void BackgroundImage_SizesThatCannotBeKnown_AreErrors()
+        {
+            // auto under a key where another image shows: only the base asset's natural size is known
+            var auto = Banner()
+                .With("state:x", ("background-image", "url(\"assets/logo-hover.png\")"), ("background-size", "10px 10px"))
+                .With("state:x+hover", ("background-size", "auto"));
+            StringAssert.Contains("logo-hover.png", Assert.Throws<UnsupportedStyleException>(() => Build(Screen(Root(auto)))).Message);
+
+            // a layer image over a base without a url image has no CSS background geometry to start from
+            var added = Node("plain", "container", ("width", "20px"), ("height", "20px")).With("hover", ("background-image", "url(\"assets/logo.png\")"));
+            StringAssert.Contains("base layer", Assert.Throws<UnsupportedStyleException>(() => Build(Screen(Root(added)))).Message);
         }
 
         [Test]

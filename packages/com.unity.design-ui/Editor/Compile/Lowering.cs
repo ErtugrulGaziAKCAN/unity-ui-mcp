@@ -66,7 +66,7 @@ namespace DesignUi.Editor
             if (copy.Shadow != null) throw new IrFormatException("the root node '" + copy.Id + "' has a shadow; a shadow needs a parent to host it");
             Process(copy, false, false, true, false, true, bps);
             if (Get(copy, Base, "position") == "static") BaseLayer(copy)["position"] = "relative";
-            MarkPressedAncestors(copy);
+            MarkNamedAncestors(copy);
             return copy;
         }
 
@@ -99,6 +99,7 @@ namespace DesignUi.Editor
             LowerGap(node, bps);
             PaintOrder(node, flex);
             RefreshClickable(node);
+            node.Focusable = IsFocusable(node);
         }
 
         // ---- cascade -------------------------------------------------------------------------------------
@@ -370,6 +371,7 @@ namespace DesignUi.Editor
             // after CssDefaults a visible flex display is written as flex in base or in the layer that shows the node
             bool visiblyFlex = el.Style.Values.Any(l => l.TryGetValue("display", out var d) && d.Trim() == "flex");
             bool clickable = IsClickable(el);
+            bool focusable = IsFocusable(el);
 
             var host = new IrNode { Id = el.Id + "__shadowhost", Kind = "container" };
             BaseLayer(host)["flex-direction"] = "column";
@@ -421,6 +423,7 @@ namespace DesignUi.Editor
             // an active layer emptied by the move still made the element pressable: it keeps its Clickable (and with it
             // the pointer capture that ends the press), the host never gets one
             el.Clickable = clickable;
+            el.Focusable = focusable;
 
             float x = s.Offset.X, y = s.Offset.Y, w = s.Offset.W, h = s.Offset.H;
             var shadow = new IrNode
@@ -804,16 +807,24 @@ namespace DesignUi.Editor
 
         static bool IsActive(LayerDim d) => d.Kind == LayerDimKind.Pseudo && d.Name == "active";
 
+        static IEnumerable<string> KeysAndTriggers(IrNode n) =>
+            n.Style.Keys.Concat(n.Anims.Select(a => a.Trigger).Where(t => t != LayerKey.ShowTrigger));
+
         static bool IsClickable(IrNode n) =>
             n.Action != null || n.Kind == "button" || n.Kind == "toggle" || n.Style.Keys.Any(k => LayerKey.Parse(k).Dims.Any(IsActive));
+
+        /// <summary>A layer or animation of the element's own <c>:focus</c>: UI Toolkit focuses only focusable elements.</summary>
+        static bool IsFocusable(IrNode n) =>
+            KeysAndTriggers(n).Any(k => LayerKey.Parse(k).Dims.Any(d => d.Kind == LayerDimKind.Pseudo && d.Name == "focus"));
 
         static void RefreshClickable(IrNode n) => n.Clickable = IsClickable(n);
 
         /// <summary>
         /// An element that a descendant's layer or animation names as pressed (<c>anc(id):active</c>) needs a Clickable too,
-        /// because UI Toolkit sets :active only on elements with one.
+        /// because UI Toolkit sets :active only on elements with one; one named as focused (<c>anc(id):focus</c>) must be
+        /// focusable.
         /// </summary>
-        static void MarkPressedAncestors(IrNode root)
+        static void MarkNamedAncestors(IrNode root)
         {
             var byId = new Dictionary<string, IrNode>(StringComparer.Ordinal);
             void Index(IrNode n)
@@ -823,9 +834,12 @@ namespace DesignUi.Editor
             }
             void Mark(IrNode n)
             {
-                var keys = n.Style.Keys.Concat(n.Anims.Select(a => a.Trigger).Where(t => t != LayerKey.ShowTrigger));
-                foreach (var dim in keys.SelectMany(k => LayerKey.Parse(k).OfKind(LayerDimKind.Ancestor)))
-                    if (dim.Name == "active" && !dim.AncestorClass && byId.TryGetValue(dim.AncestorId, out var target)) target.Clickable = true;
+                foreach (var dim in KeysAndTriggers(n).SelectMany(k => LayerKey.Parse(k).OfKind(LayerDimKind.Ancestor)))
+                {
+                    if (dim.AncestorClass || !byId.TryGetValue(dim.AncestorId, out var target)) continue;
+                    if (dim.Name == "active") target.Clickable = true;
+                    if (dim.Name == "focus") target.Focusable = true;
+                }
                 foreach (var c in n.Children) Mark(c);
             }
             Index(root);
@@ -890,6 +904,7 @@ namespace DesignUi.Editor
                 Anims = (n.Anims ?? new List<IrAnim>()).Select(a => a.Clone()).ToList(),
                 Children = (n.Children ?? new IrNode[0]).Select(Clone).ToArray(),
                 Clickable = n.Clickable,
+                Focusable = n.Focusable,
                 PickingIgnore = n.PickingIgnore,
                 MirrorPseudoState = n.MirrorPseudoState,
                 MirrorClasses = (string[])n.MirrorClasses?.Clone() ?? new string[0],

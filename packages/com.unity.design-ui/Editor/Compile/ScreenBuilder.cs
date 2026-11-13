@@ -98,13 +98,17 @@ namespace DesignUi.Editor
             return builder.Finish(root, ir, className);
         }
 
-        /// <summary>The ids of the elements a layer key names as an ancestor (<c>anc(id):…</c>) anywhere in the tree.</summary>
+        /// <summary>A node's layer keys and the keys its animations are triggered by.</summary>
+        static IEnumerable<string> KeysOf(IrNode n) =>
+            n.Style.Keys.Concat((n.Anims ?? new List<IrAnim>()).Select(a => a.Trigger).Where(t => t != null && t != LayerKey.ShowTrigger));
+
+        /// <summary>The ids of the elements a layer key or an animation trigger names as an ancestor (<c>anc(id):…</c>) anywhere in the tree.</summary>
         static HashSet<string> AncestorTargets(IrNode root)
         {
             var result = new HashSet<string>(StringComparer.Ordinal);
             void Visit(IrNode n)
             {
-                foreach (var key in n.Style.Keys) foreach (var id in LayerKey.Parse(key).AncestorIds) result.Add(id);
+                foreach (var key in KeysOf(n)) foreach (var id in LayerKey.Parse(key).AncestorIds) result.Add(id);
                 foreach (var c in n.Children) Visit(c);
             }
             Visit(root);
@@ -244,6 +248,8 @@ namespace DesignUi.Editor
             public readonly List<LayerRules> Layers = new List<LayerRules>();
             public readonly List<string> IrClasses = new List<string>();
             public readonly List<KeyValuePair<string, string>> Attributes = new List<KeyValuePair<string, string>>();
+            /// <summary>Attribute texts UI Toolkit does not draw (alt, aria-label), recorded in the manifest.</summary>
+            public readonly SortedDictionary<string, IrText> AccessibilityLabels = new SortedDictionary<string, IrText>(StringComparer.Ordinal);
             public readonly List<Draft> Children = new List<Draft>();
             /// <summary>Items of a list-mode repeat (a ListView holds no UXML children), or null.</summary>
             public List<Draft> TemplateItems;
@@ -317,8 +323,21 @@ namespace DesignUi.Editor
                     if (!ClassIdent.IsMatch(c)) throw new IrFormatException("class '" + c + "' on node '" + node.Id + "' is not a valid USS class name");
                     d.IrClasses.Add(c);
                 }
-                if (node.Text != null && d.Tag != "ui:Label" && d.Tag != "ui:Button" && d.Tag != "ui:Toggle")
-                    throw new IrFormatException("node '" + node.Id + "' of kind '" + node.Kind + "' has text; only text, button and toggle nodes carry text");
+                // a select's text is its selected option, the DropdownField's value. DropdownField (6000.3) takes its value from
+                // UXML only as a choice: one choice at index 0; the view fills the real choices at runtime.
+                if (node.Text != null && d.Tag == "ui:DropdownField")
+                {
+                    var option = node.Text.Tr ?? "";
+                    if (option.IndexOf(',') >= 0)
+                        throw new IrFormatException("the selected option '" + option + "' of dropdown '" + node.Id + "' contains a comma, which a UXML choices list cannot hold; reword the option");
+                    if (option.Length > 0)
+                    {
+                        d.Attributes.Add(new KeyValuePair<string, string>("choices", option));
+                        d.Attributes.Add(new KeyValuePair<string, string>("index", "0"));
+                    }
+                }
+                else if (node.Text != null && d.Tag != "ui:Label" && d.Tag != "ui:Button" && d.Tag != "ui:Toggle")
+                    throw new IrFormatException("node '" + node.Id + "' of kind '" + node.Kind + "' has text; only text, button, toggle and dropdown nodes carry text");
                 foreach (var kv in (node.AttrTexts ?? new Dictionary<string, IrText>()).OrderBy(kv => kv.Key, StringComparer.Ordinal))
                 {
                     switch (kv.Key)
@@ -332,10 +351,12 @@ namespace DesignUi.Editor
                             d.Attributes.Add(new KeyValuePair<string, string>("tooltip", kv.Value?.Tr ?? ""));
                             break;
                         default:
-                            throw new IrFormatException("node '" + node.Id + "' has " + kv.Key + " text; UI Toolkit has no alternative text or accessible label to show it. " +
-                                                        "Remove the attribute, or show the text in the design.");
+                            // alt and aria-label: UI Toolkit draws no alternative text or accessible label; the manifest keeps them per element
+                            d.AccessibilityLabels[kv.Key] = kv.Value;
+                            break;
                     }
                 }
+                if (node.Focusable) d.Attributes.Add(new KeyValuePair<string, string>("focusable", "true"));
                 if (node.Initial != null)
                 {
                     // UXML: VisualElement enabled, BaseField<bool> value (UnityEngine.UIElementsModule 6000.3)
@@ -367,7 +388,7 @@ namespace DesignUi.Editor
                 bool tint = painted != null && painted.Tint;
                 if (tint && !baseCss.ContainsKey("color"))
                     throw new IrFormatException("tintable vector '" + node.Id + "' has no color in its base layer");
-                var images = BackgroundImages(node, painted, out var cssBackground);
+                var images = BackgroundImages(node, painted);
                 foreach (var key in OrderedLayers(node.Style.Keys))
                 {
                     ValidateLayer(key, node.Id);
@@ -375,11 +396,11 @@ namespace DesignUi.Editor
                     var basis = key == Base ? css : Lowering.Basis(node, key);
                     var decls = StyleMapper.Map(css, basis, isText, key == Base).ToList();
                     ResolveFont(decls, css);
-                    if (images.TryGetValue(key, out var image)) decls.AddRange(image);
+                    if (images.Declarations.TryGetValue(key, out var image)) decls.AddRange(image);
                     if (tint)
                         foreach (var color in decls.Where(x => x.Property == "color").ToList())
                             decls.Add(new UssDeclaration(TintProperty, color.Value));
-                    if (cssBackground) BackgroundGeometry(decls, painted, node, key, image != null && image.Any(x => x.Value != "none"));
+                    if (images.CssBackground) BackgroundGeometry(decls, painted, node, key, images);
                     var inner = content == null ? new List<UssDeclaration>() : decls.Where(x => content.Contains(x.Property)).ToList();
                     var outer = content == null ? decls : decls.Where(x => !content.Contains(x.Property)).ToList();
                     if (key == Base)
@@ -398,79 +419,110 @@ namespace DesignUi.Editor
 
             static readonly Regex UrlItem = new Regex(@"^url\(\s*(?:""([^""]*)""|'([^']*)'|([^)""']*?))\s*\)$", RegexOptions.Compiled);
 
+            const string NoImage = "none";
+
+            /// <summary>What <see cref="BackgroundImages"/> found: per-layer declarations and the image in effect under each key.</summary>
+            sealed class BackgroundPlan
+            {
+                /// <summary>The base image is a CSS url() background (sized, repeated and positioned like one).</summary>
+                public bool CssBackground;
+                public readonly Dictionary<string, List<UssDeclaration>> Declarations = new Dictionary<string, List<UssDeclaration>>(StringComparer.Ordinal);
+                /// <summary>Each layer's image as the IR gives it: an asset file, <c>none</c>, or null for a gradient.</summary>
+                public readonly IrNode Images = new IrNode { Style = new Dictionary<string, Dictionary<string, string>>() };
+                public string BaseFile;
+
+                /// <summary>The image file in effect while a key holds (the USS cascade of the layers' images), or <c>none</c>.</summary>
+                public string ImageAt(string key) => Lowering.Resolve(Images, LayerKey.Parse(key), "background-image", true);
+            }
+
             /// <summary>
             /// Takes <c>url()</c> images out of the layers' <c>background-image</c> (the IR rewrites them to its asset files).
-            /// The base image is the element's asset, whose declarations <see cref="MapLayers"/> writes; a layer may switch
-            /// to another image file or to <c>none</c>, which become that layer's declarations (returned per layer); a layer
-            /// repeating the base value is dropped. One image per element: a url beside a gradient or a second url is an
-            /// error. Gradients stay for the mapper (baked from the base layer only). <paramref name="cssBackground"/> says
-            /// whether the base image is a CSS background (sized, repeated and positioned like one) rather than an
-            /// <c>img</c>, an icon or a baked gradient, which fill the element.
+            /// The base image is the element's asset, whose declarations <see cref="MapLayers"/> writes. A layer may switch to
+            /// another image file or to <c>none</c>; a layer naming the base image again writes the base asset, unless the
+            /// layers inside its key already resolve to it. These become that layer's declarations. One image per element:
+            /// a url beside a gradient or a second url is an error, and so is a layer image over a base without a url image.
+            /// Gradients stay for the mapper (baked from the base layer only). <c>img</c> elements, icons and baked gradients
+            /// fill the element; only a CSS url() background gets CSS background geometry.
             /// </summary>
-            Dictionary<string, List<UssDeclaration>> BackgroundImages(IrNode node, IrAsset painted, out bool cssBackground)
+            BackgroundPlan BackgroundImages(IrNode node, IrAsset painted)
             {
-                var result = new Dictionary<string, List<UssDeclaration>>(StringComparer.Ordinal);
-                cssBackground = false;
+                var plan = new BackgroundPlan();
                 string Url(string item)
                 {
                     var m = UrlItem.Match(item.Trim());
                     return m.Success ? (m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value.Trim()) : null;
                 }
-                node.Style[Base].TryGetValue("background-image", out var baseValue);
-                foreach (var key in node.Style.Keys.ToList())
+                // every layer's image before anything is taken out, so a layer can be compared with the layers inside its key
+                foreach (var pair in node.Style)
                 {
-                    var layer = node.Style[key];
-                    if (!layer.TryGetValue("background-image", out var raw)) continue;
+                    if (!pair.Value.TryGetValue("background-image", out var raw)) continue;
                     var value = raw.Trim();
                     var items = CssSupport.SplitTop(value, ',').Select(x => x.Trim()).ToList();
                     var urls = items.Select(Url).Where(u => u != null).ToList();
                     if (urls.Count > 0 && items.Count > 1)
                         throw new UnsupportedStyleException("background-image", raw, null,
-                            "Element '" + node.Id + "' has several background images (layer '" + key + "'); UI Toolkit draws one. Put the others in child elements.");
-                    if (key == Base)
+                            "Element '" + node.Id + "' has several background images (layer '" + pair.Key + "'); UI Toolkit draws one. Put the others in child elements.");
+                    var image = urls.Count == 1 ? urls[0] : value == NoImage ? NoImage : null;
+                    if (image != null) plan.Images.Style[pair.Key] = new Dictionary<string, string> { { "background-image", image } };
+                }
+                if (plan.Images.Style.TryGetValue(Base, out var baseImage) && baseImage["background-image"] != NoImage)
+                {
+                    var file = baseImage["background-image"];
+                    if (painted == null || painted.File != file)
+                        throw new IrFormatException("the base background image '" + file + "' of node '" + node.Id + "' is not its asset ('" + (painted?.File ?? "none") + "')");
+                    plan.CssBackground = true;
+                    plan.BaseFile = file;
+                }
+                foreach (var key in node.Style.Keys.ToList())
+                {
+                    var layer = node.Style[key];
+                    if (!plan.Images.Style.TryGetValue(key, out var own)) continue; // a gradient: the mapper rejects it outside the base layer
+                    layer.Remove("background-image");
+                    if (key == Base) continue;
+                    var image = own["background-image"];
+                    if (image == NoImage)
                     {
-                        if (urls.Count == 0) continue;
-                        if (painted == null || painted.File != urls[0])
-                            throw new IrFormatException("the base background image '" + urls[0] + "' of node '" + node.Id + "' is not its asset ('" + (painted?.File ?? "none") + "')");
-                        layer.Remove("background-image");
-                        cssBackground = true;
+                        plan.Declarations[key] = new List<UssDeclaration> { new UssDeclaration("background-image", NoImage) };
                         continue;
                     }
-                    if (baseValue != null && value == baseValue.Trim()) { layer.Remove("background-image"); continue; }
-                    if (value == "none")
+                    if (!plan.CssBackground)
+                        throw new UnsupportedStyleException("background-image", "url(\"" + image + "\")", null,
+                            "Layer '" + key + "' of '" + node.Id + "' sets a url() background image the base layer does not have; only the base layer's url() image " +
+                            "is drawn with its natural size and CSS background geometry. Give the base layer a url() image too.");
+                    if (image == plan.BaseFile)
                     {
-                        layer.Remove("background-image");
-                        result[key] = new List<UssDeclaration> { new UssDeclaration("background-image", "none") };
+                        // the base image again: nothing to write when the layers inside the key already show it
+                        if (Lowering.Resolve(plan.Images, LayerKey.Parse(key), "background-image", false) != plan.BaseFile)
+                            plan.Declarations[key] = AssetDeclarations(painted, node.Id).ToList();
                         continue;
                     }
-                    if (urls.Count == 0) continue; // a gradient: the mapper rejects it outside the base layer
-                    var file = urls[0];
                     var asset = new IrAsset
                     {
-                        Kind = file.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) ? "svg" : "image",
-                        File = file,
-                        Sha256 = System.IO.Path.GetFileNameWithoutExtension(file),
+                        Kind = image.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) ? "svg" : "image",
+                        File = image,
+                        Sha256 = System.IO.Path.GetFileNameWithoutExtension(image),
                     };
-                    layer.Remove("background-image");
-                    result[key] = AssetDeclarations(asset, node.Id).ToList();
+                    plan.Declarations[key] = AssetDeclarations(asset, node.Id).ToList();
                 }
-                return result;
+                return plan;
             }
 
             /// <summary>
             /// CSS background geometry for a CSS background image. USS starts from a stretched, unrepeated, centred image,
             /// CSS from the image's natural size, repeated from the top left, so the base layer writes CSS's initial values
-            /// where the IR leaves them out, and <c>auto</c> sizes become the asset's natural size in px. A layer that
-            /// switches to another image must size it explicitly: the IR knows only the base asset's natural size.
+            /// where the IR leaves them out, and <c>auto</c> sizes become the base asset's natural size in px. Under a key
+            /// where another image is in effect the size must be explicit: the IR knows only the base asset's natural size.
             /// </summary>
-            static void BackgroundGeometry(List<UssDeclaration> decls, IrAsset painted, IrNode node, string key, bool switchesImage)
+            static void BackgroundGeometry(List<UssDeclaration> decls, IrAsset painted, IrNode node, string key, BackgroundPlan plan)
             {
-                if (switchesImage)
+                var image = plan.ImageAt(key);
+                bool otherImage = image != null && image != NoImage && image != plan.BaseFile;
+                if (otherImage)
                 {
                     var size = Lowering.Resolve(node, LayerKey.Parse(key), "background-size", true);
                     if (size == null || size.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).All(x => x == "auto"))
                         throw new UnsupportedStyleException("background-size", size ?? "auto", null,
-                            "Layer '" + key + "' of '" + node.Id + "' switches to another background image whose natural size is not known; give it an explicit background-size.");
+                            "Layer '" + key + "' of '" + node.Id + "' shows another background image ('" + image + "') whose natural size is not known; give it an explicit background-size.");
                 }
                 if (key == Base)
                 {
@@ -784,7 +836,7 @@ namespace DesignUi.Editor
                     w.Asset != null || w.Background != null || w.Bind != null || w.Action != null || w.Repeat != null ||
                     w.Clickable || w.MirrorPseudoState || wrapper.IrClasses.Count > 0 || wrapper.FirstItem ||
                     (w.Anims != null && w.Anims.Count > 0) || w.Transitions.Count > 0 ||
-                    wrapper.TemplateItems != null || wrapper.Children.Count != 1 || wrapper.Attributes.Count > 0)
+                    wrapper.TemplateItems != null || wrapper.Children.Count != 1 || wrapper.Attributes.Count > 0 || wrapper.AccessibilityLabels.Count > 0)
                     return false;
                 bool wrapperShrinks = true;
                 foreach (var layer in wrapper.Layers)
@@ -876,8 +928,14 @@ namespace DesignUi.Editor
                                       ?? throw new IrFormatException("shadow host '" + node.Id + "' has no element to mirror");
                 }
                 e.Clickable = node.Clickable && d.Tag != "ui:Button" && d.Tag != "ui:Toggle";
+                foreach (var kv in d.AccessibilityLabels) e.AccessibilityLabels[kv.Key] = kv.Value;
+                // an animation trigger may name an ancestor too; it must be one in the compiled tree
+                foreach (var trigger in (node.Anims ?? new List<IrAnim>()).Select(a => a.Trigger).Where(t => t != null && t != LayerKey.ShowTrigger))
+                    foreach (var id in LayerKey.Parse(trigger).AncestorIds)
+                        if (ancestors.FindIndex(a => a.Id == id) < 0)
+                            throw new IrFormatException("an animation of '" + d.Name + "' is triggered by '" + trigger + "', which names '" + id + "', not its ancestor in the compiled tree");
                 e.Attributes.AddRange(d.Attributes);
-                if (node.Text != null)
+                if (node.Text != null && d.Tag != "ui:DropdownField") // a dropdown's text is its value attribute
                 {
                     e.Text = node.Text.Tr ?? "";
                     if (!node.Text.Rich && e.Text.IndexOf('<') >= 0) e.EnableRichText = false;

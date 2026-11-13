@@ -233,6 +233,7 @@ namespace DesignUi.Editor.Tests
         [TestCase("\"keyframes\":[]", "\"keyframes\":[{\"offset\":0,\"values\":{},\"easing\":null}]", "no keyframes")]
         [TestCase("\"trigger\":\"state:loading+hover\"", "\"trigger\":\"hover+state:loading\"", "canonical order")]
         [TestCase("\"trigger\":\"state:loading+hover\"", "\"trigger\":\"pseudo:hover\"", "malformed")]
+        [TestCase("\"trigger\":\"state:loading+hover\"", "\"trigger\":\"base\"", "'show'")]
         [TestCase("\"phase\":\"enter\"", "\"phase\":\"start\"", "phase")]
         [TestCase("\"direction\":\"normal\"", "\"direction\":\"sideways\"", "direction")]
         [TestCase("\"iterations\":1", "\"iterations\":\"forever\"", "iterations")]

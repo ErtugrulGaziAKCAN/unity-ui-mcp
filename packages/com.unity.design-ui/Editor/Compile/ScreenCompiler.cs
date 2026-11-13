@@ -197,6 +197,7 @@ namespace DesignUi.Editor
                 clickable = compiled.AllElements().Where(e => e.Clickable).Select(e => e.Name).ToArray(),
                 mirrors = compiled.AllElements().Where(e => e.MirrorElement != null)
                     .Select(e => new MirrorEntry { element = e.MirrorElement, host = e.Name, classes = e.MirrorClasses.Count > 0 ? e.MirrorClasses.ToArray() : null }).ToArray(),
+                accessibility = Accessibility(compiled),
                 repeats = compiled.Repeats.Select(r => new RepeatEntry
                 {
                     name = r.Name, mode = r.Mode, container = r.Container, template = r.TemplateFile, items = r.Items.Select(i => i.Name).ToArray(),
@@ -246,6 +247,16 @@ namespace DesignUi.Editor
         }
 
         public static string ViewFileName(string className) => className + "View.g.cs";
+
+        /// <summary>The undrawn attribute texts per element name, or null when there are none.</summary>
+        static Dictionary<string, Dictionary<string, AccessibilityText>> Accessibility(CompiledScreen compiled)
+        {
+            var result = new Dictionary<string, Dictionary<string, AccessibilityText>>(StringComparer.Ordinal);
+            foreach (var e in compiled.AllElements().Where(x => x.AccessibilityLabels.Count > 0))
+                result[e.Name] = e.AccessibilityLabels.ToDictionary(kv => kv.Key, kv => new AccessibilityText { key = kv.Value?.Key, tr = kv.Value?.Tr, en = kv.Value?.En },
+                    StringComparer.Ordinal);
+            return result.Count > 0 ? result : null;
+        }
 
         static string GeneratorVersion
         {

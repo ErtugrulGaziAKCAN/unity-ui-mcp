@@ -21,6 +21,14 @@ namespace DesignUi.Editor
         public string[] classes;
     }
 
+    /// <summary>An attribute text UI Toolkit does not draw (alt, aria-label): its localization key and texts.</summary>
+    public sealed class AccessibilityText
+    {
+        public string key;
+        public string tr;
+        public string en;
+    }
+
     /// <summary>A repeat: container, mode, list-mode template file and item names.</summary>
     public sealed class RepeatEntry
     {
@@ -56,6 +64,11 @@ namespace DesignUi.Editor
         public string[] clickable = new string[0];
         public MirrorEntry[] mirrors = new MirrorEntry[0];
         public RepeatEntry[] repeats = new RepeatEntry[0];
+        /// <summary>
+        /// Element name to its undrawn attribute texts (<c>alt</c>, <c>aria-label</c>) by attribute name; null when the
+        /// screen has none.
+        /// </summary>
+        public Dictionary<string, Dictionary<string, AccessibilityText>> accessibility;
         /// <summary>Shared manifest only: the union of all screens' tokens (USS variable name to value).</summary>
         public Dictionary<string, string> tokens;
         /// <summary>Shared manifest only: screen folder name to the screen id compiled into it.</summary>

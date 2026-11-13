@@ -84,6 +84,7 @@ namespace DesignUi.Editor
 
             Require(a.Kind == IrAnim.Transition || a.Kind == IrAnim.KeyframesKind, "kind must be transition or keyframes, not '" + a.Kind + "'");
             Require(a.Trigger != null, "no trigger");
+            Require(a.Trigger != LayerKey.BaseText, "the trigger of the base layer is written 'show', not 'base'");
             if (a.Trigger != LayerKey.ShowTrigger)
             {
                 LayerKey.IsCanonical(a.Trigger, out var canonical);

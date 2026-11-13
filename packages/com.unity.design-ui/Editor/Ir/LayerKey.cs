@@ -276,12 +276,36 @@ namespace DesignUi.Editor
                         added.Add(u);
                         if (added.Count > limit)
                             throw new UnsupportedStyleException("layers", string.Join(", ", given.Select(k => k.Text).OrderBy(t => t, StringComparer.Ordinal)), null,
-                                what() + " combine into more than " + limit + " layer unions; simplify the states, breakpoints and pseudo-states that change it.");
+                                what() + " combine into more than " + limit + " layer unions (" + Involved(given) + "). Each of these can hold " +
+                                "together with the others, so every combination needs its own rule. View classes are independent of each other: " +
+                                "for choices that exclude each other use one screen state per choice instead of an is-* class each, or let fewer " +
+                                "layers change this element.");
                     }
                 frontier = next;
             }
             added.Sort(RuleOrder);
             return added;
+        }
+
+        /// <summary>The conditions a set of keys depends on, by kind: view classes, states, breakpoints, pseudo-states.</summary>
+        static string Involved(IEnumerable<LayerKey> keys)
+        {
+            var dims = keys.SelectMany(k => k.Dims).Distinct().ToList();
+            string Of(string label, IEnumerable<string> names)
+            {
+                var list = names.Distinct().OrderBy(x => x, StringComparer.Ordinal).ToList();
+                return list.Count == 0 ? null : label + " " + string.Join(", ", list);
+            }
+            var parts = new[]
+            {
+                Of("view classes", dims.Where(d => d.Kind == LayerDimKind.Class || (d.Kind == LayerDimKind.Ancestor && d.AncestorClass))
+                    .Select(d => d.Kind == LayerDimKind.Ancestor ? d.Name + " on '" + d.AncestorId + "'" : d.Name)),
+                Of("states", dims.Where(d => d.Kind == LayerDimKind.State).Select(d => d.Name)),
+                Of("breakpoints", dims.Where(d => d.Kind == LayerDimKind.Breakpoint).Select(d => d.Name)),
+                Of("pseudo-states", dims.Where(d => d.Kind == LayerDimKind.Pseudo || (d.Kind == LayerDimKind.Ancestor && !d.AncestorClass))
+                    .Select(d => d.Kind == LayerDimKind.Ancestor ? d.Name + " of '" + d.AncestorId + "'" : d.Name)),
+            };
+            return string.Join("; ", parts.Where(x => x != null));
         }
 
         public bool Equals(LayerKey other) => other != null && Text == other.Text;
