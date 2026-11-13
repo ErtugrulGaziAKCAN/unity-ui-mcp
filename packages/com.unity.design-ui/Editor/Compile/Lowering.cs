@@ -14,9 +14,11 @@ namespace DesignUi.Editor
     /// layer unions USS needs: one USS property is computed from several CSS properties, so two layers that hold together
     /// and set different parts of it need a rule of their own.</item>
     /// <item>CssDefaults: make CSS initial values explicit (flex rows, block layout, static positioning, box sizing).</item>
-    /// <item>Children are processed, then baked shadows get a host wrapper.</item>
+    /// <item>Children are processed, then baked outer shadows get a host wrapper (<see cref="BuildHost"/>).</item>
     /// <item>gap becomes child margins, per layer and per union of the layers that change it.</item>
     /// <item>Siblings are ordered like CSS paints them.</item>
+    /// <item>A baked inset shadow becomes the element's first child, an absolute overlay of its padding box
+    /// (<see cref="InsetOverlay"/>); per-layer gradients become per-layer images of the element (<see cref="IrNode.AssetLayers"/>).</item>
     /// </list>
     /// A layer's values are resolved like USS resolves its rules (<see cref="Resolve"/>): every layer whose dimensions
     /// are all in the layer's key applies, the most specific (then the latest) wins. The IR records a union for every
@@ -63,7 +65,7 @@ namespace DesignUi.Editor
             var bps = new Dictionary<string, IrBreakpoint>(StringComparer.Ordinal);
             foreach (var b in breakpoints ?? new IrBreakpoint[0]) if (b?.Name != null) bps[b.Name] = b;
             var copy = Clone(root);
-            if (copy.Shadow != null) throw new IrFormatException("the root node '" + copy.Id + "' has a shadow; a shadow needs a parent to host it");
+            if (HasOuterShadow(copy)) throw new IrFormatException("the root node '" + copy.Id + "' has a shadow; a shadow needs a parent to host it");
             Process(copy, false, false, true, false, true, bps);
             if (Get(copy, Base, "position") == "static") BaseLayer(copy)["position"] = "relative";
             MarkNamedAncestors(copy);
@@ -74,6 +76,7 @@ namespace DesignUi.Editor
             IReadOnlyDictionary<string, IrBreakpoint> bps)
         {
             CompleteUnions(node, bps);
+            BackgroundLayerImages(node);
             var visible = VisibleDisplay(node, parentFlex);
             bool flex = visible == "flex";
             bool blockSelf = node.Children.Length > 0 && !flex;
@@ -81,7 +84,7 @@ namespace DesignUi.Editor
             bool positioned = isRoot || position == "relative" || position == "absolute";
 
             if (position == "absolute" && !parentPositioned)
-                throw new UnsupportedStyleException("position", "absolute", null,
+                throw new UnsupportedStyleException("position", "absolute", "U-CSS-035",
                     "Element '" + node.Id + "' is absolute but its parent is not positioned; set position: relative on the parent (UI Toolkit anchors absolute elements to the parent, CSS to the nearest positioned ancestor).");
 
             CssDefaults(node, parentBlock, parentFlex, flex, blockSelf);
@@ -98,6 +101,7 @@ namespace DesignUi.Editor
             WrapShadows(node);
             LowerGap(node, bps);
             PaintOrder(node, flex);
+            InsetOverlay(node);
             RefreshClickable(node);
             node.Focusable = IsFocusable(node);
         }
@@ -268,13 +272,13 @@ namespace DesignUi.Editor
                 if (pair.Key == Base) continue;
                 var layer = pair.Value;
                 if (layer.TryGetValue("box-shadow", out var bs))
-                    throw new UnsupportedStyleException("box-shadow", bs, null, "box-shadow is baked from the base layer only (layer '" + pair.Key + "').");
+                    throw new UnsupportedStyleException("box-shadow", bs, null, "box-shadow in style layer '" + pair.Key + "'; the exporter bakes shadows per layer into shadowLayers and insetShadowLayers (re-export the design).");
                 if (layer.TryGetValue("z-index", out var z))
-                    throw new UnsupportedStyleException("z-index", z, null, "z-index is only allowed in the base layer (layer '" + pair.Key + "').");
+                    throw new UnsupportedStyleException("z-index", z, "U-CSS-004", "z-index is only allowed in the base layer (layer '" + pair.Key + "').");
                 if (layer.TryGetValue("pointer-events", out var pe))
                     throw new UnsupportedStyleException("pointer-events", pe, null, "pointer-events is only allowed in the base layer.");
                 if (layer.TryGetValue("position", out var pos) && Position(pos) != Position(basePosition))
-                    throw new UnsupportedStyleException("position", pos, null, "position cannot change between layers ('" + pair.Key + "').");
+                    throw new UnsupportedStyleException("position", pos, "U-CSS-035", "position cannot change between layers ('" + pair.Key + "').");
             }
 
             // box-sizing: the kit sets border-box globally; an explicit content-box only matters on a sized element with padding or border
@@ -282,7 +286,7 @@ namespace DesignUi.Editor
             {
                 if (!pair.Value.TryGetValue("box-sizing", out var bsz)) continue;
                 if (bsz == "content-box" && HasBoxExtras(node) && (baseLayer.ContainsKey("width") || baseLayer.ContainsKey("height")))
-                    throw new UnsupportedStyleException("box-sizing", bsz, null, "content-box with padding or border on a sized element is not supported; the kit sets border-box.");
+                    throw new UnsupportedStyleException("box-sizing", bsz, "U-CSS-036", "content-box with padding or border on a sized element is not supported; the kit sets border-box.");
                 pair.Value.Remove("box-sizing");
             }
 
@@ -344,12 +348,14 @@ namespace DesignUi.Editor
 
         // ---- shadow host -----------------------------------------------------------------------------------
 
+        static bool HasOuterShadow(IrNode n) => n.Shadow != null || (n.ShadowLayers != null && n.ShadowLayers.Count > 0);
+
         static void WrapShadows(IrNode node)
         {
             for (int i = 0; i < node.Children.Length; i++)
             {
                 var el = node.Children[i];
-                if (el.Shadow == null) continue;
+                if (!HasOuterShadow(el)) continue;
                 node.Children[i] = BuildHost(el);
             }
         }
@@ -357,21 +363,29 @@ namespace DesignUi.Editor
         /// <summary>
         /// <c>&lt;id&gt;__shadowhost</c> takes the element's slot and the properties that place it (margins, flex item
         /// properties, position and insets, size, transforms, opacity, display, z-index and their transitions, in every
-        /// layer); it contains the absolute <c>&lt;id&gt;__shadow</c> image, anchored by insets so it follows the
-        /// element's size, and the element itself, grown to fill the host. The host owns visibility; an element that is
-        /// visibly flex keeps <c>display: flex</c> in its base (the USS default, so it hides nothing) because its text
-        /// alignment is composed from the flex rules. The element keeps the Clickable it had before the move; a runtime
-        /// mirror copies its pseudo-states onto the host.
+        /// layer); it contains the absolute <c>&lt;id&gt;__shadow</c> image, anchored by insets so it covers the drawn rect
+        /// of the shadow's offset and follows the element's size, and the element itself, grown to fill the host. A shadow
+        /// that changes per layer (<see cref="IrNode.ShadowLayers"/>, e.g. a hover lift) gives the image a rule per layer
+        /// with that layer's insets and 9-slice (none where the layer has no shadow); the element's own pseudo-states and
+        /// classes reach it through the host's mirror classes (<c>anc(&lt;id&gt;__shadowhost):class:dui-hover</c>). The host
+        /// owns visibility; an element that is visibly flex keeps <c>display: flex</c> in its base (the USS default, so it
+        /// hides nothing) because its text alignment is composed from the flex rules. The element keeps the Clickable it
+        /// had before the move (a pressed shadow layer alone makes it pressable); a runtime mirror copies its pseudo-states
+        /// onto the host.
         /// </summary>
         static IrNode BuildHost(IrNode el)
         {
             var s = el.Shadow;
-            if (s.Offset == null) throw new IrFormatException("shadow of node '" + el.Id + "' has no offset");
-            el.Shadow = null;
+            var layers = el.ShadowLayers ?? new Dictionary<string, IrShadow>();
+            if (s != null && s.Offset == null) throw new IrFormatException("shadow of node '" + el.Id + "' has no offset");
+            foreach (var kv in layers)
+                if (kv.Value != null && kv.Value.Offset == null) throw new IrFormatException("shadow of layer '" + kv.Key + "' of node '" + el.Id + "' has no offset");
             // after CssDefaults a visible flex display is written as flex in base or in the layer that shows the node
             bool visiblyFlex = el.Style.Values.Any(l => l.TryGetValue("display", out var d) && d.Trim() == "flex");
             bool clickable = IsClickable(el);
             bool focusable = IsFocusable(el);
+            el.Shadow = null;
+            el.ShadowLayers = new Dictionary<string, IrShadow>();
 
             var host = new IrNode { Id = el.Id + "__shadowhost", Kind = "container" };
             BaseLayer(host)["flex-direction"] = "column";
@@ -411,6 +425,7 @@ namespace DesignUi.Editor
             MoveAnims(el, host);
             // the host never has the element's pseudo-states; a runtime mirror copies them onto it as dui-* classes
             var hostKeys = host.Style.Keys.Concat(host.Transitions.Keys).Concat(host.Anims.Select(a => a.Trigger).Where(t => t != LayerKey.ShowTrigger))
+                .Concat(layers.Keys.Select(HostLayerName))
                 .Select(LayerKey.Parse).ToList();
             host.MirrorPseudoState = hostKeys.Any(k => k.OfKind(LayerDimKind.Class).Any(d => d.Name.StartsWith(MirrorClassPrefix, StringComparison.Ordinal)));
             // the element's own view-toggled classes that moved layers depend on: the view toggles them on the host too,
@@ -425,27 +440,138 @@ namespace DesignUi.Editor
             el.Clickable = clickable;
             el.Focusable = focusable;
 
-            float x = s.Offset.X, y = s.Offset.Y, w = s.Offset.W, h = s.Offset.H;
             var shadow = new IrNode
             {
                 Id = el.Id + "__shadow",
                 Kind = "image",
                 PickingIgnore = true,
-                Asset = new IrAsset { Kind = s.Kind, File = s.File, Sha256 = s.Sha256, Width = s.Width, Height = s.Height, Slice = (float[])s.Slice?.Clone() },
-                Style = new Dictionary<string, Dictionary<string, string>>
-                {
-                    { Base, new Dictionary<string, string>
-                        {
-                            { "position", "absolute" },
-                            { "left", Fmt(x) + "px" },
-                            { "top", Fmt(y) + "px" },
-                            { "right", Fmt(-(x + w)) + "px" },
-                            { "bottom", Fmt(-(y + h)) + "px" },
-                        } },
-                },
+                Asset = Plain(s),
+                Style = new Dictionary<string, Dictionary<string, string>> { { Base, DrawnRect(s?.Offset) } },
             };
+            shadow.Style[Base]["position"] = "absolute";
+            foreach (var kv in layers)
+            {
+                // the element's layer as the image sees it: a child of the host, whose mirror classes carry the element's state
+                var key = LayerKey.Parse(HostLayerName(kv.Key)).Map(d => d.ToDescendant(host.Id)).Text;
+                if (kv.Value != null) shadow.Style[key] = DrawnRect(kv.Value.Offset);
+                shadow.AssetLayers[key] = Plain(kv.Value);
+            }
             host.Children = new[] { shadow, el };
             return host;
+        }
+
+        /// <summary>
+        /// The insets that place an absolute image on the drawn rect (x + ox, y + oy, w + ow, h + oh) of a box (x, y, w, h)
+        /// it is the child of; a missing offset covers the box.
+        /// </summary>
+        static Dictionary<string, string> DrawnRect(BoxRect o)
+        {
+            float x = o?.X ?? 0, y = o?.Y ?? 0, w = o?.W ?? 0, h = o?.H ?? 0;
+            return new Dictionary<string, string>
+            {
+                { "left", Fmt(x) + "px" },
+                { "top", Fmt(y) + "px" },
+                { "right", Fmt(-(x + w)) + "px" },
+                { "bottom", Fmt(-(y + h)) + "px" },
+            };
+        }
+
+        /// <summary>An image asset without the shadow's offset (the compiler places it by insets), or null.</summary>
+        static IrAsset Plain(IrAsset a) => a == null ? null : new IrAsset
+        {
+            Kind = a.Kind, File = a.File, Sha256 = a.Sha256, Width = a.Width, Height = a.Height, Slice = (float[])a.Slice?.Clone(), Tint = a.Tint, StopGap = a.StopGap,
+        };
+
+        // ---- inset shadow ----------------------------------------------------------------------------------
+
+        /// <summary>
+        /// An inset shadow is drawn above the element's background and border and below its content (CSS paints the
+        /// border after it; the two differ only on the anti-aliased inner edge of a curved border). It becomes the element's
+        /// first child, <c>&lt;id&gt;__inset</c>: absolute with zero insets, which is the padding box (UI Toolkit places an
+        /// absolute child inside the parent's border, as CSS does), not pickable, its 9-slice stretched over it. Its rule per
+        /// layer of <see cref="IrNode.InsetShadowLayers"/> names the element's own pseudo-states and classes as
+        /// <c>anc(&lt;id&gt;):…</c>. Content the element draws itself (its own text, a form control's parts, scrolled content)
+        /// would cover or scroll it, so those elements are rejected; a content image moves to a child above it.
+        /// </summary>
+        static void InsetOverlay(IrNode node)
+        {
+            if (node.InsetShadow == null && (node.InsetShadowLayers == null || node.InsetShadowLayers.Count == 0)) return;
+            string value = "inset " + (node.InsetShadow?.File ?? node.InsetShadowLayers.Values.FirstOrDefault(v => v != null)?.File ?? "none");
+            if (node.Text != null)
+                throw new UnsupportedStyleException("box-shadow", value, null,
+                    "Element '" + node.Id + "' has an inset box-shadow and its own text; UI Toolkit draws an element's text below its children, so the " +
+                    "inset shadow would cover it. Put the text in a child element of the shadowed box.");
+            switch (node.Kind)
+            {
+                case "input":
+                case "toggle":
+                case "dropdown":
+                    throw new UnsupportedStyleException("box-shadow", value, null,
+                        "Form control '" + node.Id + "' (" + node.Kind + ") has an inset box-shadow; its UI Toolkit control draws its own parts above an overlay. " +
+                        "Put the inset shadow on a wrapper element behind the control.");
+                case "scroll":
+                case "list":
+                    throw new UnsupportedStyleException("box-shadow", value, null,
+                        "Scroll area '" + node.Id + "' has an inset box-shadow; an overlay inside it would scroll with the content. Put the inset shadow on a wrapper " +
+                        "element around the scroll area.");
+            }
+            var overlay = new IrNode
+            {
+                Id = node.Id + "__inset",
+                Kind = "image",
+                PickingIgnore = true,
+                Asset = Plain(node.InsetShadow),
+                Style = new Dictionary<string, Dictionary<string, string>>
+                {
+                    { Base, new Dictionary<string, string> { { "position", "absolute" }, { "left", "0px" }, { "top", "0px" }, { "right", "0px" }, { "bottom", "0px" } } },
+                },
+            };
+            foreach (var kv in node.InsetShadowLayers ?? new Dictionary<string, IrShadow>())
+                overlay.AssetLayers[LayerKey.Parse(kv.Key).Map(d => d.ToDescendant(node.Id)).Text] = Plain(kv.Value);
+            node.InsetShadow = null;
+            node.InsetShadowLayers = new Dictionary<string, IrShadow>();
+            node.Children = new[] { overlay }.Concat(node.Children).ToArray();
+        }
+
+        // ---- background images per layer ------------------------------------------------------------------
+
+        static readonly Regex UrlValue = new Regex(@"^url\(\s*(?:""([^""]*)""|'([^']*)'|([^)""']*?))\s*\)$", RegexOptions.Compiled);
+
+        /// <summary>The file of a single <c>url()</c> value, <c>none</c>, or null for anything else (a gradient, a list).</summary>
+        static string ImageFile(string value)
+        {
+            if (value == null) return null;
+            value = value.Trim();
+            if (value == "none") return "none";
+            var m = UrlValue.Match(value);
+            return !m.Success ? null : m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value.Trim();
+        }
+
+        /// <summary>
+        /// The background image per layer (<see cref="IrNode.BackgroundLayers"/>). Gradients appear only in the effect
+        /// maps: each layer's gradient (or none) becomes that layer's image (<see cref="IrNode.AssetLayers"/>), stretched
+        /// over the element like the base gradient. url() images stay in the style layers, where the compiler reads them with
+        /// their CSS background geometry; the map only mirrors them, which is checked. A layer whose map entry differs from
+        /// the url() image of the style layers combines a url() image with a gradient, which UI Toolkit cannot draw on one
+        /// element (one background image, one geometry).
+        /// </summary>
+        static void BackgroundLayerImages(IrNode node)
+        {
+            if (node.BackgroundLayers == null || node.BackgroundLayers.Count == 0) return;
+            bool urlImages = node.Style.Values.Any(l => l.ContainsKey("background-image"));
+            foreach (var kv in node.BackgroundLayers.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                if (urlImages)
+                {
+                    var styled = ImageFile(Resolve(node, LayerKey.Parse(kv.Key), "background-image", true)) ?? (kv.Key == Base ? null : ImageFile(Get(node, Base, "background-image")));
+                    if (styled == (kv.Value?.File ?? "none")) continue;
+                    throw new UnsupportedStyleException("background-image", kv.Value?.File ?? "none", null,
+                        "Element '" + node.Id + "' combines a url() background image with a gradient (layer '" + kv.Key + "'); UI Toolkit draws one background " +
+                        "image per element with one geometry. Put the gradient or the image on a child element.");
+                }
+                node.AssetLayers[kv.Key] = kv.Value?.Copy();
+            }
+            node.BackgroundLayers = new Dictionary<string, IrAsset>();
         }
 
         /// <summary>Prefix of the layers whose rules apply to the host while the element is in a pseudo-state.</summary>
@@ -634,7 +760,7 @@ namespace DesignUi.Editor
                         {
                             var k = LayerKey.Parse(p.Key);
                             if (k.Has(LayerDimKind.Pseudo) || k.Has(LayerDimKind.Class))
-                                throw new UnsupportedStyleException("display", p.Value["display"], null,
+                                throw new UnsupportedStyleException("display", p.Value["display"], "U-CSS-034",
                                     "'" + inflow[j].Id + "' shows or hides itself by its own pseudo-state or class (layer '" + p.Key + "') before '" + c.Id +
                                     "' in the gap container '" + node.Id + "'; USS cannot select a sibling's state, so the gap after it cannot follow. Use a screen state, or a state or class of an ancestor.");
                             relevant.Add(k);
@@ -807,11 +933,16 @@ namespace DesignUi.Editor
 
         static bool IsActive(LayerDim d) => d.Kind == LayerDimKind.Pseudo && d.Name == "active";
 
+        /// <summary>A node's style layer keys, the keys of its effect maps and its animation triggers.</summary>
         static IEnumerable<string> KeysAndTriggers(IrNode n) =>
-            n.Style.Keys.Concat(n.Anims.Select(a => a.Trigger).Where(t => t != LayerKey.ShowTrigger));
+            n.Style.Keys.Concat(n.EffectKeys).Concat(n.Anims.Select(a => a.Trigger).Where(t => t != LayerKey.ShowTrigger));
 
+        /// <summary>
+        /// A button, toggle or action, or an element with a layer of its own <c>:active</c> (a style layer, or a layer that
+        /// exists only in an effect map, such as <c>:active { box-shadow: none }</c>).
+        /// </summary>
         static bool IsClickable(IrNode n) =>
-            n.Action != null || n.Kind == "button" || n.Kind == "toggle" || n.Style.Keys.Any(k => LayerKey.Parse(k).Dims.Any(IsActive));
+            n.Action != null || n.Kind == "button" || n.Kind == "toggle" || n.Style.Keys.Concat(n.EffectKeys).Any(k => LayerKey.Parse(k).Dims.Any(IsActive));
 
         /// <summary>A layer or animation of the element's own <c>:focus</c>: UI Toolkit focuses only focusable elements.</summary>
         static bool IsFocusable(IrNode n) =>
@@ -890,12 +1021,12 @@ namespace DesignUi.Editor
                 Text = CloneText(n.Text),
                 Asset = CloneAsset(n.Asset),
                 Background = CloneAsset(n.Background),
-                Shadow = n.Shadow == null ? null : new IrShadow
-                {
-                    Kind = n.Shadow.Kind, File = n.Shadow.File, Sha256 = n.Shadow.Sha256, Width = n.Shadow.Width, Height = n.Shadow.Height,
-                    Slice = (float[])n.Shadow.Slice?.Clone(), Tint = n.Shadow.Tint,
-                    Offset = n.Shadow.Offset == null ? null : new BoxRect { X = n.Shadow.Offset.X, Y = n.Shadow.Offset.Y, W = n.Shadow.Offset.W, H = n.Shadow.Offset.H },
-                },
+                BackgroundLayers = CanonicalMap(n.BackgroundLayers, n.Id, a => a?.Copy()),
+                Shadow = n.Shadow?.CopyShadow(),
+                ShadowLayers = CanonicalMap(n.ShadowLayers, n.Id, s => s?.CopyShadow()),
+                InsetShadow = n.InsetShadow?.CopyShadow(),
+                InsetShadowLayers = CanonicalMap(n.InsetShadowLayers, n.Id, s => s?.CopyShadow()),
+                AssetLayers = CanonicalMap(n.AssetLayers, n.Id, a => a?.Copy()),
                 AttrTexts = (n.AttrTexts ?? new Dictionary<string, IrText>()).ToDictionary(kv => kv.Key, kv => CloneText(kv.Value)),
                 Initial = n.Initial == null ? null : new IrInitial { Disabled = n.Initial.Disabled, Checked = n.Initial.Checked },
                 Bind = n.Bind,
@@ -927,14 +1058,27 @@ namespace DesignUi.Editor
             return result;
         }
 
+        /// <summary>An effect map with canonical keys; two keys naming the same layer are an error.</summary>
+        static Dictionary<string, T> CanonicalMap<T>(Dictionary<string, T> map, string id, Func<T, T> copy) where T : class
+        {
+            var result = new Dictionary<string, T>();
+            var source = new Dictionary<string, string>();
+            foreach (var kv in map ?? new Dictionary<string, T>())
+            {
+                var key = LayerKey.Parse(kv.Key).Text;
+                if (result.ContainsKey(key))
+                    throw new IrFormatException("node '" + id + "' has the effect layers '" + source[key] + "' and '" + kv.Key + "', which are the same layer '" + key + "'");
+                result[key] = copy(kv.Value);
+                source[key] = kv.Key;
+            }
+            return result;
+        }
+
         static IrText CloneText(IrText t) => t == null ? null : new IrText
         {
             Key = t.Key, Tr = t.Tr, En = t.En, Args = (string[])t.Args?.Clone() ?? new string[0], Rich = t.Rich, Style = t.Style,
         };
 
-        static IrAsset CloneAsset(IrAsset a) => a == null ? null : new IrAsset
-        {
-            Kind = a.Kind, File = a.File, Sha256 = a.Sha256, Width = a.Width, Height = a.Height, Slice = (float[])a.Slice?.Clone(), Tint = a.Tint,
-        };
+        static IrAsset CloneAsset(IrAsset a) => a?.Copy();
     }
 }

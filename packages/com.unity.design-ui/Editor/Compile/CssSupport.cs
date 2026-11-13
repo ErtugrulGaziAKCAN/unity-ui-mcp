@@ -29,6 +29,32 @@ namespace DesignUi.Editor
         public string Rule;
         public string Fix;
         public string Note;
+        /// <summary>Values a dedicated lint rule rejects (e.g. display: grid is U-CSS-001), with that rule and fix.</summary>
+        public Dictionary<string, (string Rule, string Fix)> RejectedValues = new Dictionary<string, (string, string)>(StringComparer.Ordinal);
+        /// <summary>The lint rule that judges this property's values (U-CSS-023 when none is named).</summary>
+        public string ValueRule;
+        /// <summary>The fix for any other rejected value of this property.</summary>
+        public string ValueFix;
+    }
+
+    /// <summary>What the compiler does with one declaration on its own (<see cref="CssSupport.Judge"/>).</summary>
+    public enum CssVerdictKind { Written, Dropped, Lowered, Rejected }
+
+    public readonly struct CssVerdict
+    {
+        public readonly CssVerdictKind Kind;
+        /// <summary>The rule a rejection names (null otherwise).</summary>
+        public readonly string Rule;
+        public readonly string Message;
+
+        public CssVerdict(CssVerdictKind kind, string rule, string message)
+        {
+            Kind = kind;
+            Rule = rule;
+            Message = message;
+        }
+
+        public override string ToString() => Kind + (Rule != null ? " " + Rule : "") + (Message != null ? ": " + Message : "");
     }
 
     /// <summary>
@@ -40,6 +66,11 @@ namespace DesignUi.Editor
         public const string RelativePath = "Editor/Data/css-support.json";
         public const string UnknownPropertyRule = "U-CSS-023";
         public const string UnknownFunctionRule = "U-CSS-024";
+        /// <summary>The lint's dedicated rules for <c>calc()</c> and viewport units, which the mapper names too.</summary>
+        public const string CalcRule = "U-CSS-005";
+        public const string ViewportUnitRule = "U-CSS-006";
+
+        static readonly Regex ViewportLength = new Regex(@"^-?(\d+\.?\d*|\.\d+)(vw|vh|vi|vb|vmin|vmax|svw|svh|lvw|lvh|dvw|dvh)$", RegexOptions.Compiled);
 
         static CssSupport _default;
         public static CssSupport Default => _default ?? (_default = Load(DefaultPath()));
@@ -91,6 +122,10 @@ namespace DesignUi.Editor
                 };
                 if (v["components"] is JArray c) { spec.MinComponents = (int)c[0]; spec.MaxComponents = (int)c[1]; }
                 if (v["mapValues"] is JObject m) foreach (var kv in m) spec.MapValues[kv.Key] = (string)kv.Value;
+                if (v["rejectedValues"] is JObject r)
+                    foreach (var kv in r) spec.RejectedValues[kv.Key] = ((string)kv.Value?["rule"], (string)kv.Value?["fix"]);
+                spec.ValueRule = (string)v["valueRule"];
+                spec.ValueFix = (string)v["valueFix"];
                 _props[p.Key] = spec;
             }
         }
@@ -110,24 +145,66 @@ namespace DesignUi.Editor
         static readonly Regex Hex = new Regex(@"^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$", RegexOptions.Compiled);
         static readonly Regex RgbArgs = new Regex(@"^\(\s*[\d.]+%?\s*,\s*[\d.]+%?\s*,\s*[\d.]+%?\s*(,\s*[\d.]+%?\s*)?\)$", RegexOptions.Compiled);
 
-        /// <summary>Throws UnsupportedStyleException when the value is not valid for the property.</summary>
+        /// <summary>
+        /// Throws UnsupportedStyleException when the value is not valid for the property, naming the rule and fix the lint
+        /// gives it: a value a dedicated rule rejects (<see cref="CssPropertySpec.RejectedValues"/>), else the property's
+        /// value rule (U-CSS-023 when none is named) with its value fix.
+        /// </summary>
         public void ValidateValue(CssPropertySpec spec, string value)
         {
+            UnsupportedStyleException Invalid(string offending)
+            {
+                if (offending != null && ViewportLength.IsMatch(offending.Trim()))
+                    return new UnsupportedStyleException(spec.Name, value, ViewportUnitRule, "Use px or % instead of viewport units.");
+                foreach (var token in new[] { offending, (value ?? "").Trim() }.Concat(SplitTop((value ?? "").Trim(), ' ')))
+                    if (token != null && spec.RejectedValues.TryGetValue(token.Trim(), out var r))
+                        return new UnsupportedStyleException(spec.Name, value, r.Rule, r.Fix);
+                return new UnsupportedStyleException(spec.Name, value, spec.ValueRule ?? UnknownPropertyRule, spec.ValueFix);
+            }
             var v = (value ?? "").Trim();
-            if (v.Length == 0) throw new UnsupportedStyleException(spec.Name, value);
+            if (v.Length == 0) throw Invalid(v);
             var items = SplitTop(v, ',');
-            if (!spec.List && items.Count > 1) throw new UnsupportedStyleException(spec.Name, value);
+            if (!spec.List && items.Count > 1) throw Invalid(v);
             foreach (var item in items)
             {
                 var part = item.Trim();
-                if (part.Length == 0) throw new UnsupportedStyleException(spec.Name, value);
+                if (part.Length == 0) throw Invalid(part);
                 if (Array.IndexOf(spec.Keywords, part) >= 0 || spec.MapValues.ContainsKey(part)) continue;
                 if (Array.IndexOf(spec.Types, "ratio") >= 0 && Ratio.IsMatch(part)) continue;
                 var comps = SplitTop(part, ' ');
-                if (comps.Count < spec.MinComponents || comps.Count > spec.MaxComponents)
-                    throw new UnsupportedStyleException(spec.Name, value);
+                if (comps.Count < spec.MinComponents || comps.Count > spec.MaxComponents) throw Invalid(part);
                 foreach (var comp in comps)
-                    if (!ComponentOk(spec, comp, value)) throw new UnsupportedStyleException(spec.Name, value);
+                    if (!ComponentOk(spec, comp, value)) throw Invalid(comp);
+            }
+        }
+
+        /// <summary>
+        /// What the compiler does with <c>property: value</c> alone in a base layer, through the mapper itself
+        /// (<see cref="StyleMapper.Map(IReadOnlyDictionary{string,string},IReadOnlyDictionary{string,string},bool,bool)"/>):
+        /// written to USS, accepted and dropped, valid only where the compiler lowers it, or rejected with the rule the
+        /// rejection names. Unity's half of the lint/compiler agreement (contracts/css-support-cases.json).
+        /// </summary>
+        public static CssVerdict Judge(string property, string value)
+        {
+            var css = new Dictionary<string, string>(StringComparer.Ordinal) { { property, value } };
+            try
+            {
+                var decls = StyleMapper.Map(css, css, true, true);
+                return new CssVerdict(decls.Count > 0 ? CssVerdictKind.Written : CssVerdictKind.Dropped, null, null);
+            }
+            catch (UnsupportedStyleException e)
+            {
+                if (!e.NeedsLowering) return new CssVerdict(CssVerdictKind.Rejected, e.RuleId ?? UnknownPropertyRule, e.Message);
+                // a lowered property still has a value grammar (gap in px): its own keyword or function is the lowering's, anything else is checked
+                var support = Default;
+                if (!support.TryGet(property, out var spec)) return new CssVerdict(CssVerdictKind.Lowered, null, e.Message);
+                var v = (value ?? "").Trim();
+                bool loweredForm = SplitTop(v, ' ').All(t => Array.IndexOf(spec.LoweredValues, t) >= 0) ||
+                                   spec.LoweredFunctions.Any(fn => SplitTop(v, ',').Any(item => item.Trim().StartsWith(fn + "(", StringComparison.OrdinalIgnoreCase)));
+                if (loweredForm || spec.Keywords.Length + spec.Types.Length + spec.Functions.Length == 0) return new CssVerdict(CssVerdictKind.Lowered, null, e.Message);
+                try { support.ValidateValue(spec, v); }
+                catch (UnsupportedStyleException invalid) { return new CssVerdict(CssVerdictKind.Rejected, invalid.RuleId ?? UnknownPropertyRule, invalid.Message); }
+                return new CssVerdict(CssVerdictKind.Lowered, null, e.Message);
             }
         }
 
@@ -142,6 +219,7 @@ namespace DesignUi.Editor
                     comp.EndsWith(")", StringComparison.Ordinal) && RgbArgs.IsMatch(comp.Substring(paren)))
                     return true;
                 if (Array.IndexOf(spec.Functions, fn) >= 0) return true;
+                if (fn == "calc") throw new UnsupportedStyleException(spec.Name, whole, CalcRule, "Write a literal px or % value; calc() is not compiled.");
                 throw new UnsupportedStyleException(spec.Name, whole, UnknownFunctionRule,
                     "Value function '" + fn + "' is not supported; resolve it to a plain px, % or colour value.");
             }

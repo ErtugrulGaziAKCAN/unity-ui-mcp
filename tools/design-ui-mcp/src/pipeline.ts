@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Browser } from "playwright";
+import type { DesignUiConfig, UnityStep } from "./config.js";
 import { readThresholds, runCompare, runExport, summarizeIssues, writeReport, writeVerdict, type Finding, type KitConfig } from "./exporter.js";
 
 export interface ExportOutcome {
@@ -62,8 +63,9 @@ export interface Pipeline {
  * What this version ships: the exporter's export step runs in this process on the server's warm browser (lint, IR,
  * baked effects, goldens, assets, sample data), and the comparison of Unity captures with the goldens writes the HTML
  * report (`<screen>/report.html`; difference images and verdict.json in `<screen>/.design-ui/compare/`). The Unity
- * capture is not in the com.unity.design-ui package yet: set `unityCapture` when it lands and design_ui_verify lights
- * up without other changes.
+ * side (com.unity.design-ui) compiles an export (import, code 0 with a log) and captures a compiled screen for every
+ * golden (the env-driven EditMode test DesignCaptureTests.CaptureFromEnv, finished by capture-done.json); whether those
+ * Unity steps can run depends on the project's runner configuration (see unityStep).
  */
 export const INSTALLED_PIPELINE: Pipeline = {
   exportScreen: async (entry, kit, outDir, browser) => {
@@ -95,13 +97,35 @@ export const INSTALLED_PIPELINE: Pipeline = {
       discard: () => rm(next),
     };
   },
-  unityCapture: false,
+  unityCapture: true,
 };
 
 /** Why a step is unavailable, worded for the AI client and the user. */
 export const MISSING = {
   export: "the design export step (browser capture to screen IR, goldens and assets) is not installed in this version of unity-ui-mcp",
-  compile: "the Unity side (IR compiler and import into the open Editor) arrives with the import pipeline of the com.unity.design-ui package; until then the Editor answers \"Not available yet\"",
+  compile: "the Unity compile runs on an export, so it cannot run without the export step",
   compare: "verification (Unity capture and comparison against the design) is not installed in this version of unity-ui-mcp",
-  capture: "the Unity capture (the com.unity.design-ui test that renders the compiled screen for every golden capture) is not in the Unity package yet; the comparison against the design and the HTML report are installed and run once it lands",
+  capture: "the Unity capture (the com.unity.design-ui test that renders the compiled screen for every golden capture) is not installed in this pipeline; the comparison against the design and the HTML report run once it is",
 };
+
+/** Whether a Unity step can run with the project's configuration, and how (for status, instructions and verify). */
+export interface UnityStepRoute { ready: boolean; how: string }
+
+/**
+ * import and kitSync run on `unityRunner.prefer`, capture on `unityRunner.captureVia`. The Editor route needs the open
+ * Editor's bridge (checked when the step runs; design_ui_status shows it); the package has no Editor capture, so a
+ * capture needs the command route. The command route needs its argv template.
+ */
+export function unityStep(cfg: DesignUiConfig | null, step: UnityStep): UnityStepRoute {
+  if (!cfg) return { ready: false, how: "design-ui.config.json is missing or invalid" };
+  const route = step === "capture" ? cfg.unityRunner.captureVia : cfg.unityRunner.prefer;
+  if (route === "editor") {
+    return step === "capture"
+      ? { ready: false, how: "the com.unity.design-ui package has no Editor capture (the open Editor is never put into a capture); set \"unityRunner.captureVia\": \"command\" with a capture command in design-ui.config.json" }
+      : { ready: true, how: "in the open Unity Editor through its bridge (Window > Design UI > Status), which answers code 0 with a log" };
+  }
+  const argv = cfg.unityRunner.command[step];
+  return argv.length
+    ? { ready: true, how: `through the configured command (${path.basename(argv[0])}${argv.length > 1 ? " …" : ""})` }
+    : { ready: false, how: `"unityRunner.command.${step}" is not configured in design-ui.config.json` };
+}

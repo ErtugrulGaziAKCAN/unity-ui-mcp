@@ -107,12 +107,16 @@ namespace DesignUi.Editor.Tests
             return Screen(root, screenId);
         }
 
-        /// <summary>Every asset of a node tree: its image, background and shadow.</summary>
+        /// <summary>Every asset of a node tree: its image, background and shadows, base and per layer.</summary>
         public static IEnumerable<IrAsset> Assets(IrNode node)
         {
             if (node.Asset != null) yield return node.Asset;
             if (node.Background != null) yield return node.Background;
             if (node.Shadow != null) yield return node.Shadow;
+            if (node.InsetShadow != null) yield return node.InsetShadow;
+            foreach (var a in node.BackgroundLayers.Values.Where(a => a != null)) yield return a;
+            foreach (var a in node.ShadowLayers.Values.Where(a => a != null)) yield return a;
+            foreach (var a in node.InsetShadowLayers.Values.Where(a => a != null)) yield return a;
             foreach (var child in node.Children)
                 foreach (var a in Assets(child)) yield return a;
         }

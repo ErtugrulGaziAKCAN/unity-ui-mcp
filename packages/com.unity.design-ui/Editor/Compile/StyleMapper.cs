@@ -29,8 +29,16 @@ namespace DesignUi.Editor
         public readonly string Value;
         public readonly string RuleId;
         public readonly string Fix;
+        /// <summary>
+        /// The declaration is valid only where the compiler lowers it (a lowered property, value or function left over in
+        /// a layer the mapper sees); not a rejection of the design.
+        /// </summary>
+        public readonly bool NeedsLowering;
 
         public UnsupportedStyleException(string property, string value, string ruleId = null, string fix = null)
+            : this(property, value, ruleId, fix, false) { }
+
+        UnsupportedStyleException(string property, string value, string ruleId, string fix, bool needsLowering)
             : base("CSS declaration is outside the supported UI Toolkit set: " + property + ": " + value +
                    (ruleId != null ? " (" + ruleId + ")" : "") + (fix != null ? ". " + fix : ""))
         {
@@ -38,7 +46,11 @@ namespace DesignUi.Editor
             Value = value;
             RuleId = ruleId;
             Fix = fix;
+            NeedsLowering = needsLowering;
         }
+
+        /// <summary>A lowered declaration that reached the mapper (see <see cref="NeedsLowering"/>).</summary>
+        internal static UnsupportedStyleException Lowered(string property, string value, string fix) => new UnsupportedStyleException(property, value, null, fix, true);
     }
 
     /// <summary>
@@ -95,7 +107,7 @@ namespace DesignUi.Editor
                     throw new UnsupportedStyleException(key, value, CssSupport.UnknownPropertyRule, "Property '" + key + "' is not in css-support.json.");
                 foreach (var fn in spec.LoweredFunctions)
                     if (CssSupport.SplitTop(value, ',').Any(item => item.Trim().StartsWith(fn + "(", StringComparison.OrdinalIgnoreCase)))
-                        throw new UnsupportedStyleException(key, value, null,
+                        throw UnsupportedStyleException.Lowered(key, value,
                             "'" + fn + "()' in '" + key + "' is compiled only on the node it belongs to" + (spec.Note != null ? " (" + spec.Note + ")" : "") + ".");
                 if (key == "aspect-ratio") value = AspectRatioValue(value);
                 switch (spec.Handling)
@@ -103,7 +115,7 @@ namespace DesignUi.Editor
                     case CssHandling.Error:
                         throw new UnsupportedStyleException(key, value, spec.Rule, spec.Fix);
                     case CssHandling.Lowered:
-                        throw new UnsupportedStyleException(key, value, null, "'" + key + "' must be lowered before mapping (" + (spec.Fix ?? "Lowering.Apply") + ").");
+                        throw UnsupportedStyleException.Lowered(key, value, "'" + key + "' must be lowered before mapping (" + (spec.Fix ?? spec.Note ?? "Lowering.Apply") + ").");
                     case CssHandling.Dropped:
                         if (spec.Keywords.Length > 0 || spec.Functions.Length > 0) support.ValidateValue(spec, value);
                         if (isLayer && key == "background-image")
@@ -112,7 +124,7 @@ namespace DesignUi.Editor
                 }
 
                 if (spec.LoweredValues.Length > 0 && value.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Any(v => Array.IndexOf(spec.LoweredValues, v) >= 0))
-                    throw new UnsupportedStyleException(key, value, null,
+                    throw UnsupportedStyleException.Lowered(key, value,
                         "'" + key + ": " + value + "' is compiled only on the node it belongs to" + (spec.Note != null ? " (" + spec.Note + ")" : "") + ".");
                 if (Array.IndexOf(spec.DropValues, value) >= 0)
                 {

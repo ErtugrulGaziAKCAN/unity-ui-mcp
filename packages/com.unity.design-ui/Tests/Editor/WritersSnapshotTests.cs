@@ -104,9 +104,9 @@ namespace DesignUi.Editor.Tests
         public void IdenticalStyles_ShareOneClass()
         {
             var s = Build(Screen(Root(
-                Text("a", "A", ("color", "#ff0000"), ("font-size", "20px")),
-                Text("b", "B", ("color", "#ff0000"), ("font-size", "20px")),
-                Text("c", "C", ("color", "#00ff00"), ("font-size", "20px")))));
+                Text("a", "A", ("color", "#ff0000"), ("font-size", "23.125px")),
+                Text("b", "B", ("color", "#ff0000"), ("font-size", "23.125px")),
+                Text("c", "C", ("color", "#00ff00"), ("font-size", "23.125px")))));
             Assert.AreEqual(Cls(s, "a"), Cls(s, "b"));
             Assert.AreNotEqual(Cls(s, "a"), Cls(s, "c"));
             Assert.AreEqual(1, s.Rules.Count(r => r.Selector == "." + Cls(s, "a")));

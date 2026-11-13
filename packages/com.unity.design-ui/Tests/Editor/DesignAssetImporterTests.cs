@@ -460,6 +460,49 @@ namespace DesignUi.Editor.Tests
             Assert.That(red.b, Is.LessThan(0.05f), "tinted red: " + red);
         }
 
+        /// <summary>
+        /// The exporter's gradient SVG for an image that leaves part of the border box empty (a no-repeat gradient under a
+        /// border): a transparent full-box rect pins the box, then the gradient rect. The importer sizes a VectorImage by
+        /// its geometry, so without the pin it would shrink to the gradient rect and stretch it over the whole element.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator PinnedGradientSvg_KeepsTheBorderBoxAsItsBounds_OnAPanel()
+        {
+            var export = Export();
+            const string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"50\" viewBox=\"0 0 100 50\"><defs>" +
+                               "<linearGradient id=\"g0\" gradientUnits=\"userSpaceOnUse\" x1=\"10\" y1=\"25\" x2=\"90\" y2=\"25\">" +
+                               "<stop offset=\"0\" stop-color=\"#ff0000\"/><stop offset=\"1\" stop-color=\"#0000ff\"/></linearGradient></defs>" +
+                               "<rect x=\"0\" y=\"0\" width=\"100\" height=\"50\" fill=\"#000000\" fill-opacity=\"0\"/>" +
+                               "<rect x=\"10\" y=\"10\" width=\"80\" height=\"30\" fill=\"url(#g0)\"/></svg>";
+            File.WriteAllText(export + "/assets/pinned.svg", svg);
+            var asset = new IrAsset { Kind = "svg", File = "assets/pinned.svg", Sha256 = Hash(File.ReadAllBytes(export + "/assets/pinned.svg")), Width = 100, Height = 50, StopGap = 1 };
+            var path = DesignAssetImporter.Import(asset, export, OutRoot, _profile);
+            var vector = AssetDatabase.LoadAssetAtPath<VectorImage>(path);
+            Assert.IsNotNull(vector);
+            var doc = Panel(128);
+            for (int i = 0; i < 2; i++) yield return null;
+            var box = new VisualElement();
+            box.style.position = Position.Absolute;
+            box.style.left = 0; box.style.top = 0; box.style.width = 100; box.style.height = 50;
+            box.style.backgroundImage = new StyleBackground(vector);
+            doc.rootVisualElement.Add(box);
+            for (int i = 0; i < 6; i++) yield return null;
+
+            var tex = Read();
+            Color At(int x, int y) => tex.GetPixel(x, 127 - y);
+            try
+            {
+                foreach (var (x, y) in new[] { (4, 25), (95, 25), (50, 4), (50, 45) })
+                    Assert.Less(At(x, y).a, 0.02f, "outside the gradient rect (" + x + "," + y + ") stays transparent: " + At(x, y));
+                Assert.Greater(At(12, 25).a, 0.98f, "inside the gradient rect");
+                Assert.Greater(At(12, 25).r, 0.85f, "left end red: " + At(12, 25));
+                Assert.Greater(At(88, 25).b, 0.85f, "right end blue: " + At(88, 25));
+                Assert.Greater(At(50, 11).a, 0.98f, "top edge of the gradient rect at y = 10");
+                Assert.Greater(At(50, 38).a, 0.98f, "bottom edge of the gradient rect at y = 40");
+            }
+            finally { UnityEngine.Object.DestroyImmediate(tex); }
+        }
+
         [UnityTest]
         public IEnumerator SlicedShadow_StretchesWithoutSeamsAtThreeSizes()
         {

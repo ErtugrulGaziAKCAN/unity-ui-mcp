@@ -30,8 +30,21 @@
       "kind": "svg",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "slice": null,
+      "stopGap": 0.25,
       "tint": false,
       "width": 2560
+    },
+    "backgroundLayers": {
+      "state:loading": {
+        "file": "assets/8888888888888888888888888888888888888888888888888888888888888888.svg",
+        "height": 1440,
+        "kind": "svg",
+        "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+        "slice": null,
+        "stopGap": 0.5,
+        "tint": false,
+        "width": 2560
+      }
     },
     "bind": null,
     "children": [
@@ -41,15 +54,19 @@
         "asset": null,
         "attrTexts": {},
         "background": null,
+        "backgroundLayers": {},
         "bind": null,
         "children": [],
         "classes": [],
         "external": false,
         "id": "title",
         "initial": null,
+        "insetShadow": null,
+        "insetShadowLayers": {},
         "kind": "text",
         "repeat": null,
         "shadow": null,
+        "shadowLayers": {},
         "style": {
           "base": {
             "color": "#ffffff",
@@ -118,38 +135,67 @@
           "kind": "image",
           "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "slice": null,
+          "stopGap": null,
           "tint": false,
           "width": 600
         },
         "attrTexts": {},
         "background": null,
+        "backgroundLayers": {},
         "bind": null,
         "children": [],
         "classes": [],
         "external": false,
         "id": "card",
         "initial": null,
+        "insetShadow": null,
+        "insetShadowLayers": {},
         "kind": "container",
         "repeat": null,
         "shadow": {
           "file": "assets/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.png",
-          "height": 96,
+          "height": 126,
           "kind": "shadow9",
           "offset": {
-            "h": 0,
-            "w": 0,
-            "x": 0,
-            "y": 8
+            "h": 54,
+            "w": 54,
+            "x": -27,
+            "y": -19
           },
           "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
           "slice": [
-            40,
-            40,
-            40,
-            40
+            59,
+            62,
+            59,
+            62
           ],
+          "stopGap": null,
           "tint": false,
-          "width": 96
+          "width": 132
+        },
+        "shadowLayers": {
+          "hover": {
+            "file": "assets/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff.png",
+            "height": 150,
+            "kind": "shadow9",
+            "offset": {
+              "h": 78,
+              "w": 78,
+              "x": -39,
+              "y": -27
+            },
+            "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "slice": [
+              71,
+              74,
+              71,
+              74
+            ],
+            "stopGap": null,
+            "tint": false,
+            "width": 156
+          },
+          "state:loading": null
         },
         "style": {
           "base": {
@@ -157,6 +203,9 @@
             "display": "block",
             "height": "300px",
             "width": "600px"
+          },
+          "hover": {
+            "translate": "0px -4px"
           }
         },
         "text": null
@@ -213,6 +262,7 @@
           }
         },
         "background": null,
+        "backgroundLayers": {},
         "bind": null,
         "children": [
           {
@@ -221,15 +271,19 @@
             "asset": null,
             "attrTexts": {},
             "background": null,
+            "backgroundLayers": {},
             "bind": null,
             "children": [],
             "classes": [],
             "external": false,
             "id": "play-label",
             "initial": null,
+            "insetShadow": null,
+            "insetShadowLayers": {},
             "kind": "text",
             "repeat": null,
             "shadow": null,
+            "shadowLayers": {},
             "style": {
               "base": {
                 "display": "block"
@@ -252,9 +306,34 @@
           "checked": false,
           "disabled": false
         },
+        "insetShadow": {
+          "file": "assets/9999999999999999999999999999999999999999999999999999999999999999.png",
+          "height": 37,
+          "kind": "shadow9",
+          "offset": {
+            "h": 0,
+            "w": 0,
+            "x": 0,
+            "y": 0
+          },
+          "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "slice": [
+            18,
+            17,
+            14,
+            17
+          ],
+          "stopGap": null,
+          "tint": false,
+          "width": 36
+        },
+        "insetShadowLayers": {
+          "active": null
+        },
         "kind": "button",
         "repeat": null,
         "shadow": null,
+        "shadowLayers": {},
         "style": {
           "active": {
             "background-color": "#1fa89e"
@@ -281,6 +360,7 @@
         "asset": null,
         "attrTexts": {},
         "background": null,
+        "backgroundLayers": {},
         "bind": null,
         "children": [
           {
@@ -289,6 +369,7 @@
             "asset": null,
             "attrTexts": {},
             "background": null,
+            "backgroundLayers": {},
             "bind": null,
             "children": [
               {
@@ -297,15 +378,19 @@
                 "asset": null,
                 "attrTexts": {},
                 "background": null,
+                "backgroundLayers": {},
                 "bind": "player-name",
                 "children": [],
                 "classes": [],
                 "external": false,
                 "id": "row-name",
                 "initial": null,
+                "insetShadow": null,
+                "insetShadowLayers": {},
                 "kind": "text",
                 "repeat": null,
                 "shadow": null,
+                "shadowLayers": {},
                 "style": {
                   "anc(row):class:is-selected": {
                     "color": "#0b1f26"
@@ -331,9 +416,12 @@
             "external": false,
             "id": "row",
             "initial": null,
+            "insetShadow": null,
+            "insetShadowLayers": {},
             "kind": "container",
             "repeat": null,
             "shadow": null,
+            "shadowLayers": {},
             "style": {
               "base": {
                 "display": "flex",
@@ -350,6 +438,8 @@
         "external": false,
         "id": "rows",
         "initial": null,
+        "insetShadow": null,
+        "insetShadowLayers": {},
         "kind": "list",
         "repeat": {
           "count": 3,
@@ -357,6 +447,7 @@
           "name": "row"
         },
         "shadow": null,
+        "shadowLayers": {},
         "style": {
           "base": {
             "display": "flex",
@@ -373,9 +464,12 @@
     "external": false,
     "id": "root",
     "initial": null,
+    "insetShadow": null,
+    "insetShadowLayers": {},
     "kind": "container",
     "repeat": null,
     "shadow": null,
+    "shadowLayers": {},
     "style": {
       "base": {
         "background-color": "#0b1f26",

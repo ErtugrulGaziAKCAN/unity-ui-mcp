@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { requireConfig, type ServerContext } from "../context.js";
 import { resolveScreen, sourceSha } from "../design.js";
-import { MISSING } from "../pipeline.js";
+import { MISSING, unityStep } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { runUnity, UnityRunnerError } from "../runner.js";
 import { exportDirOf, readLastImport, reportPathOf, unityDirOf, writeLastVerify } from "../status.js";
@@ -31,6 +31,12 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       }
       if (!ctx.pipeline.unityCapture) {
         return toolResult(`design_ui_verify is not available yet: ${MISSING.capture}. No capture ran and no verdict exists for ${screen}.`, {
+          screen, available: false, missing: ["capture"], verdict: null, timings: t.done(),
+        }, true);
+      }
+      const route = unityStep(cfg, "capture");
+      if (!route.ready) {
+        return toolResult(`design_ui_verify cannot capture: ${route.how}. No capture ran and no verdict exists for ${screen}.`, {
           screen, available: false, missing: ["capture"], verdict: null, timings: t.done(),
         }, true);
       }
@@ -61,6 +67,12 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         return toolResult(`Unity capture of ${screen} failed (exit ${run.code}, via ${run.via}); no verdict. Log tail:\n${run.logTail}`, {
           screen, verdict: null, code: run.code, logTail: run.logTail, timings: t.done(),
         }, true);
+      }
+      // only a capture that wrote its done marker last counts; anything else is an unfinished run
+      if (!fs.existsSync(path.join(staging, "capture-done.json"))) {
+        dropStaging();
+        return toolResult(`Unity capture of ${screen} (via ${run.via}) did not finish (no capture-done.json); no verdict. ` +
+          "The previous report and verdict are unchanged.", { screen, verdict: null, logTail: run.logTail, timings: t.done() }, true);
       }
       const steps: Record<string, number> = { ...(imp.timings ?? {}), capture: t.steps.capture };
       const v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir }));

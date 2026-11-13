@@ -60,6 +60,10 @@ namespace DesignUi.Editor
 
         const string Base = "base";
         const string HostSuffix = "__shadowhost";
+        /// <summary>Suffix of the inset-shadow overlay Lowering makes the first child of an element.</summary>
+        const string InsetSuffix = "__inset";
+        /// <summary>Suffix of the child that takes an element's content image when the element paints something under it.</summary>
+        const string ImageSuffix = "__image";
         const string ContentSuffix = ">content";
 
         static readonly Regex ClassIdent = new Regex(@"^-?[A-Za-z_][A-Za-z0-9_-]*$", RegexOptions.Compiled);
@@ -104,9 +108,36 @@ namespace DesignUi.Editor
             return builder.Finish(root, ir, className);
         }
 
-        /// <summary>A node's layer keys and the keys its animations are triggered by.</summary>
+        /// <summary>A node's layer keys (style and effect layers) and the keys its animations are triggered by.</summary>
         static IEnumerable<string> KeysOf(IrNode n) =>
-            n.Style.Keys.Concat((n.Anims ?? new List<IrAnim>()).Select(a => a.Trigger).Where(t => t != null && t != LayerKey.ShowTrigger));
+            n.Style.Keys.Concat(n.EffectKeys).Concat((n.Anims ?? new List<IrAnim>()).Select(a => a.Trigger).Where(t => t != null && t != LayerKey.ShowTrigger));
+
+        /// <summary>Whether Lowering gave the node an inset-shadow overlay (its first child).</summary>
+        static bool HasInsetOverlay(IrNode n) => n.Children.Length > 0 && n.Children[0].Id == n.Id + InsetSuffix;
+
+        static readonly Regex BaseUrl = new Regex(@"^url\(\s*(?:""([^""]*)""|'([^']*)'|([^)""']*?))\s*\)$", RegexOptions.Compiled);
+
+        /// <summary>
+        /// The node's asset is the url() image of its base <c>background-image</c> (an element painted only by a url()
+        /// background), which CSS paints as a background, below an inset shadow and the content.
+        /// </summary>
+        static bool AssetIsBaseBackground(IrNode n)
+        {
+            var v = Get(n, Base, "background-image");
+            var m = v == null ? null : BaseUrl.Match(v);
+            if (m == null || !m.Success || n.Asset == null) return false;
+            var file = m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value.Trim();
+            return file == n.Asset.File;
+        }
+
+        /// <summary>
+        /// A content image (an img or inline svg) paints above whatever the element paints under it: a gradient (in base or in
+        /// a layer) and an inset shadow. Then the image moves to a child, <c>&lt;id&gt;__image</c>, and the element's own
+        /// background image is the gradient. A baked 9-slice (the compiler's shadow and inset images) is never content.
+        /// </summary>
+        static bool ContentInChild(IrNode n) =>
+            n.Asset != null && n.Asset.Kind != "shadow9" && !AssetIsBaseBackground(n) &&
+            (n.Background != null || n.AssetLayers.Count > 0 || HasInsetOverlay(n));
 
         /// <summary>The ids of the elements a layer key or an animation trigger names as an ancestor (<c>anc(id):…</c>) anywhere in the tree.</summary>
         static HashSet<string> AncestorTargets(IrNode root)
@@ -295,6 +326,9 @@ namespace DesignUi.Editor
                 if (node.Kind == "scroll" && node.Children.Length == 1 && node.Children[0].Kind == "list" && !HasScrollingOverflow(node.Children[0]))
                     return ListDraft(node, node.Children[0], isRoot, inScroll, true);
 
+                LowerObjectFit(node);
+                // decided before the layers are mapped: mapping takes the url() images out of the style layers
+                bool contentChild = ContentInChild(node);
                 var d = Start(node, isRoot);
                 if (node.Kind == "scroll")
                 {
@@ -319,8 +353,35 @@ namespace DesignUi.Editor
                     var first = d.Children.FirstOrDefault(c => Get(c.Node, Base, "position") != "absolute");
                     if (first != null) first.FirstItem = true;
                 }
-                if (node.Background != null && node.Asset != null) d.Children.Insert(0, ContentChild(node));
+                // the content image paints after the inset shadow overlay and before the element's other children
+                if (contentChild) d.Children.Insert(HasInsetOverlay(node) ? 1 : 0, ContentChild(node));
                 return d;
+            }
+
+            /// <summary>object-fit of a content image to the USS scale mode (centred, like <c>object-position: center</c>).</summary>
+            static readonly Dictionary<string, string> FitModes = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "fill", "stretch-to-fill" }, { "contain", "scale-to-fit" }, { "cover", "scale-and-crop" },
+            };
+
+            /// <summary>
+            /// <c>object-fit</c> is lowered: it leaves the style layers, and on an element with a content image (an img or
+            /// inline svg) each layer's value becomes that layer's <c>-unity-background-scale-mode</c> (<see cref="IrNode.ScaleModes"/>)
+            /// on the element that paints the image (the element, or its content child). CSS applies it to replaced content
+            /// only, so elsewhere it is dropped.
+            /// </summary>
+            static void LowerObjectFit(IrNode node)
+            {
+                var content = node.Asset != null && node.Asset.Kind != "shadow9" && !AssetIsBaseBackground(node);
+                foreach (var pair in node.Style.Where(p => p.Value.ContainsKey("object-fit")).ToList())
+                {
+                    var v = pair.Value["object-fit"].Trim();
+                    pair.Value.Remove("object-fit");
+                    if (!content) continue;
+                    if (!FitModes.TryGetValue(v, out var mode))
+                        throw new UnsupportedStyleException("object-fit", v, null, "Use object-fit fill, contain or cover (centred).");
+                    node.ScaleModes[pair.Key] = mode;
+                }
             }
 
             static string Visibility(string overflow) => overflow == "auto" ? "Auto" : overflow == "scroll" ? "AlwaysVisible" : "Hidden";
@@ -386,29 +447,42 @@ namespace DesignUi.Editor
             /// node's other layers inside its key, <see cref="Lowering.Basis"/>). With <paramref name="content"/>, those
             /// properties go to a content rule (<c>&lt;layer&gt;&gt;content</c>) instead of the element's own rule; the extra
             /// declarations are added to the base layer's element and content rules. The element's background image comes
-            /// from its asset (<see cref="BackgroundImages"/>); a tintable asset is tinted with the layer's color.
+            /// from its asset (<see cref="BackgroundImages"/>), or from its gradient when a content image moved to a child
+            /// (<see cref="ContentInChild"/>); a layer of <see cref="IrNode.AssetLayers"/> (a gradient per layer, the
+            /// compiler's shadow and inset images per layer) replaces it while that layer holds, and a layer that exists only
+            /// there still gets its rule. A tintable asset is tinted with the layer's color.
             /// </summary>
             void MapLayers(Draft d, IrNode node, bool isText, HashSet<string> content, UssDeclaration[] extraOuter, UssDeclaration[] extraContent)
             {
                 if (!node.Style.TryGetValue(Base, out var baseCss)) node.Style[Base] = baseCss = new Dictionary<string, string>();
                 ApplyTextStyle(node);
-                var painted = node.Background ?? node.Asset;
-                if (node.Background != null && node.Asset != null && node.Asset.Tint)
-                    throw new UnsupportedStyleException("background-image", node.Background.File, null,
-                        "Tintable vector '" + node.Id + "' also has a background image; put the icon in a child element of the background.");
+                bool contentChild = ContentInChild(node);
+                var painted = node.Background ?? (contentChild ? null : node.Asset);
+                if (contentChild && node.Asset.Tint)
+                    throw new UnsupportedStyleException("background-image", node.Background?.File ?? "none", null,
+                        "Tintable vector '" + node.Id + "' also has a background image or an inset shadow; put the icon in a child element of the background.");
                 bool tint = painted != null && painted.Tint;
                 if (tint && !baseCss.ContainsKey("color"))
                     throw new IrFormatException("tintable vector '" + node.Id + "' has no color in its base layer");
                 var images = BackgroundImages(node, painted);
-                foreach (var key in OrderedLayers(node.Style.Keys))
+                var empty = new Dictionary<string, string>();
+                foreach (var key in OrderedLayers(node.Style.Keys.Concat(node.AssetLayers.Keys).Concat(node.ScaleModes.Keys).Distinct()))
                 {
                     ValidateLayer(key, node.Id);
-                    var css = node.Style[key];
+                    if (!node.Style.TryGetValue(key, out var css)) css = empty;
                     var basis = key == Base ? css : Lowering.Basis(node, key);
                     var decls = StyleMapper.Map(css, basis, isText, key == Base).ToList();
                     ResolveFont(decls, css);
                     LineBoxFont(decls, node, key);
                     if (images.Declarations.TryGetValue(key, out var image)) decls.AddRange(image);
+                    if (node.AssetLayers.TryGetValue(key, out var layerImage))
+                    {
+                        if (images.Declarations.ContainsKey(key))
+                            throw new IrFormatException("layer '" + key + "' of node '" + node.Id + "' sets a url() background image and another image");
+                        if (layerImage == null) decls.Add(new UssDeclaration("background-image", NoImage));
+                        else decls.AddRange(AssetDeclarations(layerImage, node.Id));
+                    }
+                    if (!contentChild && node.ScaleModes.TryGetValue(key, out var scaleMode)) decls.Add(new UssDeclaration("-unity-background-scale-mode", scaleMode));
                     if (tint)
                         foreach (var color in decls.Where(x => x.Property == "color").ToList())
                             decls.Add(new UssDeclaration(TintProperty, color.Value));
@@ -566,7 +640,20 @@ namespace DesignUi.Editor
             void ApplyTextStyle(IrNode node)
             {
                 var style = node.Text?.Style;
-                if (style == null) return;
+                if (style == null)
+                {
+                    // text in no kit style: the exporter matched none, so a size of its own must still be a kit size (U-CSS-016)
+                    if (node.Text == null || _textStyles == null) return;
+                    foreach (var pair in node.Style)
+                    {
+                        if (!pair.Value.TryGetValue("font-size", out var raw)) continue;
+                        var px = Px(raw, "font-size of node '" + node.Id + "'");
+                        if (!_textStyles.Values.Any(s => Math.Abs(px - s) <= s * 1e-5))
+                            throw new UnsupportedStyleException("font-size", raw, "U-CSS-016",
+                                "Text node '" + node.Id + "' (layer '" + pair.Key + "') has a font size that is not a kit text style size; use a text style from " + KitTextStyles.FileName + ".");
+                    }
+                    return;
+                }
                 if (_textStyles == null)
                     throw new IrFormatException("text style '" + style + "' of node '" + node.Id + "' needs the kit's " + KitTextStyles.FileName + ", which was not found");
                 if (!_textStyles.TryGetValue(style, out var size))
@@ -638,7 +725,7 @@ namespace DesignUi.Editor
             /// <summary>The repeat container inside a scroll area merges into the ListView, so it must not draw or place anything itself.</summary>
             static void CheckBoxlessList(IrNode scroll, IrNode list)
             {
-                if (list.Text != null || list.Asset != null || list.Background != null || list.Bind != null || list.Action != null ||
+                if (list.Text != null || list.Asset != null || list.Background != null || list.AssetLayers.Count > 0 || list.Bind != null || list.Action != null ||
                     (list.Anims != null && list.Anims.Count > 0) || list.Transitions.Count > 0)
                     throw new IrFormatException("list repeat container '" + list.Id + "' inside scroll area '" + scroll.Id + "' draws or binds something; it merges into the ListView, so move that to the scroll area or the items");
                 foreach (var pair in list.Style)
@@ -821,11 +908,18 @@ namespace DesignUi.Editor
                 }
             }
 
-            /// <summary>The content image of an element that also has a gradient: a child filling the content box.</summary>
+            /// <summary>The content image of an element that also paints a gradient or an inset shadow: a child filling the content box.</summary>
             Draft ContentChild(IrNode node)
             {
-                var child = new IrNode { Id = node.Id + "__image", Kind = "image", Asset = node.Asset, PickingIgnore = true };
+                var child = new IrNode { Id = node.Id + ImageSuffix, Kind = "image", Asset = node.Asset, PickingIgnore = true };
                 child.Style[Base] = new Dictionary<string, string> { { "flex-grow", "1" }, { "align-self", "stretch" } };
+                // the element's object-fit scales the image where it is painted; the element's own states reach the child as anc(id)
+                foreach (var kv in node.ScaleModes)
+                {
+                    var key = LayerKey.Parse(kv.Key).Map(x => x.ToDescendant(node.Id));
+                    foreach (var id in key.AncestorIds) _ancestorTargets.Add(id);
+                    child.ScaleModes[key.Text] = kv.Value;
+                }
                 return Draft(child, false, false);
             }
 
@@ -868,7 +962,7 @@ namespace DesignUi.Editor
                     if ((Get(p, layer, "flex-direction") ?? "column") != "column") return false;
 
                 if (w.Kind != "container" || wrapper.Tag != "ui:VisualElement" || w.External || w.Id.IndexOf("__", StringComparison.Ordinal) < 0 || w.Text != null ||
-                    w.Asset != null || w.Background != null || w.Bind != null || w.Action != null || w.Repeat != null ||
+                    w.Asset != null || w.Background != null || w.AssetLayers.Count > 0 || w.Bind != null || w.Action != null || w.Repeat != null ||
                     w.Clickable || w.MirrorPseudoState || wrapper.IrClasses.Count > 0 || wrapper.FirstItem ||
                     (w.Anims != null && w.Anims.Count > 0) || w.Transitions.Count > 0 ||
                     wrapper.TemplateItems != null || wrapper.Children.Count != 1 || wrapper.Attributes.Count > 0 || wrapper.AccessibilityLabels.Count > 0)
@@ -994,7 +1088,8 @@ namespace DesignUi.Editor
                 foreach (var child in d.Children) e.Children.Add(Emit(child, ancestors));
                 if (d.TemplateItems != null) foreach (var item in d.TemplateItems) repeat.Items.Add(Emit(item, ancestors));
                 ancestors.RemoveAt(ancestors.Count - 1);
-                if (repeat != null && d.TemplateItems == null) repeat.Items.AddRange(e.Children.Where(c => c.Name != node.Id + "__image"));
+                if (repeat != null && d.TemplateItems == null)
+                    repeat.Items.AddRange(e.Children.Where(c => c.Name != node.Id + ImageSuffix && c.Name != node.Id + InsetSuffix));
                 return e;
             }
 

@@ -24,6 +24,10 @@ namespace DesignUi.Editor
         /// Shared assets (<c>_assets/</c>) that no compiled screen uses any more, by file name. Reported only; nothing is deleted.
         /// </summary>
         public IReadOnlyList<string> StaleAssets = new string[0];
+        /// <summary>The compiled screen's id, once the IR was read; else null.</summary>
+        public string Screen;
+        /// <summary>The screen's generated folder (<c>&lt;outputFolder&gt;/&lt;Screen&gt;</c>), once the IR was read; else null.</summary>
+        public string Folder;
     }
 
     /// <summary>
@@ -271,8 +275,12 @@ namespace DesignUi.Editor
             {
                 if (batch) AssetDatabase.StopAssetEditing(); // imports everything queued in this batch
             }
-            if (failure != null) return new CompileResult { Ok = false, Written = written, Errors = new[] { failure } };
-            return new CompileResult { Ok = true, Written = written, Orphans = FindOrphans(outFolder, folderName, profile.designRoot), StaleAssets = plan?.StaleAssets ?? new string[0] };
+            if (failure != null) return new CompileResult { Ok = false, Written = written, Errors = new[] { failure }, Screen = ir.Screen, Folder = screenDir };
+            return new CompileResult
+            {
+                Ok = true, Written = written, Orphans = FindOrphans(outFolder, folderName, profile.designRoot), StaleAssets = plan?.StaleAssets ?? new string[0],
+                Screen = ir.Screen, Folder = screenDir,
+            };
         }
 
         public static string ViewFileName(string className) => className + "View.g.cs";

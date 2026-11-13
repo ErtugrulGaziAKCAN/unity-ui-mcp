@@ -278,10 +278,11 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void UnknownValueFunction_CarriesRule024()
+        public void UnknownValueFunction_CarriesRule024_AndCalcItsOwnRule()
         {
-            var e = Assert.Throws<UnsupportedStyleException>(() => Map(("width", "calc(1px + 2px)")));
+            var e = Assert.Throws<UnsupportedStyleException>(() => Map(("width", "min(1px, 2px)")));
             Assert.AreEqual("U-CSS-024", e.RuleId);
+            Assert.AreEqual("U-CSS-005", Assert.Throws<UnsupportedStyleException>(() => Map(("width", "calc(1px + 2px)"))).RuleId);
         }
 
         [TestCase("transform", "rotate(3deg)")]

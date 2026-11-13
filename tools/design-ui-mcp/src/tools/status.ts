@@ -6,7 +6,7 @@ import { bridgeStatus } from "../bridge.js";
 import type { ServerContext } from "../context.js";
 import { requireConfig } from "../context.js";
 import { findEntry, resolveScreen } from "../design.js";
-import { MISSING } from "../pipeline.js";
+import { MISSING, unityStep } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { exportDirOf, readLastImport, readLastVerify, screenStatus } from "../status.js";
 import { VERSION } from "../version.js";
@@ -16,23 +16,27 @@ export interface ToolAvailability { available: boolean; note: string }
 /** What each tool can do in this build; shared by design_ui_status and the server instructions. */
 export function availability(ctx: ServerContext): Record<string, ToolAvailability> {
   const exp = !!ctx.pipeline.exportScreen, cmp = !!ctx.pipeline.compareScreen, cap = !!ctx.pipeline.unityCapture;
+  const compile = unityStep(ctx.cfg, "import"), capture = unityStep(ctx.cfg, "capture"), kit = unityStep(ctx.cfg, "kitSync");
   return {
     design_ui_rules: { available: true, note: "live (kit RULES.md is still a stub; allowed CSS, attributes, text styles and the lint rule table are complete)" },
     design_ui_list: { available: true, note: "live" },
     design_ui_lint: { available: true, note: "live (real lint in Chromium with the kit fonts)" },
     design_ui_status: { available: true, note: "live" },
-    design_ui_import: exp
-      ? { available: true, note: "export live (lint, IR, goldens, assets); Unity compile not available yet: the import stops with the Editor's code 2 until the Unity side answers code 0" }
-      : { available: false, note: `not available yet: ${MISSING.export}; ${MISSING.compile}` },
-    design_ui_verify: cmp && cap
-      ? { available: true, note: "live" }
-      : cmp
+    design_ui_import: !exp
+      ? { available: false, note: `not available yet: ${MISSING.export}; ${MISSING.compile}` }
+      : compile.ready
+        ? { available: true, note: `live: export (lint, IR, goldens, assets), then the Unity compile ${compile.how}` }
+        : { available: false, note: `the export is live, but the Unity compile cannot run: ${compile.how}` },
+    design_ui_verify: !cmp
+      ? { available: false, note: `not available yet: ${MISSING.compare}` }
+      : !cap
         ? { available: false, note: `not available yet: ${MISSING.capture}` }
-        : { available: false, note: `not available yet: ${MISSING.compare}` },
-    design_ui_kit_sync: {
-      available: false,
-      note: "forwarded to Unity; the current com.unity.design-ui package answers \"Not available yet\" until its import pipeline lands",
-    },
+        : capture.ready
+          ? { available: true, note: `live: Unity capture ${capture.how} (counted only with capture-done.json), then the comparison and report.html` }
+          : { available: false, note: `the comparison is live, but the Unity capture cannot run: ${capture.how}` },
+    design_ui_kit_sync: kit.ready
+      ? { available: true, note: `live: ${kit.how}` }
+      : { available: false, note: `the Unity kit sync cannot run: ${kit.how}` },
   };
 }
 

@@ -225,11 +225,11 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void Ops_ImportIsNotAvailableYet_KitSyncRuns()
+        public void Ops_ImportAndKitSyncRun()
         {
             var i = DesignUiOps.Import("p", "e", false);
-            Assert.AreEqual(2, i.Code);
-            Assert.AreEqual("Not available yet: import arrives with the import pipeline.", i.Log);
+            Assert.AreEqual(1, i.Code, "import runs: a missing profile is a failure, not 'not available'");
+            StringAssert.Contains("No DesignUiProfile at 'p'", i.Log);
             var k = DesignUiOps.KitSync("p", "k");
             Assert.AreEqual(1, k.Code, "kit sync runs: a missing profile is a failure, not 'not available'");
             StringAssert.Contains("No DesignUiProfile at 'p'", k.Log);
@@ -261,6 +261,41 @@ namespace DesignUi.Editor.Tests
             finally
             {
                 Directory.Delete(kit, true);
+                FontFixture.Delete();
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator Import_RunsTheRealCompile()
+        {
+            var profile = ScriptableObject.CreateInstance<DesignUiProfile>();
+            FontFixture.Use(profile);
+            var outDir = Path.Combine(Path.GetTempPath(), "design-ui-bridge-out-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
+            profile.outputFolder = outDir; // outside the project: the generated view is never compiled into the test run
+            var profilePath = FontFixture.Folder + "/Bridge Import Profile.asset";
+            UnityEditor.AssetDatabase.CreateAsset(profile, profilePath);
+            var export = Path.Combine(Path.GetTempPath(), "design-ui-bridge-export-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(export);
+            try
+            {
+                var ir = TestIr.Screen(TestIr.Root(TestIr.Node("panel", "container", ("height", "20px"), ("background-color", "#123456"))), "bridge.import");
+                File.WriteAllText(Path.Combine(export, ScreenCompiler.IrFileName), Newtonsoft.Json.JsonConvert.SerializeObject(ir));
+                DesignUiBridge.ImportHandler = DesignUiOps.Import;
+                var body = new JObject { ["profile"] = profilePath, ["exportDir"] = export, ["discardManualEdits"] = false }.ToString();
+                var t = Send("POST", "/import", Token(), body);
+                yield return Wait(t);
+                Assert.AreEqual(200, t.Result.status);
+                var log = t.Result.body.Value<string>("log");
+                Assert.AreEqual(0, t.Result.body.Value<int>("code"), log);
+                StringAssert.Contains("Imported bridge.import into " + outDir + "/BridgeImport", log);
+                Assert.IsTrue(File.Exists(Path.Combine(outDir, "BridgeImport", "BridgeImport.uss")));
+                Assert.AreEqual("import", DesignUiBridge.LastRequest.Value.Op);
+                Assert.AreEqual(0, DesignUiBridge.LastRequest.Value.Code);
+            }
+            finally
+            {
+                Directory.Delete(export, true);
+                if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
                 FontFixture.Delete();
             }
         }

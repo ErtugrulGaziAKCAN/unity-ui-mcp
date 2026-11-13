@@ -6,9 +6,9 @@
     "prefer": "command",
     "captureVia": "command",
     "command": {
-      "import": ["../../scripts/unity-check.sh", "--warm", "--wait", "--call", "DesignUi.Editor.DesignUiBatch.Import"],
-      "capture": ["../../scripts/unity-check.sh", "--warm", "--wait", "--editmode", "DesignCaptureTests", "--assembly", "DesignUi.Editor.Tests"],
-      "kitSync": ["../../scripts/unity-check.sh", "--warm", "--wait", "--call", "DesignUi.Editor.DesignUiBatch.KitSync"]
+      "import": ["../../scripts/unity-check.sh", "--warm", "--wait", "--editmode", "DesignUiOpsTests.ImportFromEnv"],
+      "capture": ["../../scripts/unity-check.sh", "--warm", "--wait", "--editmode", "DesignCaptureTests.CaptureFromEnv"],
+      "kitSync": ["../../scripts/unity-check.sh", "--warm", "--wait", "--editmode", "DesignUiOpsTests.KitSyncFromEnv"]
     }
   }
 }

@@ -65,15 +65,37 @@ namespace DesignUi.Editor
         /// (<c>-unity-background-image-tint-color</c>). Always false on shadows.
         /// </summary>
         [JsonProperty("tint")] public bool Tint;
+        /// <summary>
+        /// A baked gradient (SVG of CSS gradients): the smallest distance between two consecutive colour stops of different
+        /// colours, as a fraction of the gradient line; null for every other asset and for a gradient without a colour change.
+        /// </summary>
+        [JsonProperty("stopGap")] public float? StopGap;
+
+        /// <summary>A copy of the asset's fields (a shadow keeps its offset).</summary>
+        public virtual IrAsset Copy() => new IrAsset
+        {
+            Kind = Kind, File = File, Sha256 = Sha256, Width = Width, Height = Height, Slice = (float[])Slice?.Clone(), Tint = Tint, StopGap = StopGap,
+        };
     }
 
     /// <summary>
-    /// Baked box-shadow. Offset.X/Y is the shadow image's top-left relative to the element's border-box
-    /// top-left (CSS px, may be negative); Offset.W/H is the shadow image size minus the element size.
+    /// Baked box-shadows: a 9-slice PNG (<see cref="IrAsset.Slice"/> always set) drawn into the rect
+    /// (x + Offset.X, y + Offset.Y, w + Offset.W, h + Offset.H) of the element's border box (x, y, w, h), in CSS px: the
+    /// drawn rect, which is often larger than the PNG (its centre texels are uniform; it is stretched). Outer shadows are
+    /// drawn behind the element and are transparent under its border box. Inset shadows cover the padding box (offset
+    /// {bl, bt, -(bl+br), -(bt+bb)}) and are drawn above the element's background and below its content.
     /// </summary>
     public sealed class IrShadow : IrAsset
     {
         [JsonProperty("offset")] public BoxRect Offset;
+
+        public override IrAsset Copy() => CopyShadow();
+
+        public IrShadow CopyShadow() => new IrShadow
+        {
+            Kind = Kind, File = File, Sha256 = Sha256, Width = Width, Height = Height, Slice = (float[])Slice?.Clone(), Tint = Tint, StopGap = StopGap,
+            Offset = Offset == null ? null : new BoxRect { X = Offset.X, Y = Offset.Y, W = Offset.W, H = Offset.H },
+        };
     }
 
     public sealed class IrRepeat
@@ -184,8 +206,20 @@ namespace DesignUi.Editor
         /// rewritten to its asset file).
         /// </summary>
         [JsonProperty("background")] public IrAsset Background;
-        /// <summary>Baked 9-slice box-shadow; its offset is relative to the element, in CSS px.</summary>
+        /// <summary>
+        /// Layer key -> the background image while exactly that layer holds, when it differs from what the layers inside it
+        /// give (another gradient, a gradient re-baked for the layer's box); null: no image. Gradients appear only here and
+        /// in <see cref="Background"/>; for url() images the style layers keep <c>background-image</c> and this map mirrors it.
+        /// </summary>
+        [JsonProperty("backgroundLayers")] public Dictionary<string, IrAsset> BackgroundLayers = new Dictionary<string, IrAsset>();
+        /// <summary>The base layer's outer box-shadows, baked into one 9-slice image; <c>box-shadow</c> never appears in <see cref="Style"/>.</summary>
         [JsonProperty("shadow")] public IrShadow Shadow;
+        /// <summary>Layer key -> the outer shadow while exactly that layer holds, when it differs (e.g. a hover lift); null: none.</summary>
+        [JsonProperty("shadowLayers")] public Dictionary<string, IrShadow> ShadowLayers = new Dictionary<string, IrShadow>();
+        /// <summary>The base layer's inset box-shadows, baked into one 9-slice image for the padding box.</summary>
+        [JsonProperty("insetShadow")] public IrShadow InsetShadow;
+        /// <summary>Layer key -> the inset shadow while exactly that layer holds, when it differs; null: none.</summary>
+        [JsonProperty("insetShadowLayers")] public Dictionary<string, IrShadow> InsetShadowLayers = new Dictionary<string, IrShadow>();
         /// <summary>Text in attributes (<c>placeholder</c>, <c>title</c>, <c>alt</c>, <c>aria-label</c>), each with its own key.</summary>
         [JsonProperty("attrTexts")] public Dictionary<string, IrText> AttrTexts = new Dictionary<string, IrText>();
         /// <summary>Form controls: the pseudo-states the markup starts in; null for other elements.</summary>
@@ -235,6 +269,26 @@ namespace DesignUi.Editor
         /// never written as USS). Not part of the IR file.
         /// </summary>
         [JsonIgnore] public Dictionary<string, Dictionary<string, string>> Transitions = new Dictionary<string, Dictionary<string, string>>();
+
+        /// <summary>
+        /// Set by Lowering.Apply: layer key -> the image that replaces the element's own background image (its
+        /// <see cref="Background"/>, else its <see cref="Asset"/>) while that layer holds; null draws none. It carries a
+        /// gradient's <see cref="BackgroundLayers"/> and the per-layer 9-slices of the compiler-made shadow and inset
+        /// images. Not part of the IR file.
+        /// </summary>
+        [JsonIgnore] public Dictionary<string, IrAsset> AssetLayers = new Dictionary<string, IrAsset>();
+
+        /// <summary>
+        /// Set by the compiler from <c>object-fit</c> (a lowered property): layer key -> the USS
+        /// <c>-unity-background-scale-mode</c> of the element that paints the content image. Not part of the IR file.
+        /// </summary>
+        [JsonIgnore] public Dictionary<string, string> ScaleModes = new Dictionary<string, string>();
+
+        /// <summary>The layer keys of the effect maps (shadows, inset shadows, background images, per-layer images).</summary>
+        [JsonIgnore]
+        public IEnumerable<string> EffectKeys =>
+            (ShadowLayers?.Keys ?? Enumerable.Empty<string>()).Concat(InsetShadowLayers?.Keys ?? Enumerable.Empty<string>())
+            .Concat(BackgroundLayers?.Keys ?? Enumerable.Empty<string>()).Concat(AssetLayers?.Keys ?? Enumerable.Empty<string>());
     }
 
     public sealed class IrScreen

@@ -69,9 +69,34 @@ namespace DesignUi.Editor
             foreach (var name in node.AttrTexts.Keys)
                 if (!AttrTextNames.Contains(name))
                     throw new IrFormatException("node '" + node.Id + "' has an unknown attribute text '" + name + "' (placeholder, title, alt or aria-label)");
-            if (node.Shadow != null && node.Shadow.Tint) throw new IrFormatException("the shadow of node '" + node.Id + "' is tinted; shadows never are");
+            node.ShadowLayers = node.ShadowLayers ?? new Dictionary<string, IrShadow>();
+            node.InsetShadowLayers = node.InsetShadowLayers ?? new Dictionary<string, IrShadow>();
+            node.BackgroundLayers = node.BackgroundLayers ?? new Dictionary<string, IrAsset>();
+            ValidateShadow(node.Shadow, node.Id, "shadow");
+            ValidateShadow(node.InsetShadow, node.Id, "inset shadow");
+            foreach (var kv in node.ShadowLayers) ValidateEffectLayer(kv.Key, node.Id, "shadowLayers", () => ValidateShadow(kv.Value, node.Id, "shadow of layer '" + kv.Key + "'"));
+            foreach (var kv in node.InsetShadowLayers) ValidateEffectLayer(kv.Key, node.Id, "insetShadowLayers", () => ValidateShadow(kv.Value, node.Id, "inset shadow of layer '" + kv.Key + "'"));
+            foreach (var kv in node.BackgroundLayers) ValidateEffectLayer(kv.Key, node.Id, "backgroundLayers", null);
             foreach (var anim in node.Anims) ValidateAnim(anim, node.Id);
             foreach (var child in node.Children) Validate(child);
+        }
+
+        /// <summary>A baked shadow is an untinted 9-slice (four insets) with its drawn rect's offset.</summary>
+        static void ValidateShadow(IrShadow s, string id, string what)
+        {
+            if (s == null) return;
+            if (s.Tint) throw new IrFormatException("the " + what + " of node '" + id + "' is tinted; shadows never are");
+            if (s.Offset == null) throw new IrFormatException("the " + what + " of node '" + id + "' has no offset (its drawn rect)");
+            if (s.Slice == null || s.Slice.Length != 4) throw new IrFormatException("the " + what + " of node '" + id + "' is not a 9-slice (four insets)");
+        }
+
+        /// <summary>An effect map's key is a canonical, non-base layer key (base is the node's own field).</summary>
+        static void ValidateEffectLayer(string key, string id, string map, Action value)
+        {
+            if (key == LayerKey.BaseText) throw new IrFormatException(map + " of node '" + id + "' names 'base'; the base value is the node's own field");
+            if (!LayerKey.IsCanonical(key, out var canonical))
+                throw new IrFormatException(map + " layer '" + key + "' of node '" + id + "' is not in canonical order (expected '" + canonical + "')");
+            value?.Invoke();
         }
 
         static void ValidateAnim(IrAnim a, string id)

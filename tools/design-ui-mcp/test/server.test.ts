@@ -65,8 +65,26 @@ describe("server surface", () => {
     const client = await serverFor(p.dir);
     const instructions = client.getInstructions() ?? "";
     expect(instructions).toMatch(/design_ui_rules[\s\S]*design_ui_lint[\s\S]*design_ui_import[\s\S]*design_ui_verify/);
-    expect(instructions).toMatch(/not available yet/i);
+    expect(instructions).toMatch(/Live in this version: .*design_ui_import.*design_ui_verify.*design_ui_kit_sync/);
+    expect(instructions).not.toMatch(/not available yet/i);
     expect(client.getServerVersion()).toMatchObject({ name: "design-ui", version: VERSION });
+  });
+
+  it("names a Unity step the configuration cannot run, in the instructions and the status", async () => {
+    const p = tempProject({ prefer: "editor" });
+    p.writeConfig({ unityRunner: { prefer: "editor", captureVia: "editor" } });
+    const client = await serverFor(p.dir);
+    expect(client.getInstructions() ?? "").toMatch(/design_ui_verify: the comparison is live, but the Unity capture cannot run: the com\.unity\.design-ui package has no Editor capture/);
+    const r = await call(client, "design_ui_status");
+    expect(r.data.tools.design_ui_import).toMatchObject({ available: true });
+    expect(r.data.tools.design_ui_import.note).toMatch(/Unity compile in the open Unity Editor through its bridge/);
+    expect(r.data.tools.design_ui_verify.available).toBe(false);
+    p.writeConfig({ unityRunner: { prefer: "command", command: { import: [], capture: [], kitSync: [] } } });
+    const s = await call(await serverFor(p.dir), "design_ui_status");
+    expect(s.data.tools.design_ui_import).toMatchObject({ available: false });
+    expect(s.data.tools.design_ui_import.note).toMatch(/"unityRunner\.command\.import" is not configured/);
+    expect(s.data.tools.design_ui_verify.note).toMatch(/"unityRunner\.command\.capture" is not configured/);
+    expect(s.data.tools.design_ui_kit_sync.available).toBe(false);
   });
 
   it("matches the package version", () => {
@@ -163,10 +181,11 @@ describe("design_ui_list and design_ui_status", () => {
     expect(r.data.version).toBe(VERSION);
     expect(r.data.tools.design_ui_lint.available).toBe(true);
     expect(r.data.tools.design_ui_import.available).toBe(true);
-    expect(r.data.tools.design_ui_import.note).toMatch(/export live.*Unity compile not available yet/i);
-    expect(r.data.pipeline).toEqual({ export: true, compare: true, capture: false });
-    expect(r.data.tools.design_ui_verify.available).toBe(false);
-    expect(r.data.tools.design_ui_verify.note).toMatch(/not available yet: the Unity capture .* comparison against the design and the HTML report are installed/);
+    expect(r.data.tools.design_ui_import.note).toMatch(/^live: export \(lint, IR, goldens, assets\), then the Unity compile through the configured command/);
+    expect(r.data.pipeline).toEqual({ export: true, compare: true, capture: true });
+    expect(r.data.tools.design_ui_verify.available).toBe(true);
+    expect(r.data.tools.design_ui_verify.note).toMatch(/^live: Unity capture through the configured command .*capture-done\.json/);
+    expect(r.data.tools.design_ui_kit_sync.available).toBe(true);
     expect(r.data.config).toMatchObject({ ok: true, designRoot: p.designRoot });
   });
 
@@ -379,13 +398,42 @@ describe("design_ui_kit_sync", () => {
 });
 
 describe("design_ui_verify", () => {
-  it("says it is not available yet before anything else, for an existing screen", async () => {
+  it("does not capture when the configuration cannot run the Unity capture", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.addScreen("clean-screen", "clean-screen");
+    p.writeConfig({ unityRunner: { prefer: "command", captureVia: "editor" } });
+    const r = await call(await serverFor(p.dir, { ...stubPipeline(), compareScreen: INSTALLED_PIPELINE.compareScreen, unityCapture: true }), "design_ui_verify", { screen: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/cannot capture: the com\.unity\.design-ui package has no Editor capture/);
+    expect(r.data).toMatchObject({ available: false, missing: ["capture"], verdict: null });
+    expect(p.runnerCalls()).toEqual([]);
+  });
+
+  it("gives no verdict for a capture that exits 0 without its done marker, and never compares it", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.addScreen("clean-screen", "clean-screen");
+    p.writeConfig({ unityRunner: { prefer: "command", command: { import: ["sh", "-c", "exit 0"], capture: ["sh", "-c", "mkdir -p \"$0\"", "{outDir}"], kitSync: [] } } });
+    let compared = 0;
+    const pipeline = { ...stubPipeline(), unityCapture: true };
+    pipeline.compareScreen = async () => { compared++; return { pass: true, topIssues: [], notRun: [], compared: 1 }; };
+    const client = await serverFor(p.dir, pipeline);
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/did not finish \(no capture-done\.json\); no verdict/);
+    expect(r.data.verdict).toBeNull();
+    expect(compared).toBe(0);
+  });
+
+  it("with the installed pipeline: needs an import first, captures nothing before it, and names a missing screen", async () => {
     const p = tempProject();
     p.addScreen("clean-screen", "clean-screen");
     const client = await serverFor(p.dir);
     const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
     expect(r.isError).toBe(true);
-    expect(r.text).toMatch(/not available yet/i);
+    expect(r.text).toMatch(/has not been imported yet/);
+    expect(r.data.verdict).toBeNull();
+    expect(p.runnerCalls()).toEqual([]);
     const missing = await call(client, "design_ui_verify", { screen: "nope" });
     expect(missing.isError).toBe(true);
     expect(missing.text).toContain("not found");

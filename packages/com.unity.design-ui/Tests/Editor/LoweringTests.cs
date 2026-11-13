@@ -1168,6 +1168,35 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Rejections_NameTheLintRuleThatRejectsTheSameDesign()
+        {
+            string RuleOf(System.Func<IrNode> design) => Assert.Throws<UnsupportedStyleException>(() => Lowering.Apply(design())).RuleId;
+
+            Assert.AreEqual("U-CSS-035", RuleOf(() => WithChildren(Node("p"), WithChildren(Node("q", ("position", "static")), Node("a", ("position", "absolute"))))));
+            Assert.AreEqual("U-CSS-035", RuleOf(() =>
+            {
+                var a = Node("a", ("position", "relative"));
+                a.Style["hover"] = Layer(("position", "absolute"));
+                return WithChildren(Node("p"), a);
+            }));
+            Assert.AreEqual("U-CSS-004", RuleOf(() =>
+            {
+                var a = Node("a", ("position", "relative"));
+                a.Style["hover"] = Layer(("z-index", "2"));
+                return WithChildren(Node("p"), a);
+            }));
+            Assert.AreEqual("U-CSS-036", RuleOf(() => WithChildren(Node("p"), Node("a", ("box-sizing", "content-box"), ("width", "10px"), ("padding-left", "2px")))));
+            Assert.AreEqual("U-CSS-034", RuleOf(() =>
+            {
+                var a = Node("a", ("height", "4px"));
+                a.Style["base"]["display"] = "none";
+                a.Style["state:x"] = Layer(("display", "block"));
+                a.Style["hover"] = Layer(("display", "block")); // shows itself by its own pseudo-state
+                return WithChildren(Flex("p", "column", ("gap", "4px")), a, Node("b", ("height", "4px")));
+            }));
+        }
+
+        [Test]
         public void Apply_Sample_LowersAndMapsEveryLayer()
         {
             var screen = IrReader.Read(IrReaderTests.SamplePath());

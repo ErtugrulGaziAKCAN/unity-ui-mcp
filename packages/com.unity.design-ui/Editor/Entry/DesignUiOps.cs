@@ -50,9 +50,48 @@ namespace DesignUi.Editor
             return new OpResult(r.Ok ? 0 : 1, log.ToString().TrimEnd('\n'));
         }
 
+        /// <summary>
+        /// Compiles an export folder (<c>screen.ir.json</c>, assets, goldens) into the project with the profile
+        /// (<see cref="ScreenCompiler.Compile(string, DesignUiProfile, bool)"/>): the generated files and the design assets
+        /// are written and imported in one asset-editing batch. Code 0 with a log of what was written, 1 with the errors
+        /// (nothing written when the design cannot be compiled or a generated file was edited by hand, unless
+        /// <paramref name="discardManualEdits"/>). A relative <paramref name="exportDir"/> is resolved against the Unity
+        /// project root, and the log says so.
+        /// </summary>
         public static OpResult Import(string profilePath, string exportDir, bool discardManualEdits)
         {
-            return new OpResult(2, "Not available yet: import arrives with the import pipeline.");
+            var profile = string.IsNullOrEmpty(profilePath) ? null : AssetDatabase.LoadAssetAtPath<DesignUiProfile>(profilePath);
+            if (profile == null) return new OpResult(1, "No DesignUiProfile at '" + profilePath + "'.");
+            if (string.IsNullOrEmpty(exportDir)) return new OpResult(1, "No export folder.");
+            var log = new StringBuilder();
+            var dir = exportDir;
+            if (!System.IO.Path.IsPathRooted(dir))
+            {
+                dir = System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), dir));
+                log.Append("note: export folder '").Append(exportDir).Append("' resolved against the project root: ").Append(dir).Append('\n');
+            }
+            if (!System.IO.Directory.Exists(dir)) return new OpResult(1, log + "No export folder at '" + dir + "'.");
+
+            CompileResult r;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            try { r = ScreenCompiler.Compile(dir, profile, discardManualEdits); }
+            catch (Exception e) when (e is FontSetupException || e is System.IO.IOException || e is UnauthorizedAccessException || e is IrFormatException || e is UnsupportedStyleException)
+            {
+                return new OpResult(1, log + "Import failed: " + e.Message);
+            }
+            var ms = watch.ElapsedMilliseconds;
+            if (r.Ok)
+            {
+                log.Append("Imported ").Append(r.Screen ?? "the screen").Append(" into ").Append(r.Folder ?? profile.outputFolder).Append(": ")
+                    .Append(r.Written.Count).Append(r.Written.Count == 1 ? " file" : " files").Append(" written (").Append(ms).Append(" ms).\n");
+            }
+            else log.Append("Import failed; nothing was written for the screen.\n");
+            foreach (var e in r.Errors) log.Append("error: ").Append(e).Append('\n');
+            foreach (var m in r.ManualEdits) log.Append("edited by hand: ").Append(m).Append('\n');
+            if (r.Written.Count > 0) log.Append("written: ").Append(string.Join(", ", r.Written)).Append('\n');
+            foreach (var o in r.Orphans) log.Append("orphan screen folder (not deleted): ").Append(o).Append('\n');
+            foreach (var a in r.StaleAssets) log.Append("asset no screen uses (not deleted): ").Append(a).Append('\n');
+            return new OpResult(r.Ok ? 0 : 1, log.ToString().TrimEnd('\n'));
         }
     }
 }

@@ -45,8 +45,8 @@ namespace DesignUi.Editor.Tests
             var card = root.Children[1];
             Assert.AreEqual("card", card.Id);
             Assert.AreEqual("shadow9", card.Shadow.Kind);
-            Assert.AreEqual(8f, card.Shadow.Offset.Y);
-            CollectionAssert.AreEqual(new[] { 40f, 40f, 40f, 40f }, card.Shadow.Slice);
+            Assert.AreEqual(-19f, card.Shadow.Offset.Y);
+            CollectionAssert.AreEqual(new[] { 59f, 62f, 59f, 62f }, card.Shadow.Slice);
             Assert.AreEqual("image", card.Asset.Kind);
             Assert.IsFalse(card.Asset.Tint);
             var title = root.Children[0];

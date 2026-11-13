@@ -817,6 +817,114 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(0.3f, hovEl.resolvedStyle.opacity, 1e-4f, ".state-loading .s-x:hover");
         }
 
+        /// <summary>
+        /// The effect layers end to end: a card whose shadow lifts on hover and disappears while loading, a button whose
+        /// inset shadow (an overlay of its padding box) goes away while pressed, and a root gradient that changes with a
+        /// state. The compiled style sheet imports cleanly and every layer resolves on a real panel.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Compiled_EffectLayers_ResolveOnAPanel()
+        {
+            IrShadow Shadow(float slice, float x, float y, float w, float h) => new IrShadow
+            {
+                Kind = "shadow9", File = ShadowFile, Sha256 = new string('d', 64), Width = 8, Height = 8,
+                Slice = new[] { slice, slice, slice, slice }, Offset = new BoxRect { X = x, Y = y, W = w, H = h },
+            };
+            var card = Node("card", "container", ("width", "40px"), ("height", "20px"), ("flex-shrink", "0"), ("background-color", "#333333"));
+            card.Shadow = Shadow(2, 0, 4, 0, 0);
+            card.ShadowLayers["hover"] = Shadow(3, -4, -2, 8, 8);
+            card.ShadowLayers["state:loading"] = null;
+            var play = Node("play", "button", ("width", "40px"), ("height", "20px"), ("flex-shrink", "0"), ("border-left-width", "2px"),
+                ("border-left-color", "#ffffff"), ("background-color", "#123456"));
+            play.InsetShadow = Shadow(2, 2, 0, -2, 0);
+            play.InsetShadowLayers["active"] = null;
+            var root = Root(card, play);
+            root.Style["base"]["padding-left"] = "20px";
+            root.Style["base"]["padding-top"] = "20px";
+            const string gradA = "assets/grad-a.svg", gradB = "assets/grad-b.svg";
+            root.Background = new IrAsset { Kind = "svg", File = gradA, Sha256 = new string('a', 64), Width = 256, Height = 256, StopGap = 1 };
+            root.BackgroundLayers["state:loading"] = new IrAsset { Kind = "svg", File = gradB, Sha256 = new string('b', 64), Width = 256, Height = 256, StopGap = 1 };
+            var ir = TestIr.Screen(root);
+            var export = Export(ir);
+            foreach (var (file, colour) in new[] { (gradA, "#ff0000"), (gradB, "#0000ff") })
+            {
+                var svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"256\" height=\"256\" viewBox=\"0 0 256 256\"><rect x=\"0\" y=\"0\" width=\"256\" height=\"256\" fill=\"" + colour + "\"/></svg>";
+                File.WriteAllText(Path.Combine(export, file), svg);
+                SetHash(ir, file, File.ReadAllBytes(Path.Combine(export, file)));
+            }
+            WriteIr(export, ir);
+            var result = ScreenCompiler.Compile(export, Profile(AssetsRoot), false, NoView());
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            var ussPath = AssetsRoot + "/TestScreen/TestScreen.uss";
+            var vta = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(AssetsRoot + "/TestScreen/TestScreen.uxml");
+            var sheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(ussPath);
+            Assert.IsFalse(sheet.importedWithErrors || sheet.importedWithWarnings, "the effect rules parse:\n" + File.ReadAllText(ussPath));
+
+            var doc = Panel(256);
+            for (int i = 0; i < 2; i++) yield return null;
+            var tree = vta.Instantiate();
+            tree.style.position = Position.Absolute;
+            tree.style.left = 0; tree.style.top = 0; tree.style.right = 0; tree.style.bottom = 0;
+            doc.rootVisualElement.Add(tree);
+            for (int i = 0; i < 10; i++) yield return null;
+
+            var rootEl = tree.Q("root");
+            var host = tree.Q("card__shadowhost");
+            var shadow = tree.Q("card__shadow");
+            var cardEl = tree.Q("card");
+            var playEl = tree.Q<Button>("play");
+            var inset = tree.Q("play__inset");
+            var a = AssetDatabase.LoadAssetAtPath<VectorImage>(AssetsRoot + "/_assets/" + Path.GetFileName(gradA));
+            var b = AssetDatabase.LoadAssetAtPath<VectorImage>(AssetsRoot + "/_assets/" + Path.GetFileName(gradB));
+            Assert.IsNotNull(a);
+            Assert.IsNotNull(b);
+            bool NoImage(VisualElement e)
+            {
+                var bg = e.resolvedStyle.backgroundImage;
+                return bg.texture == null && bg.sprite == null && bg.vectorImage == null && bg.renderTexture == null;
+            }
+
+            // base: the shadow covers the drawn rect (0, 4, 40, 20) of the card's border box, sliced 2
+            Assert.AreSame(host, cardEl.parent);
+            Assert.AreEqual(new Rect(0, 4, 40, 20), shadow.layout);
+            Assert.IsNotNull(shadow.resolvedStyle.backgroundImage.texture);
+            Assert.AreEqual(2, shadow.resolvedStyle.unitySliceLeft);
+            Assert.AreSame(a, rootEl.resolvedStyle.backgroundImage.vectorImage);
+            // the inset overlay is the play button's padding box: inside its 2 px left border
+            Assert.AreSame(playEl, inset.parent);
+            Assert.AreSame(inset, playEl.hierarchy[0]);
+            Assert.AreEqual(new Rect(2, 0, 38, 20), inset.layout);
+            Assert.IsNotNull(inset.resolvedStyle.backgroundImage.texture);
+            Assert.AreEqual(PickingMode.Ignore, inset.pickingMode);
+            Assert.AreEqual(PickingMode.Ignore, shadow.pickingMode);
+
+            // hover (the mirror class on the host): the lifted shadow's drawn rect and slices
+            host.AddToClassList("dui-hover");
+            for (int i = 0; i < 3; i++) yield return null;
+            Assert.AreEqual(new Rect(-4, -2, 48, 28), shadow.layout);
+            Assert.AreEqual(3, shadow.resolvedStyle.unitySliceLeft);
+            host.RemoveFromClassList("dui-hover");
+
+            // loading: no shadow, the other gradient
+            rootEl.AddToClassList("state-loading");
+            for (int i = 0; i < 3; i++) yield return null;
+            Assert.IsTrue(NoImage(shadow), "no shadow while loading");
+            Assert.AreSame(b, rootEl.resolvedStyle.backgroundImage.vectorImage);
+            rootEl.RemoveFromClassList("state-loading");
+
+            // pressed: no inset shadow
+            var pseudo = typeof(VisualElement).GetProperty("pseudoStates", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.IsNotNull(pseudo, "VisualElement.pseudoStates");
+            pseudo.SetValue(playEl, Enum.Parse(pseudo.PropertyType, "Active"));
+            for (int i = 0; i < 3; i++) yield return null;
+            Assert.IsTrue(NoImage(inset), "no inset shadow while pressed");
+            pseudo.SetValue(playEl, Enum.ToObject(pseudo.PropertyType, 0));
+            for (int i = 0; i < 3; i++) yield return null;
+            Assert.IsFalse(NoImage(inset));
+            Assert.IsFalse(NoImage(shadow));
+            Assert.AreSame(a, rootEl.resolvedStyle.backgroundImage.vectorImage);
+        }
+
         static void AssertColor(string hex, Color actual)
         {
             Assert.IsTrue(ColorUtility.TryParseHtmlString(hex, out var c));
