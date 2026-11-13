@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -24,6 +25,19 @@ describe("scripts/smoke.mjs (out-of-band server check over stdio)", () => {
     expect(r.stdout).toMatch(/tools\/call design_ui_list \{\}: isError=false/);
     expect(r.stdout).toContain("Unity bridge: not-found");
     expect(r.stdout).toContain("server exited with 0");
+  });
+
+  it("writes every call's structured result to --out, with a per-request --timeout", () => {
+    const p = tempProject({ prefer: "editor" });
+    const out = path.join(tempDir(), "calls.json");
+    const r = spawnSync(process.execPath, [path.join(pkg, "scripts", "smoke.mjs"), "--project", p.dir, "--timeout", "120",
+      "--call", "design_ui_status", "--call", "design_ui_list", "--out", out], { encoding: "utf8", timeout: 60_000 });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const calls = JSON.parse(fs.readFileSync(out, "utf8"));
+    expect(calls.map((c: { name: string }) => c.name)).toEqual(["design_ui_status", "design_ui_list"]);
+    expect(calls[0]).toMatchObject({ args: {}, isError: false });
+    expect(typeof calls[0].ms).toBe("number");
+    expect(calls[1].structuredContent.unity.bridge).toBe("not-found");
   });
 
   it("fails when the project has no design-ui.config.json", () => {
