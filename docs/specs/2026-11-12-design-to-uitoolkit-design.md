@@ -158,7 +158,7 @@ rows that cite them; items marked *unmeasured* are allowed by the reference but 
 | `rem` | Resolved to px at export | Allowed |
 | Transitions and easing | Recorded in the IR and played by the animation player (§11), never emitted as USS transitions, so nothing animates twice | `linear`, `ease*`, `cubic-bezier()`, `steps()` once the player lands; until then the five keywords |
 | `display: grid`, `::before`/`::after`, `:nth-child` and structural pseudo-classes, a `z-index` the sibling order cannot follow (U-CSS-004), `calc()`, `vw`/`vh`, `backdrop-filter`, `cubic-bezier()`, `inline`/`inline-block` text flow, `font-family` outside the kit, `box-sizing: content-box` on a sized element with padding or border (U-CSS-036), an absolute element in a static parent (U-CSS-035) | No equivalent | **Lint error** |
-| `font-size`, `line-height`, `font-weight` | Font size and weight direct; `line-height` is not in USS and is dropped by the compiler | Only the kit text styles in `text-styles.json` (whole-pixel sizes and line heights; U-CSS-016); see "Text styles" below. Weights need a real face in the reference locale's font (checked by kit sync; U-FONT-001 as backstop) |
+| `font-size`, `line-height`, `font-weight` | Font size and weight direct; `line-height` is not in USS and is dropped by the compiler | Only the kit text styles in `text-styles.json` (sizes and line heights in multiples of 4 px, whole device pixels at every declared viewport; U-CSS-016); see "Text styles" below. Weights need a real face in the reference locale's font (checked by kit sync; U-FONT-001 as backstop) |
 
 `z-index` is compiled by reordering siblings, since UI Toolkit draws in hierarchy order. The compiler keeps in-flow
 siblings in layout order and moves only absolute siblings, each into the gap that gives it its CSS stacking level
@@ -176,15 +176,26 @@ controls are styled by the compiled kit components.
 
 **Text styles.** UI Toolkit cannot set a line height: a text element is `ceil(n × P)` tall for n lines, with
 `P = fontSize × faceInfo.lineHeight / faceInfo.pointSize` of the font twin, while Chromium makes it `n × line-height`.
-Unity 6000.3 also rounds font sizes to whole device pixels. The font twins therefore carry CSS's line box:
-`faceInfo.lineHeight = r × pointSize` with the half-leading folded into ascent and descent, for two kit ratios,
-`r = 1.25` (caption, label, body, subtitle; font sizes multiples of 4 px) and `r = 1.125` (title, headline, display;
-sizes multiples of 8 px). Each size times its ratio is a whole pixel count, so `P = L` and heights are exactly
-`n × L` with baselines within 0.5 px, at the reference size and at the 0.75 and 0.5 viewport scales. The kit ships Inter
-Regular and Bold at 12/15, 16/20, 24/30, 28/35, 32/36, 48/54 and 56/63 px (font size / line height); the table is
-generated from the two ratios by `tools/design-export/src/kit/textStyles.ts`, and kit sync builds the twins with the
-same line box. Lint matches the whole-pixel numbers (U-CSS-016). The IR records the matched style name, and the USS
-writer formats numbers with the invariant culture at round-trip precision.
+Unity 6000.3 also rounds font sizes to whole device pixels and ceils each text element's height to whole device pixels.
+The font twins therefore carry CSS's line box: `faceInfo.lineHeight = r × pointSize` with the half-leading folded into
+ascent and descent, for two kit ratios, `r = 1.25` (label 16/20, subtitle 32/40, headline 48/60, display 64/80 px, font
+size / line height) and `r = 4/3` (caption 12/16, body 24/32, title 36/48 px). Font sizes and line heights are
+multiples of 4 px, so both stay whole device pixels at the 0.75 and 0.5 viewport scales too: `P = L`, a text block is
+exactly `n × L` tall with baselines within 0.5 px, and texts stacked in a column add up without drift (a fractional line
+height would be ceiled per text). The kit ships Inter Regular and Bold in these seven sizes; the table is generated from
+the two ratios by `tools/design-export/src/kit/textStyles.ts`. `design-export kit build` and kit sync refuse a table
+whose font size or line height is not a whole number of device pixels at the scale of any declared viewport, and kit
+sync builds the twins with the same line box. Lint matches the numbers (U-CSS-016). Every listing of the table (RULES.md,
+the base stylesheet's `.text-<style>` classes, the Claude Design System's type styles) is generated from
+`text-styles.json`. The IR records the matched style name, and the USS writer formats numbers with the invariant
+culture at round-trip precision.
+
+**Font smoothing.** Chromium on macOS draws text with the platform's default font smoothing, which thickens glyph
+stems; UI Toolkit's SDF text has no such dilation, so the same text looked bolder in the design than in Unity. The
+design therefore renders without it: the kit base stylesheet sets `-webkit-font-smoothing: antialiased` and
+`-moz-osx-font-smoothing: grayscale` on `:root`, lint requires the computed `-webkit-font-smoothing: antialiased` on
+every text-bearing element (U-CSS-038), and the goldens are screenshots of that same page. What the designer sees in
+Claude Design, the goldens and Unity then draw the same stem weight (`docs/findings/text-ink.md`).
 
 ### 5.4 Lint
 
@@ -197,7 +208,8 @@ Lint is a whitelist. Which CSS properties, keywords, units and value functions t
 `packages/com.unity.design-ui/Editor/Data/css-support.json`; the exporter's lint (`tools/design-export/src/lint/allowed-css.ts`
 loads it) and the Unity style mapper both read it, so a property the mapper cannot reproduce can never pass lint.
 Anything not listed is an error (U-CSS-023 for properties, U-CSS-024 for value functions). Missing assets (U-NET-002),
-font faces not from the kit (U-FONT-002), glyphs rendered by a platform fallback font (U-FONT-003) and markup outside
+font faces not from the kit (U-FONT-002), glyphs rendered by a platform fallback font (U-FONT-003), text without grayscale
+font smoothing (U-CSS-038) and markup outside
 `<x-dc>` (U-DC-005) are errors too.
 
 The file describes IR values for the mapper (per property `handling`, `keywords`, `types`, `functions`, `components`,
@@ -261,9 +273,10 @@ fonts as `/_blob/<id>` uploads. The design kit is published to Claude as a Desig
   `data-u-repeat` on the first), UI built by script (U-DC-003), and `data-props` other than `$preview` (U-DC-004).
 - **Artboard.** One artboard per screen, a fixed 2560×1440 root, titled with the screen id; states stay
   `data-u-state` roots inside it (§5.2). Inline styles are allowed; they compile like rules.
-- **Kit sync** also writes the kit as a Design System artifact folder (`README.md` from `RULES.md`, list-shaped
-  `tokens.json` from `tokens.css` and `text-styles.json`, the synced font files, component previews and a cover);
-  the `/unity-ui-mcp` skill publishes or updates that design system with the Artifact tool.
+- **Design System export.** `design-export kit claude <kitDir> <outDir>` writes the kit as a Design System artifact
+  folder (`README.md` rendered from the same sources as `RULES.md` plus the artboard rules, list-shaped `tokens.json`
+  from `tokens.css` and `text-styles.json`, the font files kit sync copied from the Unity project, component previews
+  and a cover, the index last); the `/unity-ui-mcp` skill publishes or updates that design system with the Artifact tool.
 
 ## 6. Fonts
 
@@ -285,7 +298,17 @@ source file, matching sampling point size, padding, atlas size and render mode, 
 and weight table. Twins are always **dynamic**, because the advanced text generator (needed for Arabic shaping and
 bidirectional text) does not accept static font assets. Twins regenerate when TMP Settings or the per-locale mapping
 change. The project keeps one font configuration: its TMP setup. Each twin's face carries the kit's CSS line box
-(`faceInfo.lineHeight = r × pointSize`, half-leading folded into ascent and descent; r 1.25 or 1.125, §5.3 text styles).
+(`faceInfo.lineHeight = r × pointSize`, half-leading folded into ascent and descent; r 1.25 or 4/3, §5.3 text styles).
+
+**Kerning.** A dynamic twin adds a glyph the moment text first needs it, but that glyph's kerning pairs only in its
+update queue, after the text was laid out, and UI Toolkit keeps that unkerned first layout (up to 46 px wider on a
+33-character line, standard text generator). Import therefore adds every character of the screen's strings, with their
+font features (kerning pairs, mark positioning, ligatures), to each locale's twins (the plain twin and its line-box
+variants, its weight faces and fallbacks) before anything is laid out. Text that import cannot know (bound values,
+Smart String arguments, repeat items) is assigned with `DesignText.SetText`, or its characters are added first with
+`DesignText.Prepare`; every generated text write goes through them. The twins keep their dynamic glyph data in player
+builds, so a build starts with the imported characters and pairs. The advanced text generator kerns on its own but was
+measured outside the 1-px width limit and needs a project-wide setting, so it is not used for this.
 
 **Weights.** If the resolved font has no real face for a weight, both Chromium and Unity synthesize bold, and they
 do it differently: UI Toolkit's standard text generator widens every advance by 14 %, Chromium keeps them (M0). For
@@ -404,7 +427,8 @@ public sealed partial class ClubOverviewView
 }
 ```
 
-- Setters skip unchanged values and allocate nothing in steady state.
+- Setters skip unchanged values and allocate nothing in steady state. Text setters assign through
+  `DesignText.SetText`, so new characters are kerned from their first layout (§6).
 - The project writes a presenter that calls the view with real game data. The generator never writes or edits
   presenters.
 - Removing a `data-u-id` the presenter uses causes a C# compile error, so breakage is explicit.
@@ -612,7 +636,7 @@ Codex); streamable HTTP is added in M4. It is started per Unity project:
 
 | Tool | Does |
 |---|---|
-| `design_ui_rules` | Returns the kit rules (`RULES.md`), allowed CSS, attributes, text styles and font families, so any AI producing HTML can follow the contract (also exposed as an MCP resource) |
+| `design_ui_rules` | Returns the kit's `RULES.md` (rendered from the kit's own files when the kit has none) and the same contract as one compact JSON (every rule with severity and fix, the allowed CSS in brief, text styles, fonts), so any AI producing HTML can follow the contract; an optional `section` returns one RULES.md section or only the JSON (the Markdown is also exposed as an MCP resource) |
 | `design_ui_list` | Lists screens under `designRoot` with status: new, design changed since import, imported, verified, failed; also reports the Unity connection (bridge found or not, project path) |
 | `design_ui_lint` | Lints one design folder or ZIP; returns findings with rule id, element path and fix |
 | `design_ui_import` | Exports the design (IR, goldens) and compiles it into the Unity project through the Unity runner |
@@ -736,9 +760,9 @@ Risks measured in M0 (results and evidence in `docs/findings/m0.md`):
   closer than the 64-step ramp); radii resolved at export.
 - **R2** No `line-height` in USS. Options: kit text styles pin line-height to the font twin's metrics, or the twin
   generator produces line-spacing variants. Choose by measurement.
-  **Resolved (see findings):** the font twins carry CSS's line box (`lineHeight = r × pointSize`, r 1.25 for sizes that
-  are multiples of 4 and 1.125 for multiples of 8), so heights are exactly `n × L` and baselines within 0.5 px (§5.3
-  text styles, `design-kit/text-styles.json`). The fractional-size and exact-pitch rulings were superseded (findings
+  **Resolved (see findings):** the font twins carry CSS's line box (`lineHeight = r × pointSize`, r 1.25 or 4/3, font
+  sizes and line heights in multiples of 4 px), so heights are exactly `n × L` and baselines within 0.5 px at every
+  declared viewport (§5.3 text styles, `design-kit/text-styles.json`). The fractional-size and exact-pitch rulings were superseded (findings
   O-13).
 - **R3** Synthetic bold differs between Chromium and TextCore. **Resolved (see findings):** real faces only,
   checked by kit sync, with U-FONT-001 as the lint backstop for the reference locale (§6).
@@ -769,7 +793,8 @@ Risks open after M0:
   The pilot measures its colours and cost; texture sampling still interpolates in linear space there (9-slice
   shadows, gradient ramps).
 - **R10** Viewports other than the reference. UI Toolkit rounds text sizes up to whole pixels; text styles with
-  font sizes in multiples of 4 or 8 px keep text sizes whole at scales 0.75 and 0.5 by derivation, and rows of auto-width
+  font sizes and line heights in multiples of 4 px keep both whole at scales 0.75 and 0.5 (kit build and kit sync refuse
+  other tables), and rows of auto-width
   text accumulate the rounded-up widths (up to about 2 px per text at the reference). The M1 fidelity suite measures
   both at 1920×1080 and 1280×720.
 
