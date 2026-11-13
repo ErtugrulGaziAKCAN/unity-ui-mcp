@@ -162,7 +162,7 @@ export function irText(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>, s
   return { key: e.attrs["data-l10n"] ?? null, tr: t.text, en: e.attrs["data-en"] ?? null, args, rich: t.rich, style };
 }
 
-/** Attribute texts (I-4): placeholder (drawn with the field's text style), title, alt, aria-label. */
+/** Attribute texts: placeholder (drawn with the field's text style), title, alt, aria-label. */
 export function attrTexts(e: SnapElement): Record<string, IrText> {
   const out: Record<string, IrText> = {};
   for (const a of TEXT_ATTRS) {

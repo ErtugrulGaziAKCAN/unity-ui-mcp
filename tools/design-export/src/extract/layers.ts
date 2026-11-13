@@ -1,7 +1,7 @@
 import { overlap, type Breakpoint } from "../lint/resolve/media.js";
 
 /**
- * Layer keys (R39). A key is `base` or dimensions joined with `+` in canonical order bp → state → class → anc → own
+ * Layer keys. A key is `base` or dimensions joined with `+` in canonical order bp → state → class → anc → own
  * pseudo-state (alphabetical within a kind):
  *   bp:<name> | state:<name> | class:<is-x> | anc(<ancestor id>):<pseudo | class:is-x> | hover|active|focus|disabled|checked
  * e.g. `state:loading+hover`, `anc(card):hover`, `bp:narrow+anc(row):class:is-selected`. A layer applies while all its

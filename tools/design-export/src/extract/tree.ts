@@ -1,20 +1,20 @@
 /**
- * DOM → IR extraction (plan Task 8). Reads the lint snapshot (no second CDP walk), plus one page call (child order
+ * DOM → IR extraction (spec §7). Reads the lint snapshot (no second CDP walk), plus one page call (child order
  * and rendered text, serialised inline SVGs, image sizes), layer boxes where radii or transforms need them, and CDP
  * attributesStyle for the few elements with presentational attributes.
  *
  * Style layers record what the design specifies, as Chromium expands it into longhands, plus browser defaults that
- * render (R35) and presentational attributes (R36):
- * - layer keys follow R39 (see layers.ts); each layer holds what wins (CSS cascade with !important and specificity)
+ * render and presentational attributes (img/svg width and height, hidden):
+ * - layer keys are described in layers.ts; each layer holds what wins (CSS cascade with !important and specificity)
  *   when exactly its dimensions hold, and co-active layers that set one property also get their union;
  * - var() is resolved per layer (custom properties redefined in a layer), rem becomes px, colours are #rrggbb or
  *   rgba(), CSS-wide keywords are concrete, url() backgrounds point at assets/<sha256>;
- * - transition-* and animation-* go to `anims` only (R34); properties with no effect in UI Toolkit and shorthand
- *   residue at initial values are left out; transform is split (R32); radii are px per corner for the layer's box
- *   (R24/R26, I-7); borders without a style are removed; display is explicit in every base layer; CSS initial values
+ * - transition-* and animation-* go to `anims` only (the animation player owns them, §11); properties with no effect in UI Toolkit and shorthand
+ *   residue at initial values are left out; transform is split into translate/rotate/scale; radii are px per corner for the layer's box
+ *   (findings R1, overlapping-curves rule); borders without a style are removed; display is explicit in every base layer; CSS initial values
  *   that render differently in USS are written (O-6);
- * - text nodes carry the inherited text properties and the layers that change them (R32/I-8) and the matched kit
- *   text style (R26); tintable SVGs carry `color` the same way.
+ * - text nodes carry the inherited text properties and the layers that change them, and the matched kit
+ *   text style (§5.3 text styles); tintable SVGs carry `color` the same way.
  */
 import path from "node:path";
 import type { IrAnim, IrAsset, IrNode, IrScreen, NodeKind } from "../ir/types.js";
@@ -25,7 +25,7 @@ import { firstFamily } from "../lint/css-values.js";
 import { kitFonts, realFaces } from "../lint/fonts.js";
 import { designChildren, describeAt, itemChildren, repeatIssues, repeatSamples, repeatTemplate } from "../lint/repeat.js";
 import { nonDesign } from "../lint/rules/util.js";
-import { annotateTextStyles, rendersText, type DomSnapshot } from "../lint/snapshot.js";
+import { annotateTextStyles, expandShorthands, rendersText, type DomSnapshot } from "../lint/snapshot.js";
 import { isRichInline, isTextElement, runPlans, type RunPlan } from "../lint/text-runs.js";
 import { readTextStyles } from "../lint/text-styles.js";
 import { animsOf, inheritedAnims, mergeAnims } from "./anims.js";
@@ -115,15 +115,24 @@ export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, o
   const ctx: StyleContext = { ids, docUrl };
   ctx.presentational = await presentationalStyles(d.cdp, s, plans.filter((p) => hasPresentational(el(p.i).attrs)).map((p) => p.i));
   lap("cdp");
-  const ex = new StyleExtractor(s, ctx);
+  let ex = new StyleExtractor(s, ctx);
   for (const p of plans) ex.raw(p.i);
+  // shorthands that use custom properties redefined in a layer: Chromium expands them with the layer's values,
+  // then the cascade runs again with those longhands (a nested variable can ask for one more round)
+  for (let round = 0; ex.missingExpansions.size && round < 4; round++) {
+    const items = Array.from(ex.missingExpansions.values());
+    const got = await expandShorthands(d.page, items);
+    ctx.expansions = new Map([...(ctx.expansions ?? []), ...items.map((x, k) => [`${x.name}\u0000${x.value}`, got[k]] as const)]);
+    ex = new StyleExtractor(s, ctx);
+    for (const p of plans) ex.raw(p.i);
+  }
   const states = new Set(ex.states);
   for (const p of plans) { const st = el(p.i).attrs["data-u-state"]; if (st) states.add(st); }
   states.delete("default");
   const stateList = Array.from(states).sort();
   lap("cascade");
 
-  // ---- 3. layer boxes for radii and transforms (I-7) ----------------------------------------------------------
+  // ---- 3. layer boxes for radii and transforms -------------------------------------------------------------------
   const requests = new Map<string, number[]>();
   const ask = (key: string, i: number) => requests.set(key, [...(requests.get(key) ?? []), i]);
   // a layer made only of the element's own (or a named ancestor's) pseudo-states and classes changes the box only when
@@ -207,7 +216,7 @@ export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, o
     const text = textual(p) ? irText(s, p.i, page.seqs, styles, page.rendered) : null;
     const tint = p.kind === "vector" && e.svgPaint === "current";
     const copies = text ? ex.addInherited(p.i, layers, TEXT_INHERITED) : tint ? ex.addInherited(p.i, layers, ["color"]) : [];
-    // url() backgrounds → assets (I-3a); the base one is the node's background image
+    // url() backgrounds → assets; the base one is the node's background image
     let background: IrAsset | null = null;
     for (const [key, layer] of layers) {
       const en = layer.get("background-image");
@@ -243,7 +252,7 @@ export async function buildIr(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, o
   // ---- 6. fixtures, fonts, tokens -----------------------------------------------------------------------------
   const sample = (i: number) => (el(i).tag === "select" ? irText(s, i, page.seqs, styles, page.rendered)?.tr ?? "" : plainText(s, i, page.seqs, page.rendered));
   const isClasses = (i: number) => (el(i).attrs.class ?? "").split(/\s+/).filter((c) => /^is-./.test(c));
-  // is-* classes of a sample's elements, by the id of the template element at the same place (I-6)
+  // is-* classes of a sample's elements, by the id of the template element at the same place
   const itemClasses = (x: number, tpl: number, out: Record<string, string[]>) => {
     const id = ids.get(tpl);
     const cls = isClasses(x);

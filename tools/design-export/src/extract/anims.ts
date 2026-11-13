@@ -97,7 +97,7 @@ function framesOf(s: DomSnapshot, i: number, name: string, refs: Set<string>): I
 }
 
 /**
- * Every transition and keyframe animation of element `i` (spec §11, R27/R34), triggered by layer keys (`show` for
+ * Every transition and keyframe animation of element `i` (spec §11), triggered by layer keys (`show` for
  * base). Transitions: per non-base layer, `enter` with the transition in effect in that layer and `leave` with the
  * base's (CSS uses the destination style's). Keyframes: base animations start on show; a layer that declares
  * animation-* starts its animations (`restart`) when it changes animation-name, else it modifies the running ones
@@ -142,7 +142,7 @@ export function animsOf(ex: StyleExtractor, i: number, raw: Layers, layers: Laye
   return out;
 }
 
-/** An ancestor's animations of an inherited property, re-triggered by the layer the descendant sees (I-8). */
+/** An ancestor's animations of an inherited property, re-triggered by the layer the descendant sees. */
 export function inheritedAnims(anims: IrAnim[], prop: string, fromKey: string, key: string): IrAnim[] {
   const out: IrAnim[] = [];
   for (const a of anims) {

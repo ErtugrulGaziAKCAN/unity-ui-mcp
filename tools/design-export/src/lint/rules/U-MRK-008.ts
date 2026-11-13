@@ -3,7 +3,7 @@ import type { Rule } from "../types.js";
 import { make } from "./util.js";
 
 /**
- * Smart String arguments (R40): a variable inside localized text is a `<span data-u-arg="name">sample</span>` and
+ * Smart String arguments (spec §13): a variable inside localized text is a `<span data-u-arg="name">sample</span>` and
  * data-en writes it as `{name}`; each placeholder has exactly one span and each span one placeholder (data-l10n-args,
  * when present, lists the same names).
  */

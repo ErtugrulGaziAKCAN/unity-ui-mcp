@@ -164,7 +164,7 @@ function pageUndo(u: Mutation): void {
 }
 
 /**
- * Element sizes with a layer applied (I-7): breakpoints by resizing the viewport into their range, the screen state
+ * Element sizes with a layer applied: breakpoints by resizing the viewport into their range, the screen state
  * class on the root, is-* classes, hover/active/focus forced through CDP and disabled/checked as properties (own or
  * on the named ancestor). Everything is undone afterwards, the viewport included.
  */
@@ -252,7 +252,7 @@ export async function measureLayerBoxes(d: LoadedDesign, s: DomSnapshot, root: n
 const PRESENTATIONAL = ["hidden", "width", "height", "align", "valign", "border", "hspace", "vspace", "bgcolor", "color", "nowrap"];
 export const hasPresentational = (attrs: Record<string, string>) => PRESENTATIONAL.some((a) => attrs[a] !== undefined);
 
-/** Presentational attribute styles of the given elements (R36), as physical longhand declarations. */
+/** Presentational attribute styles of the given elements (CDP attributesStyle), as physical longhand declarations. */
 export async function presentationalStyles(cdp: CDPSession, s: DomSnapshot, indices: number[]): Promise<Map<number, SnapDecl[]>> {
   const out = new Map<number, SnapDecl[]>();
   if (!indices.length) return out;

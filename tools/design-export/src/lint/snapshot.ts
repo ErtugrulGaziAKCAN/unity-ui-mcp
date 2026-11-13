@@ -75,10 +75,12 @@ export interface SnapSelector {
   /** Indices of the elements `reach` matches (null when it is not a valid selector for the browser). */
   elements: number[] | null;
   /**
-   * Compounds before the subject that carry an interaction pseudo-class or an is-* class, with the ancestors of each
-   * reached element that can match them (CSS: the rule applies while such an ancestor is in that state).
+   * Compounds before the subject that carry an interaction pseudo-class or an is-* class, with the ancestors (inside
+   * the screen root, the root included) of each reached element that can match them: the rule applies while such an
+   * ancestor is in that state. A compound that is only such a state matches the ancestors carrying its is-* classes in
+   * the markup; one that is only pseudo-classes names no ancestor (`bare`).
    */
-  dynamicAncestors: { compound: number; matches: Record<number, number[]> }[];
+  dynamicAncestors: { compound: number; matches: Record<number, number[]>; bare: boolean }[];
 }
 
 export interface SnapRule {
@@ -345,16 +347,23 @@ function pageMatch(selectors: string[]): (number[] | null)[] {
   });
 }
 
-/** Runs in the page: for each (prefix, rest) pair, the ancestors of each element that match `prefix` and reach it through `rest`. */
+/**
+ * Runs in the page: for each (prefix, rest) pair, the ancestors of each element that match `prefix` and reach it
+ * through `rest`, from the parent up to the screen root (never body or html).
+ */
 function pageAncestors(items: { prefix: string; rest: string; els: number[] }[]): number[][][] {
   const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
   const idx = new Map<Element, number>(els.map((e, i) => [e, i]));
+  const root = document.querySelector("[data-u-screen]");
   return items.map(({ prefix, rest, els: list }) => list.map((i) => {
     const out: number[] = [];
     try {
-      for (let a = els[i].parentElement; a; a = a.parentElement) {
-        if (!a.matches(prefix)) continue;
-        if (Array.from(a.querySelectorAll(`:scope ${rest}`)).includes(els[i])) out.push(idx.get(a) ?? -1);
+      for (let a = els[i].parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+        if (a.matches(prefix) && Array.from(a.querySelectorAll(`:scope ${rest}`)).includes(els[i])) {
+          const k = idx.get(a);
+          if (k !== undefined) out.push(k);
+        }
+        if (a === root) break;
       }
     } catch { /* invalid selector: no ancestor */ }
     return out;
@@ -371,6 +380,11 @@ function pageExpand(items: { name: string; value: string }[]): (SnapDecl[] | nul
     for (let i = 0; i < st.length; i++) r.push({ name: st[i], value: st.getPropertyValue(st[i]), important: false });
     return r;
   });
+}
+
+/** Longhands Chromium's CSSOM expands each shorthand value into (null when the value does not parse). One page call. */
+export async function expandShorthands(page: Page, items: { name: string; value: string }[]): Promise<(SnapDecl[] | null)[]> {
+  return items.length ? evaluate(page, pageExpand, items) : [];
 }
 
 /** Runs in the page: computed values of properties on elements and their parents (the root for body). */
@@ -474,15 +488,23 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
   const matched = await evaluate(page, pageMatch, Array.from(reach.keys()));
   const reached = raw.rules.map((_, k) => Array.from(new Set(reachOf[k].flatMap((s) => matched[reach.get(s)!] ?? []))).sort((a, b) => a - b));
   // ancestors matching compounds with interaction pseudo-classes or is-* classes (one page call)
-  const dynamicOf = (sel: ParsedSelector) => sel.compounds.slice(0, -1).flatMap((c, k) =>
-    c.simples.some((x) => (x.kind === "pseudo-class" && DYNAMIC_PSEUDO_CLASSES.has(x.name)) || (x.kind === "class" && /^is-/.test(x.name))) ? [k] : []);
+  const isState = (x: ParsedSelector["compounds"][number]["simples"][number]) =>
+    (x.kind === "pseudo-class" && DYNAMIC_PSEUDO_CLASSES.has(x.name)) || (x.kind === "class" && /^is-/.test(x.name));
+  const dynamicOf = (sel: ParsedSelector) => sel.compounds.slice(0, -1).flatMap((c, k) => (c.simples.some(isState) ? [k] : []));
   const ancItems: { prefix: string; rest: string; els: number[] }[] = [];
   const ancSlots = parsed.map((list, k) => list.map((p, j) => dynamicOf(p).map((c) => {
     const els = matched[reach.get(reachOf[k][j])!] ?? [];
-    ancItems.push({
-      prefix: reachSelector({ text: p.text, compounds: p.compounds.slice(0, c + 1) }),
-      rest: reachSelector({ text: p.text, compounds: p.compounds.slice(c + 1) }), els,
-    });
+    const comp = p.compounds[c];
+    const rest = reachSelector({ text: p.text, compounds: p.compounds.slice(c + 1) });
+    let prefix = reachSelector({ text: p.text, compounds: p.compounds.slice(0, c + 1) });
+    if (comp.simples.every(isState)) {
+      // only a state: the ancestors that carry its is-* classes in the markup; pseudo-classes alone name none
+      const classes = comp.simples.filter((x) => x.kind === "class").map((x) => x.raw).join("");
+      if (!classes) return { compound: c, slot: -1, els };
+      const head = c > 0 ? reachSelector({ text: p.text, compounds: p.compounds.slice(0, c) }) + (comp.combinator === ">" ? " > " : " ") : "";
+      prefix = head + classes;
+    }
+    ancItems.push({ prefix, rest, els });
     return { compound: c, slot: ancItems.length - 1, els };
   })));
   const ancFound = ancItems.length ? await evaluate(page, pageAncestors, ancItems) : [];
@@ -607,7 +629,10 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
     selectors: parsed[k].map((p, j) => ({
       text: p.text, parsed: p, reach: reachOf[k][j], specificity: specificity(p), pseudoClasses: pseudoClasses(p), pseudoElement: pseudoElement(p),
       structural: structural(p), elements: matched[reach.get(reachOf[k][j])!],
-      dynamicAncestors: ancSlots[k][j].map((a) => ({ compound: a.compound, matches: Object.fromEntries(a.els.map((i, n) => [i, ancFound[a.slot][n]])) })),
+      dynamicAncestors: ancSlots[k][j].map((a) => ({
+        compound: a.compound, bare: a.slot < 0,
+        matches: a.slot < 0 ? {} : Object.fromEntries(a.els.map((i, n) => [i, ancFound[a.slot][n]])),
+      })),
     })),
   }));
   const s: DomSnapshot = {

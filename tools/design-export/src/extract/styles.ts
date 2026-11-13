@@ -1,6 +1,7 @@
 import type { StyleLayers } from "../ir/types.js";
 import { CSS_SUPPORT_DATA, cssSupport } from "../lint/allowed-css.js";
 import { CSS_WIDE, px, resolveVars, type SnapDecl } from "../lint/css-values.js";
+import { stateAncestor } from "../lint/ancestors.js";
 import { breakpointsOf, MediaError, type Breakpoint } from "../lint/resolve/media.js";
 import { CORNERS, cornerProperty, resolveRadii, type Corner } from "../lint/resolve/radius.js";
 import { splitTransform, type TransformSplit } from "../lint/resolve/transform.js";
@@ -26,14 +27,18 @@ export interface StyleContext {
   docUrl?: string;
   /** Untransformed border-box size per layer key and element index, measured with that layer applied. */
   boxes?: Map<string, Map<number, Size>>;
+  /** Chromium's longhand expansion of shorthand values (`name\u0000value` → longhands), for var() users per layer. */
+  expansions?: Map<string, SnapDecl[] | null>;
 }
+
+const expansionKey = (name: string, value: string) => `${name}\u0000${value}`;
 
 export { PSEUDO_STATES };
 export const isAnimProperty = (p: string) => /^(transition|animation)(-|$)/.test(p);
 const SIDES = ["top", "right", "bottom", "left"] as const;
 const RADII = CORNERS.map(cornerProperty);
 const KEEP_DROPPED = new Set(["box-shadow", "background-image", "line-height", ...SIDES.map((s) => `border-${s}-style`)]);
-/** Accepted properties with no effect in UI Toolkit ("dropped" in the CSS support data); baked ones stay for Task 10. */
+/** Accepted properties with no effect in UI Toolkit ("dropped" in the CSS support data); shadows and gradients stay for the bake step. */
 const NO_EFFECT = new Set(Object.entries(CSS_SUPPORT_DATA.properties)
   .filter(([n, p]) => p.handling === "dropped" && !KEEP_DROPPED.has(n) && !isAnimProperty(n)).map(([n]) => n));
 export const INHERITED = new Set([...CSS_SUPPORT_DATA.browserDefaults.inherited, "font-family", "font-size", "font-weight", "font-style",
@@ -61,7 +66,7 @@ export const INITIAL: Record<string, string> = {
   ...Object.fromEntries(RADII.map((r) => [r, "0px"])),
 };
 
-/** Inherited text properties written on every text node (R32); the first five always (computed if nobody declares them). */
+/** Inherited text properties written on every text node; the first five always (computed if nobody declares them). */
 export const TEXT_INHERITED = ["color", "font-family", "font-size", "font-weight", "font-style", "letter-spacing", "text-align", "white-space-collapse", "text-wrap-mode"];
 const ALWAYS = new Set(TEXT_INHERITED.slice(0, 5));
 
@@ -184,11 +189,13 @@ export interface InheritCopy { prop: string; from: number; fromKey: string; key:
  * Specified style layers per element, from the lint snapshot. Sources: browser defaults that render, presentational
  * attributes, author rules, inline styles. Each layer records what wins (CSS cascade with !important and
  * specificity) when exactly its dimensions hold; when two layers that can hold at once set the same property, their
- * union is recorded too (R39), so the IR never leaves precedence to the compiler.
+ * union is recorded too, so the IR never leaves precedence to the compiler.
  */
 export class StyleExtractor {
   readonly states = new Set<string>();
   readonly breakpoints = new Map<string, Breakpoint>();
+  /** Shorthand values (var() substituted for a layer) whose longhands are not in `ctx.expansions` yet. */
+  readonly missingExpansions = new Map<string, { name: string; value: string }>();
   readonly root: number;
   private readonly candCache = new Map<number, Cand[]>();
   private readonly propCache = new Map<number, Map<string, Cand[]>>();
@@ -223,11 +230,12 @@ export class StyleExtractor {
     const where = () => `${rule.path} reaching ${this.s.elements[i].path}`;
     const dims: string[] = [];
     const comps = sel.parsed.compounds;
-    const ancestorId = (k: number, what: string): string => {
-      const m = sel.dynamicAncestors.find((x) => x.compound === k)?.matches[i] ?? [];
-      if (m.length !== 1) throw new Error(`${where()}: ${what} in "${sel.text}" matches ${m.length} ancestors; it must match exactly one`);
-      const id = this.id(m[0]);
-      if (!id) throw new Error(`${where()}: ${what} in "${sel.text}" matches ${this.s.elements[m[0]].path}, which is not an element of the compiled screen`);
+    const ancestorId = (k: number): string => {
+      const d = sel.dynamicAncestors.find((x) => x.compound === k);
+      const r = d ? stateAncestor(this.s, sel, d, i) : { problem: `no ancestor recorded for compound ${k} of "${sel.text}"` };
+      if ("problem" in r) throw new Error(`${where()}: ${r.problem}`);
+      const id = this.id(r.index);
+      if (!id) throw new Error(`${where()}: "${sel.text}" names ${this.s.elements[r.index].path}, which is not an element of the compiled screen`);
       return id;
     };
     for (let k = 0; k < comps.length; k++) {
@@ -235,9 +243,9 @@ export class StyleExtractor {
       for (const x of comps[k].simples) {
         if (x.kind === "pseudo-class" && DYNAMIC_PSEUDO_CLASSES.has(x.name)) {
           if (!PSEUDO_STATES.has(x.name)) throw new Error(`${where()}: :${x.name} has no IR layer (only :${Array.from(PSEUDO_STATES).join(", :")})`);
-          dims.push(subject ? x.name : `anc(${ancestorId(k, `:${x.name}`)}):${x.name}`);
+          dims.push(subject ? x.name : `anc(${ancestorId(k)}):${x.name}`);
         } else if (x.kind === "class" && /^is-/.test(x.name)) {
-          dims.push(subject ? `class:${x.name}` : `anc(${ancestorId(k, `.${x.name}`)}):class:${x.name}`);
+          dims.push(subject ? `class:${x.name}` : `anc(${ancestorId(k)}):class:${x.name}`);
         } else if (x.kind === "class" && /^state-./.test(x.name)) {
           // the view swaps state classes on the screen root only
           if (subject && i !== this.root) return null;
@@ -354,7 +362,10 @@ export class StyleExtractor {
         return;
       }
       if (customPass) return;
-      const refs = varRefs(d.value);
+      // a longhand the snapshot expanded from a shorthand that used var(): the shorthand is the source
+      const colon = d.via ? d.via.indexOf(":") : -1;
+      const via = colon > 0 ? { name: d.via!.slice(0, colon).trim(), value: d.via!.slice(colon + 1).trim() } : null;
+      const refs = varRefs(via ? via.value : d.value);
       const first = remToPx(resolveVars(d.value, lookup(s, i)), s.rootFontSize);
       push(d.name, first, refs, weight, spec, order, dims, base);
       if (!refs.length) return;
@@ -362,7 +373,15 @@ export class StyleExtractor {
       for (const ctx of this.varContexts(i, refs)) {
         const u = union(dims, ctx);
         if (!satisfiable(u, this.breakpoints) || keyOf(u) === keyOf(dims)) continue;
-        const v = remToPx(resolveVars(d.value, (n) => this.customAt(i, u, n)), s.rootFontSize);
+        let v: string;
+        if (via) {
+          const sub = resolveVars(via.value, (n) => this.customAt(i, u, n));
+          const key = expansionKey(via.name, sub);
+          if (!this.ctx.expansions?.has(key)) { this.missingExpansions.set(key, { name: via.name, value: sub }); continue; }
+          const long = this.ctx.expansions.get(key)?.find((x) => x.name === d.name);
+          if (!long) continue;
+          v = remToPx(long.value, s.rootFontSize);
+        } else v = remToPx(resolveVars(d.value, (n) => this.customAt(i, u, n)), s.rootFontSize);
         if (v !== first) push(d.name, v, refs, weight, spec, order, u, base);
       }
     };
@@ -524,7 +543,7 @@ export class StyleExtractor {
       }
     }
 
-    // transform → translate / rotate / scale (R32), against the layer's box (I-7)
+    // transform → translate / rotate / scale, against the layer's box
     if (Array.from(out.values()).some((m) => m.has("transform"))) {
       if (["translate", "rotate", "scale"].some((p) => (this.byProp(i).get(p) ?? []).some((c) => c.entry.value.trim() !== "none"))) {
         throw new Error(`${e.path}: transform together with translate/rotate/scale cannot be split into the IR's translate, rotate and scale; use one of the two forms`);
@@ -550,7 +569,7 @@ export class StyleExtractor {
       }
     }
 
-    // border radii → one px value per corner for the layer's box (R24/R26, I-7)
+    // border radii → one px value per corner for the layer's box (findings R1, overlapping-curves rule)
     if (RADII.some((p) => this.byProp(i).has(p))) {
       const lctx = { fontSize: px(e.computed["font-size"]) ?? undefined, rootFontSize: s.rootFontSize };
       const resolveAt = (dims: readonly string[], box: Size | null) => {
@@ -601,7 +620,7 @@ export class StyleExtractor {
       else if (name === "base") layer.set("display", { value: blockify(e.computed.display ?? "block"), refs: [] });
     }
 
-    // CSS initial values that render differently from USS's (findings O-6, I-5)
+    // CSS initial values that render differently from USS's (findings O-6)
     const c = e.computed;
     const anyLayer = (p: string, test: (v: string) => boolean) => Array.from(out.values()).some((m) => m.has(p) && test(m.get(p)!.value));
     if (!base.has("position") && Array.from(out.values()).some((m) => INSETS.some((k) => m.has(k)))) base.set("position", { value: c.position || "static", refs: [] });
@@ -617,7 +636,7 @@ export class StyleExtractor {
   }
 
   /**
-   * Adds inherited properties (R32/I-8) to a node's layers: the nearest ancestor's base value (computed for colour and
+   * Adds inherited properties to a node's layers: the nearest ancestor's base value (computed for colour and
    * font when nobody declares them), and every ancestor layer that changes them, as the matching layer seen from this
    * node (`anc(<id>):hover`, `state:x`, …) plus unions where layers meet. Returns where each layer came from, so the
    * ancestor's animations of those properties can be copied.

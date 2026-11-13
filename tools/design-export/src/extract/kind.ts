@@ -25,7 +25,7 @@ function backgroundImageOnly(e: SnapElement): boolean {
 export const isScroll = (e: SnapElement) => /^(auto|scroll)$/.test(e.computed["overflow-x"] ?? "") || /^(auto|scroll)$/.test(e.computed["overflow-y"] ?? "");
 
 /**
- * Kind table (plan Task 8). `list` is decided by the tree (a repeat container in list mode), and so is a text
+ * Element kinds (spec §7). `list` is decided by the tree (a repeat container in list mode), and so is a text
  * element whose keyed inline runs become nodes of their own (a container); without the snapshot an element counts as
  * text only when it has direct text and no element children.
  */

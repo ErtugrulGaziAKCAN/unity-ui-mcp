@@ -1,7 +1,8 @@
 import { cssSupport } from "../allowed-css.js";
 import { STRUCTURAL_PSEUDO_CLASSES, type ParsedSelector } from "../selectors.js";
 import type { Rule } from "../types.js";
-import { at, Collector, isExternal, targetOf, sources } from "./util.js";
+import { stateAncestor } from "../ancestors.js";
+import { at, Collector, targetOf, sources } from "./util.js";
 
 /** Pseudo-classes USS has, plus `is-*` state classes; structural pseudo-classes are U-CSS-003's. */
 function problems(sel: ParsedSelector): string[] {
@@ -20,8 +21,6 @@ export const rule: Rule = {
   id: "U-CSS-027", severity: "error",
   check(s) {
     const c = new Collector();
-    const root = s.elements.findIndex((e) => e.attrs["data-u-screen"] !== undefined);
-    const inScreen = (a: number) => { for (let k = a; k >= 0; k = s.elements[k].parent) if (k === root) return true; return false; };
     for (const src of sources(s)) {
       if (!src.rule) continue;
       const t = targetOf(s, src);
@@ -30,13 +29,10 @@ export const rule: Rule = {
       // a state on an ancestor compiles as a layer naming that ancestor: exactly one, inside the screen
       for (const sel of src.rule.selectors) {
         if (sel.pseudoElement) continue;
-        for (const d of sel.dynamicAncestors) {
-          const compound = sel.parsed.compounds[d.compound].simples.map((x) => x.raw).join("");
-          for (const i of src.elements) {
-            const m = d.matches[i] ?? [];
-            if (m.length > 1) bad.push(`"${compound}" in "${sel.text}" matches ${m.length} ancestors of ${s.elements[i].path} (${m.map((a) => s.elements[a].path).join(", ")})`);
-            else if (m.length === 1 && (!inScreen(m[0]) || isExternal(s, m[0]))) bad.push(`"${compound}" in "${sel.text}" matches ${s.elements[m[0]].path}, which is not part of the compiled screen`);
-          }
+        for (const d of sel.dynamicAncestors) for (const i of src.elements) {
+          if (!(sel.elements ?? []).includes(i)) continue;
+          const r = stateAncestor(s, sel, d, i);
+          if ("problem" in r) bad.push(r.problem);
         }
       }
       if (bad.length) c.add(t.path, Array.from(new Set(bad)).join(", ") + at(src, t));

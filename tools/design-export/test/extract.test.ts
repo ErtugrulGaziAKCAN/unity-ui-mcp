@@ -149,7 +149,7 @@ describe("buildIr: styles", () => {
     expect(note.children).toEqual([]);
   });
 
-  it("records inherited text properties on text nodes, with the ancestor layers that change them (R32, I-8)", () => {
+  it("records inherited text properties on text nodes, with the ancestor layers that change them", () => {
     const t = byId(r.ir.root, "title").style.base;
     expect(t).toMatchObject({ color: "#ffffff", "font-family": '"Inter UI"', "font-weight": "400" });
     expect(t["font-size"]).toMatch(/^16\.51\d*px$/);
@@ -196,7 +196,7 @@ describe("buildIr: kinds, assets and external regions", () => {
     expect(bg.asset!.file).toBe(`assets/${sha}.png`);
   });
 
-  it("serialises an inline svg painted with currentColor white and marks it tintable with its colour (I-3c)", () => {
+  it("serialises an inline svg painted with currentColor white and marks it tintable with its colour", () => {
     const icon = byId(r.ir.root, "icon");
     expect(icon.kind).toBe("vector");
     expect(icon.children).toEqual([]);
@@ -292,7 +292,7 @@ describe("buildIr: animations", () => {
   });
 });
 
-describe("buildIr: review fixes", () => {
+describe("buildIr: layers, text runs and lossless values", () => {
   const write = (css: string, body: string) => {
     const p = path.join(tmp(), "s.html");
     fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}
@@ -305,7 +305,7 @@ describe("buildIr: review fixes", () => {
     try { return Array.from(new Set((await lint(d, kit)).filter((f) => f.severity === "error").map((f) => f.ruleId))).sort(); } finally { await d.close(); }
   };
 
-  it("R39: compound, ancestor and breakpoint layers with unions of co-active layers", async () => {
+  it("compound, ancestor and breakpoint layers with unions of co-active layers", async () => {
     const r = await build(fx("compound.html"));
     expect(validateIr(r.ir)).toEqual([]);
     const n = (id: string) => byId(r.ir.root, id);
@@ -319,7 +319,7 @@ describe("buildIr: review fixes", () => {
     expect(r.ir.states).toEqual(["default", "loading"]);
   });
 
-  it("R39: a media query list becomes one breakpoint per query, and lint accepts it", async () => {
+  it("a media query list becomes one breakpoint per query, and lint accepts it", async () => {
     const r = await build(fx("compound.html"));
     expect(r.ir.breakpoints).toEqual([{ name: "max-width-1919", maxWidth: 1919 }, { name: "min-aspect-ratio-3-1", minAspect: 3 }]);
     const st = byId(r.ir.root, "r").style;
@@ -328,14 +328,50 @@ describe("buildIr: review fixes", () => {
     expect(await lintIds(write("@media (max-width: 1919px), (min-aspect-ratio: 3/1){.q{opacity:0.5}} .q{width:10px;height:10px;flex-shrink:0}", '<div class="q" data-u-id="q"></div>'))).toEqual([]);
   });
 
-  it("R39: an ancestor state matching several ancestors is rejected by lint and export alike", async () => {
+  it("an ancestor state matching several ancestors is rejected by lint and export alike", async () => {
     const p = write(".card{display:flex;flex-direction:column;flex-shrink:0} .card:hover .t{color:#16c2d5}",
       '<div class="card" data-u-id="outer"><div class="card" data-u-id="inner"><p class="t" data-u-id="t" data-l10n="s.t" data-en="T">T</p></div></div>');
     expect(await lintIds(p)).toEqual(["U-CSS-027"]);
     await expect(build(p)).rejects.toThrow(/matches 2 ancestors/);
   });
 
-  it("I-7: radii are resolved against the box measured in each layer (state, breakpoint, pseudo, union)", async () => {
+  it("a state compound with no other selector names the ancestor carrying its class, or is rejected by lint and export alike", async () => {
+    const ok = write(".q{width:10px;height:10px;flex-shrink:0} .is-x .q{opacity:0.5} .c{display:flex;flex-shrink:0}",
+      '<div class="c is-x" data-u-id="c"><div class="q" data-u-id="q"></div></div>');
+    expect(await lintIds(ok)).toEqual([]);
+    expect(byId((await build(ok)).ir.root, "q").style["anc(c):class:is-x"]).toEqual({ opacity: "0.5" });
+    for (const [css, msg] of [
+      [":hover .q{opacity:0.5}", /names a state but not the ancestor/],
+      [".is-open .q{opacity:0.5}", /matches no ancestor .* inside the screen/],
+      ["body:hover .q{opacity:0.5}", /matches no ancestor .* inside the screen/],
+    ] as const) {
+      const p = write(`.q{width:10px;height:10px;flex-shrink:0} .c{display:flex;flex-shrink:0} ${css}`, '<div class="c" data-u-id="c"><div class="q" data-u-id="q"></div></div>');
+      const d = await openDesign(p, kit, [2560, 1440], browser);
+      try {
+        const f = (await lint(d, kit)).filter((x) => x.severity === "error");
+        expect(f.map((x) => x.ruleId), css).toEqual(["U-CSS-027"]);
+        expect(f[0].detail, css).toMatch(msg);
+      } finally { await d.close(); }
+      await expect(build(p), css).rejects.toThrow(msg);
+    }
+  });
+
+  it("custom properties redefined in a layer re-resolve shorthand users too", async () => {
+    const p = write(`.b{display:flex;flex-direction:column;flex-shrink:0;--c:#00ff00;--p:4px} .b:hover{--c:#ff0000;--p:8px}
+      .k{width:10px;height:10px;flex-shrink:0} .k1{border:1px solid var(--c)} .k2{background:var(--c)} .k3{padding:var(--p)}
+      .k4{border-width:1px;border-style:solid;border-color:var(--c)}`,
+      '<div class="b" data-u-id="b"><div class="k k1" data-u-id="k1"></div><div class="k k2" data-u-id="k2"></div><div class="k k3" data-u-id="k3"></div><div class="k k4" data-u-id="k4"></div></div>');
+    expect(await lintIds(p)).toEqual([]);
+    const r = await build(p);
+    const hover = (id: string) => byId(r.ir.root, id).style["anc(b):hover"];
+    expect(byId(r.ir.root, "k1").style.base["border-top-color"]).toBe("#00ff00");
+    expect(hover("k1")).toMatchObject({ "border-top-color": "#ff0000", "border-left-color": "#ff0000" });
+    expect(hover("k2")).toMatchObject({ "background-color": "#ff0000" });
+    expect(hover("k3")).toMatchObject({ "padding-top": "8px", "padding-left": "8px" });
+    expect(hover("k4")).toMatchObject({ "border-top-color": "#ff0000", "border-bottom-color": "#ff0000" });
+  });
+
+  it("radii are resolved against the box measured in each layer (state, breakpoint, pseudo, union)", async () => {
     const st = byId((await build(fx("compound.html"))).ir.root, "pill").style;
     expect(st.base["border-top-left-radius"]).toBe("20px");
     expect(st.hover["border-top-left-radius"]).toBe("30px");
@@ -343,7 +379,7 @@ describe("buildIr: review fixes", () => {
     expect(st["bp:max-width-1919+hover"]["border-top-left-radius"]).toBe("30px");
   });
 
-  it("C-1: keyed inline texts become text nodes; a wrapper becomes their container or row", async () => {
+  it("keyed inline texts become text nodes; a wrapper becomes their container or row", async () => {
     const r = await build(fx("review-text.html"));
     const n = (id: string) => byId(r.ir.root, id);
     expect(n("wrap").kind).toBe("container");
@@ -358,12 +394,12 @@ describe("buildIr: review fixes", () => {
     expect(await lintIds(fx("review-text.html"))).toEqual([]);
   });
 
-  it("C-1: keyed texts that a row would not reproduce are rejected by lint and export alike", async () => {
+  it("keyed texts that a row would not reproduce are rejected by lint and export alike", async () => {
     expect(await lintIds(fx("review-text-two.html"))).toEqual(["U-MRK-009"]);
     await expect(build(fx("review-text-two.html"))).rejects.toThrow(/space between them/);
   });
 
-  it("R40: Smart String arguments are {name} in tr with their sample in fixtures", async () => {
+  it("Smart String arguments are {name} in tr with their sample in fixtures", async () => {
     const r = await build(fx("review-ctl.html"));
     expect(byId(r.ir.root, "greet").text).toEqual({ key: "probe.greet", tr: "Selam {name}", en: "Hi {name}", args: ["name"], rich: false, style: "label" });
     expect(r.fixtures.name).toBe("Ali");
@@ -371,12 +407,12 @@ describe("buildIr: review fixes", () => {
     expect(await lintIds(write("", '<p data-l10n="s.g" data-en="Hi {name}" data-l10n-args="name">Selam <span data-u-id="nm" data-u-bind="name">Ali</span></p>'))).toEqual(["U-MRK-008", "U-MRK-009"]);
   });
 
-  it("I-2: whitespace collapses as rendered across inline tags; pre-line is exact", async () => {
+  it("whitespace collapses as rendered across inline tags; pre-line is exact", async () => {
     expect(byId((await build(fx("review-text.html"))).ir.root, "ws").text?.tr).toBe("Merhaba <b>dünya</b>");
     expect(byId((await build(fx("compound.html"))).ir.root, "pl").text?.tr).toBe("a b\nc");
   });
 
-  it("I-3a: url() backgrounds are assets; size, repeat and position stay in the layers", async () => {
+  it("url() backgrounds are assets; size, repeat and position stay in the layers", async () => {
     const r = await build(fx("review-bg.html"));
     const sha = crypto.createHash("sha256").update(fs.readFileSync(fx("assets/logo.png"))).digest("hex");
     const hero = byId(r.ir.root, "hero");
@@ -388,7 +424,7 @@ describe("buildIr: review fixes", () => {
     expect(await lintIds(fx("review-bg.html"))).toEqual([]);
   });
 
-  it("I-3b/c/d: custom properties per layer, tinted icons per layer, concrete initial values", async () => {
+  it("custom properties per layer, tinted icons per layer, concrete initial values", async () => {
     const r = await build(fx("review-style.html"));
     expect(byId(r.ir.root, "panel").style["state:dark"]).toEqual({ "background-color": "#000000" });
     const icon = byId(r.ir.root, "icon");
@@ -398,7 +434,7 @@ describe("buildIr: review fixes", () => {
     expect(byId(r.ir.root, "reset").style.base.color).toBe("#000000");
   });
 
-  it("I-3e/I-4: initial disabled/checked and attribute texts", async () => {
+  it("initial disabled/checked and attribute texts", async () => {
     const r = await build(fx("review-ctl.html"));
     expect(byId(r.ir.root, "go").initial).toEqual({ disabled: true, checked: false });
     expect(byId(r.ir.root, "go").style.disabled).toEqual({ "background-color": "#333333" });
@@ -410,13 +446,13 @@ describe("buildIr: review fixes", () => {
     expect(byId((await build(fx("assets.html"))).ir.root, "logo").attrTexts.alt).toMatchObject({ key: "assets.logo", tr: "Logo", en: "Logo", style: null });
   });
 
-  it("I-5: CSS initial values that render differently in USS are explicit", async () => {
+  it("CSS initial values that render differently in USS are explicit", async () => {
     const r = await build(fx("review-init.html"));
     expect(byId(r.ir.root, "f").style.base).toMatchObject({ "flex-direction": "row", "align-content": "stretch" });
     expect(byId(r.ir.root, "off").style.base.position).toBe("static");
   });
 
-  it("I-6: is-* classes neither stop sampling nor stay on the template; they become item state", async () => {
+  it("is-* classes neither stop sampling nor stay on the template; they become item state", async () => {
     const r = await build(fx("review-ctl.html"));
     const rows = byId(r.ir.root, "rows");
     expect(rows.repeat).toEqual({ name: "items", mode: "inline", count: 3 });
@@ -424,7 +460,7 @@ describe("buildIr: review fixes", () => {
     expect(r.fixtures.items).toEqual([{ label: "One", $classes: { rows__0: ["is-selected"] } }, { label: "Two" }, { label: "Three", $classes: { rows__0: ["is-selected"] } }]);
   });
 
-  it("I-8: an ancestor's transition of an inherited colour is copied to the text", async () => {
+  it("an ancestor's transition of an inherited colour is copied to the text", async () => {
     const stl = byId((await build(fx("review-style.html"))).ir.root, "stl");
     expect(stl.style["state:dark"]).toEqual({ color: "#16c2d5" });
     expect(stl.anims.map((a) => [a.trigger, a.phase, a.properties, a.duration, a.timing])).toEqual([["state:dark", "enter", ["color"], 200, "ease"], ["state:dark", "leave", ["color"], 200, "ease"]]);
@@ -444,7 +480,7 @@ describe("buildIr: review fixes", () => {
     }
   });
 
-  it("minors: revert, per-layer blockification, text inputs, play-state modifiers, id collisions", async () => {
+  it("revert, per-layer blockification, text inputs, play-state modifiers, id collisions", async () => {
     const r = await build(fx("compound.html"));
     expect(byId(r.ir.root, "rv").style.base["margin-top"]).toBe("16.5156px");
     expect(byId(r.ir.root, "m").style["state:loading"]).toEqual({ display: "flex" });
@@ -455,7 +491,7 @@ describe("buildIr: review fixes", () => {
   });
 });
 
-describe("buildIr: speed (R22)", () => {
+describe("buildIr: speed", () => {
   it("extracts a 600-node screen from the lint snapshot quickly", async () => {
     const rows = Array.from({ length: 150 }, (_, i) =>
       `<div class="row" data-u-id="row-${i}"><p data-u-id="name-${i}" data-u-bind="name-${i}">Oyuncu ${i}</p>` +
