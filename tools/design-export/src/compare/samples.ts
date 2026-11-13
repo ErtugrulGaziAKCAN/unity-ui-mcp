@@ -50,16 +50,14 @@ export function paintedRect(b: Rect, scale: number): Rect {
 }
 
 /**
- * The pixels of a border side that both renderers cover fully: Chromium paints the side from the painted rect's edge
- * at its exact device width (anti-aliased where that is fractional), UI Toolkit from its whole-pixel edge at the width
- * rounded (half up, at least 1). Returns the first and last such pixel across the side (inclusive), or null.
+ * A border side across its edge: the pixel at the centre of the band the renderer paints (Chromium from the painted
+ * rect's edge at the exact device width, anti-aliased where that is fractional; UI Toolkit from its whole-pixel edge at
+ * the width rounded half up, at least 1) and the first and last pixel it covers fully (inclusive).
  */
-function fullBand(gEdge: number, uEdge: number, w: number, inward: 1 | -1): [number, number] | null {
-  const uw = Math.max(1, Math.round(w)), ue = Math.round(uEdge);
-  const [g0, g1] = inward > 0 ? [Math.ceil(gEdge - 1e-6), Math.floor(gEdge + w + 1e-6) - 1] : [Math.ceil(gEdge - w - 1e-6), Math.floor(gEdge + 1e-6) - 1];
-  const [u0, u1] = inward > 0 ? [ue, ue + uw - 1] : [ue - uw, ue - 1];
-  const lo = Math.max(g0, u0), hi = Math.min(g1, u1);
-  return lo <= hi ? [lo, hi] : null;
+function sideBand(edge: number, w: number, inward: 1 | -1): { centre: number; full: [number, number] } {
+  const centre = Math.floor(edge + (inward * w) / 2 + 1e-6);
+  const full: [number, number] = inward > 0 ? [Math.ceil(edge - 1e-6), Math.floor(edge + w + 1e-6) - 1] : [Math.ceil(edge - w - 1e-6), Math.floor(edge + 1e-6) - 1];
+  return { centre, full };
 }
 
 export type RingKind = "edge" | "border" | "corner";
@@ -72,8 +70,9 @@ const CORNER_DEPTHS = [2, 4, 7, 11, 16];
 /**
  * Ring points of an element whose design box is `g` and Unity box `u`, each placed relative to its own box:
  * - `edge`: the background just inside the border (inset border + 3 px) at ¼, ½ and ¾ of each side, 3×3 means;
- * - `border`: the middle of each painted border side, on the pixels both renderers cover fully (`g` is Chromium's painted
- *   rect, see paintedRect): one pixel, or a 3×3 mean where three or more are; a side neither covers fully is not sampled;
+ * - `border`: the middle of each painted border side, across it at the centre of the band each renderer paints (`g` is
+ *   Chromium's painted rect, see paintedRect; its centre pixel is fully covered for any border of 2 device px or more):
+ *   one pixel, or a 3×3 mean where that stays on fully covered pixels on both sides; every side is sampled;
  * - `corner`: along each corner's diagonal at 2, 4, 7, 11 and 16 px (within half the smaller side), 3×3 means, which
  *   tell a pill from a rounded rectangle or a square corner; none whose mean straddles a border's inner edge.
  * With the corner radii (device px, top-left, top-right, bottom-right, bottom-left), no sample sits on a rounded
@@ -110,12 +109,17 @@ export function ringPoints(g: Rect, u: Rect, border: readonly number[] | undefin
   if (kinds.includes("border")) {
     SIDES.forEach((side, i) => {
       const w = bw[i];
-      if (w < 1) return;
-      const band = side === "top" ? fullBand(g.y, u.y, w, 1) : side === "bottom" ? fullBand(g.y + g.h, u.y + u.h, w, -1)
-        : side === "left" ? fullBand(g.x, u.x, w, 1) : fullBand(g.x + g.w, u.x + u.w, w, -1);
-      if (!band) return;
-      const across = (band[0] + band[1]) >> 1, win = band[1] - band[0] + 1 >= 3 ? 3 : 1;
-      add(`${side} border`, "border", win, (b) => side === "top" || side === "bottom" ? [Math.floor(b.x + b.w / 2), across] : [across, Math.floor(b.y + b.h / 2)]);
+      if (!(w > 0)) return;
+      const inward = side === "top" || side === "left" ? 1 : -1;
+      const edge = (b: Rect) => (side === "top" ? b.y : side === "bottom" ? b.y + b.h : side === "left" ? b.x : b.x + b.w);
+      const gb = sideBand(edge(g), w, inward), ub = sideBand(Math.round(edge(u)), Math.max(1, Math.round(w)), inward);
+      // a 3×3 mean only where it stays on fully covered pixels across the side on both renderers
+      const fits = (s: ReturnType<typeof sideBand>) => s.centre - 1 >= s.full[0] && s.centre + 1 <= s.full[1];
+      const win = fits(gb) && fits(ub) ? 3 : 1;
+      const horizontal = side === "top" || side === "bottom";
+      out.push({ where: `${side} border`, kind: "border", win,
+        gx: horizontal ? Math.floor(g.x + g.w / 2) : gb.centre, gy: horizontal ? gb.centre : Math.floor(g.y + g.h / 2),
+        ux: horizontal ? Math.floor(u.x + u.w / 2) : ub.centre, uy: horizontal ? ub.centre : Math.floor(u.y + u.h / 2) });
     });
   }
   if (kinds.includes("corner")) {

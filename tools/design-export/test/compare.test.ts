@@ -43,6 +43,17 @@ function fill(img: Rgba, r: R, c: Rgb): Rgba {
   }
   return img;
 }
+/** A rect with fractional edges painted as Chromium anti-aliases it: each pixel blends the colour by its covered area. */
+function paint(img: Rgba, r: R, c: Rgb): Rgba {
+  for (let y = Math.max(0, Math.floor(r.y)); y < Math.min(img.h, Math.ceil(r.y + r.h)); y++) {
+    const cy = Math.min(y + 1, r.y + r.h) - Math.max(y, r.y);
+    for (let x = Math.max(0, Math.floor(r.x)); x < Math.min(img.w, Math.ceil(r.x + r.w)); x++) {
+      const a = cy * (Math.min(x + 1, r.x + r.w) - Math.max(x, r.x)), o = (y * img.w + x) * 4;
+      for (let k = 0; k < 3; k++) img.data[o + k] = Math.round(c[k] * a + img.data[o + k] * (1 - a));
+    }
+  }
+  return img;
+}
 /** Vertical 1-px stripes: stand-in glyphs. */
 function glyphs(img: Rgba, r: R, c: Rgb): Rgba {
   for (let x = r.x; x < r.x + r.w; x += 2) fill(img, { x, y: r.y, w: 1, h: r.h }, c);
@@ -597,6 +608,63 @@ describe("compareCapture: fix round checks", () => {
     // a wrong border colour still fails
     const wrong = { png: draw(181, 0, [70, 140, 160]), boxes: boxes(181, 119) };
     expect(compareCapture(golden, wrong, [], T, ctx).issues.map((i) => i.kind)).toContain("edge");
+  });
+
+  it("samples every border side of an element whose four edges are off the device grid", () => {
+    // a button at 1280×720 (scale 0.5) laid out at 161, 101 CSS px, 240×60, with a 4px border: Chromium paints it from
+    // 80.5, 50.5 device px with every outer edge and the border's inner edges half covered; UI Toolkit from 81, 51
+    const bg: Rgb = [11, 31, 38], fillC: Rgb = [18, 60, 71], line: Rgb = [43, 101, 115], wrong: Rgb = [70, 140, 160];
+    const draw = (b: R, edge: Rgb, sides: Partial<Record<"top" | "right" | "bottom" | "left", Rgb>> = {}) => {
+      const png = canvas(320, 200, bg);
+      paint(png, b, edge);
+      const bands = { top: { x: b.x, y: b.y, w: b.w, h: 2 }, bottom: { x: b.x, y: b.y + b.h - 2, w: b.w, h: 2 }, left: { x: b.x, y: b.y, w: 2, h: b.h }, right: { x: b.x + b.w - 2, y: b.y, w: 2, h: b.h } };
+      for (const [side, c] of Object.entries(sides)) paint(png, bands[side as keyof typeof bands], c);
+      paint(png, { x: b.x + 2, y: b.y + 2, w: b.w - 4, h: b.h - 4 }, fillC);
+      glyphs(png, { x: 120, y: 60, w: 40, h: 12 }, [250, 250, 250]);
+      return png;
+    };
+    const boxes = (x: number, y: number): CaptureBoxes => ({
+      capture: "c", viewport: [320, 200], scale: 0.5, external: [],
+      elements: { root: el(0, 0, 320, 200), btn: el(x, y, 120, 30, { text: true, lines: [{ x: 118, y: 58, w: 44, h: 16, baseline: 70 }] }) },
+    });
+    const ctx: CaptureContext = { borders: { btn: [2, 2, 2, 2] }, backgrounds: new Set(["btn"]), painters: new Set(["btn"]), order: ["root", "btn"], root: "root" };
+    const golden = { png: draw({ x: 80.5, y: 50.5, w: 120, h: 30 }, line), boxes: boxes(80.5, 50.5) };
+    const unity = (sides: Partial<Record<"top" | "right" | "bottom" | "left", Rgb>> = {}) => ({ png: draw({ x: 81, y: 51, w: 120, h: 30 }, line, sides), boxes: boxes(81, 51) });
+    const colourIssues = (v: ReturnType<typeof compareCapture>) => v.issues.filter((i) => i.kind === "edge" || i.kind === "color");
+    expect(colourIssues(compareCapture(golden, unity(), [], T, ctx))).toEqual([]);
+    for (const side of ["top", "right", "bottom", "left"] as const) {
+      const v = compareCapture(golden, unity({ [side]: wrong }), [], T, ctx);
+      expect(colourIssues(v).map((i) => i.detail), side).toEqual([expect.stringMatching(new RegExp(`^${side} border: ΔE2000`))]);
+    }
+  });
+
+  it("checks a thin element on its painted centre line: a divider Unity drops or colours wrongly fails, one it draws passes", () => {
+    // dividers at 1920×1080 (scale 0.75) laid out at 52, 130 CSS px, 320 CSS px wide: 1 CSS px (0.75 device px from 97.5,
+    // which UI Toolkit rounds to nothing) and 4 CSS px (3 device px from 97.5; UI Toolkit draws 98 to 101)
+    const bg: Rgb = [11, 31, 38], line: Rgb = [43, 101, 115];
+    const mk = (b: R | null, c: Rgb, box: R) => {
+      const png = canvas(320, 200, bg);
+      if (b) paint(png, b, c);
+      return { png, boxes: { capture: "c", viewport: [320, 200] as [number, number], scale: 0.75, external: [], elements: { root: el(0, 0, 320, 200), line: el(box.x, box.y, box.w, box.h) } } };
+    };
+    const ctx: CaptureContext = { backgrounds: new Set(["root", "line"]), painters: new Set(["root", "line"]), order: ["root", "line"], root: "root" };
+    const hair = { x: 39, y: 97.5, w: 240, h: 0.75 };
+    const golden1 = mk(hair, line, hair);
+    const dropped = compareCapture(golden1, mk(null, line, { x: 39, y: 98, w: 240, h: 0 }), [], T, ctx);
+    expect(dropped.pass).toBe(false);
+    expect(dropped.issues.filter((i) => i.id === "line").map((i) => i.kind)).toEqual(expect.arrayContaining(["box", "color"]));
+    const wrongColour = compareCapture(golden1, mk({ x: 39, y: 98, w: 240, h: 1 }, [120, 40, 40], { x: 39, y: 98, w: 240, h: 1 }), [], T, ctx);
+    expect(wrongColour.issues.filter((i) => i.id === "line").map((i) => i.kind)).toContain("color");
+
+    const bar = { x: 39, y: 97.5, w: 240, h: 3 }, unityBar = { x: 39, y: 98, w: 240, h: 3 };
+    const golden4 = mk(bar, line, bar);
+    const drawn = compareCapture(golden4, mk(unityBar, line, unityBar), [], T, ctx);
+    expect(drawn.issues).toEqual([]);
+    expect(drawn.elements.find((e) => e.id === "line")!.samples).toBeGreaterThan(0);
+    const missing = compareCapture(golden4, mk(null, line, unityBar), [], T, ctx);
+    expect(missing.issues.filter((i) => i.id === "line").map((i) => i.kind)).toEqual(["color"]);
+    const recoloured = compareCapture(golden4, mk(unityBar, [120, 40, 40], unityBar), [], T, ctx);
+    expect(recoloured.issues.filter((i) => i.id === "line").map((i) => i.kind)).toEqual(["color"]);
   });
 
   it("copies the anti-aliased column of an edge the design paints off the device grid, and only that column", () => {

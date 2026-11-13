@@ -19,9 +19,11 @@
  * - colour (samples.ts): elements that paint a background get a 5×3 grid of 3×3 means inside both boxes (inset 6 px;
  *   one centre sample under 16 px), skipping points under later elements that paint or on text lines; when every
  *   grid point is covered, samples just inside the border take over; an element left without any sample is listed
- *   as "not sampled", never skipped silently. Elements that carry text and paint also get ring samples (background
- *   inside the border, the border, the corner diagonals for the radius). Every sample is ΔE2000 ≤ `deltaE2000` against
- *   the closest Unity colour within 1 px;
+ *   as "not sampled", never skipped silently. A painted line thinner than 8 device px (a divider, a bar) is sampled one
+ *   pixel at a time on the centre line each renderer paints instead; Unity must draw it (a line it rounds to 0 px is a
+ *   box issue) and a line left without a sample that later elements do not cover fails. Elements that carry text and
+ *   paint also get ring samples (background inside the border, each border side at the centre of its painted band, the
+ *   corner diagonals for the radius). Every sample is ΔE2000 ≤ `deltaE2000` against the closest Unity colour within 1 px;
  * - text ink per line: the ink colour (ΔE2000 ≤ `textInkDeltaE` for text of at least `textInkFullPx` device px, the
  *   measured `textInkDeltaESmall` limit below that size) and the ink amount: Unity's relative to the design's between
  *   `textInkRatio` and 1 (each ± `textInkCoverage`), and within ±`textInkMedianTolerance` of the capture's median ratio
@@ -33,7 +35,9 @@
  *   `deltaE2000`, so a faint missing shadow fails although SSIM dilutes it.
  * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows. The
  * pixel row or column of a painted edge the design draws off the device grid (Chromium snaps boxes to whole CSS px, UI
- * Toolkit to whole device px) is copied from the design too; the box check measures where that edge is.
+ * Toolkit to whole device px) is copied from the design too, unless it would be the whole of a thin element; the box
+ * check measures where that edge is. Colour samples keep their 3×3 neighbourhood off text and external regions, and only
+ * the pixels they average off those edge rows (and off the area outside the screen root).
  * Colours are compared premultiplied (a translucent Unity pixel counts as its colour over black). Line widths are not
  * compared (findings §4: the caret route's line rects differ from Chromium's by more than a pixel at the same break).
  */
@@ -294,6 +298,8 @@ export interface CompareOptions {
 
 const EPS = 1e-6;
 const MIN_ELEMENT = 16;
+/** Painted elements thinner than this (device px) are lines: sampled on their centre line, one pixel at a time. */
+const THIN_PX = 8;
 const MIN_INK_PX = 16;
 const FX = [0.1, 0.3, 0.5, 0.7, 0.9], FY = [0.25, 0.5, 0.75];
 const fmt = (n: number, d = 2) => (n >= 0 ? "+" : "") + n.toFixed(d);
@@ -322,18 +328,22 @@ function opaque(img: Rgba): { img: Rgba; translucent: number } {
 /**
  * The one-pixel rows and columns where an element's painted edge falls between device pixels in the design: Chromium
  * paints a box at its layout rect snapped to whole CSS px (paintedRect), so its edge pixel is partly covered there while
- * UI Toolkit snaps the edge to a whole device pixel.
+ * UI Toolkit snaps the edge to a whole device pixel. An axis whose edge pixels would be every pixel the element paints
+ * across it (a line of about 2 device px or less) keeps them: the mask never hides a whole element.
  */
 export function offGridEdges(boxes: readonly Box[], scale: number): Rect[] {
   const out: Rect[] = [];
   const frac = (v: number) => { const f = v - Math.floor(v); return f > 1e-3 && f < 1 - 1e-3; };
+  /** The edge pixels of [a, b) to copy, or none when they are all of its pixels. */
+  const edges = (a: number, b: number): number[] => {
+    const px = new Set([...(frac(a) ? [Math.floor(a)] : []), ...(frac(b) ? [Math.floor(b)] : [])]);
+    return px.size < Math.ceil(b - 1e-9) - Math.floor(a) ? [...px] : [];
+  };
   for (const b of boxes) {
     if (!b?.visible || b.w <= 0 || b.h <= 0) continue;
     const p = paintedRect(b, scale);
-    if (frac(p.x)) out.push({ x: Math.floor(p.x), y: p.y, w: 1, h: p.h });
-    if (frac(p.x + p.w)) out.push({ x: Math.floor(p.x + p.w), y: p.y, w: 1, h: p.h });
-    if (frac(p.y)) out.push({ x: p.x, y: Math.floor(p.y), w: p.w, h: 1 });
-    if (frac(p.y + p.h)) out.push({ x: p.x, y: Math.floor(p.y + p.h), w: p.w, h: 1 });
+    for (const x of edges(p.x, p.x + p.w)) out.push({ x, y: p.y, w: 1, h: p.h });
+    for (const y of edges(p.y, p.y + p.h)) out.push({ x: p.x, y, w: p.w, h: 1 });
   }
   return out;
 }
@@ -474,12 +484,15 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const externalBoxes = g.external.flatMap((id) => [g.elements[id], u.external.includes(id) ? u.elements[id] : undefined]).filter((e): e is Box => !!e);
     const mask = maskRects(w, h, [...textBoxes, ...externalBoxes], 2);
     const lineMask = maskRects(w, h, [...textLines, ...externalBoxes], 2);
+    // colour samples stay 1 px off text and external regions (their own 3×3 window and neighbours); the SSIM-only masks
+    // below exclude just their own pixels from a sample (`edgeBand`)
+    const textMask = lineMask.slice();
+    const edgeBand = new Uint8Array(w * h);
     // the anti-aliased pixel row or column of a painted edge Chromium draws off the device grid: it snaps a box to whole
     // CSS px, so at scale 0.75 an edge can fall at x.25, x.5 or x.75 device px, where UI Toolkit puts it on a whole pixel
     // (Yoga); the box check measures where the edge is (findings: pixel grid)
     const offGrid = offGridEdges(compared.filter((id) => !ctx.painters || ctx.painters.has(id)).map((id) => g.elements[id]), g.scale);
-    maskRects(w, h, offGrid, 0, mask);
-    maskRects(w, h, offGrid, 0, lineMask);
+    for (const m of [mask, lineMask, edgeBand]) maskRects(w, h, offGrid, 0, m);
     edgeMasked = offGrid.length;
     // outside the screen root nothing is designed: a breakpoint's coverage viewport of another aspect shows the page's
     // own background in the golden and the panel's clear colour in Unity there
@@ -490,8 +503,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       if (r0.x + r0.w < w) outside.push({ x: r0.x + r0.w, y: 0, w: w - r0.x - r0.w, h });
       if (r0.y > 0) outside.push({ x: 0, y: 0, w, h: r0.y });
       if (r0.y + r0.h < h) outside.push({ x: 0, y: r0.y + r0.h, w, h: h - r0.y - r0.h });
-      maskRects(w, h, outside, 0, mask);
-      maskRects(w, h, outside, 0, lineMask);
+      for (const m of [mask, lineMask, edgeBand]) maskRects(w, h, outside, 0, m);
       outsideScreen = outside.length > 0;
     }
     masked = [...textBoxes, ...externalBoxes].filter((r) => r.w > 0 && r.h > 0).map((r) => ({ x: r6(r.x - 2), y: r6(r.y - 2), w: r6(r.w + 4), h: r6(r.h + 4) }));
@@ -517,14 +529,23 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return ids.flatMap((x) => [g.elements[x], u.elements[x]]).filter((e): e is Box => !!e && e.visible);
     };
     const onText = (x: number, y: number) => {
-      for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) if (lineMask[yy * w + xx]) return true;
+      for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) if (textMask[yy * w + xx]) return true;
+      return false;
+    };
+    /** A design pixel the sample's window averages lies in an off-grid edge or outside the screen. */
+    const inBand = (x: number, y: number, win: number) => {
+      const r = win >> 1;
+      for (let yy = Math.max(0, y - r); yy <= Math.min(h - 1, y + r); yy++) for (let xx = Math.max(0, x - r); xx <= Math.min(w - 1, x + r); xx++) if (edgeBand[yy * w + xx]) return true;
       return false;
     };
     /** `light`: the design's ink is lighter than its background (font smoothing thickens such text most). */
     interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean; later: boolean; small: boolean }
     const inkLines: InkLine[] = [];
-    const usable = (p: RingPoint, cover: Rect[]) => p.gx >= 0 && p.gy >= 0 && p.gx < w && p.gy < h && p.ux >= 0 && p.uy >= 0 && p.ux < w && p.uy < h
-      && !cover.some((l) => inside(l, p.gx, p.gy, 1)) && !onText(p.gx, p.gy) && !onText(p.ux, p.uy);
+    const inImage = (p: RingPoint) => p.gx >= 0 && p.gy >= 0 && p.gx < w && p.gy < h && p.ux >= 0 && p.uy >= 0 && p.ux < w && p.uy < h;
+    const usable = (p: RingPoint, cover: Rect[]) => inImage(p)
+      && !cover.some((l) => inside(l, p.gx, p.gy, 1)) && !onText(p.gx, p.gy) && !onText(p.ux, p.uy) && !inBand(p.gx, p.gy, p.win);
+    /** Whether pixel (x, y) shares area with one of the rects. */
+    const touches = (rs: readonly Rect[], x: number, y: number) => rs.some((r) => r.x < x + 1 && r.x + r.w > x && r.y < y + 1 && r.y + r.h > y);
 
     /** Elements below ssimElement, judged after every other check (a measured lower limit needs those to pass). */
     const lowSsim: { id: string; s0: number; best: number; region: Rect; carriesText: boolean; shadow: boolean }[] = [];
@@ -551,8 +572,42 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const cover = covering(id);
       // the golden's painted rect (Chromium snaps a box to whole CSS px) places the ring samples and the corner curves
       const gPaint = paintedRect(ge, g.scale);
-      // background colour: the grid, then the ring inside the border, never silently nothing
-      if (!ctx.backgrounds || ctx.backgrounds.has(id)) {
+      // grid and centre-line points off the rounded corners' anti-aliased curves (outer, and inner inside a border)
+      const curve = (p: RingPoint) => nearCurve(gPaint, ctx.borders?.[id], ctx.radii?.[id], p.gx, p.gy) || nearCurve(ue, ctx.borders?.[id], ctx.radii?.[id], p.ux, p.uy);
+      const solid = !ctx.backgrounds || ctx.backgrounds.has(id);
+      let use: RingPoint[] | null = null;
+      if ((solid || ctx.borders?.[id]) && paints(id) && Math.min(gPaint.w, gPaint.h) < THIN_PX) {
+        // a line (a divider, a bar): 3×3 windows would straddle its edges, so it is sampled one pixel at a time on the
+        // centre line each renderer paints; it must be there in Unity, and the off-grid mask never covers it
+        const horizontal = gPaint.h <= gPaint.w;
+        const gThick = horizontal ? gPaint.h : gPaint.w, uThick = horizontal ? ue.h : ue.w;
+        if (gThick >= 0.5 && uThick < 0.5) {
+          issue(id, "box", `a line ${Number(gThick.toFixed(2))} device px thick in the design is ${Number(uThick.toFixed(2))} px in Unity (UI Toolkit snaps its edges to whole device px)`, ge);
+        }
+        const centre = (a: number, len: number) => Math.floor(a + len / 2 + 1e-6);
+        // along the line on a pixel the renderer covers fully (the line's ends may be off the grid too)
+        const along = (a: number, len: number, f: number) => {
+          const lo = Math.ceil(a - 1e-6), hi = Math.floor(a + len + 1e-6) - 1;
+          return hi < lo ? Math.floor(a + len / 2) : Math.min(hi, Math.max(lo, Math.floor(a + f * len)));
+        };
+        const pts = Array.from(new Map(FX.map((f): [string, RingPoint] => {
+          const p: RingPoint = horizontal
+            ? { where: `the centre line at ${f * 100}%`, kind: "edge", gx: along(gPaint.x, gPaint.w, f), gy: centre(gPaint.y, gPaint.h), ux: along(ue.x, ue.w, f), uy: centre(ue.y, ue.h), win: 1 }
+            : { where: `the centre line at ${f * 100}%`, kind: "edge", gx: centre(gPaint.x, gPaint.w), gy: along(gPaint.y, gPaint.h, f), ux: centre(ue.x, ue.w), uy: along(ue.y, ue.h, f), win: 1 };
+          return [`${p.gx},${p.gy}`, p];
+        })).values());
+        let covered = 0;
+        use = pts.filter((p) => {
+          if (!inImage(p)) return false;
+          if (touches(cover, p.gx, p.gy)) { covered++; return false; }
+          return !touches(textLines, p.gx, p.gy) && !touches(textLines, p.ux, p.uy) && !edgeBand[p.gy * w + p.gx] && !curve(p);
+        });
+        // covered by later elements, it shows nothing to compare; otherwise a line left without a sample is a failure
+        if (!use.length && covered < pts.length) {
+          issue(id, "color", `a line ${Number(gThick.toFixed(2))} device px thick: no colour sample left on its centre line (on text, an off-grid edge or a curve)`, ge);
+        }
+      } else if (solid) {
+        // background colour: the grid, then the ring inside the border, never silently nothing
         const ix0 = Math.max(ge.x, ue.x), iy0 = Math.max(ge.y, ue.y), ix1 = Math.min(ge.x + ge.w, ue.x + ue.w), iy1 = Math.min(ge.y + ge.h, ue.y + ue.h);
         const cw = ix1 - ix0, ch = iy1 - iy0;
         const pts: RingPoint[] = [];
@@ -562,11 +617,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
             : FY.flatMap((fy) => FX.map((fx) => [Math.floor(ix0 + 6 + (cw - 12) * fx), Math.floor(iy0 + 6 + (ch - 12) * fy)] as [number, number]));
           for (const [x, y] of grid) pts.push({ where: `(${x}, ${y})`, kind: "edge", gx: x, gy: y, ux: x, uy: y, win: 3 });
         }
-        // grid points off the rounded corners' anti-aliased curves (outer, and inner inside a border)
-        const curve = (p: RingPoint) => nearCurve(gPaint, ctx.borders?.[id], ctx.radii?.[id], p.gx, p.gy) || nearCurve(ue, ctx.borders?.[id], ctx.radii?.[id], p.ux, p.uy);
         // and where the design is flat (a picture's detail or an edge is measured by SSIM)
-        let use = pts.filter((p) => usable(p, cover) && !curve(p) && flatAt(gp, p.gx, p.gy));
+        use = pts.filter((p) => usable(p, cover) && !curve(p) && flatAt(gp, p.gx, p.gy));
         if (!use.length) use = ringPoints(gPaint, ue, ctx.borders?.[id], ["edge"], ctx.radii?.[id]).filter((p) => usable(p, cover));
+      }
+      if (use) {
         row.samples = use.length;
         if (!use.length) notSampled.push(id);
         let bestS: { de: number; p: RingPoint; a: number[]; b: number[] } | null = null;
