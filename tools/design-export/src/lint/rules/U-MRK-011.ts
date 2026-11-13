@@ -2,12 +2,20 @@ import { repeatSamples } from "../repeat.js";
 import type { Rule } from "../types.js";
 import { isExternal, make } from "./util.js";
 
+/** Members every generated class inherits from object (the compiler's ViewCodeWriter.ObjectMembers). */
+export const OBJECT_MEMBERS = ["Equals", "GetHashCode", "GetType", "ToString", "MemberwiseClone", "Finalize", "ReferenceEquals"];
+/** Members the generated screen view declares (the compiler's ViewCodeWriter.ScreenMembers). */
+export const SCREEN_MEMBERS = ["State", "SetState", "Find", "StateClasses", "ScreenRoot", "SetSelected", "SetClass", "SetEnabled"];
+/** Members a generated repeat item view declares (the compiler's ViewCodeWriter.ItemMembers). */
+export const ITEM_MEMBERS = ["Index", "BeginBind", "Find", "SetSelected", "SetClass", "SetEnabled"];
+
 /**
- * Members every generated view class declares or inherits from object (the compiler's ViewCodeWriter.Reserved): an
- * element whose data-u-id gives one of these names cannot have its own property in the view.
+ * Names an element's data-u-id cannot give in the screen view: an element with one of these names cannot have its own
+ * property there.
  */
-export const RESERVED_VIEW_MEMBERS = ["State", "SetState", "Find", "StateClasses", "ScreenRoot", "Equals", "GetHashCode", "GetType", "ToString",
-  "MemberwiseClone", "Finalize", "ReferenceEquals"];
+export const RESERVED_VIEW_MEMBERS = [...SCREEN_MEMBERS, ...OBJECT_MEMBERS];
+/** The same for ids inside the items of a data-u-repeat list, which become members of the item view. */
+export const RESERVED_ITEM_MEMBERS = [...ITEM_MEMBERS, ...OBJECT_MEMBERS];
 
 /** The view member of a data-u-id, as the compiler names it (Naming.Pascal: parts split at . - _, each capitalised). */
 export const viewMember = (id: string): string =>
@@ -15,7 +23,8 @@ export const viewMember = (id: string): string =>
 
 /**
  * A data-u-id must not give a member the generated view class already has (State, SetState, Find, …, or the class's own
- * name <Screen>View). Ids inside the items of a data-u-repeat list are members of the item, not of the view.
+ * name <Screen>View). Ids inside the items of a data-u-repeat list are members of the item view and are checked against
+ * the item's members (Index, BeginBind, …).
  */
 export const rule: Rule = {
   id: "U-MRK-011", severity: "error",
@@ -30,14 +39,17 @@ export const rule: Rule = {
     const screen = s.elements.find((e) => e.attrs["data-u-screen"] !== undefined)?.attrs["data-u-screen"];
     // the class is <Pascal(screen id)>View
     const reserved = new Set([...RESERVED_VIEW_MEMBERS, ...(screen ? [`${viewMember(screen)}View`] : [])]);
+    const reservedInItem = new Set(RESERVED_ITEM_MEMBERS);
     const out = [];
     for (const e of s.elements) {
       const id = e.attrs["data-u-id"];
-      if (id === undefined || inItem[e.index] || isExternal(s, e.index)) continue;
+      if (id === undefined || isExternal(s, e.index)) continue;
       const member = viewMember(id);
-      if (!reserved.has(member)) continue;
-      out.push(make(rule, e.path, `data-u-id "${id}" gives the view member ${member}, which the generated view class already declares`,
-        `Rename the data-u-id so its name differs from ${[...RESERVED_VIEW_MEMBERS.slice(0, 5)].join(", ")}, … (e.g. "${id}-label").`));
+      const names = inItem[e.index] ? RESERVED_ITEM_MEMBERS : RESERVED_VIEW_MEMBERS;
+      if (!(inItem[e.index] ? reservedInItem : reserved).has(member)) continue;
+      const where = inItem[e.index] ? "the generated item view of its data-u-repeat list" : "the generated view class";
+      out.push(make(rule, e.path, `data-u-id "${id}" gives the view member ${member}, which ${where} already declares`,
+        `Rename the data-u-id so its name differs from ${names.slice(0, 5).join(", ")}, … (e.g. "${id}-label").`));
     }
     return out;
   },

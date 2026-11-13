@@ -113,6 +113,16 @@ describe("lint engine", () => {
     expect(f[0].path).toBe('[data-u-screen=lint.sample] > div[data-u-id="gelen-kutusu-İ"]');
   });
 
+  it("checks ids inside repeat items against the item view's members, and screen ids against the screen view's", async () => {
+    const dir = tmp();
+    const list = (id: string) => `<div style="display:flex;flex-direction:column">` +
+      `<div data-u-repeat="rows" data-u-id="row" style="display:flex"><p data-u-id="${id}" data-u-bind="name">Ali</p></div></div>`;
+    const item = (await lintFile(write(dir, list("index")))).filter((x) => x.ruleId === "U-MRK-011");
+    expect(item.map((x) => x.detail)).toEqual([expect.stringContaining('"index" gives the view member Index, which the generated item view')]);
+    // State is a screen member only, so it is free inside an item
+    expect((await lintFile(write(dir, list("state")))).filter((x) => x.ruleId === "U-MRK-011")).toEqual([]);
+  });
+
   it("returns warnings without errors for a design with only warnings", async () => {
     const f = await lintFile(fx("W-CSS-001.fail.html"));
     expect(f.length).toBeGreaterThan(0);

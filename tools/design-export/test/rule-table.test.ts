@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { RULES } from "../src/lint/index.js";
 import fs from "node:fs";
 import { RULE_SUMMARIES } from "../src/lint/rule-table.js";
-import { RESERVED_VIEW_MEMBERS, viewMember } from "../src/lint/rules/U-MRK-011.js";
+import { ITEM_MEMBERS, OBJECT_MEMBERS, SCREEN_MEMBERS, viewMember } from "../src/lint/rules/U-MRK-011.js";
 
 describe("lint rule table", () => {
   it("has a summary and a fix for every rule in the registry", () => {
@@ -30,9 +30,14 @@ describe("lint rule table", () => {
 
   it("U-MRK-011 names the members the compiler's view class reserves, as it names them", () => {
     const cs = fs.readFileSync(new URL("../../../packages/com.unity.design-ui/Editor/Compile/ViewCodeWriter.cs", import.meta.url), "utf8");
-    const m = /static readonly string\[\] Reserved = \{([^}]*)\}/.exec(cs);
-    expect(m).not.toBeNull();
-    expect(Array.from(m![1].matchAll(/"([^"]+)"/g), (x) => x[1]).sort()).toEqual([...RESERVED_VIEW_MEMBERS].sort());
+    const names = (field: string): string[] => {
+      const m = new RegExp(`static readonly string\\[\\] ${field} = \\{([^}]*)\\}`).exec(cs);
+      expect(m, field).not.toBeNull();
+      return Array.from(m![1].matchAll(/"([^"]+)"/g), (x) => x[1]).sort();
+    };
+    expect(names("ScreenMembers")).toEqual([...SCREEN_MEMBERS].sort());
+    expect(names("ItemMembers")).toEqual([...ITEM_MEMBERS].sort());
+    expect(names("ObjectMembers")).toEqual([...OBJECT_MEMBERS].sort());
     // Naming.Pascal: parts split at . - _, first letter upper-cased, the rest kept
     expect(viewMember("state")).toBe("State");
     expect(viewMember("set-state")).toBe("SetState");
