@@ -106,6 +106,9 @@ namespace DesignUi.Editor
                         continue;
                 }
 
+                if (spec.LoweredValues.Length > 0 && value.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Any(v => Array.IndexOf(spec.LoweredValues, v) >= 0))
+                    throw new UnsupportedStyleException(key, value, null,
+                        "'" + key + ": " + value + "' is compiled only on the node it belongs to" + (spec.Note != null ? " (" + spec.Note + ")" : "") + ".");
                 if (Array.IndexOf(spec.DropValues, value) >= 0)
                 {
                     if (isLayer)

@@ -37,7 +37,10 @@ namespace DesignUi.Editor
         public string sourceSha256;
         public string irSha256;
         public string generatorVersion;
-        /// <summary>File path relative to the manifest's folder to the SHA-256 (lowercase hex) of its bytes.</summary>
+        /// <summary>
+        /// File path relative to the manifest's folder to the SHA-256 (lowercase hex) of its content: the bytes of a binary
+        /// file, the bytes with CRLF read as LF for a text file (a Windows checkout with autocrlf is not an edit).
+        /// </summary>
         public Dictionary<string, string> files = new Dictionary<string, string>(StringComparer.Ordinal);
         public string[] removedElements = new string[0];
         /// <summary>Name of the screen root element, which carries the <c>state-*</c> and <c>bp-*</c> classes.</summary>
@@ -50,6 +53,8 @@ namespace DesignUi.Editor
         public RepeatEntry[] repeats = new RepeatEntry[0];
         /// <summary>Shared manifest only: the union of all screens' tokens (USS variable name to value).</summary>
         public Dictionary<string, string> tokens;
+        /// <summary>Shared manifest only: screen folder name to the screen id compiled into it.</summary>
+        public Dictionary<string, string> screens;
 
         /// <summary>The manifest at <paramref name="path"/>, or null when there is none. Throws InvalidDataException when it is unreadable.</summary>
         public static GeneratedManifest Load(string path)
@@ -91,8 +96,9 @@ namespace DesignUi.Editor
         }
 
         /// <summary>
-        /// Generated files under <paramref name="outDir"/> whose bytes no longer match their recorded hash, i.e. that were
-        /// edited by hand. A missing file is not an edit (it is written again). Paths are <c>outDir/relative</c>.
+        /// Generated files under <paramref name="outDir"/> whose content no longer matches its recorded hash, i.e. that were
+        /// edited by hand. A missing file is not an edit (it is written again), and text compares with CRLF read as LF.
+        /// Paths are <c>outDir/relative</c>.
         /// </summary>
         public IReadOnlyList<string> FindManualEdits(string outDir)
         {
@@ -100,11 +106,37 @@ namespace DesignUi.Editor
             foreach (var kv in files.OrderBy(k => k.Key, StringComparer.Ordinal))
             {
                 var path = Combine(outDir, kv.Key);
-                if (File.Exists(path) && !string.Equals(Sha256Hex(File.ReadAllBytes(path)), kv.Value, StringComparison.OrdinalIgnoreCase))
+                if (File.Exists(path) && !string.Equals(ContentHash(kv.Key, File.ReadAllBytes(path)), kv.Value, StringComparison.OrdinalIgnoreCase))
                     result.Add(path);
             }
             return result;
         }
+
+        static readonly HashSet<string> TextExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { ".uxml", ".uss", ".tss", ".cs", ".json", ".svg", ".txt", ".md", ".gitattributes" };
+
+        /// <summary>Whether a generated file is text (compared and hashed with CRLF read as LF); everything else is binary.</summary>
+        public static bool IsText(string path)
+        {
+            var name = Path.GetFileName(path);
+            return TextExtensions.Contains(name.StartsWith(".", StringComparison.Ordinal) && name.IndexOf('.', 1) < 0 ? name : Path.GetExtension(name));
+        }
+
+        /// <summary>The bytes a file's hash and comparisons use: unchanged for binary files, CRLF as LF for text.</summary>
+        public static byte[] Normalized(string path, byte[] bytes)
+        {
+            if (!IsText(path) || Array.IndexOf(bytes, (byte)'\r') < 0) return bytes;
+            var result = new List<byte>(bytes.Length);
+            for (int i = 0; i < bytes.Length; i++)
+                if (!(bytes[i] == (byte)'\r' && i + 1 < bytes.Length && bytes[i + 1] == (byte)'\n')) result.Add(bytes[i]);
+            return result.ToArray();
+        }
+
+        /// <summary>SHA-256 of a file's normalized content (see <see cref="Normalized"/>).</summary>
+        public static string ContentHash(string path, byte[] bytes) => Sha256Hex(Normalized(path, bytes));
+
+        /// <summary>Whether two versions of a file have the same normalized content.</summary>
+        public static bool SameContent(string path, byte[] a, byte[] b) => Normalized(path, a).SequenceEqual(Normalized(path, b));
 
         internal static string Combine(string dir, string relative) => dir.TrimEnd('/', '\\') + "/" + relative;
 

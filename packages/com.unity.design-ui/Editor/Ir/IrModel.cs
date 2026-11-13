@@ -73,6 +73,11 @@ namespace DesignUi.Editor
     {
         [JsonProperty("name")] public string Name;
         [JsonProperty("mode")] public string Mode;
+        /// <summary>
+        /// Number of sample items in the design. The compiler writes one item template; the verifier fills this many
+        /// items from the fixtures, so the count is not duplicated into the compiled tree.
+        /// </summary>
+        [JsonProperty("count")] public int Count;
     }
 
     public sealed class IrNode

@@ -19,20 +19,13 @@ namespace DesignUi.Editor.Tests
     {
         const string AssetsRoot = "Assets/DesignUiCompilerTests";
 
-        /// <summary>The Editor writes Unity's default runtime theme here when a PanelSettings is created; removed again if this test made it.</summary>
+        /// <summary>Where the Editor writes Unity's default runtime theme when a PanelSettings without a theme is created.</summary>
         const string DefaultThemeFolder = "Assets/UI Toolkit";
 
         readonly List<string> _temp = new List<string>();
         GameObject _go;
         PanelSettings _settings;
         RenderTexture _rt;
-        bool _hadDefaultThemeFolder;
-
-        [SetUp]
-        public void Remember()
-        {
-            _hadDefaultThemeFolder = AssetDatabase.IsValidFolder(DefaultThemeFolder);
-        }
 
         [TearDown]
         public void Cleanup()
@@ -43,7 +36,20 @@ namespace DesignUi.Editor.Tests
             foreach (var dir in _temp) if (Directory.Exists(dir)) Directory.Delete(dir, true);
             _temp.Clear();
             if (AssetDatabase.IsValidFolder(AssetsRoot)) AssetDatabase.DeleteAsset(AssetsRoot);
-            if (!_hadDefaultThemeFolder && AssetDatabase.IsValidFolder(DefaultThemeFolder)) AssetDatabase.DeleteAsset(DefaultThemeFolder);
+        }
+
+        /// <summary>A copy of the shipped design PanelSettings rendering into a RenderTexture, 1 design px = 1 panel px.</summary>
+        UIDocument Panel(int size)
+        {
+            _rt = new RenderTexture(size, size, 24);
+            _settings = UnityEngine.Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+            _settings.scaleMode = PanelScaleMode.ConstantPixelSize;
+            _settings.scale = 1f;
+            _settings.targetTexture = _rt;
+            _go = new GameObject("ScreenCompilerTests");
+            var doc = _go.AddComponent<UIDocument>();
+            doc.panelSettings = _settings;
+            return doc;
         }
 
         string TempDir()
@@ -80,6 +86,9 @@ namespace DesignUi.Editor.Tests
             return p;
         }
 
+        /// <summary>The Showcase with its kit text style table next to the IR, as an export folder.</summary>
+        string ShowcaseExport(IrScreen ir = null) => Export(ir ?? Showcase(), textStyles: true);
+
         static Dictionary<string, byte[]> Snapshot(string dir) =>
             Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Where(f => !f.EndsWith(".meta", StringComparison.Ordinal))
                 .ToDictionary(f => f.Replace('\\', '/'), File.ReadAllBytes);
@@ -87,12 +96,12 @@ namespace DesignUi.Editor.Tests
         static Dictionary<string, DateTime> Times(string dir) =>
             Directory.GetFiles(dir, "*", SearchOption.AllDirectories).ToDictionary(f => f.Replace('\\', '/'), File.GetLastWriteTimeUtc);
 
-        // ---- incremental output (R22) ----------------------------------------------------------------------
+        // ---- incremental output (spec 14) ------------------------------------------------------------------
 
         [Test]
         public void Compile_Twice_SecondWritesNothingAndFilesAreByteIdentical()
         {
-            var export = Export(Showcase());
+            var export = ShowcaseExport();
             var profile = Profile(AssetsRoot);
             var first = ScreenCompiler.Compile(export, profile);
             Assert.IsTrue(first.Ok, string.Join("\n", first.Errors));
@@ -123,7 +132,7 @@ namespace DesignUi.Editor.Tests
         public void Compile_ColourOnlyChange_RewritesStylesButNotTheViewCode()
         {
             var ir = Showcase();
-            var export = Export(ir);
+            var export = ShowcaseExport(ir);
             var output = TempDir();
             var profile = Profile(output);
             var hooks = new CompileHooks { ViewCode = s => "// view of " + s.ClassName + ": " + string.Join(",", s.AllElements().Select(e => e.Name)) + "\n" };
@@ -145,34 +154,55 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(GeneratedManifest.Sha256Hex(File.ReadAllBytes(view)), manifest.files["TestShowcaseView.g.cs"]);
         }
 
-        [Test]
-        public void Compile_StaleOutput_IsDeleted()
+        static IrScreen ScrollingList(string gap = null)
         {
-            var ir = TestIr.Screen(Root(Node("rows", "list").Add(Node("row", "container", ("height", "10px")))));
-            ir.Root.Children[0].Repeat = new IrRepeat { Name = "row", Mode = "list" };
+            var list = Node("rows", "list", ("display", "flex"), ("flex-direction", "column"), ("overflow-y", "auto"), ("height", "100px"));
+            if (gap != null) list.Style["base"]["gap"] = gap;
+            list.Add(Node("row", "container", ("height", "10px"), ("background-color", "#123456")));
+            list.Repeat = new IrRepeat { Name = "row", Mode = "list", Count = 3 };
+            return TestIr.Screen(Root(list));
+        }
+
+        [Test]
+        public void Compile_StaleOutput_IsDeletedInsideTheBatch()
+        {
+            var ir = ScrollingList();
             var export = Export(ir);
-            var output = TempDir();
-            var profile = Profile(output);
+            var profile = Profile(AssetsRoot);
             Assert.IsTrue(ScreenCompiler.Compile(export, profile).Ok);
-            var template = output + "/TestScreen/RowItem.uxml";
-            Assert.IsTrue(File.Exists(template));
+            var template = AssetsRoot + "/TestScreen/RowItem.uxml";
+            Assert.IsNotNull(AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(template));
             ir.Root.Children = new IrNode[0];
             WriteIr(export, ir);
             var result = ScreenCompiler.Compile(export, profile);
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
             Assert.IsFalse(File.Exists(template));
-            var manifest = GeneratedManifest.Load(output + "/TestScreen/" + ScreenCompiler.ManifestFileName);
+            Assert.IsFalse(File.Exists(template + ".meta"));
+            Assert.IsNull(AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(template));
+            var manifest = GeneratedManifest.Load(AssetsRoot + "/TestScreen/" + ScreenCompiler.ManifestFileName);
             Assert.IsFalse(manifest.files.ContainsKey("RowItem.uxml"));
+        }
+
+        [Test]
+        public void Compile_WithoutTheViewStep_KeepsAnExistingView()
+        {
+            var export = ShowcaseExport();
+            var output = TempDir();
+            var profile = Profile(output);
+            var hooks = new CompileHooks { ViewCode = c => "// view\n" };
+            Assert.IsTrue(ScreenCompiler.Compile(export, profile, false, hooks).Ok);
+            var view = output + "/TestShowcase/TestShowcaseView.g.cs";
+            var result = ScreenCompiler.Compile(export, profile);
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            Assert.IsTrue(File.Exists(view), "a compile that does not write the view never deletes it");
+            Assert.IsTrue(GeneratedManifest.Load(output + "/TestShowcase/" + ScreenCompiler.ManifestFileName).files.ContainsKey("TestShowcaseView.g.cs"));
+            Assert.IsTrue(ScreenCompiler.Compile(export, profile, false, hooks).Ok);
         }
 
         [Test]
         public void Compile_ListRepeat_TemplateAndListViewInstantiate()
         {
-            var ir = TestIr.Screen(Root(
-                Node("rows", "list", ("display", "flex"), ("flex-direction", "column"), ("gap", "4px"))
-                    .Add(Node("row", "container", ("height", "10px"), ("background-color", "#123456")))));
-            ir.Root.Children[0].Repeat = new IrRepeat { Name = "row", Mode = "list" };
-            var result = ScreenCompiler.Compile(Export(ir), Profile(AssetsRoot));
+            var result = ScreenCompiler.Compile(Export(ScrollingList("4px")), Profile(AssetsRoot));
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
             var screen = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(AssetsRoot + "/TestScreen/TestScreen.uxml");
             var item = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(AssetsRoot + "/TestScreen/RowItem.uxml");
@@ -180,20 +210,72 @@ namespace DesignUi.Editor.Tests
             Assert.IsNotNull(item);
             Assert.IsFalse(item.importedWithErrors || item.importedWithWarnings);
             var tree = screen.Instantiate();
-            Assert.IsInstanceOf<ListView>(tree.Q("rows"));
+            var list = tree.Q<ListView>("rows");
+            Assert.IsNotNull(list);
+            Assert.AreEqual(14f, list.fixedItemHeight, "10px item + 4px gap");
             var row = item.Instantiate().Q("row");
             Assert.IsNotNull(row);
             StringAssert.StartsWith("s-", row.GetClasses().First());
             var uss = File.ReadAllText(AssetsRoot + "/TestScreen/TestScreen.uss");
-            StringAssert.Contains("." + row.GetClasses().First() + ".__first {", uss, "the view toggles __first on item 0");
+            StringAssert.DoesNotContain(".__first", uss, "list items get the gap from their slot");
         }
 
         // ---- manual-edit guard -----------------------------------------------------------------------------
 
         [Test]
+        public void Compile_CrlfCheckout_IsNeitherAnEditNorAWrite()
+        {
+            var export = ShowcaseExport();
+            var output = TempDir();
+            var profile = Profile(output);
+            Assert.IsTrue(ScreenCompiler.Compile(export, profile).Ok);
+            var dir = output + "/TestShowcase";
+            foreach (var file in new[] { dir + "/TestShowcase.uss", dir + "/TestShowcase.uxml", output + "/" + ScreenCompiler.TokensFileName })
+                File.WriteAllText(file, File.ReadAllText(file).Replace("\n", "\r\n"));
+            var result = ScreenCompiler.Compile(export, profile);
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            CollectionAssert.IsEmpty(result.ManualEdits);
+            CollectionAssert.IsEmpty(result.Written);
+        }
+
+        [Test]
+        public void Compile_FileAlreadyHoldingTheNewOutput_IsClean()
+        {
+            // an interrupted compile wrote the new .uss but not the manifest
+            var ir = Showcase();
+            var export = ShowcaseExport(ir);
+            var output = TempDir();
+            var profile = Profile(output);
+            Assert.IsTrue(ScreenCompiler.Compile(export, profile).Ok);
+            ir.Root.Children[0].Style["base"]["background-color"] = "#abcdef";
+            WriteIr(export, ir);
+            var elsewhere = TempDir();
+            Assert.IsTrue(ScreenCompiler.Compile(export, Profile(elsewhere)).Ok);
+            File.Copy(elsewhere + "/TestShowcase/TestShowcase.uss", output + "/TestShowcase/TestShowcase.uss", true);
+
+            var result = ScreenCompiler.Compile(export, profile);
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            CollectionAssert.AreEqual(new[] { output + "/TestShowcase/TestShowcase.uxml" }, result.Written.ToArray());
+        }
+
+        [Test]
+        public void Compile_WritesGitAttributesKeepingGeneratedTextLf()
+        {
+            var output = TempDir();
+            Assert.IsTrue(ScreenCompiler.Compile(ShowcaseExport(), Profile(output)).Ok);
+            foreach (var file in new[] { output + "/.gitattributes", output + "/TestShowcase/.gitattributes" })
+            {
+                Assert.IsTrue(File.Exists(file), file);
+                var text = File.ReadAllText(file);
+                StringAssert.Contains("eol=lf", text);
+                StringAssert.Contains("*.png binary", text);
+            }
+        }
+
+        [Test]
         public void Compile_HandEditedUss_IsRefusedUntilDiscarded()
         {
-            var export = Export(Showcase());
+            var export = ShowcaseExport();
             var output = TempDir();
             var profile = Profile(output);
             Assert.IsTrue(ScreenCompiler.Compile(export, profile).Ok);
@@ -218,7 +300,7 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void Compile_ForeignFileInTheWay_IsAManualEdit()
         {
-            var export = Export(Showcase());
+            var export = ShowcaseExport();
             var output = TempDir();
             Directory.CreateDirectory(output + "/TestShowcase");
             File.WriteAllText(output + "/TestShowcase/TestShowcase.uxml", "<ui:UXML />\n");
@@ -232,7 +314,7 @@ namespace DesignUi.Editor.Tests
         {
             var ir = Showcase();
             ir.Tokens["color.accent"] = "#2fd1c5";
-            var export = Export(ir);
+            var export = ShowcaseExport(ir);
             var output = TempDir();
             var profile = Profile(output);
             Assert.IsTrue(ScreenCompiler.Compile(export, profile).Ok);
@@ -249,7 +331,7 @@ namespace DesignUi.Editor.Tests
         public void Compile_Manifest_RecordsHashesAndRuntimeWiring()
         {
             var ir = Showcase();
-            var export = Export(ir);
+            var export = ShowcaseExport(ir);
             var output = TempDir();
             Assert.IsTrue(ScreenCompiler.Compile(export, Profile(output)).Ok);
             var dir = output + "/TestShowcase";
@@ -262,7 +344,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("test.showcase", m.screen);
             Assert.AreEqual("root", m.root);
             Assert.AreEqual("TestShowcaseView.g.cs", m.view, "reserved for the view class");
-            CollectionAssert.AreEquivalent(new[] { "TestShowcase.uxml", "TestShowcase.uss", "assets/shadow.png" }, m.files.Keys);
+            CollectionAssert.AreEquivalent(new[] { "TestShowcase.uxml", "TestShowcase.uss", "assets/shadow.png", ".gitattributes" }, m.files.Keys);
             foreach (var kv in m.files) Assert.AreEqual(GeneratedManifest.Sha256Hex(File.ReadAllBytes(dir + "/" + kv.Key)), kv.Value, kv.Key);
             CollectionAssert.AreEqual(new[] { "tile" }, m.clickable);
             Assert.AreEqual(1, m.mirrors.Length);
@@ -286,13 +368,13 @@ namespace DesignUi.Editor.Tests
             a.Tokens["color.accent"] = "#2fd1c5";
             var b = TestIr.Screen(Root(), "test.beta");
             b.Tokens["space.4"] = "16px";
-            Assert.IsTrue(ScreenCompiler.Compile(Export(a), profile).Ok);
+            Assert.IsTrue(ScreenCompiler.Compile(ShowcaseExport(a), profile).Ok);
             Assert.IsTrue(ScreenCompiler.Compile(Export(b), profile).Ok);
             var tokens = File.ReadAllText(output + "/" + ScreenCompiler.TokensFileName);
             StringAssert.Contains("--color-accent: #2fd1c5;", tokens);
             StringAssert.Contains("--space-4: 16px;", tokens);
             a.Tokens["color.accent"] = "#000000";
-            var exportA = Export(a);
+            var exportA = ShowcaseExport(a);
             var again = ScreenCompiler.Compile(exportA, profile);
             Assert.IsTrue(again.Ok, string.Join("\n", again.Errors));
             tokens = File.ReadAllText(output + "/" + ScreenCompiler.TokensFileName);
@@ -332,6 +414,59 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Compile_TextStylesWithoutATable_IsAnError()
+        {
+            var export = Export(Showcase());
+            var output = TempDir();
+            var profile = Profile(output);
+            profile.kitDir = TempDir();
+            var result = ScreenCompiler.Compile(export, profile);
+            Assert.IsFalse(result.Ok);
+            var error = string.Join("\n", result.Errors);
+            StringAssert.Contains(Path.Combine(export, KitTextStyles.FileName), error, "names the paths it searched");
+            StringAssert.Contains(Path.Combine(profile.kitDir, KitTextStyles.FileName), error);
+            Assert.IsFalse(Directory.Exists(output + "/TestShowcase"));
+        }
+
+        [Test]
+        public void Compile_ScreensSharingAFolderName_IsAnError()
+        {
+            var output = TempDir();
+            var profile = Profile(output);
+            Assert.IsTrue(ScreenCompiler.Compile(Export(TestIr.Screen(Root(), "club.overview")), profile).Ok);
+            var result = ScreenCompiler.Compile(Export(TestIr.Screen(Root(), "club-overview")), profile);
+            Assert.IsFalse(result.Ok);
+            StringAssert.Contains("club.overview", string.Join("\n", result.Errors));
+        }
+
+        [Test]
+        public void Compile_OutputNamesDifferingOnlyInCase_AreAnError()
+        {
+            // the list template of repeat "rows" in screen "rows.item" would be RowsItem.uxml, the screen's own file
+            var ir = ScrollingList();
+            ir.Screen = "rows.item";
+            ir.Root.Children[0].Repeat.Name = "rows";
+            var result = ScreenCompiler.Compile(Export(ir), Profile(TempDir()));
+            Assert.IsFalse(result.Ok);
+            StringAssert.Contains("RowsItem.uxml", string.Join("\n", result.Errors));
+        }
+
+        [Test]
+        public void Compile_ReportsOrphanScreenFoldersWithoutDeletingThem()
+        {
+            var output = TempDir();
+            var design = TempDir();
+            Directory.CreateDirectory(Path.Combine(design, "test.alpha"));
+            var profile = Profile(output);
+            profile.designRoot = design;
+            Assert.IsTrue(ScreenCompiler.Compile(Export(TestIr.Screen(Root(), "test.beta")), profile).Ok);
+            var result = ScreenCompiler.Compile(Export(TestIr.Screen(Root(), "test.alpha")), profile);
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            CollectionAssert.AreEqual(new[] { output + "/TestBeta" }, result.Orphans.ToArray());
+            Assert.IsTrue(Directory.Exists(output + "/TestBeta"));
+        }
+
+        [Test]
         public void Compile_InvalidInput_ReportsErrorsAndWritesNothing()
         {
             var output = TempDir();
@@ -347,7 +482,25 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(Directory.Exists(output + "/TestScreen"));
         }
 
-        // ---- profile (R31) ---------------------------------------------------------------------------------
+        // ---- profile and the shipped panel settings (spec 5.3, 12) --------------------------------------------
+
+        [UnityTest]
+        public IEnumerator ShippedPanelSettings_RenderWithTheRuntimeThemeAndWriteNoDefaultTheme()
+        {
+            var settings = DesignUiProfile.LoadDefaultPanelSettings();
+            Assert.IsNotNull(settings, DesignUiProfile.PanelSettingsPath);
+            Assert.AreSame(AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(DesignUiProfile.RuntimeThemePath), settings.themeStyleSheet);
+            Assert.AreEqual(PanelScaleMode.ScaleWithScreenSize, settings.scaleMode);
+            Assert.AreEqual(new Vector2Int(2560, 1440), settings.referenceResolution);
+            Assert.AreEqual(0.5f, settings.match);
+            Assert.IsNull(settings.targetTexture);
+
+            var hadDefaultTheme = AssetDatabase.IsValidFolder(DefaultThemeFolder);
+            var doc = Panel(64);
+            for (int i = 0; i < 3; i++) yield return null;
+            Assert.IsNotNull(doc.rootVisualElement.panel);
+            if (!hadDefaultTheme) Assert.IsFalse(AssetDatabase.IsValidFolder(DefaultThemeFolder), "no UnityDefaultRuntimeTheme.tss is written");
+        }
 
         [Test]
         public void Profile_DefaultsAndRuntimeTheme()
@@ -365,6 +518,7 @@ namespace DesignUi.Editor.Tests
                 var theme = AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(DesignUiProfile.RuntimeThemePath);
                 Assert.IsNotNull(theme, "the package's runtime theme imports as a ThemeStyleSheet");
                 Assert.AreSame(theme, p.RuntimeTheme, "design screens use the package's minimal theme by default");
+                Assert.AreSame(DesignUiProfile.LoadDefaultPanelSettings(), p.DesignPanelSettings);
                 Assert.IsNotNull(typeof(DesignUiProfile).GetCustomAttributes(typeof(CreateAssetMenuAttribute), false).SingleOrDefault());
             }
             finally { UnityEngine.Object.DestroyImmediate(p); }
@@ -375,22 +529,32 @@ namespace DesignUi.Editor.Tests
         [UnityTest]
         public IEnumerator Compiled_Screen_ResolvesItsRulesOnAPanel()
         {
-            var export = Export(Showcase(), textStyles: true);
+            var export = ShowcaseExport();
             var profile = Profile(AssetsRoot);
-            var result = ScreenCompiler.Compile(export, profile);
+            // an asset step that places the shadow under a folder name with # and %: the url() must escape them
+            var odd = AssetsRoot + "/odd #1 50%";
+            var hooks = new CompileHooks
+            {
+                AssetPath = a =>
+                {
+                    Directory.CreateDirectory(odd);
+                    var path = odd + "/" + Path.GetFileName(a.File);
+                    File.Copy(Path.Combine(export, a.File), path, true);
+                    AssetDatabase.ImportAsset(AssetsRoot);
+                    AssetDatabase.ImportAsset(odd);
+                    AssetDatabase.ImportAsset(path);
+                    return path;
+                },
+            };
+            var result = ScreenCompiler.Compile(export, profile, false, hooks);
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
             var vta = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(AssetsRoot + "/TestShowcase/TestShowcase.uxml");
+            var sheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(AssetsRoot + "/TestShowcase/TestShowcase.uss");
             Assert.IsNotNull(vta);
+            StringAssert.Contains("%23", File.ReadAllText(AssetsRoot + "/TestShowcase/TestShowcase.uss"));
+            Assert.IsFalse(sheet.importedWithErrors || sheet.importedWithWarnings, "the escaped project url resolves at import");
 
-            _rt = new RenderTexture(256, 256, 24);
-            _settings = ScriptableObject.CreateInstance<PanelSettings>();
-            _settings.targetTexture = _rt;
-            _settings.scaleMode = PanelScaleMode.ConstantPixelSize; // 1 design px = 1 panel px, no snapping to a scaled pixel grid
-            _settings.scale = 1f;
-            _settings.themeStyleSheet = profile.RuntimeTheme;
-            _go = new GameObject("ScreenCompilerTests");
-            var doc = _go.AddComponent<UIDocument>();
-            doc.panelSettings = _settings;
+            var doc = Panel(256);
             for (int i = 0; i < 2; i++) yield return null;
             var tree = vta.Instantiate();
             doc.rootVisualElement.Add(tree);
@@ -409,7 +573,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(0f, tree.Q("item-a").resolvedStyle.marginTop, "__first restores the first item's margin");
             Assert.AreEqual(8f, tree.Q("item-b").resolvedStyle.marginTop);
             Assert.AreEqual(PickingMode.Ignore, shadow.pickingMode);
-            Assert.IsNotNull(shadow.resolvedStyle.backgroundImage.texture, "the shadow PNG resolves through the relative url");
+            Assert.IsNotNull(shadow.resolvedStyle.backgroundImage.texture, "the shadow PNG resolves through the escaped project url");
             Assert.AreEqual(2, shadow.resolvedStyle.unitySliceLeft);
             Assert.AreEqual(100f, host.resolvedStyle.width);
 
@@ -419,6 +583,46 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(0.5f, root.resolvedStyle.opacity, 1e-4f);
             AssertColor("#222222", panel.resolvedStyle.backgroundColor);
             Assert.AreEqual(0.8f, host.resolvedStyle.opacity, 1e-4f);
+        }
+
+        [UnityTest]
+        public IEnumerator Compiled_ScrollAreaAndList_ResolveOnAPanel()
+        {
+            var area = Node("area", "scroll", ("width", "120px"), ("height", "60px"), ("overflow-y", "auto"), ("display", "flex"),
+                    ("flex-direction", "row"), ("padding-left", "6px"))
+                .Add(Node("a", "container", ("width", "10px"), ("height", "80px")), Node("b", "container", ("width", "10px"), ("height", "80px")));
+            var list = Node("rows", "list", ("display", "flex"), ("flex-direction", "column"), ("gap", "4px")).Add(Node("row", "container", ("height", "10px")));
+            list.Repeat = new IrRepeat { Name = "row", Mode = "list", Count = 5 };
+            var inbox = Node("inbox__0", "scroll", ("width", "120px"), ("height", "60px"), ("overflow-y", "auto")).Add(list);
+            var result = ScreenCompiler.Compile(Export(TestIr.Screen(Root(area, inbox))), Profile(AssetsRoot));
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            var vta = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(AssetsRoot + "/TestScreen/TestScreen.uxml");
+            Assert.IsFalse(vta.importedWithErrors || vta.importedWithWarnings);
+
+            var doc = Panel(256);
+            for (int i = 0; i < 2; i++) yield return null;
+            var tree = vta.Instantiate();
+            doc.rootVisualElement.Add(tree);
+            for (int i = 0; i < 10; i++) yield return null;
+
+            var scroll = tree.Q<ScrollView>("area");
+            Assert.AreEqual(ScrollViewMode.Vertical, scroll.mode);
+            Assert.AreEqual(ScrollerVisibility.Auto, scroll.verticalScrollerVisibility);
+            Assert.AreEqual(ScrollerVisibility.Hidden, scroll.horizontalScrollerVisibility);
+            // the selector chain follows the real 6000.3 hierarchy
+            var content = scroll.contentContainer;
+            Assert.AreSame(scroll, content.parent.parent.parent);
+            Assert.AreEqual(FlexDirection.Row, content.resolvedStyle.flexDirection, "content layout reaches the content container");
+            Assert.AreEqual(6f, content.resolvedStyle.paddingLeft);
+            Assert.AreEqual(120f, scroll.resolvedStyle.width);
+
+            var listView = tree.Q<ListView>("inbox__0");
+            Assert.IsNotNull(listView, "the list and its scroll area are one ListView");
+            Assert.IsNull(tree.Q("rows"));
+            Assert.AreEqual(14f, listView.fixedItemHeight);
+            Assert.AreEqual(60f, listView.resolvedStyle.height);
+            Assert.AreEqual(1, listView.Query<ScrollView>().ToList().Count, "only the ListView's own ScrollView");
+            Assert.IsNull(listView.GetFirstAncestorOfType<ScrollView>(), "not nested in another ScrollView");
         }
 
         static void AssertColor(string hex, Color actual)

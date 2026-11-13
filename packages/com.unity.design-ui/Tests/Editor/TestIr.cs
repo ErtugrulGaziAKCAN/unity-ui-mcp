@@ -67,7 +67,7 @@ namespace DesignUi.Editor.Tests
         /// </summary>
         public static IrScreen Showcase(string screenId = "test.showcase")
         {
-            var label = Text("go-label", "Giriş", ("color", "#ffffff"), ("font-size", "16.5156px"));
+            var label = Text("go-label", "Giriş", ("color", "#ffffff"), ("font-size", "16.5156px"), ("font-family", "Inter"));
             label.Text.Style = "label";
 
             var card = Node("card", "container", ("width", "100px"), ("height", "50px"), ("background-color", "#666666"))

@@ -68,8 +68,8 @@
     flex-shrink: 0;
 }
 
-.s-2db5a44f {
-    flex-direction: column;
+.s-144a84ee {
+    overflow: hidden;
 }
 
 .s-2143cc9b {

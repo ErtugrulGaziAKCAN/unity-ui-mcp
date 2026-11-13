@@ -32,6 +32,8 @@ namespace DesignUi.Editor
         public string Text;
         /// <summary>False when plain text contains '&lt;' (rich text would read it as a tag); null keeps the default.</summary>
         public bool? EnableRichText;
+        /// <summary>Control attributes written to UXML in order: ScrollView <c>mode</c> and scroller visibility, ListView <c>fixed-item-height</c>.</summary>
+        public readonly List<KeyValuePair<string, string>> Attributes = new List<KeyValuePair<string, string>>();
         /// <summary>picking-mode Ignore (baked shadows, pointer-events: none).</summary>
         public bool PickingIgnore;
         /// <summary>The element needs a Clickable from the view so that :active works (not a Button or Toggle, which have one).</summary>
@@ -53,9 +55,11 @@ namespace DesignUi.Editor
     }
 
     /// <summary>
-    /// A repeated item template (<c>data-u-repeat</c>). Mode <c>list</c>: the container is a ListView and the items are
-    /// written to their own UXML (<see cref="TemplateFile"/>), not into the screen. Mode <c>inline</c>: the items stay in
-    /// the screen's UXML. Either way the view toggles <see cref="ScreenBuilder.FirstItemClass"/> on the first item.
+    /// A repeated item template (<c>data-u-repeat</c>). Mode <c>list</c>: the container is a ListView with fixed-height
+    /// slots (item height and margins plus the gap) and the item template is written to its own UXML
+    /// (<see cref="TemplateFile"/>), not into the screen. Mode <c>inline</c>: the template stays in the screen's UXML and
+    /// the view toggles <see cref="ScreenBuilder.FirstItemClass"/> on the first item. Only the template is compiled; the
+    /// IR's <c>repeat.count</c> sample items are filled from the fixtures by the verifier.
     /// </summary>
     public sealed class CompiledRepeat
     {

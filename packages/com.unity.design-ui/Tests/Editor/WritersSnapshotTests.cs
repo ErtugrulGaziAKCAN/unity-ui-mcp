@@ -14,10 +14,23 @@ namespace DesignUi.Editor.Tests
     {
         static string ExpectedPath(string file) => IrReaderTests.PackagePath("Tests", "Editor", "Data", "expected~", file);
 
-        static CompiledScreen Sample() => ScreenBuilder.Build(IrReader.Read(IrReaderTests.SamplePath()), RelativeAsset, null);
+        /// <summary>
+        /// contracts/ir-sample.json with its list repeat made a scroll area: the contract's list is neither a scroll area
+        /// nor inside one, and a list repeat compiles to a ListView only as (or as the only child of) a scroll area.
+        /// </summary>
+        static IrScreen SampleIr()
+        {
+            var ir = IrReader.Read(IrReaderTests.SamplePath());
+            ir.Root.Children[3].Style["base"]["overflow-y"] = "auto";
+            return ir;
+        }
+
+        static CompiledScreen Sample() => ScreenBuilder.Build(SampleIr(), RelativeAsset, null);
+
+        static readonly Dictionary<string, double> Kit = new Dictionary<string, double> { { "label", 16.515625 }, { "body", 23.125 } };
 
         static CompiledScreen Build(IrScreen ir, IReadOnlyDictionary<string, double> styles = null) =>
-            ScreenBuilder.Build(ir, RelativeAsset, null, styles);
+            ScreenBuilder.Build(ir, RelativeAsset, null, styles ?? Kit);
 
         static string Cls(CompiledScreen s, string name)
         {
@@ -117,7 +130,7 @@ namespace DesignUi.Editor.Tests
         public void ColourChange_ChangesOneClassDefinitionAndOneUxmlLine()
         {
             var before = Sample();
-            var ir = IrReader.Read(IrReaderTests.SamplePath());
+            var ir = SampleIr();
             ir.Root.Children[0].Style["base"]["color"] = "#ff0000"; // title
             var after = Build(ir);
 
@@ -153,7 +166,8 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("#555555", Decl(Rule(s, "." + Cls(s, "go") + ":active"), "background-color"));
 
             // one class per selector, optionally one root state/breakpoint class before it and one pseudo-class or toggled class after it
-            var policy = new Regex(@"^(\.(state|bp)-[a-z0-9_-]+ )?\.s-[0-9a-f]{8}((\.(state|bp)-[a-z0-9_-]+)|(:(hover|active|focus|checked|disabled))|(\.[A-Za-z_-][A-Za-z0-9_-]*))?$");
+            var policy = new Regex(@"^(\.(state|bp)-[a-z0-9_-]+ )?\.s-[0-9a-f]{8}((\.(state|bp)-[a-z0-9_-]+)|(:(hover|active|focus|checked|disabled))|(\.-?[A-Za-z_][A-Za-z0-9_-]*))?" +
+                                   @"( > \.unity-scroll-view__content-and-vertical-scroll-container > \.unity-scroll-view__content-viewport > \.unity-scroll-view__content-container)?$");
             foreach (var r in s.Rules) StringAssert.IsMatch(policy.ToString(), r.Selector);
         }
 
@@ -197,9 +211,12 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void ProjectAssetPaths_UseProjectDatabaseUrls()
         {
-            var s = ScreenBuilder.Build(Showcase(), a => "Assets/UI/Generated/TestShowcase/" + a.File, null);
+            var s = ScreenBuilder.Build(Showcase(), a => "Assets/UI/Generated/TestShowcase/" + a.File, null, Kit);
             Assert.AreEqual("url(\"project://database/Assets/UI/Generated/TestShowcase/assets/shadow.png\")",
                 Decl(Rule(s, "." + Cls(s, "card__shadow")), "background-image"));
+            var odd = ScreenBuilder.Build(Showcase(), a => "Assets/UI #2/50%/a?b.png", null, Kit);
+            Assert.AreEqual("url(\"project://database/Assets/UI %232/50%25/a%3Fb.png\")", Decl(Rule(odd, "." + Cls(odd, "card__shadow")), "background-image"),
+                "# would start a sub-asset name, ? the fileID/guid parameters");
         }
 
         [Test]
@@ -237,6 +254,7 @@ namespace DesignUi.Editor.Tests
             var s = Sample();
             var rows = s.Find("rows");
             Assert.AreEqual("ui:ListView", rows.Tag);
+            CollectionAssert.AreEqual(new[] { new KeyValuePair<string, string>("fixed-item-height", "64") }, rows.Attributes);
             Assert.AreEqual(0, rows.Children.Count, "a ListView cannot hold UXML children");
             var repeat = s.Repeats.Single();
             Assert.AreEqual("RowItem.uxml", repeat.TemplateFile);
@@ -253,9 +271,11 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void Tags_FollowTheKindTable()
         {
+            var list = Node("l", "list", ("overflow-y", "auto")).Add(Node("li", "container", ("height", "10px")));
+            list.Repeat = new IrRepeat { Name = "li", Mode = "list", Count = 3 };
             var root = Root(
                 Node("c", "container"), Text("t", "T"), Node("i", "image"), Node("v", "vector"), Node("b", "button"),
-                Node("g", "toggle"), Node("n", "input"), Node("d", "dropdown"), Node("sc", "scroll"), Node("l", "list"));
+                Node("g", "toggle"), Node("n", "input"), Node("d", "dropdown"), Node("sc", "scroll", ("overflow-y", "auto")), list);
             var s = Build(Screen(root));
             var expected = new Dictionary<string, string>
             {
@@ -271,6 +291,8 @@ namespace DesignUi.Editor.Tests
         {
             Assert.Throws<IrFormatException>(() => Build(Screen(Root(Node("x", "marquee")))));
             Assert.Throws<IrFormatException>(() => Build(Screen(Root(Node("x", "container", ("height", "1px")).With("visited", ("opacity", "0.5"))))));
+            Assert.Throws<IrFormatException>(() => Build(Screen(Root(Node("x", "container", ("height", "1px")).With("class:-1x", ("opacity", "0.5"))))),
+                "-1x is not a CSS identifier");
         }
 
         // ---- text ------------------------------------------------------------------------------------------
@@ -281,12 +303,14 @@ namespace DesignUi.Editor.Tests
             var rich = Text("r", "<b>Kalın</b> & \"tırnak\"");
             rich.Text.Rich = true;
             var plain = Text("p", "a < b\nc");
-            var s = Build(Screen(Root(rich, plain)));
+            var control = Text("z", "x\u0001y\uD800z\uD83D\uDE00");
+            var s = Build(Screen(Root(rich, plain, control)));
             var uxml = UxmlWriter.Write(s, "TestScreen.uss");
             StringAssert.Contains("name=\"r\"", uxml);
             StringAssert.Contains("text=\"&lt;b&gt;Kalın&lt;/b&gt; &amp; &quot;tırnak&quot;\"", uxml);
             StringAssert.Contains("enable-rich-text=\"false\" text=\"a &lt; b&#10;c\"", uxml);
             StringAssert.DoesNotContain("name=\"r\" enable-rich-text", uxml);
+            StringAssert.Contains("text=\"xyz\uD83D\uDE00\"", uxml, "XML-invalid characters are dropped, a valid surrogate pair stays");
         }
 
         [Test]
@@ -306,10 +330,27 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void TextStyle_WithoutATable_KeepsTheIrValue()
+        public void TextStyle_WithoutATable_Throws()
         {
-            var s = Build(Showcase());
-            Assert.AreEqual("16.5156px", Decl(Rule(s, "." + Cls(s, "go-label")), "font-size"));
+            var ex = Assert.Throws<IrFormatException>(() => ScreenBuilder.Build(Showcase(), RelativeAsset, null, null));
+            StringAssert.Contains("text-styles.json", ex.Message);
+        }
+
+        [Test]
+        public void TextStyle_EveryLayerUsesAKitSize()
+        {
+            var ir = Showcase();
+            var label = ir.Root.Children[1].Children[0];
+            label.With("bp:narrow", ("font-size", "23.125px")).With("hover", ("font-size", "16.5156px"));
+            var s = Build(ir);
+            var cls = Cls(s, "go-label");
+            Assert.AreEqual("16.515625px", Decl(Rule(s, "." + cls), "font-size"));
+            Assert.AreEqual("23.125px", Decl(Rule(s, ".bp-narrow ." + cls), "font-size"));
+            Assert.AreEqual("16.515625px", Decl(Rule(s, "." + cls + ":hover"), "font-size"));
+
+            label.With("state:loading", ("font-size", "17px"));
+            var ex = Assert.Throws<UnsupportedStyleException>(() => Build(ir));
+            Assert.AreEqual("U-CSS-016", ex.RuleId);
         }
 
         [Test]
@@ -338,10 +379,149 @@ namespace DesignUi.Editor.Tests
         public void FontDefinition_ReplacesTheFamilyPlaceholder()
         {
             var s = ScreenBuilder.Build(Screen(Root(Text("t", "T", ("font-family", "\"Inter\", sans-serif")))), RelativeAsset,
-                family => "url(\"project://database/Assets/Fonts/" + family + " UITK.asset\")");
+                family => "url(\"project://database/Assets/Fonts/" + family + " UITK.asset\")", Kit);
             Assert.AreEqual("url(\"project://database/Assets/Fonts/Inter UITK.asset\")", Decl(Rule(s, "." + Cls(s, "t")), "-unity-font-definition"));
             var unresolved = Build(Screen(Root(Text("t", "T", ("font-family", "Inter")))));
             Assert.AreEqual("var(--font-inter)", Decl(Rule(unresolved, "." + Cls(unresolved, "t")), "-unity-font-definition"));
+        }
+
+        // ---- scroll areas and lists ------------------------------------------------------------------------
+
+        static IrNode Scroll(string id, params (string k, string v)[] style)
+        {
+            var all = new List<(string, string)> { ("width", "300px"), ("height", "200px") };
+            all.AddRange(style);
+            return Node(id, "scroll", all.ToArray());
+        }
+
+        [Test]
+        public void Scroll_OverflowBecomesModeAndScrollerVisibility()
+        {
+            var s = Build(Screen(Root(
+                Scroll("both", ("overflow-x", "scroll"), ("overflow-y", "auto")),
+                Scroll("down", ("overflow-y", "auto"), ("overflow-x", "hidden")),
+                Scroll("across", ("overflow", "auto hidden")))));
+            CollectionAssert.AreEqual(new[]
+            {
+                new KeyValuePair<string, string>("mode", "VerticalAndHorizontal"),
+                new KeyValuePair<string, string>("horizontal-scroller-visibility", "AlwaysVisible"),
+                new KeyValuePair<string, string>("vertical-scroller-visibility", "Auto"),
+            }, s.Find("both").Attributes);
+            Assert.AreEqual("Vertical", s.Find("down").Attributes[0].Value);
+            Assert.AreEqual("Hidden", s.Find("down").Attributes[1].Value);
+            Assert.AreEqual("Horizontal", s.Find("across").Attributes[0].Value);
+            var uxml = UxmlWriter.Write(s, "TestScreen.uss");
+            StringAssert.Contains("<ui:ScrollView name=\"down\" class=\"" + Cls(s, "down") + "\" mode=\"Vertical\" horizontal-scroller-visibility=\"Hidden\" vertical-scroller-visibility=\"Auto\" />", uxml);
+            StringAssert.DoesNotContain("overflow: auto", UssWriter.Write(s));
+        }
+
+        [Test]
+        public void Scroll_ContentLayoutGoesToTheContentContainer()
+        {
+            var area = Scroll("area", ("overflow-y", "auto"), ("display", "flex"), ("flex-direction", "row"), ("padding-top", "8px"),
+                    ("background-color", "#101010"), ("align-items", "center"))
+                .With("state:loading", ("padding-top", "12px"), ("opacity", "0.5"))
+                .Add(Node("a", "container", ("width", "10px")), Node("b", "container", ("width", "10px")));
+            var s = Build(Screen(Root(area)));
+            var cls = Cls(s, "area");
+            var chain = ScreenBuilder.ScrollContentChain;
+            Assert.AreEqual(" > .unity-scroll-view__content-and-vertical-scroll-container > .unity-scroll-view__content-viewport > .unity-scroll-view__content-container", chain);
+            var outer = Rule(s, "." + cls);
+            Assert.AreEqual("hidden", Decl(outer, "overflow"));
+            Assert.AreEqual("#101010", Decl(outer, "background-color"));
+            Assert.AreEqual("300px", Decl(outer, "width"));
+            Assert.IsFalse(outer.Declarations.Any(d => d.Property == "flex-direction" || d.Property == "padding-top" || d.Property == "align-items"));
+            var content = Rule(s, "." + cls + chain);
+            Assert.AreEqual("row", Decl(content, "flex-direction"));
+            Assert.AreEqual("center", Decl(content, "align-items"));
+            Assert.AreEqual("8px", Decl(content, "padding-top"));
+            Assert.AreEqual("100%", Decl(content, "min-height"));
+            Assert.AreEqual("12px", Decl(Rule(s, ".state-loading ." + cls + chain), "padding-top"));
+            Assert.AreEqual("0.5", Decl(Rule(s, ".state-loading ." + cls), "opacity"));
+        }
+
+        [Test]
+        public void Overflow_ScrollingOutsideAScrollArea_IsRejected()
+        {
+            Assert.Throws<UnsupportedStyleException>(() => Build(Screen(Root(Node("x", "container", ("overflow-y", "auto"))))));
+            Assert.Throws<UnsupportedStyleException>(() => Build(Screen(Root(Scroll("x", ("overflow-y", "auto")).With("hover", ("overflow-y", "hidden"))))));
+            Assert.Throws<IrFormatException>(() => Build(Screen(Root(Scroll("x", ("overflow-y", "hidden"))))));
+        }
+
+        static IrNode ListContainer(string id, params IrNode[] items)
+        {
+            var list = Node(id, "list", ("display", "flex"), ("flex-direction", "column"), ("gap", "8px")).Add(items);
+            list.Repeat = new IrRepeat { Name = "message", Mode = "list", Count = 12 };
+            return list;
+        }
+
+        static IrNode Item(string id = "message") => Node(id, "container", ("height", "40px"), ("margin-bottom", "2px"), ("background-color", "#202020"));
+
+        [Test]
+        public void ListAsOnlyChildOfAScrollArea_IsOneListViewWithTheAreasBox()
+        {
+            var area = Scroll("inbox__0", ("overflow-y", "auto"), ("background-color", "#101010")).Add(ListContainer("inbox-list", Item()));
+            var s = Build(Screen(Root(area)));
+            var list = s.Find("inbox__0");
+            Assert.AreEqual("ui:ListView", list.Tag);
+            Assert.IsNull(s.Find("inbox-list"));
+            CollectionAssert.Contains(s.RemovedElements.ToArray(), "inbox-list");
+            CollectionAssert.AreEqual(new[] { new KeyValuePair<string, string>("fixed-item-height", "50") }, list.Attributes, "40 + 2 margin + 8 gap");
+            var outer = Rule(s, "." + Cls(s, "inbox__0"));
+            Assert.AreEqual("300px", Decl(outer, "width"));
+            Assert.AreEqual("#101010", Decl(outer, "background-color"));
+            Assert.AreEqual("hidden", Decl(outer, "overflow"));
+            var repeat = s.Repeats.Single();
+            Assert.AreEqual("list", repeat.Mode);
+            Assert.AreEqual("inbox__0", repeat.Container);
+            Assert.AreEqual("MessageItem.uxml", repeat.TemplateFile);
+            var item = Cls(s, "message");
+            Assert.IsFalse(Rule(s, "." + item).Declarations.Any(d => d.Property == "margin-top"), "the gap is in the slot, not in item margins");
+            Assert.AreEqual("2px", Decl(Rule(s, "." + item), "margin-bottom"));
+            Assert.IsFalse(s.Rules.Any(r => r.Selector.Contains(ScreenBuilder.FirstItemClass)), "no first-item rule in list mode");
+            CollectionAssert.DoesNotContain(s.Find("message").Classes, ScreenBuilder.FirstItemClass);
+            Assert.IsFalse(s.Rules.Any(r => r.Selector.Contains("unity-scroll-view__content")), "a ListView gets no content rule");
+        }
+
+        [Test]
+        public void ListThatScrollsItself_IsAListViewWithItsOwnBox()
+        {
+            var list = ListContainer("rows", Item("row"));
+            list.Style["base"]["overflow-y"] = "auto";
+            list.Style["base"]["height"] = "120px";
+            var s = Build(Screen(Root(list)));
+            Assert.AreEqual("ui:ListView", s.Find("rows").Tag);
+            Assert.AreEqual("50", s.Find("rows").Attributes.Single().Value);
+            Assert.AreEqual("120px", Decl(Rule(s, "." + Cls(s, "rows")), "height"));
+            CollectionAssert.IsEmpty(s.RemovedElements);
+        }
+
+        [Test]
+        public void List_UnsupportedShapes_AreErrors()
+        {
+            // not a scroll area and not inside one
+            Assert.Throws<IrFormatException>(() => Build(Screen(Root(ListContainer("l", Item())))));
+            // inside a scroll area next to other content
+            Assert.Throws<IrFormatException>(() => Build(Screen(Root(Scroll("s", ("overflow-y", "auto")).Add(Node("header", "container", ("height", "10px")), ListContainer("l", Item()))))));
+            // the merged container has a box of its own
+            var boxed = ListContainer("l", Item());
+            boxed.Style["base"]["padding-top"] = "4px";
+            Assert.Throws<UnsupportedStyleException>(() => Build(Screen(Root(Scroll("s", ("overflow-y", "auto")).Add(boxed)))));
+            // a row of items
+            var row = ListContainer("l", Item());
+            row.Style["base"]["flex-direction"] = "row";
+            row.Style["base"]["overflow-y"] = "auto";
+            Assert.Throws<UnsupportedStyleException>(() => Build(Screen(Root(row))));
+            // items without a fixed height
+            var loose = ListContainer("l", Node("message", "container", ("background-color", "#202020")));
+            loose.Style["base"]["overflow-y"] = "auto";
+            var ex = Assert.Throws<IrFormatException>(() => Build(Screen(Root(loose))));
+            StringAssert.Contains("height", ex.Message);
+            // padding on the scrolling list
+            var padded = ListContainer("l", Item());
+            padded.Style["base"]["overflow-y"] = "auto";
+            padded.Style["base"]["padding-top"] = "4px";
+            Assert.Throws<UnsupportedStyleException>(() => Build(Screen(Root(padded))));
         }
 
         // ---- assets ----------------------------------------------------------------------------------------

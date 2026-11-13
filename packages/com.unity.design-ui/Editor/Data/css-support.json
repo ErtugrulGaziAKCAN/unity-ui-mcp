@@ -41,7 +41,8 @@
     "handling": "direct = written to USS (value validated); lowered = Lowering removes it, the mapper rejects leftovers; dropped = accepted and omitted; error = rejected with rule and fix. Properties not listed are U-CSS-023, value functions not listed are U-CSS-024.",
     "components": "[min,max] space-separated components per list item (default [1,1]); list = comma separated list allowed",
     "dropValues": "keyword values that are accepted and omitted",
-    "mapValues": "keyword aliases rewritten before mapping"
+    "mapValues": "keyword aliases rewritten before mapping",
+    "loweredValues": "keyword values valid only where the compiler lowers them (see the property's note); the mapper rejects them elsewhere"
   },
   "properties": {
     "-webkit-font-smoothing": {
@@ -545,6 +546,11 @@
         "visible",
         "hidden"
       ],
+      "loweredValues": [
+        "auto",
+        "scroll"
+      ],
+      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected.",
       "mapValues": {
         "clip": "hidden"
       }
@@ -555,6 +561,11 @@
         "visible",
         "hidden"
       ],
+      "loweredValues": [
+        "auto",
+        "scroll"
+      ],
+      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected.",
       "mapValues": {
         "clip": "hidden"
       }
@@ -565,6 +576,11 @@
         "visible",
         "hidden"
       ],
+      "loweredValues": [
+        "auto",
+        "scroll"
+      ],
+      "note": "auto and scroll make the element a scroll area (the exporter classifies it as scroll, or list for a list repeat): the compiler turns them into the ScrollView's mode and scroller visibility (auto: Auto, scroll: AlwaysVisible) or into a ListView. On any other node they are rejected.",
       "mapValues": {
         "clip": "hidden"
       }

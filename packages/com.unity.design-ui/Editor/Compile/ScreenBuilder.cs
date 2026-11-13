@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using UnityEngine.UIElements;
 
 namespace DesignUi.Editor
 {
@@ -17,32 +18,53 @@ namespace DesignUi.Editor
     /// <item><c>.s-x</c> base; <c>.s-x:hover</c> (and active, focus, checked, disabled);</item>
     /// <item><c>.state-n .s-x</c> / <c>.bp-n .s-x</c> for descendants of the screen root, which carries the state and
     /// breakpoint classes; <c>.s-x.state-n</c> / <c>.s-x.bp-n</c> for the root itself;</item>
-    /// <item><c>.s-x.c</c> for a class layer <c>class:c</c>: <c>__first</c> (the view toggles it on the first repeated
-    /// item) and the <c>dui-*</c> classes a PseudoStateMirror sets on a shadow host.</item>
+    /// <item><c>.s-x.c</c> for a class layer <c>class:c</c>: <c>is-*</c> view states, <c>__first</c> (the view toggles
+    /// it on the first item of an inline repeat) and the <c>dui-*</c> classes a PseudoStateMirror sets on a shadow host;</item>
+    /// <item>any of these followed by <see cref="ScrollContentChain"/> for the content layout of a scroll area, which
+    /// CSS applies to the scrolled content and UI Toolkit to the ScrollView's content container.</item>
     /// </list>
     /// Rules are ordered by the first element that uses their class (document order), and within a class: base,
-    /// breakpoints, states, classes, then hover, focus, checked, active, disabled.
+    /// breakpoints, states, classes, then hover, focus, checked, active, disabled (each followed by its content rule).
     /// </summary>
     public static class ScreenBuilder
     {
-        /// <summary>Class the view toggles on the first item of a repeat (USS has no :first-child), see Lowering.FirstItemLayer.</summary>
+        /// <summary>Class the view toggles on the first item of an inline repeat (USS has no :first-child), see Lowering.FirstItemLayer.</summary>
         public const string FirstItemClass = "__first";
 
-        /// <summary>Marks a shadow host whose element the view gives a PseudoStateMirror targeting the host (R33).</summary>
+        /// <summary>Marks a shadow host: the view attaches a PseudoStateMirror to its element, targeting the host.</summary>
         public const string MirrorHostClass = "dui-mirror-host";
 
         public const string StateClassPrefix = "state-";
         public const string BreakpointClassPrefix = "bp-";
+
+        /// <summary>
+        /// Child-combinator chain from a ScrollView to its content container (Unity 6000.3 hierarchy: ScrollView,
+        /// content-and-vertical-scroll container, content viewport, content container). Child combinators keep nested
+        /// ScrollViews out of the match.
+        /// </summary>
+        public static readonly string ScrollContentChain =
+            " > ." + ScrollView.contentAndVerticalScrollUssClassName + " > ." + ScrollView.viewportUssClassName + " > ." + ScrollView.contentUssClassName;
 
         const string Base = "base";
         const string HostSuffix = "__shadowhost";
         const string BreakpointLayer = "bp:";
         const string StateLayer = "state:";
         const string ClassLayer = "class:";
+        const string ContentSuffix = ">content";
 
         static readonly string[] PseudoOrder = { "hover", "focus", "checked", "active", "disabled" };
-        static readonly Regex ClassIdent = new Regex(@"^[A-Za-z_-][A-Za-z0-9_-]*$", RegexOptions.Compiled);
+        static readonly Regex ClassIdent = new Regex(@"^-?[A-Za-z_][A-Za-z0-9_-]*$", RegexOptions.Compiled);
         static readonly Regex NameIdent = new Regex(@"^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
+        static readonly Regex PxValue = new Regex(@"^(-?\d+(?:\.\d+)?)px$|^0$", RegexOptions.Compiled);
+
+        /// <summary>Layout of the scrolled content: in CSS it applies inside the scroll container, in UI Toolkit to the content container.</summary>
+        static readonly HashSet<string> ScrollContentProperties = new HashSet<string>
+        {
+            "flex-direction", "flex-wrap", "justify-content", "align-items", "align-content",
+            "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
+        };
+
+        static readonly string[] OverflowKeys = { "overflow", "overflow-x", "overflow-y" };
 
         public static CompiledScreen Build(IrScreen ir, Func<IrAsset, string> assetPath, Func<string, string> fontDefinition) =>
             Build(ir, assetPath, fontDefinition, null);
@@ -51,8 +73,8 @@ namespace DesignUi.Editor
         /// <c>project://database/…</c>) or a path relative to the USS file.</param>
         /// <param name="fontDefinition">USS value for <c>-unity-font-definition</c> of a CSS font family, or null to keep the
         /// <c>var(--font-&lt;family&gt;)</c> placeholder.</param>
-        /// <param name="textStyleSizes">Kit text styles (name to font size in px); a text node naming a style gets that
-        /// exact size. Null keeps the IR's font-size.</param>
+        /// <param name="textStyleSizes">Kit text styles (name to font size in px). Every text node that names a style
+        /// (<c>text.style</c>) gets that exact size, in every layer; such a node without a table is an error.</param>
         public static CompiledScreen Build(IrScreen ir, Func<IrAsset, string> assetPath, Func<string, string> fontDefinition,
             IReadOnlyDictionary<string, double> textStyleSizes)
         {
@@ -62,10 +84,14 @@ namespace DesignUi.Editor
             var className = Pascal(ir.Screen, "screen id");
             var lowered = Lowering.Apply(ir.Root);
             var builder = new Builder(assetPath, fontDefinition, textStyleSizes);
-            var root = builder.Draft(lowered, true);
+            var root = builder.Draft(lowered, true, false);
             builder.RemoveWrappers(root);
             return builder.Finish(root, ir, className);
         }
+
+        /// <summary>Whether any node of the tree names a kit text style.</summary>
+        public static bool UsesTextStyles(IrNode node) =>
+            node != null && (node.Text?.Style != null || (node.Children ?? new IrNode[0]).Any(UsesTextStyles));
 
         /// <summary>
         /// PascalCase of an ASCII id: <c>club.overview</c> to <c>ClubOverview</c>, <c>message-list</c> to <c>MessageList</c>.
@@ -90,6 +116,17 @@ namespace DesignUi.Editor
         /// <summary>Invariant, round-trip formatting for numbers written into USS (a Turkish culture never adds a comma).</summary>
         internal static string Number(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 
+        /// <summary>
+        /// A path as written inside <c>url("…")</c>: <c>%</c>, <c>#</c> and <c>?</c> are percent-encoded, because the USS
+        /// importer reads <c>#</c> as a sub-asset name and <c>?</c> as the start of fileID/guid parameters.
+        /// </summary>
+        internal static string UrlPath(string path)
+        {
+            if (path.IndexOf('"') >= 0 || path.IndexOf('\\') >= 0 || path.Any(char.IsControl))
+                throw new IrFormatException("asset path '" + path + "' cannot be written in a USS url()");
+            return path.Replace("%", "%25").Replace("#", "%23").Replace("?", "%3F");
+        }
+
         static string Hash8(string canonical)
         {
             using (var sha = SHA256.Create())
@@ -107,14 +144,82 @@ namespace DesignUi.Editor
             return n.Style.TryGetValue(Base, out var b) && b.TryGetValue(prop, out var bv) ? bv.Trim() : null;
         }
 
+        static double Px(string value, string what)
+        {
+            var m = PxValue.Match((value ?? "").Trim());
+            if (!m.Success) throw new IrFormatException(what + " '" + value + "' is not a px length");
+            return m.Groups[1].Success ? double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
+        }
+
+        static bool Scrolls(string overflow) => overflow == "auto" || overflow == "scroll";
+
+        static bool HasScrollingOverflow(IrNode n)
+        {
+            foreach (var layer in n.Style.Values)
+                foreach (var key in OverflowKeys)
+                    if (layer.TryGetValue(key, out var v) && v.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Any(Scrolls))
+                        return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Removes overflow from every layer of a scroll or list node and returns the base values per axis (clip reads as
+        /// hidden). A scroll area cannot change its overflow with a state, breakpoint or pseudo-state.
+        /// </summary>
+        static (string x, string y) ConsumeOverflow(IrNode node)
+        {
+            (string, string) Read(Dictionary<string, string> layer, (string, string) basis)
+            {
+                var (x, y) = basis;
+                if (layer.TryGetValue("overflow", out var both))
+                {
+                    var parts = both.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length < 1 || parts.Length > 2) throw new UnsupportedStyleException("overflow", both);
+                    x = parts[0];
+                    y = parts.Length == 2 ? parts[1] : parts[0];
+                }
+                if (layer.TryGetValue("overflow-x", out var ox)) x = ox.Trim();
+                if (layer.TryGetValue("overflow-y", out var oy)) y = oy.Trim();
+                string Norm(string v, string key)
+                {
+                    v = v == "clip" ? "hidden" : v;
+                    if (v != "visible" && v != "hidden" && v != "auto" && v != "scroll") throw new UnsupportedStyleException(key, v);
+                    return v;
+                }
+                return (Norm(x, "overflow-x"), Norm(y, "overflow-y"));
+            }
+
+            if (!node.Style.TryGetValue(Base, out var baseLayer)) node.Style[Base] = baseLayer = new Dictionary<string, string>();
+            var result = Read(baseLayer, ("visible", "visible"));
+            foreach (var pair in node.Style)
+            {
+                if (pair.Key == Base || !OverflowKeys.Any(pair.Value.ContainsKey)) continue;
+                if (Read(pair.Value, result) != result)
+                    throw new UnsupportedStyleException("overflow", string.Join(" ", OverflowKeys.Where(pair.Value.ContainsKey).Select(k => pair.Value[k])), null,
+                        "The overflow of scroll area '" + node.Id + "' cannot change in layer '" + pair.Key + "'.");
+            }
+            foreach (var layer in node.Style.Values) foreach (var key in OverflowKeys) layer.Remove(key);
+            return result;
+        }
+
+        sealed class LayerRules
+        {
+            public string Key;
+            public bool Content;
+            public List<UssDeclaration> Declarations;
+        }
+
         sealed class Draft
         {
             public IrNode Node;
+            public string Name;
             public string Tag;
             public bool IsRoot;
             public bool FirstItem;
-            public readonly List<KeyValuePair<string, List<UssDeclaration>>> Layers = new List<KeyValuePair<string, List<UssDeclaration>>>();
+            public IrRepeat Repeat;
+            public readonly List<LayerRules> Layers = new List<LayerRules>();
             public readonly List<string> IrClasses = new List<string>();
+            public readonly List<KeyValuePair<string, string>> Attributes = new List<KeyValuePair<string, string>>();
             public readonly List<Draft> Children = new List<Draft>();
             /// <summary>Items of a list-mode repeat (a ListView holds no UXML children), or null.</summary>
             public List<Draft> TemplateItems;
@@ -139,66 +244,244 @@ namespace DesignUi.Editor
 
             // ---- drafts: tags and mapped layers -------------------------------------------------------------
 
-            public Draft Draft(IrNode node, bool isRoot)
+            public Draft Draft(IrNode node, bool isRoot, bool inScroll)
             {
                 if (string.IsNullOrEmpty(node.Id)) throw new IrFormatException("a node has no id");
-                var d = new Draft { Node = node, Tag = TagFor(node), IsRoot = isRoot };
+                if (node.Kind == "list") return ListDraft(node, node, isRoot, inScroll, false);
+                if (node.Kind == "scroll" && node.Children.Length == 1 && node.Children[0].Kind == "list" && !HasScrollingOverflow(node.Children[0]))
+                    return ListDraft(node, node.Children[0], isRoot, inScroll, true);
+
+                var d = Start(node, isRoot);
+                if (node.Kind == "scroll")
+                {
+                    var (x, y) = ConsumeOverflow(node);
+                    if (!Scrolls(x) && !Scrolls(y)) throw new IrFormatException("scroll node '" + node.Id + "' has no overflow auto or scroll");
+                    d.Attributes.Add(new KeyValuePair<string, string>("mode", Scrolls(x) && Scrolls(y) ? "VerticalAndHorizontal" : Scrolls(y) ? "Vertical" : "Horizontal"));
+                    d.Attributes.Add(new KeyValuePair<string, string>("horizontal-scroller-visibility", Visibility(x)));
+                    d.Attributes.Add(new KeyValuePair<string, string>("vertical-scroller-visibility", Visibility(y)));
+                    // CSS clips a scroll container's content at its padding box; the scrolled content box is at least the scrollport
+                    MapLayers(d, node, false, ScrollContentProperties,
+                        new[] { new UssDeclaration("overflow", "hidden") },
+                        new[] { new UssDeclaration("min-height", "100%"), new UssDeclaration("min-width", "100%") });
+                    inScroll = true;
+                }
+                else MapLayers(d, node, node.Kind == "text" || node.Text != null, null, null, null);
+
+                foreach (var child in node.Children) d.Children.Add(Draft(child, false, inScroll));
+                if (node.Repeat != null)
+                {
+                    d.Repeat = node.Repeat;
+                    // the static tree shows the template item: it gets the class the view toggles on the first item at runtime
+                    var first = d.Children.FirstOrDefault(c => Get(c.Node, Base, "position") != "absolute");
+                    if (first != null) first.FirstItem = true;
+                }
+                if (node.Background != null && node.Asset != null) d.Children.Insert(0, ContentChild(node));
+                return d;
+            }
+
+            static string Visibility(string overflow) => overflow == "auto" ? "Auto" : overflow == "scroll" ? "AlwaysVisible" : "Hidden";
+
+            Draft Start(IrNode node, bool isRoot)
+            {
+                var d = new Draft { Node = node, Name = node.Id, Tag = TagFor(node), IsRoot = isRoot };
                 foreach (var c in node.Classes ?? new string[0])
                 {
                     if (!c.StartsWith("is-", StringComparison.Ordinal)) continue; // design classes have no rules here; is-* are view-toggled states
                     if (!ClassIdent.IsMatch(c)) throw new IrFormatException("class '" + c + "' on node '" + node.Id + "' is not a valid USS class name");
                     d.IrClasses.Add(c);
                 }
-
                 if (node.Text != null && d.Tag != "ui:Label" && d.Tag != "ui:Button" && d.Tag != "ui:Toggle")
                     throw new IrFormatException("node '" + node.Id + "' of kind '" + node.Kind + "' has text; only text, button and toggle nodes carry text");
+                return d;
+            }
 
+            /// <summary>
+            /// Maps every layer of <paramref name="node"/> into <paramref name="d"/>. With <paramref name="content"/>, those
+            /// properties go to a content rule (<c>&lt;layer&gt;&gt;content</c>) instead of the element's own rule; the
+            /// extra declarations are added to the base layer's element and content rules.
+            /// </summary>
+            void MapLayers(Draft d, IrNode node, bool isText, HashSet<string> content, UssDeclaration[] extraOuter, UssDeclaration[] extraContent)
+            {
                 if (!node.Style.TryGetValue(Base, out var baseCss)) node.Style[Base] = baseCss = new Dictionary<string, string>();
-                if (node.Text?.Style != null && _textStyles != null)
-                {
-                    if (!_textStyles.TryGetValue(node.Text.Style, out var size))
-                        throw new IrFormatException("text style '" + node.Text.Style + "' of node '" + node.Id + "' is not in " + KitTextStyles.FileName);
-                    baseCss["font-size"] = Number(size) + "px";
-                }
-
-                bool isText = node.Kind == "text" || node.Text != null;
-                Draft content = null;
+                ApplyTextStyle(node);
                 foreach (var key in OrderedLayers(node.Style.Keys))
                 {
                     ValidateLayer(key, node.Id);
                     var css = node.Style[key];
                     var decls = StyleMapper.Map(css, baseCss, isText, key == Base).ToList();
                     ResolveFont(decls, css);
+                    var inner = content == null ? new List<UssDeclaration>() : decls.Where(x => content.Contains(x.Property)).ToList();
+                    var outer = content == null ? decls : decls.Where(x => !content.Contains(x.Property)).ToList();
                     if (key == Base)
                     {
                         // a content image paints above a baked gradient: the gradient stays the background, the image moves to a child
-                        if (node.Background != null) decls.AddRange(AssetDeclarations(node.Background, node.Id));
-                        else if (node.Asset != null) decls.AddRange(AssetDeclarations(node.Asset, node.Id));
-                        if (node.Background != null && node.Asset != null) content = ContentChild(node);
-                        decls = Sorted(decls, node.Id);
+                        if (node.Background != null) outer.AddRange(AssetDeclarations(node.Background, node.Id));
+                        else if (node.Asset != null) outer.AddRange(AssetDeclarations(node.Asset, node.Id));
+                        if (extraOuter != null) outer.AddRange(extraOuter);
+                        if (extraContent != null) inner.AddRange(extraContent);
                     }
-                    if (decls.Count > 0) d.Layers.Add(new KeyValuePair<string, List<UssDeclaration>>(key, decls));
+                    outer = Sorted(outer, node.Id);
+                    inner = Sorted(inner, node.Id);
+                    if (outer.Count > 0) d.Layers.Add(new LayerRules { Key = key, Declarations = outer });
+                    if (inner.Count > 0) d.Layers.Add(new LayerRules { Key = key, Content = true, Declarations = inner });
                 }
+            }
 
-                if (node.Kind == "list")
+            /// <summary>
+            /// A text node that names a kit text style gets the style's exact size in its base layer; any other layer that
+            /// sets a font size must set a kit size (matched numerically, as Chromium serialises lengths to 6 significant
+            /// digits), which is then written exactly.
+            /// </summary>
+            void ApplyTextStyle(IrNode node)
+            {
+                var style = node.Text?.Style;
+                if (style == null) return;
+                if (_textStyles == null)
+                    throw new IrFormatException("text style '" + style + "' of node '" + node.Id + "' needs the kit's " + KitTextStyles.FileName + ", which was not found");
+                if (!_textStyles.TryGetValue(style, out var size))
+                    throw new IrFormatException("text style '" + style + "' of node '" + node.Id + "' is not in " + KitTextStyles.FileName);
+                node.Style[Base]["font-size"] = Number(size) + "px";
+                foreach (var pair in node.Style)
                 {
-                    if (node.Children.Length > 0 && node.Repeat == null)
-                        throw new IrFormatException("list node '" + node.Id + "' has children but no repeat");
-                    if (node.Repeat != null) d.TemplateItems = node.Children.Select(c => Draft(c, false)).ToList();
+                    if (pair.Key == Base || !pair.Value.TryGetValue("font-size", out var raw)) continue;
+                    var v = Px(raw, "font-size of node '" + node.Id + "'");
+                    bool Near(double s) => Math.Abs(v - s) <= s * 1e-5;
+                    double? kit = Near(size) ? size : _textStyles.Values.Where(Near).Cast<double?>().FirstOrDefault();
+                    if (kit == null)
+                        throw new UnsupportedStyleException("font-size", raw, "U-CSS-016",
+                            "Layer '" + pair.Key + "' of text node '" + node.Id + "' sets a font size that is not a kit text style size; use a text style from " + KitTextStyles.FileName + ".");
+                    pair.Value["font-size"] = Number(kit.Value) + "px";
                 }
-                else
+            }
+
+            // ---- lists ---------------------------------------------------------------------------------------
+
+            /// <summary>
+            /// A list-mode repeat compiles to one ListView, which scrolls by itself (spec 10). Its box is the repeat
+            /// container's own box when the container is the scroll area, or the scroll area's box when the container is
+            /// the scroll area's only child (the container then must not have a box of its own and is listed as removed).
+            /// The ListView places items in fixed-height slots: slot = item margins + height + the container's gap, which
+            /// puts item k exactly where CSS gap puts it, so the lowered gap margins and the first-item class are undone.
+            /// </summary>
+            Draft ListDraft(IrNode box, IrNode list, bool isRoot, bool inScroll, bool merged)
+            {
+                var name = list.Repeat?.Name ?? "?";
+                const string fix = " Make the repeat container the scroll area (overflow-y: auto) or the only child of one, or use data-u-repeat-mode inline.";
+                if (list.Repeat == null) throw new IrFormatException("list node '" + list.Id + "' has no repeat");
+                if (inScroll)
+                    throw new IrFormatException("list repeat '" + name + "' in '" + list.Id + "' is inside another scroll area; a ListView scrolls by itself and cannot be nested in one." + fix);
+                var (x, y) = ConsumeOverflow(box);
+                if (!Scrolls(y))
+                    throw new IrFormatException("list repeat '" + name + "' in '" + list.Id + "' is not a scroll area; a ListView needs a bounded, vertically scrolling box." + fix);
+                if (Scrolls(x)) throw new UnsupportedStyleException("overflow-x", x, null, "List repeat '" + name + "' scrolls horizontally; a ListView scrolls vertically only. Use data-u-repeat-mode inline.");
+                if (y == "scroll") throw new UnsupportedStyleException("overflow-y", y, null, "A ListView shows its scroller when needed; use overflow-y: auto on list repeat '" + name + "'.");
+                foreach (var layer in list.Style.Keys.Concat(new[] { Base }).Distinct())
                 {
-                    foreach (var child in node.Children) d.Children.Add(Draft(child, false));
-                    if (node.Repeat != null)
-                    {
-                        // the static tree shows the sample items: the first one gets the class the view toggles at runtime
-                        var first = d.Children.FirstOrDefault(c => Get(c.Node, Base, "position") != "absolute");
-                        if (first != null) first.FirstItem = true;
-                    }
+                    var direction = Get(list, layer, "flex-direction") ?? "column";
+                    if (direction != "column")
+                        throw new UnsupportedStyleException("flex-direction", direction, null, "List repeat '" + name + "' lays items out in a " + direction + "; a ListView stacks them in one column. Use data-u-repeat-mode inline.");
+                    var wrap = Get(list, layer, "flex-wrap");
+                    if (wrap != null && wrap != "nowrap") throw new UnsupportedStyleException("flex-wrap", wrap, null, "A ListView does not wrap items; use data-u-repeat-mode inline.");
                 }
-                if (content != null) d.Children.Insert(0, content);
+                if (merged) CheckBoxlessList(box, list);
+
+                var gap = UndoListGap(list);
+                var slot = SlotHeight(list, gap);
+
+                var d = Start(box, isRoot);
+                d.Tag = "ui:ListView";
+                d.Repeat = list.Repeat;
+                MapLayers(d, box, false, ScrollContentProperties, new[] { new UssDeclaration("overflow", "hidden") }, null);
+                foreach (var layer in d.Layers.Where(l => l.Content))
+                    foreach (var decl in layer.Declarations)
+                        if (!(decl.Property == "flex-direction" && decl.Value == "column"))
+                            throw new UnsupportedStyleException(decl.Property, decl.Value, null,
+                                "The content layout of list repeat '" + name + "' cannot be reproduced by a ListView, which stacks fixed-height items from the top of its box; move it to the items.");
+                d.Layers.RemoveAll(l => l.Content);
+                if (slot.HasValue) d.Attributes.Add(new KeyValuePair<string, string>("fixed-item-height", Number(slot.Value)));
+                d.TemplateItems = list.Children.Select(c => Draft(c, false, true)).ToList();
+                if (merged) _removed.Add(list.Id);
                 return d;
             }
+
+            /// <summary>The repeat container inside a scroll area merges into the ListView, so it must not draw or place anything itself.</summary>
+            static void CheckBoxlessList(IrNode scroll, IrNode list)
+            {
+                if (list.Text != null || list.Asset != null || list.Background != null || list.Bind != null || list.Action != null ||
+                    (list.Anims != null && list.Anims.Count > 0) || list.Transitions.Count > 0)
+                    throw new IrFormatException("list repeat container '" + list.Id + "' inside scroll area '" + scroll.Id + "' draws or binds something; it merges into the ListView, so move that to the scroll area or the items");
+                foreach (var pair in list.Style)
+                    foreach (var kv in pair.Value)
+                    {
+                        var v = kv.Value.Trim();
+                        bool ok = pair.Key == Base && (
+                            (kv.Key == "display" && v == "flex") || (kv.Key == "flex-direction" && v == "column") || kv.Key == "flex-shrink" ||
+                            (kv.Key == "position" && v == "relative") || (kv.Key == "align-items" && (v == "stretch" || v == "normal")) ||
+                            (kv.Key == "justify-content" && (v == "flex-start" || v == "normal" || v == "start")) ||
+                            (kv.Key == "flex-wrap" && v == "nowrap"));
+                        if (!ok)
+                            throw new UnsupportedStyleException(kv.Key, kv.Value, null,
+                                "List repeat container '" + list.Id + "' inside scroll area '" + scroll.Id + "' has a box of its own (layer '" + pair.Key + "'); it merges into one ListView with the scroll area's box. Move the style to the scroll area or the items.");
+                    }
+            }
+
+            /// <summary>Removes the gap margins Lowering gave the items of a list repeat and returns the gap in px.</summary>
+            static double UndoListGap(IrNode list)
+            {
+                double gap = 0;
+                bool first = true;
+                foreach (var item in list.Children)
+                {
+                    if (!item.Style.TryGetValue(Lowering.FirstItemLayer, out var own))
+                    {
+                        if (!first && gap != 0) throw new IrFormatException("items of list repeat '" + list.Id + "' do not share one gap");
+                        first = false;
+                        continue;
+                    }
+                    if (own.Count != 1) throw new IrFormatException("unexpected first-item layer on '" + item.Id + "'");
+                    var prop = own.Keys.Single();
+                    var g = Px(Get(item, Base, prop), prop + " of '" + item.Id + "'") - Px(own[prop], prop + " of '" + item.Id + "'");
+                    if (!first && Math.Abs(g - gap) > 1e-9) throw new IrFormatException("items of list repeat '" + list.Id + "' do not share one gap");
+                    item.Style.Remove(Lowering.FirstItemLayer);
+                    foreach (var layer in item.Style.Values)
+                        if (layer.TryGetValue(prop, out var v) && v.Trim() != "auto")
+                            layer[prop] = Number(Px(v, prop + " of '" + item.Id + "'") - g) + "px";
+                    if (item.Style[Base].TryGetValue(prop, out var b) && Px(b, prop) == 0) item.Style[Base].Remove(prop);
+                    gap = g;
+                    first = false;
+                }
+                return gap;
+            }
+
+            /// <summary>Fixed slot height of a list repeat's items: margin-top + height + margin-bottom + gap, the same for every item.</summary>
+            static double? SlotHeight(IrNode list, double gap)
+            {
+                double? slot = null;
+                foreach (var item in list.Children)
+                {
+                    string Need(string prop, bool required)
+                    {
+                        var v = Get(item, Base, prop);
+                        if (v == null && !required) return "0px";
+                        if (v == null || !PxValue.IsMatch(v))
+                            throw new IrFormatException("list item '" + item.Id + "' needs a px " + prop + " (it is '" + (v ?? "unset") +
+                                                        "'): a ListView places items in fixed-height slots. Set it, or use data-u-repeat-mode inline.");
+                        return v;
+                    }
+                    if (item.Style[Base].ContainsKey("margin")) throw new IrFormatException("list item '" + item.Id + "' uses the margin shorthand; the exporter writes longhands");
+                    foreach (var pair in item.Style)
+                        foreach (var key in new[] { "height", "min-height", "max-height", "margin-top", "margin-bottom", "display" })
+                            if (pair.Key != Base && pair.Value.ContainsKey(key))
+                                throw new UnsupportedStyleException(key, pair.Value[key], null,
+                                    "List item '" + item.Id + "' changes its height in layer '" + pair.Key + "'; ListView items share one fixed height.");
+                    var h = Px(Need("margin-top", false), "margin-top") + Px(Need("height", true), "height") + Px(Need("margin-bottom", false), "margin-bottom") + gap;
+                    if (slot.HasValue && Math.Abs(slot.Value - h) > 1e-9) throw new IrFormatException("items of list repeat '" + list.Id + "' have different heights");
+                    slot = h;
+                }
+                return slot;
+            }
+
+            // ---- shared helpers ------------------------------------------------------------------------------
 
             static string TagFor(IrNode node)
             {
@@ -259,10 +542,9 @@ namespace DesignUi.Editor
             {
                 var path = _assetPath(asset);
                 if (string.IsNullOrEmpty(path)) throw new IrFormatException("no path for asset '" + asset.File + "' of node '" + id + "'");
-                if (path.IndexOf('"') >= 0 || path.IndexOf('\\') >= 0) throw new IrFormatException("asset path '" + path + "' cannot be written in a USS url()");
                 var url = path.StartsWith("Assets/", StringComparison.Ordinal) || path.StartsWith("Packages/", StringComparison.Ordinal)
-                    ? "project://database/" + path
-                    : path;
+                    ? "project://database/" + UrlPath(path)
+                    : UrlPath(path);
                 yield return new UssDeclaration("background-image", "url(\"" + url + "\")");
                 if (asset.Slice == null) yield break;
                 if (asset.Slice.Length != 4) throw new IrFormatException("9-slice of node '" + id + "' needs four insets");
@@ -281,7 +563,7 @@ namespace DesignUi.Editor
             {
                 var child = new IrNode { Id = node.Id + "__image", Kind = "image", Asset = node.Asset, PickingIgnore = true };
                 child.Style[Base] = new Dictionary<string, string> { { "flex-grow", "1" }, { "align-self", "stretch" } };
-                return Draft(child, false);
+                return Draft(child, false, false);
             }
 
             static List<UssDeclaration> Sorted(List<UssDeclaration> decls, string id)
@@ -302,7 +584,7 @@ namespace DesignUi.Editor
                     var w = d.Children[i];
                     if (!IsRemovableWrapper(d, w)) continue;
                     d.Children[i] = w.Children[0];
-                    _removed.Add(w.Node.Id);
+                    _removed.Add(w.Name);
                 }
             }
 
@@ -318,21 +600,21 @@ namespace DesignUi.Editor
             {
                 var p = parent.Node;
                 var w = wrapper.Node;
-                if (p.Kind != "container" || p.Repeat != null) return false;
+                if (p.Kind != "container" || p.Repeat != null || parent.Tag != "ui:VisualElement") return false;
                 foreach (var layer in p.Style.Keys.Concat(new[] { Base }))
                     if ((Get(p, layer, "flex-direction") ?? "column") != "column") return false;
 
-                if (w.Kind != "container" || w.External || w.Id.IndexOf("__", StringComparison.Ordinal) < 0 || w.Text != null ||
+                if (w.Kind != "container" || wrapper.Tag != "ui:VisualElement" || w.External || w.Id.IndexOf("__", StringComparison.Ordinal) < 0 || w.Text != null ||
                     w.Asset != null || w.Background != null || w.Bind != null || w.Action != null || w.Repeat != null ||
                     w.Clickable || w.MirrorPseudoState || wrapper.IrClasses.Count > 0 || wrapper.FirstItem ||
                     (w.Anims != null && w.Anims.Count > 0) || w.Transitions.Count > 0 ||
-                    wrapper.TemplateItems != null || wrapper.Children.Count != 1)
+                    wrapper.TemplateItems != null || wrapper.Children.Count != 1 || wrapper.Attributes.Count > 0)
                     return false;
                 bool wrapperShrinks = true;
                 foreach (var layer in wrapper.Layers)
                 {
-                    if (layer.Key != Base) return false;
-                    foreach (var decl in layer.Value)
+                    if (layer.Key != Base || layer.Content) return false;
+                    foreach (var decl in layer.Declarations)
                     {
                         if (decl.Property == "flex-direction" && decl.Value == "column") continue;
                         if (decl.Property == "flex-shrink" && decl.Value == "0") { wrapperShrinks = false; continue; }
@@ -371,10 +653,12 @@ namespace DesignUi.Editor
             public CompiledScreen Finish(Draft root, IrScreen ir, string className)
             {
                 var compiledRoot = Emit(root);
-                var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var r in _repeats)
-                    if (r.TemplateFile != null && !files.Add(r.TemplateFile))
-                        throw new IrFormatException("two list repeats would write '" + r.TemplateFile + "'; give them different repeat names");
+                var names = new Dictionary<string, CompiledElement>(StringComparer.Ordinal);
+                foreach (var e in compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf()))))
+                {
+                    if (names.TryGetValue(e.Name, out var other) && other != e) throw new IrFormatException("two elements are named '" + e.Name + "'");
+                    names[e.Name] = e;
+                }
                 return new CompiledScreen
                 {
                     ScreenId = ir.Screen,
@@ -391,7 +675,7 @@ namespace DesignUi.Editor
             CompiledElement Emit(Draft d)
             {
                 var node = d.Node;
-                var e = new CompiledElement { Tag = d.Tag, Name = node.Id, PickingIgnore = node.PickingIgnore, Source = node };
+                var e = new CompiledElement { Tag = d.Tag, Name = d.Name, PickingIgnore = node.PickingIgnore, Source = node };
                 if (d.Layers.Count > 0) e.Classes.Add(ClassFor(d));
                 e.Classes.AddRange(d.IrClasses);
                 if (d.FirstItem) e.Classes.Add(FirstItemClass);
@@ -399,26 +683,27 @@ namespace DesignUi.Editor
                 {
                     e.Classes.Add(MirrorHostClass);
                     e.MirrorHost = true;
-                    e.MirrorElement = d.Children.Select(c => c.Node.Id).FirstOrDefault(id => id + HostSuffix == node.Id)
+                    e.MirrorElement = d.Children.Select(c => c.Name).FirstOrDefault(id => id + HostSuffix == node.Id)
                                       ?? throw new IrFormatException("shadow host '" + node.Id + "' has no element to mirror");
                 }
                 e.Clickable = node.Clickable && d.Tag != "ui:Button" && d.Tag != "ui:Toggle";
+                e.Attributes.AddRange(d.Attributes);
                 if (node.Text != null)
                 {
                     e.Text = node.Text.Tr ?? "";
                     if (!node.Text.Rich && e.Text.IndexOf('<') >= 0) e.EnableRichText = false;
                 }
 
-                // a list repeat registers before its items so repeats are listed in document order
+                // a repeat registers before its items so repeats are listed in document order
                 CompiledRepeat repeat = null;
-                if (node.Repeat != null)
+                if (d.Repeat != null)
                 {
                     repeat = new CompiledRepeat
                     {
-                        Name = node.Repeat.Name,
+                        Name = d.Repeat.Name,
                         Mode = d.TemplateItems != null ? "list" : "inline",
-                        Container = node.Id,
-                        TemplateFile = d.TemplateItems != null ? Pascal(node.Repeat.Name, "repeat name") + "Item.uxml" : null,
+                        Container = d.Name,
+                        TemplateFile = d.TemplateItems != null ? Pascal(d.Repeat.Name, "repeat name") + "Item.uxml" : null,
                     };
                     _repeats.Add(repeat);
                 }
@@ -426,7 +711,7 @@ namespace DesignUi.Editor
                 if (repeat != null)
                 {
                     if (d.TemplateItems != null) foreach (var item in d.TemplateItems) repeat.Items.Add(Emit(item));
-                    else repeat.Items.AddRange(e.Children.Where(c => c.Source != null && c.Name != node.Id + "__image"));
+                    else repeat.Items.AddRange(e.Children.Where(c => c.Name != node.Id + "__image"));
                 }
                 return e;
             }
@@ -437,18 +722,19 @@ namespace DesignUi.Editor
                 if (d.IsRoot) sb.Append("root\n"); // the root's state and breakpoint selectors differ, so it never shares a class
                 foreach (var layer in d.Layers)
                 {
-                    sb.Append('[').Append(layer.Key).Append("]\n");
-                    foreach (var decl in layer.Value) sb.Append(decl.Property).Append(": ").Append(decl.Value).Append(";\n");
+                    sb.Append('[').Append(layer.Key).Append(layer.Content ? ContentSuffix : "").Append("]\n");
+                    foreach (var decl in layer.Declarations) sb.Append(decl.Property).Append(": ").Append(decl.Value).Append(";\n");
                 }
                 var canonical = sb.ToString();
                 var cls = "s-" + Hash8(canonical);
                 if (_canonical.TryGetValue(cls, out var existing))
                 {
-                    if (existing != canonical) throw new IrFormatException("style class " + cls + " is the hash of two different declaration lists (element '" + d.Node.Id + "')");
+                    if (existing != canonical) throw new IrFormatException("style class " + cls + " is the hash of two different declaration lists (element '" + d.Name + "')");
                     return cls;
                 }
                 _canonical[cls] = canonical;
-                foreach (var layer in d.Layers) _rules.Add(new UssRule(Selector(layer.Key, cls, d.IsRoot), layer.Value));
+                foreach (var layer in d.Layers)
+                    _rules.Add(new UssRule(Selector(layer.Key, cls, d.IsRoot) + (layer.Content ? ScrollContentChain : ""), layer.Declarations));
                 return cls;
             }
 

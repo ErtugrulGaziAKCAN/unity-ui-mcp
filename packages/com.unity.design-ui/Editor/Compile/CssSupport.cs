@@ -18,12 +18,15 @@ namespace DesignUi.Editor
         public string[] Types = new string[0];
         public string[] Functions = new string[0];
         public string[] DropValues = new string[0];
+        /// <summary>Keyword values that only a lowering consumes (e.g. overflow auto on a scroll area); the mapper rejects them.</summary>
+        public string[] LoweredValues = new string[0];
         public Dictionary<string, string> MapValues = new Dictionary<string, string>();
         public int MinComponents = 1;
         public int MaxComponents = 1;
         public bool List;
         public string Rule;
         public string Fix;
+        public string Note;
     }
 
     /// <summary>
@@ -77,9 +80,11 @@ namespace DesignUi.Editor
                     Types = Strings(v["types"]),
                     Functions = Strings(v["functions"]),
                     DropValues = Strings(v["dropValues"]),
+                    LoweredValues = Strings(v["loweredValues"]),
                     List = v["list"] != null && (bool)v["list"],
                     Rule = (string)v["rule"],
                     Fix = (string)v["fix"],
+                    Note = (string)v["note"],
                 };
                 if (v["components"] is JArray c) { spec.MinComponents = (int)c[0]; spec.MaxComponents = (int)c[1]; }
                 if (v["mapValues"] is JObject m) foreach (var kv in m) spec.MapValues[kv.Key] = (string)kv.Value;

@@ -1,5 +1,6 @@
 using System.Collections;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.TestTools;
 using UnityEngine.UIElements;
@@ -50,7 +51,11 @@ namespace DesignUi.Editor.Tests
         public IEnumerator Panel()
         {
             _rt = new RenderTexture(64, 64, 24);
-            _settings = ScriptableObject.CreateInstance<PanelSettings>();
+            // a copy of the shipped settings (theme already set): creating a theme-less PanelSettings makes the Editor
+            // write Unity's default runtime theme into Assets/
+            _settings = Object.Instantiate(AssetDatabase.LoadAssetAtPath<PanelSettings>(DesignUiProfile.PanelSettingsPath));
+            _settings.scaleMode = PanelScaleMode.ConstantPixelSize;
+            _settings.scale = 1f;
             _settings.targetTexture = _rt;
             _go = new GameObject("PseudoStateMirrorTests");
             var doc = _go.AddComponent<UIDocument>();
@@ -171,7 +176,7 @@ namespace DesignUi.Editor.Tests
         [UnityTest]
         public IEnumerator Active_ElementWithItsClickable_FollowsPressLeaveReenterAndRelease()
         {
-            // a shadowed card keeps its Clickable (R33): it captures the pointer and stops the down event, which the
+            // a shadowed card keeps its Clickable: it captures the pointer and stops the down event, which the
             // mirror has already seen in the trickle-down phase
             _el.AddManipulator(new Clickable(() => { }));
             var log = Log();

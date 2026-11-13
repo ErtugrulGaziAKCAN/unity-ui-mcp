@@ -44,6 +44,7 @@ namespace DesignUi.Editor
             Attribute(sb, "name", e.Name);
             if (e.Classes.Count > 0) Attribute(sb, "class", string.Join(" ", e.Classes));
             if (e.PickingIgnore) Attribute(sb, "picking-mode", "Ignore");
+            foreach (var a in e.Attributes) Attribute(sb, a.Key, a.Value);
             if (e.EnableRichText.HasValue) Attribute(sb, "enable-rich-text", e.EnableRichText.Value ? "true" : "false");
             if (e.Text != null) Attribute(sb, "text", e.Text);
             if (e.Children.Count == 0)
@@ -63,11 +64,22 @@ namespace DesignUi.Editor
             { '&', "&amp;" }, { '<', "&lt;" }, { '>', "&gt;" }, { '"', "&quot;" }, { '\n', "&#10;" }, { '\r', "&#13;" }, { '\t', "&#9;" },
         };
 
+        /// <summary>
+        /// Attribute value escaping. Characters XML 1.0 cannot hold at all (C0 controls other than tab, LF and CR,
+        /// U+FFFE, U+FFFF and unpaired surrogates) are dropped; they are invisible and no entity can carry them.
+        /// </summary>
         static string Escape(string value)
         {
             var sb = new StringBuilder(value.Length);
-            foreach (var c in value)
+            for (int i = 0; i < value.Length; i++)
             {
+                var c = value[i];
+                if (char.IsHighSurrogate(c))
+                {
+                    if (i + 1 < value.Length && char.IsLowSurrogate(value[i + 1])) { sb.Append(c).Append(value[i + 1]); i++; }
+                    continue;
+                }
+                if (char.IsLowSurrogate(c) || c == '\uFFFE' || c == '\uFFFF' || (c < 0x20 && c != '\t' && c != '\n' && c != '\r')) continue;
                 if (Entities.TryGetValue(c, out var entity)) sb.Append(entity);
                 else sb.Append(c);
             }

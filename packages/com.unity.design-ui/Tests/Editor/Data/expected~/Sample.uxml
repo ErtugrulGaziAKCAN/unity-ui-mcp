@@ -10,6 +10,6 @@
         <ui:Button name="play" class="s-978dddc0">
             <ui:Label name="play-label" class="s-dce4475d" text="Oyna" />
         </ui:Button>
-        <ui:ListView name="rows" class="s-2db5a44f" />
+        <ui:ListView name="rows" class="s-144a84ee" fixed-item-height="64" />
     </ui:VisualElement>
 </ui:UXML>

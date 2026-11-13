@@ -24,7 +24,7 @@ namespace DesignUi.Editor
 
         /// <summary>
         /// Synthetic layer on the template items of a repeat container with a gap: its margin undoes the lowered gap
-        /// on the first item. Task 13 emits it as a rule for the class <c>__first</c>, which the view toggles on the
+        /// on the first item. The compiler emits it as a rule for the class <c>__first</c>, which the view toggles on the
         /// first repeated item (USS has no :first-child).
         /// </summary>
         public const string FirstItemLayer = "class:__first";
@@ -230,7 +230,8 @@ namespace DesignUi.Editor
         /// layer); it contains the absolute <c>&lt;id&gt;__shadow</c> image, anchored by insets so it follows the
         /// element's size, and the element itself, grown to fill the host. The host owns visibility; an element that is
         /// visibly flex keeps <c>display: flex</c> in its base (the USS default, so it hides nothing) because its text
-        /// alignment is composed from the flex rules. The element keeps the Clickable it had before the move (R33).
+        /// alignment is composed from the flex rules. The element keeps the Clickable it had before the move; a runtime
+        /// mirror copies its pseudo-states onto the host.
         /// </summary>
         static IrNode BuildHost(IrNode el)
         {
@@ -646,7 +647,7 @@ namespace DesignUi.Editor
                 },
                 Bind = n.Bind,
                 Action = n.Action,
-                Repeat = n.Repeat == null ? null : new IrRepeat { Name = n.Repeat.Name, Mode = n.Repeat.Mode },
+                Repeat = n.Repeat == null ? null : new IrRepeat { Name = n.Repeat.Name, Mode = n.Repeat.Mode, Count = n.Repeat.Count },
                 Anims = (JArray)n.Anims?.DeepClone() ?? new JArray(),
                 Children = (n.Children ?? new IrNode[0]).Select(Clone).ToArray(),
                 Clickable = n.Clickable,

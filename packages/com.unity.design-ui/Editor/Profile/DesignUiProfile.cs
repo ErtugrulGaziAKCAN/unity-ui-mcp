@@ -14,8 +14,16 @@ namespace DesignUi.Editor
     [CreateAssetMenu(fileName = "DesignUiProfile", menuName = "Design UI/Profile")]
     public sealed class DesignUiProfile : ScriptableObject
     {
-        /// <summary>The package's minimal runtime theme (R31): no Unity default theme, functional defaults only.</summary>
+        /// <summary>The package's minimal runtime theme: no Unity default theme, functional defaults only (spec 5.3).</summary>
         public const string RuntimeThemePath = "Packages/com.unity.design-ui/Runtime/Themes/DesignUiRuntimeTheme.tss";
+
+        /// <summary>
+        /// The package's PanelSettings for design screens, in the verifier and in game: the runtime theme, Scale With
+        /// Screen Size at 2560×1440, match 0.5 (spec 12). Copy it with Object.Instantiate and set only what differs (for
+        /// example the target texture); creating a PanelSettings without a theme makes the Editor write Unity's default
+        /// runtime theme into the project.
+        /// </summary>
+        public const string PanelSettingsPath = "Packages/com.unity.design-ui/Runtime/Themes/DesignUiPanelSettings.asset";
 
         [Tooltip("Folder with the design sources, IR and goldens, one subfolder per screen id (outside the product repository by default).")]
         public string designRoot;
@@ -32,17 +40,20 @@ namespace DesignUi.Editor
         public string[] locales = new string[0];
         public LocaleFont[] localeFonts = new LocaleFont[0];
         public TextureImporterCompression textureCompression = TextureImporterCompression.Uncompressed;
-        [Tooltip("Theme of the PanelSettings that render design screens, in the verifier and in game. Empty uses the package's DesignUiRuntimeTheme.")]
-        public ThemeStyleSheet runtimeTheme;
+        [Tooltip("PanelSettings that render design screens, in the verifier and in game. Empty uses the package's DesignUiPanelSettings (minimal runtime theme, 2560x1440 reference).")]
+        public PanelSettings panelSettings;
 
-        /// <summary>The theme for design-screen PanelSettings: <see cref="runtimeTheme"/>, or the package's runtime theme when empty.</summary>
-        public ThemeStyleSheet RuntimeTheme => runtimeTheme != null ? runtimeTheme : LoadDefaultRuntimeTheme();
+        /// <summary>PanelSettings for design screens: <see cref="panelSettings"/>, or the package's settings when empty.</summary>
+        public PanelSettings DesignPanelSettings => panelSettings != null ? panelSettings : LoadDefaultPanelSettings();
 
-        public static ThemeStyleSheet LoadDefaultRuntimeTheme() => AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(RuntimeThemePath);
+        /// <summary>The theme of <see cref="DesignPanelSettings"/>.</summary>
+        public ThemeStyleSheet RuntimeTheme => DesignPanelSettings != null ? DesignPanelSettings.themeStyleSheet : null;
+
+        public static PanelSettings LoadDefaultPanelSettings() => AssetDatabase.LoadAssetAtPath<PanelSettings>(PanelSettingsPath);
 
         void Reset()
         {
-            runtimeTheme = LoadDefaultRuntimeTheme();
+            panelSettings = LoadDefaultPanelSettings();
         }
     }
 
