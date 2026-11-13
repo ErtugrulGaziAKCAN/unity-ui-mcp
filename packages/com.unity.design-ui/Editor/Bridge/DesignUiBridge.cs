@@ -106,6 +106,9 @@ namespace DesignUi.Editor
 
         internal static bool IsBusy => Volatile.Read(ref s_Busy) != 0;
 
+        /// <summary>An import changed scripts and the Editor has not reloaded them yet.</summary>
+        internal static bool CompilePending => s_PendingCompile != 0;
+
         static DesignUiBridge()
         {
             AssemblyReloadEvents.beforeAssemblyReload += OnBeforeReload;

@@ -87,7 +87,8 @@ namespace DesignUi.Editor
             return path;
         }
 
-        static void Report(string what, OpResult r)
+        /// <summary>Logs the result (an error when it failed) and shows its first lines in a dialog.</summary>
+        internal static void Report(string what, OpResult r)
         {
             if (r.Code == 0) Debug.Log("Design UI " + what + ":\n" + r.Log);
             else Debug.LogError("Design UI " + what + " failed (code " + r.Code + "):\n" + r.Log);

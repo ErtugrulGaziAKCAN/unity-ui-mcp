@@ -222,16 +222,20 @@ echo "[4/7] design-ui.config.json"
 CONFIG="$PROJECT/design-ui.config.json"
 if [ -f "$CONFIG" ]; then
   info "kept existing $CONFIG"
+  # mcpServer: the server path the Design UI window (Window > Design UI > Status) puts into its client snippets
+  HAS_SERVER="$("$NODE" -e 'try { const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(typeof c.mcpServer === "string" ? "1" : "0") } catch { process.stdout.write("1") }' "$CONFIG")"
+  [ "$HAS_SERVER" = 1 ] || info "$CONFIG has no \"mcpServer\" (the Design UI window's client snippets need it): add \"mcpServer\": $("$NODE" -p 'JSON.stringify(process.argv[1])' "$SERVER_JS")"
 else
-  change "write $CONFIG (designRoot $DESIGN_ROOT, kitDir $REPO/design-kit, Unity runner: editor bridge)"
+  change "write $CONFIG (designRoot $DESIGN_ROOT, kitDir $REPO/design-kit, mcpServer $SERVER_JS, Unity runner: editor bridge)"
   if [ "$DRY" != 1 ]; then
-    "$NODE" - "$CONFIG" "$DESIGN_ROOT" "$REPO/design-kit" <<'NODE'
+    "$NODE" - "$CONFIG" "$DESIGN_ROOT" "$REPO/design-kit" "$SERVER_JS" <<'NODE'
 const fs = require("fs");
-const [file, designRoot, kitDir] = process.argv.slice(2);
+const [file, designRoot, kitDir, mcpServer] = process.argv.slice(2);
 const cfg = {
   designRoot,
   kitDir,
   profileAsset: "Assets/DesignUi/DesignUiProfile.asset",
+  mcpServer,
   unityRunner: { prefer: "editor", captureVia: "command", command: { import: [], capture: [], kitSync: [] } },
 };
 fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n", { flag: "wx" });
