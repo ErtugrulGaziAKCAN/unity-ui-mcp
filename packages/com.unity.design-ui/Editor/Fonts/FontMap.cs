@@ -14,7 +14,9 @@ namespace DesignUi.Editor
     /// locale, <c>.locale-&lt;code&gt; { --font-&lt;family&gt;: url("project://database/&lt;twin&gt;"); … }</c>, that maps every
     /// font family of the project's locales to that locale's twin (bold comes from the twin's weight table through
     /// <c>-unity-font-style</c>). Screens import it, and the compiled screen root carries the reference locale's class, so
-    /// swapping that class on the root switches the font of every text below it.
+    /// swapping that class on the root switches the font of every text below it. Each family also has one variable per
+    /// kit line-height ratio, <c>--font-&lt;family&gt;-&lt;key&gt;</c> (<c>r125</c>, <c>r1125</c>), pointing at the twin's
+    /// line-box variant (<see cref="FontTwinGenerator.LineBox"/>); text in a kit text style uses its ratio's variable.
     /// </summary>
     public static class FontMap
     {
@@ -158,7 +160,7 @@ namespace DesignUi.Editor
             foreach (var rule in screen.Rules)
                 foreach (var d in rule.Declarations)
                     if (d.Property == "-unity-font-definition" && d.Value.StartsWith(prefix, StringComparison.Ordinal) && d.Value.EndsWith(")", StringComparison.Ordinal))
-                        used.Add(d.Value.Substring(prefix.Length, d.Value.Length - prefix.Length - 1));
+                        used.Add(FamilySlugOf(d.Value.Substring(prefix.Length, d.Value.Length - prefix.Length - 1)));
             var errors = new List<string>();
             if (used.Count == 0) return errors;
             var names = string.Join(", ", used.Select(s => "'" + s + "'"));
@@ -170,7 +172,18 @@ namespace DesignUi.Editor
             return errors;
         }
 
-        /// <summary>DesignFonts.uss: per resolved locale, every family's variable points at the locale's twin.</summary>
+        /// <summary>The family slug of a font variable name: <c>inter-r125</c> → <c>inter</c> (a kit line-box key is dropped).</summary>
+        internal static string FamilySlugOf(string variable)
+        {
+            foreach (var box in FontTwinGenerator.LineBox.Kit)
+                if (variable.EndsWith("-" + box.Key, StringComparison.Ordinal)) return variable.Substring(0, variable.Length - box.Key.Length - 1);
+            return variable;
+        }
+
+        /// <summary>
+        /// DesignFonts.uss: per resolved locale, every family's variable points at the locale's twin, and its line-box
+        /// variables (<c>--font-&lt;family&gt;-&lt;key&gt;</c>) at the twin's variants.
+        /// </summary>
         internal static string WriteUss(FontsPlan plan)
         {
             var sb = new StringBuilder();
@@ -180,22 +193,31 @@ namespace DesignUi.Editor
                 if (!plan.Fonts.TryGetValue(locale, out var font)) continue;
                 var url = Url(FontTwinGenerator.TwinPath(font.Primary, plan.TwinFolder));
                 sb.Append("\n.").Append(LocaleClass(locale)).Append(" {\n");
-                foreach (var slug in plan.Families.Keys) sb.Append("    --font-").Append(slug).Append(": ").Append(url).Append(";\n");
+                foreach (var slug in plan.Families.Keys)
+                {
+                    sb.Append("    --font-").Append(slug).Append(": ").Append(url).Append(";\n");
+                    foreach (var box in FontTwinGenerator.LineBox.Kit.OrderBy(b => b.Key, StringComparer.Ordinal))
+                        sb.Append("    --font-").Append(slug).Append('-').Append(box.Key).Append(": ")
+                          .Append(Url(FontTwinGenerator.TwinPath(font.Primary, plan.TwinFolder, box))).Append(";\n");
+                }
                 sb.Append("}\n");
             }
             return sb.ToString();
         }
 
         /// <summary>
-        /// Creates or updates the twin of every resolved locale's font, with its own fallbacks, the plan's global fallbacks
-        /// and its weight faces. Twins keep their GUIDs, so <c>DesignFonts.uss</c> never needs a re-import for them.
+        /// Creates or updates the twin of every resolved locale's font and its line-box variants, with their own fallbacks,
+        /// the plan's global fallbacks and their weight faces. Twins keep their GUIDs, so <c>DesignFonts.uss</c> never needs a re-import for them.
         /// </summary>
         internal static FontTwinGenerator.TwinRun EnsureTwins(FontsPlan plan)
         {
             var run = new FontTwinGenerator.TwinRun(plan.Globals);
             foreach (var locale in plan.Locales)
                 if (plan.Fonts.TryGetValue(locale, out var font))
+                {
                     FontTwinGenerator.GetOrCreateTwin(font.Primary, plan.TwinFolder, run);
+                    foreach (var box in FontTwinGenerator.LineBox.Kit) FontTwinGenerator.GetOrCreateTwin(font.Primary, plan.TwinFolder, run, box);
+                }
             return run;
         }
     }

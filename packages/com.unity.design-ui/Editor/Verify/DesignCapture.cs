@@ -52,6 +52,11 @@ namespace DesignUi.Editor
     {
         /// <summary>Next to boxes.json: what the run did not capture and why (boxes.json itself holds only captures).</summary>
         public const string MetaFileName = "boxes.meta.json";
+        /// <summary>
+        /// Written last by a capture run that went through every job: the run id, the job count and the captured and
+        /// not-captured counts. A capture folder without it was not captured (the run stopped or never ran).
+        /// </summary>
+        public const string DoneFileName = "capture-done.json";
         public const string MatrixPath = "goldens/matrix.json";
         public const string FixturesPath = "fixtures/" + IrFixtures.FileName;
 
@@ -182,9 +187,9 @@ namespace DesignUi.Editor
         /// <summary>
         /// Captures every job of <c>&lt;exportDir&gt;/goldens/matrix.json</c> into <paramref name="outDir"/> with the goldens'
         /// names, copies the compiled <c>.design-ui.json</c> (removed wrappers) next to them and writes
-        /// <see cref="MetaFileName"/>. The files a capture owns (PNGs, boxes.json, the meta file, the copied manifest) are
-        /// deleted first, so nothing of an earlier run can be compared; the meta file says <c>running</c> until the run
-        /// completes. Animation samples are listed as not captured until the animation player exists; a job that cannot be
+        /// <see cref="MetaFileName"/>. The files a capture owns (PNGs, boxes.json, the meta file, the copied manifest, the done
+        /// marker) are deleted first, so nothing of an earlier run can be compared; the meta file says <c>running</c> until the
+        /// run completes, and <see cref="DoneFileName"/> is written last. Animation samples are listed as not captured until the animation player exists; a job that cannot be
         /// made, or fails, is listed with its reason and leaves no PNG or boxes entry behind.
         /// </summary>
         public static IEnumerator CaptureAll(string exportDir, string screenFolder, DesignUiProfile profile, string outDir, CaptureResult result)
@@ -247,6 +252,13 @@ namespace DesignUi.Editor
                 }
             }
             WriteMeta(outDir, exportDir, screenFolder, result, run, "complete", total.Elapsed.TotalMilliseconds);
+            WriteJson(Path.Combine(outDir, DoneFileName), new JObject
+            {
+                ["captured"] = result.Captured.Count,
+                ["jobs"] = jobs.Count,
+                ["notCaptured"] = result.NotCaptured.Count,
+                ["runId"] = run.Id,
+            });
         }
 
         /// <summary>The profile asset at <paramref name="assetPath"/>, or the project's only DesignUiProfile when it is empty.</summary>
@@ -728,7 +740,7 @@ namespace DesignUi.Editor
         {
             Directory.CreateDirectory(outDir);
             foreach (var png in Directory.GetFiles(outDir, "*.png")) File.Delete(png);
-            foreach (var name in new[] { BoxesWriter.FileName, MetaFileName, ScreenCompiler.ManifestFileName })
+            foreach (var name in new[] { DoneFileName, BoxesWriter.FileName, MetaFileName, ScreenCompiler.ManifestFileName })
             {
                 var path = Path.Combine(outDir, name);
                 if (File.Exists(path)) File.Delete(path);
@@ -778,10 +790,15 @@ namespace DesignUi.Editor
                     ["version"] = Application.unityVersion,
                 },
             };
+            WriteJson(Path.Combine(outDir, MetaFileName), meta);
+        }
+
+        static void WriteJson(string path, JObject json)
+        {
             using (var sw = new StringWriter { NewLine = "\n" })
             {
-                using (var writer = new JsonTextWriter(sw) { Formatting = Formatting.Indented, Indentation = 2 }) meta.WriteTo(writer);
-                File.WriteAllText(Path.Combine(outDir, MetaFileName), sw.ToString().Replace("\r\n", "\n") + "\n", new UTF8Encoding(false));
+                using (var writer = new JsonTextWriter(sw) { Formatting = Formatting.Indented, Indentation = 2 }) json.WriteTo(writer);
+                File.WriteAllText(path, sw.ToString().Replace("\r\n", "\n") + "\n", new UTF8Encoding(false));
             }
         }
     }

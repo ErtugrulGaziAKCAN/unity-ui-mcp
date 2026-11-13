@@ -21,17 +21,17 @@ namespace DesignUi.Editor.Tests
             "\"viewports\":[[2560,1440],[1920,1080],[1280,720]],\"screenMatch\":0.5,\"filterFunctions\":[],\"locales\":[\"tr\"]}\n";
 
         /// <summary>
-        /// Whole-pixel text styles (Inter, 400 and 700): font sizes that are multiples of 4 px, line heights = fontSize ×
-        /// (ascent − descent) / pointSize of the font, rounded to 1/64 px (the kit's design-kit/text-styles.json rows).
+        /// Kit line boxes (Inter, 400 and 700): line height 1.25 × fontSize with sizes multiples of 4 px, or 1.125 × fontSize
+        /// with sizes multiples of 8 px (the kit's design-kit/text-styles.json rows).
         /// </summary>
-        const string WholePixelStyles = @"{
-  ""caption"": { ""fontSize"": 12, ""lineHeight"": 14.515625, ""weight"": 400 },
-  ""label-bold"": { ""fontSize"": 16, ""lineHeight"": 19.359375, ""weight"": 700 },
-  ""body"": { ""fontSize"": 24, ""lineHeight"": 29.046875, ""weight"": 400 },
-  ""subtitle"": { ""fontSize"": 28, ""lineHeight"": 33.875, ""weight"": 400 },
-  ""title-bold"": { ""fontSize"": 32, ""lineHeight"": 38.71875, ""weight"": 700 },
-  ""headline"": { ""fontSize"": 48, ""lineHeight"": 58.078125, ""weight"": 400 },
-  ""display"": { ""fontSize"": 56, ""lineHeight"": 67.765625, ""weight"": 400 }
+        const string LineBoxStyles = @"{
+  ""caption"": { ""fontSize"": 12, ""lineHeight"": 15, ""weight"": 400 },
+  ""label-bold"": { ""fontSize"": 16, ""lineHeight"": 20, ""weight"": 700 },
+  ""body"": { ""fontSize"": 24, ""lineHeight"": 30, ""weight"": 400 },
+  ""subtitle"": { ""fontSize"": 28, ""lineHeight"": 35, ""weight"": 400 },
+  ""title-bold"": { ""fontSize"": 32, ""lineHeight"": 36, ""weight"": 700 },
+  ""headline"": { ""fontSize"": 48, ""lineHeight"": 54, ""weight"": 400 },
+  ""display"": { ""fontSize"": 56, ""lineHeight"": 63, ""weight"": 400 }
 }
 ";
 
@@ -61,7 +61,7 @@ namespace DesignUi.Editor.Tests
             FontFixture.Delete();
         }
 
-        string Kit(string styles = WholePixelStyles)
+        string Kit(string styles = LineBoxStyles)
         {
             var dir = Path.Combine(Path.GetTempPath(), "design-ui-kit-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
             Directory.CreateDirectory(dir);
@@ -182,10 +182,10 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(r.Warnings.Any(w => w.StartsWith("Multiple TMP Settings", StringComparison.Ordinal)));
         }
 
-        [TestCase(13, 16, "use fontSize 12 with lineHeight 14.515625")]           // the standard generator rounds sizes to whole device px
-        [TestCase(16.515625, 20, "use fontSize 16 with lineHeight 19.359375")]    // the earlier fractional table
-        [TestCase(18, 21.78125, "use fontSize 20 with lineHeight 24.203125")]     // whole, but not whole at the 0.75 and 0.5 scales
-        public void Run_FontSizeThatIsNotAMultipleOf4_FailsWithTheComputedFix(double size, double line, string fix)
+        [TestCase(13, 16.25, 4, "use fontSize 12 with lineHeight 15")]   // ratio 1.25, but not a multiple of 4
+        [TestCase(18, 22.5, 4, "use fontSize 20 with lineHeight 25")]    // whole, but not whole at the 0.75 and 0.5 scales
+        [TestCase(36, 40.5, 8, "use fontSize 40 with lineHeight 45")]    // ratio 1.125 needs multiples of 8
+        public void Run_FontSizeOffItsRatiosStep_FailsWithTheComputedFix(double size, double line, int step, string fix)
         {
             var kit = Kit("{ \"x\": { \"fontSize\": " + Num(size) + ", \"lineHeight\": " + Num(line) + ", \"weight\": 400 } }");
             var profile = Profile();
@@ -193,7 +193,7 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(r.Ok);
             var error = r.Errors.Single();
             StringAssert.Contains("text style 'x'", error);
-            StringAssert.Contains("multiple of 4", error);
+            StringAssert.Contains("multiple of " + step + " px", error);
             StringAssert.Contains(fix, error);
             Assert.IsFalse(File.Exists(kit + "/fonts/fonts.css"), "nothing is written when the kit is invalid");
             Assert.AreEqual(KitConfig, File.ReadAllText(kit + "/kit.config.json"));
@@ -201,26 +201,28 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.IsEmpty(r.Twins);
         }
 
-        [TestCase(16, 20, "19.359375")]   // the integer line height of the earlier table
-        [TestCase(24, 29, "29.046875")]   // 0.039 px off the pitch 29.0390625
-        public void Run_LineHeightOffTheUiToolkitPitch_FailsWithTheComputedLineHeight(double size, double line, string fix)
+        [TestCase(16, 19.359375)]   // the whole-pixel table's UI Toolkit pitch
+        [TestCase(16, 24)]          // ratio 1.5
+        public void Run_LineHeightThatIsNoKitLineBox_FailsNamingBothRatios(double size, double line)
         {
             var kit = Kit("{ \"x\": { \"fontSize\": " + Num(size) + ", \"lineHeight\": " + Num(line) + ", \"weight\": 400 } }");
             var profile = Profile();
             var r = KitSync.Run(profile, kit, Resolver(profile));
             Assert.IsFalse(r.Ok);
             var error = r.Errors.Single();
-            StringAssert.Contains("lineHeight " + Num(line), error);
-            StringAssert.Contains("use lineHeight " + fix, error);
+            StringAssert.Contains("not a kit line box", error);
+            StringAssert.Contains("lineHeight 20 (1.25 × fontSize", error);
+            StringAssert.Contains("lineHeight 18 (1.125 × fontSize", error);
         }
 
         [Test]
-        public void Run_LineHeightWithinHalfOf1_64PxOfThePitch_IsValid()
+        public void Run_MakesTheLineBoxVariantsOfEveryLocalesFont()
         {
-            // 24 px: exact pitch 29.0390625, the 1/64 px grid gives 29.046875 (1/128 px above)
             var profile = Profile();
-            var r = KitSync.Run(profile, Kit("{ \"x\": { \"fontSize\": 24, \"lineHeight\": 29.046875, \"weight\": 400 } }"), Resolver(profile));
+            var r = KitSync.Run(profile, Kit(), Resolver(profile));
             Assert.IsTrue(r.Ok, Errors(r));
+            foreach (var key in new[] { "r125", "r1125" })
+                CollectionAssert.Contains(r.Twins.ToArray(), FontFixture.TwinFolder + "/Kit Regular UITK " + key + ".asset");
         }
 
         static string Num(double v) => v.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
@@ -229,7 +231,7 @@ namespace DesignUi.Editor.Tests
         public void Run_TheKitTablesAreValid()
         {
             var profile = Profile();
-            var tables = new List<string> { WholePixelStyles };
+            var tables = new List<string> { LineBoxStyles };
             var repoKit = IrReaderTests.PackagePath("..", "..", "design-kit", "text-styles.json");
             if (File.Exists(repoKit)) tables.Add(File.ReadAllText(repoKit));
             foreach (var styles in tables)
@@ -358,7 +360,7 @@ namespace DesignUi.Editor.Tests
             Directory.CreateDirectory(dir);
             _temp.Add(dir);
             File.WriteAllText(dir + "/kit.config.json", KitConfig);
-            File.WriteAllText(dir + "/text-styles.json", WholePixelStyles);
+            File.WriteAllText(dir + "/text-styles.json", LineBoxStyles);
             var profile = Profile();
             var r = KitSync.Run(profile, relative, Resolver(profile));
             Assert.IsTrue(r.Ok, Errors(r));

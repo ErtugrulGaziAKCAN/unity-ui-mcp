@@ -14,6 +14,37 @@ namespace DesignUi.Editor
     {
         public const string FileName = "text-styles.json";
 
+        /// <summary>
+        /// Style name to the key of its line-box variant (<see cref="FontTwinGenerator.LineBox"/>): the kit ratio of its
+        /// <c>lineHeight / fontSize</c>, or null for a style with another ratio (it keeps the plain font twin).
+        /// </summary>
+        public static IReadOnlyDictionary<string, string> LoadLineBoxes(string path)
+        {
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var p in Read(path))
+            {
+                var size = (p.Value as JObject)?["fontSize"];
+                var line = (p.Value as JObject)?["lineHeight"];
+                double s = size != null && (size.Type == JTokenType.Float || size.Type == JTokenType.Integer) ? size.Value<double>() : 0;
+                double l = line != null && (line.Type == JTokenType.Float || line.Type == JTokenType.Integer) ? line.Value<double>() : 0;
+                result[p.Key] = s > 0 && l > 0 ? FontTwinGenerator.LineBox.ForRatio(l / s)?.Key : null;
+            }
+            return result;
+        }
+
+        static JObject Read(string path)
+        {
+            try
+            {
+                using (var reader = new JsonTextReader(new StringReader(File.ReadAllText(path))) { FloatParseHandling = FloatParseHandling.Double })
+                    return JObject.Load(reader);
+            }
+            catch (Exception e) when (e is IOException || e is JsonException || e is UnauthorizedAccessException)
+            {
+                throw new IrFormatException("cannot read text styles '" + path + "': " + e.Message, e);
+            }
+        }
+
         /// <summary>Style name to font size in px. Throws IrFormatException when the file is not a valid style table.</summary>
         public static IReadOnlyDictionary<string, double> Load(string path)
         {

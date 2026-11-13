@@ -28,10 +28,57 @@ namespace DesignUi.Editor
     /// atlas settings or source font rebuild it in place, keeping its GUID, so every reference to it survives. Tables are
     /// written through SerializedObject, so the font asset refreshes its lookup and native data (OnValidate). Writes use
     /// asset-specific saves only.</para>
+    /// <para>Line-box variants (<see cref="LineBox"/>): CSS sets a line box of <c>line-height</c> and centres the font's
+    /// ascent + descent in it (half-leading); UI Toolkit has no line height and lays a line out at the face's line height
+    /// with the baseline at its ascent. The variant twin of a ratio r is the same font with
+    /// <c>faceInfo.lineHeight = r × pointSize</c> and the ascent and descent lines moved apart by the half-leading
+    /// <c>h = (r × pointSize − (ascentLine − descentLine)) / 2</c>, so a line of size s is exactly <c>r × s</c> tall in
+    /// UI Toolkit, with its baseline where CSS puts it. Glyph metrics are untouched. A variant falls back to the same
+    /// ratio's variants of the fallbacks, and its weight table holds the same ratio's variants of the weight faces.</para>
     /// </summary>
     public static class FontTwinGenerator
     {
         public const string Suffix = " UITK";
+
+        /// <summary>A CSS line-height ratio that kit text styles use, with its key (twin name and USS variable suffix).</summary>
+        public sealed class LineBox
+        {
+            public readonly string Key;
+            public readonly double Ratio;
+            /// <summary>Kit font sizes for this ratio are multiples of this (whole device pixels at 0.75 and 0.5, and a whole line box).</summary>
+            public readonly int SizeStep;
+
+            LineBox(string key, double ratio, int sizeStep)
+            {
+                Key = key;
+                Ratio = ratio;
+                SizeStep = sizeStep;
+            }
+
+            /// <summary>The kit's line-height ratios: 1.25 (sizes multiples of 4) and 1.125 (sizes multiples of 8).</summary>
+            public static readonly IReadOnlyList<LineBox> Kit = new[] { new LineBox("r125", 1.25, 4), new LineBox("r1125", 1.125, 8) };
+
+            /// <summary>The kit ratio of a line height over a font size, or null.</summary>
+            public static LineBox ForRatio(double ratio) => Kit.FirstOrDefault(b => Math.Abs(b.Ratio - ratio) < 1e-9);
+
+            /// <summary>
+            /// UI Toolkit ceils a text element's height, and the float arithmetic of an exact r × size line lands a hair above
+            /// the whole pixel (measured on 6000.3: 21 px for a 20 px line box). The variant's line box is this fraction
+            /// smaller (0.0002 px on a 20 px line), so n lines are exactly n × r × size tall.
+            /// </summary>
+            public const double Shrink = 1e-5;
+
+            /// <summary>The face of a variant: line height r × pointSize, ascent and descent lines moved apart by the half-leading.</summary>
+            public FaceInfo Face(FaceInfo face)
+            {
+                double target = Ratio * face.pointSize * (1 - Shrink);
+                double h = (target - ((double)face.ascentLine - face.descentLine)) / 2;
+                face.lineHeight = (float)target;
+                face.ascentLine = (float)(face.ascentLine + h);
+                face.descentLine = (float)(face.descentLine - h);
+                return face;
+            }
+        }
 
         /// <summary>The twin of <paramref name="tmp"/>, with TMP Settings' global fallbacks after its own.</summary>
         public static FontAsset GetOrCreateTwin(TMP_FontAsset tmp, string folder) =>
@@ -41,11 +88,18 @@ namespace DesignUi.Editor
         internal static FontAsset GetOrCreateTwin(TMP_FontAsset tmp, string folder, IEnumerable<TMP_FontAsset> globals) =>
             GetOrCreateTwin(tmp, folder, new TwinRun(globals));
 
-        /// <summary>The twin's asset path; throws <see cref="FontSetupException"/> when the folder is not inside Assets/.</summary>
-        public static string TwinPath(TMP_FontAsset tmp, string folder)
+        /// <summary>The line-box variant twin of <paramref name="tmp"/> for a kit ratio, with TMP Settings' global fallbacks.</summary>
+        public static FontAsset GetOrCreateTwin(TMP_FontAsset tmp, string folder, LineBox lineBox) =>
+            GetOrCreateTwin(tmp, folder, new TwinRun(TmpSettingsFontResolver.GlobalFallbacks()), lineBox);
+
+        /// <summary>
+        /// The twin's asset path (<c>&lt;name&gt; UITK.asset</c>, a variant <c>&lt;name&gt; UITK &lt;key&gt;.asset</c>); throws
+        /// <see cref="FontSetupException"/> when the folder is not inside Assets/.
+        /// </summary>
+        public static string TwinPath(TMP_FontAsset tmp, string folder, LineBox lineBox = null)
         {
             if (tmp == null) throw new ArgumentNullException(nameof(tmp));
-            return CheckFolder(folder) + "/" + tmp.name + Suffix + ".asset";
+            return CheckFolder(folder) + "/" + tmp.name + Suffix + (lineBox != null ? " " + lineBox.Key : "") + ".asset";
         }
 
         /// <summary>The twin's render mode: the TMP asset's, except bitmap modes (SMOOTH, RASTER), which become SDFAA.</summary>
@@ -78,7 +132,8 @@ namespace DesignUi.Editor
             public readonly IReadOnlyList<TMP_FontAsset> Globals;
             /// <summary>The global fallbacks and every font in their own fallback chains: their twins get no global fallbacks.</summary>
             public readonly HashSet<TMP_FontAsset> GlobalChain = new HashSet<TMP_FontAsset>();
-            public readonly Dictionary<TMP_FontAsset, FontAsset> Twins = new Dictionary<TMP_FontAsset, FontAsset>();
+            /// <summary>The twins of this pass by TMP asset and line-box key ("" for the plain twin).</summary>
+            public readonly Dictionary<(TMP_FontAsset, string), FontAsset> Twins = new Dictionary<(TMP_FontAsset, string), FontAsset>();
             /// <summary>Render-mode substitutions of this pass, one per TMP asset.</summary>
             public readonly List<string> Notes = new List<string>();
             readonly Dictionary<string, TMP_FontAsset> _paths = new Dictionary<string, TMP_FontAsset>(StringComparer.OrdinalIgnoreCase);
@@ -104,11 +159,14 @@ namespace DesignUi.Editor
             }
         }
 
-        internal static FontAsset GetOrCreateTwin(TMP_FontAsset tmp, string folder, TwinRun run)
+        internal static FontAsset GetOrCreateTwin(TMP_FontAsset tmp, string folder, TwinRun run, LineBox lineBox = null)
         {
             if (tmp == null) throw new ArgumentNullException(nameof(tmp));
-            if (run.Twins.TryGetValue(tmp, out var known)) return known;
-            var path = TwinPath(tmp, folder);
+            var key = (tmp, lineBox?.Key ?? "");
+            if (run.Twins.TryGetValue(key, out var known)) return known;
+            // a variant's face comes from the plain twin's (the font engine's metrics at the sampling size)
+            var face = lineBox != null ? lineBox.Face(GetOrCreateTwin(tmp, folder, run).faceInfo) : (FaceInfo?)null;
+            var path = TwinPath(tmp, folder, lineBox);
             run.Claim(path, tmp);
             var font = TmpSourceFont.GetSourceFont(tmp);
             CheckSettings(tmp);
@@ -131,7 +189,7 @@ namespace DesignUi.Editor
                 built = true;
             }
             if (built && mode != tmp.atlasRenderMode) Debug.LogWarning(BitmapNote(tmp), twin);
-            run.Twins[tmp] = twin; // before the recursion: fallback lists may form cycles
+            run.Twins[key] = twin; // before the recursion: fallback lists may form cycles
 
             // TMP's search order: the asset's own fallbacks, then the global ones (not for a global fallback or a font in
             // a global's own chain, which TMP searches without the globals again); twins without duplicates or itself
@@ -140,14 +198,14 @@ namespace DesignUi.Editor
             foreach (var f in (tmp.fallbackFontAssetTable ?? new List<TMP_FontAsset>()).Concat(globals))
             {
                 if (f == null || f == tmp) continue;
-                var t = GetOrCreateTwin(f, folder, run);
+                var t = GetOrCreateTwin(f, folder, run, lineBox);
                 if (t != twin && !fallbacks.Contains(t)) fallbacks.Add(t);
             }
             var weights = tmp.fontWeightTable ?? new TMP_FontWeightPair[0];
-            var regular = weights.Select(w => w.regularTypeface != null ? GetOrCreateTwin(w.regularTypeface, folder, run) : null).ToArray();
-            var italic = weights.Select(w => w.italicTypeface != null ? GetOrCreateTwin(w.italicTypeface, folder, run) : null).ToArray();
+            var regular = weights.Select(w => w.regularTypeface != null ? GetOrCreateTwin(w.regularTypeface, folder, run, lineBox) : null).ToArray();
+            var italic = weights.Select(w => w.italicTypeface != null ? GetOrCreateTwin(w.italicTypeface, folder, run, lineBox) : null).ToArray();
 
-            if (Mirror(twin, fallbacks, regular, italic) || built)
+            if (Mirror(twin, fallbacks, regular, italic, face) || built)
             {
                 EditorUtility.SetDirty(twin);
                 AssetDatabase.SaveAssetIfDirty(twin);
@@ -159,10 +217,11 @@ namespace DesignUi.Editor
         /// Writes the fallback list and the weight table through SerializedObject when they differ, so the font asset's
         /// OnValidate refreshes its lookup tables and native font data. Returns whether anything changed.
         /// </summary>
-        static bool Mirror(FontAsset twin, List<FontAsset> fallbacks, FontAsset[] regular, FontAsset[] italic)
+        static bool Mirror(FontAsset twin, List<FontAsset> fallbacks, FontAsset[] regular, FontAsset[] italic, FaceInfo? face)
         {
             using (var so = new SerializedObject(twin))
             {
+                if (face.HasValue) SetFace(so, face.Value);
                 var list = so.FindProperty("m_FallbackFontAssetTable");
                 var table = so.FindProperty("m_FontWeightTable");
                 if (list == null || table == null) throw new FontSetupException("this Unity version's TextCore FontAsset has no fallback list or weight table field");
@@ -181,6 +240,19 @@ namespace DesignUi.Editor
                 }
                 return so.ApplyModifiedPropertiesWithoutUndo();
             }
+        }
+
+        /// <summary>Writes a variant's line metrics (line height, ascent and descent lines) when they differ.</summary>
+        static void SetFace(SerializedObject so, FaceInfo face)
+        {
+            void Float(string name, float value)
+            {
+                var p = so.FindProperty("m_FaceInfo." + name) ?? throw new FontSetupException("this Unity version's TextCore FontAsset has no face info field " + name);
+                if (Math.Abs(p.floatValue - value) > 1e-5f) p.floatValue = value;
+            }
+            Float("m_LineHeight", face.lineHeight);
+            Float("m_AscentLine", face.ascentLine);
+            Float("m_DescentLine", face.descentLine);
         }
 
         static void Set(SerializedProperty p, FontAsset value)

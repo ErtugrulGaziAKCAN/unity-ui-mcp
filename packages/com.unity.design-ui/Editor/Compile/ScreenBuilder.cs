@@ -85,14 +85,20 @@ namespace DesignUi.Editor
         /// <param name="textStyleSizes">Kit text styles (name to font size in px). Every text node that names a style
         /// (<c>text.style</c>) gets that exact size, in every layer; such a node without a table is an error.</param>
         public static CompiledScreen Build(IrScreen ir, Func<IrAsset, string> assetPath, Func<string, string> fontDefinition,
-            IReadOnlyDictionary<string, double> textStyleSizes)
+            IReadOnlyDictionary<string, double> textStyleSizes) => Build(ir, assetPath, fontDefinition, textStyleSizes, null);
+
+        /// <param name="textStyleLineBoxes">Kit text style name to its line-box variant key (<see cref="KitTextStyles.LoadLineBoxes"/>):
+        /// a text node in such a style names its family's variant variable, <c>var(--font-&lt;family&gt;-&lt;key&gt;)</c>, whose
+        /// twin lays a line out at the style's CSS line height.</param>
+        public static CompiledScreen Build(IrScreen ir, Func<IrAsset, string> assetPath, Func<string, string> fontDefinition,
+            IReadOnlyDictionary<string, double> textStyleSizes, IReadOnlyDictionary<string, string> textStyleLineBoxes)
         {
             if (ir == null) throw new ArgumentNullException(nameof(ir));
             if (assetPath == null) throw new ArgumentNullException(nameof(assetPath));
             if (ir.Root == null) throw new IrFormatException("IR has no root node");
             var className = Pascal(ir.Screen, "screen id");
             var lowered = Lowering.Apply(ir.Root, ir.Breakpoints);
-            var builder = new Builder(assetPath, fontDefinition, textStyleSizes, AncestorTargets(lowered));
+            var builder = new Builder(assetPath, fontDefinition, textStyleSizes, AncestorTargets(lowered), textStyleLineBoxes, InheritedFamilies(lowered));
             var root = builder.Draft(lowered, true, false);
             builder.RemoveWrappers(root);
             return builder.Finish(root, ir, className);
@@ -112,6 +118,21 @@ namespace DesignUi.Editor
                 foreach (var c in n.Children) Visit(c);
             }
             Visit(root);
+            return result;
+        }
+
+        /// <summary>Each node's font family: its own base <c>font-family</c>, else its parent's (CSS inherits it).</summary>
+        static Dictionary<IrNode, string> InheritedFamilies(IrNode root)
+        {
+            var result = new Dictionary<IrNode, string>();
+            void Visit(IrNode n, string inherited)
+            {
+                var own = Get(n, Base, "font-family");
+                var family = string.IsNullOrEmpty(own) ? inherited : own;
+                result[n] = family;
+                foreach (var c in n.Children ?? new IrNode[0]) Visit(c, family);
+            }
+            Visit(root, null);
             return result;
         }
 
@@ -246,6 +267,8 @@ namespace DesignUi.Editor
             readonly Func<IrAsset, string> _assetPath;
             readonly Func<string, string> _fontDefinition;
             readonly IReadOnlyDictionary<string, double> _textStyles;
+            readonly IReadOnlyDictionary<string, string> _lineBoxes;
+            readonly Dictionary<IrNode, string> _families;
             readonly List<string> _removed = new List<string>();
             readonly List<UssRule> _rules = new List<UssRule>();
             readonly Dictionary<string, string> _canonical = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -253,12 +276,14 @@ namespace DesignUi.Editor
             readonly HashSet<string> _ancestorTargets;
 
             public Builder(Func<IrAsset, string> assetPath, Func<string, string> fontDefinition, IReadOnlyDictionary<string, double> textStyles,
-                HashSet<string> ancestorTargets)
+                HashSet<string> ancestorTargets, IReadOnlyDictionary<string, string> lineBoxes, Dictionary<IrNode, string> families)
             {
                 _assetPath = assetPath;
                 _fontDefinition = fontDefinition;
                 _textStyles = textStyles;
                 _ancestorTargets = ancestorTargets;
+                _lineBoxes = lineBoxes;
+                _families = families;
             }
 
             // ---- drafts: tags and mapped layers -------------------------------------------------------------
@@ -382,6 +407,7 @@ namespace DesignUi.Editor
                     var basis = key == Base ? css : Lowering.Basis(node, key);
                     var decls = StyleMapper.Map(css, basis, isText, key == Base).ToList();
                     ResolveFont(decls, css);
+                    LineBoxFont(decls, node, key);
                     if (images.Declarations.TryGetValue(key, out var image)) decls.AddRange(image);
                     if (tint)
                         foreach (var color in decls.Where(x => x.Property == "color").ToList())
@@ -740,6 +766,29 @@ namespace DesignUi.Editor
                     }
                     if (!ok) throw new IrFormatException("node '" + id + "' has unsupported style layer '" + key + "' ('" + dim.Text + "' is not a valid USS class name)");
                 }
+            }
+
+            /// <summary>
+            /// A text node in a kit text style with a line-box variant names its family's variant variable
+            /// (<c>var(--font-&lt;family&gt;-&lt;key&gt;)</c>) in every layer; its base layer names it even when the family is
+            /// inherited, because the variable of the inherited font would be the plain twin.
+            /// </summary>
+            void LineBoxFont(List<UssDeclaration> decls, IrNode node, string layer)
+            {
+                var style = node.Text?.Style;
+                if (style == null || _lineBoxes == null || !_lineBoxes.TryGetValue(style, out var box) || box == null) return;
+                const string prefix = "var(--font-";
+                bool found = false;
+                for (int i = 0; i < decls.Count; i++)
+                {
+                    var d = decls[i];
+                    if (d.Property != "-unity-font-definition") continue;
+                    found = true;
+                    if (d.Value.StartsWith(prefix, StringComparison.Ordinal) && d.Value.EndsWith(")", StringComparison.Ordinal))
+                        decls[i] = new UssDeclaration(d.Property, d.Value.Substring(0, d.Value.Length - 1) + "-" + box + ")");
+                }
+                if (!found && layer == Base && _families != null && _families.TryGetValue(node, out var family) && !string.IsNullOrEmpty(family))
+                    decls.Add(new UssDeclaration("-unity-font-definition", prefix + StyleMapper.FamilySlug(family) + "-" + box + ")"));
             }
 
             void ResolveFont(List<UssDeclaration> decls, Dictionary<string, string> css)

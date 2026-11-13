@@ -118,11 +118,12 @@ namespace DesignUi.Editor
                     return Fail("the screen uses kit text styles but no " + KitTextStyles.FileName + " was found (searched: " + string.Join(", ", searched) +
                                 "); export it with the design or set the profile's kit folder");
                 var textStyles = stylesPath != null ? KitTextStyles.Load(stylesPath) : null;
+                var lineBoxes = stylesPath != null ? KitTextStyles.LoadLineBoxes(stylesPath) : null;
 
                 // default asset step: the build only plans the assets (paths, checks); they are copied and imported in the write batch
                 plan = hooks?.AssetPath == null ? new AssetPlan(exportDir, outFolder, profile) : null;
                 var assetPath = hooks?.AssetPath ?? plan.Add;
-                compiled = ScreenBuilder.Build(ir, assetPath, hooks?.FontDefinition, textStyles);
+                compiled = ScreenBuilder.Build(ir, assetPath, hooks?.FontDefinition, textStyles, lineBoxes);
 
                 // fonts per locale: element rules keep var(--font-…); DesignFonts.uss defines them per .locale-<code>
                 fonts = FontMap.Plan(profile, hooks?.Fonts ?? FontMap.DefaultResolver(profile));

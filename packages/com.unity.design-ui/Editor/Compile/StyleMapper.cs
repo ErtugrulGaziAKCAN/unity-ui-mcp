@@ -233,7 +233,8 @@ namespace DesignUi.Editor
 
         static readonly Regex Slug = new Regex(@"[^a-z0-9]+", RegexOptions.Compiled);
 
-        static string FamilySlug(string value)
+        /// <summary>The <c>--font-&lt;slug&gt;</c> variable of a CSS <c>font-family</c> value (its first family).</summary>
+        internal static string FamilySlug(string value)
         {
             var first = CssSupport.SplitTop(value, ',')[0].Trim().Trim('"', '\'').ToLowerInvariant();
             var slug = Slug.Replace(first, "-").Trim('-');

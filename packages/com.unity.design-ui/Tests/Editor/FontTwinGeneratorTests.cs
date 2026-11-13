@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.IO;
 using System.Linq;
@@ -9,6 +10,7 @@ using UnityEngine.TestTools;
 using UnityEngine.TextCore.LowLevel;
 using UnityEngine.UIElements;
 using FontAsset = UnityEngine.TextCore.Text.FontAsset;
+using Object = UnityEngine.Object;
 
 namespace DesignUi.Editor.Tests
 {
@@ -66,6 +68,111 @@ namespace DesignUi.Editor.Tests
             var stored = AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(twin));
             Assert.IsTrue(stored.OfType<Texture2D>().Any(), "atlas texture sub-asset");
             Assert.IsTrue(stored.OfType<Material>().Any(), "material sub-asset");
+        }
+
+        [Test]
+        public void LineBoxVariant_HasTheCssLineBoxFace_AndFallsBackToTheSameRatiosVariants()
+        {
+            var fallback = FontFixture.CreateTmp(FontFixture.BoldTtf, "Box Fallback");
+            var bold = FontFixture.CreateTmp(FontFixture.BoldTtf, "Box Bold");
+            var tmp = FontFixture.CreateTmp(FontFixture.RegularTtf, "Box Regular");
+            FontFixture.SetFallbacks(tmp, fallback);
+            FontFixture.SetWeight(tmp, 700, bold);
+            var box = FontTwinGenerator.LineBox.ForRatio(1.25);
+            var variant = FontTwinGenerator.GetOrCreateTwin(tmp, Twins, box);
+            var plain = AssetDatabase.LoadAssetAtPath<FontAsset>(Twins + "/Box Regular UITK.asset");
+
+            Assert.AreEqual(Twins + "/Box Regular UITK r125.asset", AssetDatabase.GetAssetPath(variant));
+            Assert.IsNotNull(plain, "the plain twin is made too (its face is the variant's source)");
+            var f = plain.faceInfo;
+            var v = variant.faceInfo;
+            Assert.AreEqual(1.25f * f.pointSize, v.lineHeight, 1e-3f, "line height = r × pointSize");
+            Assert.Less(v.lineHeight, 1.25f * f.pointSize, "a hair below, so UI Toolkit's ceil keeps the whole line box");
+            var h = (1.25f * f.pointSize - (f.ascentLine - f.descentLine)) / 2;
+            Assert.AreEqual(f.ascentLine + h, v.ascentLine, 1e-3f, "ascent moved up by the half-leading");
+            Assert.AreEqual(f.descentLine - h, v.descentLine, 1e-3f, "descent moved down by the half-leading");
+            Assert.AreEqual(f.pointSize, v.pointSize);
+            Assert.AreEqual(f.capLine, v.capLine, "glyph metrics stay");
+            CollectionAssert.AreEqual(new[] { "Box Fallback UITK r125" }, variant.fallbackFontAssetTable.Select(x => x.name).ToArray(), "same-ratio fallbacks");
+            Assert.AreEqual("Box Bold UITK r125", variant.fontWeightTable[7].regularTypeface.name, "same-ratio weight faces");
+
+            // the face survives a forced re-import and a second pass writes nothing new
+            AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(variant), ImportAssetOptions.ForceUpdate);
+            var again = FontTwinGenerator.GetOrCreateTwin(tmp, Twins, box);
+            Assert.AreSame(variant, again);
+            Assert.AreEqual(1.25f * f.pointSize, AssetDatabase.LoadAssetAtPath<FontAsset>(Twins + "/Box Regular UITK r125.asset").faceInfo.lineHeight, 1e-3f);
+        }
+
+        [UnityTest]
+        public IEnumerator LineBoxVariant_LabelsAreExactlyTheCssLineBoxTall_WithTheBaselineWhereChromiumPutsIt()
+        {
+            // 16 px text in a 20 px CSS line box (ratio 1.25): Chromium puts the baseline at round(ascent) + (20 − round(ascent) − round(descent)) / 2
+            var variant = FontTwinGenerator.GetOrCreateTwin(FontFixture.Regular, Twins, FontTwinGenerator.LineBox.ForRatio(1.25));
+            var plain = AssetDatabase.LoadAssetAtPath<FontAsset>(Twins + "/Inter Fixture UITK.asset").faceInfo;
+            foreach (var scale in new[] { 1f, 0.75f, 0.5f })
+            {
+                double ascent = plain.ascentLine * 16.0 * scale / plain.pointSize, descent = -plain.descentLine * 16.0 * scale / plain.pointSize;
+                double lineBox = 20 * scale;
+                double chromium = (Math.Round(ascent, MidpointRounding.AwayFromZero) + (lineBox - Math.Round(ascent, MidpointRounding.AwayFromZero) - Math.Round(descent, MidpointRounding.AwayFromZero)) / 2) / scale;
+
+                _rt = new RenderTexture(256, 256, 24, RenderTextureFormat.ARGB32);
+                _settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+                _settings.scaleMode = PanelScaleMode.ConstantPixelSize;
+                _settings.scale = scale;
+                _settings.targetTexture = _rt;
+                _settings.clearColor = true;
+                _settings.colorClearValue = Color.black;
+                _go = new GameObject("LineBoxVariant");
+                var doc = _go.AddComponent<UIDocument>();
+                doc.panelSettings = _settings;
+                var root = doc.rootVisualElement;
+                var labels = new[] { 1, 2, 5 }.Select((lines, i) =>
+                {
+                    var l = new Label(string.Join("\n", Enumerable.Repeat("H", lines))) { name = "l" + lines };
+                    l.style.position = Position.Absolute;
+                    l.style.left = 10 + 30 * i;
+                    l.style.top = 10;
+                    l.style.fontSize = 16;
+                    l.style.color = Color.white;
+                    l.style.unityFontDefinition = FontDefinition.FromSDFFont(variant);
+                    root.Add(l);
+                    return l;
+                }).ToList();
+                for (int i = 0; i < 8; i++) yield return null;
+
+                CollectionAssert.AreEqual(new[] { 20f, 40f, 100f }, labels.Select(l => l.layout.height).ToArray(), "line boxes at scale " + scale);
+                var ir = TestIr.Screen(TestIr.Root(), "box.test");
+                ir.Root.Children = labels.Select(l => { var n = TestIr.Node(l.name, "text"); n.Text = new IrText { Tr = "H" }; return n; }).ToArray();
+                var measured = BoxesWriter.Measure("c", root, new Vector2Int(256, 256), scale, ir);
+                foreach (var l in labels)
+                {
+                    var lines = (Newtonsoft.Json.Linq.JArray)measured["elements"][l.name]["lines"];
+                    Assert.AreEqual(int.Parse(l.name.Substring(1)), lines.Count, l.name + " lines");
+                    Assert.AreEqual(10 + chromium, (double)lines[0]["baseline"] / scale, 0.5, l.name + ": first baseline at scale " + scale);
+                    for (int k = 1; k < lines.Count; k++)
+                        Assert.AreEqual(20 * scale, (double)lines[k]["baseline"] - (double)lines[k - 1]["baseline"], 2e-3, l.name + ": line pitch");
+                }
+
+                // the rendered glyph sits on that baseline: the bottom of the H's ink in the one-line label
+                var tex = new Texture2D(256, 256, TextureFormat.RGBA32, false, true);
+                var active = RenderTexture.active;
+                RenderTexture.active = _rt;
+                tex.ReadPixels(new Rect(0, 0, 256, 256), 0, 0, false);
+                tex.Apply(false);
+                RenderTexture.active = active;
+                var first = labels[0].worldBound;
+                int x0 = Mathf.FloorToInt(first.xMin * scale), x1 = Mathf.CeilToInt(first.xMax * scale);
+                int inkBottom = -1;
+                for (int y = Mathf.FloorToInt(first.yMin * scale); y < Mathf.CeilToInt(first.yMax * scale); y++)
+                    for (int x = x0; x < x1; x++)
+                        if (tex.GetPixel(x, 255 - y).r > 0.5f) inkBottom = y + 1;
+                Object.DestroyImmediate(tex);
+                Assert.AreEqual(10 + chromium, inkBottom / scale, 1.0 / scale + 0.01, "ink bottom of 'H' at scale " + scale);
+
+                Object.DestroyImmediate(_go);
+                Object.DestroyImmediate(_settings);
+                Object.DestroyImmediate(_rt);
+            }
         }
 
         [Test]

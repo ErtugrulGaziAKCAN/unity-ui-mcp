@@ -247,7 +247,7 @@ namespace DesignUi.Editor.Tests
             try
             {
                 File.WriteAllText(Path.Combine(kit, "kit.config.json"), "{\"fontsCss\":\"fonts/fonts.css\",\"textStyles\":\"text-styles.json\",\"locales\":[]}\n");
-                File.WriteAllText(Path.Combine(kit, "text-styles.json"), "{ \"label\": { \"fontSize\": 16, \"lineHeight\": 19.359375, \"weight\": 400 } }");
+                File.WriteAllText(Path.Combine(kit, "text-styles.json"), "{ \"label\": { \"fontSize\": 16, \"lineHeight\": 20, \"weight\": 400 } }");
                 DesignUiBridge.KitSyncHandler = DesignUiOps.KitSync;
                 var body = new JObject { ["profile"] = profilePath, ["kitDir"] = kit }.ToString();
                 var t = Send("POST", "/kit-sync", Token(), body);

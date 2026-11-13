@@ -17,14 +17,15 @@ namespace DesignUi.Editor.Tests
     /// <summary>
     /// The Unity capture of a compiled screen (spec 15) and its batch entry point. <see cref="CaptureFromEnv"/> runs every
     /// job of an export's <c>goldens/matrix.json</c> when <c>DESIGN_UI_EXPORT</c> is set (see the repository README);
-    /// otherwise its result is inconclusive ("not configured").
+    /// otherwise it passes without capturing ("not configured"). A capture counts only with the capture-done marker in
+    /// its output folder.
     /// </summary>
     public class DesignCaptureTests
     {
         const string Out = "Assets/DesignUiCaptureTests";
-        const string Labels = "{ \"label\": { \"fontSize\": 16, \"lineHeight\": 19.359375, \"weight\": 400 }, " +
-                              "\"body\": { \"fontSize\": 24, \"lineHeight\": 29.046875, \"weight\": 400 }, " +
-                              "\"title\": { \"fontSize\": 32, \"lineHeight\": 38.71875, \"weight\": 400 } }";
+        const string Labels = "{ \"label\": { \"fontSize\": 16, \"lineHeight\": 20, \"weight\": 400 }, " +
+                              "\"body\": { \"fontSize\": 24, \"lineHeight\": 30, \"weight\": 400 }, " +
+                              "\"title\": { \"fontSize\": 32, \"lineHeight\": 36, \"weight\": 400 } }";
 
         readonly List<string> _temp = new List<string>();
         readonly List<UnityEngine.Object> _objects = new List<UnityEngine.Object>();
@@ -43,8 +44,8 @@ namespace DesignUi.Editor.Tests
         public IEnumerator CaptureFromEnv()
         {
             var export = Env("DESIGN_UI_EXPORT", "DESIGN_UI_EXPORT_DIR");
-            // not a capture run: inconclusive, never a pass, so a runner never reads an unconfigured run as captured
-            if (export == null) Assert.Inconclusive("not configured: DESIGN_UI_EXPORT is not set, so nothing was captured (set DESIGN_UI_EXPORT and DESIGN_UI_OUT)");
+            // not a capture run: nothing to do; a runner reads a capture only from the capture-done marker of its output folder
+            if (export == null) Assert.Pass("not configured; nothing captured (set DESIGN_UI_EXPORT and DESIGN_UI_OUT)");
             var outDir = Env("DESIGN_UI_OUT", "DESIGN_UI_OUT_DIR");
             Assert.IsNotNull(outDir, "DESIGN_UI_OUT names the folder the captures are written to");
             var profile = DesignCapture.LoadProfile(Env("DESIGN_UI_PROFILE"));
@@ -531,6 +532,7 @@ namespace DesignUi.Editor.Tests
                 });
             }
             File.WriteAllText(Path.Combine(outDir, "notes.txt"), "a file the capture does not own");
+            File.WriteAllText(Path.Combine(outDir, DesignCapture.DoneFileName), "{ \"runId\": \"old\" }");
 
             var result = new CaptureResult();
             yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result);
@@ -543,6 +545,25 @@ namespace DesignUi.Editor.Tests
             var meta = JObject.Parse(File.ReadAllText(Path.Combine(outDir, DesignCapture.MetaFileName)));
             Assert.AreEqual("complete", (string)meta["status"]);
             Assert.IsFalse(string.IsNullOrEmpty((string)meta["runId"]));
+            var done = JObject.Parse(File.ReadAllText(Path.Combine(outDir, DesignCapture.DoneFileName)));
+            Assert.AreEqual((string)meta["runId"], (string)done["runId"], "this run's marker, not the earlier one");
+            Assert.AreEqual(2, (int)done["jobs"]);
+            Assert.AreEqual(1, (int)done["captured"]);
+            Assert.AreEqual(1, (int)done["notCaptured"]);
+        }
+
+        [Test]
+        public void CaptureAll_ThatStopsBeforeTheEnd_LeavesNoDoneMarker()
+        {
+            var export = Export(Small(BlackRoot(Box("tile", "#112233")))); // no goldens/matrix.json
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outDir = TempDir();
+            File.WriteAllText(Path.Combine(outDir, DesignCapture.DoneFileName), "{ \"runId\": \"old\" }");
+            var run = DesignCapture.CaptureAll(export, screen, profile, outDir, new CaptureResult());
+            Assert.Throws<IrFormatException>(() => { while (run.MoveNext()) { } });
+            Assert.IsFalse(File.Exists(Path.Combine(outDir, DesignCapture.DoneFileName)), "a folder without the marker was not captured");
+            Assert.AreEqual("running", (string)JObject.Parse(File.ReadAllText(Path.Combine(outDir, DesignCapture.MetaFileName)))["status"]);
         }
 
         [UnityTest]

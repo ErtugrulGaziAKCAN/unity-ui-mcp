@@ -28,8 +28,7 @@ delete the `com.unity.design-ui` entry from `packages-lock.json`.
 Unity verification runs on an isolated copy of the sample project made by the maintainer's local clone tool
 (`~/unity-clone-test`, not part of this repository). Because the copy lives outside this repo, use the wrapper,
 which temporarily makes the package reference in `samples/FidelityProject/Packages/manifest.json` absolute and
-restores it on exit: `scripts/unity-check.sh --warm --editmode 'DesignUi;!DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv'`
-(the capture entry below is inconclusive without its variables, and Unity then exits with a failure code). When the task
+restores it on exit: `scripts/unity-check.sh --warm --editmode "DesignUi"`. When the task
 is finished run `scripts/unity-check.sh --done`. Never edit the manifest entry by hand; the wrapper refuses to start
 (exit 2) if it is not the relative value.
 
@@ -52,13 +51,14 @@ an EditMode test of the package's test assembly, `DesignUi.Editor.Tests.DesignCa
 
    - `DESIGN_UI_EXPORT`: the export folder (`screen.ir.json`, `fixtures/sample-data.json`, `goldens/matrix.json`).
    - `DESIGN_UI_OUT`: where the captures go: `<capture>.png` and `boxes.json` named like the goldens, the compiled
-     `.design-ui.json` (removed wrappers) and `boxes.meta.json` (`status` `running` until the run completes, what was
-     not captured and why, notes, timings). The PNGs, `boxes.json`, `boxes.meta.json` and `.design-ui.json` of an
-     earlier run in this folder are deleted first.
+     `.design-ui.json` (removed wrappers), `boxes.meta.json` (`status` `running` until the run completes, what was
+     not captured and why, notes, timings) and, written last, `capture-done.json` (run id, job count, captured and
+     not-captured counts). The files of an earlier run in this folder are deleted first. Runners and the comparison
+     treat a folder without `capture-done.json` as not captured.
    - `DESIGN_UI_SCREEN` (optional): the compiled screen folder; default `<profile output folder>/<Screen>`.
    - `DESIGN_UI_PROFILE` (optional): the DesignUiProfile asset; default the project's only profile.
-   - `DESIGN_UI_EXPORT_DIR` and `DESIGN_UI_OUT_DIR` are accepted as well. Without `DESIGN_UI_EXPORT` the test's result
-     is inconclusive ("not configured"), never passed.
+   - `DESIGN_UI_EXPORT_DIR` and `DESIGN_UI_OUT_DIR` are accepted as well. Without `DESIGN_UI_EXPORT` the test passes
+     with "not configured; nothing captured" and writes nothing, so only `capture-done.json` says a capture ran.
 3. `design-export compare <export folder> --unity <capture folder> --report report.html`.
 
 Animation samples are listed in `boxes.meta.json` as not captured until the animation player exists, so a screen
