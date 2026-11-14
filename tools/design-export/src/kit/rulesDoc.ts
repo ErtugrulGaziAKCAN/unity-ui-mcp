@@ -296,12 +296,14 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
 
   h("Layout");
   L.push(
-    "- `display: flex` (rows and columns, `flex-wrap` for tiles) or `none`; `display: block` becomes a flex column. No grid (U-CSS-001), no floats or `position: fixed/sticky` (U-CSS-017).",
+    "- `display: flex` (rows and columns, `flex-wrap: wrap` for tiles; no `wrap-reverse`) or `none`; `display: block` becomes a flex column. No grid (U-CSS-001), no floats or `position: fixed/sticky` (U-CSS-017).",
     "- `gap` only on containers that do not wrap (U-CSS-011); it becomes margins. Sizes in px or %; no `calc()` (U-CSS-005) and no viewport units (U-CSS-006).",
     "- `position: absolute` needs a positioned parent (U-CSS-035); `z-index` only where the markup order already gives the paint order (U-CSS-004, U-CSS-032).",
     "- Give flex items an explicit size or `flex-shrink: 0` where their content must not shrink (U-CSS-019); `align-items: baseline` is not available (U-CSS-018).",
+    "- `min-width`, `max-width`, `min-height` and `max-height` work as in CSS, except that a box whose width `max-width` sets while its text wraps needs a width of its own (U-CSS-045): UI Toolkit sizes it to its longest line.",
     "- Move, turn and scale with `translate`, `rotate`, `scale` (or a `transform` of those functions in that order, U-CSS-025).",
     "- Text sits in its own element: no text next to element children (U-CSS-030); a single inline child of a block becomes a block only when it renders the same (U-CSS-009).",
+    "- Lines break between words only: keep every word shorter than its box (`overflow-wrap` stays `normal`); `white-space: nowrap` with `overflow: hidden` and `text-overflow: ellipsis` shortens a line with an ellipsis.",
     "- `overflow: hidden` clips; `overflow-y: auto` makes a scroll area (a `ScrollView`), and a `data-u-repeat` list inside one becomes a virtualized `ListView`.",
   );
 
@@ -319,6 +321,7 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
     "- `linear-gradient()` and `radial-gradient()` are baked into a vector image that fills the element; colour stops at least 1/64 of the gradient line apart (U-CSS-022), sRGB stops only (U-CSS-014). One background image per element (U-CSS-037).",
     "- `text-shadow`: one shadow, `x y blur colour` (several are U-CSS-023). `border-style`: `solid` or `none` (U-CSS-021). Corner radii are circular, one px value per corner (U-CSS-020; % only on squares, a pill uses half the height).",
     "- `object-fit`: `fill`, `contain` or `cover`, centred, on images. Icons are inline `<svg>`: paint every shape with `currentColor` to follow the text colour in every state, or every shape with fixed colours (U-CSS-031).",
+    "- A url() background image is drawn with its CSS `background-size`, `background-position` and `background-repeat` (not `space` or `round`). Show raster images (`<img>` or background) at their natural size or larger at 2560×1440, so every viewport draws them at half their size or more, and put a scaled or repeated background image on whole pixels at every viewport (sizes and offsets in multiples of 4 px): Chromium and UI Toolkit resample smaller or off-grid rasters differently.",
     `- \`filter\`: only the functions css-support.json enables, each once its fidelity fixture passes in Unity (U-CSS-015; \`kit.config.json\` \`filterFunctions\` mirrors the list); currently ${filters.length ? code(filters) : "none"}. No \`backdrop-filter\` (U-CSS-007), no \`outline\` (draw focus with a border).`,
   );
 

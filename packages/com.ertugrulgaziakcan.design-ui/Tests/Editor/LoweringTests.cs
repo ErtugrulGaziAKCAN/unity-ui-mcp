@@ -349,6 +349,26 @@ namespace DesignUi.Editor.Tests
                 Lowering.Apply(WithChildren(Node("p"), Node("a", ("box-sizing", "content-box"), ("height", "100px"), ("border-top-width", "2px")))));
         }
 
+        /// <summary>A min, max or flex-basis size sizes the box as much as a width: content-box with padding changes it too.</summary>
+        [TestCase("min-width", "200px")]
+        [TestCase("max-height", "50%")]
+        [TestCase("flex-basis", "120px")]
+        public void CssDefaults_ContentBoxWithPaddingAndAMinMaxOrBasisSize_Throws(string property, string value)
+        {
+            var e = Assert.Throws<UnsupportedStyleException>(() =>
+                Lowering.Apply(WithChildren(Node("p"), Node("a", ("box-sizing", "content-box"), (property, value), ("padding-left", "8px")))));
+            Assert.AreEqual("U-CSS-036", e.RuleId);
+        }
+
+        [TestCase("min-width", "0px")]
+        [TestCase("max-width", "none")]
+        [TestCase("flex-basis", "auto")]
+        public void CssDefaults_ContentBoxWithPaddingAndNoSize_IsRemoved(string property, string value)
+        {
+            var r = Lowering.Apply(WithChildren(Node("p"), Node("a", ("box-sizing", "content-box"), (property, value), ("padding-left", "8px"))));
+            Assert.IsFalse(B(r.Children[0]).ContainsKey("box-sizing"));
+        }
+
         [Test]
         public void CssDefaults_ContentBoxWithoutPaddingOrBorder_IsRemoved()
         {

@@ -57,7 +57,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
     fix: "use a screen state or an ancestor's class, keep an always-visible child first, or margins instead of gap",
   },
   "U-CSS-035": { when: "an absolute element whose parent is static, or that changes position between layers", fix: "`position: relative` on the parent; one position in every layer" },
-  "U-CSS-036": { when: "`box-sizing: content-box` on an element with a width or height and padding or border", fix: "`box-sizing: border-box` (the kit base stylesheet sets it everywhere)" },
+  "U-CSS-036": { when: "`box-sizing: content-box` on an element with a width, height, min or max size or flex-basis and padding or border", fix: "`box-sizing: border-box` (the kit base stylesheet sets it everywhere)" },
   "U-CSS-037": {
     when: "baked effects that cannot share one element: an inset shadow under its own text, on a form control or a scroll area; a url() image beside a gradient or only in a layer; a background image or inset shadow on a tintable icon",
     fix: "move the text, image, gradient or icon into a child, or the shadow onto a wrapper",
@@ -75,6 +75,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-CSS-042": { when: "a transition of a property the animation player cannot animate (a layout property, letter-spacing, `visibility`, …)", fix: "transition transforms, opacity or colours; translate or scale for size and position" },
   "U-CSS-043": { when: "`@keyframes` and a transition of the same property on one element", fix: "one of them; the other on another property or a wrapper" },
   "U-CSS-044": { when: "negative `letter-spacing` on a text with less right padding than the spacing", fix: "right padding of at least the spacing, or letter-spacing ≥ 0" },
+  "U-CSS-045": { when: "a box whose width `max-width` sets while its text wraps (UI Toolkit sizes it to its longest line)", fix: "a width of its own, or text that fits on one line" },
   "U-DC-001": { when: "`{{…}}` holes in a Claude Design artboard", fix: "static sample text" },
   "U-DC-002": { when: "`<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import`", fix: "write rows out, `data-u-repeat` on the first" },
   "U-DC-003": { when: "UI built by script", fix: "static markup" },

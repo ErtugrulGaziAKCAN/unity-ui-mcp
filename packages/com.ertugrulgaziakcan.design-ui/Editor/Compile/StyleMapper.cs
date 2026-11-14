@@ -143,7 +143,7 @@ namespace DesignUi.Editor
                     case "font-weight": case "font-style":
                     case "text-align": case "white-space": case "white-space-collapse": case "text-wrap-mode":
                     case "overflow": case "overflow-x": case "overflow-y": case "font-family":
-                    case "letter-spacing":
+                    case "letter-spacing": case "word-spacing":
                         break; // composed below
                     case "aspect-ratio":
                         result.Add(new UssDeclaration(key, AspectRatio(value)));
@@ -200,6 +200,7 @@ namespace DesignUi.Editor
             }
 
             LetterSpacing(result, support, Merged, Has, isText, isLayer);
+            WordSpacing(result, support, Merged, Has);
 
             if (Has("font-family"))
                 result.Add(new UssDeclaration("-unity-font-definition", "var(--font-" + FamilySlug(css["font-family"]) + ")"));
@@ -260,6 +261,30 @@ namespace DesignUi.Editor
                     "Give the text at least " + Num(-spacing) + "px of right padding, or use a letter-spacing of 0 or more: UI Toolkit draws no spacing after the last character and lays out no negative padding.");
             result.RemoveAll(d => d.Property == "padding-right");
             result.Add(new UssDeclaration("padding-right", Num(padding + spacing) + "px"));
+        }
+
+        /// <summary>
+        /// CSS word-spacing is px added to every space; UI Toolkit's USS word-spacing is hundredths of an em of the element's
+        /// font size, as its letter-spacing (TextCore adds both times the em scale; measured in the fidelity suite's
+        /// text-spacing fixture), so the USS value is <c>px × 100 / font-size</c>, written wherever the layer changes the
+        /// spacing or the font size. Without a font size (a container) a spacing other than none is left to the text elements,
+        /// which carry it with their own size.
+        /// </summary>
+        static void WordSpacing(List<UssDeclaration> result, CssSupport support, Func<string, string> merged, Func<string, bool> has)
+        {
+            var raw = merged("word-spacing");
+            if (raw == null || !has("word-spacing") && !has("font-size")) return;
+            double spacing = SpacingPx(Normalize(support, "word-spacing", raw), "word-spacing");
+            if (spacing == 0)
+            {
+                if (has("word-spacing")) result.Add(new UssDeclaration("word-spacing", "0px")); // none is none at any size
+                return;
+            }
+            var size = merged("font-size");
+            if (size == null) return;
+            double fontPx = SpacingPx(size, "font-size");
+            if (!(fontPx > 0)) throw new UnsupportedStyleException("font-size", size, null, "word-spacing needs a font size above 0 px.");
+            result.Add(new UssDeclaration("word-spacing", Num(spacing * 100 / fontPx) + "px"));
         }
 
         static string PaddingRight(string padding)

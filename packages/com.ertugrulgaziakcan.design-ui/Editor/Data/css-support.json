@@ -92,7 +92,8 @@
   },
   "properties": {
     "-webkit-font-smoothing": {
-      "handling": "dropped"
+      "handling": "dropped",
+      "note": "Judged on text by U-CSS-038 (every text renders with antialiased, as the goldens are measured); no effect on an element without text. Accepted and omitted."
     },
     "-webkit-tap-highlight-color": {
       "handling": "dropped"
@@ -359,20 +360,18 @@
         "repeat",
         "no-repeat",
         "repeat-x",
-        "repeat-y",
-        "space",
-        "round"
+        "repeat-y"
       ],
       "components": [
         1,
         2
       ],
-      "valueFix": "Use repeat, no-repeat, repeat-x, repeat-y, space or round.",
+      "valueFix": "Use repeat, no-repeat, repeat-x or repeat-y: space and round put or scale the tiles off the pixel grid, where Chromium and UI Toolkit resample them differently (measured).",
       "authoring": {
         "list": true,
         "note": "one value per background layer; the exporter bakes the layers into one image (U-CSS-014 rejects layers it cannot bake)"
       },
-      "note": "USS grammar repeat-x | repeat-y | [ repeat | space | round | no-repeat ]{1,2}"
+      "note": "USS grammar repeat-x | repeat-y | [ repeat | space | round | no-repeat ]{1,2}; space and round are not accepted (measured in the fidelity suite)"
     },
     "background-size": {
       "handling": "direct",
@@ -962,10 +961,9 @@
       "handling": "direct",
       "keywords": [
         "nowrap",
-        "wrap",
-        "wrap-reverse"
+        "wrap"
       ],
-      "valueFix": "Use nowrap, wrap or wrap-reverse."
+      "valueFix": "Use nowrap or wrap: UI Toolkit places wrap-reverse lines with margins elsewhere than CSS (measured); put the items in the order the lines need."
     },
     "float": {
       "handling": "error",
@@ -1479,7 +1477,13 @@
     },
     "text-rendering": {
       "handling": "dropped",
-      "note": "No effect on the compiled screen (a rendering hint, or ignored by flex layout); accepted and omitted."
+      "keywords": [
+        "auto",
+        "optimizeLegibility",
+        "optimizelegibility"
+      ],
+      "valueFix": "Use text-rendering: auto or optimizeLegibility (both measured to render as the compiled screen); the other values change kerning or hinting.",
+      "note": "auto and optimizeLegibility render the same in the design's Chromium (fidelity suite, text-spacing); accepted and omitted. Chromium writes the computed value in lower case."
     },
     "text-shadow": {
       "handling": "direct",
@@ -1516,12 +1520,10 @@
     "overflow-wrap": {
       "handling": "dropped",
       "keywords": [
-        "break-word",
-        "anywhere"
+        "normal"
       ],
-      "valueRule": "U-CSS-023",
-      "valueFix": "Leave overflow-wrap out, or use break-word: UI Toolkit wraps a word longer than its line at a character.",
-      "note": "A textarea's browser default. UI Toolkit wraps a word that does not fit its line at a character, as break-word and anywhere do, so the compiler writes nothing."
+      "valueFix": "Leave overflow-wrap normal and keep every word shorter than its box: a word broken inside its letters breaks at another letter in UI Toolkit (measured at 1920 and 1280).",
+      "note": "A textarea's browser default is break-word; browser defaults never reach the IR (U-CSS-026 asks for overflow-wrap: normal on it)."
     },
     "top": {
       "handling": "direct",
@@ -1669,7 +1671,13 @@
     },
     "will-change": {
       "handling": "dropped",
-      "note": "No effect on the compiled screen (a rendering hint, or ignored by flex layout); accepted and omitted."
+      "keywords": [
+        "auto",
+        "transform",
+        "opacity"
+      ],
+      "valueFix": "Use will-change: auto, transform or opacity (measured to render as the compiled screen); other values are not measured.",
+      "note": "auto, transform and opacity render the same in the design's Chromium (fidelity suite, sizing-visibility); accepted and omitted."
     },
     "word-spacing": {
       "handling": "direct",

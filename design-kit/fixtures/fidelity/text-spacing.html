@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.text-spacing</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 16px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 16px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
+.text-subtitle-bold { font-size: 32px; line-height: 40px; font-weight: 700; }
+.text-title { font-size: 36px; line-height: 48px; font-weight: 400; }
+.text-title-bold { font-size: 36px; line-height: 48px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 60px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 60px; font-weight: 700; }
+.text-display { font-size: 64px; line-height: 80px; font-weight: 400; }
+.text-display-bold { font-size: 64px; line-height: 80px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 32px; background-color: var(--color-surface-900); }
+.row { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 20px; }
+.chip { flex-shrink: 0; margin-right: 24px; padding-left: 12px; padding-right: 12px; white-space: nowrap; background-color: var(--color-surface-800); }
+.after { flex-shrink: 0; width: 24px; height: 16px; background-color: var(--color-accent); }
+.boxed { flex-shrink: 0; width: 480px; margin-right: 24px; white-space: nowrap; background-color: var(--color-surface-800); }
+.wrap { flex-shrink: 0; width: 400px; margin-right: 24px; background-color: var(--color-surface-800); }
+.center { text-align: center; }
+.right { text-align: right; }
+.ws-4 { word-spacing: 4px; }
+.ws-8 { word-spacing: 8px; }
+.ws-16 { word-spacing: 16px; }
+.ws-neg { word-spacing: -4px; }
+.caps-label { letter-spacing: 1.6px; }
+.cut { flex-shrink: 0; width: 360px; margin-right: 24px; white-space: nowrap; overflow: hidden; background-color: var(--color-surface-800); }
+.ellipsis { text-overflow: ellipsis; }
+.clip { text-overflow: clip; }
+.italic { font-style: italic; }
+.pre { white-space: pre; }
+.pre-wrap { white-space: pre-wrap; }
+.legible { text-rendering: optimizeLegibility; }
+.adjust { -webkit-text-size-adjust: 150%; text-size-adjust: 150%; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.text-spacing">
+  <!-- word spacing: text-sized chips with a box after them, every size, negative too -->
+  <div class="row">
+    <p class="chip text-label ws-4" data-u-id="ws-label" data-l10n="fidelity.text-spacing.ws-label" data-en="Next home match">Sıradaki iç saha maçı</p>
+    <div class="after" data-u-id="after-ws-label"></div>
+  </div>
+  <div class="row">
+    <p class="chip text-body ws-16" data-u-id="ws-body" data-l10n="fidelity.text-spacing.ws-body" data-en="Season ticket sales">Kombine bilet satışları</p>
+    <div class="after" data-u-id="after-ws-body"></div>
+  </div>
+  <div class="row">
+    <p class="chip text-title-bold ws-8" data-u-id="ws-title" data-l10n="fidelity.text-spacing.ws-title" data-en="Board meeting today">Bugün yönetim toplantısı</p>
+    <div class="after" data-u-id="after-ws-title"></div>
+  </div>
+  <div class="row">
+    <p class="chip text-body ws-neg" data-u-id="ws-neg" data-l10n="fidelity.text-spacing.ws-neg" data-en="Tight word spacing here">Sıkı kelime aralığı burada</p>
+    <div class="after" data-u-id="after-ws-neg"></div>
+  </div>
+  <!-- word spacing in fixed boxes: left, centred, right; with letter spacing -->
+  <div class="row">
+    <p class="boxed text-label-bold ws-8" data-u-id="ws-left" data-l10n="fidelity.text-spacing.ws-left" data-en="Upcoming cup matches">Yaklaşan kupa maçları</p>
+    <p class="boxed text-label-bold ws-8 center" data-u-id="ws-center" data-l10n="fidelity.text-spacing.ws-center" data-en="Upcoming cup matches">Yaklaşan kupa maçları</p>
+    <p class="boxed text-label-bold ws-8 right" data-u-id="ws-right" data-l10n="fidelity.text-spacing.ws-right" data-en="Upcoming cup matches">Yaklaşan kupa maçları</p>
+    <p class="chip text-label-bold ws-8 caps-label" data-u-id="ws-caps" data-l10n="fidelity.text-spacing.ws-caps" data-en="CUP MATCHES">KUPA MAÇLARI</p>
+  </div>
+  <!-- word spacing that wraps: the same line breaks, left and centred -->
+  <div class="row">
+    <p class="wrap text-label ws-8" data-u-id="ws-wrap" data-l10n="fidelity.text-spacing.ws-wrap" data-en="The board meets after the derby to discuss the budget.">Yönetim kurulu bütçeyi konuşmak için derbiden sonra toplanıyor.</p>
+    <p class="wrap text-label ws-8 center" data-u-id="ws-wrap-center" data-l10n="fidelity.text-spacing.ws-wrap-center" data-en="The board meets after the derby to discuss the budget.">Yönetim kurulu bütçeyi konuşmak için derbiden sonra toplanıyor.</p>
+  </div>
+  <!-- one line cut off: ellipsis left and right aligned, and clip -->
+  <div class="row">
+    <p class="cut ellipsis text-body" data-u-id="ellipsis-body" data-l10n="fidelity.text-spacing.ellipsis-body" data-en="Ticket prices stay the same for the rest of the season">Bilet fiyatları sezonun geri kalanında aynı kalıyor</p>
+    <p class="cut ellipsis text-label-bold right" data-u-id="ellipsis-right" data-l10n="fidelity.text-spacing.ellipsis-right" data-en="The transfer window closes at midnight tonight">Transfer dönemi bu gece yarısı kapanıyor</p>
+    <p class="cut clip text-body" data-u-id="clip-body" data-l10n="fidelity.text-spacing.clip-body" data-en="Ticket prices stay the same for the rest of the season">Bilet fiyatları sezonun geri kalanında aynı kalıyor</p>
+    <p class="cut ellipsis text-body" data-u-id="ellipsis-fits" data-l10n="fidelity.text-spacing.ellipsis-fits" data-en="It fits">Sığıyor</p>
+  </div>
+  <!-- italic: the kit font's real italic face -->
+  <div class="row">
+    <p class="chip text-body italic" data-u-id="italic-body" data-l10n="fidelity.text-spacing.italic-body" data-en="Quote of the day">Günün sözü</p>
+    <div class="after" data-u-id="after-italic"></div>
+    <p class="wrap text-label italic" data-u-id="italic-wrap" data-l10n="fidelity.text-spacing.italic-wrap" data-en="The board meets after the derby to discuss the budget.">Yönetim kurulu bütçeyi konuşmak için derbiden sonra toplanıyor.</p>
+  </div>
+  <!-- preserved white space: pre (one line) and pre-wrap -->
+  <div class="row">
+    <p class="chip text-body pre" data-u-id="pre-body" data-l10n="fidelity.text-spacing.pre-body" data-en="Goals   12   Assists   7">Gol   12   Asist   7</p>
+    <p class="wrap text-label pre-wrap" data-u-id="pre-wrap" data-l10n="fidelity.text-spacing.pre-wrap" data-en="Home    2 : 1    Away, a long result line that wraps">Ev    2 : 1    Deplasman, satıra sığmayan uzun bir sonuç</p>
+  </div>
+  <!-- rendering hints with no effect on a desktop screen: text-rendering: optimizeLegibility, text-size-adjust -->
+  <div class="row">
+    <p class="chip text-title-bold legible" data-u-id="legible" data-l10n="fidelity.text-spacing.legible" data-en="Wave of AVATAR fans">AVATAR taraftar dalgası</p>
+    <div class="after" data-u-id="after-legible"></div>
+    <p class="wrap text-label adjust" data-u-id="adjust" data-l10n="fidelity.text-spacing.adjust" data-en="The board meets after the derby to discuss the budget.">Yönetim kurulu bütçeyi konuşmak için derbiden sonra toplanıyor.</p>
+  </div>
+</div>
+</body>
+</html>

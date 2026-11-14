@@ -942,10 +942,22 @@ describe("IR context", () => {
       { id: "photo", kind: "image", style: { base: {} }, asset: { kind: "image", width: 320, height: 180 }, children: [] },
       { id: "natural", kind: "image", style: { base: {} }, asset: { kind: "image", width: 160, height: 90 }, children: [] },
       { id: "icon", kind: "vector", style: { base: {} }, asset: { kind: "svg", width: 24, height: 24 }, children: [] },
+      // url() background images: resampled unless drawn at their own size (background-size auto, or their px size)
+      { id: "tiled", kind: "container", style: { base: { "background-size": "auto" } }, background: { kind: "image", width: 40, height: 24 }, children: [] },
+      { id: "own", kind: "container", style: { base: { "background-size": "40px 24px" } }, background: { kind: "image", width: 40, height: 24 }, children: [] },
+      { id: "cover", kind: "container", style: { base: { "background-size": "cover" } }, background: { kind: "image", width: 40, height: 24 }, children: [] },
+      { id: "hover-size", kind: "container", style: { base: {}, hover: { "background-size": "80px 48px" } }, background: { kind: "image", width: 40, height: 24 }, children: [] },
+      { id: "gradient", kind: "container", style: { base: { "background-size": "auto" } }, background: { kind: "svg", width: 0, height: 0 }, children: [] },
     ] } });
-    const b: CaptureBoxes = { ...boxes, elements: { root: el(0, 0, 1280, 720), photo: el(0, 0, 100, 180), natural: el(200, 0, 160, 90), icon: el(400, 0, 12, 12) } };
-    const ctx = captureContext(pic, { state: "default", viewport: [1280, 720], apply: [] }, b);
-    expect([...ctx.pictures!].sort()).toEqual(["photo"]);
+    const b: CaptureBoxes = { ...boxes, scale: 1, elements: { root: el(0, 0, 1280, 720), photo: el(0, 0, 100, 180), natural: el(200, 0, 160, 90), icon: el(400, 0, 12, 12),
+      tiled: el(0, 200, 100, 100), own: el(100, 200, 100, 100), cover: el(200, 200, 100, 100), "hover-size": el(300, 200, 100, 100), gradient: el(400, 200, 100, 100) } };
+    const ctx = captureContext(pic, { state: "default", viewport: [2560, 1440], apply: [] }, b);
+    expect([...ctx.pictures!].sort()).toEqual(["cover", "photo"]);
+    const hovered = captureContext(pic, { state: "default", viewport: [2560, 1440], apply: [{ kind: "pseudo", pseudo: "hover", elementId: "hover-size" }] }, b);
+    expect([...hovered.pictures!].sort()).toEqual(["cover", "hover-size", "photo"]);
+    // at another scale than the reference every background image is resampled
+    const half = captureContext(pic, { state: "default", viewport: [1280, 720], apply: [] }, { ...b, scale: 0.5 });
+    expect([...half.pictures!].sort()).toEqual(["cover", "hover-size", "own", "photo", "tiled"]);
   });
 
   it("knows which elements an animation sample shows rotated off the axes (the design's rotation on the screen)", () => {

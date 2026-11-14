@@ -27,12 +27,12 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void OverflowWrap_BreakWord_IsUiToolkitsWrapping_SoNothingIsWritten()
+        public void OverflowWrap_NormalIsLeftOut_AndBreakingInsideAWordIsRejected()
         {
-            // a textarea's browser default (the exporter keeps it): UI Toolkit breaks a word longer than its line anyway
-            Assert.IsEmpty(Map(("overflow-wrap", "break-word")));
-            Assert.IsEmpty(Map(("overflow-wrap", "anywhere")));
-            Assert.AreEqual("U-CSS-023", Assert.Throws<UnsupportedStyleException>(() => Map(("overflow-wrap", "normal"))).RuleId);
+            // a word broken inside its letters breaks at another letter in UI Toolkit (fidelity suite, 1920 and 1280)
+            Assert.IsEmpty(Map(("overflow-wrap", "normal")));
+            Assert.AreEqual("U-CSS-023", Assert.Throws<UnsupportedStyleException>(() => Map(("overflow-wrap", "break-word"))).RuleId);
+            Assert.AreEqual("U-CSS-023", Assert.Throws<UnsupportedStyleException>(() => Map(("overflow-wrap", "anywhere"))).RuleId);
         }
 
         // ---- font ------------------------------------------------------------------------------------------
@@ -327,6 +327,28 @@ namespace DesignUi.Editor.Tests
             Assert.IsNull(Get(container, "padding-right"));
             var bare = StyleMapper.Map(D(("letter-spacing", "1px")), D(("letter-spacing", "1px")), false, true);
             Assert.IsNull(Get(bare, "letter-spacing"), "its text elements carry the spacing with their own font size");
+        }
+
+        /// <summary>
+        /// USS word-spacing is hundredths of an em of the element's font size too (TextCore adds it times the em scale, as
+        /// letter-spacing): 8px on 16px text is 50 in USS, recomputed for a layer's font size; no padding (CSS adds no spacing
+        /// after a line's last word).
+        /// </summary>
+        [Test]
+        public void WordSpacing_IsHundredthsOfAnEm_FollowingTheFontSize()
+        {
+            var text = Map(("word-spacing", "8px"), ("font-size", "16px"));
+            Assert.AreEqual("50px", Get(text, "word-spacing"));
+            Assert.IsNull(Get(text, "padding-right"));
+            Assert.AreEqual("-16.6667px", Get(Map(("word-spacing", "-4px"), ("font-size", "24px")), "word-spacing"));
+            Assert.AreEqual("0px", Get(Map(("word-spacing", "normal"), ("font-size", "24px")), "word-spacing"));
+            var basis = D(("word-spacing", "8px"), ("font-size", "16px"));
+            Assert.AreEqual("25px", Get(Layer(D(("font-size", "32px")), basis), "word-spacing"), "a layer that changes the font size keeps 8 px");
+            Assert.AreEqual("0px", Get(Layer(D(("word-spacing", "normal")), basis), "word-spacing"));
+            Assert.IsNull(Get(Layer(D(("color", "#ffffff")), basis), "word-spacing"), "the base's value still holds");
+            Assert.IsNull(Get(Map(("font-size", "16px")), "word-spacing"), "none written where nothing sets it");
+            var bare = StyleMapper.Map(D(("word-spacing", "4px")), D(("word-spacing", "4px")), false, true);
+            Assert.IsNull(Get(bare, "word-spacing"), "a container without a font size leaves it to its texts");
         }
 
         // ---- values ----------------------------------------------------------------------------------------

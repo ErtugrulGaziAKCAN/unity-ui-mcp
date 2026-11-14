@@ -210,6 +210,12 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     if (backgrounds.has(id) || borders[id] || sh || inset || n.asset || n.kind === "image" || n.kind === "vector") painters.add(id);
     // a raster picture is resampled unless its element box is its own size in device px
     if (isObj(n.asset) && n.asset.kind === "image" && b && (Math.abs(b.w - Number(n.asset.width)) > 0.5 || Math.abs(b.h - Number(n.asset.height)) > 0.5)) pictures.add(id);
+    // so is a url() background image unless it is drawn at its own size (background-size auto or its px size, scale 1)
+    if (isObj(n.background) && n.background.kind === "image") {
+      const size = (styleValue(n, "background-size", holds) ?? "auto").trim().split(/\s+/);
+      const own = size.every((x) => x === "auto") || (size.length === 2 && parseFloat(size[0]) === Number(n.background.width) && parseFloat(size[1]) === Number(n.background.height));
+      if (!own || Math.abs(golden.scale - 1) > 1e-9) pictures.add(id);
+    }
     if (setup.anim && b && typeof b.rotation === "number" && !axisAligned(b.rotation)) rotated.add(id);
   }
   return { order: ix.order, root: ix.root, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };

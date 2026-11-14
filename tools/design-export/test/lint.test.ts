@@ -410,6 +410,33 @@ describe("device grid, group opacity and stacking rules", () => {
     expect(await text("letter-spacing:1.6px")).toEqual([]);
   });
 
+  it("U-CSS-036: content-box with padding on a box that a min or max size or flex-basis sizes", async () => {
+    const box = (css: string) => ids(`<div class="b" data-u-id="b"></div>`,
+      `.b{box-sizing:content-box;padding:8px;height:40px;flex-shrink:0;align-self:flex-start;background-color:#123c47;${css}}`, "U-CSS-036");
+    expect(await box("min-width:200px")).toHaveLength(1);
+    expect(await box("max-width:50%")).toHaveLength(1);
+    expect(await box("height:auto;min-width:0")).toEqual([]);
+    expect(await box("height:auto;max-width:none")).toEqual([]);
+  });
+
+  it("U-CSS-045: a box whose width max-width sets while its text wraps", async () => {
+    const long = `data-l10n="s.t" data-en="Ticket prices stay the same for the rest of the season.">Bilet fiyatları sezonun geri kalanında aynı kalıyor.`;
+    const text = (css: string, words = long) => ids(`<p class="t" data-u-id="t" ${words}</p>`,
+      `.t{font-size:24px;line-height:30px;flex-shrink:0;align-self:flex-start;padding:8px 16px;${css}}`, "U-CSS-045");
+    expect(await text("max-width:260px")).toEqual([expect.objectContaining({ detail: "max-width 260px sets the width (260px) of a box whose text wraps: UI Toolkit sizes it to its longest line" })]);
+    expect(await text("max-width:10%"), "a % of the parent's content width").toHaveLength(1);
+    expect(await text("max-width:260px", `data-l10n="s.t" data-en="Short">Kısa`), "the box does not reach its max-width").toEqual([]);
+    expect(await text("max-width:260px;width:260px"), "a width of its own").toEqual([]);
+    expect(await text("max-width:260px;align-self:stretch"), "a stretched width").toEqual([]);
+    // a container whose wrapping text sets its width
+    const box = await ids(`<div class="c" data-u-id="c"><p class="t" ${long}</p></div>`,
+      `.c{display:flex;flex-direction:row;flex-shrink:0;align-self:flex-start;max-width:300px} .t{font-size:24px;line-height:30px;flex-shrink:1}`, "U-CSS-045");
+    expect(box.map((f) => f.path)).toEqual(["[data-u-screen=s] > div[data-u-id=c]"]);
+    // in a row, a flex-grow gives the box its size
+    expect(await ids(`<div class="r"><p class="t" data-u-id="t" ${long}</p></div>`,
+      `.r{display:flex;flex-direction:row;width:800px} .t{font-size:24px;line-height:30px;flex-grow:1;max-width:260px}`, "U-CSS-045")).toEqual([]);
+  });
+
   it("U-CSS-043: keyframes and a transition of the same property on one element", async () => {
     const box = `.b{width:200px;height:80px;flex-shrink:0;background-color:#123c47;animation:a 1s linear infinite} @keyframes a{from{translate:0 0}to{translate:0 4px}}`;
     const t = (css: string) => ids(`<div class="b" data-u-id="b"></div>`, `${box} ${css}`, "U-CSS-043");

@@ -15,6 +15,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   design files, a screen whose import or verify is running. New tool `design_ui_clean { screen?, dryRun? }` reports or
   runs the cleanup; `design_ui_status` shows the bookkeeping per screen and in total. The skill tells AI clients that
   cleanup is automatic and never to delete these files by hand.
+- Every CSS property and keyword lint accepts is measured by a fidelity fixture at 2560, 1920 and 1280 (new fixtures
+  `text-spacing`, `sizing-visibility` and `background-images`; `docs/findings/measured-css.md`). The sample project
+  has an italic face.
+- Lint rule U-CSS-045: a box whose width `max-width` sets while its text wraps needs a width of its own (UI Toolkit
+  sizes it to its longest line).
 - A design's `@media` breakpoints apply in the game: the compiled screen root sets the `bp-*` classes of the
   breakpoints that hold at its panel's logical size, and switches them when the panel is resized or rescaled, by the
   rule the verifier captures with.
@@ -23,11 +28,18 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Changed
 
+- `word-spacing` is converted to UI Toolkit's unit (hundredths of an em, as `letter-spacing`); it was written as px and
+  came out far too narrow.
+- Lint and the compiler reject what does not match the design in Unity: `flex-wrap: wrap-reverse`,
+  `background-repeat: space | round`, `overflow-wrap: break-word | anywhere`, `text-rendering` other than `auto` or
+  `optimizeLegibility`, `will-change` other than `auto`, `transform` or `opacity`, and `box-sizing: content-box` with
+  padding or border on a box that a min or max size or `flex-basis` sizes. RULES.md says how to show raster images so
+  they match (natural size or larger at 2560, background images on whole pixels).
+- The comparison treats a url() background image drawn at another size than its own like a scaled `<img>`.
 - Imports compare the Unity package with the MCP server first: the bridge's `/status` reports the package version and
   the IR version it reads; another major version or IR version stops the import before Unity is called (isError, with
   what to update), another minor version is a warning, and `design_ui_status` shows it. The package's IR reader names
   an export of another IR version as such ("made by a newer design-export … update the package").
-
 - Setup copies the design kit into the project (`<designRoot>/design-kit`) and points `kitDir` there; kit sync never
   writes into the clone's tracked `design-kit` (it refuses, and status warns, for a config of an earlier setup, with the
   copy to make).

@@ -182,12 +182,14 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 
 ## Layout
 
-- `display: flex` (rows and columns, `flex-wrap` for tiles) or `none`; `display: block` becomes a flex column. No grid (U-CSS-001), no floats or `position: fixed/sticky` (U-CSS-017).
+- `display: flex` (rows and columns, `flex-wrap: wrap` for tiles; no `wrap-reverse`) or `none`; `display: block` becomes a flex column. No grid (U-CSS-001), no floats or `position: fixed/sticky` (U-CSS-017).
 - `gap` only on containers that do not wrap (U-CSS-011); it becomes margins. Sizes in px or %; no `calc()` (U-CSS-005) and no viewport units (U-CSS-006).
 - `position: absolute` needs a positioned parent (U-CSS-035); `z-index` only where the markup order already gives the paint order (U-CSS-004, U-CSS-032).
 - Give flex items an explicit size or `flex-shrink: 0` where their content must not shrink (U-CSS-019); `align-items: baseline` is not available (U-CSS-018).
+- `min-width`, `max-width`, `min-height` and `max-height` work as in CSS, except that a box whose width `max-width` sets while its text wraps needs a width of its own (U-CSS-045): UI Toolkit sizes it to its longest line.
 - Move, turn and scale with `translate`, `rotate`, `scale` (or a `transform` of those functions in that order, U-CSS-025).
 - Text sits in its own element: no text next to element children (U-CSS-030); a single inline child of a block becomes a block only when it renders the same (U-CSS-009).
+- Lines break between words only: keep every word shorter than its box (`overflow-wrap` stays `normal`); `white-space: nowrap` with `overflow: hidden` and `text-overflow: ellipsis` shortens a line with an ellipsis.
 - `overflow: hidden` clips; `overflow-y: auto` makes a scroll area (a `ScrollView`), and a `data-u-repeat` list inside one becomes a virtualized `ListView`.
 
 ## Interaction and screen states
@@ -203,6 +205,7 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 - `linear-gradient()` and `radial-gradient()` are baked into a vector image that fills the element; colour stops at least 1/64 of the gradient line apart (U-CSS-022), sRGB stops only (U-CSS-014). One background image per element (U-CSS-037).
 - `text-shadow`: one shadow, `x y blur colour` (several are U-CSS-023). `border-style`: `solid` or `none` (U-CSS-021). Corner radii are circular, one px value per corner (U-CSS-020; % only on squares, a pill uses half the height).
 - `object-fit`: `fill`, `contain` or `cover`, centred, on images. Icons are inline `<svg>`: paint every shape with `currentColor` to follow the text colour in every state, or every shape with fixed colours (U-CSS-031).
+- A url() background image is drawn with its CSS `background-size`, `background-position` and `background-repeat` (not `space` or `round`). Show raster images (`<img>` or background) at their natural size or larger at 2560×1440, so every viewport draws them at half their size or more, and put a scaled or repeated background image on whole pixels at every viewport (sizes and offsets in multiples of 4 px): Chromium and UI Toolkit resample smaller or off-grid rasters differently.
 - `filter`: only the functions css-support.json enables, each once its fidelity fixture passes in Unity (U-CSS-015; `kit.config.json` `filterFunctions` mirrors the list); currently `invert`. No `backdrop-filter` (U-CSS-007), no `outline` (draw focus with a border).
 
 ## Animation
@@ -225,7 +228,7 @@ Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `
 - `background-color`: <color>
 - `background-position-x`: left | center | right or <length | percent> (comma list)
 - `background-position-y`: top | center | bottom or <length | percent> (comma list)
-- `background-repeat`: repeat | no-repeat | repeat-x | repeat-y | space | round (comma list)
+- `background-repeat`: repeat | no-repeat | repeat-x | repeat-y (comma list)
 - `background-size`: auto | cover | contain or <length | percent> (comma list)
 - `border-bottom-color`: <color>
 - `border-bottom-left-radius`: <length | percent> (U-CSS-020)
@@ -251,7 +254,7 @@ Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `
 - `flex-direction`: row | column | row-reverse | column-reverse
 - `flex-grow`: <number>
 - `flex-shrink`: <number>
-- `flex-wrap`: nowrap | wrap | wrap-reverse
+- `flex-wrap`: nowrap | wrap
 - `font-family`: <string | ident> (comma list) (U-CSS-010)
 - `font-size`: <length> (U-CSS-016)
 - `font-style`: normal | italic
@@ -337,10 +340,12 @@ Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `
 - `object-position`: center | 50%
 - `outline-style`: none
 - `outline-width`: 0 | 0px | medium
-- `overflow-wrap`: break-word | anywhere (U-CSS-023)
+- `overflow-wrap`: normal
 - `resize`: none
+- `text-rendering`: auto | optimizeLegibility | optimizelegibility
 - `transition-behavior`: normal (comma list)
-- any value: `-webkit-font-smoothing`, `-webkit-tap-highlight-color`, `-webkit-text-size-adjust`, `cursor`, `justify-items`, `justify-self`, `outline-color`, `outline-offset`, `text-rendering`, `text-size-adjust`, `user-select`, `will-change`
+- `will-change`: auto | transform | opacity
+- any value: `-webkit-font-smoothing`, `-webkit-tap-highlight-color`, `-webkit-text-size-adjust`, `cursor`, `justify-items`, `justify-self`, `outline-color`, `outline-offset`, `text-size-adjust`, `user-select`
 
 **Never supported:**
 
@@ -394,7 +399,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-033 | error | pseudo-states a pointer or focus cannot produce together: `:active` on an ancestor and on the element, two focused elements | style one press or focus per element; an `is-*` class set by code for a combined look |
 | U-CSS-034 | error | a `gap` container whose earlier child shows or hides by its own pseudo-state or `is-*` class, or by markup in some written-out repeat items | use a screen state or an ancestor's class, keep an always-visible child first, or margins instead of gap |
 | U-CSS-035 | error | an absolute element whose parent is static, or that changes position between layers | `position: relative` on the parent; one position in every layer |
-| U-CSS-036 | error | `box-sizing: content-box` on an element with a width or height and padding or border | `box-sizing: border-box` (the kit base stylesheet sets it everywhere) |
+| U-CSS-036 | error | `box-sizing: content-box` on an element with a width, height, min or max size or flex-basis and padding or border | `box-sizing: border-box` (the kit base stylesheet sets it everywhere) |
 | U-CSS-037 | error | baked effects that cannot share one element: an inset shadow under its own text, on a form control or a scroll area; a url() image beside a gradient or only in a layer; a background image or inset shadow on a tintable icon | move the text, image, gradient or icon into a child, or the shadow onto a wrapper |
 | U-CSS-038 | error | text without `-webkit-font-smoothing: antialiased` (macOS browsers thicken its stems, UI Toolkit does not) | the kit base stylesheet (it sets it on `:root`); never override it |
 | U-CSS-039 | error | `opacity` < 1, or a fade of it, on overlapping parts | `--color-disabled-*` colours; no fade |
@@ -403,6 +408,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-042 | error | a transition of a property the animation player cannot animate (a layout property, letter-spacing, `visibility`, …) | transition transforms, opacity or colours; translate or scale for size and position |
 | U-CSS-043 | error | `@keyframes` and a transition of the same property on one element | one of them; the other on another property or a wrapper |
 | U-CSS-044 | error | negative `letter-spacing` on a text with less right padding than the spacing | right padding of at least the spacing, or letter-spacing ≥ 0 |
+| U-CSS-045 | error | a box whose width `max-width` sets while its text wraps (UI Toolkit sizes it to its longest line) | a width of its own, or text that fits on one line |
 | U-DC-001 | error | `{{…}}` holes in a Claude Design artboard | static sample text |
 | U-DC-002 | error | `<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import` | write rows out, `data-u-repeat` on the first |
 | U-DC-003 | error | UI built by script | static markup |

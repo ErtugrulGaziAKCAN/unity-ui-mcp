@@ -6,7 +6,14 @@ import { Collector } from "./util.js";
 
 const BOX = ["padding-top", "padding-right", "padding-bottom", "padding-left", "border-top-width", "border-right-width", "border-bottom-width", "border-left-width"];
 
-/** content-box on an element with a width or height and padding or border: UI Toolkit sizes the border box (the kit's border-box). */
+/** The sizes content-box changes when the box has padding or border (the compiler's Lowering checks the same). */
+const SIZES = new Set(["width", "height", "min-width", "min-height", "max-width", "max-height", "flex-basis"]);
+const NO_SIZE = new Set(["auto", "none", "0", "0px"]);
+
+/**
+ * content-box on an element with a width, height, min or max size or flex-basis and padding or border: UI Toolkit sizes
+ * the border box (the kit's border-box).
+ */
 export const rule: Rule = {
   id: "U-CSS-036", severity: "error",
   check(s) {
@@ -17,7 +24,7 @@ export const rule: Rule = {
       const cands = L.cands(e.index);
       const contentBox = e.computed["box-sizing"] === "content-box" || cands.some((x) => x.prop === "box-sizing" && x.entry.value.trim() === "content-box");
       if (!contentBox) continue;
-      const sized = cands.filter((x) => (x.prop === "width" || x.prop === "height") && x.entry.value.trim() !== "auto").map((x) => x.prop);
+      const sized = cands.filter((x) => SIZES.has(x.prop) && !NO_SIZE.has(x.entry.value.trim())).map((x) => x.prop);
       const extras = BOX.filter((p) => (px(e.computed[p]) ?? 0) !== 0 || cands.some((x) => x.prop === p && x.dims.length > 0 && (px(x.entry.value) ?? 0) > 0));
       if (!sized.length || !extras.length) continue;
       c.add(e.path, `box-sizing: content-box with ${Array.from(new Set(sized)).join(" and ")} and ${extras.map((p) => p.replace(/-(top|right|bottom|left)/, "")).filter((v, i, a) => a.indexOf(v) === i).join(" and ")}: UI Toolkit sizes the border box`);

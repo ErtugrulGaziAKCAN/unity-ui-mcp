@@ -12,7 +12,7 @@ namespace FidelityProject
 {
     /// <summary>
     /// The fidelity suite's setup of this sample project (<c>scripts/fidelity.sh</c> runs it in a copy of the project, never
-    /// in an open Editor): TMP font assets "Inter UI" (Regular, with Bold as its 700 face) from <c>Assets/Fonts/Inter</c>, a
+    /// in an open Editor): TMP font assets "Inter UI" (Regular, with Bold as its 700 face and Italic as its 400 italic face) from <c>Assets/Fonts/Inter</c>, a
     /// DesignUiProfile for them, and a kit sync into the run's kit folder, so the exporter and the compiler use the same
     /// fonts. Everything goes below <c>$DESIGN_UI_FIDELITY_ROOT</c> (an Assets/… folder): <c>DesignUiProfile.asset</c>,
     /// <c>Fonts/</c>, the font twins in <c>Fonts/Twins/</c> and the compiled screens in <c>Generated/</c>. Without that
@@ -30,6 +30,7 @@ namespace FidelityProject
         const string Family = "Inter UI";
         const string RegularTtf = "Assets/Fonts/Inter/Inter_18pt-Regular.ttf";
         const string BoldTtf = "Assets/Fonts/Inter/Inter_18pt-Bold.ttf";
+        const string ItalicTtf = "Assets/Fonts/Inter/Inter_18pt-Italic.ttf";
         const string Locale = "tr";
 
         static string Env(string name)
@@ -55,10 +56,12 @@ namespace FidelityProject
 
             Folder(root + "/Fonts");
             var bold = Tmp(BoldTtf, root + "/Fonts/" + Family + " Bold.asset", renderMode, pointSize, padding);
+            var italic = Tmp(ItalicTtf, root + "/Fonts/" + Family + " Italic.asset", renderMode, pointSize, padding);
             var regular = Tmp(RegularTtf, root + "/Fonts/" + Family + ".asset", renderMode, pointSize, padding);
-            if (regular.fontWeightTable[7].regularTypeface != bold)
+            if (regular.fontWeightTable[7].regularTypeface != bold || regular.fontWeightTable[4].italicTypeface != italic)
             {
                 regular.fontWeightTable[7].regularTypeface = bold;
+                regular.fontWeightTable[4].italicTypeface = italic;
                 Save(regular);
             }
 

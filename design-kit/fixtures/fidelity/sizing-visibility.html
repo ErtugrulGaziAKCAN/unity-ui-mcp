@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.sizing-visibility</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 16px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 16px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
+.text-subtitle-bold { font-size: 32px; line-height: 40px; font-weight: 700; }
+.text-title { font-size: 36px; line-height: 48px; font-weight: 400; }
+.text-title-bold { font-size: 36px; line-height: 48px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 60px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 60px; font-weight: 700; }
+.text-display { font-size: 64px; line-height: 80px; font-weight: 400; }
+.text-display-bold { font-size: 64px; line-height: 80px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 48px; background-color: var(--color-surface-900); }
+.row { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 40px; }
+.track { display: flex; flex-direction: row; flex-shrink: 0; width: 800px; height: 80px; margin-right: 48px; background-color: var(--color-surface-800); }
+.column { display: flex; flex-direction: column; flex-shrink: 0; width: 160px; height: 400px; margin-right: 48px; background-color: var(--color-surface-800); }
+.cell { flex-shrink: 0; width: 120px; height: 80px; background-color: #16c2d5; }
+.grow { flex-grow: 1; background-color: #f2b544; }
+.shrink { flex-shrink: 1; width: 400px; background-color: #3ccf7a; }
+.vgrow { flex-grow: 1; height: auto; width: 160px; background-color: #f2b544; }
+.max-w-px { max-width: 300px; }
+.max-w-pct { max-width: 25%; }
+.min-w-px { min-width: 320px; }
+.min-w-pct { min-width: 30%; }
+.max-h-px { max-height: 120px; }
+.max-h-pct { max-height: 40%; }
+.min-h-px { min-height: 96px; }
+.min-h-pct { min-height: 15%; }
+.chip { flex-shrink: 0; margin-right: 48px; padding: 8px 16px; background-color: var(--color-surface-700); }
+.cap-width { max-width: 400px; }
+.content-box { box-sizing: content-box; will-change: opacity; }
+.layered { will-change: transform; }
+.inert { cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; will-change: auto; justify-self: center; }
+.lane { display: flex; flex-direction: row; flex-shrink: 0; width: 360px; height: 160px; margin-right: 32px; background-color: var(--color-surface-800); justify-items: center; }
+.pill { flex-shrink: 0; width: 64px; height: 40px; margin-right: 8px; background-color: #16c2d5; }
+.self-end { align-self: flex-end; }
+.self-center { align-self: center; }
+.self-stretch { align-self: stretch; height: auto; }
+.wrapped { flex-wrap: wrap; align-content: center; }
+.wrapped-end { flex-wrap: wrap; align-content: flex-end; }
+.pill-wide { width: 100px; margin-bottom: 8px; }
+.stack { display: flex; flex-direction: column; flex-shrink: 0; width: 160px; height: 160px; margin-right: 32px; background-color: var(--color-surface-800); }
+.push-down { margin-top: auto; }
+.push-left { margin-left: auto; margin-right: 0; }
+.centred { margin: auto; }
+.floor-width { min-width: 280px; }
+.box { flex-shrink: 0; width: 160px; height: 120px; margin-right: 24px; background-color: #16c2d5; }
+.box-b { background-color: #f0605d; }
+.box-c { background-color: #3ccf7a; }
+.hidden { visibility: hidden; }
+.shown { visibility: visible; }
+.parent { display: flex; flex-direction: row; flex-shrink: 0; width: 400px; height: 160px; margin-right: 24px; padding: 20px; background-color: #f2b544; }
+.child { flex-shrink: 0; width: 120px; height: 120px; margin-right: 20px; background-color: #16c2d5; }
+.reveal-note { display: none; }
+.state-reveal .reveal-note { display: flex; }
+.state-reveal .later { visibility: visible; }
+.state-reveal .gone { visibility: hidden; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.sizing-visibility">
+  <!-- max-width and min-width on flex items of an 800 px track: growth capped, shrinking floored, px and % -->
+  <div class="row">
+    <div class="track"><div class="cell"></div><div class="grow max-w-px" data-u-id="grow-max-px"></div><div class="cell"></div></div>
+    <div class="track"><div class="cell"></div><div class="grow max-w-pct" data-u-id="grow-max-pct"></div><div class="cell"></div></div>
+  </div>
+  <div class="row">
+    <div class="track"><div class="shrink"></div><div class="shrink min-w-px" data-u-id="shrink-min-px"></div><div class="shrink"></div></div>
+    <div class="track"><div class="shrink"></div><div class="shrink min-w-pct" data-u-id="shrink-min-pct"></div><div class="shrink"></div></div>
+  </div>
+  <!-- max-height and min-height in a 400 px column, px and % -->
+  <div class="row">
+    <div class="column"><div class="vgrow max-h-px" data-u-id="vgrow-max-px"></div><div class="cell"></div></div>
+    <div class="column"><div class="vgrow max-h-pct" data-u-id="vgrow-max-pct"></div><div class="cell"></div></div>
+    <div class="column"><div class="cell min-h-px" style="height: 40px" data-u-id="min-h-px"></div><div class="cell"></div></div>
+    <div class="column"><div class="cell min-h-pct" style="height: 20px" data-u-id="min-h-pct"></div><div class="cell"></div></div>
+    <!-- text boxes: a capped width wraps the text, a floor widens a short text -->
+    <p class="chip text-body cap-width" data-u-id="text-cap" data-l10n="fidelity.sizing-visibility.text-cap" data-en="Within its cap">Sınırın içinde</p>
+    <p class="chip text-body floor-width layered" data-u-id="text-floor" data-l10n="fidelity.sizing-visibility.text-floor" data-en="Short">Kısa</p>
+    <p class="chip text-body content-box" data-u-id="text-content-box" data-l10n="fidelity.sizing-visibility.text-content-box" data-en="Content box">İçerik kutusu</p>
+  </div>
+  <!-- alignment: align-self, align-content on wrapped lines, auto margins -->
+  <div class="row">
+    <div class="lane"><div class="pill"></div><div class="pill self-end" data-u-id="self-end"></div><div class="pill self-center" data-u-id="self-center"></div><div class="pill self-stretch" data-u-id="self-stretch"></div></div>
+    <div class="lane wrapped"><div class="pill pill-wide"></div><div class="pill pill-wide"></div><div class="pill pill-wide"></div><div class="pill pill-wide" data-u-id="wrapped-4"></div></div>
+    <div class="lane wrapped-end"><div class="pill pill-wide"></div><div class="pill pill-wide"></div><div class="pill pill-wide"></div><div class="pill pill-wide" data-u-id="wrapped-end-4"></div></div>
+    <div class="stack"><div class="pill"></div><div class="pill push-down" data-u-id="push-down"></div></div>
+    <div class="stack"><div class="pill push-left" data-u-id="push-left"></div><div class="pill centred" data-u-id="centred"></div></div>
+  </div>
+  <!-- visibility: a hidden box keeps its place; a visible child inside a hidden parent shows; a state switches both ways -->
+  <div class="row">
+    <div class="box inert" data-u-id="box-a"></div>
+    <div class="box box-b hidden" data-u-id="box-hidden"></div>
+    <div class="box box-c layered" data-u-id="box-c"></div>
+    <div class="parent hidden" data-u-id="parent-hidden"><div class="child" data-u-id="child-hidden"></div><div class="child shown" data-u-id="child-shown"></div></div>
+    <p class="chip text-body hidden" data-u-id="text-hidden" data-l10n="fidelity.sizing-visibility.text-hidden" data-en="Hidden text">Gizli metin</p>
+    <div class="box box-b hidden later" data-u-id="box-later"></div>
+    <div class="box box-c gone" data-u-id="box-gone"></div>
+    <p class="chip text-body reveal-note" data-u-state="reveal" data-l10n="fidelity.sizing-visibility.reveal" data-en="Revealed">Gösterildi</p>
+  </div>
+</div>
+</body>
+</html>

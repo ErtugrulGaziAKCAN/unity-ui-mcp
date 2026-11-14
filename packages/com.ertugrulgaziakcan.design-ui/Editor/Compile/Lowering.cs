@@ -281,11 +281,12 @@ namespace DesignUi.Editor
                     throw new UnsupportedStyleException("position", pos, "U-CSS-035", "position cannot change between layers ('" + pair.Key + "').");
             }
 
-            // box-sizing: the kit sets border-box globally; an explicit content-box only matters on a sized element with padding or border
+            // box-sizing: the kit sets border-box globally; an explicit content-box only matters on a sized element (a width,
+            // height, min or max size or flex-basis) with padding or border
             foreach (var pair in node.Style)
             {
                 if (!pair.Value.TryGetValue("box-sizing", out var bsz)) continue;
-                if (bsz == "content-box" && HasBoxExtras(node) && (baseLayer.ContainsKey("width") || baseLayer.ContainsKey("height")))
+                if (bsz == "content-box" && HasBoxExtras(node) && ContentBoxSizes.Any(p => baseLayer.TryGetValue(p, out var v) && !NoSize(v)))
                     throw new UnsupportedStyleException("box-sizing", bsz, "U-CSS-036", "content-box with padding or border on a sized element is not supported; the kit sets border-box.");
                 pair.Value.Remove("box-sizing");
             }
@@ -332,6 +333,15 @@ namespace DesignUi.Editor
             }
 
             ExtractTransitions(node);
+        }
+
+        /// <summary>The sizes content-box changes when the box has padding or border.</summary>
+        static readonly string[] ContentBoxSizes = { "width", "height", "min-width", "min-height", "max-width", "max-height", "flex-basis" };
+
+        static bool NoSize(string v)
+        {
+            v = v.Trim();
+            return v == "auto" || v == "none" || v == "0" || v == "0px";
         }
 
         static bool HasBoxExtras(IrNode node)
