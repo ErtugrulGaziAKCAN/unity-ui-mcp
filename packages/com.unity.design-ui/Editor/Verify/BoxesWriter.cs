@@ -106,6 +106,9 @@ namespace DesignUi.Editor
             catch (JsonException e) { throw new InvalidDataException("'" + path + "' is not a boxes file: " + e.Message, e); }
         }
 
+        /// <summary>Writes every capture of <paramref name="all"/> (capture name → entry) as the boxes file, replacing it.</summary>
+        internal static void WriteAll(string boxesJsonPath, JObject all) => Write(boxesJsonPath, all);
+
         static void Write(string path, JObject all)
         {
             var dir = Path.GetDirectoryName(path);

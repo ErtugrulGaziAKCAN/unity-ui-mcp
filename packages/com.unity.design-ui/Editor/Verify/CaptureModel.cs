@@ -20,11 +20,16 @@ namespace DesignUi.Editor
         /// <summary>The pseudo-state (hover, active, focus, disabled, checked) or the class name.</summary>
         public string Name;
         public string ElementId;
+        /// <summary>
+        /// A class item of an animation series that takes the class off an element whose markup has it (matrix.json
+        /// <c>absent</c>): the off side of a trigger the artboard starts in.
+        /// </summary>
+        public bool Absent;
 
         public static CaptureApply Pseudo(string pseudo, string elementId) => new CaptureApply { Kind = PseudoKind, Name = pseudo, ElementId = elementId };
         public static CaptureApply Class(string name, string elementId) => new CaptureApply { Kind = ClassKind, Name = name, ElementId = elementId };
 
-        public override string ToString() => Kind + " " + Name + " on " + ElementId;
+        public override string ToString() => Kind + " " + (Absent ? "without " : "") + Name + " on " + ElementId;
     }
 
     /// <summary>One Unity capture of a compiled screen.</summary>
@@ -50,6 +55,47 @@ namespace DesignUi.Editor
         public readonly List<string> Notes = new List<string>();
         /// <summary>Tests: called with the screen root after the capture is written, before the panel is destroyed.</summary>
         internal Action<VisualElement> Inspect;
+        /// <summary>
+        /// A run's boxes in memory (capture name → entry), written once at its end; null merges each capture into the
+        /// file at once (a run of a thousand animation samples would rewrite a file of megabytes each time).
+        /// </summary>
+        internal Newtonsoft.Json.Linq.JObject Boxes;
+    }
+
+    /// <summary>An IR animation: <c>node(ElementId).anims[Index]</c>.</summary>
+    public sealed class CaptureAnimRef
+    {
+        public string ElementId;
+        public int Index;
+        public override string ToString() => ElementId + "#" + Index;
+    }
+
+    /// <summary>A screen condition of an animation series: the state and what is applied (matrix.json <c>anim.from</c>).</summary>
+    public sealed class CaptureSetup
+    {
+        public string State = "default";
+        public List<CaptureApply> Apply = new List<CaptureApply>();
+    }
+
+    /// <summary>
+    /// An animation sample (matrix.json <c>anim</c>): the screen <see cref="Time"/> ms after the change from
+    /// <see cref="From"/> (null: the screen opens at time 0) to the job's state and applied set, with the animations of
+    /// <see cref="Runs"/> playing and every other animation frozen as in static captures.
+    /// </summary>
+    public sealed class CaptureAnim
+    {
+        public List<CaptureAnimRef> Sampled = new List<CaptureAnimRef>();
+        public List<CaptureAnimRef> Runs = new List<CaptureAnimRef>();
+        public CaptureSetup From;
+        public int Sample;
+        public double Time;
+
+        /// <summary>Jobs of one series share the change: the same from, state, applied set, viewport and runs.</summary>
+        internal string SeriesKey(CaptureJob job) =>
+            job.Viewport.x + "x" + job.Viewport.y + "|" + (From == null ? "load" : Setup(From.State, From.Apply)) + ">" + Setup(job.State, job.Apply) + "|" +
+            string.Join(",", Runs.Select(r => r.ToString()));
+
+        static string Setup(string state, IEnumerable<CaptureApply> apply) => state + string.Concat(apply.Select(a => "." + a.Kind + "." + (a.Absent ? "!" : "") + a.Name + "." + a.ElementId));
     }
 
     /// <summary>One job of <c>goldens/matrix.json</c>.</summary>
@@ -59,8 +105,10 @@ namespace DesignUi.Editor
         public string State;
         public Vector2Int Viewport;
         public List<CaptureApply> Apply = new List<CaptureApply>();
-        /// <summary>An animation sample (the animation player is not available yet, so it is not captured).</summary>
+        /// <summary>An animation sample (<see cref="Anim"/>).</summary>
         public bool Animation;
+        /// <summary>The animation sample, or null for a static capture.</summary>
+        public CaptureAnim Anim;
         /// <summary>Static captures: the keyframe animations the golden had in effect, frozen at their end frame.</summary>
         public List<FrozenAnimation> Frozen = new List<FrozenAnimation>();
 
@@ -95,17 +143,60 @@ namespace DesignUi.Editor
                         throw new IrFormatException("'" + matrixJsonPath + "': capture '" + name + "' has a frozen entry that is not [element id, animation name]");
                     job.Frozen.Add(new FrozenAnimation { ElementId = (string)pair[0], Name = (string)pair[1] });
                 }
-                foreach (var a in (c["apply"] as JArray) ?? new JArray())
-                {
-                    var kind = (string)a["kind"];
-                    var element = (string)a["elementId"];
-                    if (kind == CaptureApply.PseudoKind) job.Apply.Add(CaptureApply.Pseudo((string)a["pseudo"], element));
-                    else if (kind == CaptureApply.ClassKind) job.Apply.Add(CaptureApply.Class((string)a["name"], element));
-                    else throw new IrFormatException("'" + matrixJsonPath + "': capture '" + name + "' applies an unknown kind '" + kind + "'");
-                }
+                job.Apply = ReadApply(c["apply"] as JArray, matrixJsonPath, name);
+                if (job.Animation) job.Anim = ReadAnim((JObject)c["anim"], matrixJsonPath, name);
                 jobs.Add(job);
             }
             return jobs;
+        }
+
+        static List<CaptureApply> ReadApply(JArray list, string path, string name)
+        {
+            var apply = new List<CaptureApply>();
+            foreach (var a in list ?? new JArray())
+            {
+                var kind = (string)a["kind"];
+                var element = (string)a["elementId"];
+                if (kind == CaptureApply.PseudoKind) apply.Add(CaptureApply.Pseudo((string)a["pseudo"], element));
+                else if (kind == CaptureApply.ClassKind)
+                {
+                    var c = CaptureApply.Class((string)a["name"], element);
+                    c.Absent = a["absent"]?.Type == JTokenType.Boolean && (bool)a["absent"];
+                    apply.Add(c);
+                }
+                else throw new IrFormatException("'" + path + "': capture '" + name + "' applies an unknown kind '" + kind + "'");
+            }
+            return apply;
+        }
+
+        static List<CaptureAnimRef> ReadRefs(JToken list, string path, string name, string what)
+        {
+            var refs = new List<CaptureAnimRef>();
+            foreach (var r in (list as JArray) ?? throw new IrFormatException("'" + path + "': animation sample '" + name + "' has no " + what + " list"))
+            {
+                if (r["elementId"]?.Type != JTokenType.String || r["index"]?.Type != JTokenType.Integer)
+                    throw new IrFormatException("'" + path + "': animation sample '" + name + "' has a " + what + " entry that is not {elementId, index}");
+                refs.Add(new CaptureAnimRef { ElementId = (string)r["elementId"], Index = (int)r["index"] });
+            }
+            return refs;
+        }
+
+        static CaptureAnim ReadAnim(JObject anim, string path, string name)
+        {
+            var time = anim["time"];
+            if (time == null || (time.Type != JTokenType.Integer && time.Type != JTokenType.Float) || (double)time < 0)
+                throw new IrFormatException("'" + path + "': animation sample '" + name + "' has no time");
+            var a = new CaptureAnim
+            {
+                Sampled = ReadRefs(anim["sampled"], path, name, "sampled"),
+                Runs = ReadRefs(anim["runs"], path, name, "runs"),
+                Sample = anim["sample"]?.Type == JTokenType.Integer ? (int)anim["sample"] : 0,
+                Time = (double)time,
+            };
+            if (a.Sampled.Count == 0) throw new IrFormatException("'" + path + "': animation sample '" + name + "' samples no animation");
+            if (anim["from"] is JObject from)
+                a.From = new CaptureSetup { State = (string)from["state"] ?? "default", Apply = ReadApply(from["apply"] as JArray, path, name) };
+            return a;
         }
 
         /// <summary>A capture name is a file name: no path separators, no "..".</summary>

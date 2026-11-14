@@ -16,8 +16,8 @@
 #   5. compare   design-export compare <out>/<name>/export --unity <out>/<name>/unity --report <out>/<name>/report.html
 #   6. summary   one row per fixture x viewport x job (PASS, FAIL with the first issue, not captured with the reason) and
 #                the timings, printed and written to <out>/summary.md
-# Exit: 0 every static job passes (animation samples may stay not captured), 1 a job fails, a static job or a fixture is
-# not captured, or a step fails; 2 usage.
+# Exit: 0 every job passes (static captures and animation samples alike), 1 a job fails, a job or a fixture is not
+# captured, or a step fails; 2 usage.
 #
 # Environment: DESIGN_UI_FIDELITY_ROOT (Assets/... folder in the project copy; default below, a folder the copy keeps
 # between runs), the setup's measurement knobs (see samples/FidelityProject/Assets/Fidelity/Editor/FidelitySetup.cs) and
@@ -206,9 +206,11 @@ const read = (f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } cat
 const status = fs.readFileSync(path.join(out, "status.tsv"), "utf8").split("\n").filter(Boolean).map((l) => l.split("\t"));
 const times = fs.readFileSync(path.join(out, "timings.tsv"), "utf8").split("\n").filter(Boolean).map((l) => l.split("\t"));
 const rows = [], failures = [];
-let pass = 0, fail = 0, notCaptured = 0, animNotCaptured = 0;
+let pass = 0, fail = 0, notCaptured = 0;
+const anim = { pass: 0, fail: 0, notCaptured: 0 };
 const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
-const ANIM = /^animation sample/;
+// an animation sample: <state>@<w>x<h>.anim.<element id>.<n> (static names carry a pseudo-state or an is-* class there)
+const isAnim = (capture) => /@\d+x\d+\.anim\./.test(capture);
 let pending = 0;
 for (const name of names) {
   const skipped = status.find((s) => s[0] === name && s[2] === "skipped");
@@ -226,32 +228,32 @@ for (const name of names) {
     const job = c.capture.replace(/@\d+x\d+/, "");
     const first = c.issues[0];
     const detail = c.pass ? "" : `${c.issues.length} issue(s); ${first ? `${first.id} ${first.kind}: ${first.detail}` : ""}`;
-    jobs.push([name, vp, job, c.pass ? "PASS" : "FAIL", detail]);
+    jobs.push([name, vp, job, c.pass ? "PASS" : "FAIL", detail, isAnim(c.capture)]);
     if (c.pass) pass++; else { fail++; failures.push(`${name} ${c.capture}`); }
+    if (isAnim(c.capture)) { if (c.pass) anim.pass++; else anim.fail++; }
   }
   for (const n of verdict.notRun) {
     const reason = verdict.notRunReasons?.[n] ?? "not captured";
     const vp = (n.split("@")[1] ?? "").split(".")[0].replace("x", "×");
-    const anim = ANIM.test(reason); // by the capture's reason only: an element id may contain "anim"
-    jobs.push([name, vp, n.replace(/@\d+x\d+/, ""), anim ? "not captured (animation)" : "not captured", reason]);
-    if (anim) animNotCaptured++; else { notCaptured++; failures.push(`${name} ${n}`); }
+    jobs.push([name, vp, n.replace(/@\d+x\d+/, ""), "not captured", reason, isAnim(n)]);
+    notCaptured++; failures.push(`${name} ${n}`);
+    if (isAnim(n)) anim.notCaptured++;
   }
   // the comparison's own verdict counts too (e.g. a screen with no capture at all is not a pass)
-  const onlyAnim = verdict.notRun.length > 0 && verdict.notRun.every((n) => ANIM.test(verdict.notRunReasons?.[n] ?? ""));
-  if (!verdict.pass && !jobs.some((j) => j[3] === "FAIL" || j[3] === "not captured") && !(onlyAnim && verdict.captures.length > 0)) {
-    jobs.push([name, "–", "–", "FAIL", `the comparison does not pass the screen (${verdict.captures.length} captures, ${verdict.notRun.length} not run)`]);
+  if (!verdict.pass && !jobs.some((j) => j[3] === "FAIL" || j[3] === "not captured")) {
+    jobs.push([name, "–", "–", "FAIL", `the comparison does not pass the screen (${verdict.captures.length} captures, ${verdict.notRun.length} not run)`, false]);
     fail++; failures.push(name);
   }
   jobs.sort((a, b) => (b[1].split("×")[0] - a[1].split("×")[0]) || a[2].localeCompare(b[2]));
   rows.push(...jobs);
 }
-// animation samples: one line per fixture x viewport instead of one per sample
+// passing animation samples: one line per fixture x viewport; a failing or missing sample keeps its own line
 const folded = [];
 for (const r of rows) {
-  if (r[3] === "not captured (animation)") {
-    const prev = folded.find((x) => x[0] === r[0] && x[1] === r[1] && x[3] === r[3]);
+  if (r[5] && r[3] === "PASS") {
+    const prev = folded.find((x) => x.anim && x[0] === r[0] && x[1] === r[1]);
     if (prev) { prev.count++; continue; }
-    folded.push({ 0: r[0], 1: r[1], 2: "animation samples", 3: r[3], 4: r[4], count: 1, length: 5 });
+    folded.push({ 0: r[0], 1: r[1], 2: "animation samples", 3: "PASS", 4: "", count: 1, anim: true });
   } else folded.push(r);
 }
 const table = ["| Fixture | Viewport | Job | Result | Detail |", "|---|---|---|---|---|",
@@ -267,7 +269,9 @@ const timing = ["| Step | Time |", "|---|---|",
     return `| capture ${n} (its part of the capture run) | ${meta?.timings?.totalMs != null ? `${Math.round(meta.timings.totalMs)} ms` : "–"} |`;
   }),
   ...names.map((n) => `| compare ${n} | ${step(n, "compare")} ms |`)];
-const head = `${pass} PASS, ${fail} FAIL, ${notCaptured} not captured` + (pending ? `, ${pending} fixture(s) pending (skipped, listed in pending.json)` : "") + (animNotCaptured ? `, ${animNotCaptured} animation samples not captured (not a failure until the animation player exists)` : "");
+const animTotal = anim.pass + anim.fail + anim.notCaptured;
+const head = `${pass} PASS, ${fail} FAIL, ${notCaptured} not captured` + (pending ? `, ${pending} fixture(s) pending (skipped, listed in pending.json)` : "") +
+  (animTotal ? `; of these, animation samples: ${anim.pass} PASS, ${anim.fail} FAIL, ${anim.notCaptured} not captured` : "");
 const md = `# Fidelity summary\n\n${head}\n\n${table.join("\n")}\n\n## Timings\n\n${timing.join("\n")}\n`;
 fs.writeFileSync(path.join(out, "summary.md"), md);
 process.stdout.write(md);
