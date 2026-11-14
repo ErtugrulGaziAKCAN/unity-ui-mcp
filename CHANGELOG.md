@@ -12,6 +12,9 @@ Unity package (`com.unity.design-ui`) and the Node tools share the version numbe
   dropped the twins' glyphs or failed converting the text mesh. `TextAssetRegistry` registers them again (locale
   controller, scene loads, capture, Editor reloads and Play changes). Twins leave out the fallback and weight entries
   that formed cycles ("Circular reference detected"), which had cost script fonts their Latin fallback.
+- Play mode no longer writes into the font twins: glyphs, atlas pixels and atlas pages that text adds in Play are noted
+  (`TwinPlayGuard`), left out of saves during Play and taken back from the twin's file when Play stops; the characters
+  an import pre-adds in Edit mode are still saved and ship.
 - Generated screens imported while the package lacked an element they use (`DesignLocalizedString`) no longer stay
   broken after the package update: generated manifests record the package stamp, each screen folder's import is recorded
   with the stamp in the Library, and after a script reload the screens recorded under another package are imported

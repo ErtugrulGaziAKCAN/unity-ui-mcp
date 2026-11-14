@@ -157,7 +157,9 @@ view.SetEnabled(view.Save, false);                             // the design's :
   never overwrites a different translation, and reports what is pending); a language switch updates text and font with
   the screen open.
 - Fonts: each locale renders with the project's own TMP font (as a UI Toolkit twin), right-to-left locales get the
-  `rtl` alignment rules, and the profile's text-size steps compile to `.text-size-<key>` rules.
+  `rtl` alignment rules, and the profile's text-size steps compile to `.text-size-<key>` rules. Twins keep the
+  characters the import pre-adds; what text adds to them in Play mode is taken back when Play stops, so twins do not
+  change in version control after a Play session.
 - Transitions and `@keyframes` play through the package's animation player (CSS timing, every trigger, a
   reduced-motion switch).
 
