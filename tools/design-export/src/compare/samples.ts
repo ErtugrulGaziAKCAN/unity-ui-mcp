@@ -183,8 +183,15 @@ export function nearCurve(b: Rect, border: readonly number[] | undefined, radii:
   return false;
 }
 
-/** Ink of the text in a window: background and ink colour, and the ink amount in pixels (anti-aliasing weighted). */
-export interface Ink { bg: Rgb3; ink: Rgb3; coverage: number }
+/**
+ * Ink of the text in a window: background and ink colour, the ink amount in pixels (anti-aliasing weighted), the ink's
+ * horizontal extent (`left` and `right`: where the weighted ink of the columns reaches half a pixel from each side,
+ * sub-pixel, in image px) and its column profile (`columns[i]`: the weighted ink of image column `x0 + i`).
+ */
+export interface Ink { bg: Rgb3; ink: Rgb3; coverage: number; left: number; right: number; columns: Float64Array; x0: number }
+
+/** Half a pixel of ink: where an ink extent starts, counted from each side. */
+const EDGE_INK = 0.5;
 
 const luma = (d: Uint8Array, o: number) => 0.299 * d[o] + 0.587 * d[o + 1] + 0.114 * d[o + 2];
 function medianOf(hist: Uint32Array, n: number): number {
@@ -236,6 +243,58 @@ export function inkIn(img: Rgba, r: Rect, hidden?: (x: number, y: number) => boo
   const inkC: Rgb3 = [medianOf(ink[0], top.length), medianOf(ink[1], top.length), medianOf(ink[2], top.length)];
   const inkD = Math.max(1, Math.abs(0.299 * inkC[0] + 0.587 * inkC[1] + 0.114 * inkC[2] - bgL));
   let coverage = 0;
-  for (const k of side) coverage += Math.min(1, ((lum[k] - bgL) * sign) / inkD);
-  return { bg, ink: inkC, coverage };
+  const cols = new Float64Array(x1 - x0);
+  for (const k of side) {
+    const wgt = Math.min(1, ((lum[k] - bgL) * sign) / inkD);
+    coverage += wgt;
+    cols[(off[k] / 4) % img.w - x0] += wgt;
+  }
+  return { bg, ink: inkC, coverage, ...extent(cols, x0), columns: cols, x0 };
+}
+
+/** Where the columns' ink reaches `EDGE_INK` from the left and from the right, interpolated inside the column. */
+function extent(cols: Float64Array, x0: number): { left: number; right: number } {
+  let left = x0, right = x0 + cols.length, acc = 0;
+  for (let i = 0; i < cols.length; i++) {
+    if (acc + cols[i] >= EDGE_INK) { left = x0 + i + (EDGE_INK - acc) / cols[i]; break; }
+    acc += cols[i];
+  }
+  acc = 0;
+  for (let i = cols.length - 1; i >= 0; i--) {
+    if (acc + cols[i] >= EDGE_INK) { right = x0 + i + 1 - (EDGE_INK - acc) / cols[i]; break; }
+    acc += cols[i];
+  }
+  return { left, right };
+}
+
+/** The weighted ink of an image column (x in image px, the column's centre at x + 0.5), linearly between columns. */
+function columnAt(ink: Ink, x: number): number {
+  const i = x - ink.x0 - 0.5, f = Math.floor(i), c = ink.columns;
+  const a = f >= 0 && f < c.length ? c[f] : 0, b = f + 1 >= 0 && f + 1 < c.length ? c[f + 1] : 0;
+  return a + (b - a) * (i - f);
+}
+
+/**
+ * How far Unity's glyphs at one end of a text line sit from the design's (image px, + to the right): the shift of Unity's
+ * column profile that matches the design's best over [from, to) (the first or last em of the line's ink), each scaled to
+ * the design's ink amount there, so a renderer's thicker or thinner strokes do not move it but a glyph does. Searched
+ * within ±`range` px of `around` (the difference of the ink extents), coarse then in 0.02 px steps.
+ */
+export function endShift(design: Ink, unity: Ink, from: number, to: number, around: number, range = 2): number {
+  const x0 = Math.floor(from) - 4, x1 = Math.ceil(to) + 4;
+  let massA = 0;
+  for (let x = Math.floor(from); x < Math.ceil(to); x++) massA += columnAt(design, x + 0.5);
+  const err = (s: number) => {
+    let massB = 0;
+    for (let x = Math.floor(from); x < Math.ceil(to); x++) massB += columnAt(unity, x + 0.5 + s);
+    const k = massB > 0 ? massA / massB : 1;
+    let e = 0;
+    for (let x = x0; x < x1; x++) { const d = columnAt(design, x + 0.5) - k * columnAt(unity, x + 0.5 + s); e += d * d; }
+    return e;
+  };
+  let best = around, bestErr = err(around);
+  for (let s = around - range; s <= around + range + 1e-9; s += 0.25) { const e = err(s); if (e < bestErr) { bestErr = e; best = s; } }
+  const centre = best;
+  for (let s = centre - 0.25; s <= centre + 0.25 + 1e-9; s += 0.02) { const e = err(s); if (e < bestErr) { bestErr = e; best = s; } }
+  return best;
 }

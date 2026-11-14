@@ -20,7 +20,7 @@ const STEP_ORDER = ["lint", "export", "import", "compile", "capture", "compare"]
 const ms = (v: number) => (v >= 10000 ? `${(v / 1000).toFixed(1)} s` : `${Math.round(v)} ms`);
 
 const KIND_LABEL: Record<string, string> = {
-  box: "box", missing: "missing", extra: "only in Unity", visibility: "visibility", lines: "line count", baseline: "baseline",
+  box: "box", missing: "missing", extra: "only in Unity", visibility: "visibility", lines: "line count", baseline: "baseline", inkExtent: "text ink extent",
   color: "colour", edge: "edge, border, corner", ssim: "SSIM", ink: "text colour", inkCoverage: "text ink amount", shadow: "shadow band", size: "image size",
 };
 
@@ -81,6 +81,7 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     `<td class="num">${num(r.ssim, 5)}</td><td class="num">${num(r.ssimShifted, 5)}${r.ssimLimit !== null && r.ssimLimit !== undefined ? ` <span class="muted">(≥ ${r.ssimLimit})</span>` : ""}</td>` +
     `<td class="num">${r.samples === 0 ? '<span class="warn-text">not sampled</span>' : `${num(r.deltaE, 2)}${r.samples ? ` <span class="muted">(${r.samples})</span>` : ""}`}</td>` +
     `<td class="num">${num(r.edge, 2)}</td><td class="num">${num(r.band, 2)}</td><td class="num">${num(r.ink, 2)}</td><td class="num">${r.inkRatio === null ? "—" : `${r.inkRatio.toFixed(2)}×`}</td>` +
+    `<td class="num">${num(r.inkExtent ?? null, 2)}</td>` +
     `<td>${esc(r.lines ?? "—")}</td></tr>`).join("");
   const name = `v-${i}`;
   const views = [
@@ -117,7 +118,7 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     ${c.notSampled.length ? `<p class="warn-text">Background not sampled (every sample point covered or on text): ${c.notSampled.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${c.translucent ? `<p class="muted">${c.translucent} Unity pixels are translucent; colours were compared premultiplied.</p>` : ""}
     <details class="elements"><summary>Per-element measures (${c.elements.length})</summary>
-      <table><thead><tr><th>Element</th><th>Status</th><th>Box Δ x y w h (px)</th><th>SSIM</th><th>SSIM ≤ 1 px</th><th>Background ΔE (samples)</th><th>Edge ΔE</th><th>Shadow band ΔE</th><th>Text colour ΔE</th><th>Text ink</th><th>Lines design/Unity</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>Element</th><th>Status</th><th>Box Δ x y w h (px)</th><th>SSIM</th><th>SSIM ≤ 1 px</th><th>Background ΔE (samples)</th><th>Edge ΔE</th><th>Shadow band ΔE</th><th>Text colour ΔE</th><th>Text ink</th><th>Ink extent Δ (px)</th><th>Lines design/Unity</th></tr></thead><tbody>${rows}</tbody></table>
     </details>
   </div>
 </details>`;

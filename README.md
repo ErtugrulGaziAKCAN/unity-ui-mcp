@@ -198,7 +198,7 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`):
 | Check | Limit |
 |---|---|
 | Element boxes | ±1 px at every viewport |
-| Text | same line count and breaks, baseline ±1 px, ink colour and amount per line |
+| Text | same line count and breaks, baseline ±1 px, ink colour and amount per line, and where each line's first and last glyphs sit (and the width between them) ±1 px |
 | Colours at sampled points | ΔE2000 ≤ 1 |
 | Structure (SSIM, non-text) | ≥ 0.99 for the capture and for each element (small elements ≥ 0.984, pictures ≥ 0.985, rotated animation samples ≥ 0.975) |
 | Animation samples | at the delay and every quarter of each animation, the same limits |

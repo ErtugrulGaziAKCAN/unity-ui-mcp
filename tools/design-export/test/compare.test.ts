@@ -168,6 +168,44 @@ describe("compareCapture", () => {
     expect(compareCapture(g, u1, [], T)).toMatchObject({ pass: true, issues: [] });
   });
 
+  it("checks each text line's ink extent: ink 2 px off sideways, or 2 px narrower, fails per line; 1 px passes", () => {
+    // the same line box, baseline, ink colour and amount: only the glyphs' horizontal place differs (spacing, kerning, alignment)
+    const moved = (dx: number, w = 80) => {
+      const s = scene();
+      fill(s.png, { x: 32, y: 32, w: 128, h: 96 }, [180, 60, 60]);
+      glyphs(s.png, { x: 50 + dx, y: 52, w, h: 12 }, [250, 250, 250]);
+      return s;
+    };
+    const g = scene();
+    expect(compareCapture(g, moved(0), [], T)).toMatchObject({ pass: true, issues: [] });
+    expect(compareCapture(g, moved(1), [], T)).toMatchObject({ pass: true, issues: [] });
+    const off = compareCapture(g, moved(2), [], T);
+    expect(off.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["label:inkExtent"]);
+    expect(off.issues[0].detail).toBe("line 1 of 1: text ink left Δ +2.00 px, right Δ +2.00 px, width Δ +0.00 px (limit ±1 px)");
+    const narrow = compareCapture(g, moved(0, 76), [], T);
+    expect(narrow.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["label:inkExtent"]);
+    expect(narrow.issues[0].detail).toBe("line 1 of 1: text ink left Δ +0.00 px, right Δ -4.00 px, width Δ -4.00 px (limit ±1 px)");
+    expect(off.elements.find((r) => r.id === "label")?.inkExtent).toBe(2);
+    expect(compareCapture(g, g, [], T).elements.find((r) => r.id === "label")?.inkExtent).toBe(0);
+  });
+
+  it("measures where a line's glyphs sit, not how thick a renderer draws their strokes", () => {
+    // the same 1-px stems every 6 px; Unity's strokes half a pixel thicker on each side (the outer ink edges move by 0.5,
+    // the stems' centres do not)
+    const stems = (thick: boolean) => {
+      const s = scene();
+      fill(s.png, { x: 32, y: 32, w: 128, h: 96 }, [180, 60, 60]);
+      for (let x = 51; x < 129; x += 6) {
+        fill(s.png, { x, y: 52, w: 1, h: 12 }, [250, 250, 250]);
+        if (thick) { paint(s.png, { x: x - 0.5, y: 52, w: 0.5, h: 12 }, [250, 250, 250]); paint(s.png, { x: x + 1, y: 52, w: 0.5, h: 12 }, [250, 250, 250]); }
+      }
+      return s;
+    };
+    const v = compareCapture(stems(false), stems(true), [], { ...T, textInkRatio: 1, textInkCoverage: 1 });
+    expect(v.issues.filter((i) => i.kind === "inkExtent")).toEqual([]);
+    expect(v.elements.find((r) => r.id === "label")!.inkExtent!).toBeLessThan(0.1);
+  });
+
   it("compares boxes and baselines with a float epsilon of 1e-3 px, never a wider tolerance", () => {
     // a frame at a half CSS pixel at scale 0.75 (366 → 274.5 device px) that UI Toolkit snaps: 1 px off, plus float32 noise
     const line = (y: number) => ({ x: 50, y, w: 82, h: 16, baseline: y + 12 });
@@ -503,13 +541,15 @@ describe("compareCapture: fix round checks", () => {
     const t: Thresholds = { ...T, textInkRatio: 1, textInkCoverage: 0.1, textInkShadowHigh: 1.15 };
     const plain: CaptureContext = { fontPx: { label: 24 }, backgrounds: new Set(), painters: new Set() };
     const glow: CaptureContext = { ...plain, textShadows: new Set(["label"]) };
-    // 45 stripes for the design's 40: 1.125×
-    expect(compareCapture(mk(40), mk(45), [], t, plain).issues.map((i) => i.kind)).toEqual(["inkCoverage"]);
-    expect(compareCapture(mk(40), mk(45), [], t, glow).issues).toEqual([]);
+    // 45 stripes for the design's 40: 1.125× (the stand-in runs differ in length too: their ink extent is left out here, it
+    // has its own test)
+    const kinds = (v: ReturnType<typeof compareCapture>) => v.issues.map((i) => i.kind).filter((k) => k !== "inkExtent");
+    expect(kinds(compareCapture(mk(40), mk(45), [], t, plain))).toEqual(["inkCoverage"]);
+    expect(kinds(compareCapture(mk(40), mk(45), [], t, glow))).toEqual([]);
     // more than the limit, a colour error and too little ink still fail
-    expect(compareCapture(mk(40), mk(48), [], t, glow).issues.map((i) => i.kind)).toEqual(["inkCoverage"]);
-    expect(compareCapture(mk(40), mk(45, [250, 210, 60]), [], t, glow).issues.map((i) => i.kind)).toEqual(["ink"]);
-    expect(compareCapture(mk(40), mk(34), [], t, glow).issues.map((i) => i.kind)).toEqual(["inkCoverage"]);
+    expect(kinds(compareCapture(mk(40), mk(48), [], t, glow))).toEqual(["inkCoverage"]);
+    expect(kinds(compareCapture(mk(40), mk(45, [250, 210, 60]), [], t, glow))).toEqual(["ink"]);
+    expect(kinds(compareCapture(mk(40), mk(34), [], t, glow))).toEqual(["inkCoverage"]);
   });
 
   it("holds text of at most textInkSmallPx device px to the measured small-text limits and text above it to the usual ones", () => {
@@ -572,7 +612,7 @@ describe("compareCapture: fix round checks", () => {
     expect(compareCapture(design, unity, [], t, px(8)).issues.filter((i) => i.kind === "inkCoverage")).toEqual([]);
     const big = compareCapture(design, unity, [], t, px(14));
     expect(big.issues.filter((i) => i.kind === "inkCoverage").map((i) => i.id)).toEqual(["t3"]);
-    expect(big.issues[0].detail).toMatch(/\(limit ±15 %\)/);
+    expect(big.issues.find((i) => i.kind === "inkCoverage")!.detail).toMatch(/\(limit ±15 %\)/);
     // a line that stands out by more than the small-text tolerance still fails
     expect(compareCapture(design, mk([20, 20, 20, 26]), [], t, px(8)).issues.filter((i) => i.kind === "inkCoverage").map((i) => i.id)).toEqual(["t3"]);
   });

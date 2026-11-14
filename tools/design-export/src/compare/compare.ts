@@ -40,8 +40,15 @@
  * Toolkit to whole device px) is copied from the design too, unless it would be the whole of a thin element; the box
  * check measures where that edge is. Colour samples keep their 3×3 neighbourhood off text and external regions, and only
  * the pixels they average off those edge rows (and off the area outside the screen root).
- * Colours are compared premultiplied (a translucent Unity pixel counts as its colour over black). Line widths are not
- * compared (findings §4: the caret route's line rects differ from Chromium's by more than a pixel at the same break).
+ * - text ink extent per line: where each line's first and last glyphs sit horizontally, and the width between them, each
+ *   within ±`boxPx` (with `GEOMETRY_EPS`), whatever the text size: a spacing, kerning or alignment error moves glyphs inside
+ *   a box of the right size, keeping its ink colour, amount, line count and baseline. Measured on both images in the same
+ *   window: the column profile of Unity's ink near each end (an em) shifted to match the design's best, each scaled to the
+ *   design's amount, so the renderers' stroke thickness and anti-aliasing (outer ink edges up to 2 px apart in the suite:
+ *   bold 48 px strokes, a blurred text shadow) do not count; the suite's largest is 0.79 px.
+ * Colours are compared premultiplied (a translucent Unity pixel counts as its colour over black). Line rects are not
+ * compared (findings §4: the caret route's line rects differ from Chromium's by more than a pixel at the same break); the
+ * ink extent is measured on the pixels instead.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -54,7 +61,7 @@ import type { CaptureApply, CaptureJob } from "../capture/matrix.js";
 import { deltaE2000, hex } from "./color.js";
 import { captureContext, indexIr, type CaptureContext, type IrIndex } from "./context.js";
 import { decodePngAsync, encodePngAsync } from "./png.js";
-import { bestDeltaE, flatAt, inkIn, nearCurve, paintedRect, ringPoints, type RingPoint } from "./samples.js";
+import { bestDeltaE, endShift, flatAt, inkIn, nearCurve, paintedRect, ringPoints, type RingPoint } from "./samples.js";
 import { blockSsimMap, maskRects, regionSsim, regionSsimShifted, unionRect, wholeSsim, type Rect } from "./ssim.js";
 
 export type { CaptureContext } from "./context.js";
@@ -190,7 +197,7 @@ export function inkColourLimit(t: Thresholds, px: number, line = 0): number {
   return later ? Math.max(usual, later[1]) : usual;
 }
 
-export type IssueKind = "size" | "missing" | "extra" | "visibility" | "lines" | "box" | "baseline" | "ssim" | "edge" | "color" | "ink" | "inkCoverage" | "shadow";
+export type IssueKind = "size" | "missing" | "extra" | "visibility" | "lines" | "box" | "baseline" | "inkExtent" | "ssim" | "edge" | "color" | "ink" | "inkCoverage" | "shadow";
 /** Element id of capture-level issues (whole-capture SSIM, image size). */
 export const WHOLE = "*";
 
@@ -226,6 +233,8 @@ export interface ElementRow {
   ink: number | null;
   /** Unity's text ink amount relative to the design's, for the element's worst line (0: no ink in Unity). */
   inkRatio: number | null;
+  /** Largest move of a text line's ink extent over the lines (left edge, right edge or width), device px. */
+  inkExtent: number | null;
   /** `<design>/<Unity>` line counts; "not compared" for text without DOM lines. */
   lines: string | null;
 }
@@ -464,7 +473,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   const removedSet = new Set(removed);
   const issue = (id: string, kind: IssueKind, detail: string, at?: Rect) => issues.push(at ? { id, kind, detail, at } : { id, kind, detail });
   const newRow = (id: string, status: ElementRow["status"] = "ok"): ElementRow =>
-    ({ id, status, box: null, ssim: null, ssimShifted: null, ssimLimit: null, deltaE: null, samples: null, edge: null, band: null, ink: null, inkRatio: null, lines: null });
+    ({ id, status, box: null, ssim: null, ssimShifted: null, ssimLimit: null, deltaE: null, samples: null, edge: null, band: null, ink: null, inkRatio: null, inkExtent: null, lines: null });
 
   // ---- image size (HiDPI captures are an error, never rescaled)
   const sameSize = gp.w === up.w && gp.h === up.h;
@@ -739,6 +748,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // the font size in device px: the IR's, else the line box over the kit's largest ratio (4/3), never more than the real size
         const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
         let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number } | null = null, maxDe = 0;
+        let wX: { i: number; dl: number; dr: number; dw: number; worst: number } | null = null;
         const hidden = hiddenBy(id);
         let covered = 0;
         ge.lines.forEach((gl, i) => {
@@ -747,6 +757,16 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           const a = inkIn(gp, win, hidden ?? undefined);
           if (!a) return;
           const b = inkIn(up, win, hidden ?? undefined);
+          // the ink's horizontal extent: spacing, kerning or alignment moves it inside a box of the right size (geometry:
+          // the box limit, whatever the text size)
+          if (b) {
+            // where Unity's first and last glyphs sit against the design's: the ink profile near each end (an em, or half
+            // the line) matched to the design's, so stroke thickness and anti-aliasing (renderer differences) do not count
+            const em = Math.max(1, Math.min(gl.h, (a.right - a.left) / 2));
+            const dl = endShift(a, b, a.left, a.left + em, b.left - a.left), dr = endShift(a, b, a.right - em, a.right, b.right - a.right);
+            const dw = dr - dl, worst = Math.max(Math.abs(dl), Math.abs(dr), Math.abs(dw));
+            if (!wX || worst > wX.worst) wX = { i, dl, dr, dw, worst };
+          }
           inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow: !!ctx.textShadows?.has(id) });
           if (b) {
             const de = deltaE2000(a.ink, b.ink), limit = inkColourLimit(t, px, i);
@@ -755,6 +775,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           }
         });
         if (covered) row.lines = `${row.lines}, ${covered} not judged (covered)`;
+        if (wX) {
+          const x = wX as { i: number; dl: number; dr: number; dw: number; worst: number };
+          row.inkExtent = r6(x.worst);
+          if (x.worst > t.boxPx + GEOMETRY_EPS) {
+            issue(id, "inkExtent", `line ${x.i + 1} of ${ge.lines.length}: text ink left Δ ${fmt(x.dl)} px, right Δ ${fmt(x.dr)} px, width Δ ${fmt(x.dw)} px (limit ±${t.boxPx} px)`, ge.lines[x.i]);
+          }
+        }
         if (wDe) {
           const x = wDe as { de: number; i: number; a: number[]; b: number[]; limit: number };
           row.ink = r6(maxDe);
@@ -1017,7 +1044,7 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   };
 }
 
-const KIND_RANK: IssueKind[] = ["size", "missing", "extra", "visibility", "lines", "box", "baseline", "ssim", "edge", "color", "ink", "inkCoverage", "shadow"];
+const KIND_RANK: IssueKind[] = ["size", "missing", "extra", "visibility", "lines", "box", "baseline", "inkExtent", "ssim", "edge", "color", "ink", "inkCoverage", "shadow"];
 
 /** Short issue lines (`<capture>: <element>: <detail>`), most structural first, then (unless left out) not-run captures. */
 export function summarizeIssues(v: ScreenVerdict, limit = 20, opts: { notRun?: boolean } = {}): string[] {
