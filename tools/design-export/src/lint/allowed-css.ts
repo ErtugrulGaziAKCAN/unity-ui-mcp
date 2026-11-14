@@ -53,6 +53,8 @@ interface Lists {
   transformFunctions: string[];
   keyframeProperties: string[];
   timingKeywords: string[];
+  /** Easing functions with arguments the animation player evaluates (cubic-bezier, steps). */
+  timingFunctions: string[];
   mediaFeatures: string[];
   mediaTypes: string[];
   layoutTransitionProperties: string[];
@@ -163,7 +165,7 @@ export function cssSupportDataFrom(f: CssSupportFile): CssSupportData {
     valueFunctions: uniq([...f.exportResolved.functions, ...f.colors.functions, ...f.exportResolved.colorFunctions,
       ...props.flatMap((e) => [...(e.functions ?? []), ...(e.loweredFunctions ?? [])])]),
     initialValues: f.initialValues, svgPresentation: f.svgPresentation, transformFunctions: f.transformFunctions,
-    keyframeProperties: f.keyframeProperties, timingKeywords: f.timingKeywords, mediaFeatures: f.mediaFeatures, mediaTypes: f.mediaTypes,
+    keyframeProperties: f.keyframeProperties, timingKeywords: f.timingKeywords, timingFunctions: f.timingFunctions, mediaFeatures: f.mediaFeatures, mediaTypes: f.mediaTypes,
     layoutTransitionProperties: f.layoutTransitionProperties, pseudoElements: f.pseudoElements, pseudoClasses: f.pseudoClasses,
     atRules: f.atRules, elements: f.elements, inputTypes: f.inputTypes, browserDefaults: f.browserDefaults,
   };
@@ -208,6 +210,11 @@ export interface CssSupport {
   isTransformFunction(name: string): boolean;
   isKeyframeProperty(name: string): boolean;
   isTimingKeyword(name: string): boolean;
+  /**
+   * A CSS easing the animation player evaluates exactly: a timing keyword, `cubic-bezier(x1, y1, x2, y2)` with x1 and x2
+   * in [0, 1], or `steps(n[, jump-start | jump-end | jump-none | jump-both | start | end])` (jump-none needs n ≥ 2).
+   */
+  isTimingFunction(text: string): boolean;
   isMediaFeature(name: string): boolean;
   isMediaType(name: string): boolean;
   isLayoutTransitionProperty(name: string): boolean;
@@ -218,6 +225,7 @@ export interface CssSupport {
   isAllowedElement(tag: string, attrs: Record<string, string>): boolean;
   readonly browserDefaults: CssSupportData["browserDefaults"];
   readonly timingKeywords: readonly string[];
+  readonly timingFunctions: readonly string[];
   readonly keyframeProperties: readonly string[];
   readonly mediaFeatures: readonly string[];
   readonly pseudoClasses: readonly string[];
@@ -227,7 +235,7 @@ export interface CssSupport {
 
 export function cssSupportFrom(d: CssSupportData): CssSupport {
   const set = (a: string[]) => new Set(a.map((x) => x.toLowerCase()));
-  const fns = set(d.valueFunctions), tf = set(d.transformFunctions), kf = set(d.keyframeProperties), tk = set(d.timingKeywords);
+  const fns = set(d.valueFunctions), tf = set(d.transformFunctions), kf = set(d.keyframeProperties), tk = set(d.timingKeywords), tfn = set(d.timingFunctions);
   const mf = set(d.mediaFeatures), mt = set(d.mediaTypes), lt = set(d.layoutTransitionProperties), pe = set(d.pseudoElements);
   const units = set(d.units), colors = set(d.colors.keywords), svg = set(d.svgPresentation), pc = set(d.pseudoClasses);
   const els = set(d.elements), types = set(d.inputTypes);
@@ -254,6 +262,7 @@ export function cssSupportFrom(d: CssSupportData): CssSupport {
     isTransformFunction: (n) => tf.has(n.toLowerCase()),
     isKeyframeProperty: (n) => kf.has(n.toLowerCase()),
     isTimingKeyword: (n) => tk.has(n.toLowerCase()),
+    isTimingFunction: (text) => timingFunctionOk(text, tk, tfn),
     isMediaFeature: (n) => mf.has(n.toLowerCase()),
     isMediaType: (n) => mt.has(n.toLowerCase()),
     isLayoutTransitionProperty: (n) => lt.has(n.toLowerCase()),
@@ -267,12 +276,35 @@ export function cssSupportFrom(d: CssSupportData): CssSupport {
     },
     browserDefaults: d.browserDefaults,
     timingKeywords: d.timingKeywords,
+    timingFunctions: d.timingFunctions,
     keyframeProperties: d.keyframeProperties,
     mediaFeatures: d.mediaFeatures,
     pseudoClasses: d.pseudoClasses,
     elements: d.elements,
     inputTypes: d.inputTypes,
   };
+}
+
+/** See CssSupport.isTimingFunction (the player's DesignTimingFunction.TryParse accepts the same). */
+function timingFunctionOk(text: string, keywords: Set<string>, functions: Set<string>): boolean {
+  const t = text.trim().toLowerCase();
+  if (keywords.has(t)) return true;
+  const m = /^([a-z-]+)\((.*)\)$/.exec(t);
+  if (!m || !functions.has(m[1])) return false;
+  const args = m[2].split(",").map((x) => x.trim());
+  const num = (x: string) => (/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/.test(x) ? Number(x) : NaN);
+  if (m[1] === "cubic-bezier") {
+    if (args.length !== 4) return false;
+    const n = args.map(num);
+    return n.every(Number.isFinite) && n[0] >= 0 && n[0] <= 1 && n[2] >= 0 && n[2] <= 1;
+  }
+  if (m[1] === "steps") {
+    if (args.length < 1 || args.length > 2 || !/^\d+$/.test(args[0])) return false;
+    const count = Number(args[0]), pos = args[1] ?? "jump-end";
+    if (!["jump-start", "jump-end", "jump-none", "jump-both", "start", "end"].includes(pos)) return false;
+    return count >= (pos === "jump-none" ? 2 : 1);
+  }
+  return false;
 }
 
 export const cssSupport: CssSupport = cssSupportFrom(CSS_SUPPORT_DATA);

@@ -207,8 +207,8 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 ## Animation
 
 - Transitions and `@keyframes` are recorded with their trigger (the screen opening, a screen state, a pseudo-state or an `is-*` class) and played by the package's animation player, never as USS transitions.
-- Timing functions `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` only (U-CSS-008). Keyframes animate only `transform`, `translate`, `rotate`, `scale`, `opacity`, `color`, `background-color`, `border-color`, `border-top-color`, `border-right-color`, `border-bottom-color`, `border-left-color` (U-CSS-013). Transition colours or transforms (opacity only on one-part elements, U-CSS-039): a transition of a layout property warns (W-CSS-001), one of `box-shadow` or `background-image` fails (U-CSS-014).
-- Status: animations compile, but until the animation player lands their samples are reported as not captured in verification; static captures freeze them.
+- Timing: the keywords, `cubic-bezier()` (x 0–1) or `steps()`; no `linear()` points (U-CSS-008). Keyframes animate only transforms, `opacity`, colours, border radii and box lengths (U-CSS-013). Transition colours or transforms (opacity only on one-part elements, U-CSS-039); a layout property warns (W-CSS-001), `box-shadow` or `background-image` fails (U-CSS-014).
+- Verification samples each animation at its delay and every quarter of its duration. A trigger the artboard starts in (`is-open` in the markup) shows its end state.
 
 ## Allowed CSS
 
@@ -347,7 +347,7 @@ Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `
 
 **Units:** `px`, `%`, `deg`, `rad`, `grad`, `turn`, `s`, `ms`, `rem`. **Colours:** hex, `rgb()`, `rgba()`, `hsl()`, `hsla()`, keywords `transparent`, `white`, `black`, `red`, `green`, `blue`, `yellow`, `cyan`, `magenta`, `gray`, `grey`, `orange`, `purple`, `pink`, `brown`, `silver`, `gold`, `navy`, `teal`, `lime`, `maroon`, `olive`, `aqua`, `fuchsia`.
 **Value functions:** `var()`, `rgb()`, `rgba()`, `hsl()`, `hsla()`, `linear-gradient()`, `radial-gradient()`, `url()`, `invert()`. **Transform functions:** `translate`, `translatex`, `translatey`, `scale`, `scalex`, `scaley`, `rotate`.
-**Timing functions:** `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`. **Keyframe properties:** `transform`, `translate`, `rotate`, `scale`, `opacity`, `color`, `background-color`, `border-color`, `border-top-color`, `border-right-color`, `border-bottom-color`, `border-left-color`, `animation-timing-function`.
+**Timing functions:** `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`, `step-start`, `step-end`, `cubic-bezier()`, `steps()`. **Keyframe properties:** see Animation.
 **Pseudo-classes:** `:hover`, `:active`, `:focus`, `:disabled`, `:checked`, `:root`. **Pseudo-elements:** `::before`, `::after`, `::placeholder` (`::before`/`::after` only without content).
 **At-rules:** `@media`, `@keyframes`, `@import` (kit files only), `@font-face` (kit files only); `@media` features `min-width`, `max-width`, `min-aspect-ratio`, `max-aspect-ratio`, media types `all`, `screen`.
 **Elements:** `body`, `div`, `span`, `p`, `h1`, `h2`, `h3`, `h4`, `h5`, `h6`, `button`, `input`, `textarea`, `select`, `option`, `label`, `img`, `svg`, `br`, `ul`, `ol`, `li`, `a`, `section`, `header`, `footer`, `nav`, `main`, `aside`, `article`, `b`, `strong`, `i`, `em`, inline `<svg>` (exported as a vector image; SVG presentation attributes allowed inside). **`<input>` types:** `text`, `search`, `password`, `number`, `email`, `tel`, `url`, `checkbox`, `radio`.
@@ -365,12 +365,12 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-005 | error | `calc()` | a literal value |
 | U-CSS-006 | error | viewport units (`vw`, `vh`, `vmin`, `vmax`, …) | px or % |
 | U-CSS-007 | error | `backdrop-filter` | a solid or translucent colour, or a baked image |
-| U-CSS-008 | error | transition or animation timing other than `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` (`cubic-bezier()`, `steps()`) | one of those keywords |
+| U-CSS-008 | error | a `linear()` easing with points | a keyword, `cubic-bezier()` or `steps()` |
 | U-CSS-009 | error | an inline element in text flow other than `b`, `strong`, `i`, `em`, `span`, `br`, a rich tag with effects beyond colour, size, bold and italic, or one in a block container that cannot be a block | `display: block` on the child or `display: flex` on the parent; inside a line only the rich tags |
 | U-CSS-010 | error | a first font family that is not a kit family | a kit family first (`var(--font-ui)`) |
 | U-CSS-011 | error | `gap` on a wrapping flex container | margins on the items |
 | U-CSS-012 | error | `@media` features other than min/max-width and min/max-aspect-ratio, media types other than screen/all, `not` | the allowed features only |
-| U-CSS-013 | error | `@keyframes` animating properties other than transform, translate, rotate, scale, opacity and colours | animate allowed properties |
+| U-CSS-013 | error | `@keyframes` animating what the animation player cannot | transforms, opacity, colours, radii, box lengths |
 | U-CSS-014 | error | a transition of `box-shadow` or `background-image`, a url() image beside another image, a gradient that does not fill the element or sets a colour space | transition a transform; one image per element; whole-element sRGB gradients |
 | U-CSS-015 | error | a `filter` function css-support.json does not enable (one is enabled once its fidelity fixture passes in Unity) | remove the filter |
 | U-CSS-016 | error | text size, line height or weight that is not a kit text style | the nearest kit text style (a `.text-<style>` class) |
@@ -420,7 +420,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-MRK-011 | error | a `data-u-id` that gives a member the generated view class already has (`state`, `set-state`, `find`, `screen-root`, …) | another id, e.g. `state-label` |
 | U-NET-001 | error | any remote resource (fonts, stylesheets, images) except scripts from allowed origins | no remote resources; local files |
 | U-NET-002 | error | a local file or Claude Design blob that is missing | add the file, or map the blob in blobs.json |
-| W-CSS-001 | warning | a transition on a layout property or `all` (warning) | transition transforms or colours |
+| W-CSS-001 | warning | a transition or keyframes of a layout property, or a transition of `all` (warning) | transition transforms or colours |
 | W-FONT-001 | warning | a weight or italic without a real face in another active locale's font (warning) | add the face or avoid the weight |
 | W-FONT-002 | warning | a kit font file that cannot be read (WOFF2, `local()`) (warning) | TTF/OTF/WOFF via `url()` |
 | I-MRK-001 | info | a `title` attribute: a tooltip, which UI Toolkit shows only in Editor panels (info) | nothing for an Editor-only hint; show hints players need with a visible element |

@@ -17,7 +17,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-CSS-005": { when: "`calc()`", fix: "a literal value" },
   "U-CSS-006": { when: "viewport units (`vw`, `vh`, `vmin`, `vmax`, …)", fix: "px or %" },
   "U-CSS-007": { when: "`backdrop-filter`", fix: "a solid or translucent colour, or a baked image" },
-  "U-CSS-008": { when: "transition or animation timing other than `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out` (`cubic-bezier()`, `steps()`)", fix: "one of those keywords" },
+  "U-CSS-008": { when: "a `linear()` easing with points", fix: "a keyword, `cubic-bezier()` or `steps()`" },
   "U-CSS-009": {
     when: "an inline element in text flow other than `b`, `strong`, `i`, `em`, `span`, `br`, a rich tag with effects beyond colour, size, bold and italic, or one in a block container that cannot be a block",
     fix: "`display: block` on the child or `display: flex` on the parent; inside a line only the rich tags",
@@ -25,7 +25,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-CSS-010": { when: "a first font family that is not a kit family", fix: "a kit family first (`var(--font-ui)`)" },
   "U-CSS-011": { when: "`gap` on a wrapping flex container", fix: "margins on the items" },
   "U-CSS-012": { when: "`@media` features other than min/max-width and min/max-aspect-ratio, media types other than screen/all, `not`", fix: "the allowed features only" },
-  "U-CSS-013": { when: "`@keyframes` animating properties other than transform, translate, rotate, scale, opacity and colours", fix: "animate allowed properties" },
+  "U-CSS-013": { when: "`@keyframes` animating what the animation player cannot", fix: "transforms, opacity, colours, radii, box lengths" },
   "U-CSS-014": {
     when: "a transition of `box-shadow` or `background-image`, a url() image beside another image, a gradient that does not fill the element or sets a colour space",
     fix: "transition a transform; one image per element; whole-element sRGB gradients",
@@ -93,7 +93,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-MRK-011": { when: "a `data-u-id` that gives a member the generated view class already has (`state`, `set-state`, `find`, `screen-root`, …)", fix: "another id, e.g. `state-label`" },
   "U-NET-001": { when: "any remote resource (fonts, stylesheets, images) except scripts from allowed origins", fix: "no remote resources; local files" },
   "U-NET-002": { when: "a local file or Claude Design blob that is missing", fix: "add the file, or map the blob in blobs.json" },
-  "W-CSS-001": { when: "a transition on a layout property or `all` (warning)", fix: "transition transforms or colours" },
+  "W-CSS-001": { when: "a transition or keyframes of a layout property, or a transition of `all` (warning)", fix: "transition transforms or colours" },
   "W-FONT-001": { when: "a weight or italic without a real face in another active locale's font (warning)", fix: "add the face or avoid the weight" },
   "W-FONT-002": { when: "a kit font file that cannot be read (WOFF2, `local()`) (warning)", fix: "TTF/OTF/WOFF via `url()`" },
   "I-MRK-001": { when: "a `title` attribute: a tooltip, which UI Toolkit shows only in Editor panels (info)", fix: "nothing for an Editor-only hint; show hints players need with a visible element" },

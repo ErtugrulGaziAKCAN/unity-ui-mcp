@@ -76,7 +76,7 @@ const PROBES: Record<string, string[]> = {
   "29-supports-false": ["U-CSS-028"], "30-starting-style": ["U-CSS-028"], "40-pseudo-class-whitelist": ["U-CSS-027"],
   "41-l10n-on-ancestor": ["U-MRK-004"], "42-bind-action-turkish": ["U-MRK-005"], "43-has-sibling": ["U-CSS-027"],
   "44-common-ok": ["U-CSS-023", "U-CSS-024"], "45-onclick-div": ["U-MRK-003"], "46-ua-bold-strong-heading": ["U-CSS-026"],
-  "50-select-lh": [], "51-visibility": [], "52-anim-steps": ["U-CSS-008"], "53-kit-font-local": [], "60-all-unset": [],
+  "50-select-lh": [], "51-visibility": [], "52-anim-steps": [], "53-kit-font-local": [], "60-all-unset": [],
   "61-root-size": ["U-MRK-006"], "62-rem-body": [],
   // review round 2
   "70-reset-unused-button": [], "71-reset-unused-class": [], "72-link-only-block": [], "73-duplicate-sibling-ids": ["U-MRK-002"],
@@ -267,6 +267,21 @@ describe("device grid, group opacity and stacking rules", () => {
     expect(await ids(`<div class="one fade"></div>`, `.one{width:200px;height:80px;background-color:#123c47} .fade{animation:appear 200ms linear} @keyframes appear{from{opacity:0}to{opacity:1}}`, "U-CSS-039")).toEqual([]);
     expect(await ids(`<div class="card fade"></div>`, `${card} .fade{transition:opacity 200ms linear}`, "U-CSS-039")).toEqual([]);
     expect(await ids(`<div class="card fade"></div>`, `${card} .fade{opacity:0} .fade.is-open{opacity:1}`, "U-CSS-039")).toEqual([]);
+  });
+
+  it("animations: the easings and properties the animation player plays pass; linear() points and other properties fail", async () => {
+    const box = `.b{width:200px;height:80px;background-color:#123c47}`;
+    const t = (timing: string) => ids(`<div class="b"></div>`, `${box} .b{transition:background-color 200ms ${timing}}`, "U-CSS-008");
+    for (const ok of ["ease", "step-start", "steps(4, jump-end)", "steps(2)", "cubic-bezier(.68,-0.55,.27,1.55)"]) expect(await t(ok), ok).toEqual([]);
+    // (cubic-bezier() with x outside 0–1 and steps(0) are invalid CSS: the browser drops them, as Unity does)
+    for (const bad of ["linear(0, 0.5, 1)", "linear(0, 0.25 40%, 1)"]) expect(await t(bad), bad).toHaveLength(1);
+    expect(await ids(`<div class="b"></div>`, `${box} .b{transition-timing-function:cubic-bezier(0.1, 0.7, 1, 0.1)}`, "U-CSS-008")).toEqual([]);
+    // keyframes: radii and box lengths play (box lengths warn: a layout pass per frame); other properties fail
+    const kf = (decl: string, rule: string) => ids(`<div class="b k"></div>`, `${box} .k{animation:a 200ms linear} @keyframes a{from{${decl}}to{${decl.replace(/\d+px/, "20px")}}}`, rule);
+    expect(await kf("border-top-left-radius:4px", "U-CSS-013")).toEqual([]);
+    expect(await kf("width:10px", "U-CSS-013")).toEqual([]);
+    expect(await kf("width:10px", "W-CSS-001")).toHaveLength(1);
+    expect(await kf("letter-spacing:1px", "U-CSS-013")).toHaveLength(1);
   });
 
   it("U-CSS-041: judges positioned elements too, against later plain elements, in the base style", async () => {

@@ -21,6 +21,11 @@ export const rule: Rule = {
       const bad = list.filter((p, i) => cssSupport.isLayoutTransitionProperty(p.trim()) && (dl.length === 0 || !(seconds(dl[i % dl.length]) === 0)));
       if (bad.length) c.add(t.path, `transition on ${bad.join(", ")}${bad.includes("all") ? " (all includes layout properties)" : ""}${at(src, t)}`);
     }
-    return c.findings(rule, "Transition only transform, translate, rotate, scale and colours (opacity on an element that paints one thing, U-CSS-039); a layout property transition re-runs layout every frame.");
+    // keyframes that animate a layout property: the player lays the screen out in every frame they run
+    for (const k of s.keyframes) {
+      const layout = Array.from(new Set(k.frames.flatMap((f) => f.decls.map((d) => d.name)).filter((n) => n !== "all" && cssSupport.isLayoutTransitionProperty(n))));
+      if (layout.length) c.add(k.path, `@keyframes ${k.name} animates ${layout.join(", ")}`);
+    }
+    return c.findings(rule, "Animate only transform, translate, rotate, scale and colours (opacity on an element that paints one thing, U-CSS-039); a transition or keyframes of a layout property re-runs layout every frame.");
   },
 };

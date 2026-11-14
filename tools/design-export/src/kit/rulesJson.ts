@@ -40,7 +40,7 @@ export function rulesJson(kit: KitConfig): RulesJson {
         rejected: Object.fromEntries(props.filter(([, p]) => p.handling === "error").map(([n, p]) => [n, p.rule ?? "U-CSS-023"])),
       },
       units: d.units, colorFunctions: d.colors.functions, colorKeywords: d.colors.keywords, valueFunctions: d.valueFunctions,
-      transformFunctions: d.transformFunctions, timing: d.timingKeywords, keyframeProperties: d.keyframeProperties,
+      transformFunctions: d.transformFunctions, timing: [...d.timingKeywords, ...d.timingFunctions.map((f) => `${f}()`)], keyframeProperties: d.keyframeProperties,
       pseudoClasses: d.pseudoClasses, pseudoElements: d.pseudoElements, mediaFeatures: d.mediaFeatures, elements: d.elements,
       inputTypes: d.inputTypes, filterFunctions: enabledFilterFunctions(),
     },
