@@ -102,7 +102,11 @@ use the command runner with projects whose `design-ui.config.json` you trust.
 | `design_ui_kit_sync` | Syncs fonts and settings from Unity into the kit | live when its route works, like import |
 
 Every result has a short text summary, the same data as JSON (with per-step `timings`), and `isError` with the
-reason when a step fails or is not available. `node tools/design-ui-mcp/scripts/smoke.mjs --project <dir>` checks the
+reason when a step fails or is not available. A Unity step is limited only by `unityRunner.timeoutSec` (default 1800 s;
+bridge requests do not go through `fetch`, whose fixed 300 s headers timeout used to cut long imports off); while it
+runs, a client that asks for progress gets an MCP progress notification every 10 s. A verify that gives no verdict
+(the capture failed, timed out or did not finish) keeps its partial captures, the capture's meta file and the Unity log
+in `<folder>/.design-ui/failed-<run>/` (the newest three) and names that folder in its result. `node tools/design-ui-mcp/scripts/smoke.mjs --project <dir>` checks the
 built server without a client (stdio: initialize, tools/list, design_ui_list; `--call <tool>` for others).
 
 `scripts/setup.sh` is bash (macOS, Linux; on Windows use WSL or Git Bash, or the manual steps above).

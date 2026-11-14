@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 
 /** What the Unity package's Editor bridge writes to `<project>/Library/DesignUi/bridge.json`. */
@@ -33,34 +34,100 @@ export function findBridge(projectDir: string): BridgeInfo | null {
 }
 
 export class BridgeHttpError extends Error {
-  constructor(message: string, readonly status: number | null) { super(message); }
+  /** `timedOutMs`: the request's own limit ended it (no answer within that time). */
+  constructor(message: string, readonly status: number | null, readonly timedOutMs: number | null = null) { super(message); }
 }
 
-/** One request to the bridge (127.0.0.1 only, Bearer token). Throws BridgeHttpError on transport errors and non-200. */
-export async function bridgeRequest(info: BridgeInfo, method: "GET" | "POST", route: string, body: unknown, timeoutMs: number): Promise<any> {
-  let res: Response;
-  try {
-    res = await fetch(`http://127.0.0.1:${info.port}${route}`, {
-      method,
-      headers: { authorization: `Bearer ${info.token}`, ...(body === undefined ? {} : { "content-type": "application/json" }) },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      redirect: "error", // the bridge never redirects; the token must not follow one anywhere
-      signal: AbortSignal.timeout(timeoutMs),
+/**
+ * The timers a bridge request runs on (the real ones by default): tests pass a clock they advance themselves, so minutes
+ * of a long Unity operation pass in no time.
+ */
+export interface BridgeClock {
+  now(): number;
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+  setInterval(fn: () => void, ms: number): unknown;
+  clearInterval(handle: unknown): void;
+}
+
+export const REAL_CLOCK: BridgeClock = {
+  now: () => Date.now(),
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (h) => clearTimeout(h as NodeJS.Timeout),
+  setInterval: (fn, ms) => setInterval(fn, ms),
+  clearInterval: (h) => clearInterval(h as NodeJS.Timeout),
+};
+
+export interface BridgeRequestOptions {
+  clock?: BridgeClock;
+  /** Called every `waitEveryMs` while no answer has arrived, with the time waited so far. */
+  onWait?: (elapsedMs: number) => void;
+  waitEveryMs?: number;
+}
+
+/** How often an idle connection to the bridge is probed by TCP keep-alive while Unity works on a long request. */
+const KEEP_ALIVE_MS = 15_000;
+
+/**
+ * One request to the bridge (127.0.0.1 only, Bearer token). Throws BridgeHttpError on transport errors and non-200.
+ * The only limit is `timeoutMs` (the step's configured budget): the request goes through node:http on its own socket,
+ * not fetch, whose undici dispatcher stops waiting for headers or body after a fixed 300 s, so a long import or kit sync
+ * would fail at 300 s whatever unityRunner.timeoutSec says. The socket keeps the connection alive meanwhile, and
+ * `onWait` reports the wait (an MCP tool turns it into progress notifications).
+ */
+export function bridgeRequest(info: BridgeInfo, method: "GET" | "POST", route: string, body: unknown, timeoutMs: number, opts: BridgeRequestOptions = {}): Promise<any> {
+  const clock = opts.clock ?? REAL_CLOCK;
+  const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body), "utf8");
+  return new Promise((resolve, reject) => {
+    const started = clock.now();
+    let settled = false;
+    let timer: unknown = null, ticker: unknown = null;
+    const finish = (f: () => void) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) clock.clearTimeout(timer);
+      if (ticker !== null) clock.clearInterval(ticker);
+      f();
+    };
+    const unanswered = (cause: string) => new BridgeHttpError(`Unity Editor bridge on 127.0.0.1:${info.port} did not answer ${method} ${route} (${cause})`, null);
+    // agent false: a socket of its own with no agent timeout; the bridge never redirects and node:http follows none
+    const req = http.request({
+      host: "127.0.0.1", port: info.port, path: route, method, agent: false,
+      headers: {
+        authorization: `Bearer ${info.token}`,
+        ...(payload ? { "content-type": "application/json", "content-length": String(payload.length) } : {}),
+      },
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("error", (e) => finish(() => reject(unanswered((e as { code?: string }).code ?? e.name))));
+      res.on("end", () => finish(() => {
+        const text = Buffer.concat(chunks).toString("utf8");
+        let json: any = null;
+        try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+        if (res.statusCode !== 200) {
+          const status = res.statusCode ?? 0;
+          const reason = status === 401
+            ? "the token in Library/DesignUi/bridge.json was rejected (401); restart the bridge in Unity (Window > Design UI > Status > Restart)"
+            : status === 409 ? "the bridge is busy with another request (409)" : `HTTP ${status}${json?.error ? `: ${json.error}` : ""}`;
+          reject(new BridgeHttpError(`Unity Editor bridge refused ${method} ${route}: ${reason}`, status));
+          return;
+        }
+        resolve(json);
+      }));
     });
-  } catch (e) {
-    const cause = (e as { cause?: { code?: string } }).cause?.code ?? (e as Error).name;
-    throw new BridgeHttpError(`Unity Editor bridge on 127.0.0.1:${info.port} did not answer ${method} ${route} (${cause})`, null);
-  }
-  const text = await res.text();
-  let json: any = null;
-  try { json = text ? JSON.parse(text) : null; } catch { json = null; }
-  if (res.status !== 200) {
-    const reason = res.status === 401
-      ? "the token in Library/DesignUi/bridge.json was rejected (401); restart the bridge in Unity (Window > Design UI > Status > Restart)"
-      : res.status === 409 ? "the bridge is busy with another request (409)" : `HTTP ${res.status}${json?.error ? `: ${json.error}` : ""}`;
-    throw new BridgeHttpError(`Unity Editor bridge refused ${method} ${route}: ${reason}`, res.status);
-  }
-  return json;
+    req.setTimeout(0);
+    req.on("socket", (socket) => socket.setKeepAlive(true, KEEP_ALIVE_MS));
+    req.on("error", (e) => finish(() => reject(unanswered((e as { code?: string }).code ?? e.name))));
+    timer = clock.setTimeout(() => finish(() => {
+      req.destroy();
+      reject(new BridgeHttpError(`Unity Editor bridge on 127.0.0.1:${info.port} did not answer ${method} ${route} within ${Math.round(timeoutMs / 1000)} s`, null, timeoutMs));
+    }), timeoutMs);
+    if (opts.onWait && (opts.waitEveryMs ?? 0) > 0) {
+      ticker = clock.setInterval(() => { if (!settled) opts.onWait!(clock.now() - started); }, opts.waitEveryMs!);
+    }
+    req.end(payload);
+  });
 }
 
 export type BridgeState = "connected" | "not-found" | "not-responding" | "unauthorized";

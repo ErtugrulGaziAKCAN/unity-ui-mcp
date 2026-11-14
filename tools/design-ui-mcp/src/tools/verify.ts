@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { requireConfig, type ServerContext } from "../context.js";
+import { requireConfig, withProgress, type ServerContext } from "../context.js";
 import { designPath, exportedPage, resolveScreen, sha256, sourceSha } from "../design.js";
 import { MISSING, unityStep } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
@@ -20,7 +20,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       "only when it is the screen folder's last import.",
     inputSchema: { screen: z.string().min(1).describe(SCREEN_ARG) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, async ({ screen: screenArg }) => {
+  }, async ({ screen: screenArg }, extra) => {
     const t = new Timings();
     return guarded(t, async () => {
       const cfg = requireConfig(ctx);
@@ -76,25 +76,29 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       const staging = `${unityDir}.next`;
       const dropStaging = () => fs.rmSync(staging, { recursive: true, force: true });
       dropStaging();
+      // a run without a verdict keeps what it captured and its log next to the result (failed-<run>), for diagnosis
+      const keep = (reason: string, info: { code?: number; via?: string; log?: string }) =>
+        keepFailedRun(path.dirname(unityDir), staging, { screen, entry, reason, code: info.code ?? null, via: info.via ?? null, log: info.log ?? "", timings: t.done() });
+      const kept = (where: string) => ` Partial captures and logs kept in ${where}.`;
       let run;
       try {
-        run = await t.async("capture", () => runUnity(cfg, "capture", { exportDir, outDir: staging }, ctx.runnerOptions));
+        run = await t.async("capture", () => runUnity(cfg, "capture", { exportDir, outDir: staging }, withProgress(ctx, extra)));
       } catch (e) {
-        dropStaging();
-        if (!(e instanceof UnityRunnerError)) throw e;
-        return toolResult(`Verify of ${screen} not run: ${e.message}. No verdict.`, { screen, verdict: null, timings: t.done() }, true);
+        if (!(e instanceof UnityRunnerError)) { dropStaging(); throw e; }
+        const evidence = keep(e.message, { log: e.log });
+        return toolResult(`Verify of ${screen} not run: ${e.message}. No verdict.${kept(evidence)}`, { screen, verdict: null, evidence, timings: t.done() }, true);
       }
       if (run.code !== 0) {
-        dropStaging();
-        return toolResult(`Unity capture of ${screen} failed (exit ${run.code}, via ${run.via}); no verdict. Log tail:\n${run.logTail}`, {
-          screen, verdict: null, code: run.code, logTail: run.logTail, timings: t.done(),
+        const evidence = keep(`Unity capture failed (exit ${run.code}, via ${run.via})`, run);
+        return toolResult(`Unity capture of ${screen} failed (exit ${run.code}, via ${run.via}); no verdict.${kept(evidence)} Log tail:\n${run.logTail}`, {
+          screen, verdict: null, code: run.code, logTail: run.logTail, evidence, timings: t.done(),
         }, true);
       }
       // only a capture that wrote its done marker last counts; anything else is an unfinished run
       if (!fs.existsSync(path.join(staging, "capture-done.json"))) {
-        dropStaging();
+        const evidence = keep("Unity capture did not finish (no capture-done.json)", run);
         return toolResult(`Unity capture of ${screen} (via ${run.via}) did not finish (no capture-done.json); no verdict. ` +
-          "The previous report and verdict are unchanged.", { screen, verdict: null, logTail: run.logTail, timings: t.done() }, true);
+          `The previous report and verdict are unchanged.${kept(evidence)}`, { screen, verdict: null, logTail: run.logTail, evidence, timings: t.done() }, true);
       }
       const steps: Record<string, number> = { ...(imp.timings ?? {}), capture: t.steps.capture };
       const v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir }));
@@ -102,9 +106,10 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         const unfinished = !fs.existsSync(path.join(staging, "capture-done.json"));
         const none = !unfinished && !fs.existsSync(path.join(staging, "boxes.json"));
         v.discard?.();
-        dropStaging();
-        return toolResult(`Unity capture of ${screen} (via ${run.via}) ${unfinished ? "did not finish (no capture-done.json)" : none ? "wrote no boxes.json" : "produced none of the design's captures"}; no verdict. ` +
-          "The previous report and verdict are unchanged.", { screen, verdict: null, notRun: v.notRun, logTail: run.logTail, timings: t.done() }, true);
+        const what = unfinished ? "did not finish (no capture-done.json)" : none ? "wrote no boxes.json" : "produced none of the design's captures";
+        const evidence = keep(`Unity capture ${what}`, run);
+        return toolResult(`Unity capture of ${screen} (via ${run.via}) ${what}; no verdict. ` +
+          `The previous report and verdict are unchanged.${kept(evidence)}`, { screen, verdict: null, notRun: v.notRun, logTail: run.logTail, evidence, timings: t.done() }, true);
       }
       const verdict = v.pass && v.notRun.length === 0 ? "pass" : "fail";
       // the report and last-verify.json are written together, only now that the verdict is decided
@@ -127,4 +132,26 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       }, verdict !== "pass");
     });
   });
+}
+
+/** How many failed-<run> folders a screen keeps (the newest); older ones are deleted when a new one is kept. */
+export const FAILED_RUNS_KEPT = 3;
+
+/**
+ * Moves a capture that gave no verdict (`staging`, whatever it holds: PNGs, boxes, the meta file Unity keeps up to date)
+ * to `<bookkeeping>/failed-<run>` with the step's log (`unity.log`) and `failure.json` (why, exit code, route, timings);
+ * keeps the newest FAILED_RUNS_KEPT such folders. Returns the folder.
+ */
+export function keepFailedRun(bookkeeping: string, staging: string, failure: { screen: string; entry: string | null; reason: string; code: number | null; via: string | null; log: string; timings: Record<string, number> }): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  let dir = path.join(bookkeeping, `failed-${stamp}`);
+  for (let n = 2; fs.existsSync(dir); n++) dir = path.join(bookkeeping, `failed-${stamp}-${n}`);
+  if (fs.existsSync(staging)) fs.renameSync(staging, dir);
+  else fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "unity.log"), failure.log);
+  const { log: _log, ...rest } = failure;
+  fs.writeFileSync(path.join(dir, "failure.json"), JSON.stringify({ ...rest, failedAt: new Date().toISOString(), files: fs.readdirSync(dir).filter((f) => f !== "unity.log").length }, null, 2) + "\n");
+  const runs = fs.readdirSync(bookkeeping).filter((n) => n.startsWith("failed-")).sort();
+  for (const old of runs.slice(0, Math.max(0, runs.length - FAILED_RUNS_KEPT))) fs.rmSync(path.join(bookkeeping, old), { recursive: true, force: true });
+  return dir;
 }

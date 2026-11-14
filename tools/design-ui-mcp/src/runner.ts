@@ -1,9 +1,12 @@
 import { spawn } from "node:child_process";
-import { BridgeHttpError, bridgeRequest, findBridge, type BridgeInfo } from "./bridge.js";
+import { BridgeHttpError, bridgeRequest, findBridge, REAL_CLOCK, type BridgeClock, type BridgeInfo } from "./bridge.js";
 import type { DesignUiConfig, RunnerRoute, UnityStep } from "./config.js";
 
 /** A Unity step could not be run (no bridge, refused, timed out, command missing): not a Unity exit code. */
-export class UnityRunnerError extends Error {}
+export class UnityRunnerError extends Error {
+  /** What the step printed before it stopped (a timed-out command), when there is any. */
+  log?: string;
+}
 
 /** What the Editor bridge's import answers besides code and log (files as the bridge names them). */
 export interface ImportAnswer {
@@ -44,6 +47,8 @@ export class CompileWaitTimeout extends UnityRunnerError {
 
 export interface RunResult {
   code: number; logTail: string; via: RunnerRoute; timings: Record<string, number>;
+  /** The step's log as far as it is kept (the command route keeps its last 32 to 64 KB): evidence of a failed step. */
+  log: string;
   /**
    * The step's warnings and errors as Unity listed them, one entry each (Editor route; a bridge without the lists, and the
    * command route, give empty lists). The log tail can lose them: a long log keeps only its end.
@@ -76,7 +81,19 @@ export interface RunnerOptions {
   settleMs?: number;
   /** Limit for the wait after an import (scripts compile, domain reloads); default 300 s. */
   compileTimeoutMs?: number;
+  /** Timers of the Unity request (tests); the real clock by default. */
+  clock?: BridgeClock;
+  /**
+   * Called every `progressEveryMs` (default 10 s) while a Unity step runs, with a short line (`Unity import: 40 s`): a
+   * tool forwards it to the client as MCP progress, so a client that resets its timeout on progress keeps waiting.
+   */
+  onProgress?: (message: string) => void;
+  progressEveryMs?: number;
 }
+
+const STEP_LABEL: Record<UnityStep, string> = { import: "import", kitSync: "kit sync", capture: "capture" };
+const progressLine = (step: UnityStep, elapsedMs: number, what = "running") =>
+  `Unity ${STEP_LABEL[step]}: ${what}, ${Math.round(elapsedMs / 1000)} s`;
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
 
@@ -92,6 +109,8 @@ function importAnswer(res: any): ImportAnswer | null {
 
 export const PLACEHOLDERS = ["projectDir", "profile", "exportDir", "outDir", "kitDir"] as const;
 const LOG_TAIL_LINES = 40;
+/** After the time limit, how long a stopped command may take to close its output before the step gives up on it. */
+const COMMAND_KILL_GRACE_MS = 2000;
 const LOG_TAIL_CHARS = 4000;
 
 /**
@@ -136,7 +155,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function runUnity(cfg: DesignUiConfig, step: UnityStep, vars: Record<string, string>, opts: RunnerOptions = {}): Promise<RunResult> {
   const all: Record<string, string> = { projectDir: cfg.projectDir, profile: cfg.profileAsset, kitDir: cfg.kitDir, ...vars };
   const route = step === "capture" ? cfg.unityRunner.captureVia : cfg.unityRunner.prefer;
-  return route === "editor" ? runEditor(cfg, step, all, opts) : runCommand(cfg, step, all);
+  return route === "editor" ? runEditor(cfg, step, all, opts) : runCommand(cfg, step, all, opts);
 }
 
 async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<string, string>, opts: RunnerOptions): Promise<RunResult> {
@@ -155,10 +174,18 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
     : { profile: vars.profile, exportDir: vars.exportDir, outDir: vars.outDir };
   let res: any;
   try {
-    res = await bridgeRequest(info, "POST", route, body, cfg.unityRunner.timeoutSec * 1000);
+    // the step's whole budget is the request's only limit (no transport default); progress while Unity works
+    res = await bridgeRequest(info, "POST", route, body, cfg.unityRunner.timeoutSec * 1000, {
+      clock: opts.clock, waitEveryMs: opts.onProgress ? opts.progressEveryMs ?? 10_000 : 0,
+      onWait: opts.onProgress ? (ms) => opts.onProgress!(progressLine(step, ms)) : undefined,
+    });
   } catch (e) {
     if (e instanceof BridgeHttpError && e.status === 404 && step === "capture") {
       throw new UnityRunnerError(`this version of the com.unity.design-ui package has no Editor capture; use "unityRunner.captureVia": "command"`);
+    }
+    if (e instanceof BridgeHttpError && e.timedOutMs !== null) {
+      throw new UnityRunnerError(`Unity Editor bridge on 127.0.0.1:${info.port} did not answer POST ${route} within ${Math.round(e.timedOutMs / 1000)} s (unityRunner.timeoutSec in ` +
+        `${cfg.configPath}); Unity may still be working on it: check the Unity console, raise the limit for long steps`);
     }
     // no answer at all (closed, reloading, switched off) is an unreachable Editor; a refusal (401, 409) is not
     const unreachable = e instanceof BridgeHttpError && e.status === null;
@@ -185,7 +212,7 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
   }
   timings.total = Math.round(performance.now() - t0);
   return {
-    code, logTail: tail(log), via: "editor", timings, warnings: strings(res?.warnings), errors: strings(res?.errors),
+    code, logTail: tail(log), log, via: "editor", timings, warnings: strings(res?.warnings), errors: strings(res?.errors),
     ...(answer && step === "import" ? { answer, scriptsFailed, scriptErrors } : {}), ...(compile ? { compile } : {}),
   };
 }
@@ -199,9 +226,14 @@ async function waitForCompileEnd(projectDir: string, first: BridgeInfo, answer: 
   Promise<{ compile: CompileOutcome; scriptsFailed: boolean | null; last: unknown }> {
   const interval = opts.pollIntervalMs ?? 250;
   const limit = opts.compileTimeoutMs ?? 300_000;
-  const deadline = Date.now() + limit;
+  const t0 = Date.now(), deadline = t0 + limit;
+  let reported = t0;
   let info: BridgeInfo = first;
   for (;;) {
+    if (opts.onProgress && Date.now() - reported >= (opts.progressEveryMs ?? 10_000)) {
+      reported = Date.now();
+      opts.onProgress(progressLine("import", reported - t0, "compiling the generated scripts"));
+    }
     try {
       const s = await bridgeRequest(info, "GET", "/status", undefined, Math.max(1000, interval * 4));
       if (s?.compiling === false) {
@@ -249,7 +281,7 @@ async function waitForCompile(projectDir: string, first: BridgeInfo, opts: Runne
   }
 }
 
-async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<string, string>): Promise<RunResult> {
+async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<string, string>, opts: RunnerOptions = {}): Promise<RunResult> {
   const t0 = performance.now();
   const template = cfg.unityRunner.command[step];
   if (!template.length) {
@@ -277,22 +309,48 @@ async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<str
       reject(new UnityRunnerError(`could not start "${argv[0]}" for ${step}: ${(e as Error).message}`));
       return;
     }
-    let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); }, timeoutMs);
+    let timedOut = false, done = false;
+    let grace: NodeJS.Timeout | null = null;
+    const clock = opts.clock ?? REAL_CLOCK;
+    const started = clock.now();
+    const timedOutError = () => {
+      const e = new UnityRunnerError(`"${argv[0]}" (${step}) did not finish within ${cfg.unityRunner.timeoutSec} s and was stopped; log tail:\n${tail(log)}`);
+      e.log = log;
+      return e;
+    };
+    const timer = clock.setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      // a grandchild that keeps the output pipes open would hold the result until it ends: cut it off after a grace
+      grace = setTimeout(() => {
+        if (done) return;
+        done = true;
+        child.stdout.destroy();
+        child.stderr.destroy();
+        reject(timedOutError());
+      }, COMMAND_KILL_GRACE_MS);
+    }, timeoutMs);
+    // a capture or import in a batch Unity takes minutes: report the wait (MCP progress) while it runs
+    const ticker = opts.onProgress ? clock.setInterval(() => opts.onProgress!(progressLine(step, clock.now() - started)), opts.progressEveryMs ?? 10_000) : null;
+    const stop = () => { clock.clearTimeout(timer); if (ticker !== null) clock.clearInterval(ticker); if (grace) clearTimeout(grace); };
     child.stdout.on("data", keep);
     child.stderr.on("data", keep);
     child.on("error", (e) => {
-      clearTimeout(timer);
+      stop();
+      if (done) return;
+      done = true;
       reject(new UnityRunnerError(`could not start "${argv[0]}" for ${step}: ${e.message}`));
     });
     child.on("close", (code, signal) => {
-      clearTimeout(timer);
+      stop();
+      if (done) return;
+      done = true;
       if (timedOut) {
-        reject(new UnityRunnerError(`"${argv[0]}" (${step}) did not finish within ${cfg.unityRunner.timeoutSec} s and was stopped; log tail:\n${tail(log)}`));
+        reject(timedOutError());
         return;
       }
       resolve({
-        code: code ?? (signal ? 128 : 1), logTail: tail(log), via: "command", warnings: [], errors: [],
+        code: code ?? (signal ? 128 : 1), logTail: tail(log), log, via: "command", warnings: [], errors: [],
         timings: { total: Math.round(performance.now() - t0) },
       });
     });

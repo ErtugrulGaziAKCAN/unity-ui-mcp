@@ -42,3 +42,25 @@ export async function guarded(t: Timings, body: () => Promise<CallToolResult>): 
     return toolResult(message, { error: message, timings: t.done() }, true);
   }
 }
+
+/** What a tool handler gets besides its arguments (the MCP SDK's request extra), as far as progress needs it. */
+export interface ProgressExtra {
+  _meta?: { progressToken?: string | number };
+  sendNotification?: (n: { method: "notifications/progress"; params: { progressToken: string | number; progress: number; message?: string } }) => Promise<void>;
+}
+
+/**
+ * The runner's progress callback for one tool call: each line becomes an MCP progress notification when the client
+ * asked for progress (a progressToken), so a client that resets its request timeout on progress waits for a long Unity
+ * step; undefined otherwise.
+ */
+export function progressOf(extra: ProgressExtra | undefined): ((message: string) => void) | undefined {
+  const token = extra?._meta?.progressToken;
+  const send = extra?.sendNotification;
+  if (token === undefined || !send) return undefined;
+  let n = 0;
+  return (message) => {
+    n++;
+    send({ method: "notifications/progress", params: { progressToken: token, progress: n, message } }).catch(() => { /* the client went away */ });
+  };
+}

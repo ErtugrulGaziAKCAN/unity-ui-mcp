@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { requireConfig, type ServerContext } from "../context.js";
+import { requireConfig, withProgress, type ServerContext } from "../context.js";
 import { designPath, findEntry, folderScreens, mixedScreens, resolveScreen, sha256, sourceSha } from "../design.js";
 import { MISSING } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
@@ -28,7 +28,7 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       discardManualEdits: z.boolean().optional().describe("Overwrite generated Unity files that were edited by hand (default false)."),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, async ({ design, discardManualEdits }) => {
+  }, async ({ design, discardManualEdits }, extra) => {
     const t = new Timings();
     return guarded(t, async () => {
       const cfg = requireConfig(ctx);
@@ -96,7 +96,7 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       try {
         run = await t.async("unity", () => runUnity(cfg, "import", {
           exportDir, outDir: unityDirOf(dir), discardManualEdits: String(discard), importDone: doneFile,
-        }, ctx.runnerOptions));
+        }, withProgress(ctx, extra)));
       } catch (e) {
         if (!(e instanceof UnityRunnerError)) throw e;
         if (e instanceof CompileWaitTimeout) {

@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { requireConfig, type ServerContext } from "../context.js";
+import { requireConfig, withProgress, type ServerContext } from "../context.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { runUnity, UnityRunnerError, withIssues } from "../runner.js";
 
@@ -10,13 +10,13 @@ export function registerKitSync(server: McpServer, ctx: ServerContext): void {
       "Re-syncs fonts and settings from the Unity project into the design kit (kitDir) and regenerates the UI Toolkit font " +
       "twins, through the Unity runner (the open Editor's bridge by default). Run it after font or TMP settings changes.",
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, async () => {
+  }, async (extra) => {
     const t = new Timings();
     return guarded(t, async () => {
       const cfg = requireConfig(ctx);
       let run;
       try {
-        run = await t.async("unity", () => runUnity(cfg, "kitSync", {}, ctx.runnerOptions));
+        run = await t.async("unity", () => runUnity(cfg, "kitSync", {}, withProgress(ctx, extra)));
       } catch (e) {
         if (!(e instanceof UnityRunnerError)) throw e;
         return toolResult(`Kit sync not run: ${e.message}`, { kitDir: cfg.kitDir, timings: t.done() }, true);

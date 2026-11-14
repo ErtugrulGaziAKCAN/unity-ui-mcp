@@ -11,7 +11,7 @@ import { Runtime } from "../src/runtime.js";
 import { createServer, createUnconfiguredServer, TOOL_NAMES, VERSION } from "../src/server.js";
 import { screenStatus } from "../src/status.js";
 import { fileURLToPath } from "node:url";
-import { call, connect, startStubBridge, STUB_RUNNER, tempDir, tempProject, writeZip, type StubBridge } from "./helpers.js";
+import { call, connect, manualClock, startStubBridge, STUB_RUNNER, tempDir, tempProject, writeZip, type StubBridge } from "./helpers.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fast = { pollIntervalMs: 10, settleMs: 20, compileTimeoutMs: 5000 };
@@ -950,6 +950,24 @@ describe("design_ui_kit_sync", () => {
     expect(summary(old)).toBe("Kit sync failed (exit 1, via editor).\nLog tail:\nKit sync failed; nothing was written.\nerror: x");
   });
 
+  it("reports progress while Unity works, to a client that asks for it, and waits past 300 s", async () => {
+    const p = tempProject({ prefer: "editor" });
+    bridge = await startStubBridge(p.dir);
+    const hold = bridge.holdPosts();
+    const clock = manualClock();
+    const client = await connect(createServer(readConfig(p.dir), { runtime, runnerOptions: { ...fast, clock, progressEveryMs: 10_000 } }));
+    const seen: { progress: number; message?: string }[] = [];
+    const pending = client.callTool({ name: "design_ui_kit_sync", arguments: {} }, undefined, { onprogress: (x) => seen.push(x), resetTimeoutOnProgress: true });
+    await hold.arrived;
+    clock.advance(310_000);
+    await new Promise((r) => setTimeout(r, 50)); // the notifications cross the in-memory transport
+    hold.release();
+    const r = await pending;
+    expect(r.isError).toBeFalsy();
+    expect(seen.map((x) => x.progress)).toEqual(Array.from({ length: 31 }, (_, i) => i + 1));
+    expect(seen[30].message).toBe("Unity kit sync: running, 310 s");
+  });
+
   it("succeeds through the command route", async () => {
     const p = tempProject({ prefer: "command" });
     const r = await call(await serverFor(p.dir), "design_ui_kit_sync");
@@ -985,6 +1003,62 @@ describe("design_ui_verify", () => {
     expect(r.data.verdict).toBeNull();
     expect(compared).toBe(0);
   });
+
+  /** Evidence folders a failed verify kept: `<screen>/.design-ui/failed-<run>`. */
+  const failedRuns = (dir: string) => fs.readdirSync(path.join(dir, ".design-ui")).filter((n) => n.startsWith("failed-")).sort();
+
+  it("keeps a failed capture's partial captures and its log in a failed-<run> folder next to the result, and says where", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const partial = 'mkdir -p "$0" && printf png > "$0/default@320x180.png" && printf "{}" > "$0/boxes.meta.json" && echo "capture line 1" && echo "capture failed: timeout" >&2 && exit 3';
+    p.writeConfig({ unityRunner: { prefer: "command", command: { import: CONFIRMING_IMPORT, capture: ["sh", "-c", partial, "{outDir}"], kitSync: [] } } });
+    const client = await serverFor(p.dir, { ...stubPipeline(), unityCapture: true, compareScreen: async () => ({ pass: true, topIssues: [], notRun: [], compared: 1 }) });
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.data.verdict).toBeNull();
+    const runs = failedRuns(dir);
+    expect(runs).toHaveLength(1);
+    const kept = path.join(dir, ".design-ui", runs[0]);
+    expect(r.data.evidence).toBe(kept);
+    expect(r.text).toContain(`Partial captures and logs kept in ${kept}`);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "unity.next"))).toBe(false);
+    expect(fs.readFileSync(path.join(kept, "default@320x180.png"), "utf8")).toBe("png");
+    expect(fs.existsSync(path.join(kept, "boxes.meta.json"))).toBe(true);
+    const log = fs.readFileSync(path.join(kept, "unity.log"), "utf8");
+    expect(log).toContain("capture line 1");
+    expect(log).toContain("capture failed: timeout");
+    expect(JSON.parse(fs.readFileSync(path.join(kept, "failure.json"), "utf8"))).toMatchObject({ screen: "clean.screen", code: 3, via: "command", reason: expect.stringContaining("exit 3") });
+  });
+
+  it("keeps the evidence of a capture without a done marker and of a timed-out capture; only the newest three failed runs stay", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const unfinished = 'mkdir -p "$0" && printf png > "$0/default@320x180.png" && echo "stopped early"';
+    p.writeConfig({ unityRunner: { prefer: "command", command: { import: CONFIRMING_IMPORT, capture: ["sh", "-c", unfinished, "{outDir}"], kitSync: [] } } });
+    const pipeline = { ...stubPipeline(), unityCapture: true, compareScreen: async () => ({ pass: true, topIssues: [], notRun: [], compared: 1 }) };
+    let client = await serverFor(p.dir, pipeline);
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(r.text).toMatch(/did not finish \(no capture-done\.json\); no verdict/);
+    expect(fs.readFileSync(path.join(r.data.evidence, "unity.log"), "utf8")).toContain("stopped early");
+
+    // the runner stops the command at the limit; a child that keeps its output open is cut off after a short grace
+    const slow = 'mkdir -p "$0" && printf png > "$0/default@320x180.png" && echo "still capturing" && sleep 30';
+    p.writeConfig({ unityRunner: { prefer: "command", timeoutSec: 1, command: { import: CONFIRMING_IMPORT, capture: ["sh", "-c", slow, "{outDir}"], kitSync: [] } } });
+    client = await serverFor(p.dir, pipeline);
+    const t = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(t.text).toMatch(/did not finish within 1 s/);
+    expect(t.data.evidence).toMatch(/failed-/);
+    expect(fs.readFileSync(path.join(t.data.evidence, "default@320x180.png"), "utf8")).toBe("png");
+    expect(fs.readFileSync(path.join(t.data.evidence, "unity.log"), "utf8")).toContain("still capturing");
+    p.writeConfig({ unityRunner: { prefer: "command", command: { import: CONFIRMING_IMPORT, capture: ["sh", "-c", unfinished, "{outDir}"], kitSync: [] } } });
+    client = await serverFor(p.dir, pipeline);
+    for (let i = 0; i < 3; i++) await call(client, "design_ui_verify", { screen: "clean-screen" });
+    const runs = failedRuns(dir);
+    expect(runs).toHaveLength(3);
+    expect(runs).not.toContain(path.basename(r.data.evidence));
+  }, 30_000);
 
   it("with the installed pipeline: needs an import first, captures nothing before it, and names a missing screen", async () => {
     const p = tempProject();

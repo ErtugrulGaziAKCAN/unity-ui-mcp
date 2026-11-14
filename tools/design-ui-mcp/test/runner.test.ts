@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { findBridge, bridgeStatus, probeBridge } from "../src/bridge.js";
 import { readConfig } from "../src/config.js";
 import { CompileWaitTimeout, expandTemplate, runUnity, UnityRunnerError } from "../src/runner.js";
-import { startStubBridge, tempProject, type StubBridge } from "./helpers.js";
+import { manualClock, startStubBridge, tempProject, type StubBridge } from "./helpers.js";
 
 const fast = { pollIntervalMs: 10, settleMs: 20, compileTimeoutMs: 5000 };
 let bridge: StubBridge | null = null;
@@ -238,6 +238,56 @@ describe("expandTemplate", () => {
   it("rejects unknown or unset placeholders", () => {
     expect(() => expandTemplate(["{nope}"], {})).toThrow(/\{nope\}/);
     expect(() => expandTemplate(["{exportDir}"], {})).toThrow(/\{exportDir\}/);
+  });
+});
+
+describe("runUnity: long Editor operations", () => {
+  it("waits for a bridge answer as long as unityRunner.timeoutSec allows, past Node's hidden 300 s fetch limits, and reports progress meanwhile", async () => {
+    const p = tempProject({ prefer: "editor" });
+    p.writeConfig({ unityRunner: { prefer: "editor", timeoutSec: 1800 } });
+    bridge = await startStubBridge(p.dir);
+    const hold = bridge.holdPosts();
+    const clock = manualClock();
+    const progress: string[] = [];
+    const run = runUnity(readConfig(p.dir), "kitSync", {}, { ...fast, clock, progressEveryMs: 10_000, onProgress: (m) => progress.push(m) });
+    await hold.arrived;
+    clock.advance(301_000); // simulated: past undici's 300 s headers timeout, which fetch would apply
+    hold.release();
+    const r = await run;
+    expect(r).toMatchObject({ code: 0, via: "editor" });
+    expect(progress).toHaveLength(30);
+    expect(progress[0]).toMatch(/kit sync.*10 s/i);
+    expect(progress[29]).toMatch(/300 s/);
+    expect(clock.pending()).toBe(0); // the request's own timer and progress timer are gone with it
+  });
+
+  it("stops a bridge request at the configured timeout and names it", async () => {
+    const p = tempProject({ prefer: "editor" });
+    p.writeConfig({ unityRunner: { prefer: "editor", timeoutSec: 400 } });
+    bridge = await startStubBridge(p.dir);
+    const hold = bridge.holdPosts();
+    const clock = manualClock();
+    const run = runUnity(readConfig(p.dir), "import", { exportDir: "/x" }, { ...fast, clock });
+    const failed = expect(run).rejects.toThrow(/did not answer POST \/import within 400 s \(unityRunner\.timeoutSec in /);
+    await hold.arrived;
+    clock.advance(399_000);
+    clock.advance(1_001);
+    await failed;
+    await expect(run).rejects.toBeInstanceOf(UnityRunnerError);
+    hold.release();
+  });
+
+  it("never sends a bridge request through fetch", async () => {
+    const p = tempProject({ prefer: "editor" });
+    bridge = await startStubBridge(p.dir);
+    const real = globalThis.fetch;
+    let fetched = 0;
+    globalThis.fetch = ((...a: Parameters<typeof fetch>) => { fetched++; return real(...a); }) as typeof fetch;
+    try {
+      await runUnity(readConfig(p.dir), "kitSync", {}, fast);
+      await bridgeStatus(p.dir);
+    } finally { globalThis.fetch = real; }
+    expect(fetched).toBe(0);
   });
 });
 

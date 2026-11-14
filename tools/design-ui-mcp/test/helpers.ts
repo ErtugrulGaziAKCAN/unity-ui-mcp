@@ -85,7 +85,41 @@ export interface StubBridge {
   lastCompile: unknown;
   /** `scriptsFailed` of GET /status (omitted while undefined, like an older bridge). */
   scriptsFailed: boolean | undefined;
+  /**
+   * Holds the answers of the next POST /import and /kit-sync until `release`: `arrived` resolves once such a request has
+   * reached the bridge (a long Unity operation, simulated without sleeping).
+   */
+  holdPosts(): { arrived: Promise<void>; release: () => void };
   close(): Promise<void>;
+}
+
+/**
+ * A clock for the bridge transport (BridgeClock) that only moves when the test advances it: `advance(ms)` runs every
+ * timer due in that time, in order, so minutes of a long Unity operation pass in no real time.
+ */
+export function manualClock() {
+  let now = 0, seq = 0;
+  const timers = new Map<number, { at: number; fn: () => void; every?: number }>();
+  return {
+    now: () => now,
+    setTimeout: (fn: () => void, ms: number) => { const id = ++seq; timers.set(id, { at: now + ms, fn }); return id as unknown; },
+    clearTimeout: (h: unknown) => { timers.delete(h as number); },
+    setInterval: (fn: () => void, ms: number) => { const id = ++seq; timers.set(id, { at: now + ms, fn, every: ms }); return id as unknown; },
+    clearInterval: (h: unknown) => { timers.delete(h as number); },
+    pending: () => timers.size,
+    advance(ms: number) {
+      const end = now + ms;
+      for (;;) {
+        const due = Array.from(timers.entries()).filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+        if (!due) break;
+        const [id, t] = due;
+        now = t.at;
+        if (t.every) t.at += t.every; else timers.delete(id);
+        t.fn();
+      }
+      now = end;
+    },
+  };
 }
 
 /** A loopback HTTP server that behaves like the Unity Editor bridge, plus its Library/DesignUi/bridge.json. */
@@ -93,7 +127,15 @@ export async function startStubBridge(projectDir: string, opts: { tokenInFile?: 
   const token = "a".repeat(64);
   const state: StubBridge = {
     port: 0, token, requests: [], answer: { code: 0, log: "imported" }, compilingPolls: 0, downPolls: 0, lastCompile: null, scriptsFailed: undefined,
-    close: async () => {},
+    holdPosts: () => { throw new Error("not started"); }, close: async () => {},
+  };
+  let hold: { arrive: () => void; released: Promise<void> } | null = null;
+  state.holdPosts = () => {
+    let arrive!: () => void, release!: () => void;
+    const arrived = new Promise<void>((r) => (arrive = r));
+    const released = new Promise<void>((r) => (release = r));
+    hold = { arrive, released };
+    return { arrived, release };
   };
   const server = http.createServer((req, res) => {
     let raw = "";
@@ -116,7 +158,14 @@ export async function startStubBridge(projectDir: string, opts: { tokenInFile?: 
           ...(state.scriptsFailed === undefined ? {} : { scriptsFailed: compiling ? false : state.scriptsFailed }),
         });
       }
-      if ((req.url === "/import" || req.url === "/kit-sync") && req.method === "POST") return send(200, state.answer);
+      if ((req.url === "/import" || req.url === "/kit-sync") && req.method === "POST") {
+        const h = hold;
+        if (!h) return send(200, state.answer);
+        hold = null;
+        h.arrive();
+        void h.released.then(() => send(200, state.answer));
+        return;
+      }
       return send(404, { error: "not found" });
     });
   });
