@@ -213,6 +213,16 @@ const NO_PEER_NETWORK = `for (const k of ["RTCPeerConnection", "webkitRTCPeerCon
   try { Object.defineProperty(globalThis, k, { value: undefined, configurable: false, writable: false }); } catch {}
 }`;
 
+/**
+ * Moves the pointer off the page, so no element is :hover. Headless Chromium on Linux starts a page with a pointer at
+ * the window's top-left corner (macOS starts with none): the element there and its ancestors would be :hover in the
+ * base state, and lint, export and capture would read their hover style as the base. A pointer outside the viewport
+ * hovers nothing.
+ */
+export async function releasePointer(cdp: CDPSession): Promise<void> {
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: -1, y: -1 });
+}
+
 export async function openDesign(
   htmlPath: string,
   kit: KitConfig,
@@ -299,6 +309,8 @@ export async function openDesign(
     const page = await context.newPage();
     const cdp = await context.newCDPSession(page);
     await page.goto(`${ORIGIN}/${encodeURIComponent(name)}`, { waitUntil: "load" });
+    // before the page goes quiet: a script reacting to the pointer leaving finishes its changes in that wait
+    await releasePointer(cdp);
     await page.evaluate(() => document.fonts.ready);
     // scripts (e.g. React from an allowed CDN) may still be committing after load: wait until the DOM is quiet
     await page.evaluate(QUIET_JS);
