@@ -84,12 +84,6 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
-- `scripts/capture-on-copy.sh` no longer copies the open Editor's process and lock files into the project copy: the
-  copy's Unity read the copied `Library/ilpp.pid` as its own and stopped the open Editor's IL post-processing runner.
-  `Library/ilpp.pid` and every other `*.pid` in the `Library`, `Library/EditorInstance.json`, the asset databases'
-  `-lock` files, search index locks, `Temp/` and `UnityLockfile` are deleted from the copy (APFS clone and rsync alike)
-  before Unity starts.
-- `scripts/setup.sh` removes a `"testables"` entry of the package's id before 0.1.0 instead of renaming it to the new
 - `DesignUiGammaComposite` draws its panel where UI Toolkit would draw the panel on screen instead of at the end of the
   frame over everything: over Screen Space - Overlay canvases of a lower or the same sort order, under those of a higher
   one, and among other runtime panels by sort order (the same sort order: the panel made later on top), so drawing and
@@ -101,6 +95,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   GameObject attaches after the region: the check runs on the region's first frame after it attaches, once every
   component enabled with it has run, and warns once per region (the check ran inside the region's OnEnable, before such
   a composite attached, and a process-wide latch then kept other regions from being checked).
+- `scripts/capture-on-copy.sh` no longer copies the open Editor's process and lock files into the project copy: the
+  copy's Unity read the copied `Library/ilpp.pid` as its own and stopped the open Editor's IL post-processing runner.
+  `Library/ilpp.pid` and every other `*.pid` in the `Library`, `Library/EditorInstance.json`, the asset databases'
+  `-lock` files, search index locks, `Temp/` and `UnityLockfile` are deleted from the copy (APFS clone and rsync alike)
+  before Unity starts.
+- `scripts/setup.sh` removes a `"testables"` entry of the package's id before 0.1.0 instead of renaming it to the new
   id (the project's manifest never lists the package's tests); `--dry-run` prints the same plan.
 - `DesignUiGammaComposite` renders a `DesignUiPanelRegion`'s sort-order copy of its PanelSettings, whether the copy was
   made before or after the composite attached, in a texture of its own that follows screen resizes; the copy gets its
