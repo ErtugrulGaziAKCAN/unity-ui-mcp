@@ -181,27 +181,49 @@ namespace DesignUi.Editor
         static void CompleteUnions(IrNode node, IReadOnlyDictionary<string, IrBreakpoint> bps)
         {
             var groups = IsTextNode(node) ? ComposedGroups.Concat(new[] { TextAlignGroup }) : ComposedGroups;
-            foreach (var group in groups)
+            foreach (var group in groups) CompleteGroup(node, group, bps);
+        }
+
+        /// <summary>
+        /// The CSS properties a fixed-line text's explicit height is composed from (ScreenBuilder.PlanTextHeights): its font
+        /// size and its vertical padding and borders.
+        /// </summary>
+        internal static readonly string[] TextHeightGroup =
+            { "font-size", "padding-top", "padding-bottom", "border-top-width", "border-bottom-width", "border-top-style", "border-bottom-style" };
+
+        /// <summary>
+        /// <see cref="CompleteUnions"/> for one composed group of an already lowered node (the compiler's fixed-line text
+        /// heights): false, with nothing changed, when the layers that set it combine into more unions than the limit.
+        /// </summary>
+        internal static bool TryCompleteGroup(IrNode node, string[] group, IReadOnlyList<IrBreakpoint> breakpoints)
+        {
+            var bps = new Dictionary<string, IrBreakpoint>(StringComparer.Ordinal);
+            foreach (var b in breakpoints ?? new IrBreakpoint[0]) if (b?.Name != null) bps[b.Name] = b;
+            try { CompleteGroup(node, group, bps); }
+            catch (UnsupportedStyleException) { return false; }
+            return true;
+        }
+
+        static void CompleteGroup(IrNode node, string[] group, IReadOnlyDictionary<string, IrBreakpoint> bps)
+        {
+            // a layer that only hides a text does not change how it is aligned
+            bool Sets(Dictionary<string, string> layer) =>
+                group.Any(prop => layer.TryGetValue(prop, out var v) && !(group == TextAlignGroup && prop == "display" && v.Trim() == "none"));
+            var setters = node.Style.Where(p => p.Key != Base && Sets(p.Value)).Select(p => LayerKey.Parse(p.Key)).ToList();
+            if (setters.Count < 2) return;
+            var unions = LayerKey.UnionClosure(setters, bps, UnionLimit, () => "The layers of '" + node.Id + "' that set " + string.Join(", ", group));
+            foreach (var u in unions)
             {
-                // a layer that only hides a text does not change how it is aligned
-                bool Sets(Dictionary<string, string> layer) =>
-                    group.Any(prop => layer.TryGetValue(prop, out var v) && !(group == TextAlignGroup && prop == "display" && v.Trim() == "none"));
-                var setters = node.Style.Where(p => p.Key != Base && Sets(p.Value)).Select(p => LayerKey.Parse(p.Key)).ToList();
-                if (setters.Count < 2) continue;
-                var unions = LayerKey.UnionClosure(setters, bps, UnionLimit, () => "The layers of '" + node.Id + "' that set " + string.Join(", ", group));
-                foreach (var u in unions)
+                node.Style.TryGetValue(u.Text, out var layer);
+                // longhands first: a shorthand is left out next to one of its longhands (the other parts come from the basis)
+                foreach (var prop in group.OrderBy(x => GroupShorthands.ContainsKey(x) ? 1 : 0))
                 {
-                    node.Style.TryGetValue(u.Text, out var layer);
-                    // longhands first: a shorthand is left out next to one of its longhands (the other parts come from the basis)
-                    foreach (var prop in group.OrderBy(x => GroupShorthands.ContainsKey(x) ? 1 : 0))
-                    {
-                        if (layer != null && (layer.ContainsKey(prop) || Conflicts(layer, prop))) continue;
-                        if (!setters.Any(x => x.IsSubsetOf(u) && node.Style[x.Text].ContainsKey(prop))) continue;
-                        var v = Resolve(node, u, prop, false);
-                        if (v == null) continue;
-                        if (layer == null) node.Style[u.Text] = layer = new Dictionary<string, string>();
-                        layer[prop] = v;
-                    }
+                    if (layer != null && (layer.ContainsKey(prop) || Conflicts(layer, prop))) continue;
+                    if (!setters.Any(x => x.IsSubsetOf(u) && node.Style[x.Text].ContainsKey(prop))) continue;
+                    var v = Resolve(node, u, prop, false);
+                    if (v == null) continue;
+                    if (layer == null) node.Style[u.Text] = layer = new Dictionary<string, string>();
+                    layer[prop] = v;
                 }
             }
         }

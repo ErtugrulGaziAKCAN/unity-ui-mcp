@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -152,6 +153,11 @@ namespace DesignUi.Editor
         public IReadOnlyList<(Vector2Int viewport, double scale)> Viewports;
         /// <summary>The panel scales of the profile's scaled viewports: the screen root's <c>viewport-scales</c> (DesignScreen).</summary>
         public IReadOnlyList<double> ViewportScales;
+        /// <summary>
+        /// Every locale's text of a String Table key of the screen (the compiler reads the tables before it builds), or null
+        /// without localization: a text gets a fixed line count only when each of them keeps it.
+        /// </summary>
+        public Func<string, IEnumerable<string>> Translations;
         /// <summary>The compiled font set (<c>DesignFonts.asset</c>) relative to the screen's UXML, for the screen root's reference, or null.</summary>
         public string FontSet;
     }

@@ -166,6 +166,7 @@ namespace DesignUi.Editor
                     Viewports = (profile.viewports ?? new UnityEngine.Vector2Int[0])
                         .Select(v => (v, BoxesWriter.Scale(v, profile.referenceResolution, profile.screenMatch))).ToList(),
                     ViewportScales = FontMap.ScaledViewportScales(profile),
+                    Translations = Translations(profile, ir.Screen, hooks?.Tables ?? DesignStringTables.Current),
                     // the screen root's own reference to the locales' twins (DesignFonts.asset next to DesignFonts.uss, project only)
                     FontSet = FontSetFolder(outFolder) != null ? "../" + DesignUi.DesignFontSet.FileName : null,
                 };
@@ -561,6 +562,21 @@ namespace DesignUi.Editor
             EnsureAssetFolder(parent);
             if (Directory.Exists(folder)) AssetDatabase.ImportAsset(folder);
             else AssetDatabase.CreateFolder(parent, folder.Substring(slash + 1));
+        }
+
+        /// <summary>
+        /// Every locale's text of a key in the screen's String Table collection, read when it is asked (one key at a time), or
+        /// null when the profile does not localize or no tables are installed: a text the design keeps on fixed lines gets
+        /// its explicit height only when every translation keeps the line count (ScreenBuilder.PlanTextHeights).
+        /// </summary>
+        internal static Func<string, IEnumerable<string>> Translations(DesignUiProfile profile, string screen, IDesignStringTables tables)
+        {
+            if (profile?.localization == null || !profile.localization.enabled || tables == null || string.IsNullOrEmpty(screen)) return null;
+            string collection;
+            try { collection = profile.localization.CollectionFor(screen); }
+            catch (IrFormatException) { return null; }
+            if (string.IsNullOrEmpty(collection)) return null;
+            return key => tables.Strings(collection, new[] { key }).Values.SelectMany(v => v);
         }
 
         /// <summary>The kit's line boxes and each of them scaled by every text-size step (each key once).</summary>

@@ -46,8 +46,11 @@ namespace DesignUi.Editor.Tests
             FontFixture.Delete();
         }
 
-        static ScreenBuildOptions Options(params DesignTextSize[] steps) => new ScreenBuildOptions
+        static ScreenBuildOptions Options(params DesignTextSize[] steps) => Options(null, steps);
+
+        static ScreenBuildOptions Options(Func<string, IEnumerable<string>> translations, params DesignTextSize[] steps) => new ScreenBuildOptions
         {
+            Translations = translations,
             TextStyleSizes = Sizes,
             TextStyleLineBoxes = new Dictionary<string, string> { { "label", FontTwinGenerator.LineBox.KeyOf(16, 20) }, { "caption", FontTwinGenerator.LineBox.KeyOf(12, 16) } },
             LineBoxes = FontTwinGenerator.LineBox.Of(new[] { (16.0, 20.0), (12.0, 16.0) }),
@@ -146,6 +149,124 @@ namespace DesignUi.Editor.Tests
             var s = Build(Root(locale, animated));
             Assert.IsNull(Height(s, "locale"));
             Assert.IsNull(Height(s, "animated"));
+        }
+
+        [Test]
+        public void TwoLayersThatHoldTogether_AndSetDifferentHeightParts_GetTheirUnionsHeight()
+        {
+            // loading sets the size (12 px in the label's 5:4 line box: 15), hover the padding (8): loading while hovered is 23
+            var t = Label("t", "Işık", false, ("padding-top", "4px"))
+                .With("hover", ("padding-top", "8px"))
+                .With("state:loading", ("font-size", "12px"));
+            var s = Build(Root(t), Options(new DesignTextSize { key = "large", scale = 1.5f }));
+            Assert.AreEqual("28px", Height(s, "t", ":hover"));
+            Assert.AreEqual("19px", Height(s, "t", "", ".state-loading"));
+            Assert.AreEqual("23px", Height(s, "t", ":hover", ".state-loading"), "the union of both layers");
+            Assert.AreEqual("30.5px", Height(s, "t", ":hover", ".text-size-large.state-loading"), "and under a text-size step: 12 × 1.5 × 1.25 + 8");
+        }
+
+        /// <summary>
+        /// The combined node on a panel at the scale of every exact viewport (1, 0.75, 0.5, 1.5): its height is the CSS one in
+        /// both layers' context, 23 px (a class layer stands in for hover, which a panel test cannot hold).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheCombinedLayers_AreTheirCssHeight_AtEveryExactScale()
+        {
+            var t = Label("t", "Işık", false, ("padding-top", "4px"), ("align-self", "flex-start"))
+                .With("class:is-hot", ("padding-top", "8px"))
+                .With("state:loading", ("font-size", "12px"));
+            t.Style["base"]["font-family"] = "\"" + FontFixture.Regular.faceInfo.familyName + "\"";
+            var root = Node("root", "container", ("position", "relative"), ("width", "2560px"), ("height", "1440px")).Add(t);
+            var dir = Path.Combine(Path.GetTempPath(), "design-ui-fixed-union-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
+            Directory.CreateDirectory(dir);
+            _temp.Add(dir);
+            File.WriteAllText(Path.Combine(dir, ScreenCompiler.IrFileName), JsonConvert.SerializeObject(TestIr.Screen(root, "fixed.union"), Formatting.Indented));
+            File.WriteAllText(Path.Combine(dir, KitTextStyles.FileName),
+                "{ \"label\": { \"fontSize\": 16, \"lineHeight\": 20, \"weight\": 400 }, \"caption\": { \"fontSize\": 12, \"lineHeight\": 16, \"weight\": 400 } }");
+            var result = ScreenCompiler.Compile(dir, Profile(), false, NoView());
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            foreach (var scale in new[] { 1f, 0.75f, 0.5f, 1.5f })
+            {
+                _rt = new RenderTexture(1024, 1024, 24);
+                _settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+                _settings.scaleMode = PanelScaleMode.ConstantPixelSize;
+                _settings.scale = scale;
+                _settings.targetTexture = _rt;
+                _go = new GameObject("FixedLineTextHeightTests union");
+                var doc = _go.AddComponent<UIDocument>();
+                doc.panelSettings = _settings;
+                for (int f = 0; f < 2; f++) yield return null;
+                var tree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/FixedUnion/FixedUnion.uxml").Instantiate();
+                doc.rootVisualElement.Add(tree);
+                var screen = tree.Q<DesignScreen>("root");
+                var label = tree.Q<Label>("t");
+                screen.AddToClassList("state-loading");
+                label.AddToClassList("is-hot");
+                for (int f = 0; f < 4; f++) yield return null;
+                // Yoga puts both edges on the device grid: within half a device pixel of 23 px (without the union: 28 or 19)
+                Assert.AreEqual(23 * scale, label.layout.height * scale, 0.5 + 1e-3, "the laid-out height at scale " + scale);
+                Object.DestroyImmediate(_go);
+                Object.DestroyImmediate(_settings);
+                Object.DestroyImmediate(_rt);
+                _go = null;
+                _settings = null;
+                _rt = null;
+            }
+        }
+
+        [Test]
+        public void ATextWhoseTranslationChangesItsLineCount_OrThatTheGameFills_KeepsItsMeasuredHeight()
+        {
+            // the String Tables' translations by key: German breaks one label onto two lines, another keeps one
+            var tables = new Dictionary<string, string[]>
+            {
+                { "test.wraps-de", new[] { "Licht\nTor", "Işık" } },
+                { "test.keeps", new[] { "Licht", "Işık" } },
+            };
+            Func<string, IEnumerable<string>> translations = key => tables.TryGetValue(key, out var v) ? v : new string[0];
+            var bound = Label("bound", "Satır 1\nSatır 2");
+            bound.Bind = "address";
+            var argument = Label("argument", "{count} oyuncu");
+            argument.Text.Args = new[] { "count" };
+            var s = Build(Root(Label("wraps-de", "Işık"), Label("keeps", "Işık"), bound, argument), Options(translations));
+            Assert.IsNull(Height(s, "wraps-de"), "its German translation has two lines");
+            Assert.AreEqual("20px", Height(s, "keeps"), "every translation keeps one line");
+            Assert.IsNull(Height(s, "bound"), "a bound text's lines come from the game");
+            Assert.IsNull(Height(s, "argument"), "an argument's value comes from the game");
+        }
+
+        /// <summary>A String Table fake that answers per key: locale → text.</summary>
+        sealed class KeyedTables : IDesignStringTables
+        {
+            public readonly Dictionary<string, Dictionary<string, string>> Entries = new Dictionary<string, Dictionary<string, string>>();
+            public readonly List<string> Asked = new List<string>();
+            public IReadOnlyList<string> Check(StringTableRequest request) => new string[0];
+            public LocalizationReport Write(StringTableRequest request) => new LocalizationReport { Collection = request.Collection };
+            public IReadOnlyDictionary<string, IReadOnlyList<string>> Strings(string collection, IEnumerable<string> keys)
+            {
+                Asked.Add(collection);
+                var result = new Dictionary<string, IReadOnlyList<string>>();
+                foreach (var key in keys)
+                    if (Entries.TryGetValue(key, out var byLocale))
+                        foreach (var kv in byLocale)
+                            result[kv.Key] = (result.TryGetValue(kv.Key, out var l) ? l : new string[0]).Concat(new[] { kv.Value }).ToList();
+                return result;
+            }
+        }
+
+        [Test]
+        public void TheCompiler_ReadsEveryLocalesTranslation_FromTheScreensCollection()
+        {
+            var tables = new KeyedTables();
+            tables.Entries["test.title"] = new Dictionary<string, string> { { "de", "Kader\nliste" }, { "tr", "Kadro" } };
+            var profile = Profile();
+            profile.localization = new DesignLocalizationSettings { enabled = true, defaultCollection = "{Screen}Texts" };
+            var translations = ScreenCompiler.Translations(profile, "club.squad", tables);
+            CollectionAssert.AreEquivalent(new[] { "Kader\nliste", "Kadro" }, translations("test.title").ToArray());
+            Assert.AreEqual("ClubSquadTexts", tables.Asked.Single(), "the screen's own collection");
+            CollectionAssert.IsEmpty(translations("test.other"));
+            profile.localization.enabled = false;
+            Assert.IsNull(ScreenCompiler.Translations(profile, "club.squad", tables), "without localization the IR's texts are all there is");
         }
 
         DesignUiProfile Profile()

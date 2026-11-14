@@ -132,7 +132,7 @@ namespace DesignUi.Editor
             var className = Pascal(ir.Screen, "screen id");
             var lowered = Lowering.Apply(ir.Root, ir.Breakpoints);
             var builder = new Builder(assetPath, fontDefinition, options, AncestorTargets(lowered), InheritedFamilies(lowered));
-            builder.PlanTextHeights(lowered, null);
+            builder.PlanTextHeights(lowered, null, ir.Breakpoints);
             var root = builder.Draft(lowered, true, false);
             builder.RemoveWrappers(root);
             return builder.Finish(root, ir, className);
@@ -1060,17 +1060,23 @@ namespace DesignUi.Editor
             /// UI Toolkit rounds a text element's measured height up to whole device pixels: at a scale where a line box is a
             /// fraction of a device pixel each such element is up to a pixel taller than the design's and texts stacked below it
             /// drift. A text whose line count the design fixes (no wrapping, <c>white-space: nowrap</c> or <c>pre</c>, in every
-            /// layer; its lines are its explicit breaks) and whose height is its content's gets an explicit height of exactly
+            /// layer; its lines are its explicit breaks, the same count in the design's English and in every locale's
+            /// translation the screen's String Tables hold; not bound or filled with arguments at runtime) and whose height is
+            /// its content's gets an explicit height of exactly
             /// <c>lines × line box</c> plus its vertical padding and borders (<see cref="TextHeight"/>), so layout uses the exact
             /// value and nothing adds up. Its height is its content's when no layer sizes it (height, min or max height) and it is
             /// not grown or stretched: in a column without flex-grow or flex-basis, in a row whose items are aligned (not
             /// stretched), or absolute without both top and bottom. Wrapping text keeps its measured height (at most a device
             /// pixel over the design per element).
             /// </summary>
-            public void PlanTextHeights(IrNode node, IrNode parent)
+            public void PlanTextHeights(IrNode node, IrNode parent, IReadOnlyList<IrBreakpoint> breakpoints)
             {
-                foreach (var child in node.Children) PlanTextHeights(child, node);
-                if (FixedLines(node, parent, out var lines, out var ratio)) _fixedLines[node] = (lines, ratio);
+                foreach (var child in node.Children) PlanTextHeights(child, node, breakpoints);
+                if (!FixedLines(node, parent, out var lines, out var ratio)) return;
+                // the height is composed from the size, padding and borders: two layers that hold together and set different
+                // parts get their union, which writes the height of both (a hovered padding in a loading state's size); a
+                // node whose layers would combine into too many unions keeps its measured height
+                if (Lowering.TryCompleteGroup(node, Lowering.TextHeightGroup, breakpoints)) _fixedLines[node] = (lines, ratio);
             }
 
             bool FixedLines(IrNode node, IrNode parent, out int lines, out double ratio)
@@ -1078,12 +1084,18 @@ namespace DesignUi.Editor
                 lines = 0;
                 ratio = 0;
                 if (parent == null || node.Text == null || node.Children.Length > 0 || node.Field != null || (node.Kind != "text" && node.Kind != "button")) return false;
+                // the game writes a bound text and fills arguments at runtime: the design does not fix their lines
+                if (node.Bind != null || (node.Text.Args?.Length ?? 0) > 0) return false;
                 var style = node.Text.Style;
                 if (style == null || _lineBoxes == null || !_lineBoxes.TryGetValue(style, out var key) || key == null || !_boxesByKey.TryGetValue(key, out var box)) return false;
                 var tr = node.Text.Tr ?? "";
                 if (node.Text.Rich && tr.IndexOf("<size=", StringComparison.Ordinal) >= 0) return false; // another size in a line changes its box
                 lines = tr.Split('\n').Length;
                 if (node.Text.En != null && node.Text.En.Split('\n').Length != lines) return false;
+                // every locale's translation in the screen's String Tables keeps the line count, or the text is not fixed
+                if (node.Text.Key != null && _options.Translations != null)
+                    foreach (var t in _options.Translations(node.Text.Key) ?? Enumerable.Empty<string>())
+                        if (t != null && t.Split('\n').Length != lines) return false;
                 ratio = box.LineHeight / box.FontSize;
                 // an animation of the size, padding or borders changes the height between the layers' values
                 if ((node.Anims ?? new List<IrAnim>()).Any(a => (a.Properties ?? new string[0]).Any(p => p == "all" || HeightProps.Contains(p) || p.StartsWith("padding", StringComparison.Ordinal) || p.StartsWith("border", StringComparison.Ordinal))))
