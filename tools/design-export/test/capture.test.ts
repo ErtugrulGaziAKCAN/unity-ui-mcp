@@ -371,6 +371,37 @@ describe("captures", () => {
     expect(near(px(captureName(spin), "spin"), [157, 165, 168], 2)).toBe(true);
   });
 
+  it("a trigger class the markup already has: the page shows the layer's end, and the trigger still runs off and on", async () => {
+    const d0 = await openDesign(fx("initial-trigger.html"), kit, [2560, 1440], browser);
+    let b: IrBuild;
+    try { b = await buildIr(d0, await collectSnapshot(d0.page, d0.cdp, kit), kit, tmp(), fx("initial-trigger.html")); } finally { await d0.close(); }
+    const jobs = buildMatrix(b.ir).filter((j) => j.viewport[0] === 2560);
+    const open = { kind: "class", name: "is-open", elementId: "panel" } as const;
+    const entering = (j: CaptureJob) => j.apply.some((a) => a.kind === "class" && !a.absent);
+    const series = (id: string, enter: boolean) => jobs.filter((j) => j.anim && j.anim.sampled[0].elementId === id && entering(j) === enter);
+    // the off side takes the markup's class off; the on side has it
+    expect(series("panel", true)[0].anim!.from).toEqual({ state: "default", apply: [{ ...open, absent: true }] });
+    expect(series("panel", false)[0].apply).toEqual([{ ...open, absent: true }]);
+    expect(series("panel", false)[0].anim!.from).toEqual({ state: "default", apply: [open] });
+    expect(series("menu", true)).toHaveLength(5);
+    const dir = tmp();
+    const r = await captureMatrix(fx("initial-trigger.html"), kit, b.ir, b.elements, dir, { browser, jobs }); // did not start: an error before the fix
+    const x = (name: string, id: string) => r.boxes[name].elements[id].x, y = (name: string, id: string) => r.boxes[name].elements[id].y;
+    expect(x("default@2560x1440", "panel")).toBe(0); // the static screen: open, nothing running
+    expect(series("panel", true).map((j) => x(captureName(j), "panel"))).toEqual([-300, -225, -150, -75, 0]);
+    expect(series("panel", false).map((j) => x(captureName(j), "panel"))).toEqual([0, -75, -150, -225, -300]);
+    const menuY = y("default@2560x1440", "menu");
+    expect(series("menu", true).map((j) => y(captureName(j), "menu") - menuY)).toEqual([-40, -30, -20, -10, 0]);
+    // every page is given back with the markup's classes
+    const d1 = await openDesign(fx("initial-trigger.html"), kit, [2560, 1440], browser);
+    try {
+      const s = await CaptureSession.open(d1, b.ir, b.elements, [2560, 1440]);
+      for (const j of series("panel", false).slice(0, 2)) await s.capture(j, tmp());
+      await s.close();
+      expect(await d1.page.evaluate(() => document.querySelector(".panel")!.className)).toBe("panel is-open");
+    } finally { await d1.close(); }
+  });
+
   it("refuses an element map that does not fit the page, and a page at another viewport", async () => {
     const d = await openDesign(fx("screen.html"), kit, [2560, 1440], browser);
     try {

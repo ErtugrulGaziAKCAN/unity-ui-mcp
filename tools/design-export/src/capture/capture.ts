@@ -344,8 +344,9 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
 
 interface CdpNode { nodeId: number; backendNodeId: number; nodeType: number; nodeName: string; attributes?: string[]; children?: CdpNode[] }
 interface DomEl { nodeId: number; backendNodeId: number; parent: number; attrs: Map<string, string> }
-interface Desired { classes: Map<string, [number, string]>; props: Map<string, [number, "disabled" | "checked"]>; forced: Map<number, string[]> }
-const emptyDesired = (): Desired => ({ classes: new Map(), props: new Map(), forced: new Map() });
+/** `absent`: markup classes the setup takes off (CaptureApply `absent`). */
+interface Desired { classes: Map<string, [number, string]>; absent: Map<string, [number, string]>; props: Map<string, [number, "disabled" | "checked"]>; forced: Map<number, string[]> }
+const emptyDesired = (): Desired => ({ classes: new Map(), absent: new Map(), props: new Map(), forced: new Map() });
 
 /**
  * One page at one viewport, reused across jobs. It works through its own CDP session, so its DOM node ids, forced
@@ -367,6 +368,8 @@ export class CaptureSession {
   private current: Desired = emptyDesired();
   /** Classes the session added (absent in the markup), by `i|class`. */
   private added = new Set<string>();
+  /** Markup classes the session took off (an `absent` item), by `i|class`: put back when no setup wants them off. */
+  private taken = new Map<string, [number, string]>();
   /** disabled/checked values before the session changed them, by `i|prop`. */
   private originals = new Map<string, boolean>();
   /** Style attributes before animation overrides. */
@@ -469,7 +472,7 @@ export class CaptureSession {
     const force = (i: number, p: string) => { const l = want.forced.get(i) ?? []; if (!l.includes(p)) l.push(p); want.forced.set(i, l); };
     for (const a of setup.apply) {
       const i = this.index(a.elementId);
-      if (a.kind === "class") { want.classes.set(`${i}|${a.name}`, [i, a.name]); continue; }
+      if (a.kind === "class") { (a.absent ? want.absent : want.classes).set(`${i}|${a.name}`, [i, a.name]); continue; }
       if (a.pseudo === "disabled" || a.pseudo === "checked") want.props.set(`${i}|${a.pseudo}`, [i, a.pseudo]);
       else if (a.pseudo === "focus") force(i, "focus");
       else {
@@ -489,14 +492,29 @@ export class CaptureSession {
   private async goTo(setup: ScreenSetup | null): Promise<void> {
     const want = this.desiredOf(setup), cur = this.current;
     const m: Mutation = { add: [], remove: [], set: [] };
+    // markup classes taken off: put back what no longer has to be off, take off what has to be
+    const restore = Array.from(this.taken).filter(([k]) => !want.absent.has(k));
+    const take = Array.from(want.absent).filter(([k]) => !this.taken.has(k) && !this.added.has(k));
+    for (const [, v] of restore) m.add.push(v);
+    for (const [, v] of take) m.remove.push(v);
     for (const [k, v] of cur.classes) if (!want.classes.has(k)) { if (this.added.has(k)) m.remove.push(v); else cur.classes.delete(k); }
-    for (const [k, v] of want.classes) if (!cur.classes.has(k)) m.add.push(v);
+    for (const [k, v] of want.classes) if (!cur.classes.has(k) && !this.taken.has(k)) m.add.push(v);
     for (const [k, [i, p]] of cur.props) if (!want.props.has(k)) m.set.push([i, p, this.originals.get(k) ?? false]);
     for (const [k, [i, p]] of want.props) if (!cur.props.has(k)) m.set.push([i, p, true]);
     if (m.add.length || m.remove.length || m.set.length) {
       const r = await this.d.page.evaluate(pageMutate, m);
-      for (const [i, c] of r.removed) { const k = `${i}|${c}`; this.added.delete(k); cur.classes.delete(k); }
-      for (const [i, c] of m.add) { const k = `${i}|${c}`; if (r.added.some(([x, y]) => x === i && y === c)) this.added.add(k); cur.classes.set(k, [i, c]); }
+      for (const [i, c] of r.removed) {
+        const k = `${i}|${c}`;
+        if (want.absent.has(k) && !this.added.has(k)) this.taken.set(k, [i, c]);
+        this.added.delete(k); cur.classes.delete(k);
+      }
+      for (const [i, c] of m.add) {
+        const k = `${i}|${c}`;
+        // a markup class put back is the markup's again, never the session's
+        if (this.taken.has(k)) { this.taken.delete(k); if (want.classes.has(k)) cur.classes.set(k, [i, c]); continue; }
+        if (r.added.some(([x, y]) => x === i && y === c)) this.added.add(k);
+        cur.classes.set(k, [i, c]);
+      }
       for (const [i, p, v] of r.previous) {
         const k = `${i}|${p}`;
         if (want.props.has(k)) { if (!this.originals.has(k)) this.originals.set(k, v); cur.props.set(k, [i, p]); }
@@ -610,7 +628,8 @@ export class CaptureSession {
   }
 
   /**
-   * Gives the page back, also after a failure midway: overrides removed, every class it added removed, disabled/checked
+   * Gives the page back, also after a failure midway: overrides removed, every class it added removed and every markup
+   * class it took off put back, disabled/checked
    * restored, animations finished, forced pseudo-states cleared, the timeline running, its window global deleted and
    * its CDP agents disabled (its own CDP session detached).
    */
@@ -621,11 +640,12 @@ export class CaptureSession {
     this.savedStyles.clear();
     this.series = null;
     const m: Mutation = {
-      add: [], remove: Array.from(this.added, (k) => this.current.classes.get(k) ?? (k.split("|").map((x, n) => (n ? x : Number(x))) as [number, string])),
+      add: Array.from(this.taken.values()),
+      remove: Array.from(this.added, (k) => this.current.classes.get(k) ?? (k.split("|").map((x, n) => (n ? x : Number(x))) as [number, string])),
       set: Array.from(this.originals, ([k, v]) => { const [i, p] = k.split("|"); return [Number(i), p as "disabled" | "checked", v]; }),
     };
-    if (m.remove.length || m.set.length) await attempt(() => this.d.page.evaluate(pageMutate, m));
-    this.added.clear(); this.originals.clear();
+    if (m.add.length || m.remove.length || m.set.length) await attempt(() => this.d.page.evaluate(pageMutate, m));
+    this.added.clear(); this.taken.clear(); this.originals.clear();
     await attempt(() => this.d.page.evaluate(pageTextCeilRemove));
     if (this.radioNames.length) await attempt(() => this.d.page.evaluate(pageRadiosTogether, this.radioNames));
     this.radioNames = [];

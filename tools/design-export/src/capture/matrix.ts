@@ -22,10 +22,14 @@ import { logicalViewport } from "../viewport.js";
 export type PseudoKind = "hover" | "active" | "focus" | "disabled" | "checked";
 const PSEUDO: ReadonlySet<string> = new Set(["hover", "active", "focus", "disabled", "checked"]);
 
-/** One thing applied to one element besides the screen state: a forced pseudo-state or an added is-* class. */
+/**
+ * One thing applied to one element besides the screen state: a forced pseudo-state or an added is-* class. `absent`
+ * (animation series only): the class is taken off an element whose markup has it, so a trigger the artboard starts in
+ * (a panel that starts `is-open`) can be left and entered.
+ */
 export type CaptureApply =
   | { kind: "pseudo"; pseudo: PseudoKind; elementId: string }
-  | { kind: "class"; name: string; elementId: string };
+  | { kind: "class"; name: string; elementId: string; absent?: true };
 
 /** A screen condition: state (class `state-<n>` on the root; none for default) plus what is applied. */
 export interface ScreenSetup { state: string; apply: CaptureApply[] }
@@ -67,7 +71,7 @@ export interface UnsampledAnim extends AnimRef { reason: string }
 type Bp = IrScreen["breakpoints"][number];
 
 const r6 = (n: number) => { const r = Math.round(n * 1e6) / 1e6; return Object.is(r, -0) ? 0 : r; };
-const applyLabel = (a: CaptureApply) => (a.kind === "pseudo" ? a.pseudo : a.name);
+const applyLabel = (a: CaptureApply) => (a.kind === "pseudo" ? a.pseudo : (a.absent ? "!" : "") + a.name);
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const sortApply = (list: CaptureApply[]) => list.sort((a, b) => cmp(a.elementId, b.elementId) || cmp(applyLabel(a), applyLabel(b)));
 
@@ -217,6 +221,11 @@ function normalize(t: Tree, list: CaptureApply[]): CaptureApply[] {
     && pointer.some((b) => b !== a && isAncestorOrSelf(t, a.elementId, b.elementId)))));
 }
 
+/** The class items of a trigger whose element has the class in its markup, as `absent` items (the trigger's off side). */
+function absentOf(t: Tree, apply: CaptureApply[]): CaptureApply[] {
+  return apply.flatMap((a) => (a.kind === "class" && (t.nodes.get(a.elementId)?.classes ?? []).includes(a.name) ? [{ ...a, absent: true as const }] : []));
+}
+
 /** A disabled element that is also focused or pressed: a state no screen can reach. */
 const unreachable = (apply: CaptureApply[]) => apply.some((a) => a.kind === "pseudo" && a.pseudo === "disabled"
   && apply.some((b) => b.kind === "pseudo" && (b.pseudo === "focus" || b.pseudo === "active") && b.elementId === a.elementId));
@@ -326,9 +335,10 @@ export function buildMatrix(ir: IrScreen): CaptureJob[] {
       } else {
         const s = setupOfKey(t, ir, id, a.trigger);
         bps = s.bps;
-        // state and breakpoints are the context; the rest of the trigger is the change (a state-only trigger changes the state)
+        // state and breakpoints are the context; the rest of the trigger is the change (a state-only trigger changes the state).
+        // A trigger class the markup already has (the artboard starts in it) is taken off for the off side.
         const on: ScreenSetup = { state: s.state, apply: s.apply };
-        const off: ScreenSetup = s.apply.length ? { state: s.state, apply: [] } : { state: "default", apply: [] };
+        const off: ScreenSetup = s.apply.length ? { state: s.state, apply: absentOf(t, s.apply) } : { state: "default", apply: [] };
         [from, to] = a.phase === "enter" ? [off, on] : [on, off];
       }
       const times = sampleTimes(a);
