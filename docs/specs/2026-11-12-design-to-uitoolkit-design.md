@@ -457,7 +457,8 @@ Animations follow the same rule as static styling: one-to-one, or rejected by li
   exactly: the five keywords as their CSS `cubic-bezier()` definitions, any `cubic-bezier()`, and `steps()`. A
   pseudo-state or class transition animates from the current value to the target layer's value and then hands the
   value back to the USS rule. The player writes transform, opacity and colour properties without layout passes and
-  allocates nothing per frame in steady state; a layout property is allowed only with warning W-CSS-001.
+  allocates nothing per frame in steady state; a transition or keyframes of a layout property is a lint error
+  (U-CSS-013, U-CSS-042: animate `translate` or `scale` instead).
 - **Verification.** The exporter pauses animations through the CDP `Animation` domain and captures each animation at
   `delay` and at 0, ¼, ½, ¾ and 1 of its duration. The Unity verifier steps the player's clock to the same times.
   Every sample is compared with the static thresholds (§15).

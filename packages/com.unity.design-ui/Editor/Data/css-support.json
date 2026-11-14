@@ -1882,19 +1882,6 @@
     "border-bottom-color",
     "border-left-color",
     "border-radius",
-    "width",
-    "height",
-    "min-width",
-    "min-height",
-    "max-width",
-    "max-height",
-    "margin",
-    "padding",
-    "inset",
-    "border-width",
-    "flex-basis",
-    "flex-grow",
-    "flex-shrink",
     "animation-timing-function"
   ],
   "timingKeywords": [
@@ -1921,7 +1908,6 @@
     "screen"
   ],
   "layoutTransitionProperties": [
-    "all",
     "width",
     "height",
     "min-width",
@@ -1947,9 +1933,6 @@
     "flex-grow",
     "flex-shrink",
     "flex-basis",
-    "flex-direction",
-    "flex-wrap",
-    "flex-flow",
     "border-width",
     "border-top-width",
     "border-right-width",

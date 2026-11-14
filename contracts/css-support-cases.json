@@ -18371,9 +18371,6 @@
         ]
       },
       "lint": [],
-      "notes": [
-        "W-CSS-001"
-      ],
       "property": "transition",
       "unity": "compile",
       "value": "all 0.2s ease"

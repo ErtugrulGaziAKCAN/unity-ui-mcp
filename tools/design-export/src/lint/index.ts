@@ -45,6 +45,8 @@ import { rule as U_CSS_038 } from "./rules/U-CSS-038.js";
 import { rule as U_CSS_039 } from "./rules/U-CSS-039.js";
 import { rule as U_CSS_040 } from "./rules/U-CSS-040.js";
 import { rule as U_CSS_041 } from "./rules/U-CSS-041.js";
+import { rule as U_CSS_042 } from "./rules/U-CSS-042.js";
+import { rule as U_CSS_043 } from "./rules/U-CSS-043.js";
 import { rule as I_MRK_001 } from "./rules/I-MRK-001.js";
 import { rule as U_DC_001 } from "./rules/U-DC-001.js";
 import { rule as U_DC_002 } from "./rules/U-DC-002.js";
@@ -68,7 +70,6 @@ import { rule as U_MRK_011 } from "./rules/U-MRK-011.js";
 import { rule as U_MRK_012 } from "./rules/U-MRK-012.js";
 import { rule as U_NET_001 } from "./rules/U-NET-001.js";
 import { rule as U_NET_002 } from "./rules/U-NET-002.js";
-import { rule as W_CSS_001 } from "./rules/W-CSS-001.js";
 import { rule as W_FONT_001 } from "./rules/W-FONT-001.js";
 import { rule as W_FONT_002 } from "./rules/W-FONT-002.js";
 
@@ -118,6 +119,8 @@ export const RULES: readonly Rule[] = [
   U_CSS_039,
   U_CSS_040,
   U_CSS_041,
+  U_CSS_042,
+  U_CSS_043,
   U_DC_001,
   U_DC_002,
   U_DC_003,
@@ -140,7 +143,6 @@ export const RULES: readonly Rule[] = [
   U_MRK_012,
   U_NET_001,
   U_NET_002,
-  W_CSS_001,
   W_FONT_001,
   W_FONT_002,
   I_MRK_001,

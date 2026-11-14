@@ -324,7 +324,7 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
   h("Animation");
   L.push(
     "- Transitions and `@keyframes` are recorded with their trigger (the screen opening, a screen state, a pseudo-state or an `is-*` class) and played by the package's animation player, never as USS transitions.",
-    `- Timing: the keywords, \`cubic-bezier()\` (x 0–1) or \`steps()\`; no \`linear()\` points (U-CSS-008). Keyframes animate only transforms, \`opacity\`, colours, border radii and box lengths (U-CSS-013). Transition colours or transforms (opacity only on one-part elements, U-CSS-039); a layout property warns (W-CSS-001), \`box-shadow\` or \`background-image\` fails (U-CSS-014).`,
+    `- Timing: the keywords, \`cubic-bezier()\` (x 0–1) or \`steps()\`; no \`linear()\` points (U-CSS-008). Keyframes and transitions animate only transforms, \`opacity\` (one-part elements, U-CSS-039), colours and border radii (U-CSS-013, U-CSS-042): a size or position change is a \`translate\` or \`scale\`, never a layout property; \`box-shadow\` or \`background-image\` fails (U-CSS-014). One property of an element is animated by keyframes or by a transition, not both (U-CSS-043).`,
     "- Verification samples each animation at its delay and every quarter of its duration. A trigger the artboard starts in (`is-open` in the markup) shows its end state.",
   );
 

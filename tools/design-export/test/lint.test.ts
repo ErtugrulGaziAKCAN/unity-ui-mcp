@@ -141,7 +141,7 @@ describe("lint engine", () => {
   });
 
   it("returns warnings without errors for a design with only warnings", async () => {
-    const f = await lintFile(fx("W-CSS-001.fail.html"));
+    const f = await lintFile(fx("W-FONT-002.fail.html"), KIT_FOR["W-FONT-002"]?.fail ?? kit);
     expect(f.length).toBeGreaterThan(0);
     expect(f.some((x) => x.severity === "error")).toBe(false);
   });
@@ -293,12 +293,39 @@ describe("device grid, group opacity and stacking rules", () => {
     // (cubic-bezier() with x outside 0–1 and steps(0) are invalid CSS: the browser drops them, as Unity does)
     for (const bad of ["linear(0, 0.5, 1)", "linear(0, 0.25 40%, 1)"]) expect(await t(bad), bad).toHaveLength(1);
     expect(await ids(`<div class="b"></div>`, `${box} .b{transition-timing-function:cubic-bezier(0.1, 0.7, 1, 0.1)}`, "U-CSS-008")).toEqual([]);
-    // keyframes: radii and box lengths play (box lengths warn: a layout pass per frame); other properties fail
+    // keyframes: radii play; layout properties (the player never lays out per frame) and other properties fail
     const kf = (decl: string, rule: string) => ids(`<div class="b k"></div>`, `${box} .k{animation:a 200ms linear} @keyframes a{from{${decl}}to{${decl.replace(/\d+px/, "20px")}}}`, rule);
     expect(await kf("border-top-left-radius:4px", "U-CSS-013")).toEqual([]);
-    expect(await kf("width:10px", "U-CSS-013")).toEqual([]);
-    expect(await kf("width:10px", "W-CSS-001")).toHaveLength(1);
+    for (const layout of ["width:10px", "margin-left:4px", "padding:4px", "inset:4px", "border-top-width:4px", "flex-basis:10px", "font-size:10px", "line-height:10px"]) {
+      expect((await kf(layout, "U-CSS-013")).map((x) => x.fix), layout).toEqual([expect.stringMatching(/translate or scale instead/)]);
+    }
     expect(await kf("letter-spacing:1px", "U-CSS-013")).toHaveLength(1);
+  });
+
+  it("U-CSS-042: transitions only of what the player animates; layout properties point to transforms", async () => {
+    const box = `.b{width:200px;height:80px;flex-shrink:0;background-color:#123c47}`;
+    const t = (css: string) => ids(`<div class="b" data-u-id="b"></div>`, `${box} ${css}`, "U-CSS-042");
+    // named properties fail even when nothing changes them; all fails only for what a layer really changes
+    expect((await t(`.b{transition:height 200ms ease}`)).map((x) => [x.detail, x.fix])).toEqual([[expect.stringMatching(/transition of height \(base\); height lays the screen out/), expect.stringMatching(/translate or scale instead/)]]);
+    expect(await t(`.b{transition:letter-spacing 200ms ease}`)).toHaveLength(1);
+    expect(await t(`.b{transition:visibility 200ms ease}`)).toHaveLength(1);
+    expect(await t(`.b{transition:all 200ms ease} .b:hover{background-color:#16c2d5;scale:1.05}`)).toEqual([]);
+    expect((await t(`.b{transition:all 200ms ease} .b:hover{width:220px}`)).map((x) => x.detail)).toEqual([expect.stringMatching(/transition of width \(hover\)/)]);
+    // discrete properties change at once in CSS too; a zero or negative combined duration never transitions
+    expect(await t(`.b{transition:display 200ms ease, flex-direction 200ms ease}`)).toEqual([]);
+    expect(await t(`.b{transition:width 0s ease}`)).toEqual([]);
+    expect(await t(`.b{transition:width 100ms ease -200ms}`)).toEqual([]);
+    // box-shadow is U-CSS-014's
+    expect(await t(`.b{transition:box-shadow 200ms ease}`)).toEqual([]);
+  });
+
+  it("U-CSS-043: keyframes and a transition of the same property on one element", async () => {
+    const box = `.b{width:200px;height:80px;flex-shrink:0;background-color:#123c47;animation:a 1s linear infinite} @keyframes a{from{translate:0 0}to{translate:0 4px}}`;
+    const t = (css: string) => ids(`<div class="b" data-u-id="b"></div>`, `${box} ${css}`, "U-CSS-043");
+    expect(await t(`.b{transition:all 200ms ease} .b:hover{background-color:#16c2d5}`)).toEqual([]);
+    expect((await t(`.b{transition:all 200ms ease} .b:hover{translate:0 8px}`)).map((x) => x.detail)).toEqual([expect.stringMatching(/translate is animated by @keyframes a and transitioned \(hover\)/)]);
+    // a transform transition covers the keyframes' translate
+    expect(await t(`.b{transition:transform 200ms ease} .b:hover{transform:translateY(8px)}`)).toHaveLength(1);
   });
 
   it("U-CSS-041: judges positioned elements too, against later plain elements, in the base style", async () => {

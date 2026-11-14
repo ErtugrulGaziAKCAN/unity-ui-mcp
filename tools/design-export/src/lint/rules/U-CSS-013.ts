@@ -16,7 +16,7 @@ export const rule: Rule = {
         bad.add(d.name);
       }
       return bad.size ? [make(rule, k.path, `@keyframes ${k.name} animates ${Array.from(bad).join(", ")}`,
-        "Animate only what the animation player animates in @keyframes: transform, translate, rotate, scale, opacity, colours, border radii and box lengths (width, height, margins, paddings, insets, border widths, flex sizes; these lay out every frame, W-CSS-001).")] : [];
+        "Animate only what the animation player animates in @keyframes: transform, translate, rotate, scale, opacity, colours and border radii. For a change of size or position (width, height, margins, paddings, insets, border widths, flex sizes, font-size, line-height) animate translate or scale instead: a layout property would lay the screen out in every frame.")] : [];
     });
   },
 };

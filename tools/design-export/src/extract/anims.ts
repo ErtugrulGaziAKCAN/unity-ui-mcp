@@ -21,14 +21,15 @@ export function timeMs(v: string): number | null {
 }
 
 /** Longhands a transition-property entry covers ("all", shorthands, transform → its split). */
-function covers(name: string): string[] | "all" {
+export function covers(name: string): string[] | "all" {
   const n = name.trim().toLowerCase();
   if (n === "all") return "all";
   if (n === "transform") return ["translate", "rotate", "scale"];
   return physicalNames(n);
 }
 
-const list = (v: string | undefined, fallback: string) =>
+/** A comma list of a transition-* or animation-* property (CSS-wide keywords and absence: `fallback`). */
+export const list = (v: string | undefined, fallback: string) =>
   splitTopLevel(v === undefined || CSS_WIDE.has(v.trim().toLowerCase()) ? fallback : v, ",").map((x) => x.trim());
 
 /**

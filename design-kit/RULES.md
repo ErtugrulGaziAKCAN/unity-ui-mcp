@@ -207,7 +207,7 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 ## Animation
 
 - Transitions and `@keyframes` are recorded with their trigger (the screen opening, a screen state, a pseudo-state or an `is-*` class) and played by the package's animation player, never as USS transitions.
-- Timing: the keywords, `cubic-bezier()` (x 0–1) or `steps()`; no `linear()` points (U-CSS-008). Keyframes animate only transforms, `opacity`, colours, border radii and box lengths (U-CSS-013). Transition colours or transforms (opacity only on one-part elements, U-CSS-039); a layout property warns (W-CSS-001), `box-shadow` or `background-image` fails (U-CSS-014).
+- Timing: the keywords, `cubic-bezier()` (x 0–1) or `steps()`; no `linear()` points (U-CSS-008). Keyframes and transitions animate only transforms, `opacity` (one-part elements, U-CSS-039), colours and border radii (U-CSS-013, U-CSS-042): a size or position change is a `translate` or `scale`, never a layout property; `box-shadow` or `background-image` fails (U-CSS-014). One property of an element is animated by keyframes or by a transition, not both (U-CSS-043).
 - Verification samples each animation at its delay and every quarter of its duration. A trigger the artboard starts in (`is-open` in the markup) shows its end state.
 
 ## Allowed CSS
@@ -370,7 +370,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-010 | error | a first font family that is not a kit family | a kit family first (`var(--font-ui)`) |
 | U-CSS-011 | error | `gap` on a wrapping flex container | margins on the items |
 | U-CSS-012 | error | `@media` features other than min/max-width and min/max-aspect-ratio, media types other than screen/all, `not` | the allowed features only |
-| U-CSS-013 | error | `@keyframes` animating what the animation player cannot | transforms, opacity, colours, radii, box lengths |
+| U-CSS-013 | error | `@keyframes` animating what the animation player cannot (a layout property, letter-spacing, shadows, …) | transforms, opacity, colours, radii; translate or scale for size and position |
 | U-CSS-014 | error | a transition of `box-shadow` or `background-image`, a url() image beside another image, a gradient that does not fill the element or sets a colour space | transition a transform; one image per element; whole-element sRGB gradients |
 | U-CSS-015 | error | a `filter` function css-support.json does not enable (one is enabled once its fidelity fixture passes in Unity) | remove the filter |
 | U-CSS-016 | error | text size, line height or weight that is not a kit text style | the nearest kit text style (a `.text-<style>` class) |
@@ -399,6 +399,8 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-039 | error | `opacity` < 1, or a fade of it, on overlapping parts | `--color-disabled-*` colours; no fade |
 | U-CSS-040 | error | a border, hard shadow edge or painted line under 8px off the device grid | the listed lengths |
 | U-CSS-041 | error | a positioned or moved box or shadow over later elements | room, or `position: relative` on later ones |
+| U-CSS-042 | error | a transition of a property the animation player cannot animate (a layout property, letter-spacing, `visibility`, …) | transition transforms, opacity or colours; translate or scale for size and position |
+| U-CSS-043 | error | `@keyframes` and a transition of the same property on one element | one of them; the other on another property or a wrapper |
 | U-DC-001 | error | `{{…}}` holes in a Claude Design artboard | static sample text |
 | U-DC-002 | error | `<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import` | write rows out, `data-u-repeat` on the first |
 | U-DC-003 | error | UI built by script | static markup |
@@ -421,7 +423,6 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-MRK-012 | error | a `data-u-action` element inside another `data-u-action` element | one action per element; a button in a card: the card's action on a full-size layer element beside the button, not on the card container |
 | U-NET-001 | error | any remote resource (fonts, stylesheets, images) except scripts from allowed origins | no remote resources; local files |
 | U-NET-002 | error | a local file or Claude Design blob that is missing | add the file, or map the blob in blobs.json |
-| W-CSS-001 | warning | a transition or keyframes of a layout property, or a transition of `all` (warning) | transition transforms or colours |
 | W-FONT-001 | warning | a weight or italic without a real face in another active locale's font (warning) | add the face or avoid the weight |
 | W-FONT-002 | warning | a kit font file that cannot be read (WOFF2, `local()`) (warning) | TTF/OTF/WOFF via `url()` |
 | I-MRK-001 | info | a `title` attribute: a tooltip, which UI Toolkit shows only in Editor panels (info) | nothing for an Editor-only hint; show hints players need with a visible element |
