@@ -149,7 +149,9 @@ function styleValue(n: LooseNode, prop: string, holds: (key: string) => boolean)
 
 /** The IR facts for one capture: paint order, active outer shadow rects (device px) and painted backgrounds. */
 export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: CaptureBoxes): CaptureContext {
-  const test = dimensionTest(ix, setup);
+  // what a job applies in a later written-out repeat item (`item`) holds there, not on the IR's own elements, whose
+  // boxes the captures measure
+  const test = dimensionTest(ix, { ...setup, apply: setup.apply.filter((a) => !a.item?.length) });
   const shadows: Record<string, Rect> = {};
   const backgrounds = new Set<string>(), painters = new Set<string>();
   const borders: Record<string, [number, number, number, number]> = {};

@@ -825,6 +825,9 @@ describe("IR context", () => {
     expect(hover.shadows).toEqual({ card: { x: 95, y: 97, w: 210, h: 112 } });
     // a layer can remove the shadow
     expect(captureContext(ix, { state: "busy", viewport: [1280, 720], apply: [] }, boxes).shadows).toEqual({});
+    // a pointer in a later written-out repeat item is not on the IR's own elements, whose boxes the capture measures
+    const later = captureContext(ix, { state: "default", viewport: [1280, 720], apply: [{ kind: "pseudo", pseudo: "hover", elementId: "btn", item: [2] }] }, boxes);
+    expect(later.shadows).toEqual(base.shadows);
   });
 
   it("knows which elements draw a raster picture at another size than its own", () => {
