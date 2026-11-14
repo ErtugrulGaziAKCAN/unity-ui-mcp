@@ -183,8 +183,9 @@ The kit's [RULES.md](design-kit/RULES.md) is the contract (`design_ui_rules` ser
 - **Text styles only.** UI Toolkit has no `line-height`, so every text uses one of the kit text styles (caption 12/16
   to display 64/80 px, 400 or 700). Their sizes and line heights are multiples of 4 px, whole device pixels at every
   exact viewport, and the font twins carry each style's CSS line box: a text block is exactly lines × line height on
-  both sides. A text that does not wrap (`white-space: nowrap`, its lines its `<br>`s) gets exactly that height, so
-  stacked labels never drift.
+  both sides. A text that does not wrap (`white-space: nowrap`, its lines its `<br>`s, kept by every translation) gets
+  exactly that height, so it adds no text-height drift to the labels stacked below it; a bound text or one with
+  arguments keeps its measured height. Translations of such a text must keep its line count.
 - **Grayscale font smoothing** on the root (the base stylesheet sets it): browsers on macOS otherwise draw thicker
   stems than UI Toolkit.
 - **Borders and lines on the device grid.** A border, hard shadow edge or line under 8 px must stay whole at every
@@ -202,7 +203,8 @@ The kit's [RULES.md](design-kit/RULES.md) is the contract (`design_ui_rules` ser
 ## Viewports: exact and scaled
 
 `kit.config.json` declares the resolutions a game ships (the profile's **Viewports** and **Scaled Viewports** mirror
-it; kit sync writes the profile's). Each has a class:
+it; kit sync writes the profile's). A new profile starts with the defaults below; a profile saved before this release
+keeps its own list and declares no scaled viewport until one is added. Each has a class:
 
 - **exact** (`[w, h]`): the panel scale keeps the kit's 4 px grid whole, so every text size, line height, border and thin
   line is a whole number of device pixels there; kit build, kit sync and lint hold the design to it. With the

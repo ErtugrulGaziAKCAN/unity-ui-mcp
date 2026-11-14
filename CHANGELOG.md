@@ -22,7 +22,8 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   "scaled" }`; the profile has **Viewports** (exact) and **Scaled Viewports**, kit sync writes both, the IR carries
   `scaledViewports`. Exact viewports keep every kit value whole device pixels (kit build, kit sync and lint judge only
   them); scaled viewports are laid out and verified with the same ±1 device px geometry but exempt from those rules.
-  Default kit and profile: exact 2560×1440, 1920×1080, 1280×720 and 3840×2160, scaled 1600×900 and 1366×768. Verdicts,
+  Default kit and new profiles: exact 2560×1440, 1920×1080, 1280×720 and 3840×2160, scaled 1600×900 and 1366×768 (a
+  profile saved before keeps its list and gets no scaled viewport). Verdicts,
   reports, `design_ui_verify` and the fidelity summary count captures per class; `design_ui_status`, `design_ui_rules`
   and the Design UI window list each viewport's class. `fidelity-thresholds.json` may hold measured scaled-class limits
   under `scaled` (never boxes or baselines). The fidelity suite runs all six viewports (comparisons four fixtures at a
@@ -32,9 +33,10 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   rendered 6.7 % wide), so kit sync and the compiler make twin variants with `faceInfo.scale = exact / rounded` for each
   scaled viewport, and `DesignScreen` takes the class of the scale its panel renders at (`viewport-scales`), under which
   `DesignFonts.uss` selects them.
-- Drift-free stacked text: a text that does not wrap and whose height is its content's gets an explicit height of
-  lines × line box plus its vertical padding and borders (text-size steps scale it), so stacked labels no longer drift
-  where a line box is a fraction of a device pixel. New fidelity fixture `stacked-text`.
+- Drift-free stacked text: a text that does not wrap (in the design and in every translation the String Tables hold;
+  not bound, no arguments) and whose height is its content's gets an explicit height of lines × line box plus its
+  vertical padding and borders (text-size steps scale it; two layers that hold together get their union's height), so
+  it adds no text-height drift where a line box is a fraction of a device pixel. New fidelity fixture `stacked-text`.
 
 - Disk use stays bounded by itself. After a verify writes its report the run's Unity captures and difference images
   are deleted (the report keeps thumbnails and issue crops of its failing captures, in `<screen>/.design-ui/report/`);

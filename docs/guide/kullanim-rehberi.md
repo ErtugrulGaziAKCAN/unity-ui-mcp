@@ -42,7 +42,8 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
 7. **Localization** (isteğe bağlı): Unity Localization 1.5 veya üstü. Profilin localization ayarlarında her ekranın
    String Table koleksiyonunu (ya da varsayılan bir adlandırma kalıbını) ve tablolarının argüman biçimini (`{name}` Smart
    String ya da `{0}` sıralı) belirt.
-8. **Çözünürlükler.** Oyunun sunduğu her çözünürlüğü profilde bildir. **Viewports** (tam, exact): panel ölçeği kit'in
+8. **Çözünürlükler.** Oyunun sunduğu her çözünürlüğü profilde bildir (yeni bir profil kit'in altı çözünürlüğüyle başlar;
+   bu sürümden önce kaydedilmiş bir profil kendi listesini korur). **Viewports** (tam, exact): panel ölçeği kit'in
    4 px ızgarasını tam tutanlar (2560×1440 referansıyla 3840×2160, 2560×1440, 1920×1080, 1280×720); orada her yazı
    boyutu, satır yüksekliği ve kenarlık tam cihaz pikselidir, lint, kit build ve kit sync tasarımı buna göre denetler.
    **Scaled Viewports** (ölçekli) oyuncuların kullandığı diğerleri (1600×900, 1366×768): orada hiçbir tasarım değeri tam
@@ -65,7 +66,9 @@ Kit'in Design System'ini canvas'a ekle. Sonra:
 - **Yerleşim yalnız flex ile.** Grid, `calc()`, `vw`/`vh`, float ya da `position: fixed` yok. `gap` yalnız satır
   kaydırmayan kapsayıcılarda. İçeriği küçülmemesi gereken flex elemanlarına açık bir boyut ya da `flex-shrink: 0` ver.
 - **Her metin kit'teki bir yazı stili sınıfını kullanır** (`.text-body`, `.text-title-bold`, …): 12 ile 64 px arası
-  boyutlar, 400 ve 700 kalınlık. Metin kendi elemanında durur.
+  boyutlar, 400 ve 700 kalınlık. Metin kendi elemanında durur. Satırlarında kalması gereken bir etiket
+  `white-space: nowrap` kullanır (satırları `<br>`'leridir); her çeviride aynı satır sayısını koru ki Unity'de tam
+  yüksekliğini alsın.
 - **Görünen her metnin bir anahtarı vardır.** Metni referans dilde (kit'te Türkçe) yaz; `data-l10n="club.overview.title"`
   (anlamlı İngilizce bir anahtar) ve `data-en="Overview"` ekle. Cümle içindeki bir değer
   `<span data-u-arg="count">3</span>` olur ve `data-en`'de `{count}` diye yazılır. Oyundan gelen ve çevrilmeyen değerler

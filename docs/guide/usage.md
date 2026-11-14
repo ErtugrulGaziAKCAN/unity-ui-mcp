@@ -42,7 +42,8 @@ fix; a difference after import is reported, never smoothed over.
 7. **Localization** (optional): Unity Localization 1.5 or later. In the profile's localization settings, name each
    screen's String Table collection (or a default pattern) and the argument format your tables use (`{name}` Smart
    Strings, or `{0}` indexed).
-8. **Resolutions.** Declare in the profile every resolution the game offers. **Viewports** (exact) are those whose panel
+8. **Resolutions.** Declare in the profile every resolution the game offers (a new profile starts with the kit's six; a
+   profile saved before this release keeps its own list). **Viewports** (exact) are those whose panel
    scale keeps the kit's 4 px grid whole (with the 2560×1440 reference: 3840×2160, 2560×1440, 1920×1080, 1280×720):
    every text size, line height and border is whole device pixels there, and lint, kit build and kit sync hold the
    design to it. **Scaled Viewports** are the others players use (1600×900, 1366×768): no design value can be whole
@@ -65,7 +66,8 @@ Attach the kit's Design System to the canvas. Then:
 - **Layout with flex only.** No grid, `calc()`, `vw`/`vh`, floats or `position: fixed`. `gap` only where items do not
   wrap. Give flex items an explicit size or `flex-shrink: 0` where their content must not shrink.
 - **Text uses a kit text style class** (`.text-body`, `.text-title-bold`, …): sizes from 12 to 64 px, weights 400 and
-  700. Text sits in its own element.
+  700. Text sits in its own element. A label that must stay on its lines uses `white-space: nowrap` (its lines are its
+  `<br>`s); keep that line count in every translation, so it gets an exact height in Unity.
 - **Every visible text has a key.** Write the text in the reference locale (Turkish in the kit) and add
   `data-l10n="club.overview.title"` (a meaningful English key) and `data-en="Overview"`. A value inside a sentence is
   `<span data-u-arg="count">3</span>`, written `{count}` in `data-en`. Values that come from the game and are not

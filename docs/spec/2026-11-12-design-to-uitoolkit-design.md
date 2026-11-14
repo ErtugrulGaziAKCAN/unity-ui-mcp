@@ -625,11 +625,15 @@ this section are in `docs/findings/animation.md`.
 - **Drift-free stacked text.** UI Toolkit ceils each text element's measured height to whole device pixels; where a line
   box is fractional (16/20 at 0.625: 12.5 px) a column of texts drifts by up to a pixel per text. The compiler gives a
   text whose line count the design fixes (no wrapping in any layer: `text-wrap-mode: nowrap`, `white-space: nowrap` or
-  `pre`; its lines are its explicit breaks, the same count in every locale the IR carries) and whose height is its
+  `pre`; its lines are its explicit breaks, the same count in the design's English and in every locale's translation the
+  screen's String Table collection holds when it is compiled; not bound, no arguments) and whose height is its
   content's (no height, min or max height in any layer; not grown in a column, not stretched in a row, not pinned by top
   and bottom; no animated size, padding or border) an explicit `height` of `lines × line box + vertical padding and
-  borders` in every layer that changes them, scaled by the text-size steps. Wrapping text keeps its measured height (at
-  most one device pixel over per element).
+  borders` in every layer that changes them, scaled by the text-size steps. The height is composed from several CSS
+  properties, so two layers that hold together and set different parts get their union layer (as `CompleteUnions` does
+  for the other composed properties), which writes the height of both. Wrapping text keeps its measured height (at most
+  one device pixel over per element). A translation added later must keep the line count (or the screen is imported
+  again).
 
 ## 13. Localization
 
