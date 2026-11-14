@@ -385,6 +385,26 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void TextRow_ShowsTheActiveFontResolver()
+        {
+            var profile = ScriptableObject.CreateInstance<DesignUiProfile>();
+            FontFixture.Use(profile);
+            if (!AssetDatabase.IsValidFolder(ProfileFolder)) AssetDatabase.CreateFolder("Assets", "DesignUiWindowTests");
+            AssetDatabase.CreateAsset(profile, ProfilePath);
+            Config();
+            var w = Open();
+            w.RefreshText();
+            StringAssert.StartsWith("Font resolver: built-in", Text(w, "text-resolver"));
+
+            var resolver = ScriptableObject.CreateInstance<FixtureFontResolver>();
+            AssetDatabase.CreateAsset(resolver, ProfileFolder + "/Window Fonts.asset");
+            profile.fontResolver = resolver;
+            FontFixture.Save(profile);
+            w.RefreshText();
+            StringAssert.StartsWith("Font resolver: 'Window Fonts' (" + typeof(FixtureFontResolver).FullName, Text(w, "text-resolver"));
+        }
+
+        [Test]
         public void TextRow_WithoutAProfile_SaysSo()
         {
             var s = TextStatus.Check(null, null);

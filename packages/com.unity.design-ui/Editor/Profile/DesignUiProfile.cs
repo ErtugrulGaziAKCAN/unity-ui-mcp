@@ -38,7 +38,10 @@ namespace DesignUi.Editor
         [Range(0f, 1f)] public float screenMatch = 0.5f;
         public string referenceLocale = "tr";
         public string[] locales = new string[0];
+        [Tooltip("The TMP font each locale renders with when no font resolver is set, or when the resolver gives no font for a locale.")]
         public LocaleFont[] localeFonts = new LocaleFont[0];
+        [Tooltip("The project's font resolver (a DesignUiFontResolver asset, implemented in an Editor assembly of the project): kit sync, the compile and the Design UI window ask it which TMP font renders each locale. Empty uses Locale Fonts over TMP Settings.")]
+        public DesignUiFontResolver fontResolver;
         public TextureImporterCompression textureCompression = TextureImporterCompression.Uncompressed;
         [Tooltip("PanelSettings that render design screens, in the verifier and in game. Empty uses the package's DesignUiPanelSettings (minimal runtime theme, 2560x1440 reference).")]
         public PanelSettings panelSettings;

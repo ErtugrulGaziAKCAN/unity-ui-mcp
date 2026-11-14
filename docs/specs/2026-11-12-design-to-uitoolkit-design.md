@@ -286,6 +286,11 @@ locale X", including its fallback chain and weight table.
 - Default resolver: TMP Settings default font asset (read through `TMP_Settings.instance`, not a file path) and
   its global fallbacks, for every locale.
 - Project resolvers can add a per-locale mapping. For example, a project can map locales through its own localized-fonts asset (§17).
+  The profile's `localeFonts` maps locales without code. A project with its own font system derives from the Editor
+  base class `DesignUiFontResolver` (a `ScriptableObject`) in one of its Editor assemblies and sets the asset as the
+  profile's `fontResolver`: kit sync, the compile and the Design UI window then ask it, a locale it gives no font for
+  falls back to `localeFonts` over TMP Settings, and a missing or throwing resolver is an error that names it. Runtime
+  needs nothing: the compiled `DesignFontSet` carries the answer.
 
 **Font sync** (`design_ui_kit_sync`) reads the resolved fonts' source font files (`m_SourceFontFile_EditorRef`)
 and writes them with `@font-face` rules into the kit, keyed by locale. Claude Design and the exporter's Chromium

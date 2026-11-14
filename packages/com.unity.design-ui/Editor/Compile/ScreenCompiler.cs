@@ -49,7 +49,7 @@ namespace DesignUi.Editor
         /// returns null writes no view and keeps an existing one.
         /// </summary>
         public Func<CompiledScreen, string> ViewCode;
-        /// <summary>Which TMP font renders each locale; default: <see cref="FontMap.DefaultResolver"/> (profile mapping over TMP Settings).</summary>
+        /// <summary>Which TMP font renders each locale; default: <see cref="FontMap.ResolverFor"/> (the profile's font resolver, else its mapping over TMP Settings).</summary>
         public IFontResolver Fonts;
         /// <summary>The String Tables a localized screen's texts go to; default: <see cref="DesignStringTables.Current"/>.</summary>
         public IDesignStringTables Tables;
@@ -182,7 +182,7 @@ namespace DesignUi.Editor
 
                 // fonts per locale: element rules keep var(--font-…); DesignFonts.uss defines them per .locale-<code>; every kit
                 // line box has a twin variant, and so has each of them scaled by a text-size step
-                fonts = FontMap.Plan(profile, hooks?.Fonts ?? FontMap.DefaultResolver(profile));
+                fonts = FontMap.Plan(profile, hooks?.Fonts ?? FontMap.ResolverFor(profile));
                 fonts.LineBoxes = ScaledLineBoxes(kitBoxes, profile.textSizes);
                 var fontErrors = fonts.Errors.Concat(FontMap.ScreenErrors(fonts, compiled)).ToList();
                 if (fontErrors.Count > 0) return new CompileResult { Ok = false, Errors = fontErrors };

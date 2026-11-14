@@ -36,8 +36,8 @@ namespace DesignUi.Editor
         internal static bool HasManualEdits(OpResult r) => r.Code != 0 && (r.Log ?? "").Contains(ManualEditPrefix);
 
         /// <summary>
-        /// Font sync into the kit folder (<c>KitSync.Run</c>) with the profile's resolver (per-locale fonts
-        /// over TMP Settings). <paramref name="profilePath"/> is the profile's asset path (Assets/…); a relative
+        /// Font sync into the kit folder (<c>KitSync.Run</c>) with the profile's resolver (<see cref="FontMap.ResolverFor"/>:
+        /// its font resolver asset, else its per-locale fonts over TMP Settings). <paramref name="profilePath"/> is the profile's asset path (Assets/…); a relative
         /// <paramref name="kitDir"/> is resolved against the Unity project root, and the log says so.
         /// </summary>
         public static OpResult KitSync(string profilePath, string kitDir)
@@ -45,7 +45,7 @@ namespace DesignUi.Editor
             var profile = string.IsNullOrEmpty(profilePath) ? null : AssetDatabase.LoadAssetAtPath<DesignUiProfile>(profilePath);
             if (profile == null) return new OpResult(1, "No DesignUiProfile at '" + profilePath + "'.");
             KitSyncResult r;
-            try { r = global::DesignUi.Editor.KitSync.Run(profile, kitDir, FontMap.DefaultResolver(profile)); }
+            try { r = global::DesignUi.Editor.KitSync.Run(profile, kitDir, FontMap.ResolverFor(profile)); }
             catch (Exception e) when (e is FontSetupException || e is System.IO.IOException || e is UnauthorizedAccessException)
             {
                 return new OpResult(1, "Kit sync failed: " + e.Message);

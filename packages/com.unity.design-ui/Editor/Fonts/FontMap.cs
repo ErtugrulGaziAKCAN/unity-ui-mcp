@@ -25,8 +25,48 @@ namespace DesignUi.Editor
 
         static readonly Regex LocaleCode = new Regex("^[A-Za-z0-9]+([_-][A-Za-z0-9]+)*$", RegexOptions.Compiled);
 
-        /// <summary>The project's resolver: the profile's per-locale fonts over TMP Settings' default font and global fallbacks.</summary>
+        /// <summary>The built-in resolver: the profile's per-locale fonts over TMP Settings' default font and global fallbacks.</summary>
         public static IFontResolver DefaultResolver(DesignUiProfile p) => new ProfileLocaleFontResolver(p, new TmpSettingsFontResolver());
+
+        /// <summary>
+        /// The resolver kit sync, the compile and the Design UI window use: the profile's <see cref="DesignUiProfile.fontResolver"/>
+        /// asset when it is set (a locale it gives no font for falls back to <see cref="DefaultResolver"/>), else DefaultResolver.
+        /// Throws <see cref="FontSetupException"/> when the field references an asset that no longer loads; a resolver that
+        /// throws is reported the same way when it is asked.
+        /// </summary>
+        public static IFontResolver ResolverFor(DesignUiProfile p)
+        {
+            if (p == null) throw new ArgumentNullException(nameof(p));
+            if (p.fontResolver != null) return new ProjectFontResolver(p.fontResolver, DefaultResolver(p));
+            if (MissingResolver(p)) throw new FontSetupException(MissingResolverMessage);
+            return DefaultResolver(p);
+        }
+
+        internal const string MissingResolverMessage =
+            "the DesignUiProfile's fontResolver is missing: it references an asset that no longer loads (deleted, or its script is gone or " +
+            "does not compile); pick a DesignUiFontResolver asset or clear the field";
+
+        /// <summary>Whether the profile's fontResolver field references an object that does not load (the Inspector's "Missing").</summary>
+        internal static bool MissingResolver(DesignUiProfile p)
+        {
+            if (!ReferenceEquals(p.fontResolver, null) && p.fontResolver == null) return true;
+            using (var so = new SerializedObject(p))
+            {
+                var field = so.FindProperty(nameof(DesignUiProfile.fontResolver));
+                return field != null && field.objectReferenceValue == null && field.objectReferenceInstanceIDValue != 0;
+            }
+        }
+
+        /// <summary>Which resolver <see cref="ResolverFor"/> uses, for the Design UI window.</summary>
+        internal static string ResolverDescription(DesignUiProfile p)
+        {
+            if (p == null) return "no DesignUiProfile";
+            if (p.fontResolver != null)
+                return "'" + p.fontResolver.name + "' (" + p.fontResolver.GetType().FullName + ", " + AssetDatabase.GetAssetPath(p.fontResolver) +
+                       "); locales it gives no font for fall back to the profile's locale fonts over TMP Settings";
+            if (MissingResolver(p)) return MissingResolverMessage;
+            return "built-in: the profile's locale fonts over TMP Settings' default font and global fallbacks (the profile sets no fontResolver)";
+        }
 
         public static string LocaleClass(string locale) => LocaleClassPrefix + locale;
 

@@ -65,7 +65,8 @@ namespace DesignUi.Editor
             var warnings = new List<string>();
             var notes = new List<string>();
             if (profile == null) return Failed(new[] { "no DesignUiProfile" }, warnings, notes);
-            resolver = resolver ?? FontMap.DefaultResolver(profile);
+            try { resolver = resolver ?? FontMap.ResolverFor(profile); }
+            catch (FontSetupException e) { return Failed(new[] { e.Message }, warnings, notes); }
             if (string.IsNullOrEmpty(kitDir)) return Failed(new[] { "no kit folder" }, warnings, notes);
             if (!Path.IsPathRooted(kitDir))
             {
@@ -98,7 +99,12 @@ namespace DesignUi.Editor
             if (settings.Count > 1) warnings.Add("Multiple TMP Settings assets under Resources: " + string.Join(", ", settings));
 
             // ---- fonts per locale (nothing is written before everything checks out) -------------------------------------
-            var plan = FontMap.Plan(profile, resolver);
+            FontMap.FontsPlan plan;
+            try { plan = FontMap.Plan(profile, resolver); }
+            catch (FontSetupException e) { return Failed(new[] { e.Message }, warnings, notes, kitDir); } // a project resolver that throws
+            if (resolver is ProjectFontResolver project && project.FallbackLocales.Count > 0)
+                warnings.Add("the font resolver '" + project.Name + "' gives no font for " + string.Join(", ", project.FallbackLocales) +
+                             ": the profile's locale fonts over TMP Settings answer for " + (project.FallbackLocales.Count == 1 ? "it" : "them"));
             errors.AddRange(plan.Errors);
             foreach (var locale in plan.Missing) errors.Add("Font not resolvable: " + FontMap.NoFont(locale));
             if (errors.Count > 0) return Failed(errors, warnings, notes, kitDir);

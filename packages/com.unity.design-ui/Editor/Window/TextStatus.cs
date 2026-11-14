@@ -27,6 +27,8 @@ namespace DesignUi.Editor
         public string Twins = "";
         public bool FontSetExists;
         public string FontSet = "";
+        /// <summary>Which font resolver kit sync and the compile use (<see cref="FontMap.ResolverDescription"/>).</summary>
+        public string Resolver = "";
 
         const string RunKitSync = " Run Kit Sync.";
 
@@ -35,7 +37,7 @@ namespace DesignUi.Editor
             var s = new TextStatus();
             if (profile == null)
             {
-                s.Kit = s.Twins = s.FontSet = "no DesignUiProfile (create one above)";
+                s.Kit = s.Twins = s.FontSet = s.Resolver = "no DesignUiProfile (create one above)";
                 return s;
             }
             var folder = (profile.outputFolder ?? "").Replace('\\', '/').TrimEnd('/');
@@ -43,8 +45,9 @@ namespace DesignUi.Editor
             s.FontSetExists = folder.Length > 0 && AssetDatabase.LoadAssetAtPath<DesignFontSet>(setPath) != null;
             s.FontSet = s.FontSetExists ? setPath : "not generated yet: the first import writes " + setPath;
 
+            s.Resolver = FontMap.ResolverDescription(profile);
             FontMap.FontsPlan plan;
-            try { plan = FontMap.Plan(profile, FontMap.DefaultResolver(profile)); }
+            try { plan = FontMap.Plan(profile, FontMap.ResolverFor(profile)); }
             catch (FontSetupException e)
             {
                 s.Kit = s.Twins = e.Message;
