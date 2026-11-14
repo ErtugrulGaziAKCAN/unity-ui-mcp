@@ -17,6 +17,10 @@ namespace DesignUi
     /// The region also hands the screens' font set to <see cref="DesignText"/> on attach and runs a
     /// <see cref="LocaleFontController"/> on the document root (the locale from <see cref="LocaleSource"/>, by default Unity
     /// Localization's selected locale; the game's text size from <see cref="TextSizes"/>). It reads no input itself.
+    /// When the document re-creates its root (Unity does it, for example, when Enable Advanced Text is switched in a running
+    /// Editor and every PanelSettings asset is rewritten), the region follows the new root and raises
+    /// <see cref="RootRebuilt"/>: a generated view built on the old root still writes into a tree nobody shows, so the
+    /// host builds its view again on the new root.
     /// Runs in Play mode and in players; nothing is applied in Edit mode.
     /// </summary>
     [AddComponentMenu("Design UI/Panel Region")]
@@ -46,6 +50,7 @@ namespace DesignUi
         IDesignLocaleSource m_LocaleSource, m_OwnedLocaleSource;
         IDesignTextSizeSource m_TextSizes;
         LocaleFontController m_LocaleFonts;
+        bool m_WarnedRebuilt;
 
         /// <summary>The framed document (see the field's tooltip for the default).</summary>
         public UIDocument Document
@@ -129,6 +134,12 @@ namespace DesignUi
         /// that also reads Escape itself skips its own handling while <see cref="HasFocus"/> is true.
         /// </summary>
         public event Action EscapePressed;
+
+        /// <summary>
+        /// The document replaced the root the region had bound (the argument is the new root). Views built on the old root
+        /// write into a detached tree: build them again on the new one. Logged once as a warning when nobody listens.
+        /// </summary>
+        public event Action<VisualElement> RootRebuilt;
 
         /// <summary>Raised when the focus moves from outside the screen (or from nothing) to an element of the screen.</summary>
         public event Action FocusEntered;
@@ -218,7 +229,12 @@ namespace DesignUi
         {
             if (!m_IsAttached || m_Attached == null) return;
             var root = m_Attached.rootVisualElement;
-            if (root != m_Root) Bind(root);
+            if (root != m_Root)
+            {
+                var rebuilt = m_Root != null && root != null;
+                Bind(root);
+                if (rebuilt) OnRootRebuilt(root);
+            }
             var panel = root?.panel;
             if (panel == null) return;
             var screen = ScreenRect();
@@ -277,6 +293,19 @@ namespace DesignUi
                 if (found != null) return found;
             }
             return null;
+        }
+
+        void OnRootRebuilt(VisualElement root)
+        {
+            if (RootRebuilt != null)
+            {
+                RootRebuilt(root);
+                return;
+            }
+            if (m_WarnedRebuilt) return;
+            m_WarnedRebuilt = true;
+            Debug.LogWarning("DesignUiPanelRegion '" + name + "': the UIDocument re-created its root (its PanelSettings or tree changed, for example when Enable Advanced " +
+                             "Text was switched while the game runs). A view built on the old root no longer shows: handle RootRebuilt and build the view again.", this);
         }
 
         void Bind(VisualElement root)

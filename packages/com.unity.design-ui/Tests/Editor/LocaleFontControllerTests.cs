@@ -171,7 +171,7 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.AreEqual(new[] { "locale-ar" }, LocaleClasses(root), "a regional code uses its language's fonts");
             Assert.AreSame(ar, RootFont(root));
             Assert.IsTrue(root.ClassListContains(LocaleFontController.RtlClass));
-            Assert.AreEqual(LanguageDirection.RTL, root.languageDirection);
+            Assert.AreNotEqual(LanguageDirection.RTL, root.languageDirection, "no RTL direction without the advanced generator (the standard one reverses the string)");
             Assert.IsTrue(_controller.IsRightToLeft);
             var bound = new Label();
             root.Add(bound);
@@ -240,6 +240,46 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(StyleKeyword.Null, root.style.unityTextGenerator.keyword, "Latin keeps the standard generator (measured exact)");
             Assert.IsFalse(_controller.UsesAdvancedText);
             CollectionAssert.IsEmpty(_controller.Issues);
+        }
+
+        /// <summary>
+        /// The standard text generator has no bidirectional algorithm: with an RTL direction it reverses the whole string,
+        /// digits and Latin included ("6202" for 2026). The direction is RTL only while the advanced generator is known to
+        /// be on; off or unknown, it stays left to right and the issue says the locale needs Enable Advanced Text.
+        /// </summary>
+        [Test]
+        public void RightToLeft_DirectionOnlyWhileTheAdvancedGeneratorIsOn()
+        {
+            var root = Root();
+            var locales = new Locales("en");
+            AdvancedText(AdvancedTextState.Off);
+            LogAssert.Expect(LogType.Warning, new Regex("ar.*Enable Advanced Text.*left to right.*reverse"));
+            _controller = new LocaleFontController(root, null, new DesignLocaleRules(), locales);
+            locales.Set("ar");
+            Assert.IsTrue(_controller.IsRightToLeft);
+            Assert.IsTrue(root.ClassListContains(LocaleFontController.RtlClass), "the alignment rule still applies");
+            Assert.AreEqual(LanguageDirection.Inherit, root.languageDirection, "off: never an RTL direction the standard generator reverses");
+            Assert.AreEqual(StyleKeyword.Null, root.style.unityTextGenerator.keyword);
+            StringAssert.Contains("Enable Advanced Text", _controller.Issues[0]);
+            StringAssert.Contains("left to right", _controller.Issues[0]);
+            _controller.Dispose();
+
+            AdvancedText(AdvancedTextState.Unknown);
+            LocaleFontController.ResetAdvancedTextReport();
+            LogAssert.Expect(LogType.Warning, new Regex("cannot tell whether"));
+            _controller = new LocaleFontController(root, null, new DesignLocaleRules(), new Locales("he"));
+            Assert.AreEqual(LanguageDirection.Inherit, root.languageDirection, "unknown: requested for shaping, but no RTL direction");
+            Assert.AreEqual(TextGeneratorType.Advanced, root.style.unityTextGenerator.value);
+            StringAssert.Contains("left-to-right", _controller.Issues[0]);
+            _controller.Dispose();
+
+            AdvancedText(AdvancedTextState.On);
+            var on = new Locales("ar");
+            _controller = new LocaleFontController(root, null, new DesignLocaleRules(), on);
+            Assert.AreEqual(LanguageDirection.RTL, root.languageDirection, "on: the advanced generator lays out right to left");
+            CollectionAssert.IsEmpty(_controller.Issues);
+            on.Set("tr");
+            Assert.AreEqual(LanguageDirection.Inherit, root.languageDirection);
         }
 
         [Test]
@@ -364,7 +404,7 @@ namespace DesignUi.Editor.Tests
             locales.Set("ar");
             Assert.IsTrue(root.ClassListContains(LocaleFontController.RtlClass));
             Assert.IsTrue(screen.ClassListContains(LocaleFontController.RtlClass), "the compiled .rtl rules sit on the screen root's class");
-            Assert.AreEqual(LanguageDirection.RTL, root.languageDirection);
+            Assert.AreNotEqual(LanguageDirection.RTL, root.languageDirection, "the generator is off: left to right, never reversed");
             yield return null;
             Assert.Less(a.layout.x, b.layout.x, "layout is not mirrored");
 
@@ -561,6 +601,156 @@ namespace DesignUi.Editor.Tests
             {
                 if (Available) Field.SetValue(null, _previous);
             }
+        }
+
+        /// <summary>
+        /// Project Settings > UI Toolkit > Enable Advanced Text switched on the way the settings window does it
+        /// (<c>UIToolkitProjectSettings.enableAdvancedText</c>: Unity writes the ICU data into every PanelSettings asset and
+        /// saves them), and back off with every file it wrote restored. Documents that exist while it is switched are
+        /// rebuilt by Unity, so a test switches it before it makes its panel.
+        /// </summary>
+        sealed class ProjectAdvancedText : IDisposable
+        {
+            static readonly PropertyInfo Setting = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("UnityEditor.UIElements.UIToolkitProjectSettings"))
+                .FirstOrDefault(t => t != null)?.GetProperty("enableAdvancedText", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            readonly Dictionary<string, byte[]> _files = new Dictionary<string, byte[]>();
+            /// <summary>Each PanelSettings asset with the ICU data it had (the switch assigns it in memory and on disk).</summary>
+            readonly List<(PanelSettings settings, Object icu)> _icu = new List<(PanelSettings, Object)>();
+            readonly bool _was;
+
+            public static bool Available => Setting != null && Setting.CanWrite;
+
+            public ProjectAdvancedText(bool on)
+            {
+                foreach (var p in AssetDatabase.FindAssets("t:PanelSettings").Select(AssetDatabase.GUIDToAssetPath))
+                {
+                    var asset = AssetDatabase.LoadAssetAtPath<PanelSettings>(p);
+                    if (asset != null) using (var so = new SerializedObject(asset)) _icu.Add((asset, so.FindProperty("m_ICUDataAsset")?.objectReferenceValue));
+                }
+                foreach (var p in AssetDatabase.FindAssets("t:PanelSettings").Select(AssetDatabase.GUIDToAssetPath).Concat(new[] { "ProjectSettings/UIToolkitProjectSettings.asset" }))
+                    if (File.Exists(p)) _files[p] = File.ReadAllBytes(p);
+                _was = (bool)Setting.GetValue(null);
+                Setting.SetValue(null, on);
+            }
+
+            public void Dispose()
+            {
+                Setting.SetValue(null, _was);
+                // the loaded assets first (a later save would write them again), then the files as they were
+                foreach (var (settings, icu) in _icu)
+                {
+                    if (settings == null) continue;
+                    using (var so = new SerializedObject(settings))
+                    {
+                        var p = so.FindProperty("m_ICUDataAsset");
+                        if (p != null && p.objectReferenceValue != icu)
+                        {
+                            p.objectReferenceValue = icu;
+                            so.ApplyModifiedPropertiesWithoutUndo();
+                            AssetDatabase.SaveAssetIfDirty(settings);
+                        }
+                    }
+                }
+                foreach (var kv in _files) File.WriteAllBytes(kv.Key, kv.Value);
+                foreach (var kv in _files) if (!kv.Key.StartsWith("ProjectSettings", StringComparison.Ordinal)) AssetDatabase.ImportAsset(kv.Key, ImportAssetOptions.ForceUpdate);
+            }
+        }
+
+        /// <summary>Ink per column of the lit pixels in rows [y0, y1), cropped to the ink and resampled to 64 bins (sum 1).</summary>
+        static float[] InkProfile(Color32[] px, int width, int height, int y0, int y1)
+        {
+            var cols = new float[width];
+            for (int y = y0; y < y1; y++)
+                for (int x = 0; x < width; x++) cols[x] += px[(height - 1 - y) * width + x].r / 255f;
+            int a = Array.FindIndex(cols, v => v > 0.5f), b = Array.FindLastIndex(cols, v => v > 0.5f);
+            Assert.GreaterOrEqual(a, 0, "ink in rows " + y0 + "–" + y1);
+            var bins = new float[64];
+            for (int x = a; x <= b; x++) bins[Math.Min(63, (x - a) * 64 / (b - a + 1))] += cols[x];
+            var sum = bins.Sum();
+            for (int i = 0; i < bins.Length; i++) bins[i] /= sum;
+            return bins;
+        }
+
+        static float Distance(float[] p, float[] q) => p.Zip(q, (x, y) => Math.Abs(x - y)).Sum();
+
+        /// <summary>
+        /// With the project setting on, a design screen's twins render Arabic through the locale controller as it should: the
+        /// advanced generator shapes it, the RTL direction leaves digits in their order (2026, never 6202), and switching to a
+        /// Latin locale gives the standard generator and left to right back. Twins are made the way kit sync makes them.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ProjectSettingOn_ArabicTwinText_IsShaped_AndItsDigitsKeepTheirOrder()
+        {
+            if (!ProjectAdvancedText.Available) Assert.Ignore("this Unity version has no Enable Advanced Text project setting");
+            if (!File.Exists(ArabicFontPath)) Assert.Ignore("no Arabic system font at " + ArabicFontPath + " (macOS)");
+            if (!AssetDatabase.IsValidFolder(ArabicFolder)) AssetDatabase.CreateFolder("Assets", "DesignUiLocaleFixture");
+            File.Copy(ArabicFontPath, ArabicFolder + "/SFArabic.ttf", true);
+            AssetDatabase.ImportAsset(ArabicFolder + "/SFArabic.ttf", ImportAssetOptions.ForceSynchronousImport);
+            var arabic = FontTwinGenerator.GetOrCreateTwin(FontFixture.CreateTmp(ArabicFolder + "/SFArabic.ttf", "Locale Arabic", folder: ArabicFolder), ArabicFolder + "/Twins");
+            var latin = FontTwinGenerator.GetOrCreateTwin(FontFixture.CreateTmp(FontFixture.RegularTtf, "Locale Latin", folder: ArabicFolder), ArabicFolder + "/Twins");
+            _advancedText = new ProjectAdvancedText(true); // before the panel exists: Unity rebuilds documents that exist while it switches
+            LocaleFontController.AdvancedTextCheck = _advancedCheck; // Unity's own answer
+
+            var root = Root();
+            _settings.clearColor = true;
+            _settings.colorClearValue = Color.black;
+            yield return null;
+            var locales = new Locales("ar");
+            _controller = new LocaleFontController(root, Set(("tr", new[] { latin }), ("ar", new[] { arabic })), new DesignLocaleRules(), locales);
+            Assert.IsTrue(_controller.UsesAdvancedText, "Unity's check says the generator is on: " + string.Join(" | ", _controller.Issues));
+            Assert.AreEqual(LanguageDirection.RTL, root.languageDirection);
+
+            Label Line(string text, int row, bool reference)
+            {
+                var l = new Label(text);
+                l.style.position = Position.Absolute;
+                l.style.left = 20;
+                l.style.top = 60 * row;
+                l.style.fontSize = 40;
+                l.style.color = Color.white;
+                if (reference)
+                {
+                    l.style.unityFontDefinition = FontDefinition.FromSDFFont(arabic);
+                    l.style.unityTextGenerator = TextGeneratorType.Standard;
+                    l.languageDirection = LanguageDirection.LTR;
+                }
+                root.Add(l);
+                return l;
+            }
+            var salam = Line("سلام", 0, false);
+            var digits = Line("2026", 1, false);
+            Line("2026", 2, true);
+            Line("6202", 3, true);
+            var plain = Line("سلام", 4, true);
+            int shapedGlyphs = -1, plainGlyphs = -1;
+            salam.PostProcessTextVertices = g => shapedGlyphs = g.Count;
+            plain.PostProcessTextVertices = g => plainGlyphs = g.Count;
+            for (int i = 0; i < 20; i++)
+            {
+                root.Query<Label>().ForEach(l => l.MarkDirtyRepaint());
+                yield return null;
+            }
+            Assert.AreEqual(TextGeneratorType.Advanced, digits.resolvedStyle.unityTextGenerator);
+            Assert.AreSame(arabic, digits.resolvedStyle.unityFontDefinition.fontAsset, "the Arabic locale's twin");
+            Assert.AreEqual(4, plainGlyphs, "the standard generator draws the four letters unshaped");
+            Assert.AreEqual(3, shapedGlyphs, "the advanced generator shapes lam + alef into one glyph");
+
+            var tex = Track(new Texture2D(_rt.width, _rt.height, TextureFormat.RGBA32, false, true));
+            var active = RenderTexture.active;
+            RenderTexture.active = _rt;
+            tex.ReadPixels(new Rect(0, 0, _rt.width, _rt.height), 0, 0, false);
+            tex.Apply(false);
+            RenderTexture.active = active;
+            var px = tex.GetPixels32();
+            var shown = InkProfile(px, _rt.width, _rt.height, 60, 110);
+            float toOrder = Distance(shown, InkProfile(px, _rt.width, _rt.height, 120, 170)), toReversed = Distance(shown, InkProfile(px, _rt.width, _rt.height, 180, 230));
+            Assert.Less(toOrder, toReversed / 2, "2026 reads 2026 in the right-to-left paragraph (ink distance to 2026: " + toOrder + ", to 6202: " + toReversed + ")");
+
+            locales.Set("tr");
+            Assert.IsFalse(_controller.UsesAdvancedText, "a Latin locale keeps the standard generator");
+            Assert.AreEqual(LanguageDirection.Inherit, root.languageDirection);
+            yield return null;
+            Assert.AreSame(latin, digits.resolvedStyle.unityFontDefinition.fontAsset);
         }
 
         [UnityTest]

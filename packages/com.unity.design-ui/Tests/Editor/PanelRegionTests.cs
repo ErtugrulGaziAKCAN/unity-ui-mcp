@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -346,6 +347,41 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(locales.HasListeners, "detaching ends the controller");
             Assert.IsFalse(sizes.HasListeners);
             Assert.IsFalse(locales.Disposed, "a source the game set is the game's");
+        }
+
+        /// <summary>
+        /// A document that re-creates its root (Unity rebuilds every open document when a PanelSettings asset is rewritten,
+        /// for example by switching Enable Advanced Text in a running Editor): the region binds the new root, runs its locale
+        /// controller there and raises RootRebuilt, so the host builds its view again; without a listener it warns once.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RootRebuilt_IsRaised_AndTheNewRootGetsTheLocale_WhenTheDocumentRecreatesItsRoot()
+        {
+            Shell(640, 360);
+            var locales = new LocaleFontControllerTests.Locales("he");
+            _region.Fonts = null;
+            _region.LocaleSource = locales;
+            _region.Attach();
+            yield return Settle();
+            var old = _doc.rootVisualElement;
+            Assert.IsTrue(old.ClassListContains("locale-he"));
+            var raised = new List<VisualElement>();
+            _region.RootRebuilt += raised.Add;
+            _doc.enabled = false;
+            _doc.enabled = true;
+            yield return Settle();
+            _region.Refresh();
+            Assume.That(_doc.rootVisualElement, NUnit.Framework.Is.Not.SameAs(old), "this Unity version keeps the root across a disable");
+            CollectionAssert.AreEqual(new[] { _doc.rootVisualElement }, raised.Distinct().ToArray(), "raised with the new root");
+            Assert.IsTrue(_doc.rootVisualElement.ClassListContains("locale-he"), "the new root follows the locale");
+            Assert.IsTrue(_doc.rootVisualElement.ClassListContains(LocaleFontController.RtlClass));
+
+            _region.RootRebuilt -= raised.Add;
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("re-created its root.*RootRebuilt"));
+            _doc.enabled = false;
+            _doc.enabled = true;
+            yield return Settle();
+            _region.Refresh();
         }
 
         [Test]

@@ -23,9 +23,12 @@ namespace DesignUi
     /// reference locale's), so <c>DesignFonts.uss</c> points every font variable at that locale's twins and
     /// <see cref="DesignText"/> prepares bound text in them; the root gets the locale's primary twin as
     /// <c>-unity-font-definition</c> (inherited by text that names no family).</item>
-    /// <item>Right to left (<see cref="DesignLocaleRules"/>): the <c>rtl</c> class and an RTL language direction on the
-    /// root. The compiler writes the alignment rule as <c>.rtl</c> rules (start-aligned text to the end); the layout is
-    /// not mirrored.</item>
+    /// <item>Right to left (<see cref="DesignLocaleRules"/>): the <c>rtl</c> class on the root, and an RTL language
+    /// direction only while the advanced generator is known to be on: the standard generator has no bidirectional
+    /// algorithm and reverses a whole RTL string, digits and Latin included ("6202" for 2026), so with the generator off or
+    /// unknown the direction stays left to right and <see cref="Issues"/> says the locale needs Enable Advanced Text. The
+    /// compiler writes the alignment rule as <c>.rtl</c> rules (start-aligned text to the end); the layout is not
+    /// mirrored.</item>
     /// <item>Shaping: <c>-unity-text-generator: advanced</c> on the root for right-to-left and complex-script locales only
     /// (the standard generator stays for the rest, where it measured exact). Unity's own check decides: on — requested;
     /// off (Project Settings > UI Toolkit > Enable Advanced Text unchecked) — not requested, the locale is reported in
@@ -155,7 +158,6 @@ namespace DesignUi
             m_Root.style.unityFontDefinition = primary != null ? FontDefinition.FromSDFFont(primary) : new StyleFontDefinition(StyleKeyword.Null);
 
             IsRightToLeft = m_Rules.IsRightToLeft(code);
-            m_Root.languageDirection = IsRightToLeft ? LanguageDirection.RTL : LanguageDirection.Inherit;
             ApplyGenerator();
             ApplyClasses();
         }
@@ -365,20 +367,27 @@ namespace DesignUi
         void ApplyGenerator()
         {
             m_LocaleIssues.Clear();
-            bool use = false;
+            bool use = false, on = false;
             var code = RequestedLocale;
             var panel = m_Root.panel; // without a panel it is decided when the root is attached (OnAttach)
             if (code != null && m_Rules.NeedsShaping(code) && panel != null)
             {
                 var state = AdvancedTextCheck(panel);
                 use = state != AdvancedTextState.Off;
-                if (state == AdvancedTextState.Unknown) m_LocaleIssues.Add(UnknownAdvancedText);
+                on = state == AdvancedTextState.On;
+                if (state == AdvancedTextState.Unknown)
+                    m_LocaleIssues.Add(UnknownAdvancedText + (IsRightToLeft ? " Until it can tell, locale '" + code + "' keeps left-to-right direction." : ""));
                 else if (state == AdvancedTextState.Off)
                     m_LocaleIssues.Add("locale '" + code + "' needs the advanced text generator (" + (IsRightToLeft ? "bidirectional text and shaping" : "shaping") +
-                                       ") but the project has it off: enable Project Settings > UI Toolkit > Enable Advanced Text. Its text renders unshaped.");
+                                       ") but the project has it off: enable Project Settings > UI Toolkit > Enable Advanced Text (players also need the PanelSettings' ICU data). " +
+                                       (IsRightToLeft
+                                           ? "Until then its text renders unshaped and left to right: the standard generator would reverse a right-to-left string, digits included."
+                                           : "Its text renders unshaped."));
             }
             UsesAdvancedText = use;
             m_Root.style.unityTextGenerator = use ? new StyleEnum<TextGeneratorType>(TextGeneratorType.Advanced) : new StyleEnum<TextGeneratorType>(StyleKeyword.Null);
+            // right to left only where the advanced generator lays it out: the standard one reverses the whole string
+            m_Root.languageDirection = IsRightToLeft && on ? LanguageDirection.RTL : LanguageDirection.Inherit;
             UpdateIssues();
         }
 
@@ -457,7 +466,7 @@ namespace DesignUi
             foreach (var issue in m_Issues)
             {
                 if (!m_Logged.Add(issue)) continue;
-                if (issue == UnknownAdvancedText)
+                if (issue.StartsWith(UnknownAdvancedText, StringComparison.Ordinal))
                 {
                     if (s_UnknownReported) continue; // a fact of the Unity version: once per session
                     s_UnknownReported = true;
