@@ -33,8 +33,10 @@ namespace DesignUi.Editor
     /// <item>Panel: a copy of the profile's design PanelSettings (the package's DesignUiPanelSettings by default) with Scale With
     /// Screen Size at the profile's reference resolution and match, which must equal the export's; the target is an
     /// <c>R8G8B8A8_UNorm</c> RenderTexture of the viewport with a <c>D24_UNorm_S8_UInt</c> depth-stencil,
-    /// <c>forceGammaRendering</c> on (gamma-space blending, as the browser), cleared to magenta (pixels left magenta were
-    /// not covered). The document root is stretched over the panel.</item>
+    /// <c>forceGammaRendering</c> on (gamma-space blending, as the browser and the game's DesignUiGammaComposite), cleared
+    /// to magenta (pixels left magenta were not covered); with the profile's colour path Linear Panel in a Linear project,
+    /// an <c>R8G8B8A8_SRGB</c> target without forceGammaRendering, as an ordinary on-screen panel blends and stores its
+    /// colours. The document root is stretched over the panel.</item>
     /// <item>Screen: the compiled UXML, the reference locale's class on the screen root and the shared <c>DesignFonts.uss</c>;
     /// the runtime wiring of the generated view (a Clickable on the manifest's elements, a PseudoStateMirror from an element
     /// to its shadow host); sample data from <c>fixtures/sample-data.json</c> by element name: bound texts, Smart String
@@ -262,7 +264,7 @@ namespace DesignUi.Editor
             // a runner passes its own run id, so it can tell this run's done marker from an earlier run's
             var run = new RunInfo { Id = string.IsNullOrEmpty(runId) ? Guid.NewGuid().ToString("N") : runId, Started = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture) };
             Clear(outDir);
-            WriteMeta(outDir, exportDir, screenFolder, result, run, "running", total.Elapsed.TotalMilliseconds);
+            WriteMeta(outDir, exportDir, screenFolder, profile, result, run, "running", total.Elapsed.TotalMilliseconds);
             var jobs = CaptureJob.ReadMatrix(Path.Combine(exportDir, MatrixPath));
             var manifest = Path.Combine(screenFolder, ScreenCompiler.ManifestFileName);
             if (!File.Exists(manifest)) throw new InvalidOperationException("'" + screenFolder + "' is not a compiled screen (no " + ScreenCompiler.ManifestFileName + ")");
@@ -286,7 +288,7 @@ namespace DesignUi.Editor
                 if (!force && !due && flushed.Elapsed.TotalSeconds < FlushEverySeconds) return;
                 var took = Stopwatch.StartNew();
                 BoxesWriter.WriteAll(Path.Combine(outDir, BoxesWriter.FileName), boxes);
-                WriteMeta(outDir, exportDir, screenFolder, result, run, "running", total.Elapsed.TotalMilliseconds);
+                WriteMeta(outDir, exportDir, screenFolder, profile, result, run, "running", total.Elapsed.TotalMilliseconds);
                 flushMs = took.Elapsed.TotalMilliseconds;
                 sinceFlush = 0;
                 flushed.Restart();
@@ -425,7 +427,7 @@ namespace DesignUi.Editor
                 }
             }
             BoxesWriter.WriteAll(Path.Combine(outDir, BoxesWriter.FileName), boxes);
-            WriteMeta(outDir, exportDir, screenFolder, result, run, "complete", total.Elapsed.TotalMilliseconds);
+            WriteMeta(outDir, exportDir, screenFolder, profile, result, run, "complete", total.Elapsed.TotalMilliseconds);
             WriteJson(Path.Combine(outDir, DoneFileName), new JObject
             {
                 ["captured"] = result.Captured.Count,
@@ -600,14 +602,17 @@ namespace DesignUi.Editor
             public void Open(Vector2Int viewport, DesignUiProfile profile, VisualTreeAsset tree)
             {
                 var source = profile.DesignPanelSettings ?? throw new InvalidOperationException("no design PanelSettings: set the profile's panelSettings or reinstall the package");
+                // the profile's colour path: the game's on-screen panel of a Linear project blends in linear light and its
+                // sRGB target stores the encoded result; the gamma composite blends as the design (UNorm, forceGammaRendering)
+                bool linearPanel = LinearPanel(profile);
                 var desc = new RenderTextureDescriptor(viewport.x, viewport.y)
                 {
-                    graphicsFormat = GraphicsFormat.R8G8B8A8_UNorm,
+                    graphicsFormat = linearPanel ? GraphicsFormat.R8G8B8A8_SRGB : GraphicsFormat.R8G8B8A8_UNorm,
                     depthStencilFormat = GraphicsFormat.D24_UNorm_S8_UInt, // rounded clipping uses the stencil
                     msaaSamples = 1,
                     mipCount = 1,
                     useMipMap = false,
-                    sRGB = false,
+                    sRGB = linearPanel,
                 };
                 Target = new RenderTexture(desc) { name = "DesignCapture", hideFlags = HideFlags.DontSave };
                 Target.Create();
@@ -620,7 +625,7 @@ namespace DesignUi.Editor
                 Settings.targetTexture = Target;
                 Settings.clearColor = true;
                 Settings.colorClearValue = Sentinel;
-                Settings.forceGammaRendering = true;
+                Settings.forceGammaRendering = !linearPanel;
                 Settings.scale = 1f; // a consumer's PanelSettings may scale on top of Scale With Screen Size
                 Host = new GameObject("DesignCapture") { hideFlags = HideFlags.DontSave };
                 Host.SetActive(false); // the document registers once, with its settings and tree already set
@@ -643,7 +648,7 @@ namespace DesignUi.Editor
             /// </summary>
             public Task WritePngAsync(string path)
             {
-                var tex = new Texture2D(Target.width, Target.height, TextureFormat.RGBA32, false, true) { hideFlags = HideFlags.DontSave };
+                var tex = new Texture2D(Target.width, Target.height, TextureFormat.RGBA32, false, !Target.sRGB) { hideFlags = HideFlags.DontSave };
                 var active = RenderTexture.active;
                 byte[] raw;
                 uint w = (uint)Target.width, h = (uint)Target.height;
@@ -661,10 +666,14 @@ namespace DesignUi.Editor
                 return Task.Run(() => File.WriteAllBytes(path, ImageConversion.EncodeArrayToPNG(raw, GraphicsFormat.R8G8B8A8_UNorm, w, h)));
             }
 
+            /// <summary>Whether the capture shows the game's on-screen panel of a Linear project (the profile's colour path).</summary>
+            public static bool LinearPanel(DesignUiProfile profile) =>
+                profile.colorPath == DesignColorPath.LinearPanel && QualitySettings.activeColorSpace == ColorSpace.Linear;
+
             /// <summary>The RenderTexture's bytes as a PNG, unchanged (no colour conversion).</summary>
             public byte[] ReadPng()
             {
-                var tex = new Texture2D(Target.width, Target.height, TextureFormat.RGBA32, false, true) { hideFlags = HideFlags.DontSave };
+                var tex = new Texture2D(Target.width, Target.height, TextureFormat.RGBA32, false, !Target.sRGB) { hideFlags = HideFlags.DontSave };
                 var active = RenderTexture.active;
                 try
                 {
@@ -1121,8 +1130,7 @@ namespace DesignUi.Editor
         {
             if (ir?.Breakpoints == null || ir.Breakpoints.Length == 0) return Enumerable.Empty<string>();
             var reference = ir.ReferenceViewport != null && ir.ReferenceViewport.Length == 2 ? ir.ReferenceViewport : new[] { 2560, 1440 };
-            double rw = viewport.x / (double)reference[0], rh = viewport.y / (double)reference[1];
-            double scale = rw + (rh - rw) * ir.ScreenMatch;
+            double scale = BoxesWriter.Scale(viewport, new Vector2Int(reference[0], reference[1]), ir.ScreenMatch); // the boxes' scale, the exporter's
             // the same rule the screen root applies at runtime (DesignScreen.ApplyBreakpoints), at the viewport's logical size
             return new DesignUi.DesignBreakpoints(ScreenBuilder.BreakpointsOf(ir).ToList()).Active(viewport.x / scale, viewport.y / scale).ToList();
         }
@@ -1560,7 +1568,7 @@ namespace DesignUi.Editor
             BoxesWriter.Remove(Path.Combine(outDir, BoxesWriter.FileName), name);
         }
 
-        static void WriteMeta(string outDir, string exportDir, string screenFolder, CaptureResult result, RunInfo run, string status, double totalMs)
+        static void WriteMeta(string outDir, string exportDir, string screenFolder, DesignUiProfile profile, CaptureResult result, RunInfo run, string status, double totalMs)
         {
             var meta = new JObject
             {
@@ -1577,6 +1585,8 @@ namespace DesignUi.Editor
                 ["unity"] = new JObject
                 {
                     ["colorSpace"] = QualitySettings.activeColorSpace.ToString(),
+                    // what the capture renders through: the gamma composite (UNorm, forceGammaRendering) or the linear on-screen panel
+                    ["colorPath"] = Mount.LinearPanel(profile) ? "linear-panel" : "gamma-composite",
                     ["graphics"] = SystemInfo.graphicsDeviceType.ToString(),
                     ["platform"] = Application.platform.ToString(),
                     ["version"] = Application.unityVersion,

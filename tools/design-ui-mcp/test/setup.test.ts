@@ -484,6 +484,17 @@ describe("scripts/install-skill.sh", () => {
     expect(read(path.join(dir, "unity-ui-mcp", "SKILL.md"))).toBe("user copy");
   });
 
+  it("creates Claude Code's skill folder when Claude Code is installed without one", () => {
+    const home = tempDir("design-ui-home-");
+    fs.mkdirSync(path.join(home, ".claude"));
+    const dry = run(home, "--dry-run");
+    expect(dry.out).toMatch(/would create .*\.claude\/skills/);
+    expect(fs.existsSync(path.join(home, ".claude", "skills"))).toBe(false);
+    const r = run(home);
+    expect(r.code, r.out).toBe(0);
+    expect(fs.readlinkSync(path.join(home, ".claude", "skills", "unity-ui-mcp"))).toBe(SKILL_DIR);
+  });
+
   it("--dry-run prints the links and creates nothing; with no skill folder it says so", () => {
     const home = tempDir("design-ui-home-");
     const none = run(home);

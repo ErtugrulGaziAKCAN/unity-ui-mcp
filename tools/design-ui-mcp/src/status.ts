@@ -32,7 +32,7 @@ export interface VerifyRecord {
   entry?: string;
   sourceSha: string;
   irSha: string;
-  /** "incomplete": nothing failed, but a job was not compared (not run, or hidden in the design); never a pass. */
+  /** "incomplete": nothing failed or went unrun, but the design hides a job in every context (not compared); never a pass. */
   verdict: "pass" | "fail" | "incomplete";
   reportPath: string;
   verifiedAt: string;

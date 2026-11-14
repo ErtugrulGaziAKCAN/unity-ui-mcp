@@ -1180,6 +1180,21 @@ describe("design_ui_verify", () => {
     expect(runs).not.toContain(path.basename(r.data.evidence));
   }, 30_000);
 
+  it("keeps the evidence when the comparison itself fails (an unreadable boxes.json), with no verdict", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.addScreen("clean-screen", "clean-screen");
+    const bad = 'mkdir -p "$0" && printf png > "$0/default@320x180.png" && printf "{not json" > "$0/boxes.json" && echo "{}" > "$0/capture-done.json"';
+    p.writeConfig({ unityRunner: { prefer: "command", command: { import: CONFIRMING_IMPORT, capture: ["sh", "-c", bad, "{outDir}"], kitSync: [] } } });
+    const pipeline = { ...stubPipeline(), unityCapture: true, compareScreen: async () => { throw new Error("boxes.json is not JSON"); } };
+    const client = await serverFor(p.dir, pipeline);
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/^Comparison of clean\.screen failed: boxes\.json is not JSON; no verdict\. Partial captures and logs kept in .*failed-/);
+    expect(fs.readFileSync(path.join(r.data.evidence, "boxes.json"), "utf8")).toBe("{not json");
+    expect(r.data.verdict).toBeNull();
+  });
+
   it("keeps the evidence of a failed verify when its captures cannot be moved (a locked file): copied, or named in failure.json", () => {
     const bookkeeping = tempDir(), staging = path.join(bookkeeping, "unity.next");
     fs.mkdirSync(staging);
@@ -1308,7 +1323,32 @@ const copyCapture = (without: string[] = []) => ({
   },
 });
 
+/** copyCapture whose Unity also writes a boxes.meta.json with this colour space and colour path. */
+const colourCapture = (colorSpace: string, colorPath: string) => {
+  const c = copyCapture();
+  const meta = JSON.stringify({ status: "complete", notCaptured: [], unity: { colorSpace, colorPath } });
+  c.unityRunner.command.capture[2] = `${c.unityRunner.command.capture[2]} && echo '${meta}' > "$1"/boxes.meta.json`;
+  return c;
+};
+
 describe("design_ui_verify with the installed comparison", () => {
+  it("names the colour path of a Linear project: a note for the gamma composite, a warning for a linear on-screen panel", async () => {
+    for (const [colorPath, line] of [
+      ["gamma-composite", /\nColour: Linear colour space, captured through the gamma composite: in game this holds for panels rendered through DesignUiGammaComposite/],
+      ["linear-panel", /\nWarning: Linear colour space, colour path Linear Panel: Unity blends translucent colours in linear light/],
+    ] as const) {
+      const p = tempProject({ prefer: "command" });
+      p.writeConfig(colourCapture("Linear", colorPath));
+      p.addScreen("clean-screen", "clean-screen");
+      const client = await serverFor(p.dir, goldenPipeline());
+      expect((await call(client, "design_ui_import", { design: "clean-screen" })).isError).toBeFalsy();
+      const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
+      expect(r.text).toMatch(/^PASS: clean-screen/);
+      expect(r.text).toMatch(line);
+      expect(r.data.colour).toEqual({ space: "Linear", path: colorPath });
+    }
+  });
+
   it("says the Unity capture is not available yet and runs nothing, even after an import", async () => {
     const p = tempProject({ prefer: "command" });
     p.addScreen("clean-screen", "clean-screen");

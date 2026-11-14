@@ -274,6 +274,11 @@ export function writeClaudeDesignSystem(kitDir: string, outDir: string, opts: Cl
   const projectDir = path.join(path.resolve(outDir), "project");
   if (fs.existsSync(projectDir) && fs.readdirSync(projectDir).length) {
     if (!opts.force) throw new Error(`${projectDir} already exists; pass --force to replace it`);
+    // --force replaces only what this command wrote: a design-system.json whose last change came from it
+    let existing: unknown = null;
+    try { existing = JSON.parse(fs.readFileSync(path.join(projectDir, "design-system.json"), "utf8")); } catch { /* not ours */ }
+    if ((existing as { lastChange?: { via?: string } } | null)?.lastChange?.via !== VIA)
+      throw new Error(`${projectDir} was not written by ${VIA} (no design-system.json of it); remove or move it yourself`);
     fs.rmSync(projectDir, { recursive: true, force: true });
   }
   const written: string[] = [];

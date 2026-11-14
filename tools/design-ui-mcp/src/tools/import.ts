@@ -32,7 +32,7 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       design: importArg,
       discardManualEdits: z.boolean().optional().describe("Overwrite generated Unity files that were edited by hand (default false)."),
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }, // discardManualEdits overwrites hand edits
   }, async ({ design, discardManualEdits }, extra) => {
     const t = new Timings();
     return guarded(t, async () => {

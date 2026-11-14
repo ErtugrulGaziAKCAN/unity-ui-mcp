@@ -26,7 +26,7 @@ export function registerLint(server: McpServer, ctx: ServerContext): void {
       "returns findings with rule id, element path and fix. Errors are design-side fixes: change the HTML/CSS (or tell the " +
       "design tool), never the Unity output. A ZIP is unpacked into a fresh temp folder (removed afterwards); unsafe entries are rejected.",
     inputSchema: { design: designArg },
-    annotations: { readOnlyHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: true, openWorldHint: true }, // a design may load scripts from the kit's allowed CDN origins
   }, async ({ design }) => {
     const t = new Timings();
     return guarded(t, async () => {

@@ -22,7 +22,8 @@ namespace FidelityProject
     /// <see cref="GlyphRenderMode"/> name, default SDFAA), <c>DESIGN_UI_FIDELITY_POINT_SIZE</c> (atlas sampling size,
     /// default 72), <c>DESIGN_UI_FIDELITY_PADDING</c> (default 7) and <c>DESIGN_UI_FIDELITY_TEXT_GENERATOR</c>
     /// (<c>advanced</c>: the profile renders with a PanelSettings copy whose theme sets <c>-unity-text-generator: advanced</c>
-    /// on the panel root).
+    /// on the panel root) and <c>DESIGN_UI_FIDELITY_COLOR_PATH</c> (<c>linear</c>: the profile's colour path is Linear Panel,
+    /// so the captures show an ordinary on-screen panel of this Linear project).
     /// </para>
     /// </summary>
     public class FidelitySetup
@@ -82,6 +83,9 @@ namespace FidelityProject
             profile.locales = new[] { Locale };
             profile.localeFonts = new[] { new LocaleFont { locale = Locale, font = regular } };
             profile.panelSettings = PanelSettingsFor(root, Env("DESIGN_UI_FIDELITY_TEXT_GENERATOR"));
+            var colorPath = Env("DESIGN_UI_FIDELITY_COLOR_PATH");
+            Assert.IsTrue(colorPath == null || colorPath == "linear", "DESIGN_UI_FIDELITY_COLOR_PATH is 'linear' or unset");
+            profile.colorPath = colorPath == "linear" ? DesignColorPath.LinearPanel : DesignColorPath.GammaComposite;
             Save(profile);
 
             var r = DesignUiOps.KitSync(path, kit);

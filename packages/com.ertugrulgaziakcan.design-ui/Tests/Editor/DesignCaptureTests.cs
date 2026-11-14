@@ -1172,6 +1172,35 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("#ff8800", Hex(Pixel(Png(both), 20, 10)), "a breakpoint and a state together");
         }
 
+        /// <summary>
+        /// The profile's colour path decides what the capture shows in a Linear project: the gamma composite blends 25 %
+        /// white over #0b1f26 as Chromium does (#48575c), the linear on-screen panel in linear light (#8a8b8d, ΔE2000 22).
+        /// Opaque colours are the same on both paths.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Run_ColorPath_GammaCompositeBlendsAsTheDesign_LinearPanelInLinearLight()
+        {
+            if (QualitySettings.activeColorSpace != ColorSpace.Linear) Assert.Ignore("a Gamma project blends in gamma space on both paths");
+            var veil = Node("veil", "container", ("position", "absolute"), ("left", "0px"), ("top", "0px"), ("width", "100px"), ("height", "40px"),
+                ("background-color", "rgba(255, 255, 255, 0.25)"));
+            var panel = Box("panel", "#0b1f26", ("position", "relative")).Add(veil);
+            var solid = Box("solid", "#16c2d5");
+            var export = Export(Small(BlackRoot(panel, solid)));
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+
+            var gamma = Request(export, screen, "default@320x180", 320, 180);
+            yield return DesignCapture.Run(gamma, profile);
+            AssertNear("#48575c", Pixel(Png(gamma), 50, 20), 1, "gamma composite: blended as the design");
+            AssertNear("#16c2d5", Pixel(Png(gamma), 50, 60), 1, "gamma composite: opaque");
+
+            profile.colorPath = DesignColorPath.LinearPanel;
+            var linear = Request(export, screen, "default@320x180", 320, 180);
+            yield return DesignCapture.Run(linear, profile);
+            AssertNear("#8a8b8d", Pixel(Png(linear), 50, 20), 2, "linear panel: blended in linear light");
+            AssertNear("#16c2d5", Pixel(Png(linear), 50, 60), 1, "linear panel: opaque colours are the same");
+        }
+
         [UnityTest]
         public IEnumerator Run_ViewportOfAnotherAspect_BoxesUseThePanelsScale_AndMatchThePng()
         {
@@ -1381,6 +1410,8 @@ namespace DesignUi.Editor.Tests
             var meta = JObject.Parse(File.ReadAllText(Path.Combine(outDir, DesignCapture.MetaFileName)));
             Assert.AreEqual("complete", (string)meta["status"]);
             Assert.IsFalse(string.IsNullOrEmpty((string)meta["runId"]));
+            Assert.AreEqual("gamma-composite", (string)meta["unity"]["colorPath"], "the profile's default colour path");
+            Assert.AreEqual(QualitySettings.activeColorSpace.ToString(), (string)meta["unity"]["colorSpace"]);
             var done = JObject.Parse(File.ReadAllText(Path.Combine(outDir, DesignCapture.DoneFileName)));
             Assert.AreEqual((string)meta["runId"], (string)done["runId"], "this run's marker, not the earlier one");
             Assert.AreEqual(2, (int)done["jobs"]);

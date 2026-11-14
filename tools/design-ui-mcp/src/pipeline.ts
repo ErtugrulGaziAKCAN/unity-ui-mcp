@@ -20,7 +20,7 @@ export type ExportScreen = (entry: string, kit: KitConfig, outDir: string, brows
 
 export interface CompareOutcome {
   pass: boolean;
-  /** "fail" when a compared capture fails; else "incomplete" when a job was not compared (not run or hidden); else "pass". */
+  /** "fail" when a capture fails or did not run; else "incomplete" when the design hides a job in every context; else "pass". */
   status?: "pass" | "fail" | "incomplete";
   /** Jobs the design shows in no context: no golden, not compared (the screen is incomplete). */
   hidden?: string[];
@@ -36,8 +36,10 @@ export interface CompareOutcome {
   verdictFile?: string;
   /** Per-step milliseconds as recorded in the report. */
   timings?: Record<string, number>;
-  /** Checks skipped for the whole screen (e.g. no IR). */
+  /** Checks skipped for the whole screen (e.g. no IR), and a capture in a colour path that differs from the design. */
   warnings?: string[];
+  /** The Unity project's colour space and the colour path the capture rendered with (null when unknown). */
+  colour?: { space: string; path: string } | null;
   /** Painted backgrounds left without any colour sample, over all captures. */
   notSampled?: number;
   /**
@@ -97,7 +99,7 @@ export const INSTALLED_PIPELINE: Pipeline = {
     const verdictFile = path.join(work, "verdict.json");
     return {
       pass: v.pass, status: v.status, hidden: v.hidden, topIssues: summarizeIssues(v, 20, { notRun: false }), notRun: v.notRun, compared: v.captures.length,
-      extra: v.extra, verdictFile, timings: v.timings, warnings: v.warnings,
+      extra: v.extra, verdictFile, timings: v.timings, warnings: v.warnings, colour: v.colour ?? null,
       notSampled: v.captures.reduce((a, c) => a + c.notSampled.length, 0),
       publish: () => {
         rm(pics);

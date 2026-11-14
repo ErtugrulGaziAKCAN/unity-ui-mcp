@@ -384,5 +384,13 @@ describe("Claude design system export (kit claude)", () => {
     fs.writeFileSync(path.join(out, "project", "stale.md"), "old");
     expect(await runCli(["kit", "claude", kitDir, out, "--force"], io().io)).toBe(0);
     expect(fs.existsSync(path.join(out, "project", "stale.md"))).toBe(false);
+    // --force replaces only a folder this command wrote (its design-system.json says so)
+    const other = tmp("claude-ds-");
+    fs.mkdirSync(path.join(other, "project"));
+    fs.writeFileSync(path.join(other, "project", "notes.md"), "mine");
+    const c = io();
+    expect(await runCli(["kit", "claude", kitDir, other, "--force"], c.io)).toBe(2);
+    expect(c.err.join("")).toMatch(/was not written by design-export kit claude/);
+    expect(fs.readFileSync(path.join(other, "project", "notes.md"), "utf8")).toBe("mine");
   });
 });

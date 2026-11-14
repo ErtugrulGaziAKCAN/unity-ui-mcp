@@ -113,7 +113,13 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
             `The previous report and verdict are unchanged.${kept(evidence)}`, { screen, verdict: null, logTail: run.logTail, evidence, timings: t.done() }, true);
         }
         const steps: Record<string, number> = { ...(imp.timings ?? {}), capture: t.steps.capture };
-        const v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir }));
+        let v;
+        try {
+          v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir }));
+        } catch (e) {
+          const evidence = keep(`the comparison failed: ${(e as Error).message}`, run); // e.g. an unreadable boxes.json
+          return toolResult(`Comparison of ${screen} failed: ${(e as Error).message}; no verdict.${kept(evidence)}`, { screen, verdict: null, evidence, timings: t.done() }, true);
+        }
         if (v.compared === 0) {
           const unfinished = !fs.existsSync(path.join(staging, "capture-done.json"));
           const none = !unfinished && !fs.existsSync(path.join(staging, "boxes.json"));
@@ -139,11 +145,13 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
           ...(hidden.length ? [`Hidden in the design (no golden, not compared; show them in a state, class or repeat item, or remove their layers): ${hidden.join(", ")}`] : []),
           ...(v.extra?.length ? [`Extra Unity captures (not compared): ${v.extra.join(", ")}`] : []),
           ...(v.warnings ?? []).map((w) => `Warning: ${w}`),
+          ...(v.colour?.space === "Linear" && v.colour.path !== "linear-panel"
+            ? ["Colour: Linear colour space, captured through the gamma composite: in game this holds for panels rendered through DesignUiGammaComposite"] : []),
           ...(v.notSampled ? [`Backgrounds not sampled (every point covered or on text): ${v.notSampled}`] : []),
         ];
         return toolResult(lines.join("\n"), {
           screen, entry, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun, hidden,
-          extra: v.extra ?? [], warnings: v.warnings ?? [], notSampled: v.notSampled ?? 0, steps: v.timings ?? steps, timings: t.done(),
+          extra: v.extra ?? [], warnings: v.warnings ?? [], colour: v.colour ?? null, notSampled: v.notSampled ?? 0, steps: v.timings ?? steps, timings: t.done(),
         }, verdict !== "pass");
       }));
     });

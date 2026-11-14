@@ -491,7 +491,7 @@ A complete screen; with the base stylesheet pasted at the marked line it lints c
   <button class="start text-body-bold" data-u-id="start" data-u-action="start-training" data-l10n="squad.overview.start" data-en="Start training">Antrenmanı başlat</button>
   <div class="list" data-u-id="players">
     <div class="row is-selected" data-u-repeat="players" data-u-id="player" data-u-action="open-player">
-      <span class="text-body-bold" data-u-id="name" data-u-bind="player.name">Ahmet Çelik</span>
+      <span class="text-body-bold" data-u-id="name" data-u-bind="player.name">Kerem Örnekoğlu</span>
       <span class="text-body" data-u-id="rating" data-u-bind="player.rating">8.4</span>
     </div>
     <div class="row" data-u-id="player" data-u-action="open-player">

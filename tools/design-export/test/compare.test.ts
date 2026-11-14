@@ -379,7 +379,7 @@ describe("compareCapture", () => {
   });
 });
 
-describe("compareCapture: fix round checks", () => {
+describe("compareCapture: edge, colour and ink checks", () => {
   /** 320×192, a card with a child panel covering its whole inset grid. */
   const covered = (cardColour: Rgb) => {
     const png = canvas(320, 192, [16, 24, 32]);
@@ -1159,6 +1159,29 @@ describe("compareScreen", () => {
     expect(v.notRunReasons["busy@320x192"]).toBe("animation player not available");
     expect(summarizeIssues(v)).toContain("busy@320x192: not run (animation player not available)");
     expect(v.pass).toBe(false);
+  });
+
+  it("reports the colour space and path the Unity capture rendered with, and warns for a linear on-screen panel", async () => {
+    const f = screenFixture((_, s) => s);
+    const meta = (unity: Record<string, string>) => fs.writeFileSync(path.join(f.unityDir, "boxes.meta.json"), JSON.stringify({ status: "complete", notCaptured: [], unity }));
+    meta({ colorSpace: "Linear", colorPath: "gamma-composite" });
+    let v = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(v.colour).toEqual({ space: "Linear", path: "gamma-composite" });
+    expect(v.warnings.filter((w) => /colour/.test(w))).toEqual([]);
+    expect(v.pass).toBe(true);
+    meta({ colorSpace: "Linear", colorPath: "linear-panel" });
+    v = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(v.colour).toEqual({ space: "Linear", path: "linear-panel" });
+    expect(v.warnings.filter((w) => /colour/.test(w))).toEqual([expect.stringMatching(/^Linear colour space, colour path Linear Panel: .*DesignUiGammaComposite/)]);
+    meta({ colorSpace: "Gamma", colorPath: "linear-panel" });
+    v = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(v.colour).toEqual({ space: "Gamma", path: "linear-panel" });
+    expect(v.warnings.filter((w) => /colour/.test(w))).toEqual([]);
+    // a capture of an earlier package writes no colour path: the gamma composite it always rendered with
+    meta({ colorSpace: "Linear" });
+    expect((await compareScreen(f.exportDir, f.unityDir, T)).colour).toEqual({ space: "Linear", path: "gamma-composite" });
+    fs.rmSync(path.join(f.unityDir, "boxes.meta.json"));
+    expect((await compareScreen(f.exportDir, f.unityDir, T)).colour).toBeNull();
   });
 
   it("reads the compiler-removed elements from the generated manifest in the Unity folder", async () => {

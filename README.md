@@ -33,6 +33,8 @@ Guides: [usage guide](docs/guide/usage.md) · [Türkçe kullanım rehberi](docs/
   [INSTALL.md](INSTALL.md). All measurements so far were made on macOS.
 - Optional, for localized screens: **Unity Localization 1.5** or later, with Addressables settings in the project (the
   import creates String Table collections through them).
+- A **Linear colour space** project shows design screens through the `DesignUiGammaComposite` component (see
+  [Fidelity](#fidelity-and-speed)); a Gamma project needs nothing.
 - Optional, for right-to-left and complex-script locales (Arabic and others): **Project Settings > UI Toolkit > Enable
   Advanced Text**, and ICU data on every PanelSettings a player uses
   ([details](docs/findings/advanced-text.md)).
@@ -207,6 +209,15 @@ The fidelity suite (`scripts/fidelity.sh`: 15 fidelity fixtures and the 9 kit co
 passes **2340 of 2340 captures** in 0.1.0: 1140 static captures and 1200 animation samples, none failed, not captured
 or incomplete.
 
+**Linear colour space.** UI Toolkit blends an ordinary on-screen panel of a Linear project in linear light; the design's
+browser blends in sRGB. Captured that way, 2248 of the suite's 2355 captures fail (text ink 0.63–1.42× the design's,
+translucent colours up to ΔE2000 37). Add `DesignUiGammaComposite` (Add Component > Design UI > Gamma Composite) with
+the design PanelSettings once to the game: the panel then renders into a screen-sized UNorm texture with
+`forceGammaRendering` and is composited over the screen, which shows exactly what verify captures (cost: 29.5 MB of
+textures and one full-screen pass, 0.14 ms at 2560×1440 on an M4 Pro). The profile's `colorPath` is Gamma Composite by
+default; Linear Panel makes verify capture an ordinary on-screen panel instead, and its answer warns. A Gamma project
+needs neither. Details: [docs/findings/colour-space.md](docs/findings/colour-space.md).
+
 Measured on the sample project (macOS, Apple silicon, warm browser):
 
 | Step | Time |
@@ -265,7 +276,10 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
   the copy's manifest only, and removes the copy afterwards; see the [usage guide](docs/guide/usage.md#verification-captures).
 - Templates take `{projectDir}` `{profile}` `{exportDir}` `{outDir}` `{kitDir}`, also passed as `DESIGN_UI_*`
   environment variables. They run as programs with your rights: only use a config you trust.
-- `timeoutSec` limits one Unity step; while it runs, the server sends MCP progress notifications every 10 s.
+- `timeoutSec` limits one Unity step (the script compile after an import included); while it runs, the server sends
+  MCP progress notifications every 10 s.
+- The server reads the config when it starts: after editing it (or after setup configures a project), restart the MCP
+  server, which in most clients means a new chat.
 
 ## Troubleshooting
 

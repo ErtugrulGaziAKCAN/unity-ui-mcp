@@ -79,7 +79,7 @@ export interface RunnerOptions {
   pollIntervalMs?: number;
   /** The Editor must report "not compiling" for this long before an import counts as done. */
   settleMs?: number;
-  /** Limit for the wait after an import (scripts compile, domain reloads); default 300 s. */
+  /** Limit for the wait after an import (scripts compile, domain reloads); default unityRunner.timeoutSec. */
   compileTimeoutMs?: number;
   /** Timers of the Unity request (tests); the real clock by default. */
   clock?: BridgeClock;
@@ -201,10 +201,12 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
   if (code === 0 && step !== "capture" && (!answer || answer.compiling)) {
     const t1 = performance.now();
     if (answer) {
-      const end = await waitForCompileEnd(cfg.projectDir, info, answer, opts, { warnings: strings(res?.warnings), errors: strings(res?.errors) });
+      // the compile after an import is a Unity step too: unityRunner.timeoutSec limits it unless a caller sets its own limit
+      const wait = { ...opts, compileTimeoutMs: opts.compileTimeoutMs ?? cfg.unityRunner.timeoutSec * 1000 };
+      const end = await waitForCompileEnd(cfg.projectDir, info, answer, wait, { warnings: strings(res?.warnings), errors: strings(res?.errors) });
       ({ compile, scriptsFailed } = end);
       scriptErrors = failedErrors(end.last);
-    } else await waitForCompile(cfg.projectDir, info, opts); // a bridge without the compile fields: wait for "not compiling" to settle, as before
+    } else await waitForCompile(cfg.projectDir, info, { ...opts, compileTimeoutMs: opts.compileTimeoutMs ?? cfg.unityRunner.timeoutSec * 1000 }); // an older bridge: wait for "not compiling" to settle
     timings.compileWait = Math.round(performance.now() - t1);
   } else if (answer && answer.compileId !== null) {
     // the compile already ended inside the import (failed, typically): its outcome is in the answer

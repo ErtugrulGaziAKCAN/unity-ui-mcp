@@ -53,6 +53,8 @@ namespace DesignUi.Editor
         public DesignUi.DesignTextSize[] textSizes = new DesignUi.DesignTextSize[0];
         [Tooltip("Unity Localization: whether screens bind their texts to String Table entries, the collection of each screen, the argument format, and the rules for a collection the import creates. Off keeps static design text (fidelity samples only).")]
         public DesignLocalizationSettings localization = new DesignLocalizationSettings();
+        [Tooltip("How the game shows design screens in a Linear-colour-space project, and so what verify captures. Gamma Composite: the panel renders through DesignUiGammaComposite (a UNorm texture with forceGammaRendering, composited over the screen), so translucent colours blend as in the design. Linear Panel: an ordinary on-screen panel, which blends translucent colours in linear light (they drift from the design). No effect in a Gamma project.")]
+        public DesignColorPath colorPath = DesignColorPath.GammaComposite;
 
         /// <summary>PanelSettings for design screens: <see cref="panelSettings"/>, or the package's settings when empty.</summary>
         public PanelSettings DesignPanelSettings => panelSettings != null ? panelSettings : LoadDefaultPanelSettings();
@@ -67,6 +69,15 @@ namespace DesignUi.Editor
             panelSettings = LoadDefaultPanelSettings();
             if (panelSettings != null) host.sortingOrder = panelSettings.sortingOrder; // a region keeps the asset's order until changed here
         }
+    }
+
+    /// <summary>How the game shows design screens in a Linear-colour-space project (<see cref="DesignUiProfile.colorPath"/>).</summary>
+    public enum DesignColorPath
+    {
+        /// <summary>Through DesignUi.DesignUiGammaComposite: blended in gamma space, as the design (verify captures a UNorm target with forceGammaRendering).</summary>
+        GammaComposite = 0,
+        /// <summary>An ordinary on-screen panel: blended in linear light (verify captures an sRGB target without forceGammaRendering).</summary>
+        LinearPanel = 1,
     }
 
     /// <summary>The TMP font asset a locale renders with (its UI Toolkit twin is generated from it).</summary>

@@ -325,6 +325,12 @@ export interface ScreenVerdict {
   warnings: string[];
   /** Other remarks (e.g. no capture matrix: name order, no animation strips). */
   notes: string[];
+  /**
+   * The colour space of the Unity project and the colour path the capture rendered with (boxes.meta.json `unity`):
+   * `gamma-composite` blends as the design (in game: DesignUiGammaComposite), `linear-panel` as an ordinary on-screen
+   * panel of a Linear project. Null without the meta file.
+   */
+  colour: { space: string; path: string } | null;
 }
 
 export interface CompareOptions {
@@ -939,6 +945,19 @@ function readNotCaptured(file: string): Record<string, string> {
   return out;
 }
 
+/** The colour space and colour path of a Unity capture's boxes.meta.json (a meta without a path: the gamma composite). */
+function readColour(file: string): { space: string; path: string } | null {
+  const meta = tryJson(file);
+  const unity = isObj(meta) && isObj(meta.unity) ? meta.unity : null;
+  if (!unity || typeof unity.colorSpace !== "string") return null;
+  return { space: unity.colorSpace, path: typeof unity.colorPath === "string" ? unity.colorPath : "gamma-composite" };
+}
+
+/** The warning of a capture that shows translucent colours blended in linear light (an on-screen panel of a Linear project). */
+export const LINEAR_PANEL_WARNING = "Linear colour space, colour path Linear Panel: Unity blends translucent colours in linear light, " +
+  "the design in sRGB, so they differ from the design (up to ΔE2000 22 measured); to show them as designed, render the panel " +
+  "through DesignUiGammaComposite and set the profile's colour path to Gamma Composite";
+
 export async function compareScreen(exportDir: string, unityDir: string, t: Thresholds, opts: CompareOptions = {}): Promise<ScreenVerdict> {
   const t0 = performance.now();
   const goldensDir = path.join(exportDir, "goldens");
@@ -978,6 +997,8 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   const unityBoxesFile = path.join(unityDir, "boxes.json");
   const unityBoxes = finished && fs.existsSync(unityBoxesFile) ? readBoxesFile(unityBoxesFile, "Unity") : {};
   const unityNotCaptured = finished ? readNotCaptured(path.join(unityDir, "boxes.meta.json")) : {};
+  const colour = readColour(path.join(unityDir, "boxes.meta.json"));
+  if (colour?.space === "Linear" && colour.path === "linear-panel") warnings.push(LINEAR_PANEL_WARNING);
   const notRunReasons: Record<string, string> = {};
   const runnable: string[] = [];
   for (const name of names) {
@@ -1040,7 +1061,7 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   return {
     screen, pass: status === "pass", status,
     captures, notRun, notRunReasons, hidden, hiddenReasons, extra, thresholds: t, timings, platform, removed: [...removed!].sort(),
-    animations: animationStrips(entries.filter((e) => known.has(e.name))), warnings, notes,
+    animations: animationStrips(entries.filter((e) => known.has(e.name))), warnings, notes, colour,
   };
 }
 

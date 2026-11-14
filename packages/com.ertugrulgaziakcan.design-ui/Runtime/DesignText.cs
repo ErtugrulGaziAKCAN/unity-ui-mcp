@@ -20,6 +20,15 @@ namespace DesignUi
         /// <summary>The screens' font set <see cref="SetText"/> uses when none is passed (the compiler's <c>DesignFonts.asset</c>).</summary>
         public static DesignFontSet Fonts { get; set; }
 
+        // a region sets Fonts in Play; with domain reload off it would outlive Play and keep edit-mode SetText preparing glyphs
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetFonts() => Fonts = null;
+#if UNITY_EDITOR
+        [UnityEditor.InitializeOnLoadMethod]
+        static void ResetFontsAfterPlay() => UnityEditor.EditorApplication.playModeStateChanged +=
+            s => { if (s == UnityEditor.PlayModeStateChange.EnteredEditMode) Fonts = null; };
+#endif
+
         /// <summary>
         /// Assigns <paramref name="text"/> to <paramref name="element"/> after adding its characters, with their kerning pairs,
         /// to the twins of the element's locale in <paramref name="fonts"/> (or <see cref="Fonts"/>): the locale is the class

@@ -18,6 +18,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 - Every CSS property and keyword lint accepts is measured by a fidelity fixture at 2560, 1920 and 1280 (new fixtures
   `text-spacing`, `sizing-visibility` and `background-images`; `docs/findings/measured-css.md`). The sample project
   has an italic face.
+- `DesignUiGammaComposite`: in a Linear-colour-space project the design PanelSettings render into a screen-sized UNorm
+  texture with `forceGammaRendering` and are composited over the screen, so the game shows the colours verify captures
+  (an ordinary on-screen panel blends in linear light: 2248 of the suite's 2355 captures fail that way). The profile's
+  `colorPath` (Gamma Composite by default, or Linear Panel) decides what verify captures; the capture records the colour
+  space and path, and verify names them (a warning for Linear Panel).
 - Lint rule U-CSS-045: a box whose width `max-width` sets while its text wraps needs a width of its own (UI Toolkit
   sizes it to its longest line).
 - A design's `@media` breakpoints apply in the game: the compiled screen root sets the `bp-*` classes of the
@@ -48,6 +53,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- Kit sync and imports through the Editor wait for the script compile as long as `unityRunner.timeoutSec` allows (it
+  was a fixed 300 s); `design_ui_import` and `design_ui_kit_sync` are marked destructive and `design_ui_lint` as reaching
+  the network (allowed CDN scripts).
+- A verify whose comparison fails (an unreadable `boxes.json`) keeps its captures and log in `failed-<run>`.
+- `kit claude --force` replaces only a folder it wrote.
+- `scripts/install-skill.sh` creates Claude Code's skill folder when Claude Code has none yet.
+- `DesignText.Fonts` is cleared at the start and end of Play, so a font set of Play never prepares glyphs in edit mode.
 - The comparison sees horizontal text errors: each text line's first and last glyphs (and the width between them) are
   held to the box limit, ±1 px, from Unity's ink column profile near each end matched to the design's (spacing, kerning
   or alignment inside a box of the right size had kept the same ink colour, amount, line count and baseline and passed).

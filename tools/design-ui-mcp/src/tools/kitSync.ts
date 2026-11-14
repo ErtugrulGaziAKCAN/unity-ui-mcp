@@ -10,7 +10,7 @@ export function registerKitSync(server: McpServer, ctx: ServerContext): void {
     description:
       "Re-syncs fonts and settings from the Unity project into the design kit (kitDir) and regenerates the UI Toolkit font " +
       "twins, through the Unity runner (the open Editor's bridge by default). Run it after font or TMP settings changes.",
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }, // rewrites the kit's font files
   }, async (extra) => {
     const t = new Timings();
     return guarded(t, async () => {
