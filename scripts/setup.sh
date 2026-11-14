@@ -237,6 +237,10 @@ for (let i = Array.isArray(current.testables) ? current.testables.indexOf(oldNam
   }
   results.push(`CHANGE remove "${oldName}" from the "testables" of Packages/manifest.json (the package tests are listed only in the temporary copy a capture makes)`);
 }
+// an earlier setup renamed the old id in "testables": left alone (it may be wanted), but said
+if (Array.isArray(current.testables) && current.testables.includes(name)) {
+  results.push(`NOTE Packages/manifest.json lists "${name}" in "testables": the package tests then run in this project and switch its settings; remove that entry unless you want them (captures list them in their temporary copy)`);
+}
 if (hadName) {
   results.push(`KEEP kept existing entry "${name}": ${JSON.stringify(json.dependencies[name])}`);
 } else if (!has(current.dependencies, name)) {
@@ -267,6 +271,7 @@ while IFS= read -r MANIFEST_LINE; do
   case "$MANIFEST_LINE" in
     CHANGE*) change "${MANIFEST_LINE#CHANGE }" ;;
     KEEP*) info "${MANIFEST_LINE#KEEP }" ;;
+    NOTE*) info "note: ${MANIFEST_LINE#NOTE }" ;;
     FAIL*) die "${MANIFEST_LINE#FAIL }" ;;
     *) die "unexpected manifest result: $MANIFEST_RESULT" ;;
   esac

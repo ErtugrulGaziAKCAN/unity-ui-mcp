@@ -14,9 +14,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   the viewports and the nearest valid lengths (multiples of 4 px with the default kit). New fidelity fixture
   `half-pixel-frame` (frames centred at a fraction of a device pixel, grid paddings inside).
 - Capture slots and a disk check for `scripts/capture-on-copy.sh`: one capture-on-copy Unity runs at a time on the
-  machine by default (`--slots N` or `CAPTURE_COPY_SLOTS`; the others wait and say so; a slot whose holder process is
-  gone is taken over), and the copy needs `--min-free-gb` (default 10; rsync adds the project's size) free where it
-  goes, else the script stops before copying with how much is free (exit 2). The usage guide says how a project with its
+  machine by default (`--slots N` or `CAPTURE_COPY_SLOTS`; the others wait and say so; a slot counts while its script
+  or its Unity runs and is taken over once both are gone), and the copy needs `--min-free-gb` (default 10; rsync adds
+  the project's size as far as `du` can read it) free where it goes, else the script stops before copying with how
+  much is free (exit 2). Stopped by the server's time limit (SIGTERM, then SIGKILL), SIGINT or SIGHUP, the script stops
+  its Unity and everything Unity started and waits for them before it gives the slot back, and removes the copy in the
+  background. Setup notes a `"testables"` entry of the package's id in the project's manifest. The usage guide says how a project with its
   own heavy-job runner points `command.capture` at it instead.
 - Viewport classes. `kit.config.json` `viewports` entries are `[w, h]` (exact) or `{ "size": [w, h], "class": "exact" |
   "scaled" }`; the profile has **Viewports** (exact) and **Scaled Viewports**, kit sync writes both, the IR carries

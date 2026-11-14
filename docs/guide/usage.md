@@ -236,10 +236,13 @@ It waits for a capture slot (one capture-on-copy Unity at a time on the machine 
 the copy goes, copies the project into a temporary folder (an APFS clone on macOS, so the `Library` comes along at no
 cost; rsync elsewhere), deletes the open Editor's process and lock files from the copy (`Library/ilpp.pid` and every
 other `*.pid` in the `Library`, `Library/EditorInstance.json`, the asset databases' `-lock` files, search index locks,
-`Temp/` with its `UnityLockfile`: a copy that keeps `ilpp.pid` makes its Unity stop the **open** Editor's IL
-post-processing runner), lists the package's tests (`"testables"`) in the **copy's** `Packages/manifest.json` only, runs
+packages' `.lock` and `*.lock` files, `Temp/` with its `UnityLockfile`: a copy that keeps `ilpp.pid` makes its Unity
+stop the **open** Editor's IL post-processing runner), lists the package's tests (`"testables"`) in the **copy's** `Packages/manifest.json` only, runs
 the EditMode test `DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv` there in batchmode, and removes the copy and
-gives the slot back when Unity exits, whether the capture succeeded or failed. Your project's manifest never lists the package's tests (that would put the
+gives the slot back when Unity exits, whether the capture succeeded or failed. When the server stops it at
+`unityRunner.timeoutSec` (SIGTERM, then SIGKILL two seconds later), or on Ctrl-C, it first stops its Unity and everything
+Unity started and waits for them, then gives the slot back and removes the copy in the background; no Unity of a stopped
+capture keeps running next to the next one. Your project's manifest never lists the package's tests (that would put the
 package's own test suite, which switches project settings, into your Test Runner), and no scene, asset or helper file is
 ever added to your project. The server passes the export and output folders in the environment (`DESIGN_UI_EXPORT_DIR`,
 `DESIGN_UI_OUT_DIR`, also as the `{exportDir}` and `{outDir}` placeholders); the Unity binary is the Unity Hub install of
@@ -250,9 +253,9 @@ Each capture is a heavy Unity job. The script's options go into the command temp
 
 | Option | Variable | Default | What it does |
 |---|---|---|---|
-| `--slots N` | `CAPTURE_COPY_SLOTS` | 1 | capture-on-copy Unity runs at a time on the machine; the others print that they wait and wait. A slot whose holder was killed is taken over. |
-| `--min-free-gb N` | `CAPTURE_COPY_MIN_FREE_GB` | 10 | free disk the copy needs where it goes (`TMPDIR`); with rsync also the project's size. Below it the script stops before copying, says how much is free and exits 2. |
-| `--lock-dir DIR` | `CAPTURE_COPY_LOCK_DIR` | `<TMPDIR>/design-ui-capture-slots` | the slots' folder: captures that share it share the slots. |
+| `--slots N` | `CAPTURE_COPY_SLOTS` | 1 | capture-on-copy Unity runs at a time on the machine; the others print that they wait and wait. The wait counts against `unityRunner.timeoutSec` (raise it when captures queue). A slot counts while its script or its Unity still runs (a script killed with SIGKILL leaves its Unity holding the slot until it ends) and is taken over once both are gone. |
+| `--min-free-gb N` | `CAPTURE_COPY_MIN_FREE_GB` | 10 | free disk the copy needs where it goes (`TMPDIR`); with rsync also the project's size (what `du` can read; files an open Editor deletes meanwhile or unreadable folders are reported, not fatal). Below it the script stops before copying, says how much is free and exits 2. |
+| `--lock-dir DIR` | `CAPTURE_COPY_LOCK_DIR` | `<TMPDIR>/design-ui-capture-slots` (`/tmp/design-ui-capture-slots-<uid>` without `TMPDIR`) | the slots' folder: captures that share it share the slots. Where `ps` shows no command lines (Git Bash, busybox) a slot cannot tell a reused process id from its holder and counts it. |
 
 ```json
 "capture": ["<clone>/scripts/capture-on-copy.sh", "{projectDir}", "--slots", "1", "--min-free-gb", "20"]

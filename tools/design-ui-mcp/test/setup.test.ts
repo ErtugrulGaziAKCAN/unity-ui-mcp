@@ -295,6 +295,8 @@ describe("scripts/setup.sh", () => {
     expect(r.out).toContain(`remove "${OLD}" from the "testables" of Packages/manifest.json (the package tests are listed only in the temporary copy a capture makes)`);
     expect(r.out).toContain(`kept existing entry "${NEW}": "file:/mine"`);
     expect(r.out).toContain(`warning: Packages/${OLD} is an embedded copy`);
+    // the new id stays in "testables" (the user's entry), with a note
+    expect(r.out).toContain(`note: Packages/manifest.json lists "${NEW}" in "testables": the package tests then run in this project`);
     expect(read(file)).toBe(`{
   "testables": ["${NEW}"],
   "dependencies": {
