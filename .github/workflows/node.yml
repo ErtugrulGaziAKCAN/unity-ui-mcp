@@ -1,0 +1,43 @@
+# The Node side of unity-ui-mcp: the design-export and design-ui-mcp test suites and their type checks.
+# Unity (the package tests and the fidelity suite) is not run here; it runs locally against samples/FidelityProject.
+name: Node
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: node-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Type check
+        run: |
+          npx tsc --noEmit -p tools/design-export
+          npx tsc --noEmit -p tools/design-ui-mcp
+
+      - name: design-export tests
+        run: npm test -w design-export
+
+      - name: design-ui-mcp tests
+        run: npm test -w design-ui-mcp
