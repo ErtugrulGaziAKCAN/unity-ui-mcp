@@ -830,6 +830,8 @@ namespace DesignUi.Editor
                 d.Layers.RemoveAll(l => l.Content);
                 if (slot.HasValue) d.Attributes.Add(new KeyValuePair<string, string>("fixed-item-height", Number(slot.Value)));
                 else if (!fixedHeight) d.Attributes.Add(new KeyValuePair<string, string>("virtualization-method", "DynamicHeight"));
+                // selection is the view's SetSelected class layer; navigation stays the host's (ListView's own selection off)
+                d.Attributes.Add(new KeyValuePair<string, string>("selection-type", "None"));
                 d.TemplateItems = list.Children.Select(c => Draft(c, false, true)).ToList();
                 if (!fixedHeight)
                 {

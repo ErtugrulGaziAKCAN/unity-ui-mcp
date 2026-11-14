@@ -48,6 +48,8 @@ namespace DesignUi.Editor
         public DesignUi.DesignLocaleRules localeRules = new DesignUi.DesignLocaleRules();
         [Tooltip("The game's text-size steps (key and scale, matching its IDesignTextSizeSource). The compiler writes each step's rules (.text-size-<key> on the screen root) and scaled line-box twins, and reports a step that is not whole device pixels at a declared viewport.")]
         public DesignUi.DesignTextSize[] textSizes = new DesignUi.DesignTextSize[0];
+        [Tooltip("Unity Localization: whether screens bind their texts to String Table entries, the collection of each screen, the argument format, and the rules for a collection the import creates. Off keeps static design text (fidelity samples only).")]
+        public DesignLocalizationSettings localization = new DesignLocalizationSettings();
 
         /// <summary>PanelSettings for design screens: <see cref="panelSettings"/>, or the package's settings when empty.</summary>
         public PanelSettings DesignPanelSettings => panelSettings != null ? panelSettings : LoadDefaultPanelSettings();

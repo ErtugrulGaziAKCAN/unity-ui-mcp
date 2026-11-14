@@ -29,14 +29,14 @@ namespace DesignUi.Editor
         /// <summary>The style class (<c>s-xxxxxxxx</c>) first, then IR <c>is-*</c> classes and marker classes.</summary>
         public readonly List<string> Classes = new List<string>();
         public readonly List<CompiledElement> Children = new List<CompiledElement>();
-        /// <summary>Static text (the reference-locale text, spec 13), or null.</summary>
+        /// <summary>Static text (the reference-locale text, spec 13), or null (also when the text is bound to a String Table entry).</summary>
         public string Text;
         /// <summary>False when plain text contains '&lt;' (rich text would read it as a tag); null keeps the default.</summary>
         public bool? EnableRichText;
         /// <summary>
         /// Attributes written to UXML in order: <c>placeholder-text</c> and <c>tooltip</c> from attribute texts, <c>enabled</c>
         /// and <c>value</c> from the initial disabled and checked states, ScrollView <c>mode</c> and scroller visibility,
-        /// ListView <c>fixed-item-height</c>.
+        /// ListView <c>fixed-item-height</c> (or <c>virtualization-method</c>) and <c>selection-type</c> None.
         /// </summary>
         public readonly List<KeyValuePair<string, string>> Attributes = new List<KeyValuePair<string, string>>();
         /// <summary>picking-mode Ignore (baked shadows, pointer-events: none).</summary>
@@ -57,6 +57,11 @@ namespace DesignUi.Editor
         /// them per element so assistive features and the view can use them.
         /// </summary>
         public readonly SortedDictionary<string, IrText> AccessibilityLabels = new SortedDictionary<string, IrText>(System.StringComparer.Ordinal);
+        /// <summary>
+        /// String Table bindings of the element's texts (<see cref="ScreenLocalization"/>), written as UXML
+        /// <c>&lt;Bindings&gt;</c>; empty when the profile does not localize (the texts are static).
+        /// </summary>
+        public readonly List<CompiledBinding> Bindings = new List<CompiledBinding>();
         /// <summary>The lowered IR node (bind, action, text key and args, anims, transitions), for the view writer and later tasks.</summary>
         public IrNode Source;
 

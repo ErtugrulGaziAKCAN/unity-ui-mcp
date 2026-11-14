@@ -103,6 +103,7 @@ namespace DesignUi.Editor
             else log.Append("Import failed; nothing was written for the screen.\n");
             foreach (var e in r.Errors) log.Append("error: ").Append(e).Append('\n');
             foreach (var n in r.Notes) log.Append("note: ").Append(n).Append('\n');
+            if (r.Localization != null) foreach (var l in r.Localization.Lines()) log.Append(l).Append('\n');
             foreach (var m in r.ManualEdits) log.Append(ManualEditPrefix).Append(m).Append('\n');
             if (r.Written.Count > 0) log.Append("written: ").Append(string.Join(", ", r.Written)).Append('\n');
             foreach (var o in r.Orphans) log.Append("orphan screen folder (not deleted): ").Append(o).Append('\n');

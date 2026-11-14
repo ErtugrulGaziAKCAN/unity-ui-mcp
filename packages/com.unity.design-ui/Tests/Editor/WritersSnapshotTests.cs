@@ -249,7 +249,7 @@ namespace DesignUi.Editor.Tests
             var s = Sample();
             var rows = s.Find("rows");
             Assert.AreEqual("ui:ListView", rows.Tag);
-            CollectionAssert.AreEqual(new[] { new KeyValuePair<string, string>("fixed-item-height", "64") }, rows.Attributes);
+            CollectionAssert.AreEqual(new[] { new KeyValuePair<string, string>("fixed-item-height", "64"), new KeyValuePair<string, string>("selection-type", "None") }, rows.Attributes);
             Assert.AreEqual(0, rows.Children.Count, "a ListView cannot hold UXML children");
             var repeat = s.Repeats.Single();
             Assert.AreEqual("RowItem.uxml", repeat.TemplateFile);
@@ -461,7 +461,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("ui:ListView", list.Tag);
             Assert.IsNull(s.Find("inbox-list"));
             CollectionAssert.Contains(s.RemovedElements.ToArray(), "inbox-list");
-            CollectionAssert.AreEqual(new[] { new KeyValuePair<string, string>("fixed-item-height", "50") }, list.Attributes, "40 + 2 margin + 8 gap");
+            CollectionAssert.AreEqual(new[] { new KeyValuePair<string, string>("fixed-item-height", "50"), new KeyValuePair<string, string>("selection-type", "None") }, list.Attributes, "40 + 2 margin + 8 gap");
             var outer = Rule(s, "." + Cls(s, "inbox__0"));
             Assert.AreEqual("300px", Decl(outer, "width"));
             Assert.AreEqual("#101010", Decl(outer, "background-color"));
@@ -486,7 +486,7 @@ namespace DesignUi.Editor.Tests
             list.Style["base"]["height"] = "120px";
             var s = Build(Screen(Root(list)));
             Assert.AreEqual("ui:ListView", s.Find("rows").Tag);
-            Assert.AreEqual("50", s.Find("rows").Attributes.Single().Value);
+            Assert.AreEqual("50", s.Find("rows").Attributes.Single(a => a.Key == "fixed-item-height").Value);
             Assert.AreEqual("120px", Decl(Rule(s, "." + Cls(s, "rows")), "height"));
             CollectionAssert.IsEmpty(s.RemovedElements);
         }

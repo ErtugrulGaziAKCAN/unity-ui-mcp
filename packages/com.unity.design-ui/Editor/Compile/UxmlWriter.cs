@@ -7,7 +7,8 @@ namespace DesignUi.Editor
     /// Writes the screen UXML (spec 8): one line per element, every element named, styles only through classes. Lines end
     /// with \n, so a one-element change is a one-line diff. The screen declares its repeats' item templates
     /// (<c>&lt;ui:Template&gt;</c>), which the generated view clones items from; a container root is a
-    /// <see cref="DesignUi.DesignScreen"/> (<c>dui:</c>, the package's runtime namespace).
+    /// <see cref="DesignUi.DesignScreen"/> (<c>dui:</c>, the package's runtime namespace). A localized text is a
+    /// <c>&lt;Bindings&gt;</c> child (<see cref="CompiledElement.Bindings"/>): the String Table and entry of each bound property.
     /// </summary>
     public static class UxmlWriter
     {
@@ -55,12 +56,27 @@ namespace DesignUi.Editor
             foreach (var a in e.Attributes) Attribute(sb, a.Key, a.Value);
             if (e.EnableRichText.HasValue) Attribute(sb, "enable-rich-text", e.EnableRichText.Value ? "true" : "false");
             if (e.Text != null) Attribute(sb, "text", e.Text);
-            if (e.Children.Count == 0)
+            if (e.Children.Count == 0 && e.Bindings.Count == 0)
             {
                 sb.Append(" />\n");
                 return;
             }
             sb.Append(">\n");
+            if (e.Bindings.Count > 0)
+            {
+                // String Table entries of the element's texts (Unity Localization's LocalizedString binding, through DesignText)
+                var inner = indent + "    ";
+                sb.Append(inner).Append("<Bindings>\n");
+                foreach (var b in e.Bindings)
+                {
+                    sb.Append(inner).Append("    <").Append(ScreenLocalization.BindingType);
+                    Attribute(sb, "property", b.Property);
+                    Attribute(sb, "table", b.Table);
+                    Attribute(sb, "entry", b.Entry);
+                    sb.Append(" />\n");
+                }
+                sb.Append(inner).Append("</Bindings>\n");
+            }
             foreach (var child in e.Children) Element(sb, child, depth + 1);
             sb.Append(indent).Append("</").Append(e.Tag).Append(">\n");
         }
