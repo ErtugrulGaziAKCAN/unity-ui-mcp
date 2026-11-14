@@ -385,6 +385,9 @@ namespace DesignUi
                                            : "Its text renders unshaped."));
             }
             UsesAdvancedText = use;
+            // the advanced generator finds a font by its instance ID: twins unloaded and loaded again must be registered again
+            // (TextAssetRegistry); a screen may request the generator in its own styles too, so this runs for every locale
+            if (panel != null && m_Fonts != null && Locale != null) TextAssetRegistry.Repair(m_Fonts.FontsFor(Locale));
             m_Root.style.unityTextGenerator = use ? new StyleEnum<TextGeneratorType>(TextGeneratorType.Advanced) : new StyleEnum<TextGeneratorType>(StyleKeyword.Null);
             // right to left only where the advanced generator lays it out: the standard one reverses the whole string
             m_Root.languageDirection = IsRightToLeft && on ? LanguageDirection.RTL : LanguageDirection.Inherit;

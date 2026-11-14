@@ -634,6 +634,7 @@ namespace DesignUi.Editor
                 root.style.top = 0;
                 root.style.right = 0;
                 root.style.bottom = 0;
+                TextAssetRegistry.RepairLoaded(); // the screen's twins may have been unloaded and loaded again (advanced generator)
             }
 
             /// <summary>

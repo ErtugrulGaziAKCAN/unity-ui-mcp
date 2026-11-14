@@ -23,7 +23,9 @@ namespace DesignUi.Editor
     /// Settings' list), as twins, without duplicates or the twin itself. TMP searches the global fallbacks once, after
     /// the whole chain of the font it started from, so a global fallback and the fonts in its own fallback chain list
     /// only their own fallbacks: with two or more global fallbacks they would otherwise list each other (a cycle). The
-    /// weight table is mirrored as twins.</para>
+    /// weight table is mirrored as twins. The advanced text generator rejects any cycle through fallbacks and weight tables
+    /// together, so the twins leave out a face's own entry, the regular face at 400, a fallback to a font whose weight table
+    /// lists the face, and any other entry leading back to a twin being made (docs/findings/advanced-text.md).</para>
     /// <para>Idempotent: an up-to-date twin is returned as it is. Changed fallbacks or weights update the twin; changed
     /// atlas settings or source font rebuild it in place, keeping its GUID, so every reference to it survives. Tables are
     /// written through SerializedObject, so the font asset refreshes its lookup and native data (OnValidate). Writes use
@@ -168,8 +170,15 @@ namespace DesignUi.Editor
             public readonly HashSet<TMP_FontAsset> GlobalChain = new HashSet<TMP_FontAsset>();
             /// <summary>The twins of this pass by TMP asset and line-box key ("" for the plain twin).</summary>
             public readonly Dictionary<(TMP_FontAsset, string), FontAsset> Twins = new Dictionary<(TMP_FontAsset, string), FontAsset>();
-            /// <summary>Render-mode substitutions of this pass, one per TMP asset.</summary>
+            /// <summary>Render-mode substitutions and left-out fallback or weight entries of this pass, each once.</summary>
             public readonly List<string> Notes = new List<string>();
+            /// <summary>The twins being made right now (the recursion's path): a table entry that leads back to one closes a cycle.</summary>
+            public readonly HashSet<(TMP_FontAsset, string)> OnPath = new HashSet<(TMP_FontAsset, string)>();
+
+            public void Note(string note)
+            {
+                if (!Notes.Contains(note)) Notes.Add(note);
+            }
             /// <summary>The weight-table faces (weight, italic) that get twins; null: every face.</summary>
             public ISet<(int weight, bool italic)> Faces;
 
@@ -209,7 +218,7 @@ namespace DesignUi.Editor
             var font = TmpSourceFont.GetSourceFont(tmp);
             CheckSettings(tmp);
             var mode = TwinRenderMode(tmp);
-            if (mode != tmp.atlasRenderMode) run.Notes.Add(BitmapNote(tmp));
+            if (mode != tmp.atlasRenderMode) run.Note(BitmapNote(tmp));
 
             var twin = AssetDatabase.LoadAssetAtPath<FontAsset>(path);
             if (twin == null && File.Exists(path))
@@ -228,21 +237,45 @@ namespace DesignUi.Editor
             }
             if (built && mode != tmp.atlasRenderMode) Debug.LogWarning(BitmapNote(tmp), twin);
             run.Twins[key] = twin; // before the recursion: fallback lists may form cycles
+            run.OnPath.Add(key);
 
+            // The advanced text generator accepts no cycle through fallback lists and weight tables together: it logs
+            // "Circular reference detected" and leaves out every entry from which any cycle can be reached (so a script font
+            // loses its Latin fallback, a regular face its bold face). TMP tables often have them: a face listing itself, a
+            // bold face listing its regular face at 400 and falling back to it while the regular face lists the bold one. The
+            // twins leave out what neither generator uses: a face's own entry, the regular face at 400 (never looked up in a
+            // weight table) and a fallback to a font whose weight table lists this face (a weight face's own fallbacks count
+            // only where it is the font of the text, which compiled screens never make it). Any other entry that leads back
+            // to a twin being made now is left out too, and noted.
+            bool IsWeightFaceOf(TMP_FontAsset f) =>
+                (f.fontWeightTable ?? new TMP_FontWeightPair[0]).Any(w => w.regularTypeface == tmp || w.italicTypeface == tmp);
+            FontAsset Entry(TMP_FontAsset f, string what)
+            {
+                if (f == null || f == tmp) return null;
+                if (run.OnPath.Contains((f, lineBox?.Key ?? "")))
+                {
+                    run.Note("TMP font asset '" + tmp.name + "' " + what + " '" + f.name + "', which leads back to it: its UI Toolkit twin leaves that entry out " +
+                             "(the advanced text generator rejects font cycles)");
+                    return null;
+                }
+                return GetOrCreateTwin(f, folder, run, lineBox);
+            }
+
+            // the weight table's faces (index i is weight i × 100), those the run wants: the others get no twin
+            var weights = tmp.fontWeightTable ?? new TMP_FontWeightPair[0];
+            var regular = weights.Select((w, i) => w.regularTypeface != null && i != 4 && run.Wants(i * 100, false) ? Entry(w.regularTypeface, "lists at weight " + i * 100) : null).ToArray();
+            var italic = weights.Select((w, i) => w.italicTypeface != null && run.Wants(i * 100, true) ? Entry(w.italicTypeface, "lists at weight " + i * 100 + " italic") : null).ToArray();
             // TMP's search order: the asset's own fallbacks, then the global ones (not for a global fallback or a font in
             // a global's own chain, which TMP searches without the globals again); twins without duplicates or itself
             var fallbacks = new List<FontAsset>();
             var globals = run.GlobalChain.Contains(tmp) ? Enumerable.Empty<TMP_FontAsset>() : run.Globals;
             foreach (var f in (tmp.fallbackFontAssetTable ?? new List<TMP_FontAsset>()).Concat(globals))
             {
-                if (f == null || f == tmp) continue;
-                var t = GetOrCreateTwin(f, folder, run, lineBox);
-                if (t != twin && !fallbacks.Contains(t)) fallbacks.Add(t);
+                if (f == null || f == tmp || IsWeightFaceOf(f)) continue;
+                var t = Entry(f, "falls back to");
+                if (t != null && t != twin && !fallbacks.Contains(t)) fallbacks.Add(t);
             }
-            // the weight table's faces (index i is weight i × 100), those the run wants: the others get no twin
-            var weights = tmp.fontWeightTable ?? new TMP_FontWeightPair[0];
-            var regular = weights.Select((w, i) => w.regularTypeface != null && run.Wants(i * 100, false) ? GetOrCreateTwin(w.regularTypeface, folder, run, lineBox) : null).ToArray();
-            var italic = weights.Select((w, i) => w.italicTypeface != null && run.Wants(i * 100, true) ? GetOrCreateTwin(w.italicTypeface, folder, run, lineBox) : null).ToArray();
+            run.OnPath.Remove(key);
 
             if (Mirror(twin, fallbacks, regular, italic, face) || built)
             {

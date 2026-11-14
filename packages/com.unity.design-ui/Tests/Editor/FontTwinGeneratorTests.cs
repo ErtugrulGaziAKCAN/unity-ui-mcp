@@ -1,9 +1,11 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
+using TMPro;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -410,16 +412,72 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(GlyphRenderMode.SDF16, FontTwinGenerator.TwinRenderMode(sdf));
         }
 
+        /// <summary>
+        /// A fallback cycle terminates and leaves no cycle among the twins (the advanced text generator rejects them): the
+        /// entry that leads back to the twin being made is left out, and the run notes it.
+        /// </summary>
         [Test]
-        public void Twin_FallbackCycle_Terminates()
+        public void Twin_FallbackCycle_Terminates_WithoutACycleAmongTheTwins()
         {
             var a = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Cycle A");
             var b = FontFixture.CreateTmp(FontFixture.BoldTtf, "Twin Cycle B");
             FontFixture.SetFallbacks(a, b);
             FontFixture.SetFallbacks(b, a);
-            var twin = FontTwinGenerator.GetOrCreateTwin(a, Twins);
+            var run = new FontTwinGenerator.TwinRun(new TMP_FontAsset[0]);
+            var twin = FontTwinGenerator.GetOrCreateTwin(a, Twins, run);
             var twinB = twin.fallbackFontAssetTable.Single();
-            Assert.AreSame(twin, twinB.fallbackFontAssetTable.Single());
+            Assert.AreEqual("Twin Cycle B UITK", twinB.name);
+            CollectionAssert.IsEmpty(twinB.fallbackFontAssetTable, "B's fallback to A would close the cycle");
+            Assert.IsTrue(run.Notes.Any(n => n.Contains("'Twin Cycle B' falls back to 'Twin Cycle A'")), string.Join("\n", run.Notes));
+        }
+
+        /// <summary>The fonts reachable from <paramref name="font"/> through fallback lists and weight tables, as the advanced generator walks them.</summary>
+        static bool ReachesACycle(UnityEngine.TextCore.Text.FontAsset font, List<UnityEngine.TextCore.Text.FontAsset> path = null)
+        {
+            path = path ?? new List<UnityEngine.TextCore.Text.FontAsset>();
+            if (path.Contains(font)) return true;
+            path.Add(font);
+            var next = (font.fallbackFontAssetTable ?? new List<UnityEngine.TextCore.Text.FontAsset>())
+                .Concat(font.fontWeightTable.SelectMany(w => new[] { w.regularTypeface, w.italicTypeface })).Where(f => f != null);
+            foreach (var f in next) if (ReachesACycle(f, path)) return true;
+            path.RemoveAt(path.Count - 1);
+            return false;
+        }
+
+        /// <summary>
+        /// TMP tables as games often set them (a regular face listing itself at 400 and its bold face at 700; the bold face
+        /// listing both and falling back to the regular one; a script font falling back to the regular face): the twins have no
+        /// cycle, the regular twin keeps its bold face and the script twin its Latin fallback, in plain twins and line-box
+        /// variants alike. The left-out entries are those no generator uses, so the run has no note.
+        /// </summary>
+        [Test]
+        public void Twins_OfSelfListingWeightTables_HaveNoCycle_AndKeepTheBoldFaceAndTheLatinFallback()
+        {
+            var regular = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Game Regular");
+            var bold = FontFixture.CreateTmp(FontFixture.BoldTtf, "Twin Game Bold");
+            var script = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Game Script");
+            FontFixture.SetWeight(regular, 400, regular);
+            FontFixture.SetWeight(regular, 700, bold);
+            FontFixture.SetWeight(bold, 400, regular);
+            FontFixture.SetWeight(bold, 700, bold);
+            FontFixture.SetFallbacks(bold, regular);
+            FontFixture.SetFallbacks(script, regular);
+            foreach (var box in new[] { null, FontTwinGenerator.LineBox.For(16, 20) })
+            {
+                var run = new FontTwinGenerator.TwinRun(new TMP_FontAsset[0]);
+                var regularTwin = FontTwinGenerator.GetOrCreateTwin(regular, Twins, run, box);
+                var scriptTwin = FontTwinGenerator.GetOrCreateTwin(script, Twins, run, box);
+                var boldTwin = regularTwin.fontWeightTable[7].regularTypeface;
+                Assert.IsNotNull(boldTwin, "the regular twin keeps its bold face");
+                StringAssert.StartsWith("Twin Game Bold UITK", boldTwin.name);
+                Assert.IsNull(regularTwin.fontWeightTable[4].regularTypeface, "a face does not list itself");
+                Assert.IsNull(boldTwin.fontWeightTable[4].regularTypeface, "the regular face at 400 is never looked up");
+                Assert.IsNull(boldTwin.fontWeightTable[7].regularTypeface, "a face does not list itself");
+                CollectionAssert.DoesNotContain(boldTwin.fallbackFontAssetTable, regularTwin, "the bold face's fallback to its regular face would close a cycle");
+                CollectionAssert.AreEqual(new[] { regularTwin }, scriptTwin.fallbackFontAssetTable, "the script twin keeps its Latin fallback");
+                foreach (var t in new[] { regularTwin, boldTwin, scriptTwin }) Assert.IsFalse(ReachesACycle(t), t.name + " reaches a cycle");
+                CollectionAssert.IsEmpty(run.Notes);
+            }
         }
 
         [Test]

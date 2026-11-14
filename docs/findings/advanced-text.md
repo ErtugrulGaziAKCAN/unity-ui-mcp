@@ -51,3 +51,42 @@ while Unity's check says the advanced generator is on; off or unknown, a right-t
 "2026" inside a right-to-left paragraph keeps its order (panel test
 `LocaleFontControllerTests.ProjectSettingOn_ArabicTwinText_IsShaped_AndItsDigitsKeepTheirOrder`, which switches the
 project setting the settings window's way before it makes its panel and restores every file it wrote).
+
+## Font assets that were unloaded and loaded again
+
+Measured in a project with Enable Advanced Text on (Unity 6000.3.6f1): every label drawn through a font twin with the
+advanced generator rendered nothing (0 glyphs; with a fallback in the same text the job system logged
+`ArgumentOutOfRangeException` in `ATGTextJobSystem.ConvertMeshInfoToUIRVertex`, and the text of the elements after it was
+lost too), while the standard generator, a font asset made in memory from the same TTF and an `Object.Instantiate` copy of
+the same twin rendered. The twins' tables, atlases and glyphs were not the cause (a twin without any fallback or weight
+entry failed the same way).
+
+**Cause.** TextCore registers each font asset by instance ID when it is enabled (`TextAsset.OnEnable`:
+`kTextAssetByInstanceId.TryAdd`) and removes the entry only in `OnDestroy`. Unity unloads assets without calling it
+(`Resources.UnloadUnusedAssets` after a scene change, `Resources.UnloadAsset`, the Editor's asset cleanup after a script
+reload). The asset loaded again has the same instance ID, `TryAdd` keeps the old entry, and `TextAsset.GetTextAssetByID`
+answers null (the old object is destroyed or collected). The advanced generator looks up the font asset of each text mesh
+by that ID: it skips the meshes it cannot find, so their glyphs are dropped, and a skipped mesh before a found one shifts
+its per-mesh lists (the exception). A font asset made in memory has a new instance ID, so the comparison passed. Measured
+with the registry itself: after an unload and a load the entry for the twin's ID held the old, destroyed object.
+
+**Workaround.** `TextAssetRegistry` (runtime) points the entry of a font asset, its fallbacks and its weight faces at the
+loaded asset again. The locale controller repairs its locale's fonts whenever it applies the locale or its root is attached,
+every scene load repairs the loaded font assets, the capture repairs them after it mounts a screen, and the Editor repairs
+them after a script reload, when Play starts or stops and after font assets were imported. Host code that draws twins with
+the advanced generator outside a locale controller calls `TextAssetRegistry.Repair(font)` once its fonts are loaded. On a
+Unity version whose TextCore has no such registry it does nothing (`TextAssetRegistry.Lookup` says so, and a test fails so
+it is checked again).
+
+## Cycles among the twins
+
+The advanced generator walks fallback lists and weight tables together and rejects every entry from which any cycle can
+be reached ("Circular reference detected. Cannot add … to the fallbacks."): with a regular face listing itself at 400, or a
+bold face falling back to the regular face whose table lists the bold face, a script font lost its Latin fallback and the
+regular face its bold face (synthesized bold instead). TMP's own search has no such check, so TMP tables often have these
+cycles. The twins leave out what neither generator uses: a face's own entry, the regular face at 400 (never looked up in a
+weight table) and a fallback to a font whose weight table lists the face (a weight face's own fallbacks count only where it
+is the font of the text, which compiled screens never make it). Any other entry that leads back to a twin being made is
+left out as well and named in kit sync's warnings. The panel test `AdvancedTextTwinsTests` covers both with game-like TMP
+tables, reloaded line-box twins and the setting on: Arabic shaped, "2026" and "12:15" in order, Latin and bold Latin drawn,
+no cycle reported.

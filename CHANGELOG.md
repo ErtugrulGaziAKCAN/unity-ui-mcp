@@ -3,6 +3,16 @@
 All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org); the
 Unity package (`com.unity.design-ui`) and the Node tools share the version number.
 
+## Unreleased
+
+### Fixed
+
+- Font twins render with the advanced text generator again after they were unloaded and loaded (a later Editor
+  session, a scene change in a player): TextCore kept the unloaded asset's entry in its font registry, so the generator
+  dropped the twins' glyphs or failed converting the text mesh. `TextAssetRegistry` registers them again (locale
+  controller, scene loads, capture, Editor reloads and Play changes). Twins leave out the fallback and weight entries
+  that formed cycles ("Circular reference detected"), which had cost script fonts their Latin fallback.
+
 ## 0.1.0 - 2026-11-14
 
 The first release: a Claude Design screen becomes a working Unity UI Toolkit screen, verified against the design.
