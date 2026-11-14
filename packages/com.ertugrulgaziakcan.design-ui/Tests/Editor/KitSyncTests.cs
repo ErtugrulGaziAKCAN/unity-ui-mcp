@@ -255,6 +255,43 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.AreEqual(new[] { new Vector2Int(1366, 768) }, profile.ScaledOnly.ToArray());
         }
 
+        /// <summary>
+        /// A profile saved before Scaled Viewports existed (its YAML has no such field) declares none: the field's initializer is
+        /// empty, so a routine kit sync keeps the kit's plain list. A new profile starts with the kit's scaled defaults.
+        /// </summary>
+        [Test]
+        public void AnOlderSavedProfile_GainsNoScaledViewports_AndKitSyncKeepsItsPlainList_ANewProfileStartsWithTheDefaults()
+        {
+            var meta = File.ReadAllText(IrReaderTests.PackagePath("Editor", "Profile", "DesignUiProfile.cs.meta"));
+            var guid = System.Text.RegularExpressions.Regex.Match(meta, @"guid: ([0-9a-f]{32})").Groups[1].Value;
+            Assert.IsNotEmpty(guid);
+            const string folder = "Assets/DesignUiOldProfile";
+            if (!AssetDatabase.IsValidFolder(folder)) AssetDatabase.CreateFolder("Assets", "DesignUiOldProfile");
+            var path = folder + "/OldProfile.asset";
+            try
+            {
+                File.WriteAllText(path, "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!114 &11400000\nMonoBehaviour:\n  m_ObjectHideFlags: 0\n" +
+                    "  m_CorrespondingSourceObject: {fileID: 0}\n  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n  m_GameObject: {fileID: 0}\n" +
+                    "  m_Enabled: 1\n  m_EditorHideFlags: 0\n  m_Script: {fileID: 11500000, guid: " + guid + ", type: 3}\n  m_Name: OldProfile\n" +
+                    "  m_EditorClassIdentifier: \n  referenceResolution: {x: 2560, y: 1440}\n  viewports:\n  - {x: 2560, y: 1440}\n  - {x: 1920, y: 1080}\n" +
+                    "  - {x: 1280, y: 720}\n  screenMatch: 0.5\n");
+                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+                var old = AssetDatabase.LoadAssetAtPath<DesignUiProfile>(path);
+                Assert.IsNotNull(old, "the saved profile loads");
+                CollectionAssert.IsEmpty(old.scaledViewports, "a field the asset lacks keeps its (empty) initializer");
+                CollectionAssert.AreEqual(new[] { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720) }, old.viewports);
+                Assert.IsTrue(JToken.DeepEquals(JArray.Parse("[[2560,1440],[1920,1080],[1280,720]]"), KitSync.ViewportsJson(old)), "kit sync writes its plain list");
+
+                var fresh = DesignUiProfile.CreateNew();
+                _objects.Add(fresh);
+                CollectionAssert.AreEqual(new[] { new Vector2Int(1600, 900), new Vector2Int(1366, 768) }, fresh.scaledViewports, "a new profile");
+                var made = ScriptableObject.CreateInstance<DesignUiProfile>();
+                _objects.Add(made);
+                CollectionAssert.AreEqual(fresh.scaledViewports, made.scaledViewports, "an instance made in the Editor is new too (its Reset runs)");
+            }
+            finally { AssetDatabase.DeleteAsset(folder); }
+        }
+
         [Test]
         public void Run_AScaledViewportIsExemptFromWholeDevicePixels_AnExactOneIsNot()
         {

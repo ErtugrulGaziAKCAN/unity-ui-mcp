@@ -181,11 +181,11 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void ViewportsLine_ListsEachViewportsClass()
         {
-            var profile = ScriptableObject.CreateInstance<DesignUiProfile>();
+            var profile = DesignUiProfile.CreateNew();
             try
             {
                 Assert.AreEqual("Viewports: exact 2560×1440, 1920×1080, 1280×720, 3840×2160 (every kit value whole device px); scaled 1600×900, 1366×768 " +
-                                "(verified within ±1 device px, exempt from the whole-pixel rules)", DesignUiWindow.ViewportsText(profile), "the defaults");
+                                "(verified within ±1 device px, exempt from the whole-pixel rules)", DesignUiWindow.ViewportsText(profile), "a new profile's defaults");
                 profile.scaledViewports = new Vector2Int[0];
                 profile.viewports = new[] { new Vector2Int(2560, 1440) };
                 Assert.AreEqual("Viewports: exact 2560×1440 (every kit value whole device px)", DesignUiWindow.ViewportsText(profile));

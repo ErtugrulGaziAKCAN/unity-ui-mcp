@@ -357,7 +357,7 @@ namespace DesignUi.Editor
             var existing = AssetDatabase.LoadAssetAtPath<DesignUiProfile>(path);
             if (existing != null) return existing;
             EnsureFolder(path.Substring(0, path.LastIndexOf('/')));
-            var profile = CreateInstance<DesignUiProfile>();
+            var profile = DesignUiProfile.CreateNew(); // the kit's default viewports of both classes
             profile.panelSettings = DesignUiProfile.LoadDefaultPanelSettings();
             // as written in the config (relative paths resolve against the project root), never one machine's absolute paths
             profile.designRoot = m_Config.DesignRootAsWritten;
