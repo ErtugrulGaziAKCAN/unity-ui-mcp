@@ -23,13 +23,15 @@
     font-size: 46.28125px;
 }
 
-.s-d01e0455 {
+.s-382c82cf {
+    --dui-a: "pulse 0 1200 0 infinite alternate both running ease-in-out";
+    --dui-k-0: "0||opacity=1;0.5|linear|opacity=0.6;1||opacity=0.8";
     flex-direction: column;
     height: 300px;
     width: 600px;
 }
 
-.s-d01e0455.dui-hover {
+.s-382c82cf.dui-hover {
     translate: 0px -4px;
 }
 
@@ -50,7 +52,7 @@
     background-image: none;
 }
 
-.s-d01e0455.dui-hover .s-df3d88f0 {
+.s-382c82cf.dui-hover .s-df3d88f0 {
     -unity-slice-bottom: 71;
     -unity-slice-left: 74;
     -unity-slice-right: 74;
@@ -68,25 +70,30 @@
     flex-grow: 1;
 }
 
-.s-93f19193 {
+.s-954c8309 {
+    --dui-t: "background-color";
+    --dui-t-background-color: "#2fd1c5|200 0 cubic-bezier(0.4, 0, 0.2, 1)";
     background-color: #2fd1c5;
     display: flex;
     flex-direction: row;
 }
 
-.s-93f19193:hover {
+.s-954c8309:hover {
+    --dui-t-background-color: "#5fe3d8|200 0 cubic-bezier(0.4, 0, 0.2, 1)";
     background-color: #5fe3d8;
 }
 
-.s-93f19193:active {
+.s-954c8309:active {
+    --dui-t-background-color: "#1fa89e|";
     background-color: #1fa89e;
 }
 
-.s-93f19193:disabled {
+.s-954c8309:disabled {
     opacity: 0.4;
 }
 
-.state-loading .s-93f19193:hover {
+.state-loading .s-954c8309:hover {
+    --dui-t-background-color: "#2fd1c5|";
     background-color: #2fd1c5;
 }
 
@@ -103,7 +110,7 @@
     top: 0px;
 }
 
-.s-93f19193:active .s-017d281b {
+.s-954c8309:active .s-017d281b {
     background-image: none;
 }
 

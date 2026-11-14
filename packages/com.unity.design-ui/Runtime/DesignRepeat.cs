@@ -100,6 +100,9 @@ namespace DesignUi
             }
             m_Roots.Add(roots);
             m_Items.Add(m_Create(roots));
+            // the screen's animation player watches the new item's animated elements
+            var player = DesignUiAnimationPlayer.For(m_Container);
+            if (player != null) for (int k = 0; k < roots.Length; k++) player.WatchTree(roots[k]);
         }
 
         static void Show(VisualElement[] roots, bool show)
@@ -180,6 +183,7 @@ namespace DesignUi
             var item = m_Create(roots);
             m_Made.Add(item);
             slot.userData = new Slot { Item = item, Roots = roots, First = first };
+            DesignUiAnimationPlayer.For(m_List)?.WatchTree(slot); // styled once the ListView inserts the slot
             return slot;
         }
 

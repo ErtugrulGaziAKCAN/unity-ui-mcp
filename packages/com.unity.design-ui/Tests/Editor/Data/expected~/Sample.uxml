@@ -2,13 +2,13 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:dui="DesignUi" editor-extension-mode="False">
     <ui:Template name="RowItem" src="RowItem.uxml" />
     <Style src="SampleScreen.uss" />
-    <dui:DesignScreen name="root" class="s-412e5e4c">
+    <dui:DesignScreen name="root" class="s-412e5e4c" animated="true">
         <ui:Label name="title" class="s-c1b7f7f3" enable-rich-text="false" text="Hoş geldin {name}" />
-        <ui:VisualElement name="card__shadowhost" class="s-d01e0455 dui-mirror-host">
+        <ui:VisualElement name="card__shadowhost" class="s-382c82cf dui-anim dui-mirror-host">
             <ui:VisualElement name="card__shadow" class="s-df3d88f0" picking-mode="Ignore" />
             <ui:VisualElement name="card" class="s-1ac3c08b" />
         </ui:VisualElement>
-        <ui:Button name="play" class="s-93f19193" tooltip="Maçı başlat">
+        <ui:Button name="play" class="s-954c8309 dui-anim" tooltip="Maçı başlat">
             <ui:VisualElement name="play__inset" class="s-017d281b" picking-mode="Ignore" />
             <ui:Label name="play-label" class="s-5c4a4bce" text="Oyna" />
         </ui:Button>
