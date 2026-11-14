@@ -2,6 +2,7 @@
   "name": "com.unity.design-ui",
   "displayName": "Design UI",
   "version": "0.1.0",
+  "license": "MIT",
   "unity": "6000.3",
   "description": "Turns Claude Design HTML screens into Unity UI Toolkit screens.",
   "dependencies": {

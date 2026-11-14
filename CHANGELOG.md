@@ -42,6 +42,7 @@ Unity package (`com.unity.design-ui`) and the Node tools share the version numbe
 ## 0.1.0 - 2026-11-14
 
 The first release: a Claude Design screen becomes a working Unity UI Toolkit screen, verified against the design.
+Licensed under the MIT License (`LICENSE`); the bundled Inter font stays under the SIL Open Font License (`OFL.txt`).
 
 ### Design kit and contract
 

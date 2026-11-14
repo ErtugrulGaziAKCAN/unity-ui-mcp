@@ -1,6 +1,7 @@
 {
   "name": "design-ui-mcp",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "description": "MCP server for unity-ui-mcp: lint, import and verify Claude Design screens in a Unity project (stdio).",
   "type": "module",

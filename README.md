@@ -294,7 +294,8 @@ GitHub Actions runs the two Node suites and the type checks on every push and pu
 `samples/FidelityProject` references the package by a relative path, and `scripts/unity-check.sh` is the maintainer's
 wrapper for running them on an isolated copy.
 
-## Fonts
+## License
 
-`design-kit/fonts/` and `samples/FidelityProject/Assets/Fonts/Inter/` contain Inter, licensed under the SIL Open Font
-License (`OFL.txt`).
+The code is licensed under the [MIT License](LICENSE). The bundled Inter font (`design-kit/fonts/`,
+`samples/FidelityProject/Assets/Fonts/Inter/` and the exporter's test kits) stays under the SIL Open Font License
+(`OFL.txt` next to the font files).
