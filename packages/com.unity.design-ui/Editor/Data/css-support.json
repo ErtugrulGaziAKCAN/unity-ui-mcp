@@ -203,6 +203,9 @@
     },
     "animation-duration": {
       "handling": "lowered",
+      "keywords": [
+        "auto"
+      ],
       "types": [
         "time"
       ],

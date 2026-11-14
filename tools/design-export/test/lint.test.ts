@@ -319,6 +319,16 @@ describe("device grid, group opacity and stacking rules", () => {
     expect(await t(`.b{transition:box-shadow 200ms ease}`)).toEqual([]);
   });
 
+  it("animation: none in a layer is valid CSS the player plays (Chromium expands it with animation-duration: auto)", async () => {
+    const css = `.b{width:200px;height:80px;flex-shrink:0;background-color:#123c47;animation:a 1s linear infinite} .b.is-still{animation:none} @keyframes a{from{translate:0 0}to{translate:0 4px}}`;
+    const page = (await (async () => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lint-none-")); const p = path.join(dir, "s.html");
+      fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
+        .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+        ${css}</style></head><body><div class="screen" data-u-screen="s"><div class="b" data-u-id="b"></div></div></body></html>`);
+      return p; })());
+    expect(show((await lintFile(page)).filter((f) => f.severity === "error"))).toEqual([]);
+  });
+
   it("U-CSS-043: keyframes and a transition of the same property on one element", async () => {
     const box = `.b{width:200px;height:80px;flex-shrink:0;background-color:#123c47;animation:a 1s linear infinite} @keyframes a{from{translate:0 0}to{translate:0 4px}}`;
     const t = (css: string) => ids(`<div class="b" data-u-id="b"></div>`, `${box} ${css}`, "U-CSS-043");

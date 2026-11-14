@@ -299,7 +299,7 @@ Properties are listed as longhands; shorthands (`margin`, `padding`, `border`, `
 - `animation` (comma list)
 - `animation-delay`: <time> (comma list)
 - `animation-direction`: normal | reverse | alternate | alternate-reverse (comma list)
-- `animation-duration`: <time> (comma list)
+- `animation-duration`: auto or <time> (comma list)
 - `animation-fill-mode`: none | forwards | backwards | both (comma list)
 - `animation-iteration-count`: infinite or <number> (comma list)
 - `animation-name`: <ident> (comma list)
