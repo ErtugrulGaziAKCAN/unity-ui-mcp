@@ -15,8 +15,9 @@ const lineHeight = (v: string | undefined, fontSize: string | undefined) =>
  * A box whose width a max-width sets while its text wraps. Chromium sizes an auto-width box to its max-content width
  * and clamps that at the max-width; UI Toolkit's layout measures the box with the max-width as the most it may take,
  * and the text answers with its longest wrapped line (measured: a 260 px capped chip of wrapping body text is 256 px
- * in Unity, at every viewport). A width of its own, a stretched cross size or a flex-grow give the box a definite
- * size and are fine; so is a max-width the box does not reach.
+ * in Unity, at every viewport). A width of its own, a stretched cross size (a flex column's stretch, or a block-level
+ * child of a block parent, which the compiler lowers to a stretched column) or a flex-grow give the box a definite size
+ * and are fine; so is a max-width the box does not reach.
  */
 export const rule: Rule = {
   id: "U-CSS-045", severity: "error",
@@ -41,9 +42,12 @@ export const rule: Rule = {
       if ((own && own !== "auto") || grow > 0) continue;
       const parent = s.elements[e.parent];
       const pd = parent?.computed ?? {};
-      const row = /flex/.test(pd.display ?? "") && /^row/.test(pd["flex-direction"] ?? "row");
+      const flexParent = /flex/.test(pd.display ?? "");
+      const row = flexParent && /^row/.test(pd["flex-direction"] ?? "row");
       const align = e.computed["align-self"] && e.computed["align-self"] !== "auto" ? e.computed["align-self"] : pd["align-items"];
-      if (!row && /flex/.test(pd.display ?? "") && (align === "stretch" || align === "normal")) continue; // a stretched width
+      if (!row && flexParent && (align === "stretch" || align === "normal")) continue; // a stretched width
+      // a block parent is a column whose block-level children stretch (the compiler's lowering), in CSS and in Unity
+      if (!flexParent && !/grid/.test(pd.display ?? "") && /^(block|flex|list-item|flow-root|table)$/.test(e.computed.display ?? "")) continue;
       let cap = px(max);
       if (cap === null && max.endsWith("%") && parent?.size) {
         const inner = parent.size.w - ["padding-left", "padding-right", "border-left-width", "border-right-width"].reduce((a, p) => a + (px(pd[p]) ?? 0), 0);

@@ -65,6 +65,8 @@ textarea { resize: none; }
 .push-down { margin-top: auto; }
 .push-left { margin-left: auto; margin-right: 0; }
 .centred { margin: auto; }
+.block-parent { display: block; flex-shrink: 0; width: 520px; background-color: var(--color-surface-800); }
+.cap-block { max-width: 300px; padding: 8px 16px; background-color: var(--color-surface-700); }
 .floor-width { min-width: 280px; }
 .box { flex-shrink: 0; width: 160px; height: 120px; margin-right: 24px; background-color: #16c2d5; }
 .box-b { background-color: #f0605d; }
@@ -101,13 +103,15 @@ textarea { resize: none; }
     <p class="chip text-body floor-width layered" data-u-id="text-floor" data-l10n="fidelity.sizing-visibility.text-floor" data-en="Short">Kısa</p>
     <p class="chip text-body content-box" data-u-id="text-content-box" data-l10n="fidelity.sizing-visibility.text-content-box" data-en="Content box">İçerik kutusu</p>
   </div>
-  <!-- alignment: align-self, align-content on wrapped lines, auto margins -->
+  <!-- alignment: align-self, align-content on wrapped lines, auto margins, a block parent's stretch -->
   <div class="row">
     <div class="lane"><div class="pill"></div><div class="pill self-end" data-u-id="self-end"></div><div class="pill self-center" data-u-id="self-center"></div><div class="pill self-stretch" data-u-id="self-stretch"></div></div>
     <div class="lane wrapped"><div class="pill pill-wide"></div><div class="pill pill-wide"></div><div class="pill pill-wide"></div><div class="pill pill-wide" data-u-id="wrapped-4"></div></div>
     <div class="lane wrapped-end"><div class="pill pill-wide"></div><div class="pill pill-wide"></div><div class="pill pill-wide"></div><div class="pill pill-wide" data-u-id="wrapped-end-4"></div></div>
     <div class="stack"><div class="pill"></div><div class="pill push-down" data-u-id="push-down"></div></div>
     <div class="stack"><div class="pill push-left" data-u-id="push-left"></div><div class="pill centred" data-u-id="centred"></div></div>
+    <!-- a block parent stretches its block children: max-width caps a wrapping text box there in Unity too -->
+    <div class="block-parent"><p class="cap-block text-body" data-u-id="text-cap-block" data-l10n="fidelity.sizing-visibility.text-cap-block" data-en="Ticket prices stay the same for the rest of the season.">Bilet fiyatları sezonun geri kalanında aynı kalıyor.</p></div>
   </div>
   <!-- visibility: a hidden box keeps its place; a visible child inside a hidden parent shows; a state switches both ways -->
   <div class="row">

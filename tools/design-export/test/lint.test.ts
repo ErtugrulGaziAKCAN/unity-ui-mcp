@@ -428,6 +428,11 @@ describe("device grid, group opacity and stacking rules", () => {
     expect(await text("max-width:260px", `data-l10n="s.t" data-en="Short">Kısa`), "the box does not reach its max-width").toEqual([]);
     expect(await text("max-width:260px;width:260px"), "a width of its own").toEqual([]);
     expect(await text("max-width:260px;align-self:stretch"), "a stretched width").toEqual([]);
+    // a block parent is a column whose children stretch (the lowering's rule), in CSS and in Unity alike
+    const inBlock = (css: string) => ids(`<div class="b"><p class="t" data-u-id="t" ${long}</p></div>`,
+      `.b{display:block;width:600px;flex-shrink:0;align-self:flex-start} .t{font-size:24px;line-height:30px;${css}}`, "U-CSS-045");
+    expect(await inBlock("max-width:260px"), "a block child of a block parent").toEqual([]);
+    expect(await inBlock("max-width:260px;display:flex"), "a block-level flex child").toEqual([]);
     // a container whose wrapping text sets its width
     const box = await ids(`<div class="c" data-u-id="c"><p class="t" ${long}</p></div>`,
       `.c{display:flex;flex-direction:row;flex-shrink:0;align-self:flex-start;max-width:300px} .t{font-size:24px;line-height:30px;flex-shrink:1}`, "U-CSS-045");
