@@ -765,11 +765,40 @@ namespace DesignUi.Editor.Tests
             finally { (run as IDisposable)?.Dispose(); }
             Assert.IsNotNull(meta);
             Assert.AreEqual("running", (string)meta["status"]);
-            Assert.AreEqual(24, ((JArray)meta["captured"]).Count);
+            // every 25 jobs or 10 s, whichever comes first: a slow machine may have flushed earlier and later again
+            var captured = ((JArray)meta["captured"]).Count;
+            Assert.GreaterOrEqual(captured, 24);
+            Assert.Less(captured, 40);
             Assert.IsFalse(File.Exists(Path.Combine(outDir, DesignCapture.DoneFileName)), "a stopped run has no done marker");
             var boxes = JObject.Parse(File.ReadAllText(Path.Combine(outDir, BoxesWriter.FileName)));
-            Assert.AreEqual(24, boxes.Count, "the captures so far are in boxes.json");
+            Assert.AreEqual(captured, boxes.Count, "the captures so far are in boxes.json, as the meta file lists them");
             Assert.IsTrue(File.Exists(Path.Combine(outDir, "default@320x180.n0.png")));
+        }
+
+        /// <summary>
+        /// PNGs are encoded off the main thread, but a run never has more than a few of them pending (each holds a whole
+        /// frame until it is on disk): the meta file records the most it had.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator CaptureAll_KeepsFewPngEncodesPending()
+        {
+            var ir = Small(BlackRoot(Box("panel", "#0f2a33").With("class:is-open", ("background-color", "#216372"))));
+            ir.Viewports = new[] { new[] { 320, 180 }, new[] { 1280, 720 } };
+            var export = Export(ir, null, "{ \"captures\": [" + string.Join(", ", Enumerable.Range(0, 40).Select(i =>
+                "{ \"name\": \"default@1280x720.n" + i + "\", \"state\": \"default\", \"viewport\": [1280, 720], \"apply\": [" +
+                (i % 2 == 1 ? "{ \"kind\": \"class\", \"name\": \"is-open\", \"elementId\": \"panel\" }" : "") + "] }")) + "] }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outDir = TempDir();
+            var result = new CaptureResult();
+            yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result);
+            Assert.AreEqual(40, result.Captured.Count, string.Join("\n", result.NotCaptured.Select(n => n.Capture + ": " + n.Reason)));
+            var meta = JObject.Parse(File.ReadAllText(Path.Combine(outDir, DesignCapture.MetaFileName)));
+            var peak = meta["timings"]?["pngPendingPeak"];
+            Assert.IsNotNull(peak, "the meta file records the PNG backlog");
+            Assert.LessOrEqual((int)peak, 8 + 1, "DesignCapture.MaxPendingPngs, and the one just started");
+            Assert.GreaterOrEqual((int)peak, 1);
+            Assert.AreEqual(40, Directory.GetFiles(outDir, "*.png").Length);
         }
 
         /// <summary>
@@ -1080,6 +1109,33 @@ namespace DesignUi.Editor.Tests
             dot.Anims.Add(AnimationPlayerTests.Keyframes("show", "slide", 1000, 0, "linear", 1, "normal", "both",
                 (0, null, new[] { ("translate", "0px") }), (1, null, new[] { ("translate", "100px") })));
             return Small(BlackRoot(tile, dot));
+        }
+
+        /// <summary>The periodic flush counts jobs: an animation series of 30 samples is 30 jobs, so the next job finds them on disk.</summary>
+        [UnityTest]
+        public IEnumerator CaptureAll_CountsEverySampleOfASeries_ForThePeriodicFlush()
+        {
+            var samples = Enumerable.Range(0, 30).Select(i => AnimJob("default@320x180.anim.dot." + i, "default", 320, 180, "", Ref("dot", 0), Ref("dot", 0), null, i, i * 30));
+            var matrix = "{ \"captures\": [" + string.Join(",", samples) + ", { \"name\": \"default@320x180\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [] } ] }";
+            var export = Export(AnimatedSmall(), null, matrix);
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outDir = TempDir();
+            var run = DesignCapture.CaptureAll(export, screen, profile, outDir, new CaptureResult());
+            bool flushed = false;
+            try
+            {
+                while (run.MoveNext())
+                {
+                    yield return run.Current;
+                    if (File.Exists(Path.Combine(outDir, DesignCapture.DoneFileName))) break;
+                    var path = Path.Combine(outDir, DesignCapture.MetaFileName);
+                    var meta = File.Exists(path) ? JObject.Parse(File.ReadAllText(path)) : null;
+                    if (meta != null && ((JArray)meta["captured"]).Count == 30) { flushed = true; break; }
+                }
+            }
+            finally { (run as IDisposable)?.Dispose(); }
+            Assert.IsTrue(flushed, "the 30 samples were flushed before the run went on (every 25 jobs)");
         }
 
         [UnityTest]

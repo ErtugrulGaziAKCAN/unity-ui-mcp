@@ -33,6 +33,24 @@ namespace DesignUi.Editor.Tests
         [OneTimeTearDown]
         public void DeleteFonts() => FontFixture.Delete();
 
+        /// <summary>A write goes to a temporary file first: one that fails (or a run killed midway) leaves the previous file whole.</summary>
+        [Test]
+        public void WriteAll_ThatFailsMidway_LeavesThePreviousFileWhole()
+        {
+            _temp = Path.Combine(Path.GetTempPath(), "design-ui-boxes-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(_temp);
+            var path = Path.Combine(_temp, BoxesWriter.FileName);
+            BoxesWriter.WriteAll(path, new JObject { ["a"] = new JObject { ["capture"] = "a" } });
+            var before = File.ReadAllText(path);
+            Directory.CreateDirectory(path + ".tmp"); // the temporary file cannot be written
+            Assert.Catch(() => BoxesWriter.WriteAll(path, new JObject { ["b"] = new JObject { ["capture"] = "b" } }));
+            Assert.AreEqual(before, File.ReadAllText(path), "the previous file, whole");
+            Directory.Delete(path + ".tmp");
+            BoxesWriter.WriteAll(path, new JObject { ["b"] = new JObject { ["capture"] = "b" } });
+            StringAssert.Contains("\"b\"", File.ReadAllText(path));
+            Assert.IsFalse(File.Exists(path + ".tmp"), "no temporary file left");
+        }
+
         [TestCase(2560, 1440, 1.0)]
         [TestCase(1920, 1080, 0.75)]
         [TestCase(1280, 720, 0.5)]

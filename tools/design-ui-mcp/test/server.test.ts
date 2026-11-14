@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { readConfig } from "../src/config.js";
 import { RULES } from "../src/exporter.js";
@@ -10,6 +10,7 @@ import { RULE_SUMMARIES } from "../src/rule-table.js";
 import { Runtime } from "../src/runtime.js";
 import { createServer, createUnconfiguredServer, TOOL_NAMES, VERSION } from "../src/server.js";
 import { screenStatus } from "../src/status.js";
+import { keepFailedRun } from "../src/tools/verify.js";
 import { fileURLToPath } from "node:url";
 import { call, connect, manualClock, startStubBridge, STUB_RUNNER, tempDir, tempProject, writeZip, type StubBridge } from "./helpers.js";
 
@@ -1059,6 +1060,25 @@ describe("design_ui_verify", () => {
     expect(runs).toHaveLength(3);
     expect(runs).not.toContain(path.basename(r.data.evidence));
   }, 30_000);
+
+  it("keeps the evidence of a failed verify when its captures cannot be moved (a locked file): copied, or named in failure.json", () => {
+    const bookkeeping = tempDir(), staging = path.join(bookkeeping, "unity.next");
+    fs.mkdirSync(staging);
+    fs.writeFileSync(path.join(staging, "default@320x180.png"), "png");
+    const info = { screen: "s", entry: null, reason: "Unity capture did not finish", code: 1, via: "command", log: "the log", timings: {} };
+    const rename = vi.spyOn(fs, "renameSync").mockImplementation(() => { throw Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" }); });
+    try {
+      const dir = keepFailedRun(bookkeeping, staging, info);
+      expect(fs.readFileSync(path.join(dir, "default@320x180.png"), "utf8")).toBe("png");
+      expect(fs.readFileSync(path.join(dir, "unity.log"), "utf8")).toBe("the log");
+      const cp = vi.spyOn(fs, "cpSync").mockImplementation(() => { throw new Error("EPERM: operation not permitted"); });
+      try {
+        const bare = keepFailedRun(bookkeeping, staging, info);
+        expect(JSON.parse(fs.readFileSync(path.join(bare, "failure.json"), "utf8")).evidence).toMatch(/could not be moved.*EBUSY.*EPERM/);
+        expect(fs.readFileSync(path.join(bare, "unity.log"), "utf8")).toBe("the log");
+      } finally { cp.mockRestore(); }
+    } finally { rename.mockRestore(); }
+  });
 
   it("with the installed pipeline: needs an import first, captures nothing before it, and names a missing screen", async () => {
     const p = tempProject();

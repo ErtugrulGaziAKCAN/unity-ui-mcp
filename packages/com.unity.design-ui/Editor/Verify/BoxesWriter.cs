@@ -124,8 +124,20 @@ namespace DesignUi.Editor
             {
                 using (var writer = new JsonTextWriter(sw) { Formatting = Formatting.Indented, Indentation = 2 })
                     Sort(all).WriteTo(writer);
-                File.WriteAllText(path, sw.ToString().Replace("\r\n", "\n") + "\n", new UTF8Encoding(false));
+                WriteText(path, sw.ToString().Replace("\r\n", "\n") + "\n");
             }
+        }
+
+        /// <summary>
+        /// Writes <paramref name="text"/> (UTF-8, no BOM) to <c>&lt;path&gt;.tmp</c> and moves it over <paramref name="path"/>:
+        /// a run stopped midway (a killed Unity) or a failed write never leaves half a file, only the previous one.
+        /// </summary>
+        internal static void WriteText(string path, string text)
+        {
+            var tmp = path + ".tmp";
+            File.WriteAllText(tmp, text, new UTF8Encoding(false));
+            if (File.Exists(path)) File.Replace(tmp, path, null);
+            else File.Move(tmp, path);
         }
 
         static JToken Sort(JToken t)

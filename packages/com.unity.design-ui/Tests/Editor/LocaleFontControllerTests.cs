@@ -617,11 +617,14 @@ namespace DesignUi.Editor.Tests
             /// <summary>Each PanelSettings asset with the ICU data it had (the switch assigns it in memory and on disk).</summary>
             readonly List<(PanelSettings settings, Object icu)> _icu = new List<(PanelSettings, Object)>();
             readonly bool _was;
+            readonly Action<bool> _set;
 
             public static bool Available => Setting != null && Setting.CanWrite;
 
-            public ProjectAdvancedText(bool on)
+            /// <param name="set">Switches the setting (the project setting itself by default; a test passes a stand-in).</param>
+            public ProjectAdvancedText(bool on, Action<bool> set = null)
             {
+                _set = set ?? (v => Setting.SetValue(null, v));
                 foreach (var p in AssetDatabase.FindAssets("t:PanelSettings").Select(AssetDatabase.GUIDToAssetPath))
                 {
                     var asset = AssetDatabase.LoadAssetAtPath<PanelSettings>(p);
@@ -629,31 +632,68 @@ namespace DesignUi.Editor.Tests
                 }
                 foreach (var p in AssetDatabase.FindAssets("t:PanelSettings").Select(AssetDatabase.GUIDToAssetPath).Concat(new[] { "ProjectSettings/UIToolkitProjectSettings.asset" }))
                     if (File.Exists(p)) _files[p] = File.ReadAllBytes(p);
-                _was = (bool)Setting.GetValue(null);
-                Setting.SetValue(null, on);
+                _was = set == null && (bool)Setting.GetValue(null);
+                // a switch that fails midway may already have rewritten PanelSettings files: they are restored before it throws
+                try { _set(on); }
+                catch
+                {
+                    try { Restore(false); } catch (Exception e) { Debug.LogException(e); }
+                    throw;
+                }
             }
 
-            public void Dispose()
+            public void Dispose() => Restore(true);
+
+            /// <summary>Every step runs even when an earlier one throws; the first failure is thrown at the end.</summary>
+            void Restore(bool setBack)
             {
-                Setting.SetValue(null, _was);
+                Exception first = null;
+                void Step(Action a) { try { a(); } catch (Exception e) { first = first ?? e; } }
+                if (setBack) Step(() => _set(_was));
                 // the loaded assets first (a later save would write them again), then the files as they were
                 foreach (var (settings, icu) in _icu)
                 {
                     if (settings == null) continue;
-                    using (var so = new SerializedObject(settings))
+                    Step(() =>
                     {
-                        var p = so.FindProperty("m_ICUDataAsset");
-                        if (p != null && p.objectReferenceValue != icu)
+                        using (var so = new SerializedObject(settings))
                         {
-                            p.objectReferenceValue = icu;
-                            so.ApplyModifiedPropertiesWithoutUndo();
-                            AssetDatabase.SaveAssetIfDirty(settings);
+                            var p = so.FindProperty("m_ICUDataAsset");
+                            if (p != null && p.objectReferenceValue != icu)
+                            {
+                                p.objectReferenceValue = icu;
+                                so.ApplyModifiedPropertiesWithoutUndo();
+                                AssetDatabase.SaveAssetIfDirty(settings);
+                            }
                         }
-                    }
+                    });
                 }
-                foreach (var kv in _files) File.WriteAllBytes(kv.Key, kv.Value);
-                foreach (var kv in _files) if (!kv.Key.StartsWith("ProjectSettings", StringComparison.Ordinal)) AssetDatabase.ImportAsset(kv.Key, ImportAssetOptions.ForceUpdate);
+                foreach (var kv in _files) Step(() => File.WriteAllBytes(kv.Key, kv.Value));
+                foreach (var kv in _files) if (!kv.Key.StartsWith("ProjectSettings", StringComparison.Ordinal)) Step(() => AssetDatabase.ImportAsset(kv.Key, ImportAssetOptions.ForceUpdate));
+                if (first != null) throw first;
             }
+        }
+
+        /// <summary>
+        /// The setting-on helper restores every file it saw even when the switch fails midway (after Unity rewrote some
+        /// PanelSettings files) and when a step of its own restore throws; the failure still surfaces. The switch here is a
+        /// stand-in that rewrites a PanelSettings file of the test and throws.
+        /// </summary>
+        [Test]
+        public void ProjectAdvancedText_RestoresEveryFile_WhenTheSwitchOrARestoreStepFails()
+        {
+            if (!AssetDatabase.IsValidFolder(ArabicFolder)) AssetDatabase.CreateFolder("Assets", "DesignUiLocaleFixture");
+            var path = ArabicFolder + "/Switched.asset";
+            var asset = ScriptableObject.CreateInstance<PanelSettings>();
+            AssetDatabase.CreateAsset(asset, path);
+            var before = File.ReadAllBytes(path);
+            void Rewrite() => File.WriteAllText(path, "rewritten by the switch");
+            Assert.Throws<InvalidOperationException>(() => new ProjectAdvancedText(true, on => { Rewrite(); throw new InvalidOperationException("switch failed"); }));
+            CollectionAssert.AreEqual(before, File.ReadAllBytes(path), "a failed switch restores the files it may have rewritten");
+            var calls = 0;
+            var scope = new ProjectAdvancedText(true, on => { if (calls++ == 0) Rewrite(); else throw new InvalidOperationException("restore failed"); });
+            Assert.Throws<InvalidOperationException>(scope.Dispose, "the restore's failure surfaces");
+            CollectionAssert.AreEqual(before, File.ReadAllBytes(path), "the files come back although switching the setting back failed");
         }
 
         /// <summary>Ink per column of the lit pixels in rows [y0, y1), cropped to the ink and resampled to 64 bins (sum 1).</summary>

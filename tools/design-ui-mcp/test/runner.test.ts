@@ -223,6 +223,23 @@ describe("runUnity: command route", () => {
     expect(r.code).toBe(3);
   });
 
+  it("ends a command that ignores SIGTERM with SIGKILL after the grace, and leaves no timer or progress behind", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.writeConfig({ unityRunner: { prefer: "command", timeoutSec: 1, command: { import: ["sh", "-c", "trap '' TERM; echo started; exec sleep 30"], capture: [], kitSync: [] } } });
+    const clock = manualClock();
+    const progress: string[] = [];
+    const run = runUnity(readConfig(p.dir), "import", { exportDir: "/x" }, { ...fast, clock, onProgress: (l) => progress.push(l), progressEveryMs: 100 });
+    const failed = expect(run).rejects.toThrow(/did not finish within 1 s/);
+    await new Promise((r) => setTimeout(r, 200)); // the command starts and ignores SIGTERM
+    clock.advance(1000);
+    clock.advance(2000); // the grace runs on the same clock
+    await failed;
+    expect(clock.pending()).toBe(0);
+    const seen = progress.length;
+    clock.advance(30_000);
+    expect(progress.length).toBe(seen);
+  });
+
   it("names an empty template", async () => {
     const p = tempProject({ prefer: "command" });
     p.writeConfig({ unityRunner: { prefer: "command", command: { import: [] } } });

@@ -165,8 +165,9 @@ an EditMode test of the package's test assembly, `DesignUi.Editor.Tests.DesignCa
      not captured and why, notes, timings) and, written last, `capture-done.json` (run id, job count, captured and
      not-captured counts). The files of an earlier run in this folder are deleted first. Runners and the comparison
      treat a folder without `capture-done.json` as not captured. `boxes.json` and `boxes.meta.json` are rewritten every
-     25 jobs or 10 s, so a run that is stopped leaves what it captured. The test sets its own timeout from the job count
-     (120 s + 2 s per job) and logs it. A viewport's screen is mounted once and moved from job to job.
+     25 jobs or 10 s (through a temporary file, so a run that is stopped leaves what it captured, never half a file).
+     The test sets its own timeout from the job count (120 s + 2 s per job) and logs it. A viewport's screen is mounted
+     once and moved from job to job; PNGs are encoded off the main thread, at most 8 at a time.
    - `DESIGN_UI_SCREEN` (optional): the compiled screen folder; default `<profile output folder>/<Screen>`.
    - `DESIGN_UI_PROFILE` (optional): the DesignUiProfile asset; default the project's only profile.
    - `DESIGN_UI_EXPORT_DIR` and `DESIGN_UI_OUT_DIR` are accepted as well. Without `DESIGN_UI_EXPORT` the test passes

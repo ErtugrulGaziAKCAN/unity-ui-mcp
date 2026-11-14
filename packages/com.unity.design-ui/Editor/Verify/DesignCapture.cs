@@ -215,9 +215,28 @@ namespace DesignUi.Editor
                 }
             }
             pngs.Add((req.CaptureName, session.Write(req.CaptureName, true)));
+            BoundPngBacklog(pngs);
             req.Inspect?.Invoke(session.Root);
             // an overlay the job opened (a dropdown's menu) stays open: the next job mounts the screen again
             if (dirty || session.Overlaid()) shared.Drop();
+        }
+
+        /// <summary>PNGs encoded at the same time at most: each holds a whole frame (14.7 MB at 2560×1440) until it is on disk.</summary>
+        internal const int MaxPendingPngs = 8;
+
+        /// <summary>
+        /// The most PNG encodes a capture run had pending right after starting one (boxes.meta.json
+        /// <c>timings.pngPendingPeak</c>): at most <see cref="MaxPendingPngs"/> + 1.
+        /// </summary>
+        static int s_PendingPeak;
+
+        /// <summary>Waits for the oldest PNGs still being encoded while more than <see cref="MaxPendingPngs"/> are (their errors are read at the end of the run).</summary>
+        static void BoundPngBacklog(List<(string name, Task task)> pngs)
+        {
+            var pending = pngs.Where(p => !p.task.IsCompleted).Select(p => p.task).ToList();
+            s_PendingPeak = Math.Max(s_PendingPeak, pending.Count);
+            for (int i = 0; pending.Count - i > MaxPendingPngs; i++)
+                try { pending[i].Wait(); } catch (AggregateException) { }
         }
 
         /// <summary>How many jobs of a series <see cref="RunSeries"/> wrote.</summary>
@@ -255,6 +274,7 @@ namespace DesignUi.Editor
             catch (Exception e) when (!(e is ArgumentNullException)) { UnityEngine.Debug.LogWarning("Design UI capture: " + e.Message); }
             var shared = new SharedSession();
             var pngs = new List<(string name, Task task)>();
+            s_PendingPeak = 0;
             var flushed = Stopwatch.StartNew();
             int sinceFlush = 0;
             void Flush(bool force)
@@ -327,6 +347,7 @@ namespace DesignUi.Editor
                             boxes.Remove(name);
                         }
                     }
+                    sinceFlush += series.Count - 1; // every sample is a job for the periodic flush
                     continue;
                 }
                 var req = new CaptureRequest
@@ -353,8 +374,14 @@ namespace DesignUi.Editor
                 {
                     (capture as IDisposable)?.Dispose();
                 }
-                // a job that stopped midway may have left the screen anywhere: the next job mounts it again
-                if (failure != null || skipped != null) shared.Drop();
+                // a job that stopped midway may have left the screen anywhere: the next job mounts it again; a PNG it already
+                // started is on disk before NotCaptured deletes it
+                if (failure != null || skipped != null)
+                {
+                    shared.Drop();
+                    foreach (var (_, task) in pngs.Where(p => p.name == job.Name).ToList()) try { task.Wait(); } catch (AggregateException) { }
+                    pngs.RemoveAll(p => p.name == job.Name);
+                }
                 run.Times[job.Name] = Math.Round(watch.Elapsed.TotalMilliseconds, 1);
                 if (failure != null)
                 {
@@ -616,8 +643,7 @@ namespace DesignUi.Editor
                 try
                 {
                     RenderTexture.active = Target;
-                    tex.ReadPixels(new Rect(0, 0, Target.width, Target.height), 0, 0, false);
-                    tex.Apply(false);
+                    tex.ReadPixels(new Rect(0, 0, Target.width, Target.height), 0, 0, false); // CPU-side data: no Apply (GPU upload) needed
                     raw = tex.GetRawTextureData();
                 }
                 finally
@@ -1500,6 +1526,7 @@ namespace DesignUi.Editor
             {
                 var path = Path.Combine(outDir, name);
                 if (File.Exists(path)) File.Delete(path);
+                if (File.Exists(path + ".tmp")) File.Delete(path + ".tmp"); // a write a stopped run left
             }
         }
 
@@ -1524,7 +1551,7 @@ namespace DesignUi.Editor
                 ["screen"] = screenFolder,
                 ["started"] = run.Started,
                 ["status"] = status,
-                ["timings"] = new JObject { ["captures"] = run.Times, ["totalMs"] = Math.Round(totalMs, 1) },
+                ["timings"] = new JObject { ["captures"] = run.Times, ["pngPendingPeak"] = s_PendingPeak, ["totalMs"] = Math.Round(totalMs, 1) },
                 ["unity"] = new JObject
                 {
                     ["colorSpace"] = QualitySettings.activeColorSpace.ToString(),
@@ -1541,7 +1568,7 @@ namespace DesignUi.Editor
             using (var sw = new StringWriter { NewLine = "\n" })
             {
                 using (var writer = new JsonTextWriter(sw) { Formatting = Formatting.Indented, Indentation = 2 }) json.WriteTo(writer);
-                File.WriteAllText(path, sw.ToString().Replace("\r\n", "\n") + "\n", new UTF8Encoding(false));
+                BoxesWriter.WriteText(path, sw.ToString().Replace("\r\n", "\n") + "\n");
             }
         }
     }

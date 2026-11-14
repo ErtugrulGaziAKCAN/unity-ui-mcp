@@ -33,8 +33,15 @@ data = open(path, "rb").read().decode("utf-8")
 open(path, "wb").write(data.replace(rel, ab, 1).encode("utf-8"))
 P
 
+# a test that switches Enable Advanced Text makes Unity rewrite every PanelSettings asset, the package's too; it restores
+# them, and a run that leaves the package's asset changed says so
+PS="packages/com.unity.design-ui/Runtime/Themes/DesignUiPanelSettings.asset"
+clean_before=0; git -C "$ROOT" diff --quiet -- "$PS" 2>/dev/null && clean_before=1
 set +e
 "$HOME/unity-clone-test/bin/unity-clone-test" --project "$ROOT/samples/FidelityProject" "$@"
 rc=$?
 set -e
+if [ "$clean_before" = 1 ] && ! git -C "$ROOT" diff --quiet -- "$PS" 2>/dev/null; then
+  echo "unity-check: warning: the run changed $PS (a test did not restore it); check it with git diff and restore it with git checkout" >&2
+fi
 exit "$rc"

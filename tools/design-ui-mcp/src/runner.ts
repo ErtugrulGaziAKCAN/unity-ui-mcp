@@ -310,7 +310,7 @@ async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<str
       return;
     }
     let timedOut = false, done = false;
-    let grace: NodeJS.Timeout | null = null;
+    let grace: unknown = null;
     const clock = opts.clock ?? REAL_CLOCK;
     const started = clock.now();
     const timedOutError = () => {
@@ -321,10 +321,13 @@ async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<str
     const timer = clock.setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
-      // a grandchild that keeps the output pipes open would hold the result until it ends: cut it off after a grace
-      grace = setTimeout(() => {
+      // a command that ignores SIGTERM, or a grandchild that keeps the output pipes open, would hold the result: after a
+      // grace (on the same clock) the command is killed, its pipes are cut and nothing of this run keeps ticking
+      grace = clock.setTimeout(() => {
         if (done) return;
         done = true;
+        stop();
+        child.kill("SIGKILL");
         child.stdout.destroy();
         child.stderr.destroy();
         reject(timedOutError());
@@ -332,7 +335,7 @@ async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<str
     }, timeoutMs);
     // a capture or import in a batch Unity takes minutes: report the wait (MCP progress) while it runs
     const ticker = opts.onProgress ? clock.setInterval(() => opts.onProgress!(progressLine(step, clock.now() - started)), opts.progressEveryMs ?? 10_000) : null;
-    const stop = () => { clock.clearTimeout(timer); if (ticker !== null) clock.clearInterval(ticker); if (grace) clearTimeout(grace); };
+    const stop = () => { clock.clearTimeout(timer); if (ticker !== null) clock.clearInterval(ticker); if (grace !== null) { clock.clearTimeout(grace); grace = null; } };
     child.stdout.on("data", keep);
     child.stderr.on("data", keep);
     child.on("error", (e) => {

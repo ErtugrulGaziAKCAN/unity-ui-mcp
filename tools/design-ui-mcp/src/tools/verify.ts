@@ -149,11 +149,20 @@ export function keepFailedRun(bookkeeping: string, staging: string, failure: { s
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   let dir = path.join(bookkeeping, `failed-${stamp}`);
   for (let n = 2; fs.existsSync(dir); n++) dir = path.join(bookkeeping, `failed-${stamp}-${n}`);
-  if (fs.existsSync(staging)) fs.renameSync(staging, dir);
-  else fs.mkdirSync(dir, { recursive: true });
+  // a locked file (Windows) can stop the move: the captures are copied then, else the reason is recorded; the tool's own
+  // "no verdict" answer never depends on it
+  let evidence: string | undefined;
+  if (fs.existsSync(staging)) {
+    try { fs.renameSync(staging, dir); } catch (moveError) {
+      try { fs.cpSync(staging, dir, { recursive: true }); } catch (copyError) {
+        evidence = `the partial captures could not be moved (${(moveError as Error).message}) or copied (${(copyError as Error).message}); they stay in ${staging}`;
+      }
+    }
+  }
+  fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "unity.log"), failure.log);
   const { log: _log, ...rest } = failure;
-  fs.writeFileSync(path.join(dir, "failure.json"), JSON.stringify({ ...rest, failedAt: new Date().toISOString(), files: fs.readdirSync(dir).filter((f) => f !== "unity.log").length }, null, 2) + "\n");
+  fs.writeFileSync(path.join(dir, "failure.json"), JSON.stringify({ ...rest, ...(evidence ? { evidence } : {}), failedAt: new Date().toISOString(), files: fs.readdirSync(dir).filter((f) => f !== "unity.log").length }, null, 2) + "\n");
   const runs = fs.readdirSync(bookkeeping).filter((n) => n.startsWith("failed-")).sort();
   for (const old of runs.slice(0, Math.max(0, runs.length - FAILED_RUNS_KEPT))) fs.rmSync(path.join(bookkeeping, old), { recursive: true, force: true });
   return dir;
