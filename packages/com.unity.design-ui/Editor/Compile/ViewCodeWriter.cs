@@ -159,6 +159,26 @@ namespace DesignUi.Editor
             }
         }
 
+        /// <summary>The compile's element paths from the screen root (<c>root &gt; panel &gt; count</c>), for error messages; set by <see cref="Write"/>.</summary>
+        [ThreadStatic] static Dictionary<CompiledElement, string> s_Paths;
+
+        static string PathOf(CompiledElement e) => e != null && s_Paths != null && s_Paths.TryGetValue(e, out var p) ? p : e?.Name;
+
+        /// <summary>
+        /// The C# member part of a design name (<see cref="Naming.Pascal"/>); when it gives none, the error names the attribute,
+        /// the name and the element's path (design-export lint rejects the same names, U-MRK-005).
+        /// </summary>
+        static string MemberOf(string name, string attribute, CompiledElement at)
+        {
+            try { return Naming.Pascal(name, attribute); }
+            catch (IrFormatException e)
+            {
+                throw new IrFormatException(e.Message + (at != null ? " (on '" + PathOf(at) + "')" : "") +
+                                            ": a name that becomes a generated C# member starts with a letter a-z; rename it in the design (an argument after what it " +
+                                            "holds, e.g. {count}: a profile with indexed arguments numbers them itself)", e);
+            }
+        }
+
         /// <summary>Whether the screen has animation data (an element the animation player watches).</summary>
         static bool Animated(CompiledScreen s) => s.AllElements().Any(e => e.Classes.Contains(DesignUi.DesignAnimationData.MarkerClass));
 
@@ -172,15 +192,29 @@ namespace DesignUi.Editor
             if (string.IsNullOrEmpty(className) || !Identifier.IsMatch(className) || Keywords.Contains(className))
                 throw new IrFormatException("'" + className + "' is not a valid C# class name for the view");
 
+            s_Paths = new Dictionary<CompiledElement, string>();
+            void Walk(CompiledElement e, string prefix)
+            {
+                var p = prefix == null ? e.Name : prefix + " > " + e.Name;
+                s_Paths[e] = p;
+                foreach (var c in e.Children) Walk(c, p);
+            }
+            if (s.Root != null) Walk(s.Root, null);
+            try { return WriteViews(s, ns, className); }
+            finally { s_Paths = null; }
+        }
+
+        static string WriteViews(CompiledScreen s, string ns, string className)
+        {
             var itemRoots = new HashSet<CompiledElement>(s.Repeats.SelectMany(r => r.Items));
-            var itemClasses = s.Repeats.Select(r => Naming.Pascal(r.Name, "repeat name") + "ItemView").ToList();
+            var itemClasses = s.Repeats.Select(r => MemberOf(r.Name, "data-u-repeat", r.Items.FirstOrDefault()) + "ItemView").ToList();
 
             var screen = NewView(className, className, null, ScreenMembers, itemClasses);
             Collect(screen, new[] { s.Root }, itemRoots);
             var views = new List<View> { screen };
             foreach (var r in s.Repeats)
             {
-                var itemClass = Naming.Pascal(r.Name, "repeat name") + "ItemView";
+                var itemClass = MemberOf(r.Name, "data-u-repeat", r.Items.FirstOrDefault()) + "ItemView";
                 var item = NewView(itemClass, className + "." + itemClass, r, ItemMembers, itemClasses.Where(c => c != itemClass));
                 item.Claim(className, "the screen view class");
                 Collect(item, r.Items, itemRoots);
@@ -194,7 +228,7 @@ namespace DesignUi.Editor
                 var item = views.Single(v => v.Repeat == r);
                 var setter = new RepeatSetter
                 {
-                    Repeat = r, Member = "Set" + Naming.Pascal(r.Name, "repeat name"), ItemClass = item.ClassName,
+                    Repeat = r, Member = "Set" + MemberOf(r.Name, "data-u-repeat", r.Items.FirstOrDefault()), ItemClass = item.ClassName,
                     Field = "m_Repeat" + owner.Repeats.Count, Item = item,
                 };
                 owner.Claim(setter.Member, "data-u-repeat '" + r.Name + "'");
@@ -210,7 +244,7 @@ namespace DesignUi.Editor
             var stateMembers = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var st in s.States.Count > 0 ? s.States : new[] { "default" })
             {
-                var member = Naming.Pascal(st, "state");
+                var member = MemberOf(st, "data-u-state", null);
                 if (stateMembers.TryGetValue(member, out var other))
                     throw new IrFormatException("states '" + other + "' and '" + st + "' both give the State member '" + member + "'; rename one state");
                 stateMembers[member] = st;
@@ -275,7 +309,7 @@ namespace DesignUi.Editor
             foreach (var e in v.Elements)
             {
                 if (!(e == v.Elements[0] && !v.IsItem) && e.Name.IndexOf("__", StringComparison.Ordinal) >= 0) continue;
-                var member = Naming.Pascal(e.Name, "element id");
+                var member = MemberOf(e.Name, "data-u-id", e);
                 v.Claim(member, "element id '" + e.Name + "'");
                 v.ByName[e.Name] = member;
                 v.Props.Add((e, member, TypeOf(e)));
@@ -286,11 +320,11 @@ namespace DesignUi.Editor
         static void Values(View v)
         {
             var byName = new Dictionary<string, Value>(StringComparer.Ordinal);
-            Value Get(string name, ValueKind kind, CompiledElement at)
+            Value Get(string name, ValueKind kind, CompiledElement at, string attribute)
             {
                 if (!byName.TryGetValue(name, out var value))
                 {
-                    value = new Value { Name = name, Member = "Set" + Naming.Pascal(name, "value name"), Kind = kind, Field = "m_Value" + byName.Count };
+                    value = new Value { Name = name, Member = "Set" + MemberOf(name, attribute, at), Kind = kind, Field = "m_Value" + byName.Count };
                     v.Claim(value.Member, "the value '" + name + "' (data-u-bind or argument)");
                     byName[name] = value;
                     v.Values.Add(value);
@@ -310,7 +344,7 @@ namespace DesignUi.Editor
                         throw new IrFormatException("'" + e.Name + "' has data-u-bind '" + node.Bind + "' and Smart String arguments (" + string.Join(", ", args) +
                                                     "); a bound value replaces the whole text. Bind the element or mark arguments in a localized text, not both");
                     var kind = BindKind(e);
-                    var value = Get(node.Bind, kind, e);
+                    var value = Get(node.Bind, kind, e, "data-u-bind");
                     value.Binds.Add(e);
                     v.Member(kind == ValueKind.Image ? Painter(e).Name : e.Name);
                 }
@@ -320,7 +354,7 @@ namespace DesignUi.Editor
                         throw new IrFormatException("'" + e.Name + "' (" + e.Tag + ") has Smart String arguments but shows no text");
                     var text = new ArgText { Element = e, Field = "m_Args" + v.ArgTexts.Count, Names = args.Distinct(StringComparer.Ordinal).ToArray() };
                     v.ArgTexts.Add(text);
-                    for (int i = 0; i < text.Names.Length; i++) Get(text.Names[i], ValueKind.Text, e).Args.Add((text, i));
+                    for (int i = 0; i < text.Names.Length; i++) Get(text.Names[i], ValueKind.Text, e, "data-u-arg").Args.Add((text, i));
                 }
             }
         }
@@ -356,7 +390,7 @@ namespace DesignUi.Editor
                 if (action == null) continue;
                 if (!byName.TryGetValue(action, out var ev))
                 {
-                    ev = new ActionEvent { Name = action, Member = Naming.Pascal(action, "action") + EventSuffix };
+                    ev = new ActionEvent { Name = action, Member = MemberOf(action, "data-u-action", e) + EventSuffix };
                     v.Claim(ev.Member, "data-u-action '" + action + "'");
                     byName[action] = ev;
                     v.Actions.Add(ev);

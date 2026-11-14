@@ -87,7 +87,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-MRK-003": { when: "interactive, bound or action elements without `data-u-id`", fix: "add `data-u-id`" },
   "U-MRK-004": { when: "visible text without `data-l10n` + `data-en` on the element holding it (or `data-u-bind`)", fix: "add the key and English text" },
   "U-MRK-005": {
-    when: "ids, actions or names outside `^[a-z0-9]+([._-][a-z0-9]+)*$`, or localization keys outside `^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$` (any letter case)",
+    when: "ids, actions or names outside `^[a-z0-9]+([._-][a-z0-9]+)*$` or starting with a digit (they become C# members), or localization keys outside `^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$` (any letter case)",
     fix: "ASCII transliteration (no İ, ı, ş, …); keys spelled exactly as the String Table key",
   },
   "U-MRK-006": { when: "the screen root is not the kit reference size at (0, 0)", fix: "root `width/height` = reference in px, `body { margin: 0 }`" },

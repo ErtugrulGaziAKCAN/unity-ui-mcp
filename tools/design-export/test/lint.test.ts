@@ -7,6 +7,7 @@ import { chromium, type Browser } from "playwright";
 import { readKit, type KitConfig } from "../src/kit.js";
 import { openDesign } from "../src/load.js";
 import { collectSnapshot, lint, RULES, sortFindings, type Finding } from "../src/lint/index.js";
+import { memberPart } from "../src/lint/rules/U-MRK-005.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fx = (n: string) => path.join(here, "fixtures", "lint", n);
@@ -128,6 +129,26 @@ describe("lint engine", () => {
     expect(await mrk5('<p data-u-id="unreadOnly" data-u-bind="unread">3</p>')).toEqual([
       'data-u-id="unreadOnly" does not match ^[a-z0-9]+([._-][a-z0-9]+)*$',
     ]);
+  });
+
+  it("rejects a name that gives no C# member exactly as the view generator does (an argument named 0)", async () => {
+    const dir = tmp();
+    const mrk5 = async (body: string) => (await lintFile(write(dir, body))).filter((x) => x.ruleId === "U-MRK-005");
+    const indexed = await mrk5('<p data-l10n="list.count" data-en="{0} events"><span data-u-arg="0">3</span> olay</p>');
+    expect(indexed.map((x) => x.detail)).toEqual(['data-u-arg="0" gives no C# member name (it starts with a digit)']);
+    expect(indexed[0].path).toBe("[data-u-screen=s] > p:0 > span:0");
+    expect(indexed[0].fix).toContain('data-u-arg=\"count\"');
+    expect((await mrk5('<p data-u-id="2nd-row" data-u-bind="row.name">Ali</p>')).map((x) => x.detail))
+      .toEqual(['data-u-id="2nd-row" gives no C# member name (it starts with a digit)']);
+    expect((await mrk5('<p data-l10n="list.count" data-l10n-args="1" data-en="{1} events"><span data-u-arg="1">3</span> olay</p>')).map((x) => x.detail))
+      .toEqual(['data-l10n-args="1" names an argument that gives no C# member name (it starts with a digit)', 'data-u-arg="1" gives no C# member name (it starts with a digit)']);
+    expect(await mrk5('<p data-l10n="list.count" data-en="{count} events"><span data-u-arg="count">3</span> olay</p>')).toEqual([]);
+  });
+
+  it("names members as the generator does for every case of contracts/member-names.json", () => {
+    const cases = JSON.parse(fs.readFileSync(path.resolve(here, "../../../contracts/member-names.json"), "utf8")).cases as { name: string; member: string | null }[];
+    expect(cases.length).toBeGreaterThan(5);
+    for (const c of cases) expect([c.name, memberPart(c.name)]).toEqual([c.name, c.member]);
   });
 
   it("checks ids inside repeat items against the item view's members, and screen ids against the screen view's", async () => {

@@ -413,7 +413,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-MRK-002 | error | duplicate `data-u-id` | unique ids (each repeat item is its own scope) |
 | U-MRK-003 | error | interactive, bound or action elements without `data-u-id` | add `data-u-id` |
 | U-MRK-004 | error | visible text without `data-l10n` + `data-en` on the element holding it (or `data-u-bind`) | add the key and English text |
-| U-MRK-005 | error | ids, actions or names outside `^[a-z0-9]+([._-][a-z0-9]+)*$`, or localization keys outside `^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$` (any letter case) | ASCII transliteration (no İ, ı, ş, …); keys spelled exactly as the String Table key |
+| U-MRK-005 | error | ids, actions or names outside `^[a-z0-9]+([._-][a-z0-9]+)*$` or starting with a digit (they become C# members), or localization keys outside `^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$` (any letter case) | ASCII transliteration (no İ, ı, ş, …); keys spelled exactly as the String Table key |
 | U-MRK-006 | error | the screen root is not the kit reference size at (0, 0) | root `width/height` = reference in px, `body { margin: 0 }` |
 | U-MRK-007 | error | placeholder, title, alt or aria-label text without `data-l10n-<attr>` + `data-en-<attr>` | add the key and English text per attribute |
 | U-MRK-008 | error | a variable inside localized text not marked as `<span data-u-arg="name">` with one `{name}` in `data-en` | one `data-u-arg` span per `{name}` placeholder; `data-l10n-args` (optional) lists the same names |

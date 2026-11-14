@@ -35,6 +35,26 @@ namespace DesignUi.Editor.Tests
             StringAssert.Contains("ilk.işlem", e.Message);
         }
 
+        /// <summary>
+        /// The generator names members exactly as lint expects (design-export U-MRK-005 memberPart): every case of
+        /// contracts/member-names.json, the list both sides test against.
+        /// </summary>
+        [Test]
+        public void Pascal_AgreesWithLint_OnEveryCaseOfTheMemberNameContract()
+        {
+            var path = System.IO.Path.GetFullPath(System.IO.Path.Combine(IrReaderTests.PackagePath(), "..", "..", "contracts", "member-names.json"));
+            if (!System.IO.File.Exists(path)) Assert.Pass("the package is not inside the unity-ui-mcp repository; contracts/ is not here");
+            var cases = (Newtonsoft.Json.Linq.JArray)Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(path))["cases"];
+            Assert.Greater(cases.Count, 5);
+            foreach (var c in cases)
+            {
+                var name = (string)c["name"];
+                var member = (string)c["member"];
+                if (member == null) Assert.Throws<IrFormatException>(() => Naming.Pascal(name), name);
+                else Assert.AreEqual(member, Naming.Pascal(name), name);
+            }
+        }
+
         [TestCase("2fa")]
         [TestCase("")]
         [TestCase("--")]

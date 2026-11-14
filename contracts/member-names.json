@@ -1,0 +1,16 @@
+{
+  "about": "Code-facing design names (data-u-id, data-u-bind, data-u-arg, data-u-action, data-u-repeat, data-u-state, data-u-screen) and the C# member part the Unity view generator makes of each (Naming.Pascal), null where it rejects the name. design-export lint (U-MRK-005 memberPart) and the generator both test against this list.",
+  "cases": [
+    { "name": "count", "member": "Count" },
+    { "name": "event-count", "member": "EventCount" },
+    { "name": "inbox.message-list", "member": "InboxMessageList" },
+    { "name": "row_2", "member": "Row2" },
+    { "name": "a0", "member": "A0" },
+    { "name": "v2.title", "member": "V2Title" },
+    { "name": "0", "member": null },
+    { "name": "1", "member": null },
+    { "name": "2nd-row", "member": null },
+    { "name": "0.count", "member": null },
+    { "name": "10-day", "member": null }
+  ]
+}

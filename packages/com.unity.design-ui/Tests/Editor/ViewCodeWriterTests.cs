@@ -295,6 +295,30 @@ namespace DesignUi.Editor.Tests
         // ---- names --------------------------------------------------------------------------------------------------------
 
         [Test]
+        public void Write_ANameThatGivesNoMember_NamesTheElementPathAndTheAttribute()
+        {
+            // an argument named as string.Format numbers it: lint rejects it the same way (U-MRK-005)
+            var count = Text("count", "{0} olay", ("font-size", "16.515625px"));
+            count.Text.Args = new[] { "0" };
+            var panel = Node("panel", "container", ("height", "40px")).Add(count);
+            var e = Assert.Throws<IrFormatException>(() => ViewCodeWriter.Write(Build(TestIr.Screen(Root(panel))), Ns, "TestScreenView"));
+            StringAssert.Contains("data-u-arg '0'", e.Message);
+            StringAssert.Contains("'root > panel > count'", e.Message, "the element path from the screen root");
+
+            var total = Text("total", "3", ("font-size", "16.515625px"));
+            total.Bind = "2nd-total";
+            e = Assert.Throws<IrFormatException>(() => ViewCodeWriter.Write(Build(TestIr.Screen(Root(total))), Ns, "TestScreenView"));
+            StringAssert.Contains("data-u-bind '2nd-total'", e.Message);
+            StringAssert.Contains("'root > total'", e.Message);
+
+            var go = Node("go", "button", ("height", "30px")).Add(Text("go-label", "Git"));
+            go.Action = "1-go";
+            e = Assert.Throws<IrFormatException>(() => ViewCodeWriter.Write(Build(TestIr.Screen(Root(go))), Ns, "TestScreenView"));
+            StringAssert.Contains("data-u-action '1-go'", e.Message);
+            StringAssert.Contains("'root > go'", e.Message);
+        }
+
+        [Test]
         public void Write_TwoIdsWithTheSameMemberName_Throws()
         {
             var ir = TestIr.Screen(Root(Node("card-title", "container"), Node("card.title", "container")));
