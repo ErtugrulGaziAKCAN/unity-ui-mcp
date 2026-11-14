@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using DesignUi.Editor;
 using DesignUi.Editor.Tests;
 using Newtonsoft.Json;
@@ -11,6 +12,7 @@ using UnityEditor;
 using UnityEditor.Localization;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
+using UnityEngine.Localization;
 using UnityEngine.Localization.Settings;
 using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.TestTools;
@@ -57,29 +59,47 @@ namespace DesignUi.Localization.Tests
         {
             _hadPref = EditorPrefs.HasKey(EditorLocalePref);
             _pref = EditorPrefs.GetString(EditorLocalePref, "");
-            _fixture = new LocalizationFixture("en", "tr");
-            _fixture.AddLocale("de", fallback: "en");
-            _settings = ScriptableObject.CreateInstance<ReadySettings>();
-            LocalizationSettings.Instance = _settings;
+            try
+            {
+                // an empty untitled scene first: the import creates a collection, which it refuses while a scene is unsaved
+                // (earlier tests leave the test scene modified); a scene change also destroys in-memory objects nothing
+                // references, so it comes before the fixture's
+                UnityEditor.SceneManagement.EditorSceneManager.NewScene(UnityEditor.SceneManagement.NewSceneSetup.EmptyScene, UnityEditor.SceneManagement.NewSceneMode.Single);
+                LocalizationFixture.SaveFontFixtureLeftovers();
+                _fixture = new LocalizationFixture("en", "tr");
+                _fixture.AddLocale("de", fallback: "en");
+                _settings = ScriptableObject.CreateInstance<ReadySettings>();
+                LocalizationSettings.Instance = _settings;
+                foreach (var l in _fixture.Locales.Values) LocalizationSettings.AvailableLocales.AddLocale(l); // the binding's English lookup
+            }
+            catch
+            {
+                Cleanup();
+                throw;
+            }
         }
 
         [TearDown]
         public void Cleanup()
         {
-            _controller?.Dispose();
-            _source?.Dispose();
-            if (_go != null) Object.DestroyImmediate(_go);
-            if (_panel != null) Object.DestroyImmediate(_panel);
-            if (_rt != null) Object.DestroyImmediate(_rt);
-            LocalizationSettings.Instance = null;
-            Object.DestroyImmediate(_settings);
-            if (_hadPref) EditorPrefs.SetString(EditorLocalePref, _pref);
-            else EditorPrefs.DeleteKey(EditorLocalePref);
-            if (AssetDatabase.IsValidFolder(Out)) AssetDatabase.DeleteAsset(Out);
-            _fixture.Dispose();
-            foreach (var dir in _temp) if (Directory.Exists(dir)) Directory.Delete(dir, true);
-            _temp.Clear();
-            FontFixture.Delete();
+            try { _fixture?.Dispose(); }
+            finally
+            {
+                _fixture = null;
+                _controller?.Dispose();
+                _source?.Dispose();
+                if (_go != null) Object.DestroyImmediate(_go);
+                if (_panel != null) Object.DestroyImmediate(_panel);
+                if (_rt != null) Object.DestroyImmediate(_rt);
+                LocalizationSettings.Instance = null;
+                if (_settings != null) Object.DestroyImmediate(_settings);
+                if (_hadPref) EditorPrefs.SetString(EditorLocalePref, _pref);
+                else EditorPrefs.DeleteKey(EditorLocalePref);
+                if (AssetDatabase.IsValidFolder(Out)) AssetDatabase.DeleteAsset(Out);
+                foreach (var dir in _temp) if (Directory.Exists(dir)) Directory.Delete(dir, true);
+                _temp.Clear();
+                FontFixture.Delete();
+            }
         }
 
         static IrNode Styled(IrNode text, string key, string en, params string[] args)
@@ -138,6 +158,29 @@ namespace DesignUi.Localization.Tests
             return doc.rootVisualElement;
         }
 
+        /// <summary>A translator's entry, saved.</summary>
+        static void Translate(string code, string key, string value, bool smart)
+        {
+            var table = LocalizationEditorSettings.GetStringTableCollection(Collection).StringTables.Single(t => t.LocaleIdentifier.Code == code);
+            table.AddEntry(key, value).IsSmart = smart;
+            EditorUtility.SetDirty(table);
+            AssetDatabase.SaveAssetIfDirty(table);
+        }
+
+        /// <summary>The compiled screen in a panel under a locale controller on Unity Localization's selection, with the view's argument setters.</summary>
+        (VisualElement root, VisualElement tree, DesignTextArgs who, DesignTextArgs score) Open(DesignFontSet set, string locale)
+        {
+            LocalizationSettings.SelectedLocale = _fixture.Locales[locale];
+            var root = Panel();
+            _source = new UnityLocalizationLocaleSource();
+            _controller = new LocaleFontController(root, set, new DesignLocaleRules(), _source);
+            var tree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/LocLive/LocLive.uxml").Instantiate();
+            var who = new DesignTextArgs(tree.Q<Label>("who"), null, "who"); // as the generated view creates them
+            var score = new DesignTextArgs(tree.Q<Label>("score"), null, "who");
+            root.Add(tree);
+            return (root, tree, who, score);
+        }
+
         static float Unkerned(FontAsset font, string text, float size) =>
             text.Sum(c => font.characterLookupTable[c].glyph.metrics.horizontalAdvance) * size / font.faceInfo.pointSize;
 
@@ -193,8 +236,8 @@ namespace DesignUi.Localization.Tests
             var deTwin = set.FontsFor("de")[0];
             Assert.AreNotSame(trTwin, deTwin);
             Assert.AreEqual("Größe", title.text, "the open screen shows the new locale without reopening");
-            Assert.AreEqual(Kerned, who.text, "an entry German lacks falls back to English");
-            Assert.AreEqual("Ali won", score.text);
+            Assert.AreEqual(Kerned, who.text);
+            Assert.AreEqual("Ali won", score.text, "an entry German lacks falls back to English");
             Assert.IsTrue(screen.ClassListContains("locale-de") && !screen.ClassListContains("locale-tr"), "the locale controller's class in the same frame");
             Assert.AreSame(deTwin, title.resolvedStyle.unityFontDefinition.fontAsset, "and its font");
             Assert.IsTrue(deTwin.characterLookupTable.ContainsKey('ß'));
@@ -210,14 +253,8 @@ namespace DesignUi.Localization.Tests
             Assert.AreEqual("{0} won", en.GetEntry("loc.score").Value);
             Assert.IsFalse(en.GetEntry("loc.score").IsSmart, "a plain string.Format entry");
 
-            LocalizationSettings.SelectedLocale = _fixture.Locales["tr"];
-            var root = Panel();
-            _source = new UnityLocalizationLocaleSource();
-            _controller = new LocaleFontController(root, set, new DesignLocaleRules(), _source);
-            var tree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/LocLive/LocLive.uxml").Instantiate();
+            var (_, tree, _, args) = Open(set, "tr");
             var score = tree.Q<Label>("score");
-            var args = new DesignTextArgs(score, null, "who");
-            root.Add(tree);
             yield return Frames(3);
             Assert.AreEqual(" kazandı", score.text, "an argument not set yet is empty");
             args.Set(0, "Ali");
@@ -226,6 +263,90 @@ namespace DesignUi.Localization.Tests
             LocalizationSettings.SelectedLocale = _fixture.Locales["en"];
             yield return null;
             Assert.AreEqual("Ali won", score.text);
+        }
+
+        [UnityTest]
+        public IEnumerator EachEntryIsFormattedByItsOwnSmartFlag()
+        {
+            // a Smart String profile whose German translation is a plain entry: it gets the arguments by index
+            var set = Compile(DesignArgumentFormat.SmartString, out _);
+            Translate("de", "loc.score", "{0} hat gewonnen", smart: false);
+            var (_, tree, _, args) = Open(set, "de");
+            var score = tree.Q<Label>("score");
+            args.Set(0, "Ali");
+            yield return Frames(3);
+            Assert.AreEqual("Ali hat gewonnen", score.text);
+            Cleanup();
+            Setup();
+
+            // a profile of plain placeholders whose German translation is a Smart String: it gets them by name
+            set = Compile(DesignArgumentFormat.Indexed, out _);
+            Translate("de", "loc.score", "{who} hat gewonnen", smart: true);
+            (_, tree, _, args) = Open(set, "de");
+            score = tree.Q<Label>("score");
+            args.Set(0, "Ali");
+            yield return Frames(3);
+            Assert.AreEqual("Ali hat gewonnen", score.text);
+        }
+
+        [UnityTest]
+        public IEnumerator ABrokenTranslation_ShowsEnglish_AndTheLocaleSwitchReachesEveryListener()
+        {
+            var set = Compile(DesignArgumentFormat.SmartString, out _);
+            // German: a named placeholder in a plain entry (string.Format cannot read it) and a Smart String with an unknown name
+            Translate("de", "loc.score", "{who} hat gewonnen", smart: false);
+            Translate("de", "loc.clubTitle", "Verein {klub}", smart: true);
+            var (_, tree, _, args) = Open(set, "tr");
+            var score = tree.Q<Label>("score");
+            var title = tree.Q<Label>("title");
+            args.Set(0, "Ali");
+            yield return Frames(3);
+            Assert.AreEqual("Ali kazandı", score.text);
+
+            Locale heard = null;
+            Action<Locale> listener = l => heard = l; // subscribed after the screen's bindings
+            LocalizationSettings.SelectedLocaleChanged += listener;
+            try
+            {
+                // in the order the screen's bindings load (title, then score)
+                LogAssert.Expect(LogType.Warning, new Regex(@"loc\.clubTitle.*\(de\) could not be formatted"));
+                LogAssert.Expect(LogType.Warning, new Regex(@"loc\.score.*\(de\) could not be formatted.*English entry"));
+                Assert.DoesNotThrow(() => LocalizationSettings.SelectedLocale = _fixture.Locales["de"]);
+                Assert.AreSame(_fixture.Locales["de"], heard, "listeners after the screen's bindings still hear the locale change");
+                yield return Frames(2);
+                Assert.AreEqual("Ali won", score.text, "the English entry, formatted the same way");
+                Assert.AreEqual("Club", title.text);
+                Assert.IsTrue(tree.Q("root").ClassListContains("locale-de"));
+
+                Assert.DoesNotThrow(() => args.Set(0, "Veli"), "a generated setter never throws");
+                yield return Frames(2);
+                Assert.AreEqual("Veli won", score.text);
+                LogAssert.NoUnexpectedReceived(); // reported once per key and locale
+            }
+            finally { LocalizationSettings.SelectedLocaleChanged -= listener; }
+        }
+
+        [UnityTest]
+        public IEnumerator ADetachedScreen_StopsListening_AndShowsTheCurrentLocaleWhenItComesBack()
+        {
+            var set = Compile(DesignArgumentFormat.SmartString, out _);
+            var (root, tree, _, args) = Open(set, "tr");
+            var score = tree.Q<Label>("score");
+            args.Set(0, "Ali");
+            yield return Frames(3);
+            Assert.AreEqual("Ali kazandı", score.text);
+
+            tree.RemoveFromHierarchy();
+            yield return null;
+            LocalizationSettings.SelectedLocale = _fixture.Locales["en"];
+            yield return Frames(2);
+            Assert.AreEqual("Ali kazandı", score.text, "a detached screen is not written");
+            root.Add(tree);
+            yield return Frames(3);
+            Assert.AreEqual("Ali won", score.text, "back in a panel it shows the current locale");
+            args.Set(0, "Veli");
+            yield return Frames(2);
+            Assert.AreEqual("Veli won", score.text, "and its arguments still reach it");
         }
     }
 }

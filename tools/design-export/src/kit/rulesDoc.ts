@@ -269,7 +269,7 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
   h("Markup attributes");
   L.push("| Attribute | Meaning | Required |", "|---|---|---|",
     ...MARKUP_ATTRIBUTES.map((a) => `| \`${a.name}\` | ${a.meaning} | ${a.required} |`), "",
-    "Ids, actions, binds, repeat names and state names are lowercase ASCII: `^[a-z0-9]+([._-][a-z0-9]+)*$`. Localization keys are ASCII in any letter case, exact and case-sensitive, spelled as the String Table key (`calendar.main.pendingOnly`): `^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$` (both U-MRK-005; no `İ`, `ı`, `ş`). Elements without `data-u-id` get structural names, so code never depends on them.",
+    "Ids, actions, binds, repeat names and state names are lowercase ASCII: `^[a-z0-9]+([._-][a-z0-9]+)*$`. Localization keys are ASCII in any letter case, exact and case-sensitive, spelled as the String Table key (`inbox.main.unreadOnly`): `^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$` (both U-MRK-005; no `İ`, `ı`, `ş`). Elements without `data-u-id` get structural names, so code never depends on them.",
     "A variable inside localized text is `<span data-u-arg=\"name\">sample</span>`, written `{name}` in `data-en`.");
 
   h("Text styles");

@@ -16,6 +16,13 @@ namespace DesignUi
         [UxmlAttribute("fonts")]
         public DesignFontSet Fonts { get; set; }
 
+        /// <summary>
+        /// The locale code of English, the source and fallback language of the screen's localized texts (written by the
+        /// compiler when the profile localizes), or null.
+        /// </summary>
+        [UxmlAttribute("source-locale")]
+        public string SourceLocale { get; set; }
+
         public DesignScreen()
         {
             RegisterCallback<AttachToPanelEvent>(OnAttach);

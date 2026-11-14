@@ -16,7 +16,9 @@ export const rule: Rule = {
         const outer = s.elements[p].attrs["data-u-action"];
         if (outer === undefined) continue;
         out.push(make(rule, e.path, `data-u-action="${action}" is inside data-u-action="${outer}" (${s.elements[p].path})`,
-          "Move the action to one element: keep data-u-action on the outer element when the whole area is one control, or on the inner element only, and place a second control beside the first, not inside it."));
+          "Move the action to one element. To keep a button inside a card, do not put the card's action on the card container: give the card (position: relative) " +
+          "a full-size layer element (position: absolute; inset: 0) that carries the card's data-u-action, and put the button after it as its sibling (position: relative) " +
+          "with its own action, so the button is drawn and pressed above the layer instead of inside another action."));
         break;
       }
     }

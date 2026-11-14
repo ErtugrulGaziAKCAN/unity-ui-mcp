@@ -16,7 +16,8 @@ namespace DesignUi.Editor
     /// <c>alt</c> and <c>aria-label</c> texts, which UI Toolkit does not draw, are written to the table and kept in the
     /// manifest.</item>
     /// <item>The UXML keeps no player-visible copy: a bound element's sample value (<c>data-u-bind</c>) is dropped too; the
-    /// view sets it.</item>
+    /// view sets it. A TextField's keyed design value is a localized default: a locale switch writes it again, also over
+    /// what the player typed, so inputs the player edits carry data-u-bind (or a placeholder) instead.</item>
     /// <item>Localized text is plain unless the design marked it rich (a translation is never read as tags).</item>
     /// <item>Arguments: <c>{name}</c> stays for Smart Strings; the indexed format writes <c>{0}</c>, <c>{1}</c> in the order
     /// the generated view sets them (the design's argument order).</item>
@@ -33,6 +34,8 @@ namespace DesignUi.Editor
         /// <summary>TextInputBaseField's placeholder as a binding id (Unity 6000.3; <c>textEdition.placeholder</c> does not bind).</summary>
         public const string PlaceholderProperty = "placeholderText";
         public const string TooltipProperty = "tooltip";
+        /// <summary>The screen root's attribute naming English (<see cref="DesignUi.DesignScreen.SourceLocale"/>).</summary>
+        public const string SourceLocaleAttribute = "source-locale";
 
         internal static StringTableRequest Bind(CompiledScreen compiled, DesignUiProfile profile)
         {
@@ -104,6 +107,9 @@ namespace DesignUi.Editor
                     }
                 }
             }
+
+            // the runtime binding's English (a translation that cannot be formatted falls back to it)
+            if (compiled.Root.Tag == ScreenBuilder.ScreenTag) compiled.Root.Attributes.Add(new KeyValuePair<string, string>(SourceLocaleAttribute, english));
 
             return new StringTableRequest
             {

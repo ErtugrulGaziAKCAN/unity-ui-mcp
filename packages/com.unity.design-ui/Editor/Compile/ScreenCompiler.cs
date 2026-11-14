@@ -292,7 +292,7 @@ namespace DesignUi.Editor
                 if (setFolder != null) EnsureAssetFolder(setFolder);
                 fontSet = FontMap.WriteFontSet(fonts, twins, outFolder, profile.textSizes);
             }
-            catch (FontSetupException e) { return Fail(e.Message); }
+            catch (FontSetupException e) { return new CompileResult { Ok = false, Errors = new[] { e.Message }, Localization = localization }; } // the tables stay written
 
             var writes = new List<KeyValuePair<string, byte[]>>();
             Plan(screenDir, outputs, writes);

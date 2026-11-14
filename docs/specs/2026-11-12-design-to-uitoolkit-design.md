@@ -484,12 +484,16 @@ no key.
 
 **At import (localization writer).**
 
-- Writes only this screen's keys: English source and Turkish entry.
-- Never overwrites an existing different value. Conflicts are reported and left for a human.
-- Saves only the touched table assets (asset-specific save; no project-wide save).
+- Writes only this screen's keys: English source and Turkish entry. Keys are exact and case-sensitive; an existing key
+  with the same English is reused, and only a missing Turkish entry of it is added.
+- Never overwrites an existing different value. Conflicts are reported and left for a human; nothing of a conflicting
+  key is written.
+- Saves only the touched table assets (asset-specific save; no project-wide save). Creating a collection can make
+  Addressables save the whole project, so it is refused while any asset or open scene has unsaved changes.
 - Other active locales fall back to English and are reported as "translation pending"; fallback is not counted as
-  translated.
-- New collections follow the profile's naming, Addressables address, labels and preload rules.
+  translated. Entries whose Smart flag differs from the profile's argument format are reported as warnings.
+- New collections follow the profile's naming, Addressables labels and preload rules; their addresses stay Unity
+  Localization's own (`<collection>_<locale>`), which it loads tables by.
 
 **In Unity.**
 

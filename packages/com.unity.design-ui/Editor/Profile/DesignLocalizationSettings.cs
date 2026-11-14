@@ -47,7 +47,7 @@ namespace DesignUi.Editor
         [Tooltip("Folder of a collection the import creates; {collection} is its name.")]
         public string newCollectionFolder = "Assets/Localization/{collection}";
 
-        [Tooltip("Mark the tables of a collection the import creates for preloading (Unity Localization's Preload label).")]
+        [Tooltip("Mark the tables of a collection the import creates for preloading (Unity Localization's Preload label). Preloaded tables let a language switch show the new text in the same frame as the new font; without it the new font shows the old text until the table loads.")]
         public bool preloadNewTables;
 
         [Tooltip("Extra Addressables labels for the tables of a collection the import creates. Their addresses stay Unity Localization's own (<collection>_<locale>), which it loads them by.")]

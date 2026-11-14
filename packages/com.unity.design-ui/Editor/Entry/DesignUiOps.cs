@@ -100,7 +100,8 @@ namespace DesignUi.Editor
                 log.Append("Imported ").Append(r.Screen ?? "the screen").Append(" into ").Append(r.Folder ?? profile.outputFolder).Append(": ")
                     .Append(r.Written.Count).Append(r.Written.Count == 1 ? " file" : " files").Append(" written (").Append(ms).Append(" ms).\n");
             }
-            else log.Append("Import failed; nothing was written for the screen.\n");
+            else log.Append(r.Localization != null ? "Import failed after its String Table entries were written (listed below); no screen file was written.\n"
+                : "Import failed; nothing was written for the screen.\n");
             foreach (var e in r.Errors) log.Append("error: ").Append(e).Append('\n');
             foreach (var n in r.Notes) log.Append("note: ").Append(n).Append('\n');
             if (r.Localization != null) foreach (var l in r.Localization.Lines()) log.Append(l).Append('\n');

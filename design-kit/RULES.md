@@ -77,7 +77,7 @@ textarea { resize: none; }
 | `data-u-state` | Screen state variant root, e.g. `loading`, `empty`, `error`; CSS shows it under `.state-<name>` | on state roots |
 | `data-u-external` | Region drawn by the host (e.g. an existing uGUI shell); not compiled, masked in comparison | optional |
 
-Ids, actions, binds, repeat names and state names are lowercase ASCII: `^[a-z0-9]+([._-][a-z0-9]+)*$`. Localization keys are ASCII in any letter case, exact and case-sensitive, spelled as the String Table key (`calendar.main.pendingOnly`): `^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$` (both U-MRK-005; no `İ`, `ı`, `ş`). Elements without `data-u-id` get structural names, so code never depends on them.
+Ids, actions, binds, repeat names and state names are lowercase ASCII: `^[a-z0-9]+([._-][a-z0-9]+)*$`. Localization keys are ASCII in any letter case, exact and case-sensitive, spelled as the String Table key (`inbox.main.unreadOnly`): `^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$` (both U-MRK-005; no `İ`, `ı`, `ş`). Elements without `data-u-id` get structural names, so code never depends on them.
 A variable inside localized text is `<span data-u-arg="name">sample</span>`, written `{name}` in `data-en`.
 
 ## Text styles
@@ -418,7 +418,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-MRK-009 | error | a keyed, bound, id'd or action inline element sharing a line with other text, tags or spaces, or changing font size or line height in the line | its own block element (or a flex row of them); `data-u-arg` for a variable inside one text |
 | U-MRK-010 | error | a `data-u-repeat` container with other children, a sample whose structure differs from the template, or a mode other than list/inline | only the items in the container, samples with the template's elements, ids, keys and binds |
 | U-MRK-011 | error | a `data-u-id` that gives a member the generated view class already has (`state`, `set-state`, `find`, `screen-root`, …) | another id, e.g. `state-label` |
-| U-MRK-012 | error | a `data-u-action` element inside another `data-u-action` element | one action per control: on the outer element or the inner one, a second control beside it |
+| U-MRK-012 | error | a `data-u-action` element inside another `data-u-action` element | one action per element; a button in a card: the card's action on a full-size layer element beside the button, not on the card container |
 | U-NET-001 | error | any remote resource (fonts, stylesheets, images) except scripts from allowed origins | no remote resources; local files |
 | U-NET-002 | error | a local file or Claude Design blob that is missing | add the file, or map the blob in blobs.json |
 | W-CSS-001 | warning | a transition on a layout property or `all` (warning) | transition transforms or colours |

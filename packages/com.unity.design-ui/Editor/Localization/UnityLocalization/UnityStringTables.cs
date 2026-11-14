@@ -17,13 +17,15 @@ namespace DesignUi.Editor
     /// Compiled when com.unity.localization 1.5 or newer is installed; it registers itself in
     /// <see cref="DesignStringTables.Current"/> when the Editor loads.
     /// <list type="bullet">
-    /// <item>Keys are exact and case-sensitive (<c>calendar.main.pendingOnly</c>): an existing key is reused only when the
+    /// <item>Keys are exact and case-sensitive (<c>inbox.main.unreadOnly</c>): an existing key is reused only when the
     /// design spells it the same; a new key that differs from one only in letter case is reported.</item>
     /// <item>The screen's collection must have an English and a reference-locale table. A collection that does not exist yet
     /// is created in the profile's folder with a table per project locale (Unity Localization adds the tables to
     /// Addressables under its own addresses, <c>&lt;collection&gt;_&lt;code&gt;</c>, and <c>Locale-&lt;code&gt;</c> labels);
-    /// the profile's preload flag and extra labels are applied. It is refused when the project has no Addressables settings
-    /// (creating them saves every asset of the project).</item>
+    /// the profile's preload flag and extra labels are applied. Creating it is refused when the project has no Addressables
+    /// settings (creating them saves every asset of the project) and while the project has unsaved work (assets with unsaved
+    /// changes, unsaved scenes): Addressables saves the whole project when it creates a group for the new tables
+    /// (AddressableAssetGroup.AddSchema), and no public Addressables API creates a usable group without that save.</item>
     /// <item>A table or shared table data with unsaved changes is refused (the import saves only what it writes and must not
     /// save someone's open edits).</item>
     /// <item>Saves: each written table, the shared table data and, for a new collection, the Addressables settings and groups
@@ -53,6 +55,13 @@ namespace DesignUi.Editor
                 var folder = request.NewCollectionFolder ?? "";
                 if (!(folder == "Assets" || folder.StartsWith("Assets/", StringComparison.Ordinal)))
                     errors.Add("the folder for the new String Table collection '" + request.Collection + "' must be inside Assets/ (the profile's newCollectionFolder gives '" + folder + "')");
+                // Localization adds the new tables to Addressables, which saves the whole project when it creates a group
+                // (AddressableAssetGroup.AddSchema): no one's unsaved work may be in the project then
+                var unsaved = UnsavedWork();
+                if (unsaved.Count > 0)
+                    errors.Add("creating String Table collection '" + request.Collection + "' can make Unity Localization and Addressables save the whole project; " +
+                               "save or revert these first: " + string.Join(", ", unsaved.Take(12)) + (unsaved.Count > 12 ? " and " + (unsaved.Count - 12) + " more" : "") +
+                               " (or create the collection in the Localization Tables window), then import again");
                 return errors;
             }
             foreach (var code in new[] { request.EnglishLocale, request.ReferenceLocale }.Distinct(StringComparer.OrdinalIgnoreCase))
@@ -62,6 +71,34 @@ namespace DesignUi.Editor
                 if (EditorUtility.IsDirty(asset))
                     errors.Add("'" + AssetDatabase.GetAssetPath(asset) + "' has unsaved changes; save or revert them, then import again (the import saves only what it writes)");
             return errors;
+        }
+
+        /// <summary>
+        /// What a project-wide save would write that the import did not change, by path: project assets in Unity's own format
+        /// (and project settings) with unsaved changes; plus open scenes that are not saved. Imported files (fonts, textures)
+        /// and the Editor's built-in resources are not written by a save and are left out.
+        /// </summary>
+        public static IReadOnlyList<string> UnsavedWork()
+        {
+            var paths = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (var o in UnityEngine.Resources.FindObjectsOfTypeAll<Object>())
+            {
+                if (o == null || !EditorUtility.IsDirty(o) || !EditorUtility.IsPersistent(o)) continue;
+                var path = AssetDatabase.GetAssetPath(o);
+                if (string.IsNullOrEmpty(path)) continue;
+                if (path.StartsWith("ProjectSettings/", StringComparison.Ordinal) ||
+                    (path.StartsWith("Assets/", StringComparison.Ordinal) || path.StartsWith("Packages/", StringComparison.Ordinal)) && AssetDatabase.IsNativeAsset(o))
+                    paths.Add(path);
+            }
+            var result = paths.ToList();
+            for (int i = 0; i < UnityEngine.SceneManagement.SceneManager.sceneCount; i++)
+            {
+                var scene = UnityEngine.SceneManagement.SceneManager.GetSceneAt(i);
+                if (scene.isDirty) result.Add((string.IsNullOrEmpty(scene.path) ? "Untitled" : scene.path) + " (unsaved scene)");
+            }
+            var stage = UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
+            if (stage != null && stage.scene.isDirty) result.Add(stage.assetPath + " (unsaved prefab)");
+            return result;
         }
 
         public LocalizationReport Write(StringTableRequest request)
@@ -80,7 +117,6 @@ namespace DesignUi.Editor
             {
                 var smart = request.Format == DesignArgumentFormat.SmartString && text.Args.Length > 0;
                 var written = new List<string>();
-                var conflict = false;
                 var key = shared.GetEntry(text.Key); // exact and case-sensitive: keys are never folded
                 if (key == null)
                 {
@@ -90,47 +126,40 @@ namespace DesignUi.Editor
                                          "spell it as the table does to reuse its translations");
                 }
                 var enEntry = key != null ? en.GetEntry(key.Id) : null;
-                if (enEntry != null && !string.IsNullOrEmpty(enEntry.Value))
+                var refEntry = !sameTable && key != null ? reference.GetEntry(key.Id) : null;
+                var writeEn = enEntry == null || string.IsNullOrEmpty(enEntry.Value);
+                var writeRef = !sameTable && (refEntry == null || string.IsNullOrEmpty(refEntry.Value));
+                var conflicts = new List<string>();
+                if (!writeEn && !string.Equals(enEntry.Value, text.En, StringComparison.Ordinal))
+                    conflicts.Add(text.Key + ": English in the table '" + enEntry.Value + "', in the design '" + text.En + "' (" + string.Join(", ", text.Places) + ")");
+                else if (!writeEn && smart && !enEntry.IsSmart)
+                    conflicts.Add(text.Key + ": the English entry is not a Smart String, but the design sets {" + string.Join("}, {", text.Args) + "} in it");
+                if (!sameTable && !writeRef && !string.Equals(refEntry.Value, text.Reference, StringComparison.Ordinal))
+                    conflicts.Add(text.Key + ": " + request.ReferenceLocale + " in the table '" + refEntry.Value + "', in the design '" + text.Reference + "' (" +
+                                  string.Join(", ", text.Places) + ")");
+                if (conflicts.Count > 0)
                 {
-                    if (!string.Equals(enEntry.Value, text.En, StringComparison.Ordinal))
-                    {
-                        report.Conflicts.Add(text.Key + ": English in the table '" + enEntry.Value + "', in the design '" + text.En + "' (" + string.Join(", ", text.Places) + ")");
-                        continue;
-                    }
-                    if (smart && !enEntry.IsSmart)
-                    {
-                        report.Conflicts.Add(text.Key + ": the English entry is not a Smart String, but the design sets {" + string.Join("}, {", text.Args) + "} in it");
-                        continue;
-                    }
+                    report.Conflicts.AddRange(conflicts); // nothing of a conflicting key is written
+                    continue;
                 }
-                else
+                if (writeEn)
                 {
                     Write(en, text.Key, text.En, smart);
                     written.Add(request.EnglishLocale);
                 }
-                if (!sameTable)
+                if (writeRef)
                 {
-                    var refEntry = reference.GetEntry(text.Key);
-                    if (refEntry == null || string.IsNullOrEmpty(refEntry.Value))
-                    {
-                        Write(reference, text.Key, text.Reference, smart);
-                        written.Add(request.ReferenceLocale);
-                    }
-                    else if (!string.Equals(refEntry.Value, text.Reference, StringComparison.Ordinal))
-                    {
-                        conflict = true;
-                        report.Conflicts.Add(text.Key + ": " + request.ReferenceLocale + " in the table '" + refEntry.Value + "', in the design '" + text.Reference + "' (" +
-                                             string.Join(", ", text.Places) + ")");
-                    }
+                    Write(reference, text.Key, text.Reference, smart);
+                    written.Add(request.ReferenceLocale);
                 }
                 if (written.Count > 0)
                 {
                     report.Added.Add(text.Key + " (" + string.Join(", ", written) + ")");
                     touched.Add(shared);
-                    if (written.Contains(request.EnglishLocale)) touched.Add(en);
-                    if (written.Contains(request.ReferenceLocale)) touched.Add(reference);
+                    if (writeEn) touched.Add(en);
+                    if (writeRef) touched.Add(reference);
                 }
-                else if (!conflict) report.Reused.Add(text.Key);
+                else report.Reused.Add(text.Key);
             }
 
             foreach (var asset in touched.Distinct())
@@ -142,6 +171,7 @@ namespace DesignUi.Editor
             }
             if (touched.Count > 0) LocalizationEditorSettings.EditorEvents.RaiseCollectionModified(this, collection);
             Pending(collection, request, report);
+            SmartFlags(collection, request, report);
             return report;
         }
 
@@ -220,9 +250,32 @@ namespace DesignUi.Editor
                 var code = locale.Identifier.Code;
                 if (Same(code, request.EnglishLocale) || Same(code, request.ReferenceLocale)) continue;
                 var table = TableOf(collection, code);
-                var pending = new PendingTranslation { Locale = code, FallsBackToEnglish = ReachesEnglish(locale, request.EnglishLocale) };
+                var pending = new PendingTranslation { Locale = code, FallsBackToEnglish = ReachesEnglish(locale, request.EnglishLocale), NoTable = table == null };
                 pending.Keys.AddRange(keys.Where(k => table == null || string.IsNullOrEmpty(table.GetEntry(k)?.Value)));
                 if (pending.Keys.Count > 0) report.Pending.Add(pending);
+            }
+        }
+
+        /// <summary>
+        /// Entries of texts with arguments whose Smart flag differs from the profile's format, in any locale: the screen formats
+        /// each entry by its own flag (a Smart String gets the arguments by name, a plain entry by index), so such a
+        /// translation shows its placeholders differently than the design's English. Reported, never changed.
+        /// </summary>
+        static void SmartFlags(StringTableCollection collection, StringTableRequest request, LocalizationReport report)
+        {
+            var smartProfile = request.Format == DesignArgumentFormat.SmartString;
+            foreach (var text in request.Texts.Where(t => t.Args.Length > 0))
+            {
+                if (report.Conflicts.Any(c => c.StartsWith(text.Key + ":", StringComparison.Ordinal))) continue;
+                foreach (var table in collection.StringTables.Where(t => t != null).OrderBy(t => t.LocaleIdentifier.Code, StringComparer.Ordinal))
+                {
+                    var entry = table.GetEntry(text.Key);
+                    if (entry == null || string.IsNullOrEmpty(entry.Value) || entry.IsSmart == smartProfile) continue;
+                    report.Warnings.Add(text.Key + " (" + table.LocaleIdentifier.Code + "): " + (smartProfile
+                        ? "not a Smart String, but the profile writes Smart Strings; the screen gives it the arguments by index ({0}), not by name ({" + text.Args[0] + "})"
+                        : "a Smart String, but the profile writes plain {0} placeholders; the screen gives it the arguments by name ({" + text.Args[0] + "}), not by index ({0})") +
+                        ". Mark it " + (smartProfile ? "Smart" : "not Smart") + " in the Localization Tables window, or write its placeholders that way");
+                }
             }
         }
 

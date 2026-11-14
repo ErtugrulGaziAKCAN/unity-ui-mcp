@@ -6,7 +6,7 @@ import { TEXT_ATTRS } from "./U-MRK-007.js";
 export const ID_PATTERN = /^[a-z0-9]+([._-][a-z0-9]+)*$/;
 /**
  * Localization keys: ASCII letters in any case, digits and single '.', '_' or '-' separators. A key is the String Table
- * entry exactly as the game's tables spell it (`calendar.main.pendingOnly`): case-sensitive, never folded or respelled.
+ * entry exactly as the game's tables spell it (`inbox.main.unreadOnly`): case-sensitive, never folded or respelled.
  */
 export const KEY_PATTERN = /^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$/;
 const ID_ATTRS = ["data-u-screen", "data-u-id", "data-u-repeat", "data-u-state", "data-u-bind", "data-u-action", "data-u-arg"];
@@ -30,7 +30,7 @@ export const rule: Rule = {
         .map((a) => `${a}="${e.attrs[a]}" does not match ${KEY_PATTERN.source}`));
       if (bad.length) out.push(make(rule, e.path, bad.join("; "),
         "Use ASCII only. Ids, actions, binds and other names: lowercase letters and digits separated by single '.', '_' or '-' (e.g. gelen-kutusu-i, open-inbox). " +
-        "Localization keys: letters in any case, digits and the same separators, spelled exactly as the String Table key (e.g. calendar.main.pendingOnly). " +
+        "Localization keys: letters in any case, digits and the same separators, spelled exactly as the String Table key (e.g. inbox.main.unreadOnly). " +
         "Write Turkish letters as ASCII (İ/ı → i, ş → s, ğ → g, ü → u, ö → o, ç → c)."));
     }
     return out;

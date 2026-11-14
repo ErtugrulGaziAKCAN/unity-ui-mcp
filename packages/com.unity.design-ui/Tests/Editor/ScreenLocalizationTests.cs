@@ -162,6 +162,7 @@ namespace DesignUi.Editor.Tests
                 StringAssert.DoesNotContain(copy, uxml, "no player-visible copy in the screen's UXML");
             Assert.IsFalse(uxml.Contains("placeholder-text=") || uxml.Contains("tooltip="), "attribute texts are bound, not written");
             StringAssert.Contains("enable-rich-text=\"false\"", Line(uxml, "title"), "a translation is plain text unless the design marked it rich");
+            StringAssert.Contains("source-locale=\"en\"", Line(uxml, "root"), "the screen names English, which a translation that cannot be formatted falls back to");
             // the element keeps one line, its bindings are its first children
             var lines = uxml.Split('\n').ToList();
             var at = lines.FindIndex(l => l.Contains(" name=\"title\""));

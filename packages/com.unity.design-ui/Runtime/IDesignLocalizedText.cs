@@ -22,13 +22,21 @@ namespace DesignUi
     /// <summary>Finds the localized text binding of an element.</summary>
     public static class DesignLocalizedTexts
     {
-        /// <summary>The element's localized text binding (on any of its properties), or null.</summary>
+        /// <summary>
+        /// The localized binding of the element's own text (<c>text</c>, else <c>value</c>), else of any of its properties, or null.
+        /// </summary>
         public static IDesignLocalizedText Of(VisualElement element)
         {
             if (element == null) return null;
+            IDesignLocalizedText other = null;
             foreach (var info in element.GetBindingInfos())
-                if (info.binding is IDesignLocalizedText text) return text;
-            return null;
+            {
+                if (!(info.binding is IDesignLocalizedText text)) continue;
+                var id = info.bindingId.ToString();
+                if (id == "text" || id == "value") return text;
+                if (other == null) other = text;
+            }
+            return other;
         }
     }
 }

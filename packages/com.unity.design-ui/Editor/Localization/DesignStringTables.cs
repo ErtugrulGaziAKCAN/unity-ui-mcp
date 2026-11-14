@@ -39,6 +39,8 @@ namespace DesignUi.Editor
         public readonly List<string> Keys = new List<string>();
         /// <summary>The locale's fallback chain reaches English, so the screen shows English for these keys meanwhile.</summary>
         public bool FallsBackToEnglish;
+        /// <summary>The collection has no table for the locale (translators add it first).</summary>
+        public bool NoTable;
     }
 
     /// <summary>What the import did in the String Tables.</summary>
@@ -53,6 +55,8 @@ namespace DesignUi.Editor
         /// <summary>Keys the table holds with another value: reported, never overwritten.</summary>
         public readonly List<string> Conflicts = new List<string>();
         public readonly List<PendingTranslation> Pending = new List<PendingTranslation>();
+        /// <summary>Entries the screen shows differently than the profile intends (e.g. a translation's Smart flag); nothing was changed.</summary>
+        public readonly List<string> Warnings = new List<string>();
         /// <summary>Assets saved (asset-specific saves).</summary>
         public readonly List<string> Saved = new List<string>();
         public readonly List<string> Notes = new List<string>();
@@ -64,8 +68,10 @@ namespace DesignUi.Editor
                          Reused.Count + " reused, " + Conflicts.Count + " conflicts";
             foreach (var a in Added) yield return "localization written: " + a;
             foreach (var c in Conflicts) yield return "localization conflict (not overwritten): " + c;
+            foreach (var w in Warnings) yield return "localization warning: " + w;
             foreach (var p in Pending)
-                yield return "translation pending: " + p.Locale + " (" + p.Keys.Count + (p.Keys.Count == 1 ? " key" : " keys") + ": " + string.Join(", ", p.Keys) + ")" +
+                yield return "translation pending: " + p.Locale + " (" + (p.NoTable ? "no table in collection '" + Collection + "'; " : "") +
+                             p.Keys.Count + (p.Keys.Count == 1 ? " key" : " keys") + ": " + string.Join(", ", p.Keys) + ")" +
                              (p.FallsBackToEnglish ? "; shows English meanwhile" : "; its fallback does not reach English: add a Fallback Locale to it");
             foreach (var n in Notes) yield return "localization: " + n;
         }
@@ -84,8 +90,10 @@ namespace DesignUi.Editor
         /// <summary>
         /// Writes the request: new keys with their English and reference-locale entries; an existing key with the same English
         /// is reused untouched (a missing reference-locale entry is added); any different value is a conflict, reported and
-        /// never overwritten. Other active locales without the keys are reported as pending. Only the touched assets are
-        /// saved, each by itself.
+        /// never overwritten, and nothing of that key is written. Other active locales without the keys are reported as
+        /// pending, entries whose Smart flag differs from the profile's format as warnings. Only the touched assets are saved,
+        /// each by itself; a step that can save the whole project (creating a collection) is refused while the project has
+        /// unsaved work.
         /// </summary>
         LocalizationReport Write(StringTableRequest request);
 
