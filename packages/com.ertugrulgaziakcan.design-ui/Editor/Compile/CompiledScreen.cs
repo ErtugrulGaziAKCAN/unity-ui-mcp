@@ -150,6 +150,8 @@ namespace DesignUi.Editor
         public DesignUi.RtlTextAlignment? RtlAlignment;
         /// <summary>The exact viewports and their panel scales: text-size steps are checked at each (scaled viewports are exempt).</summary>
         public IReadOnlyList<(Vector2Int viewport, double scale)> Viewports;
+        /// <summary>The panel scales of the profile's scaled viewports: the screen root's <c>viewport-scales</c> (DesignScreen).</summary>
+        public IReadOnlyList<double> ViewportScales;
         /// <summary>The compiled font set (<c>DesignFonts.asset</c>) relative to the screen's UXML, for the screen root's reference, or null.</summary>
         public string FontSet;
     }

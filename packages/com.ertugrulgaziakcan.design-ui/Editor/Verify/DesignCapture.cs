@@ -862,6 +862,15 @@ namespace DesignUi.Editor
                 var applies = Root is DesignScreen ds && !string.IsNullOrEmpty(ds.Breakpoints);
                 if (!applies) foreach (var name in breakpoints) Root.AddToClassList(ScreenBuilder.BreakpointClassPrefix + name);
                 for (int i = 0; i < MountFrames; i++) yield return null;
+                // a scaled viewport's fonts (DesignFonts.uss under the root's vs-* class): the root applies its panel's scale on
+                // attach and on geometry changes; a class it still had to change re-lays the text out first
+                if (Root is DesignScreen scaledRoot && !string.IsNullOrEmpty(scaledRoot.ViewportScales))
+                {
+                    var before = string.Join(" ", scaledRoot.GetClasses().Where(c => c.StartsWith(DesignViewportScales.ClassPrefix, StringComparison.Ordinal)));
+                    scaledRoot.ApplyViewportScale();
+                    if (before != string.Join(" ", scaledRoot.GetClasses().Where(c => c.StartsWith(DesignViewportScales.ClassPrefix, StringComparison.Ordinal))))
+                        for (int i = 0; i < MountFrames; i++) yield return null;
+                }
                 if (applies)
                 {
                     var applied = Root.GetClasses().Where(c => c.StartsWith(ScreenBuilder.BreakpointClassPrefix, StringComparison.Ordinal))

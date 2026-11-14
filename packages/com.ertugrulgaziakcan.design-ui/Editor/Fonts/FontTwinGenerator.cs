@@ -38,6 +38,11 @@ namespace DesignUi.Editor
     /// line of that size is exactly <c>lineHeight</c> tall in UI Toolkit with every baseline where Chromium puts it. Glyph
     /// metrics are untouched. A variant falls back to the same size's variants of the fallbacks, and its weight table holds
     /// the same size's variants of the weight faces.</para>
+    /// <para>Scaled-viewport variants (<see cref="LineBox.AtDeviceScale"/>): Unity sets text at whole device pixels (halves up), so
+    /// at a scaled viewport's panel scale, where a style's size is a fraction of a device pixel, the variant made for that scale
+    /// has <c>faceInfo.scale = exact / rounded</c> device size: glyphs, advances and the line box come out at the design's size
+    /// (measured on 6000.3, docs/findings/viewport-classes.md). <c>DesignFonts.uss</c> selects them under the screen root's
+    /// <see cref="DesignUi.DesignViewportScales"/> class.</para>
     /// </summary>
     public static class FontTwinGenerator
     {
@@ -53,18 +58,58 @@ namespace DesignUi.Editor
         /// </summary>
         public sealed class LineBox
         {
+            /// <summary>The twin name suffix: <see cref="BaseKey"/>, and for a scaled-viewport variant <c>x</c> and its scale's key.</summary>
             public readonly string Key;
+            /// <summary>The key of the style's line box (the USS variable suffix), the same for its scaled-viewport variants.</summary>
+            public readonly string BaseKey;
             /// <summary><c>lineHeight / fontSize</c>.</summary>
             public readonly double Ratio;
             /// <summary>CSS font size and line height of the style (px).</summary>
             public readonly double FontSize, LineHeight;
+            /// <summary>The panel scale a scaled-viewport variant is made for; null for the style's own variant.</summary>
+            public readonly double? DeviceScale;
+            /// <summary>
+            /// The variant's <c>faceInfo.scale</c>: the exact device size over the size Unity sets (<see cref="UnitySize"/>), 1 for
+            /// the style's own variant.
+            /// </summary>
+            public readonly double FaceScale = 1;
 
-            LineBox(double fontSize, double lineHeight)
+            LineBox(double fontSize, double lineHeight, double? deviceScale = null)
             {
                 FontSize = fontSize;
                 LineHeight = lineHeight;
                 Ratio = lineHeight / fontSize;
-                Key = KeyOf(fontSize, lineHeight);
+                BaseKey = KeyOf(fontSize, lineHeight);
+                Key = BaseKey;
+                if (deviceScale.HasValue)
+                {
+                    DeviceScale = deviceScale;
+                    FaceScale = fontSize * deviceScale.Value / UnitySize(fontSize * deviceScale.Value);
+                    Key = BaseKey + "x" + DesignUi.DesignViewportScales.Key(deviceScale.Value);
+                }
+            }
+
+            /// <summary>The device font size UI Toolkit sets for an exact one: whole device pixels, halves up (measured on 6000.3: 7.5 → 8, 22.5 → 23).</summary>
+            public static double UnitySize(double devicePx) => Math.Max(1, Math.Floor(devicePx + 0.5));
+
+            /// <summary>
+            /// The variant of this style's line box for text at panel scale <paramref name="scale"/> (a scaled viewport's), or null
+            /// when the font size is whole device pixels there (the style's own variant is exact) or this is already one.
+            /// </summary>
+            public LineBox AtDeviceScale(double scale)
+            {
+                if (DeviceScale.HasValue || !(scale > 0) || double.IsInfinity(scale)) return null;
+                double px = FontSize * scale;
+                return Math.Abs(px - Math.Round(px)) < 1e-6 ? null : new LineBox(FontSize, LineHeight, scale);
+            }
+
+            /// <summary><paramref name="boxes"/> and the variant of each at each of <paramref name="scales"/> where one is needed (each key once, ordered by key).</summary>
+            public static IReadOnlyList<LineBox> WithDeviceScales(IEnumerable<LineBox> boxes, IEnumerable<double> scales)
+            {
+                var all = (boxes ?? Enumerable.Empty<LineBox>()).Where(b => b != null).ToList();
+                var list = scales?.ToList() ?? new List<double>();
+                return all.Concat(all.Where(b => !b.DeviceScale.HasValue).SelectMany(b => list.Select(b.AtDeviceScale)).Where(b => b != null))
+                    .GroupBy(b => b.Key).Select(g => g.First()).OrderBy(b => b.Key, StringComparer.Ordinal).ToList();
             }
 
             static string Digits(double v) => Math.Round(v, 4).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
@@ -112,6 +157,7 @@ namespace DesignUi.Editor
                 face.lineHeight = (float)target;
                 face.ascentLine = (float)ascent;
                 face.descentLine = (float)(ascent - target);
+                if (DeviceScale.HasValue) face.scale = (float)FaceScale;
                 return face;
             }
         }
@@ -331,7 +377,7 @@ namespace DesignUi.Editor
             }
         }
 
-        /// <summary>Writes a variant's line metrics (line height, ascent and descent lines) when they differ.</summary>
+        /// <summary>Writes a variant's line metrics (line height, ascent and descent lines) and face scale when they differ.</summary>
         static void SetFace(SerializedObject so, FaceInfo face)
         {
             void Float(string name, float value)
@@ -342,6 +388,7 @@ namespace DesignUi.Editor
             Float("m_LineHeight", face.lineHeight);
             Float("m_AscentLine", face.ascentLine);
             Float("m_DescentLine", face.descentLine);
+            Float("m_Scale", face.scale); // a scaled-viewport variant's exact / rounded size; 1 elsewhere
         }
 
         static void Set(SerializedProperty p, FontAsset value)

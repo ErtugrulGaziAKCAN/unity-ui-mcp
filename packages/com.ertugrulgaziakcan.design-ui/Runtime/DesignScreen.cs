@@ -51,6 +51,27 @@ namespace DesignUi
             }
         }
 
+        double[] m_ViewportScales;
+        string m_ViewportScalesText;
+        IVisualElementScheduledItem m_ScaleWatch;
+
+        /// <summary>
+        /// The panel scales of the profile's scaled viewports (written by the compiler, <see cref="DesignViewportScales.Encode"/>):
+        /// while the screen is in a panel that renders at one of them it carries that scale's class
+        /// (<see cref="DesignViewportScales.ClassOf"/>), under which the compiled fonts keep the design's text size and line box.
+        /// </summary>
+        [UxmlAttribute("viewport-scales")]
+        public string ViewportScales
+        {
+            get => m_ViewportScalesText;
+            set
+            {
+                m_ViewportScalesText = value;
+                m_ViewportScales = string.IsNullOrEmpty(value) ? null : DesignViewportScales.Parse(value);
+                ApplyViewportScale();
+            }
+        }
+
         /// <summary>Whether the screen has transitions or keyframe animations (written by the compiler).</summary>
         [UxmlAttribute("animated")]
         public bool Animated { get; set; }
@@ -69,7 +90,7 @@ namespace DesignUi
         {
             RegisterCallback<AttachToPanelEvent>(OnAttach);
             RegisterCallback<DetachFromPanelEvent>(OnDetach);
-            RegisterCallback<GeometryChangedEvent>(m_OnGeometry = e => ApplyBreakpoints());
+            RegisterCallback<GeometryChangedEvent>(m_OnGeometry = e => { ApplyBreakpoints(); ApplyViewportScale(); });
         }
 
         readonly EventCallback<GeometryChangedEvent> m_OnGeometry;
@@ -84,6 +105,26 @@ namespace DesignUi
             m_PanelRoot = e.destinationPanel?.visualTree;
             m_PanelRoot?.RegisterCallback(m_OnGeometry);
             ApplyBreakpoints();
+            ApplyViewportScale();
+            // a resolution change of the same aspect ratio keeps the panel's logical size (no geometry change): watch the scale
+            if (m_ViewportScales != null && m_ScaleWatch == null) m_ScaleWatch = schedule.Execute(ApplyViewportScale).Every(100);
+        }
+
+        /// <summary>
+        /// Sets the class of the declared scaled viewport whose scale the panel renders at (<see cref="IPanel.scaledPixelsPerPoint"/>,
+        /// within <see cref="DesignViewportScales.Tolerance"/>) and removes the others. Does nothing outside a panel; called on
+        /// attach, on geometry changes and every 100 ms while attached.
+        /// </summary>
+        public void ApplyViewportScale()
+        {
+            if (m_ViewportScales == null || panel == null) return;
+            var current = DesignViewportScales.Matching(m_ViewportScales, panel.scaledPixelsPerPoint);
+            foreach (var s in m_ViewportScales)
+            {
+                var cls = DesignViewportScales.ClassOf(s);
+                bool on = current.HasValue && current.Value == s;
+                if (ClassListContains(cls) != on) EnableInClassList(cls, on);
+            }
         }
 
         /// <summary>

@@ -67,6 +67,7 @@ namespace DesignUi.Editor.Tests
             p.referenceLocale = "tr";
             p.locales = new[] { "tr", "ar" };
             p.fontTwinFolder = FontFixture.TwinFolder;
+            p.scaledViewports = new Vector2Int[0]; // the scaled viewports' twins: ViewportScaleTextTests
             if (fonts) p.localeFonts = new[] { new LocaleFont { locale = "tr", font = FontFixture.Regular }, new LocaleFont { locale = "ar", font = _alt } };
             return p;
         }

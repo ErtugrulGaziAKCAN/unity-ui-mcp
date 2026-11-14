@@ -165,6 +165,7 @@ namespace DesignUi.Editor
                     RtlAlignment = (profile.localeRules ?? new DesignUi.DesignLocaleRules()).rtlAlignment,
                     Viewports = (profile.viewports ?? new UnityEngine.Vector2Int[0])
                         .Select(v => (v, BoxesWriter.Scale(v, profile.referenceResolution, profile.screenMatch))).ToList(),
+                    ViewportScales = FontMap.ScaledViewportScales(profile),
                     // the screen root's own reference to the locales' twins (DesignFonts.asset next to DesignFonts.uss, project only)
                     FontSet = FontSetFolder(outFolder) != null ? "../" + DesignUi.DesignFontSet.FileName : null,
                 };
@@ -184,10 +185,10 @@ namespace DesignUi.Editor
                 }
 
                 // fonts per locale: element rules keep var(--font-…); DesignFonts.uss defines them per .locale-<code>; every kit
-                // line box has a twin variant, and so has each of them scaled by a text-size step
+                // line box has a twin variant, and so has each of them scaled by a text-size step, and each at a scaled viewport's scale
                 resolver = hooks?.Fonts ?? FontMap.ResolverFor(profile);
                 fonts = FontMap.Plan(profile, resolver);
-                fonts.LineBoxes = ScaledLineBoxes(kitBoxes, profile.textSizes);
+                fonts.LineBoxes = FontMap.ProfileLineBoxes(ScaledLineBoxes(kitBoxes, profile.textSizes), profile);
                 // twins for the faces the kit's text styles, the other compiled screens and this screen use, not every face of a
                 // family; a face this screen needs that the reference locale's font has not is an error (never synthesized)
                 fonts.Faces = FontMap.ProfileFaces(profile, stylesPath, screenDir);
@@ -329,7 +330,7 @@ namespace DesignUi.Editor
                 files = files,
                 removedElements = compiled.RemovedElements.ToArray(),
                 faces = screenFaces.Select(f => f.Face).Distinct().OrderBy(f => f).Select(FontMap.FaceName).ToArray(),
-                lineBoxes = (fonts?.LineBoxes ?? new FontTwinGenerator.LineBox[0]).Select(TwinPrune.LineBoxName).ToArray(),
+                lineBoxes = (fonts?.LineBoxes ?? new FontTwinGenerator.LineBox[0]).Where(b => !b.DeviceScale.HasValue).Select(TwinPrune.LineBoxName).ToArray(),
                 root = compiled.Root.Name,
                 view = viewFile,
                 clickable = compiled.AllElements().Where(e => e.Clickable).Select(e => e.Name).ToArray(),

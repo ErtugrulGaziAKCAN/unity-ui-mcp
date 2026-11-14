@@ -388,6 +388,7 @@ namespace DesignUi.Editor.Tests
         DesignUiProfile Profile(TMP_FontAsset font, string kit, string folder = Twins)
         {
             var p = ScriptableObject.CreateInstance<DesignUiProfile>();
+            p.scaledViewports = new Vector2Int[0]; // the scaled viewports' twins: ViewportScaleTextTests
             _objects.Add(p);
             p.referenceLocale = "tr";
             p.locales = new[] { "tr" };

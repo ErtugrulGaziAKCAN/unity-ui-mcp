@@ -32,7 +32,7 @@ namespace DesignUi.Editor
         const string ActiveKey = "DesignUi.TwinPlayGuard.Active", StateKey = "DesignUi.TwinPlayGuard.State";
 
         /// <summary>A twin's file: <c>&lt;name&gt; UITK.asset</c> or a line-box variant <c>&lt;name&gt; UITK r125s16.asset</c>.</summary>
-        static readonly Regex TwinFile = new Regex(Regex.Escape(FontTwinGenerator.Suffix) + @"( r\d+s\d+(p\d+)?)?\.asset$", RegexOptions.CultureInvariant);
+        static readonly Regex TwinFile = new Regex(Regex.Escape(FontTwinGenerator.Suffix) + @"( r\d+s\d+(p\d+)?(x\d+(p\d+)?)?)?\.asset$", RegexOptions.CultureInvariant);
 
         static bool s_SaveNoted;
 
@@ -147,7 +147,7 @@ namespace DesignUi.Editor
             return restored;
         }
 
-        static readonly Regex VariantFile = new Regex(Regex.Escape(FontTwinGenerator.Suffix) + @" r\d+s\d+(p\d+)?\.asset$", RegexOptions.CultureInvariant);
+        static readonly Regex VariantFile = new Regex(Regex.Escape(FontTwinGenerator.Suffix) + @" r\d+s\d+(p\d+)?(x\d+(p\d+)?)?\.asset$", RegexOptions.CultureInvariant);
 
         /// <summary>Whether <paramref name="path"/> is a line-box variant's file.</summary>
         internal static bool IsVariant(string path) => path != null && VariantFile.IsMatch(path);

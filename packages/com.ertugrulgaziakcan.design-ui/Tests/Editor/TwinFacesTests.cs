@@ -82,6 +82,7 @@ namespace DesignUi.Editor.Tests
             p.kitDir = kit;
             p.referenceResolution = new Vector2Int(2560, 1440);
             p.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720) };
+            p.scaledViewports = new Vector2Int[0]; // the scaled viewports' twins: ViewportScaleTextTests
             p.screenMatch = 0.5f;
             return p;
         }

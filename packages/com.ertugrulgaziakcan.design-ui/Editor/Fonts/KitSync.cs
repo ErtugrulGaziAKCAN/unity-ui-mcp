@@ -151,8 +151,8 @@ namespace DesignUi.Editor
             errors.AddRange(ValidateTextStyles(kitDir + "/" + textStyles, plan.Fonts[plan.ReferenceLocale].Primary, scales));
             var readability = errors.Count == 0 ? ReadabilityWarning(kitDir + "/" + textStyles, AllScales(profile)) : null;
             if (readability != null) warnings.Add(readability);
-            // every line box of the table and of its text-size steps: the twins an import makes (and keeps)
-            if (errors.Count == 0) plan.LineBoxes = ScreenCompiler.ScaledLineBoxes(KitTextStyles.LineBoxesOf(kitDir + "/" + textStyles), profile.textSizes);
+            // every line box of the table and of its text-size steps, and their variants at the scaled viewports: the twins an import makes (and keeps)
+            if (errors.Count == 0) plan.LineBoxes = FontMap.ProfileLineBoxes(ScreenCompiler.ScaledLineBoxes(KitTextStyles.LineBoxesOf(kitDir + "/" + textStyles), profile.textSizes), profile);
             // twins only for the faces the text styles and the compiled screens use (an import adds a new design's own)
             plan.Faces = FontMap.ProfileFaces(profile, kitDir + "/" + textStyles);
             var copies = errors.Count == 0 ? FontFiles(faces, errors) : null;

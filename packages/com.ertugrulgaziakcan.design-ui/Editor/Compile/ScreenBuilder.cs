@@ -1324,6 +1324,9 @@ namespace DesignUi.Editor
                         bool lineBoxFont = layer.Declarations.Any(x => x.Property == "-unity-font-definition" && LineBoxKeyOf(x.Value) != null);
                         if (size.Property == null && !lineBoxFont) continue;
                         double k = StepScale(step), px = size.Property == null ? double.NaN : Px(size.Value, "font-size of '" + d.Name + "' (layer '" + layer.Key + "'), which the text-size steps scale,");
+                // the scaled viewports' panel scales: the root carries the class of the one it renders at (DesignFonts.uss)
+                if (compiledRoot.Tag == ScreenTag && _options.ViewportScales != null && _options.ViewportScales.Count > 0)
+                    compiledRoot.Attributes.Add(new KeyValuePair<string, string>("viewport-scales", DesignUi.DesignViewportScales.Encode(_options.ViewportScales)));
                         var scaled = new List<UssDeclaration>();
                         if (size.Property != null) scaled.Add(new UssDeclaration("font-size", Number(px * k) + "px"));
                         FontTwinGenerator.LineBox box = null;
