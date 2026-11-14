@@ -22,7 +22,10 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   texture with `forceGammaRendering` and are composited over the screen, so the game shows the colours verify captures
   (an ordinary on-screen panel blends in linear light: 2248 of the suite's 2355 captures fail that way). The profile's
   `colorPath` (Gamma Composite by default, or Linear Panel) decides what verify captures; the capture records the colour
-  space and path, and verify names them (a warning for Linear Panel).
+  space and path, and verify names them (a warning for Linear Panel). Pointer input maps screen pixels to the texture's,
+  and the PanelSettings get their own screen-to-panel function back when the component is disabled or destroyed. Verify,
+  the Design UI window and a `DesignUiPanelRegion` (once, at runtime) warn when no composite renders the panel of a
+  Linear project.
 - Lint rule U-CSS-045: a box whose width `max-width` sets while its text wraps needs a width of its own (UI Toolkit
   sizes it to its longest line).
 - A design's `@media` breakpoints apply in the game: the compiled screen root sets the `bp-*` classes of the

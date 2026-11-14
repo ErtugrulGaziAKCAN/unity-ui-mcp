@@ -328,7 +328,7 @@ export interface ScreenVerdict {
   /**
    * The colour space of the Unity project and the colour path the capture rendered with (boxes.meta.json `unity`):
    * `gamma-composite` blends as the design (in game: DesignUiGammaComposite), `linear-panel` as an ordinary on-screen
-   * panel of a Linear project. Null without the meta file.
+   * panel of a Linear project, `gamma-project` a Gamma project's panel (no composite). Null without the meta file.
    */
   colour: { space: string; path: string } | null;
 }
@@ -946,12 +946,20 @@ function readNotCaptured(file: string): Record<string, string> {
 }
 
 /** The colour space and colour path of a Unity capture's boxes.meta.json (a meta without a path: the gamma composite). */
-function readColour(file: string): { space: string; path: string } | null {
+function readColour(file: string): { space: string; path: string; compositeInProject: boolean | null } | null {
   const meta = tryJson(file);
   const unity = isObj(meta) && isObj(meta.unity) ? meta.unity : null;
   if (!unity || typeof unity.colorSpace !== "string") return null;
-  return { space: unity.colorSpace, path: typeof unity.colorPath === "string" ? unity.colorPath : "gamma-composite" };
+  return {
+    space: unity.colorSpace, path: typeof unity.colorPath === "string" ? unity.colorPath : "gamma-composite",
+    compositeInProject: typeof unity.gammaCompositeInProject === "boolean" ? unity.gammaCompositeInProject : null,
+  };
 }
+
+/** The warning of a capture through the gamma composite in a Linear project none of whose scenes or prefabs has the component. */
+export const NO_COMPOSITE_WARNING = "Linear colour space, captured through the gamma composite, but no scene or prefab of the project has " +
+  "DesignUiGammaComposite: in game the screen blends translucent colours and text edges in linear light and will not match this verdict; " +
+  "add Design UI > Gamma Composite with the design PanelSettings (ignore this if code adds it at runtime)";
 
 /** The warning of a capture that shows translucent colours blended in linear light (an on-screen panel of a Linear project). */
 export const LINEAR_PANEL_WARNING = "Linear colour space, colour path Linear Panel: Unity blends translucent colours in linear light, " +
@@ -997,8 +1005,10 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   const unityBoxesFile = path.join(unityDir, "boxes.json");
   const unityBoxes = finished && fs.existsSync(unityBoxesFile) ? readBoxesFile(unityBoxesFile, "Unity") : {};
   const unityNotCaptured = finished ? readNotCaptured(path.join(unityDir, "boxes.meta.json")) : {};
-  const colour = readColour(path.join(unityDir, "boxes.meta.json"));
-  if (colour?.space === "Linear" && colour.path === "linear-panel") warnings.push(LINEAR_PANEL_WARNING);
+  const meta = readColour(path.join(unityDir, "boxes.meta.json"));
+  const colour = meta ? { space: meta.space, path: meta.path } : null;
+  if (meta?.space === "Linear" && meta.path === "linear-panel") warnings.push(LINEAR_PANEL_WARNING);
+  if (meta?.space === "Linear" && meta.path === "gamma-composite" && meta.compositeInProject === false) warnings.push(NO_COMPOSITE_WARNING);
   const notRunReasons: Record<string, string> = {};
   const runnable: string[] = [];
   for (const name of names) {

@@ -49,7 +49,7 @@ namespace DesignUi.Editor.Tests
             _objects.Add(settings);
             var composite = go.AddComponent<DesignUiGammaComposite>();
             composite.panelSettings = settings;
-            composite.Attach(settings, width, height); // OnEnable does this in Play mode, at the screen's size
+            composite.Attach(settings, new Vector2Int(width, height), new Vector2Int(width, height)); // OnEnable does this in Play mode, at the screen's size
             var doc = go.AddComponent<UIDocument>();
             doc.panelSettings = settings;
             return (composite, settings, doc.rootVisualElement);
@@ -144,6 +144,134 @@ namespace DesignUi.Editor.Tests
             Assert.IsNull(settings.targetTexture);
             Assert.IsFalse(settings.forceGammaRendering, "the package's DesignUiPanelSettings has it off");
             Assert.IsNull(composite.Target);
+        }
+
+        // ---- pointer input ---------------------------------------------------------------------------------------------
+
+        /// <summary>An on-screen panel (no target texture) with a box near the top and one below it, named top and bottom.</summary>
+        (GameObject go, PanelSettings settings, VisualElement root) OnScreenPanel(float scale)
+        {
+            var settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+            settings.scaleMode = PanelScaleMode.ConstantPixelSize;
+            settings.scale = scale;
+            var go = new GameObject("GammaCompositeTests");
+            _objects.Add(go);
+            _objects.Add(settings);
+            var doc = go.AddComponent<UIDocument>();
+            doc.panelSettings = settings;
+            var root = doc.rootVisualElement;
+            Box(root, 20, 20, 160, 60, Color.red).name = "top";
+            Box(root, 20, 120, 160, 60, Color.blue).name = "bottom";
+            return (go, settings, root);
+        }
+
+        /// <summary>
+        /// The element a pointer at <paramref name="screen"/> (screen pixels, origin top left, as UI Toolkit's event
+        /// handling passes them) reaches: the panel's screen-to-panel mapping, then a pick.
+        /// </summary>
+        static string Under(VisualElement root, Vector2 screen)
+        {
+            var at = RuntimePanelUtils.ScreenToPanel(root.panel, screen);
+            return root.panel.Pick(at)?.name;
+        }
+
+        static void AssertMapping(VisualElement root, string when)
+        {
+            Assert.AreEqual("top", Under(root, new Vector2(60, 40)), when + ": a point on the top box");
+            Assert.AreEqual("bottom", Under(root, new Vector2(60, 140)), when + ": a point on the bottom box (the y axis is not flipped)");
+            Assert.AreEqual("top", Under(root, new Vector2(170, 75)), when + ": near the top box's bottom right corner");
+        }
+
+        [UnityTest]
+        public IEnumerator Pointer_AtAScreenPoint_ReachesTheSameElement_WithTheCompositeOnAndOff()
+        {
+            var (go, settings, root) = OnScreenPanel(1f);
+            yield return Frames(3);
+            AssertMapping(root, "an ordinary on-screen panel");
+
+            var composite = go.AddComponent<DesignUiGammaComposite>();
+            composite.panelSettings = settings;
+            composite.Attach(settings, new Vector2Int(400, 300), new Vector2Int(400, 300));
+            yield return Frames(3);
+            Assert.AreSame(composite.Target, settings.targetTexture);
+            AssertMapping(root, "the composite, its texture the screen's size");
+
+            composite.Detach();
+            yield return Frames(3);
+            Assert.IsNull(settings.targetTexture);
+            AssertMapping(root, "the on-screen panel again");
+        }
+
+        [UnityTest]
+        public IEnumerator Pointer_ATextureOfAnotherSizeThanTheScreen_MapsScreenPixelsToItsPixels()
+        {
+            // a texture twice the screen's size with the panel at scale 2: the same logical layout as the screen at scale 1
+            var (go, settings, root) = OnScreenPanel(2f);
+            var composite = go.AddComponent<DesignUiGammaComposite>();
+            composite.panelSettings = settings;
+            composite.Attach(settings, new Vector2Int(800, 600), new Vector2Int(400, 300));
+            yield return Frames(3);
+            AssertMapping(root, "the composite, its texture twice the screen's size");
+        }
+
+        [UnityTest]
+        public IEnumerator Resize_FollowsTheScreen_AndKeepsThePointerMapping()
+        {
+            var (go, settings, root) = OnScreenPanel(1f);
+            var composite = go.AddComponent<DesignUiGammaComposite>();
+            composite.panelSettings = settings;
+            composite.Attach(settings, new Vector2Int(400, 300), new Vector2Int(400, 300));
+            yield return Frames(3);
+            var first = composite.Target;
+            composite.Resize(new Vector2Int(640, 480), new Vector2Int(640, 480));
+            yield return Frames(3);
+            Assert.AreEqual(new Vector2Int(640, 480), new Vector2Int(settings.targetTexture.width, settings.targetTexture.height));
+            Assert.AreSame(composite.Target, settings.targetTexture);
+            Assert.IsTrue(first == null, "the earlier texture is released");
+            AssertMapping(root, "after a resize");
+        }
+
+        [UnityTest]
+        public IEnumerator Detach_RestoresThePanelSettingsOwnPointerMapping()
+        {
+            var (go, settings, root) = OnScreenPanel(1f);
+            // the game's own mapping: everything 100 px lower
+            settings.SetScreenToPanelSpaceFunction(p => p + new Vector2(0, 100));
+            yield return Frames(3);
+            Assert.AreEqual("bottom", Under(root, new Vector2(60, 40)), "the game's mapping");
+            var composite = go.AddComponent<DesignUiGammaComposite>();
+            composite.panelSettings = settings;
+            composite.Attach(settings, new Vector2Int(400, 300), new Vector2Int(400, 300));
+            yield return Frames(3);
+            Assert.AreEqual("top", Under(root, new Vector2(60, 40)), "the composite maps the screen to its texture");
+            composite.Detach();
+            yield return Frames(3);
+            Assert.AreEqual("bottom", Under(root, new Vector2(60, 40)), "the game's mapping is back");
+            composite.Detach(); // twice is harmless
+            Assert.AreEqual("bottom", Under(root, new Vector2(60, 40)));
+        }
+
+        [Test]
+        public void ARegion_WarnsAboutAPanelNoCompositeRenders_AndNotAboutOneItDoes()
+        {
+            var settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+            settings.name = "Design Panel";
+            _objects.Add(settings);
+            StringAssert.Contains("renders the screen on PanelSettings 'Design Panel' without DesignUiGammaComposite",
+                DesignUiPanelRegion.ColourWarning("Inbox", settings, false));
+            StringAssert.Contains("give the asset the region's sort order", DesignUiPanelRegion.ColourWarning("Inbox", settings, true));
+
+            var go = new GameObject("GammaCompositeTests");
+            _objects.Add(go);
+            var composite = go.AddComponent<DesignUiGammaComposite>();
+            composite.Attach(settings, new Vector2Int(64, 64), new Vector2Int(64, 64));
+            Assert.IsTrue(DesignUiGammaComposite.Drives(settings));
+            Assert.IsNull(DesignUiPanelRegion.ColourWarning("Inbox", settings, false));
+            var copy = Object.Instantiate(settings); // a region's sort-order copy made while the composite is attached
+            _objects.Add(copy);
+            Assert.IsNull(DesignUiPanelRegion.ColourWarning("Inbox", copy, true), "the copy renders into the composite's texture");
+            composite.Detach();
+            Assert.IsFalse(DesignUiGammaComposite.Drives(settings));
         }
 
         /// <summary>The cost of one composite at 2560×1440 (logged; the findings quote it).</summary>

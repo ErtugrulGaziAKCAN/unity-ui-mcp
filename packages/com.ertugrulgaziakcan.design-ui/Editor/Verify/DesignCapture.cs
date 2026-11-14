@@ -1585,13 +1585,17 @@ namespace DesignUi.Editor
                 ["unity"] = new JObject
                 {
                     ["colorSpace"] = QualitySettings.activeColorSpace.ToString(),
-                    // what the capture renders through: the gamma composite (UNorm, forceGammaRendering) or the linear on-screen panel
-                    ["colorPath"] = Mount.LinearPanel(profile) ? "linear-panel" : "gamma-composite",
+                    // what the capture renders through: the gamma composite (UNorm, forceGammaRendering), the linear on-screen
+                    // panel, or a Gamma project's panel (no composite)
+                    ["colorPath"] = GammaCompositeUsage.CapturePath(profile),
                     ["graphics"] = SystemInfo.graphicsDeviceType.ToString(),
                     ["platform"] = Application.platform.ToString(),
                     ["version"] = Application.unityVersion,
                 },
             };
+            // the game shows the verdict's colours only through DesignUiGammaComposite: whether a scene or prefab has it
+            if (status == "complete" && GammaCompositeUsage.CapturePath(profile) == "gamma-composite")
+                ((JObject)meta["unity"])["gammaCompositeInProject"] = GammaCompositeUsage.InProject();
             WriteJson(Path.Combine(outDir, MetaFileName), meta);
         }
 

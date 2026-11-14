@@ -1177,6 +1177,15 @@ describe("compareScreen", () => {
     v = await compareScreen(f.exportDir, f.unityDir, T);
     expect(v.colour).toEqual({ space: "Gamma", path: "linear-panel" });
     expect(v.warnings.filter((w) => /colour/.test(w))).toEqual([]);
+    // the gamma composite in a Linear project whose scenes and prefabs do not have it: the game will not show these colours
+    meta({ colorSpace: "Linear", colorPath: "gamma-composite", gammaCompositeInProject: false } as unknown as Record<string, string>);
+    v = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(v.warnings.filter((w) => /colour/.test(w))).toEqual([expect.stringMatching(/^Linear colour space, captured through the gamma composite, but no scene or prefab of the project has DesignUiGammaComposite/)]);
+    meta({ colorSpace: "Linear", colorPath: "gamma-composite", gammaCompositeInProject: true } as unknown as Record<string, string>);
+    expect((await compareScreen(f.exportDir, f.unityDir, T)).warnings.filter((w) => /colour/.test(w))).toEqual([]);
+    // a Gamma project records its own path: nothing to warn about
+    meta({ colorSpace: "Gamma", colorPath: "gamma-project" });
+    expect((await compareScreen(f.exportDir, f.unityDir, T)).colour).toEqual({ space: "Gamma", path: "gamma-project" });
     // a capture of an earlier package writes no colour path: the gamma composite it always rendered with
     meta({ colorSpace: "Linear" });
     expect((await compareScreen(f.exportDir, f.unityDir, T)).colour).toEqual({ space: "Linear", path: "gamma-composite" });

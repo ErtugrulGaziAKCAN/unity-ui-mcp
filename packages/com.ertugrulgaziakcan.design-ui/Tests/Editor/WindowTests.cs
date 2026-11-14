@@ -43,6 +43,26 @@ namespace DesignUi.Editor.Tests
             return false;
         }
 
+        /// <summary>A Linear project whose profile says Gamma Composite, and no scene or prefab with the component: the Text section warns.</summary>
+        [UnityTest]
+        public IEnumerator Text_WarnsWhenTheGameWouldNotShowTheVerifiedColours()
+        {
+            var profile = ScriptableObject.CreateInstance<DesignUiProfile>();
+            try
+            {
+                var w = EditorWindow.GetWindow<DesignUiWindow>();
+                yield return null;
+                w.rootVisualElement.Q<UnityEditor.UIElements.ObjectField>("profile").value = profile;
+                yield return null;
+                bool linear = QualitySettings.activeColorSpace == ColorSpace.Linear;
+                Assert.AreEqual(linear && !GammaCompositeUsage.InProject(), HasLabel(w, "no scene or prefab of the project has DesignUiGammaComposite"));
+                profile.colorPath = DesignColorPath.LinearPanel;
+                w.RefreshText();
+                Assert.IsFalse(HasLabel(w, "no scene or prefab of the project has DesignUiGammaComposite"), "the profile says the game shows an ordinary panel");
+            }
+            finally { Object.DestroyImmediate(profile); }
+        }
+
         [UnityTest]
         public IEnumerator Menu_OpensWindow_ShowsStatus()
         {

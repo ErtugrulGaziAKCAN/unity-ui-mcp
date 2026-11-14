@@ -30,8 +30,30 @@ last blend is in linear light, as for any UI in a Linear project; a design has n
 judge that part.
 
 Cost: a colour and a depth-stencil texture of the screen's size (8 bytes per pixel: 29.5 MB at 2560×1440) and one
-full-screen pass per frame, 0.14 ms at 2560×1440 on the measuring machine (200 composites, GPU-synchronised). Pointer
-input maps one to one (the texture is the screen's size); the texture follows the screen size.
+full-screen pass per frame, 0.14 ms at 2560×1440 on the measuring machine (200 composites, GPU-synchronised). The
+texture follows the screen size.
+
+Pointer input: UI Toolkit passes screen pixels (origin top left, as for an on-screen panel) through the PanelSettings'
+screen-to-panel function and divides by the panel's scale. The component's function maps them to the texture's pixels
+(`x × textureWidth / screenWidth`, the same for y), and gives the PanelSettings their own function back when it is
+disabled or destroyed (the game's, or UI Toolkit's own, left unassigned again; Unity 6000.3 has no getter, so it is read
+from `PanelSettings.m_AssignedScreenToPanel` and `BaseRuntimePanel.DefaultScreenToPanelSpace`). Tested
+(`GammaCompositeTests`): a screen point reaches the same element with the composite off, on, with a texture twice the
+screen's size and after a resize; a game's own mapping is back after Detach.
+
+Play check (unity-clone-test `--play-shot --ready`, batchmode, Built-in render pipeline: the sample project has no URP;
+no player build): a uGUI EventSystem and a UIDocument on the package's PanelSettings, the component enabled by Unity's
+own lifecycle. Presses sent the game's way (EventSystem raycast, then the panel's event handler, uGUI's bottom-left screen
+position) reach the top and the bottom box with the composite enabled, disabled, enabled again and destroyed, and the
+PanelSettings are an on-screen panel again after disable and destroy. Batchmode draws no screen, so the end-of-frame
+pass to the back buffer did not run there; the same composite drawn into an sRGB texture in Play stored `#f0605d`,
+`#16c2d5` and the veil `#48575c`, the design's values. Not verified: URP, a player build, the back buffer of a real window.
+
+Where the composite does not reach the panel, the tools say so: verify's capture records whether any scene or prefab
+of the project has the component (`unity.gammaCompositeInProject`), and a Linear project on the Gamma Composite path
+without it gets a verify warning and a line in the Design UI window; at runtime a `DesignUiPanelRegion` whose panel no
+composite renders logs a one-time warning (also when it renders on a sort-order copy made before the composite was
+enabled).
 
 ## The verifier follows the profile
 
@@ -43,7 +65,8 @@ input maps one to one (the texture is the screen's size); the texture follows th
   stores. The verdict then shows the game's real colours, and verify warns that translucent colours drift.
 
 The capture records both in `boxes.meta.json` (`unity.colorSpace`, `unity.colorPath`), and the comparison reports them
-(`colour` in the verdict). A Gamma project blends in gamma space on both paths.
+(`colour` in the verdict). A Gamma project blends in gamma space on both paths and has no composite: its captures record
+`gamma-project`.
 
 ## The ordinary panel against the design
 

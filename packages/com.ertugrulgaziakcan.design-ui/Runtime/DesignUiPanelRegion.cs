@@ -45,7 +45,11 @@ namespace DesignUi
         VisualElement m_Root;
         PanelSettings m_Source, m_Copy;
         Canvas m_Canvas;
-        bool m_IsAttached, m_WarnedNoFonts;
+        bool m_IsAttached, m_WarnedNoFonts, m_ColourChecked;
+        static bool s_ColourWarned;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetColourWarning() => s_ColourWarned = false;
         float m_PreviousDocumentOrder;
         IDesignLocaleSource m_LocaleSource, m_OwnedLocaleSource;
         IDesignTextSizeSource m_TextSizes;
@@ -202,11 +206,25 @@ namespace DesignUi
             Refresh();
         }
 
+        /// <summary>
+        /// The warning for a region of a Linear-colour-space project whose panel no DesignUiGammaComposite renders: it blends
+        /// translucent colours and text edges in linear light and will not match the design. Null otherwise.
+        /// </summary>
+        internal static string ColourWarning(string region, PanelSettings settings, bool sortOrderCopy)
+        {
+            if (settings == null || QualitySettings.activeColorSpace != ColorSpace.Linear || DesignUiGammaComposite.Drives(settings)) return null;
+            return "DesignUiPanelRegion '" + region + "': this Linear-colour-space project renders the screen on PanelSettings '" + settings.name +
+                   "' without DesignUiGammaComposite, so translucent colours and text edges blend in linear light and will not match the design. " +
+                   "Add Design UI > Gamma Composite with that PanelSettings asset" +
+                   (sortOrderCopy ? " (the region renders on a copy with its own sort order, made when it was enabled: give the asset the region's sort order so no copy is made, or enable the composite before the region)" : "") + ".";
+        }
+
         /// <summary>Stops following the frame and gives the document its own PanelSettings back. Called on disable.</summary>
         internal void Detach()
         {
             if (!m_IsAttached) return;
             m_IsAttached = false;
+            m_ColourChecked = false;
             Canvas.willRenderCanvases -= Refresh;
             Bind(null);
             (m_OwnedLocaleSource as IDisposable)?.Dispose();
@@ -229,6 +247,17 @@ namespace DesignUi
         public void Refresh()
         {
             if (!m_IsAttached || m_Attached == null) return;
+            // once, after every component's OnEnable ran: a Linear project shows the verified colours only through the composite
+            if (!m_ColourChecked && Application.isPlaying)
+            {
+                m_ColourChecked = true;
+                var warning = ColourWarning(name, m_Attached.panelSettings, m_Copy != null);
+                if (warning != null && !s_ColourWarned)
+                {
+                    s_ColourWarned = true;
+                    Debug.LogWarning(warning, this);
+                }
+            }
             var root = m_Attached.rootVisualElement;
             if (root != m_Root)
             {

@@ -49,7 +49,7 @@ namespace DesignUi.Editor
         static string s_Version;
         Label m_Status, m_Project, m_Last, m_LastOperation, m_Package, m_PackageId;
         Toggle m_Enable;
-        Label m_ConfigPath, m_DesignRoot, m_LastReport, m_ProfileNote, m_OpResult, m_TextResolver, m_TextKit, m_TextTwins, m_TextFaces, m_TextFontSet, m_ServerPath, m_CopyResult;
+        Label m_ConfigPath, m_DesignRoot, m_LastReport, m_ProfileNote, m_OpResult, m_TextResolver, m_TextKit, m_TextTwins, m_TextFaces, m_TextFontSet, m_TextColour, m_ServerPath, m_CopyResult;
         Button m_OpenConfig, m_OpenDesignRoot, m_OpenReport, m_CreateProfile;
         ObjectField m_ProfileField;
 
@@ -125,6 +125,7 @@ namespace DesignUi.Editor
             text.Add(m_TextTwins = Wrapped("text-twins"));
             text.Add(m_TextFaces = Wrapped("text-faces"));
             text.Add(m_TextFontSet = Wrapped("text-font-set"));
+            text.Add(m_TextColour = Wrapped("text-colour"));
             text.Add(Row(Btn("text-check", "Check", RefreshText)));
 
             root.Add(Section("MCP clients", out var clients));
@@ -414,6 +415,9 @@ namespace DesignUi.Editor
             m_TextTwins.text = "Font twins: " + s.Twins;
             m_TextFaces.text = "Font faces: " + s.Faces;
             m_TextFontSet.text = "DesignFonts.asset: " + s.FontSet;
+            var colour = GammaCompositeUsage.Warning(profile);
+            m_TextColour.text = colour ?? "";
+            SetShown(m_TextColour, colour != null);
         }
 
         // ---- MCP clients --------------------------------------------------------------------------------------------
