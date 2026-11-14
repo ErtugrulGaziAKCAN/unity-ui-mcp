@@ -593,9 +593,11 @@ this section are in `docs/findings/animation.md`.
   the UGUI CanvasScaler log formula `2^lerp(log2(W/refW), log2(H/refH), match)` only at the reference aspect (16:9);
   e.g. 2400×1440 at match 0.5 is 0.96875, not 0.96825. Boxes are compared in device pixels.
 - `@media` rules (min/max width and aspect ratio only, U-CSS-012) become breakpoint layers, written as rules under
-  `.bp-<name>` on the screen root; the verifier sets the classes that match each viewport. **Not in 0.1.0:** a runtime
-  component that toggles the `.bp-*` classes from the panel size (planned for M4). A game whose design uses breakpoints
-  sets them on the screen root itself.
+  `.bp-<name>` on the screen root. The compiler writes the breakpoints on the root (`DesignScreen`, UXML attribute
+  `breakpoints`), and the root sets the `.bp-*` classes of those that hold at its panel's logical size (rounded to whole
+  px, the exporter's rule, `DesignBreakpoints`) on attach and whenever the screen root or the panel's root changes
+  geometry, so a resized window or a changed panel scale switches them in the game. The verifier's capture relies on
+  that and checks the root applied the breakpoints the exporter recorded for the viewport.
 - Every declared viewport is compiled from the same IR and verified separately.
 
 ## 13. Localization
@@ -962,7 +964,7 @@ including right-to-left and CJK languages). It sets the M2 localization scope an
 | **M1 Static core** | Kit, lint, exporter, IR, compiler (states + pseudo-states), font twins, verifier, report, MCP server (stdio, `editor` bridge + `command` runner), `/unity-ui-mcp` skill | Installed in the first consumer project and connected; the user applies and verifies the pilot screen through `/unity-ui-mcp` | Done |
 | **M2 Localization and binding** | Localization writer, `LocalizedString` binding, locale fonts, RTL, text size, view generation, actions | All 11 locale checks pass on the pilot | Built; the automatic locale checks are not (§13) |
 | **M3 Dynamic content and motion** | Repeat/ListView, transitions, keyframes | Lists and animated states pass §15 | Done (fidelity suite) |
-| **M4 Responsive and distribution** | Breakpoints, UPM release, MCP HTTP transport, client setup docs, first consumer pilot with a real presenter | Pilot works in game with real data, driven from at least two MCP clients | Open: runtime breakpoint classes, a registry release and the HTTP transport. Client setup docs and the in-game pilot with a presenter are done |
+| **M4 Responsive and distribution** | Breakpoints, UPM release, MCP HTTP transport, client setup docs, first consumer pilot with a real presenter | Pilot works in game with real data, driven from at least two MCP clients | Open: a registry release and the HTTP transport. Runtime breakpoint classes, client setup docs and the in-game pilot with a presenter are done |
 
 ## 21. Open decisions and risks
 

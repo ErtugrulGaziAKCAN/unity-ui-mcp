@@ -2,7 +2,7 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:dui="DesignUi" editor-extension-mode="False">
     <ui:Template name="RowItem" src="RowItem.uxml" />
     <Style src="SampleScreen.uss" />
-    <dui:DesignScreen name="root" class="s-412e5e4c" animated="true">
+    <dui:DesignScreen name="root" class="s-412e5e4c" animated="true" breakpoints="narrow::1600::">
         <ui:Label name="title" class="s-c1b7f7f3" enable-rich-text="false" text="Hoş geldin {name}" />
         <ui:VisualElement name="card__shadowhost" class="s-382c82cf dui-anim dui-mirror-host">
             <ui:VisualElement name="card__shadow" class="s-df3d88f0" picking-mode="Ignore" />

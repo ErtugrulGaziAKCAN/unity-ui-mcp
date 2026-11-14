@@ -846,9 +846,22 @@ namespace DesignUi.Editor
                 Player?.Rescan(); // repeat items cloned from the template
                 if (state != DefaultState) Root.AddToClassList(ScreenBuilder.StateClassPrefix + state);
                 m_State = state;
-                // the breakpoints that hold at this viewport, as classes on the screen root (the golden's @media rules)
-                foreach (var name in ActiveBreakpoints(Screen.Ir, m_Req.Viewport)) Root.AddToClassList(ScreenBuilder.BreakpointClassPrefix + name);
+                // the breakpoints that hold at this viewport (the golden's @media rules): a compiled DesignScreen root applies
+                // them itself from its panel's size, as in the game, and the capture checks it applied these; any other root
+                // gets the classes here
+                var breakpoints = ActiveBreakpoints(Screen.Ir, m_Req.Viewport).ToList();
+                var applies = Root is DesignScreen ds && !string.IsNullOrEmpty(ds.Breakpoints);
+                if (!applies) foreach (var name in breakpoints) Root.AddToClassList(ScreenBuilder.BreakpointClassPrefix + name);
                 for (int i = 0; i < MountFrames; i++) yield return null;
+                if (applies)
+                {
+                    var applied = Root.GetClasses().Where(c => c.StartsWith(ScreenBuilder.BreakpointClassPrefix, StringComparison.Ordinal))
+                        .Select(c => c.Substring(ScreenBuilder.BreakpointClassPrefix.Length)).ToList();
+                    if (!new HashSet<string>(applied).SetEquals(breakpoints))
+                        throw new InvalidOperationException("the screen root applied the breakpoints [" + string.Join(", ", applied) + "] at its panel's size " +
+                                                            Mount.Panel.visualTree.layout.size + ", but [" + string.Join(", ", breakpoints) + "] hold at " +
+                                                            m_Req.Viewport.x + "×" + m_Req.Viewport.y);
+                }
                 Player?.Rescan(); // list slots made by the ListView's first layout
                 Panel = Mount.Panel;
                 m_Scale = PanelScale(Panel, m_Req.Viewport);
@@ -1101,20 +1114,17 @@ namespace DesignUi.Editor
         /// <summary>
         /// The IR breakpoints that hold at a viewport, as the exporter decides them (capture/matrix.ts breakpointsHold): the
         /// panel's logical size under Scale With Screen Size (<c>scale = lerp(W/refW, H/refH, match)</c>, the IR's reference
-        /// and match), rounded to whole px, against each breakpoint's min/max width and aspect ratio, in IR order. It mirrors
-        /// the exporter for the capture; the runtime breakpoint controller should replace it once it exists.
+        /// and match), rounded to whole px, against each breakpoint's min/max width and aspect ratio, in IR order: the rule
+        /// of <see cref="DesignUi.DesignBreakpoints"/>, which the compiled screen root applies at runtime from its panel's size.
         /// </summary>
         public static IEnumerable<string> ActiveBreakpoints(IrScreen ir, Vector2Int viewport)
         {
-            if (ir?.Breakpoints == null || ir.Breakpoints.Length == 0) yield break;
+            if (ir?.Breakpoints == null || ir.Breakpoints.Length == 0) return Enumerable.Empty<string>();
             var reference = ir.ReferenceViewport != null && ir.ReferenceViewport.Length == 2 ? ir.ReferenceViewport : new[] { 2560, 1440 };
             double rw = viewport.x / (double)reference[0], rh = viewport.y / (double)reference[1];
             double scale = rw + (rh - rw) * ir.ScreenMatch;
-            double w = Math.Round(viewport.x / scale, MidpointRounding.AwayFromZero), h = Math.Round(viewport.y / scale, MidpointRounding.AwayFromZero);
-            foreach (var b in ir.Breakpoints)
-                if ((b.MinWidth == null || w >= b.MinWidth) && (b.MaxWidth == null || w <= b.MaxWidth) &&
-                    (b.MinAspect == null || w / h >= b.MinAspect) && (b.MaxAspect == null || w / h <= b.MaxAspect))
-                    yield return b.Name;
+            // the same rule the screen root applies at runtime (DesignScreen.ApplyBreakpoints), at the viewport's logical size
+            return new DesignUi.DesignBreakpoints(ScreenBuilder.BreakpointsOf(ir).ToList()).Active(viewport.x / scale, viewport.y / scale).ToList();
         }
 
         /// <summary>

@@ -54,7 +54,12 @@ namespace DesignUi.Editor
         public const string RtlClass = DesignUi.LocaleFontController.RtlClass;
 
         public const string StateClassPrefix = "state-";
-        public const string BreakpointClassPrefix = "bp-";
+        public const string BreakpointClassPrefix = DesignUi.DesignBreakpoints.ClassPrefix;
+
+        /// <summary>The IR's breakpoints as the runtime reads them (<see cref="DesignUi.DesignBreakpoints"/>).</summary>
+        internal static IEnumerable<DesignUi.DesignBreakpoints.Breakpoint> BreakpointsOf(IrScreen ir) =>
+            (ir?.Breakpoints ?? new IrBreakpoint[0]).Where(b => b?.Name != null)
+            .Select(b => new DesignUi.DesignBreakpoints.Breakpoint(b.Name, b.MinWidth, b.MaxWidth, b.MinAspect, b.MaxAspect));
 
         /// <summary>The TextField placeholder's UXML attribute (TextInputBaseField in UnityEngine.UIElementsModule 6000.3).</summary>
         public const string PlaceholderAttribute = "placeholder-text";
@@ -1175,6 +1180,9 @@ namespace DesignUi.Editor
                 if (compiledRoot.Tag == ScreenTag && compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf())))
                         .Any(e => e.Classes.Contains(DesignUi.DesignAnimationData.MarkerClass)))
                     compiledRoot.Attributes.Add(new KeyValuePair<string, string>("animated", "true"));
+                // the design's @media breakpoints: the screen root applies their bp-* classes from the panel's size at runtime
+                if (compiledRoot.Tag == ScreenTag && ir.Breakpoints != null && ir.Breakpoints.Length > 0)
+                    compiledRoot.Attributes.Add(new KeyValuePair<string, string>("breakpoints", DesignUi.DesignBreakpoints.Encode(BreakpointsOf(ir))));
                 var names = new Dictionary<string, CompiledElement>(StringComparer.Ordinal);
                 foreach (var e in compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf()))))
                 {

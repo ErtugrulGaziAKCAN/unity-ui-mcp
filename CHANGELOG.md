@@ -15,6 +15,9 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   design files, a screen whose import or verify is running. New tool `design_ui_clean { screen?, dryRun? }` reports or
   runs the cleanup; `design_ui_status` shows the bookkeeping per screen and in total. The skill tells AI clients that
   cleanup is automatic and never to delete these files by hand.
+- A design's `@media` breakpoints apply in the game: the compiled screen root sets the `bp-*` classes of the
+  breakpoints that hold at its panel's logical size, and switches them when the panel is resized or rescaled, by the
+  rule the verifier captures with.
 - `scripts/capture-on-copy.sh`: the verification capture on a temporary copy of the project (an APFS clone on macOS),
   removed afterwards, success or failure. Setup writes it into a new config.
 

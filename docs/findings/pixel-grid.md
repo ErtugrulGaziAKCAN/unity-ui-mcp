@@ -87,8 +87,9 @@ shadow reaches a later in-flow element; the fix is room for the shadow (the effe
 **Breakpoints in the Unity capture.** Nothing put the `bp-<name>` classes on the compiled screen root, so a breakpoint
 layer never applied in the capture (the effects screen's `@media (max-width: 1600px)` hero was 43 px too tall). The capture
 now adds the breakpoints that hold at the capture's viewport (`DesignCapture.ActiveBreakpoints`, the exporter's rule:
-logical size under Scale With Screen Size, rounded, against min/max width and aspect). The runtime controller that
-toggles them in a game is still to come (spec: `BreakpointController`).
+logical size under Scale With Screen Size, rounded, against min/max width and aspect). The compiled screen root now
+applies them itself from its panel's size, in the game too (`DesignBreakpoints`), and the capture checks it applied the
+same ones.
 
 **Coverage viewports on the scale step.** The viewport added for a breakpoint no declared viewport reaches was the width
 nearest the declared one with a near-whole logical size: 853×1080 for `max-width: 1600px`, scale 0.5417, where a 16 px

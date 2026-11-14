@@ -31,6 +31,26 @@ namespace DesignUi
             }
         }
 
+        DesignBreakpoints m_Breakpoints;
+        string m_BreakpointsText;
+
+        /// <summary>
+        /// The design's <c>@media</c> breakpoints (written by the compiler, <see cref="DesignBreakpoints.Encode"/>): while the
+        /// screen is in a panel it carries <c>bp-&lt;name&gt;</c> for each one that holds at the panel's size, updated when its
+        /// geometry changes, as the goldens were captured.
+        /// </summary>
+        [UxmlAttribute("breakpoints")]
+        public string Breakpoints
+        {
+            get => m_BreakpointsText;
+            set
+            {
+                m_BreakpointsText = value;
+                m_Breakpoints = string.IsNullOrEmpty(value) ? null : DesignBreakpoints.Parse(value);
+                ApplyBreakpoints();
+            }
+        }
+
         /// <summary>Whether the screen has transitions or keyframe animations (written by the compiler).</summary>
         [UxmlAttribute("animated")]
         public bool Animated { get; set; }
@@ -49,14 +69,44 @@ namespace DesignUi
         {
             RegisterCallback<AttachToPanelEvent>(OnAttach);
             RegisterCallback<DetachFromPanelEvent>(OnDetach);
+            RegisterCallback<GeometryChangedEvent>(m_OnGeometry = e => ApplyBreakpoints());
         }
+
+        readonly EventCallback<GeometryChangedEvent> m_OnGeometry;
+        VisualElement m_PanelRoot;
 
         void OnAttach(AttachToPanelEvent e)
         {
             LocaleFontController.ScreenAttached(this);
             if (Animated) DesignUiAnimationPlayer.Attach(this);
+            // the panel's own root too: a screen root of a fixed size keeps its geometry when the panel is resized
+            m_PanelRoot?.UnregisterCallback(m_OnGeometry);
+            m_PanelRoot = e.destinationPanel?.visualTree;
+            m_PanelRoot?.RegisterCallback(m_OnGeometry);
+            ApplyBreakpoints();
         }
 
-        void OnDetach(DetachFromPanelEvent e) => LocaleFontController.ScreenDetached(this);
+        /// <summary>
+        /// Sets the <c>bp-*</c> class of every breakpoint that holds at the panel's logical size (its root's layout, rounded
+        /// to whole pixels as the exporter rounds it) and removes the others. Does nothing outside a panel or before the panel
+        /// has a size; called on attach and on every geometry change of the screen root or the panel's root (a resized
+        /// panel, or a changed scale, lays them out again).
+        /// </summary>
+        public void ApplyBreakpoints()
+        {
+            if (m_Breakpoints == null || panel == null) return;
+            var size = panel.visualTree.layout.size;
+            if (float.IsNaN(size.x) || float.IsNaN(size.y) || size.x <= 0 || size.y <= 0) return;
+            var active = new System.Collections.Generic.HashSet<string>(m_Breakpoints.Active(size.x, size.y));
+            foreach (var b in m_Breakpoints.All)
+                EnableInClassList(DesignBreakpoints.ClassPrefix + b.Name, active.Contains(b.Name));
+        }
+
+        void OnDetach(DetachFromPanelEvent e)
+        {
+            m_PanelRoot?.UnregisterCallback(m_OnGeometry);
+            m_PanelRoot = null;
+            LocaleFontController.ScreenDetached(this);
+        }
     }
 }
