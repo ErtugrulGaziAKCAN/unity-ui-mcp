@@ -53,7 +53,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   },
   "U-CSS-033": { when: "pseudo-states a pointer or focus cannot produce together: `:active` on an ancestor and on the element, two focused elements", fix: "style one press or focus per element; an `is-*` class set by code for a combined look" },
   "U-CSS-034": {
-    when: "a `gap` container whose earlier child shows or hides by its own pseudo-state or `is-*` class",
+    when: "a `gap` container whose earlier child shows or hides by its own pseudo-state or `is-*` class, or by markup in some written-out repeat items",
     fix: "use a screen state or an ancestor's class, keep an always-visible child first, or margins instead of gap",
   },
   "U-CSS-035": { when: "an absolute element whose parent is static, or that changes position between layers", fix: "`position: relative` on the parent; one position in every layer" },
@@ -84,7 +84,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-FONT-003": { when: "glyphs drawn by a platform or non-kit font (character missing in the kit font)", fix: "characters the kit font covers" },
   "U-MRK-001": { when: "not exactly one `data-u-screen`", fix: "one screen root with `data-u-screen`" },
   "U-MRK-002": { when: "duplicate `data-u-id`", fix: "unique ids (each repeat item is its own scope)" },
-  "U-MRK-003": { when: "interactive, bound or action elements without `data-u-id`", fix: "add `data-u-id`" },
+  "U-MRK-003": { when: "interactive, bound or action elements, or an element some written-out repeat items hide by markup and others show, without `data-u-id`", fix: "add `data-u-id`" },
   "U-MRK-004": { when: "visible text without `data-l10n` + `data-en` on the element holding it (or `data-u-bind`)", fix: "add the key and English text" },
   "U-MRK-005": {
     when: "ids, actions or names outside `^[a-z0-9]+([._-][a-z0-9]+)*$` or starting with a digit (they become C# members), or localization keys outside `^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$` (any letter case)",

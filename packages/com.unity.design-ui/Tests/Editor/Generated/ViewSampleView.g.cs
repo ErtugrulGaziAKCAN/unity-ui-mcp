@@ -151,12 +151,14 @@ namespace DesignUi.Editor.Tests.Generated
             readonly global::DesignUi.PseudoStateMirror[] m_PseudoMirrors;
             readonly global::DesignUi.DesignClassMirror[] m_ClassMirrors;
             string m_Value0;
+            bool m_Visible0 = true;
 
             /// <summary>The index of the data this item shows, set before each bind (-1 before the first).</summary>
             public int Index { get; private set; } = -1;
 
             public VisualElement Chip { get; }
             public Label ChipLabel { get; }
+            public Label ChipBadge { get; }
 
             /// <summary>Raised when the user activates 'chip' (data-u-action 'pick-chip').</summary>
             public event Action PickChipRequested;
@@ -167,6 +169,7 @@ namespace DesignUi.Editor.Tests.Generated
                 m_Context = context;
                 Chip = Find<VisualElement>(roots, "chip");
                 ChipLabel = Find<Label>(roots, "chip-label");
+                ChipBadge = Find<Label>(roots, "chip-badge");
                 Chip.AddManipulator(new Clickable(() => { }));
                 m_PseudoMirrors = null;
                 m_ClassMirrors = null;
@@ -186,6 +189,14 @@ namespace DesignUi.Editor.Tests.Generated
                 if (string.Equals(value, m_Value0, global::System.StringComparison.Ordinal)) return;
                 m_Value0 = value;
                 global::DesignUi.DesignView.SetText(ChipLabel, value, m_Context);
+            }
+
+            /// <summary>Shows or hides 'chip-badge' in this item (the design's items hide it by markup in some of them). An unchanged value writes nothing.</summary>
+            public void SetChipBadgeVisible(bool visible)
+            {
+                if (visible == m_Visible0) return;
+                m_Visible0 = visible;
+                global::DesignUi.DesignView.SetVisible(ChipBadge, visible);
             }
 
             /// <summary>Adds or removes the design's selection class (is-selected) on <paramref name="element"/>.</summary>

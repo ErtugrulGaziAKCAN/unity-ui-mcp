@@ -602,7 +602,11 @@ namespace DesignUi.Editor.Tests
             Assert.IsNotNull(percent.Find("root__0"), "percentages resolve against the wrapper");
             var absolute = Build(Screen(Block("root", Block("root__0", Node("c", "container", ("position", "absolute"))).With("base", ("position", "relative")))));
             Assert.IsNotNull(absolute.Find("root__0"));
-            Assert.AreEqual(0, named.RemovedElements.Count + styled.RemovedElements.Count + row.RemovedElements.Count);
+            var perItem = Text("t", "T");
+            perItem.ItemVisibility = true;
+            var shownPerItem = Build(Screen(Block("root", Block("root__0", perItem))));
+            Assert.IsNotNull(shownPerItem.Find("root__0"), "a child the view shows or hides per item: the wrapper keeps its box, as in the design");
+            Assert.AreEqual(0, named.RemovedElements.Count + styled.RemovedElements.Count + row.RemovedElements.Count + shownPerItem.RemovedElements.Count);
         }
 
         // ---- tokens ----------------------------------------------------------------------------------------

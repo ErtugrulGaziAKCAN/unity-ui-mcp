@@ -281,6 +281,69 @@ namespace DesignUi.Editor.Tests
             StringAssert.DoesNotContain("m_Context;", ItemPart(code, "ChipItemView"), "an item view that needs no context keeps none (no unread field)");
         }
 
+        /// <summary>
+        /// Rows whose written-out items hide a flag (a text) and a mark (with a baked shadow, so a shadow host wraps it) by
+        /// markup in some items: sample data, compiled shown, with a per-item visibility setter.
+        /// </summary>
+        static IrScreen ItemVisibility()
+        {
+            var flag = Text("row-flag", "İşaretli", ("display", "flex"), ("align-items", "center"), ("justify-content", "center"), ("font-size", "16.515625px"));
+            flag.ItemVisibility = true;
+            var mark = Node("row-mark", "container", ("width", "10px"), ("height", "10px"));
+            mark.Shadow = new IrShadow { Kind = "shadow9", File = ShadowFile, Sha256 = "x", Width = 8, Height = 8, Slice = new float[] { 2, 2, 2, 2 }, Offset = new BoxRect() };
+            mark.ItemVisibility = true;
+            var row = Node("row", "container", ("display", "flex"), ("flex-direction", "row"), ("height", "40px")).Add(flag, mark);
+            var rows = Node("rows", "container", ("display", "flex"), ("flex-direction", "column")).Add(row);
+            rows.Repeat = new IrRepeat { Name = "row", Mode = "inline", Count = 3 };
+            return TestIr.Screen(Root(rows));
+        }
+
+        [Test]
+        public void Write_AnElementTheItemsHideByMarkup_GetsATypedVisibilitySetter_ThatSkipsUnchangedValues_OnItsShadowHostWhenItHasOne()
+        {
+            var s = Build(ItemVisibility());
+            Assert.AreEqual("row-flag", s.Find("row-flag").VisibilityOwner);
+            Assert.AreEqual("row-mark__shadowhost", s.Find("row-mark").VisibilityOwner, "the shadow host owns the element's visibility");
+            Assert.IsNull(s.Find("row").VisibilityOwner);
+            var code = ViewCodeWriter.Write(s, Ns, "TestScreenView");
+            StringAssert.DoesNotContain("Visible", ScreenPart(code));
+            var item = ItemPart(code, "RowItemView");
+            StringAssert.Contains("            bool m_Visible0 = true;\n            bool m_Visible1 = true;\n", item, "an item is compiled shown");
+            StringAssert.Contains(
+                "            /// <summary>Shows or hides 'row-flag' in this item (the design's items hide it by markup in some of them). An unchanged value writes nothing.</summary>\n" +
+                "            public void SetRowFlagVisible(bool visible)\n" +
+                "            {\n" +
+                "                if (visible == m_Visible0) return;\n" +
+                "                m_Visible0 = visible;\n" +
+                "                global::DesignUi.DesignView.SetVisible(RowFlag, visible);\n" +
+                "            }\n", item);
+            StringAssert.Contains("m_Element0 = Find<VisualElement>(roots, \"row-mark__shadowhost\");", item);
+            StringAssert.Contains(
+                "            public void SetRowMarkVisible(bool visible)\n" +
+                "            {\n" +
+                "                if (visible == m_Visible1) return;\n" +
+                "                m_Visible1 = visible;\n" +
+                "                global::DesignUi.DesignView.SetVisible(m_Element0, visible);\n" +
+                "            }\n", item);
+        }
+
+        [Test]
+        public void Write_AVisibilitySetterWithoutADesignIdOrOfAnotherMembersName_Throws()
+        {
+            var ir = ItemVisibility();
+            ir.Root.Children[0].Children[0].Children[0].Id = "row__0";
+            var e = Assert.Throws<IrFormatException>(() => ViewCodeWriter.Write(Build(ir), Ns, "TestScreenView"));
+            StringAssert.Contains("'row__0'", e.Message);
+            StringAssert.Contains("data-u-id", e.Message);
+
+            ir = ItemVisibility();
+            var clash = Text("row-count", "2", ("font-size", "16.515625px"));
+            clash.Bind = "row-flag-visible";
+            ir.Root.Children[0].Children[0].Add(clash);
+            e = Assert.Throws<IrFormatException>(() => ViewCodeWriter.Write(Build(ir), Ns, "TestScreenView"));
+            StringAssert.Contains("SetRowFlagVisible", e.Message);
+        }
+
         [Test]
         public void Write_ARepeatAndAValueOfOneSetterName_Throw()
         {

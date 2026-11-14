@@ -333,6 +333,7 @@ namespace DesignUi.Editor
                 mirrors = compiled.AllElements().Where(e => e.MirrorElement != null)
                     .Select(e => new MirrorEntry { element = e.MirrorElement, host = e.Name, classes = e.MirrorClasses.Count > 0 ? e.MirrorClasses.ToArray() : null }).ToArray(),
                 accessibility = Accessibility(compiled),
+                visibility = Visibility(compiled),
                 repeats = compiled.Repeats.Select(r => new RepeatEntry
                 {
                     name = r.Name, mode = r.Mode, container = r.Container, template = r.TemplateFile, items = r.Items.Select(i => i.Name).ToArray(),
@@ -412,6 +413,13 @@ namespace DesignUi.Editor
             foreach (var e in compiled.AllElements().Where(x => x.AccessibilityLabels.Count > 0))
                 result[e.Name] = e.AccessibilityLabels.ToDictionary(kv => kv.Key, kv => new AccessibilityText { key = kv.Value?.Key, tr = kv.Value?.Tr, en = kv.Value?.En },
                     StringComparer.Ordinal);
+            return result.Count > 0 ? result : null;
+        }
+
+        /// <summary>Each element the design's repeat items hide by markup in some items, with the element its visibility setter writes; null for none.</summary>
+        static Dictionary<string, string> Visibility(CompiledScreen compiled)
+        {
+            var result = compiled.AllElements().Where(e => e.VisibilityOwner != null).ToDictionary(e => e.Name, e => e.VisibilityOwner, StringComparer.Ordinal);
             return result.Count > 0 ? result : null;
         }
 

@@ -39,8 +39,8 @@ namespace DesignUi.Editor
     /// the runtime wiring of the generated view (a Clickable on the manifest's elements, a PseudoStateMirror from an element
     /// to its shadow host); sample data from <c>fixtures/sample-data.json</c> by element name: bound texts, Smart String
     /// arguments, and repeat items (their count, their texts, their <c>$classes</c>, their controls' <c>$states</c> and the
-    /// elements their markup hides or shows, <c>$hidden</c>, applied as the generated view applies classes, enabled state and
-    /// display; inline items are cloned from the repeat's item template, as the view clones them, and renamed, so only the
+    /// elements their markup hides, <c>$hidden</c>, applied as the generated view applies classes, enabled state and
+    /// visibility; inline items are cloned from the repeat's item template, as the view clones them, and renamed, so only the
     /// first item carries the design ids, as in the golden; list items fill the ListView's slots). A localized text (a screen compiled with the profile's localization: a String Table binding
     /// and no text in the UXML) shows the design's reference text, the IR's <c>tr</c> with its arguments from the sample
     /// data, exactly as the golden shows it; its binding is taken off first, so no table can replace it.</item>
@@ -1453,7 +1453,8 @@ namespace DesignUi.Editor
             /// <summary>
             /// Fills one item (the repeat node's children below the item's compiled roots) and gives it what its written-out
             /// sample shows: its classes (on the element and the shadow hosts that mirror them), its controls' disabled and
-            /// checked states, and the elements its markup hides or shows (on the element and its shadow host).
+            /// checked states, and the elements its markup hides, through the item view's visibility setter's path
+            /// (<see cref="DesignUi.DesignView.SetVisible"/> on the element the manifest names as the owner).
             /// </summary>
             void FillItem(IrNode repeatNode, IReadOnlyList<VisualElement> itemRoots, Scope scope, VisualTreeAsset source)
             {
@@ -1478,11 +1479,11 @@ namespace DesignUi.Editor
                 }
                 foreach (var kv in scope.Data.Hidden)
                 {
-                    var display = kv.Value ? DisplayStyle.None : DisplayStyle.Flex;
-                    var el = Find(itemRoots, kv.Key);
-                    if (el != null) el.style.display = display;
-                    var host = Find(itemRoots, kv.Key + "__shadowhost");
-                    if (host != null) host.style.display = display;
+                    if (_screen.Manifest.visibility == null || !_screen.Manifest.visibility.TryGetValue(kv.Key, out var owner))
+                        throw new InvalidOperationException("the sample data hides '" + kv.Key + "' in a repeat item, but the compiled screen has no visibility setter for it; " +
+                                                            "import the screen again from a current export");
+                    var target = Find(itemRoots, owner);
+                    if (target != null) DesignUi.DesignView.SetVisible(target, !kv.Value);
                 }
             }
 

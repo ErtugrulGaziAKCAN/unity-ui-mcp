@@ -26,7 +26,7 @@ import { kitScales, wholeBorderWidths } from "../lint/rules/U-CSS-040.js";
 import { DESIGN_ORIGIN, type LoadedDesign } from "../load.js";
 import { firstFamily, px } from "../lint/css-values.js";
 import { kitFonts, realFaces } from "../lint/fonts.js";
-import { designChildren, describeAt, itemChildren, repeatIssues, repeatSamples, repeatTemplate } from "../lint/repeat.js";
+import { designChildren, describeAt, itemChildren, markupHidden, repeatIssues, repeatSamples, repeatTemplate, sampleHidden } from "../lint/repeat.js";
 import { nonDesign } from "../lint/rules/util.js";
 import { annotateTextStyles, expandShorthands, rendersText, type DomSnapshot } from "../lint/snapshot.js";
 import { isRichInline, isTextElement, runPlans, type RunPlan } from "../lint/text-runs.js";
@@ -45,8 +45,9 @@ export { repeatSamples };
 /**
  * Sample values of the design (verification only): bind and Smart String argument names → text, repeat name → one
  * object per item. Per item, by template element id: `$classes` the is-* classes that item shows, `$states` its
- * controls' disabled/checked where they differ from the template's (the states that are on), `$hidden` whether its
- * own markup hides the element (hidden attribute, inline display: none) where that differs from the template.
+ * controls' disabled/checked where they differ from the template's (the states that are on), `$hidden` true for an
+ * element its own markup hides (hidden attribute, inline display: none) in this item and shows in another: that
+ * hiding is sample data, the template compiles shown (`itemVisibility`) and the item view shows or hides it.
  */
 export interface SampleData { [name: string]: string | SampleData[] | Record<string, string[]> | Record<string, boolean> }
 /** `elements`: IR id → index of its DOM element in document order (`[body, ...body.querySelectorAll("*")]`), for captures. */
@@ -126,11 +127,22 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
   const indexOfId = new Map<string, number>();
   for (const p of plans) if (!indexOfId.has(p.id)) indexOfId.set(p.id, p.i);
   const textual = (p: Plan) => p.kind === "text" || p.kind === "input" || p.kind === "dropdown" || (p.kind === "button" && !p.run && isTextElement(s, el(p.i)));
+  // markup hiding that varies across a repeat's written-out items is sample data: the template compiles shown, with the
+  // box of a copy that shows it standing in where its markup hides it (the template element and its descendants)
+  const sampled = sampleHidden(s);
+  const markupSample = new Set(sampled.values());
+  const shownCopies = new Map<number, number>();
+  const pairCopies = (t: number, x: number) => {
+    shownCopies.set(t, x);
+    const kt = itemChildren(s, el(t)), kx = itemChildren(s, el(x));
+    kt.forEach((k, n) => { if (kx[n] !== undefined) pairCopies(k, kx[n]); });
+  };
+  for (const [x, t] of sampled) if (!shownCopies.has(t) && markupHidden(s, t) && el(x).rendered && el(x).size) pairCopies(t, x);
   lap("plan");
 
   // ---- 2. presentational attributes (CDP, only where present), cascade --------------------------------------
   const docUrl = `${DESIGN_ORIGIN}/${encodeURIComponent(path.basename(htmlPath))}`;
-  const ctx: StyleContext = { ids, docUrl };
+  const ctx: StyleContext = { ids, docUrl, markupSample, shownCopies };
   ctx.presentational = await presentationalStyles(d.cdp, s, plans.filter((p) => hasPresentational(el(p.i).attrs)).map((p) => p.i));
   lap("cdp");
   let ex = new StyleExtractor(s, ctx);
@@ -274,6 +286,7 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     return {
       id: p.id, kind: p.kind, external: p.external, classes, style: toStyleLayers(layers), text, attrTexts: attrTexts(e),
       initial: control ? { disabled: e.attrs.disabled !== undefined, checked: toggle && e.attrs.checked !== undefined } : null,
+      ...(markupSample.has(p.i) ? { itemVisibility: true } : {}),
       ...(p.kind === "input" ? { field: {
         password: e.tag === "input" && (e.attrs.type ?? "").toLowerCase() === "password", multiline: e.tag === "textarea",
         placeholderColor: e.pseudo.placeholder?.color ? normalizeColor(e.pseudo.placeholder.color) : null,
@@ -302,22 +315,17 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     const toggle = e.tag === "input" && /^(checkbox|radio)$/i.test(e.attrs.type ?? "");
     return [...(e.attrs.disabled !== undefined ? ["disabled"] : []), ...(toggle && e.attrs.checked !== undefined ? ["checked"] : [])];
   };
-  // an element its own markup hides: the hidden attribute or an inline display: none, rendering nothing
-  const markupHidden = (i: number) => {
-    const e = el(i);
-    return !e.rendered && (e.attrs.hidden !== undefined || (e.inline ?? []).some((d) => d.name === "display" && d.value.trim().toLowerCase() === "none"));
-  };
   interface ItemState { classes: Record<string, string[]>; states: Record<string, string[]>; hidden: Record<string, boolean> }
   // a sample's is-* classes, control states and markup hiding, by the id of the template element at the same place;
-  // states and hiding only where they differ from the template's (its own markup is the IR's)
+  // states only where they differ from the template's (its own markup is the IR's); hiding where it is sample data and
+  // this item's markup hides the element (the template compiles shown)
   const itemState = (x: number, tpl: number, out: ItemState) => {
     const id = ids.get(tpl);
     const cls = isClasses(x);
     if (id && cls.length) out.classes[id] = cls;
     const sx = controlStates(x), st = controlStates(tpl);
     if (id && sx && st && sx.join() !== st.join()) out.states[id] = sx;
-    const hx = markupHidden(x), ht = markupHidden(tpl);
-    if (id && hx !== ht) out.hidden[id] = hx;
+    if (id && sampled.has(x) && markupHidden(s, x)) out.hidden[id] = true;
     const kx = itemChildren(s, el(x)), kt = itemChildren(s, el(tpl));
     kx.forEach((k, n) => { if (kt[n] !== undefined && el(k).attrs["data-u-repeat"] === undefined) itemState(k, kt[n], out); });
   };

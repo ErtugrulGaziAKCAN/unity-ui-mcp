@@ -413,6 +413,7 @@ namespace DesignUi.Editor.Tests
             var pick = Node("pick", "button", ("width", "30px"), ("height", "16px"), ("flex-shrink", "0"), ("background-color", "#123c47")).With("disabled", ("background-color", "#ff0000"));
             pick.Initial = new IrInitial();
             var card = Box("card", "#19505d", ("width", "30px"), ("height", "10px"));
+            card.ItemVisibility = true; // a written-out item's markup hides it
             var day = Node("day", "container", ("display", "flex"), ("flex-direction", "column"), ("width", "40px"), ("height", "40px"), ("flex-shrink", "0"),
                 ("background-color", "#0f2a33")).With("class:is-today", ("background-color", "#16c2d5")).Add(pick, card);
             var week = Node("week", "container", ("display", "flex"), ("flex-direction", "row"), ("height", "40px"), ("flex-shrink", "0")).Add(day);
@@ -462,9 +463,11 @@ namespace DesignUi.Editor.Tests
         [UnityTest]
         public IEnumerator Run_AJobInALaterRepeatItem_PointsAtThatItemsCopy_InNestedRepeats()
         {
-            var more = Node("more", "button", ("display", "none"), ("width", "30px"), ("height", "16px"), ("flex-shrink", "0"), ("background-color", "#123c47"))
+            var more = Node("more", "button", ("width", "30px"), ("height", "16px"), ("flex-shrink", "0"), ("background-color", "#123c47"))
                 .With("hover", ("background-color", "#16c2d5"));
             more.Initial = new IrInitial();
+            more.ItemVisibility = true; // the items' markup hides it in all but one
+            
             var day = Node("day", "container", ("display", "flex"), ("flex-direction", "column"), ("width", "40px"), ("height", "40px"), ("flex-shrink", "0"),
                 ("background-color", "#0f2a33")).Add(more);
             var week = Node("week", "container", ("display", "flex"), ("flex-direction", "row"), ("height", "40px"), ("flex-shrink", "0")).Add(day);
@@ -472,7 +475,8 @@ namespace DesignUi.Editor.Tests
             var weeks = Node("weeks", "container", ("display", "flex"), ("flex-direction", "column"), ("flex-shrink", "0")).Add(week);
             weeks.Repeat = new IrRepeat { Name = "weeks", Mode = "inline", Count = 2 };
             // only the second week's first day shows its "more" button
-            var export = Export(Small(BlackRoot(weeks)), "{ \"weeks\": [ { \"days\": [ {}, {} ] }, { \"days\": [ { \"$hidden\": { \"more\": false } }, {} ] } ] }");
+            var export = Export(Small(BlackRoot(weeks)), "{ \"weeks\": [ { \"days\": [ { \"$hidden\": { \"more\": true } }, { \"$hidden\": { \"more\": true } } ] }, " +
+                                                         "{ \"days\": [ {}, { \"$hidden\": { \"more\": true } } ] } ] }");
             var profile = Profile(new Vector2Int(320, 180), 0.5f);
             var screen = Compile(export, profile);
             var hover = CaptureApply.Pseudo("hover", "more");
@@ -489,6 +493,46 @@ namespace DesignUi.Editor.Tests
             yield return DesignCapture.Run(req, profile);
             Assert.Greater(at.width, 0, "the second week's first day shows its button");
             Assert.AreEqual("#16c2d5", Hex(Pixel(Png(req), (int)at.center.x, (int)at.center.y)), "the pointer is on that copy");
+        }
+
+        /// <summary>
+        /// A label and a shadowed mark that the design's written-out items hide by markup in some items (sample data, compiled
+        /// shown): the capture hides them as the item view's Set&lt;Id&gt;Visible does, on the element that owns the visibility
+        /// (the mark's shadow host), and an item that shows the label centres its text as the design's CSS does.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Run_ElementsTheItemsHideByMarkup_AreHiddenThroughTheItemViewsVisibilitySetter_AndShownOnesKeepTheirCss()
+        {
+            var flag = Words("flag", "Aç", ("display", "flex"), ("flex-direction", "row"), ("align-items", "center"), ("justify-content", "center"),
+                ("width", "100px"), ("height", "30px"), ("flex-shrink", "0"), ("background-color", "#123c47"));
+            flag.ItemVisibility = true;
+            var mark = Shadowed(Box("mark", "#16c2d5", ("width", "20px"), ("height", "20px")));
+            mark.ItemVisibility = true;
+            var row = Node("row", "container", ("display", "flex"), ("flex-direction", "row"), ("height", "40px"), ("flex-shrink", "0")).Add(flag, mark);
+            var rows = Node("rows", "container", ("display", "flex"), ("flex-direction", "column"), ("flex-shrink", "0")).Add(row);
+            rows.Repeat = new IrRepeat { Name = "rows", Mode = "inline", Count = 3 };
+            var export = Export(Small(BlackRoot(rows)), "{ \"rows\": [ { \"$hidden\": { \"flag\": true, \"mark\": true } }, { \"$hidden\": { \"flag\": true } }, {} ] }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var manifest = GeneratedManifest.Load(screen + "/" + ScreenCompiler.ManifestFileName);
+            CollectionAssert.AreEquivalent(new Dictionary<string, string> { { "flag", "flag" }, { "mark", "mark__shadowhost" } }, manifest.visibility,
+                "the manifest names the element each visibility setter writes");
+            var req = Request(export, screen, "default@320x180", 320, 180);
+            req.Inspect = tree =>
+            {
+                var items = tree.Q("rows").Children().ToList();
+                Assert.AreEqual(3, items.Count);
+                Assert.AreEqual(DisplayStyle.None, items[0].Q("flag").resolvedStyle.display, "the first item hides the label");
+                Assert.AreEqual(DisplayStyle.None, items[0].Q("mark__shadowhost").resolvedStyle.display, "and the mark, on its shadow host");
+                Assert.AreEqual(StyleKeyword.Null, items[0].Q("mark").style.display.keyword, "the mark's own style is left as the setter leaves it");
+                Assert.AreEqual(DisplayStyle.None, items[1].Q("flag#1").resolvedStyle.display);
+                Assert.AreEqual(DisplayStyle.Flex, items[1].Q("mark__shadowhost#1").resolvedStyle.display);
+                var shown = items[2].Q<Label>("flag#2");
+                Assert.AreEqual(DisplayStyle.Flex, shown.resolvedStyle.display, "the third item shows it: the compiled default");
+                Assert.AreEqual(StyleKeyword.Null, shown.style.display.keyword);
+                Assert.AreEqual(TextAnchor.MiddleCenter, shown.resolvedStyle.unityTextAlign, "centred as its CSS centres it");
+            };
+            yield return DesignCapture.Run(req, profile);
         }
 
         [Test]

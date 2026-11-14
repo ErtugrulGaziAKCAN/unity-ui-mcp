@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0}*,*::before,*::after{box-sizing:border-box}.screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}p{margin:0}
+.rows{display:flex;flex-direction:column;flex-shrink:0}
+.row{display:flex;flex-direction:row;height:48px;flex-shrink:0;background-color:#123c47}
+.row.is-untimed .time{display:none}
+.time{width:80px;flex-shrink:0;color:#b9d0d6}
+.flag{display:flex;flex-direction:row;align-items:center;justify-content:center;width:120px;height:32px;flex-shrink:0;appearance:none;margin:0;padding:0;border:none;border-radius:50%;background-color:#19505d;color:#ffffff;font-family:"Inter UI";font-size:16px;font-weight:400;line-height:20px}
+.tag{display:flex;flex-direction:row;align-items:center;width:96px;height:24px;flex-shrink:0;background-color:#f0605d}
+.tag[hidden]{display:none}
+.tag-dot{width:8px;height:8px;flex-shrink:0;background-color:#ffffff}
+.badge{width:40px;flex-shrink:0}
+.spare{width:40px;flex-shrink:0}
+</style></head><body><div class="screen" data-u-screen="item.visibility">
+<div class="rows" data-u-id="rows">
+<div class="row is-untimed" data-u-repeat="rows" data-u-id="row"><span class="time" data-u-id="time" data-u-bind="row.time">—</span><button class="flag" data-u-id="flag" data-u-action="flag" style="display: none">İşaretli</button><div class="tag" data-u-id="tag" hidden><span class="tag-dot" data-u-id="tag-dot"></span><span data-u-id="tag-label" data-u-bind="row.tag">Yeni</span></div><span class="badge" data-u-id="badge" data-u-bind="row.badge">1</span><span class="spare" data-u-id="spare" data-u-bind="row.spare" style="display: none">x</span></div>
+<div class="row" data-u-id="row"><span class="time" data-u-id="time" data-u-bind="row.time">13:00</span><button class="flag" data-u-id="flag" data-u-action="flag" style="display: none">İşaretli</button><div class="tag" data-u-id="tag"><span class="tag-dot" data-u-id="tag-dot"></span><span data-u-id="tag-label" data-u-bind="row.tag">Yeni</span></div><span class="badge" data-u-id="badge" data-u-bind="row.badge">2</span><span class="spare" data-u-id="spare" data-u-bind="row.spare" style="display: none">y</span></div>
+<div class="row" data-u-id="row"><span class="time" data-u-id="time" data-u-bind="row.time">15:00</span><button class="flag" data-u-id="flag" data-u-action="flag">İşaretli</button><div class="tag" data-u-id="tag"><span class="tag-dot" data-u-id="tag-dot"></span><span data-u-id="tag-label" data-u-bind="row.tag">Eski</span></div><span class="badge" data-u-id="badge" data-u-bind="row.badge" style="display: none">3</span><span class="spare" data-u-id="spare" data-u-bind="row.spare" style="display: none">z</span></div>
+</div>
+</div></body></html>

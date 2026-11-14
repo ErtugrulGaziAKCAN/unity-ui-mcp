@@ -65,6 +65,11 @@ namespace DesignUi.Editor
         public MirrorEntry[] mirrors = new MirrorEntry[0];
         public RepeatEntry[] repeats = new RepeatEntry[0];
         /// <summary>
+        /// Element name to the element its view setter <c>Set&lt;Id&gt;Visible</c> shows and hides (itself, or its shadow host),
+        /// for every element the design's repeat items hide by markup in some items; null when the screen has none.
+        /// </summary>
+        public Dictionary<string, string> visibility;
+        /// <summary>
         /// Element name to its undrawn attribute texts (<c>alt</c>, <c>aria-label</c>) by attribute name; null when the
         /// screen has none.
         /// </summary>

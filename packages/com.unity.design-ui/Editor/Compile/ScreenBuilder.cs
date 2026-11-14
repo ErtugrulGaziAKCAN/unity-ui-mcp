@@ -1111,8 +1111,8 @@ namespace DesignUi.Editor
             /// content, binding, action, repeat, class, animation or interaction) whose only USS is the default column
             /// and possibly <c>flex-shrink: 0</c>, holding one in-flow child, inside a container that is a column in every
             /// layer (so wrapper and child are stretched across alike). The child must not depend on the wrapper: no
-            /// percentages, no flex item properties, no auto vertical margins, never hidden, the same flex-shrink as the
-            /// wrapper and, when it can shrink, no vertical margins.
+            /// percentages, no flex item properties, no auto vertical margins, never hidden (by a layer or per repeat item),
+            /// the same flex-shrink as the wrapper and, when it can shrink, no vertical margins.
             /// </summary>
             static bool IsRemovableWrapper(Draft parent, Draft wrapper)
             {
@@ -1141,7 +1141,7 @@ namespace DesignUi.Editor
                 }
 
                 var c = wrapper.Children[0].Node;
-                if (Get(c, Base, "position") == "absolute") return false;
+                if (Get(c, Base, "position") == "absolute" || c.ItemVisibility) return false; // a child an item hides keeps the wrapper's box
                 foreach (var layer in c.Style)
                     foreach (var kv in layer.Value)
                     {
@@ -1224,6 +1224,10 @@ namespace DesignUi.Editor
                                       ?? throw new IrFormatException("shadow host '" + node.Id + "' has no element to mirror");
                 }
                 e.Clickable = node.Clickable && d.Tag != "ui:Button" && d.Tag != "ui:Toggle";
+                // markup hiding in the design's repeat items is sample data: the view's setter shows and hides the element that
+                // owns its visibility, the shadow host that took its slot when it has one
+                if (node.ItemVisibility)
+                    e.VisibilityOwner = ancestors.Count > 0 && ancestors[ancestors.Count - 1].Id == d.Name + HostSuffix ? ancestors[ancestors.Count - 1].Id : d.Name;
                 foreach (var kv in d.AccessibilityLabels) e.AccessibilityLabels[kv.Key] = kv.Value;
                 // an animation trigger may name an ancestor too; it must be one in the compiled tree
                 foreach (var trigger in (node.Anims ?? new List<IrAnim>()).Select(a => a.Trigger).Where(t => t != null && t != LayerKey.ShowTrigger))

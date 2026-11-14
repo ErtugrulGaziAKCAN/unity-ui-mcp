@@ -211,6 +211,17 @@ namespace DesignUi
             for (int i = 0; i < mirrors.Length; i++) mirrors[i].Sync();
         }
 
+        /// <summary>
+        /// Shows or hides an element that the design's repeat items hide by markup in some items (the generated item view's
+        /// <c>Set&lt;Id&gt;Visible</c>): hidden is an inline <c>display: none</c> on <paramref name="owner"/>, the element that
+        /// owns its visibility (the element itself, or its shadow host); shown removes it, so its style layers decide again.
+        /// </summary>
+        public static void SetVisible(VisualElement owner, bool visible)
+        {
+            if (owner == null) throw new ArgumentNullException(nameof(owner));
+            owner.style.display = visible ? new StyleEnum<DisplayStyle>(StyleKeyword.Null) : new StyleEnum<DisplayStyle>(DisplayStyle.None);
+        }
+
         /// <summary>Shows the classes a state gives the screen root: its class on, the other states' classes off.</summary>
         public static void SetState(VisualElement screenRoot, string[] stateClasses, int state)
         {

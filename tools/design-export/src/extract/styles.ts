@@ -31,6 +31,16 @@ export interface StyleContext {
   boxes?: Map<string, Map<number, Size>>;
   /** Chromium's longhand expansion of shorthand values (`name\u0000value` → longhands), for var() users per layer. */
   expansions?: Map<string, SnapDecl[] | null>;
+  /**
+   * Repeat template elements whose markup hiding is sample data (lint/repeat.ts sampleHidden): their style is the one
+   * they have shown, so an inline display: none, the hidden attribute and a [hidden] rule's display are left out.
+   */
+  markupSample?: Set<number>;
+  /**
+   * The elements of such a template that its markup hides (the template element and its descendants) → the same
+   * element in a written-out item that shows it, whose box stands in for theirs.
+   */
+  shownCopies?: Map<number, number>;
 }
 
 const expansionKey = (name: string, value: string) => `${name}\u0000${value}`;
@@ -72,14 +82,17 @@ export const INITIAL: Record<string, string> = {
 export const TEXT_INHERITED = ["color", "font-family", "font-size", "font-weight", "font-style", "letter-spacing", "text-align", "white-space-collapse", "text-wrap-mode", "text-shadow"];
 const ALWAYS = new Set(TEXT_INHERITED.slice(0, 5));
 
-/** Whether a browser-default property renders, judged like lint U-CSS-026 (which the extraction must agree with). */
-function uaRenders(e: SnapElement, prop: string): boolean {
+/**
+ * Whether a browser-default property renders, judged like lint U-CSS-026 (which the extraction must agree with);
+ * `display`: the element's display (an element whose markup hides it in a repeat item: the one it has shown).
+ */
+function uaRenders(e: SnapElement, prop: string, display = e.computed.display): boolean {
   const d = cssSupport.browserDefaults;
   const ua = e.ua[prop];
   if (d.inherited.includes(prop)) return ua.value !== ua.parent;
   const side = /^border-(top|right|bottom|left)-(style|color)$/.exec(prop);
   if (side && e.computed[`border-${side[1]}-width`] === "0px") return false;
-  if (FLEX_ONLY.has(prop) && !/flex|grid/.test(e.computed.display)) return false;
+  if (FLEX_ONLY.has(prop) && !/flex|grid/.test(display)) return false;
   return !(d.initial[prop] ?? []).includes(ua.value);
 }
 
@@ -459,16 +472,20 @@ export class StyleExtractor {
       if (!ruleAlts.has(sel)) ruleAlts.set(sel, this.selectorDims(sel, rule, i));
       return ruleAlts.get(sel)!;
     };
+    // markup hiding in a repeat item that is sample data: the element's style is the one it has shown
+    const sample = this.ctx.markupSample?.has(i) ?? false;
+    const hidingRule = (sel: SnapSelector) => sel.parsed.compounds[sel.parsed.compounds.length - 1].simples.some((x) => x.kind === "attr" && x.name.toLowerCase() === "hidden");
     for (const pass of [true, false]) {
       customPass = pass;
-      if (!pass) for (const [prop, ua] of Object.entries(e.ua)) if (uaRenders(e, prop)) push(prop, ua.value, [], 0, [0, 0, 0], -2, []);
+      if (!pass && !sample) for (const [prop, ua] of Object.entries(e.ua)) if (uaRenders(e, prop)) push(prop, ua.value, [], 0, [0, 0, 0], -2, []);
       for (const d of this.ctx.presentational?.get(i) ?? []) {
+        if (sample && d.name === "display") continue; // the hidden attribute
         const value = /^(width|height)$/.test(d.name) && /^\d+(\.\d+)?$/.test(d.value.trim()) ? `${d.value.trim()}px` : d.value;
         add({ ...d, value }, 1, [0, 0, 0], -1, [], this.ctx.docUrl);
       }
       for (const src of sourcesOf(s)[i] ?? []) {
         if (src.kind === "inline") {
-          for (const d of src.decls) add(d, d.important ? 5 : 3, [0, 0, 0], Number.MAX_SAFE_INTEGER, [], this.ctx.docUrl);
+          for (const d of src.decls) if (!(sample && d.name === "display" && d.value.trim().toLowerCase() === "none")) add(d, d.important ? 5 : 3, [0, 0, 0], Number.MAX_SAFE_INTEGER, [], this.ctx.docUrl);
           continue;
         }
         const rule = src.rule!;
@@ -476,9 +493,18 @@ export class StyleExtractor {
           if (sel.pseudoElement || !this.reaches(sel, i)) continue;
           const alts = altsOf(sel, rule);
           if (!alts) continue;
-          for (const dims of alts) for (const d of declsAt(src, i)) add(d, d.important ? 4 : 2, sel.specificity, rule.index, dims, sheetUrl(rule.sheet, this.ctx.docUrl));
+          for (const dims of alts) for (const d of declsAt(src, i)) {
+            if (sample && d.name === "display" && hidingRule(sel)) continue;
+            add(d, d.important ? 4 : 2, sel.specificity, rule.index, dims, sheetUrl(rule.sheet, this.ctx.docUrl));
+          }
         }
       }
+    }
+    if (sample) {
+      // browser defaults judged with the display the element has shown (its rules', else its tag's)
+      const own = out.filter((c) => c.prop === "display" && !c.dims.length);
+      const display = own.length ? winner(own).entry.value : uaDisplay(e);
+      for (const [prop, ua] of Object.entries(e.ua)) if (uaRenders(e, prop, display)) push(prop, ua.value, [], 0, [0, 0, 0], -2, []);
     }
     return out;
   }
@@ -559,10 +585,15 @@ export class StyleExtractor {
     return this.ctx.boxes?.get(key)?.get(i) ?? this.baseBox(i);
   }
 
-  /** Untransformed border box in the default state (else the first layer that shows the element), or null. */
+  /**
+   * Untransformed border box in the default state (else, for an element a repeat item's markup hides as sample data,
+   * the box of the written-out copy that shows it; else the first layer that shows the element), or null.
+   */
   baseBox(i: number): Size | null {
     const e = this.s.elements[i];
     if (e.size) return e.size;
+    const copy = this.ctx.shownCopies?.get(i);
+    if (copy !== undefined && this.s.elements[copy].size) return this.s.elements[copy].size;
     for (const k of Array.from(this.ctx.boxes?.keys() ?? []).sort()) { const b = this.ctx.boxes!.get(k)!.get(i); if (b) return b; }
     return null;
   }
@@ -698,16 +729,18 @@ export class StyleExtractor {
     // (lint/promote.ts; lint U-CSS-009 rejects the rest, and the compiler rejects an inline it is left with)
     const parent = e.parent >= 0 ? s.elements[e.parent] : null;
     const lone = this.promotesToBlock(i);
-    const blockify = (d: string) => ((parent && /flex/.test(parent.computed.display)) || e.computed.position === "absolute"
+    const blockify = (d: string) => ((parent && /flex/.test(this.shownDisplay(parent.index))) || e.computed.position === "absolute"
       ? ({ inline: "block", "inline-block": "block", "inline-flex": "flex", "list-item": "block" } as Record<string, string>)[d] ?? d
       : d === "list-item" || (d === "inline" && lone) ? "block" : d);
     // base without its own display: the computed one, unless a layer sets display, whose class or state the markup may
-    // show right now (a repeat's first item, a collapsed panel): then the browser default of the tag, never that layer's
+    // show right now (a repeat's first item, a collapsed panel), or the element's markup hides it as sample data: then the
+    // browser default of the tag, never that layer's or the markup's
     const layerDisplay = Array.from(out).some(([k, m]) => k !== "base" && m.has("display"));
+    const sample = this.ctx.markupSample?.has(i) ?? false;
     for (const [name, layer] of out) {
       const d = layer.get("display");
       if (d) layer.set("display", { ...d, value: blockify(d.value.trim()) });
-      else if (name === "base") layer.set("display", { value: blockify(layerDisplay ? uaDisplay(e) : e.computed.display ?? "block"), refs: [] });
+      else if (name === "base") layer.set("display", { value: blockify(layerDisplay || sample ? uaDisplay(e) : e.computed.display ?? "block"), refs: [] });
     }
 
     // CSS initial values that render differently from USS's (findings O-6)
@@ -728,6 +761,11 @@ export class StyleExtractor {
     for (const [name, layer] of out) if (name !== "base" && layer.size === 0) out.delete(name);
     this.doneCache.set(i, out);
     return out;
+  }
+
+  /** An element's display as its children see it: the computed one, or the shown one for markup hiding that is sample data. */
+  private shownDisplay(i: number): string {
+    return this.ctx.markupSample?.has(i) ? this.layers(i).get("base")!.get("display")!.value : this.s.elements[i].computed.display;
   }
 
   /**

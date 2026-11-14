@@ -1,3 +1,4 @@
+import { shownDisplay } from "./repeat.js";
 import type { DomSnapshot, SnapElement } from "./snapshot.js";
 
 /**
@@ -21,11 +22,14 @@ const memo = <T>(fn: (s: DomSnapshot) => T) => {
   return (s: DomSnapshot): T => { if (!cache.has(s)) cache.set(s, fn(s)); return cache.get(s)!; };
 };
 
-/** An inline child of a text: b, strong, i, em or span in text flow (or br), whose content is text or such children. */
+/**
+ * An inline child of a text: b, strong, i, em or span in text flow (or br), whose content is text or such children
+ * (judged as an item that shows it lays it out, where a repeat item's markup hides it or its parent as sample data).
+ */
 export function isRichInline(s: DomSnapshot, c: SnapElement): boolean {
   if (c.ns !== "html" || !RICH_TAGS.has(c.tag)) return false;
   if (c.tag === "br") return true;
-  if (!c.computed.display.startsWith("inline") || c.attrs["data-u-repeat"] !== undefined) return false;
+  if (!shownDisplay(s, c.index).startsWith("inline") || c.attrs["data-u-repeat"] !== undefined) return false;
   return c.children.every((k) => isRichInline(s, s.elements[k]));
 }
 

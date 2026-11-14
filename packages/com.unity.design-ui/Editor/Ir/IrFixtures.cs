@@ -12,7 +12,8 @@ namespace DesignUi.Editor
     /// game data or saves: bind and Smart String argument names map to text, a repeat name maps to one object per item.
     /// Per item, by template element id: <c>$classes</c> the <c>is-*</c> classes that item shows, <c>$states</c> the
     /// states of its controls that are on (<c>disabled</c>, <c>checked</c>) where they differ from the template's, and
-    /// <c>$hidden</c> whether the item's own markup hides the element (true) or shows it (false) where the template differs.
+    /// <c>$hidden</c> the elements the item's own markup hides (true) where other items show them: sample data, which the
+    /// compile shows and the item view's <c>Set&lt;Id&gt;Visible</c> hides (false shows an element).
     /// </summary>
     public sealed class IrFixtures
     {
@@ -29,7 +30,7 @@ namespace DesignUi.Editor
         public readonly Dictionary<string, string[]> Classes = new Dictionary<string, string[]>(StringComparer.Ordinal);
         /// <summary>Repeat items only: template element id to the control states that are on in this item (disabled, checked).</summary>
         public readonly Dictionary<string, string[]> States = new Dictionary<string, string[]>(StringComparer.Ordinal);
-        /// <summary>Repeat items only: template element id to whether this item's markup hides the element (true) or shows it (false).</summary>
+        /// <summary>Repeat items only: template element id to whether this item hides the element (true) or shows it (false), through its visibility setter.</summary>
         public readonly Dictionary<string, bool> Hidden = new Dictionary<string, bool>(StringComparer.Ordinal);
 
         public static IrFixtures Read(string path)

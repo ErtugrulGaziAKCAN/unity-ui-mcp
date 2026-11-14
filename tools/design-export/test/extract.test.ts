@@ -517,6 +517,41 @@ describe("buildIr: layers, text runs and lossless values", () => {
     expect((weeks[1].days[0].events as Record<string, unknown>[]).map((e) => e.$hidden ?? null)).toEqual([null, null, { card: true }]);
     expect((weeks[1].days[1].events as Record<string, unknown>[])[0].$hidden).toEqual({ title: true });
     expect((weeks[0].days[0].events as Record<string, unknown>[])[0].$hidden).toBeUndefined();
+    // both vary across the items, so the item view shows and hides them
+    expect(byId(r.ir.root, "card").itemVisibility).toBe(true);
+    expect(byId(r.ir.root, "title").itemVisibility).toBe(true);
+    expect(byId(r.ir.root, "pick").itemVisibility).toBeUndefined();
+  });
+
+  it("markup hiding that varies across a repeat's items is sample data: the template compiles shown, the items record it", async () => {
+    const r = await build(fx("item-visibility.html"));
+    expect(validateIr(r.ir)).toEqual([]);
+    // the first item's inline display: none hides the flag; a later item shows it: base is its CSS, as if shown
+    const flag = byId(r.ir.root, "flag");
+    expect(flag.itemVisibility).toBe(true);
+    expect(flag.style.base).toMatchObject({ display: "flex", "flex-direction": "row", "align-items": "center", "justify-content": "center" });
+    // percentage radii resolve against the box a shown item gives it (120×32)
+    expect(flag.style.base["border-top-left-radius"]).toBe("60px");
+    // the hidden attribute (and a [hidden] rule) hide the tag in the first item only; its child is a flex item when shown
+    const tag = byId(r.ir.root, "tag");
+    expect(tag.itemVisibility).toBe(true);
+    expect(tag.style.base.display).toBe("flex");
+    expect(byId(r.ir.root, "tag-label").style.base.display).toBe("block");
+    expect(byId(r.ir.root, "tag-dot").style.base.display).toBe("block");
+    // shown in the template, hidden by a later item's markup
+    expect(byId(r.ir.root, "badge").itemVisibility).toBe(true);
+    expect(byId(r.ir.root, "badge").style.base.display).toBe("block");
+    // hidden in every item: stays style
+    const spare = byId(r.ir.root, "spare");
+    expect(spare.itemVisibility).toBeUndefined();
+    expect(spare.style.base.display).toBe("none");
+    // hidden by a class layer: keeps its layer
+    const time = byId(r.ir.root, "time");
+    expect(time.itemVisibility).toBeUndefined();
+    expect(time.style["anc(row):class:is-untimed"]).toEqual({ display: "none" });
+    for (const id of ["rows", "row", "tag-label", "tag-dot"]) expect(byId(r.ir.root, id).itemVisibility, id).toBeUndefined();
+    // each item records what its markup hides (the first item too); a shown element is the compiled default
+    expect((r.fixtures.rows as Record<string, unknown>[]).map((x) => x.$hidden ?? null)).toEqual([{ flag: true, tag: true }, { flag: true }, { badge: true }]);
   });
 
   it("a class the markup shows never bakes its layer's display into base (a repeat's first item, a collapsed panel)", async () => {

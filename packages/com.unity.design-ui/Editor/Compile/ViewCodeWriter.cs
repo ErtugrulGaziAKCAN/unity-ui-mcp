@@ -23,6 +23,10 @@ namespace DesignUi.Editor
     /// <item>the screen's states as <c>enum State</c> and <c>SetState</c>, which swaps the root's <c>state-&lt;name&gt;</c>
     /// class; <c>SetSelected</c>/<c>SetClass</c>, which toggle the design's <c>is-*</c> view-state classes (and their
     /// shadow hosts' copies); <c>SetEnabled</c>, Unity's enabled state, so the <c>:disabled</c> layers apply;</item>
+    /// <item>one setter <c>Set&lt;Id&gt;Visible(bool visible)</c> per element the design's repeat items hide by markup in some
+    /// items (<see cref="IrNode.ItemVisibility"/>: sample data, compiled shown), named from its <c>data-u-id</c>: it writes
+    /// <see cref="DesignUi.DesignView.SetVisible"/> on the element that owns the visibility (the element, or its shadow
+    /// host) and skips an unchanged value without allocating;</item>
     /// <item>one setter per <c>data-u-repeat</c>, <c>Set&lt;Repeat&gt;(int count, Action&lt;&lt;Repeat&gt;ItemView, int&gt; bind)</c>,
     /// with a nested item view class of the same members over the item template: inline repeats are pooled items in the
     /// container, list repeats a virtualized ListView. Repeats nest (an item view has the setters of the repeats in its
@@ -101,6 +105,15 @@ namespace DesignUi.Editor
             public readonly List<CompiledElement> Elements = new List<CompiledElement>();
         }
 
+        sealed class VisibilitySetter
+        {
+            public CompiledElement Element;
+            public string Member;
+            public string Field;
+            /// <summary>The C# expression of the element that owns the visibility.</summary>
+            public string Owner;
+        }
+
         sealed class RepeatSetter
         {
             public CompiledRepeat Repeat;
@@ -126,6 +139,7 @@ namespace DesignUi.Editor
             public readonly List<ArgText> ArgTexts = new List<ArgText>();
             public readonly List<ActionEvent> Actions = new List<ActionEvent>();
             public readonly List<RepeatSetter> Repeats = new List<RepeatSetter>();
+            public readonly List<VisibilitySetter> Visibilities = new List<VisibilitySetter>();
             /// <summary>Member name to what claimed it (null: the class itself).</summary>
             public readonly Dictionary<string, string> Members = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -238,6 +252,7 @@ namespace DesignUi.Editor
             {
                 Values(v);
                 Actions(v);
+                Visibilities(v);
             }
 
             var states = new List<(string name, string member)>();
@@ -359,6 +374,24 @@ namespace DesignUi.Editor
             }
         }
 
+        /// <summary>
+        /// The view's visibility setters: one per element the design's repeat items hide by markup in some items
+        /// (<see cref="CompiledElement.VisibilityOwner"/>), named from its data-u-id, writing the element that owns the visibility.
+        /// </summary>
+        static void Visibilities(View v)
+        {
+            foreach (var e in v.Elements)
+            {
+                if (e.VisibilityOwner == null) continue;
+                if (e.Name.IndexOf("__", StringComparison.Ordinal) >= 0)
+                    throw new IrFormatException("'" + PathOf(e) + "' is shown in some of the design's repeat items and hidden by markup in others, but it has no data-u-id " +
+                                                "(its name '" + e.Name + "' is structural): give it a data-u-id, which names its visibility setter (lint U-MRK-003)");
+                var member = "Set" + MemberOf(e.Name, "data-u-id", e) + "Visible";
+                v.Claim(member, "the visibility of element '" + e.Name + "'");
+                v.Visibilities.Add(new VisibilitySetter { Element = e, Member = member, Field = "m_Visible" + v.Visibilities.Count, Owner = v.Member(e.VisibilityOwner) });
+            }
+        }
+
         static bool IsText(CompiledElement e) =>
             e.Tag == "ui:Label" || e.Tag == "ui:Button" || e.Tag == "ui:Toggle" || e.Tag == "ui:TextField" || e.Tag == "ui:DropdownField";
 
@@ -429,6 +462,7 @@ namespace DesignUi.Editor
                     sb.Append(ind).Append("bool ").Append(value.Field).Append("Set;\n");
                 }
             }
+            foreach (var vis in v.Visibilities) sb.Append(ind).Append("bool ").Append(vis.Field).Append(" = true;\n");
             sb.Append('\n');
             if (v.IsItem)
             {
@@ -568,6 +602,19 @@ namespace DesignUi.Editor
                     foreach (var e in value.Binds)
                         sb.Append(b).Append(Rt).Append("DesignView.SetImage(").Append(v.Member(Painter(e).Name)).Append(", value);\n");
                 }
+                sb.Append(ind).Append("}\n");
+            }
+
+            // visibility: the design's items hide these by markup in some items; compiled shown
+            foreach (var vis in v.Visibilities)
+            {
+                sb.Append('\n');
+                sb.Append(ind).Append("/// <summary>Shows or hides '").Append(Xml(vis.Element.Name)).Append('\'').Append(v.IsItem ? " in this item" : "")
+                  .Append(" (the design's items hide it by markup in some of them). An unchanged value writes nothing.</summary>\n");
+                sb.Append(ind).Append("public void ").Append(vis.Member).Append("(bool visible)\n").Append(ind).Append("{\n");
+                sb.Append(b).Append("if (visible == ").Append(vis.Field).Append(") return;\n");
+                sb.Append(b).Append(vis.Field).Append(" = visible;\n");
+                sb.Append(b).Append(Rt).Append("DesignView.SetVisible(").Append(vis.Owner).Append(", visible);\n");
                 sb.Append(ind).Append("}\n");
             }
 

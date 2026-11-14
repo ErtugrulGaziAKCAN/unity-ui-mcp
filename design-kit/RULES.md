@@ -21,6 +21,7 @@ When a screen is drawn in Claude Design, the kit is attached as a Design System 
 - Markup goes inside `<x-dc>`, page styles inside `<helmet><style>`; start that style with the kit stylesheet.
 - No `{{…}}` holes (U-DC-001), no `<sc-for>`, `<sc-if>`, `<dc-import>` or `x-import` (U-DC-002), no UI built by script (U-DC-003), and no `data-props` other than `$preview` (U-DC-004).
 - Repeated rows are written out as sample rows, with `data-u-repeat` on the first; the samples share its structure.
+- A sample row may hide an element other rows show (an untimed event's time) with the `hidden` attribute or an inline `display: none`: that is sample data. The element compiles as shown, from its own rules, and its item view gets `Set<Id>Visible`, so give it a `data-u-id` (U-MRK-003). An element hidden in every row, or hidden by a class or state, keeps that.
 - Inline styles are allowed; they compile like rules.
 - Images are uploads (`/_blob/<id>`) or inline `<svg>`; nothing is loaded from the network (U-NET-001). Fonts come only from the kit.
 
@@ -391,7 +392,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-031 | error | an inline SVG that paints some shapes with currentColor and others with fixed colours | currentColor on every shape (the icon follows its element's colour) or fixed colours on every shape |
 | U-CSS-032 | error | overlapping siblings UI Toolkit paints in another order than CSS (a relative sibling before a static one, a faded or transformed static one after an absolute one) | the same paint level for the siblings (position: relative), the top one later in the markup, or move them apart |
 | U-CSS-033 | error | pseudo-states a pointer or focus cannot produce together: `:active` on an ancestor and on the element, two focused elements | style one press or focus per element; an `is-*` class set by code for a combined look |
-| U-CSS-034 | error | a `gap` container whose earlier child shows or hides by its own pseudo-state or `is-*` class | use a screen state or an ancestor's class, keep an always-visible child first, or margins instead of gap |
+| U-CSS-034 | error | a `gap` container whose earlier child shows or hides by its own pseudo-state or `is-*` class, or by markup in some written-out repeat items | use a screen state or an ancestor's class, keep an always-visible child first, or margins instead of gap |
 | U-CSS-035 | error | an absolute element whose parent is static, or that changes position between layers | `position: relative` on the parent; one position in every layer |
 | U-CSS-036 | error | `box-sizing: content-box` on an element with a width or height and padding or border | `box-sizing: border-box` (the kit base stylesheet sets it everywhere) |
 | U-CSS-037 | error | baked effects that cannot share one element: an inset shadow under its own text, on a form control or a scroll area; a url() image beside a gradient or only in a layer; a background image or inset shadow on a tintable icon | move the text, image, gradient or icon into a child, or the shadow onto a wrapper |
@@ -411,7 +412,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-FONT-003 | error | glyphs drawn by a platform or non-kit font (character missing in the kit font) | characters the kit font covers |
 | U-MRK-001 | error | not exactly one `data-u-screen` | one screen root with `data-u-screen` |
 | U-MRK-002 | error | duplicate `data-u-id` | unique ids (each repeat item is its own scope) |
-| U-MRK-003 | error | interactive, bound or action elements without `data-u-id` | add `data-u-id` |
+| U-MRK-003 | error | interactive, bound or action elements, or an element some written-out repeat items hide by markup and others show, without `data-u-id` | add `data-u-id` |
 | U-MRK-004 | error | visible text without `data-l10n` + `data-en` on the element holding it (or `data-u-bind`) | add the key and English text |
 | U-MRK-005 | error | ids, actions or names outside `^[a-z0-9]+([._-][a-z0-9]+)*$` or starting with a digit (they become C# members), or localization keys outside `^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$` (any letter case) | ASCII transliteration (no İ, ı, ş, …); keys spelled exactly as the String Table key |
 | U-MRK-006 | error | the screen root is not the kit reference size at (0, 0) | root `width/height` = reference in px, `body { margin: 0 }` |

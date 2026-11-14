@@ -161,6 +161,23 @@ describe("lint engine", () => {
     expect((await lintFile(write(dir, list("state")))).filter((x) => x.ruleId === "U-MRK-011")).toEqual([]);
   });
 
+  it("an element some written-out items hide by markup and others show needs a data-u-id, and cannot lead a gap", async () => {
+    const dir = tmp();
+    const rows = (flag: (shown: boolean) => string, gap = "") => `<div style="display:flex;flex-direction:column">` +
+      [false, true].map((shown, k) => `<div${k ? "" : ' data-u-repeat="rows"'} data-u-id="row" style="display:flex;height:40px${gap}">` +
+        `${flag(shown)}<p data-u-id="name" data-u-bind="name">Ali</p></div>`).join("") + `</div>`;
+    const ids = async (html: string) => (await lintFile(write(dir, html))).map((x) => `${x.ruleId} ${x.detail}`);
+    // the per-item visibility setter is named from the element's data-u-id
+    expect(await ids(rows((shown) => `<div style="width:8px;height:8px;background-color:#16c2d5${shown ? "" : ";display:none"}"></div>`)))
+      .toEqual([expect.stringMatching(/^U-MRK-003 .*some written-out items of data-u-repeat "rows" hide by markup and others show .*has no data-u-id/)]);
+    expect(await ids(rows((shown) => `<div data-u-id="dot" style="width:8px;height:8px;background-color:#16c2d5${shown ? "" : ";display:none"}"></div>`))).toEqual([]);
+    // an element hidden in every item stays style: nothing to name
+    expect(await ids(rows(() => `<div style="width:8px;height:8px;display:none"></div>`))).toEqual([]);
+    // before every always-shown sibling of a gap container, the gap after it cannot follow the item's markup
+    expect(await ids(rows((shown) => `<div data-u-id="dot" style="width:8px;height:8px;background-color:#16c2d5${shown ? "" : ";display:none"}"></div>`, ";gap:8px")))
+      .toEqual([expect.stringMatching(/^U-CSS-034 .*dot.* is hidden by markup in some written-out items/)]);
+  });
+
   it("returns warnings without errors for a design with only warnings", async () => {
     const f = await lintFile(fx("W-FONT-002.fail.html"), KIT_FOR["W-FONT-002"]?.fail ?? kit);
     expect(f.length).toBeGreaterThan(0);

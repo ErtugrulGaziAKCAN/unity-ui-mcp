@@ -237,6 +237,12 @@ namespace DesignUi.Editor
         [JsonProperty("initial")] public IrInitial Initial;
         /// <summary>Input nodes: the field's form; null (or absent) for other elements.</summary>
         [JsonProperty("field")] public IrField Field;
+        /// <summary>
+        /// Repeat item elements (absent elsewhere): the design's written-out items hide this element by their own markup (the
+        /// hidden attribute, an inline display: none) in some items and show it in others. That hiding is sample data: the
+        /// style layers describe the element shown, and the item view gets a <c>Set&lt;Id&gt;Visible(bool)</c> setter.
+        /// </summary>
+        [JsonProperty("itemVisibility", DefaultValueHandling = DefaultValueHandling.Ignore)] public bool ItemVisibility;
         [JsonProperty("bind")] public string Bind;
         [JsonProperty("action")] public string Action;
         [JsonProperty("repeat")] public IrRepeat Repeat;

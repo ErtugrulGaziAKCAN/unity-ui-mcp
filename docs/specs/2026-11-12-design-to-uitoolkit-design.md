@@ -353,7 +353,13 @@ sync and the status window's Text section name the chosen faces and count the ot
    layer whose shadow or box differs); convert gradients to SVG per layer box;
    name every asset by content hash.
 6. **Fixtures.** Sample values inside `data-u-bind` and repeated items are written to `fixtures/sample-data.json`.
-   They are used only by verification, never by game data or saves.
+   They are used only by verification, never by game data or saves. Per written-out item they also record its `is-*`
+   classes (`$classes`), its controls' disabled and checked states (`$states`) and the elements its own markup hides
+   (`$hidden`). Markup hiding (the `hidden` attribute, an inline `display: none`) that differs between the items of a
+   repeat is sample data, not style: the template element is extracted from its own rules as if it were shown (its
+   display and everything derived from it, such as text alignment and its children's layout), its IR node carries
+   `itemVisibility: true`, and every item whose markup hides it, the first included, records `$hidden: { <id>: true }`.
+   An element hidden in every item keeps `display: none` as style; one hidden by a class or state keeps that layer.
 
 Output per screen:
 
@@ -450,6 +456,10 @@ public sealed partial class ClubOverviewView
 
 - Setters skip unchanged values and allocate nothing in steady state. Text setters assign through
   `DesignText.SetText`, so new characters are kerned from their first layout (§6).
+- An element whose hiding is sample data (`itemVisibility`, §7) gets `Set<Id>Visible(bool visible)` on its item view.
+  The item is compiled shown; hiding writes an inline `display: none` through `DesignView.SetVisible` on the element
+  that owns its visibility (itself, or its shadow host), showing removes it so the style layers decide again. The
+  element needs a `data-u-id` (lint U-MRK-003); the manifest lists each such element with that owner (`visibility`).
 - The project writes a presenter that calls the view with real game data. The generator never writes or edits
   presenters.
 - Removing a `data-u-id` the presenter uses causes a C# compile error, so breakage is explicit.
@@ -589,7 +599,9 @@ The route and setup measured in M0 (`docs/findings/m0.md`):
 collapsed row, a clipping drawer, a state's content) is captured in the context that shows them: a state or the
 classes of the layers of its elements and their ancestors; an element only a later written-out repeat item shows (its
 first item's markup hides it) is captured in that item (`item` on the job's applied items, `~<items>` in its name;
-Unity applies it to the same written-out item of the sample data). A job no context shows has no golden: matrix.json
+Unity applies it to the same written-out item of the sample data). The Unity capture applies each item's `$hidden`
+through the visibility setter's path (`DesignView.SetVisible` on the owner the manifest names), so the items hide
+what the golden's markup hides. A job no context shows has no golden: matrix.json
 lists it under `hidden`, the export result and `design_ui_import` name it, and the comparison reports it, so the
 verdict is **incomplete**, never a pass.
 

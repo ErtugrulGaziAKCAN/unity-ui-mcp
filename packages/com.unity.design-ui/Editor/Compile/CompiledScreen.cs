@@ -64,6 +64,12 @@ namespace DesignUi.Editor
         public readonly List<CompiledBinding> Bindings = new List<CompiledBinding>();
         /// <summary>The lowered IR node (bind, action, text key and args, anims, transitions), for the view writer and later tasks.</summary>
         public IrNode Source;
+        /// <summary>
+        /// An element the design's repeat items hide by markup in some items (<see cref="IrNode.ItemVisibility"/>): the name of
+        /// the element its view setter <c>Set&lt;Id&gt;Visible</c> shows and hides, itself or the shadow host that owns its
+        /// visibility; null for every other element.
+        /// </summary>
+        public string VisibilityOwner;
 
         public IEnumerable<CompiledElement> DescendantsAndSelf()
         {

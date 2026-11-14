@@ -39,9 +39,9 @@ namespace DesignUi.Editor.Tests
 
         /// <summary>
         /// A screen with a bound text (32 px, for the kerning check), a text with a Smart String argument, a button action,
-        /// a plain element with an action and a selection class, a button with a disabled layer, an inline repeat with a gap
-        /// and an action in its items, and a list repeat whose rows bind a text, raise an action and hold a nested inline
-        /// repeat; two states.
+        /// a plain element with an action and a selection class, a button with a disabled layer, an inline repeat with a gap,
+        /// an action and a badge the design's items hide by markup in some items, and a list repeat whose rows bind a text,
+        /// raise an action and hold a nested inline repeat; two states.
         /// </summary>
         internal static IrScreen SampleIr()
         {
@@ -63,7 +63,11 @@ namespace DesignUi.Editor.Tests
 
             var chipLabel = Inter(Text("chip-label", "a"), "16px");
             chipLabel.Bind = "chip.name";
-            var chip = Node("chip", "container", ("width", "60px"), ("height", "20px"), ("background-color", "#333333")).Add(chipLabel);
+            // the design's written-out chips hide the badge by markup in some items: compiled shown, a per-item setter hides it
+            var chipBadge = Inter(Text("chip-badge", "+2", ("display", "flex"), ("flex-direction", "row"), ("align-items", "center"), ("justify-content", "center"),
+                ("width", "40px"), ("height", "20px")), "16px");
+            chipBadge.ItemVisibility = true;
+            var chip = Node("chip", "container", ("width", "60px"), ("height", "20px"), ("background-color", "#333333")).Add(chipLabel, chipBadge);
             chip.Action = "pick-chip";
             var chips = Node("chips", "container", ("display", "flex"), ("flex-direction", "row"), ("gap", "4px"), ("height", "20px")).Add(chip);
             chips.Repeat = new IrRepeat { Name = "chip", Mode = "inline", Count = 3 };
@@ -464,6 +468,45 @@ namespace DesignUi.Editor.Tests
             view.SetChip(0, null);
             yield return Frames(2);
             Assert.AreEqual(0, Shown(view.Chips).Count, "no items");
+        }
+
+        [UnityTest]
+        public IEnumerator ItemVisibility_ShowsAndHidesWhatTheDesignsItemsHideByMarkup_SkipsUnchangedValues_AndAllocatesNothingThen()
+        {
+            Compile();
+            var root = Panel();
+            yield return Frames(2);
+            var tree = Instantiate();
+            root.Add(tree);
+            var view = new ViewSampleView(tree);
+            var items = new List<ViewSampleView.ChipItemView>();
+            view.SetChip(2, (item, i) =>
+            {
+                items.Add(item);
+                item.SetChipBadgeVisible(i == 1);
+            });
+            yield return Frames(3);
+            Assert.AreEqual(DisplayStyle.None, items[0].ChipBadge.resolvedStyle.display, "hidden in the first item");
+            Assert.AreEqual(DisplayStyle.Flex, items[1].ChipBadge.resolvedStyle.display, "the compile shows it, with its own display");
+            Assert.AreEqual(TextAnchor.MiddleCenter, items[1].ChipBadge.resolvedStyle.unityTextAlign, "its text centred as its CSS centres it");
+
+            items[0].SetChipBadgeVisible(true);
+            yield return Frames(2);
+            Assert.AreEqual(DisplayStyle.Flex, items[0].ChipBadge.resolvedStyle.display);
+            Assert.AreEqual(StyleKeyword.Null, items[0].ChipBadge.style.display.keyword, "shown again: its style layers decide");
+            items[0].ChipBadge.style.display = DisplayStyle.None; // changed elsewhere
+            items[0].SetChipBadgeVisible(true);
+            Assert.AreEqual(DisplayStyle.None, items[0].ChipBadge.style.display.value, "an unchanged value writes nothing");
+            items[0].ChipBadge.style.display = StyleKeyword.Null;
+
+            TestDelegate shown = () => items[1].SetChipBadgeVisible(true);
+            TestDelegate hidden = () => items[0].SetChipBadgeVisible(false);
+            shown(); // first calls compile the delegates
+            hidden();
+            Assert.That(shown, UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory(), "an unchanged shown item");
+            Assert.That(hidden, UnityEngine.TestTools.Constraints.Is.Not.AllocatingGCMemory(), "an unchanged hidden item");
+            yield return Frames(2);
+            Assert.AreEqual(DisplayStyle.None, items[0].ChipBadge.resolvedStyle.display);
         }
 
         [UnityTest]

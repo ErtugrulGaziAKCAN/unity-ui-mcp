@@ -47,6 +47,87 @@ export function itemChildren(s: DomSnapshot, e: SnapElement): number[] {
   return kids.filter((k) => !samples.has(k));
 }
 
+/** An element its own markup hides: the hidden attribute or an inline display: none, and it renders nothing. */
+export function markupHidden(s: DomSnapshot, i: number): boolean {
+  const e = s.elements[i];
+  return !e.rendered && (e.attrs.hidden !== undefined || (e.inline ?? []).some((d) => d.name === "display" && d.value.trim().toLowerCase() === "none"));
+}
+
+const sampleHiddenCache = new WeakMap<DomSnapshot, Map<number, number>>();
+
+/**
+ * Markup hiding that is sample data: elements of a data-u-repeat item whose written-out copies (every sample of the
+ * repeat, in every container of a nested repeat) are hidden by their own markup (markupHidden) in some items and shown
+ * in others. Maps each such copy to its template element, the first copy in document order (the IR's, which compiles
+ * as shown and gets a per-item visibility setter). An element hidden in every copy is not listed: that hiding is style.
+ */
+export function sampleHidden(s: DomSnapshot): Map<number, number> {
+  const hit = sampleHiddenCache.get(s);
+  if (hit) return hit;
+  const copies = new Map<number, number[]>();
+  const templates = new Map<string, number>();
+  // a copy and the template element at the same place, below them too (a nested repeat's items are its own)
+  const add = (x: number, t: number) => {
+    const list = copies.get(t);
+    if (list) list.push(x); else copies.set(t, [x]);
+    const kx = itemChildren(s, s.elements[x]), kt = itemChildren(s, s.elements[t]);
+    kx.forEach((k, n) => { if (kt[n] !== undefined && s.elements[k].attrs["data-u-repeat"] === undefined) add(k, kt[n]); });
+  };
+  for (const e of s.elements) {
+    const name = e.attrs["data-u-repeat"];
+    if (name === undefined || e.parent < 0 || nonDesign(s)[e.index]) continue;
+    if (!templates.has(name)) templates.set(name, e.index);
+    for (const x of repeatSamples(s, e.index)) add(x, templates.get(name)!);
+  }
+  const out = new Map<number, number>();
+  for (const [t, xs] of copies) {
+    const hidden = xs.map((x) => markupHidden(s, x));
+    if (hidden.includes(true) && hidden.includes(false)) for (const x of xs) out.set(x, t);
+  }
+  sampleHiddenCache.set(s, out);
+  return out;
+}
+
+/**
+ * An element's computed display as an item that shows it lays it out: a copy that a repeat item's markup hides as
+ * sample data (sampleHidden), and a child of one (no flex item, no blockification while hidden), take the display of
+ * the same element in a copy that shows it. Every other element: its computed display.
+ */
+export function shownDisplay(s: DomSnapshot, i: number): string {
+  const sampled = sampleHidden(s);
+  const e = s.elements[i];
+  // the element `child` places below `hidden` (itself when null), in the first copy that shows it
+  const shownAt = (hidden: number, child: number | null): string | null => {
+    const t = sampled.get(hidden);
+    if (t === undefined || !markupHidden(s, hidden)) return null;
+    for (const [x, tx] of sampled) {
+      if (tx !== t || markupHidden(s, x) || !s.elements[x].rendered) continue;
+      const k = child === null ? x : itemChildren(s, s.elements[x])[child];
+      if (k !== undefined) return s.elements[k].computed.display;
+    }
+    return null;
+  };
+  const own = sampled.has(i) ? shownAt(i, null) : null;
+  if (own !== null) return own;
+  if (e.parent >= 0 && sampled.has(e.parent)) {
+    const n = itemChildren(s, s.elements[e.parent]).indexOf(i);
+    const below = n >= 0 ? shownAt(e.parent, n) : null;
+    if (below !== null) return below;
+  }
+  return e.computed.display;
+}
+
+/** The repeat whose item holds a copy: the data-u-repeat name of its nearest item ancestor (or itself). */
+export function repeatOf(s: DomSnapshot, i: number): string | undefined {
+  for (let a = i; a >= 0; a = s.elements[a].parent) {
+    const p = s.elements[a].parent;
+    if (p < 0) return undefined;
+    const tpl = repeatTemplate(s, s.elements[p]);
+    if (tpl !== undefined && repeatSamples(s, tpl).includes(a)) return s.elements[tpl].attrs["data-u-repeat"];
+  }
+  return undefined;
+}
+
 /** Path by position from the screen root (id paths repeat across written-out items). */
 export function positionPath(s: DomSnapshot, i: number): string {
   const e = s.elements[i];
