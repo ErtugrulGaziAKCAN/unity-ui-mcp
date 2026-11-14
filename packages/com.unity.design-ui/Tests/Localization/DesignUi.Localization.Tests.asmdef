@@ -1,12 +1,12 @@
 {
   "name": "DesignUi.Localization.Tests",
   "rootNamespace": "DesignUi",
-  "references": ["DesignUi.Runtime", "DesignUi.Runtime.Localization", "Unity.Localization", "Unity.ResourceManager", "Unity.Addressables", "UnityEngine.TestRunner", "UnityEditor.TestRunner"],
+  "references": ["DesignUi.Runtime", "DesignUi.Runtime.Localization", "DesignUi.Editor", "DesignUi.Editor.Localization", "DesignUi.Editor.Tests", "Unity.Localization", "Unity.Localization.Editor", "Unity.ResourceManager", "Unity.Addressables", "Unity.Addressables.Editor", "Unity.TextMeshPro", "UnityEngine.TestRunner", "UnityEditor.TestRunner"],
   "includePlatforms": ["Editor"],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
   "overrideReferences": true,
-  "precompiledReferences": ["nunit.framework.dll"],
+  "precompiledReferences": ["nunit.framework.dll", "Newtonsoft.Json.dll"],
   "autoReferenced": false,
   "defineConstraints": ["UNITY_INCLUDE_TESTS", "DESIGN_UI_LOCALIZATION"],
   "versionDefines": [

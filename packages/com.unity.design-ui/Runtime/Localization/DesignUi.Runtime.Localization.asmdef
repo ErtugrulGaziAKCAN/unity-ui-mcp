@@ -1,7 +1,7 @@
 {
   "name": "DesignUi.Runtime.Localization",
   "rootNamespace": "DesignUi",
-  "references": ["DesignUi.Runtime", "Unity.Localization", "Unity.ResourceManager"],
+  "references": ["DesignUi.Runtime", "Unity.Localization", "Unity.ResourceManager", "Unity.Addressables"],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

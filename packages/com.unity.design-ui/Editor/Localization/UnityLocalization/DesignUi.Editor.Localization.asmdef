@@ -1,0 +1,16 @@
+{
+  "name": "DesignUi.Editor.Localization",
+  "rootNamespace": "DesignUi",
+  "references": ["DesignUi.Editor", "DesignUi.Runtime", "Unity.Localization", "Unity.Localization.Editor", "Unity.Addressables", "Unity.Addressables.Editor", "Unity.ResourceManager"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": ["DESIGN_UI_LOCALIZATION"],
+  "versionDefines": [
+    { "name": "com.unity.localization", "expression": "1.5.0", "define": "DESIGN_UI_LOCALIZATION" }
+  ],
+  "noEngineReferences": false
+}

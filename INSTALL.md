@@ -109,7 +109,7 @@ Then tell the user:
 
 | Tool | State |
 |---|---|
-| `design_ui_rules` | live: the design contract for any AI that writes the HTML (the kit's `RULES.md`: attributes, text styles, tokens, allowed CSS and every lint rule with its fix, plus the same as compact JSON; `section` returns one part) |
+| `design_ui_rules` | live: the design contract for any AI that writes the HTML (the kit's `RULES.md`: attributes, text styles, tokens, allowed CSS and every lint rule with its fix, with a section index; `section` returns one part, `json` the same as compact JSON) |
 | `design_ui_list` | live: screens under `designRoot` and the Unity bridge state |
 | `design_ui_lint` | live: real lint in a headless Chromium with the kit fonts; folder, `.html`, `.dc.html` or `.zip` |
 | `design_ui_status` | live: what this version supports; per-screen hashes and history |

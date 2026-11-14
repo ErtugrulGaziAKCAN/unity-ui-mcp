@@ -9,9 +9,10 @@ import { REPO_KIT_DIR } from "../paths.js";
 import { guarded, Timings, toolResult } from "../result.js";
 
 /**
- * The design contract (spec §5): the kit's RULES.md, the generated single source, plus the same contract as compact
- * data (rules with severity and fix, the allowed CSS in brief, the kit's text styles and fonts). A kit without its own
- * RULES.md gets one rendered from its own files. Nothing here is a copy: both come from the exporter's kit and lint data.
+ * The design contract (spec §5): the kit's RULES.md, the generated single source, with an index of its sections; the
+ * same contract as compact data (rules with severity and fix, the allowed CSS in brief, the kit's text styles and fonts)
+ * comes only with `section: "json"`, so the default answer stays within the 50 KB budget. A kit without its own RULES.md
+ * gets one rendered from its own files. Nothing here is a copy: both come from the exporter's kit and lint data.
  */
 const isStub = (md: string) => md.replace(/^#.*$/gm, "").trim().length < 40;
 
@@ -35,32 +36,31 @@ export function buildRules(ctx: ServerContext, t: Timings): RulesBundle {
   if (!fromFile) notes.push(`The kit has no RULES.md of its own: generated from its files (${kitDir}).`);
   const json = t.sync("json", () => rulesJson(kit));
 
+  const sections = splitSections(rules).map((s) => s.id);
   const header = [
     `Kit: ${kitDir} (reference ${kit.reference.join("×")}, viewports ${kit.viewports.map((v) => v.join("×")).join(", ")}, locales ${kit.locales.join(", ")})`,
     ...notes.map((n) => `> ${n}`),
-    "The second part of this answer is the same contract as compact JSON (rules, css, textStyles, fonts); design_ui_rules { section } returns one section.",
+    `Sections (design_ui_rules { section } returns one): ${sections.join(", ")}; json is the same contract as compact JSON (rules, css, textStyles, fonts).`,
   ].join("\n");
   return {
     markdown: `${header}\n\n${rules.trim()}\n`,
     json,
-    meta: { kitDir, rulesFile: fromFile ? file : null, rulesSource: fromFile ? "file" : "generated", sections: splitSections(rules).map((s) => s.id), notes },
+    meta: { kitDir, rulesFile: fromFile ? file : null, rulesSource: fromFile ? "file" : "generated", sections, notes },
   };
 }
 
-/** The whole answer, or one section: a Markdown section by its id, or `json` for the data alone. */
+/** RULES.md with its section index (the default), one Markdown section by its id, or `json` for the data alone. */
 export function rulesAnswer(b: RulesBundle, section: string | undefined, t: Timings): CallToolResult {
-  const compact = JSON.stringify(b.json);
-  const data = { ...b.json, ...b.meta, section: section ?? null, timings: t.done() };
-  if (!section || section === "all") {
-    return { content: [{ type: "text", text: b.markdown }, { type: "text", text: compact }], structuredContent: data };
-  }
-  if (section === "json") return { content: [{ type: "text", text: compact }], structuredContent: data };
+  const meta = { ...b.meta, section: section ?? null, timings: t.done() };
+  if (!section || section === "all") return { content: [{ type: "text", text: b.markdown }], structuredContent: meta };
+  const data = { ...b.json, ...meta };
+  if (section === "json") return { content: [{ type: "text", text: JSON.stringify(b.json) }], structuredContent: data };
   const s = splitSections(b.markdown).find((x) => x.id === section);
   if (!s) {
     return toolResult(`No section "${section}". Sections: ${["json", ...b.meta.sections].join(", ")}.`,
       { ...b.meta, section, timings: data.timings }, true);
   }
-  return { content: [{ type: "text", text: s.text }], structuredContent: data };
+  return { content: [{ type: "text", text: s.text }], structuredContent: meta };
 }
 
 export function registerRules(server: McpServer, ctx: ServerContext): void {
@@ -68,9 +68,10 @@ export function registerRules(server: McpServer, ctx: ServerContext): void {
     title: "Design rules",
     description:
       "The design contract for HTML screens that are turned into Unity UI Toolkit: the kit's RULES.md (screen and markup " +
-      "attributes, base stylesheet, text styles, tokens, allowed CSS, every lint rule with its fix, an example) and the same " +
-      "contract as compact JSON. Read it once before writing or fixing a design. `section` returns one part: a heading id " +
-      "such as `text-styles`, `allowed-css` or `lint-rules`, or `json`. Also available as the resource design-ui://rules.",
+      "attributes, base stylesheet, text styles, tokens, allowed CSS, every lint rule with its fix, an example) with an index " +
+      "of its sections. Read it once before writing or fixing a design. `section` returns one part: a heading id such as " +
+      "`text-styles`, `allowed-css` or `lint-rules`, or `json` (the same contract as compact JSON). Also available as the " +
+      "resource design-ui://rules.",
     inputSchema: { section: z.string().min(1).optional().describe("One part only: a RULES.md heading id (e.g. text-styles, lint-rules) or json.") },
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async ({ section }) => {

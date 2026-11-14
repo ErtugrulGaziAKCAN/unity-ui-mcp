@@ -209,9 +209,10 @@ namespace DesignUi.Editor
         /// primary twins, plain and line-box variants, with their kerning pairs (<see cref="DesignUi.DesignText.Prepare"/>, which
         /// also covers the weight faces and, for missing characters, the fallbacks), and saves the twins that gained characters.
         /// Without it the first layout of a text whose glyphs are new to a dynamic twin is unkerned (docs/findings/text-ink.md).
-        /// Returns the characters no font of a locale's chain has.
+        /// Returns the characters no font of a locale's chain has. <paramref name="onlyLocale"/> limits it to one resolved
+        /// locale (a locale's own translations).
         /// </summary>
-        internal static string PrepareTwins(FontsPlan plan, FontTwinGenerator.TwinRun run, IEnumerable<string> strings)
+        internal static string PrepareTwins(FontsPlan plan, FontTwinGenerator.TwinRun run, IEnumerable<string> strings, string onlyLocale = null)
         {
             var text = string.Concat((strings ?? Enumerable.Empty<string>()).Where(s => !string.IsNullOrEmpty(s)));
             if (text.Length == 0) return "";
@@ -220,6 +221,7 @@ namespace DesignUi.Editor
             var missing = new System.Text.StringBuilder();
             foreach (var locale in plan.Locales)
             {
+                if (onlyLocale != null && locale != onlyLocale) continue;
                 if (!plan.Fonts.TryGetValue(locale, out var font)) continue;
                 foreach (var twin in run.Twins.Where(kv => kv.Key.Item1 == font.Primary && kv.Value != null).Select(kv => kv.Value))
                     foreach (var c in DesignUi.DesignText.Prepare(twin, text)) if (missing.ToString().IndexOf(c) < 0) missing.Append(c);
@@ -232,6 +234,26 @@ namespace DesignUi.Editor
                     UnityEditor.AssetDatabase.SaveAssetIfDirty(t);
                 }
             return missing.ToString();
+        }
+
+        /// <summary>
+        /// The resolved locale whose twins render <paramref name="code"/> (as the runtime locale controller picks them): the
+        /// same code, else the same language in the same script, else the reference locale.
+        /// </summary>
+        internal static string FontLocaleFor(FontsPlan plan, string code)
+        {
+            string Part(string c, bool script)
+            {
+                var parts = c.Split('-', '_');
+                if (!script) return parts[0];
+                return parts.Skip(1).FirstOrDefault(p => p.Length == 4 && char.IsLetter(p[0]));
+            }
+            var resolved = plan.Locales.Where(l => plan.Fonts.ContainsKey(l)).ToList();
+            var exact = resolved.FirstOrDefault(l => string.Equals(l, code, StringComparison.OrdinalIgnoreCase));
+            if (exact != null) return exact;
+            var same = resolved.FirstOrDefault(l => string.Equals(Part(l, false), Part(code, false), StringComparison.OrdinalIgnoreCase) &&
+                                                     (Part(code, true) == null || Part(l, true) == null || string.Equals(Part(code, true), Part(l, true), StringComparison.OrdinalIgnoreCase)));
+            return same ?? plan.ReferenceLocale;
         }
 
         /// <summary>

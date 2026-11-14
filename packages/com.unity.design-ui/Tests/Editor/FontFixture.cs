@@ -182,12 +182,17 @@ namespace DesignUi.Editor.Tests
         }
     }
 
-    /// <summary>Deletes the fonts kept for the whole test session once every test of this namespace has run.</summary>
-    [SetUpFixture]
-    public class FontFixtureSession
+    /// <summary>
+    /// The fonts kept for the whole test session are deleted before the run starts and after it ends (the run's pre-build
+    /// setup and post-build cleanup, declared for this assembly), never between test assemblies: assemblies that run after
+    /// this one (the Unity Localization tests) render text too, and must not meet a destroyed fallback material in UI
+    /// Toolkit's pooled text data. A runner that quits right after the results leaves them for the next run's setup.
+    /// </summary>
+    public class FontFixtureSession : UnityEngine.TestTools.IPrebuildSetup, UnityEngine.TestTools.IPostBuildCleanup
     {
-        [OneTimeTearDown]
-        public void End()
+        public void Setup() => FontFixture.DeleteKept();
+
+        public void Cleanup()
         {
             FontFixture.DeleteKept();
             Debug.Log("FontFixtureSession: deleted " + FontFixture.KeptFolder);

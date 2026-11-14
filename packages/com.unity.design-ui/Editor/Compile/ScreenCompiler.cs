@@ -30,6 +30,8 @@ namespace DesignUi.Editor
         public string Folder;
         /// <summary>Remarks for the log (for example characters no font of a locale has); never a failure.</summary>
         public IReadOnlyList<string> Notes = new string[0];
+        /// <summary>What the import wrote into the screen's String Tables, when the profile localizes; else null.</summary>
+        public LocalizationReport Localization;
     }
 
     /// <summary>
@@ -49,6 +51,8 @@ namespace DesignUi.Editor
         public Func<CompiledScreen, string> ViewCode;
         /// <summary>Which TMP font renders each locale; default: <see cref="FontMap.DefaultResolver"/> (profile mapping over TMP Settings).</summary>
         public IFontResolver Fonts;
+        /// <summary>The String Tables a localized screen's texts go to; default: <see cref="DesignStringTables.Current"/>.</summary>
+        public IDesignStringTables Tables;
     }
 
     /// <summary>
@@ -127,9 +131,12 @@ namespace DesignUi.Editor
             AssetPlan plan;
             FontMap.FontsPlan fonts;
             string screenDir, folderName;
+            IDesignStringTables tables = null;
+            StringTableRequest tableRequest = null;
             try
             {
                 ir = IrReader.Read(irPath);
+                CheckNestedActions(ir.Root, null);
                 folderName = ScreenBuilder.Pascal(ir.Screen, "screen id");
                 screenDir = outFolder + "/" + folderName;
 
@@ -159,6 +166,19 @@ namespace DesignUi.Editor
                     FontSet = FontSetFolder(outFolder) != null ? "../" + DesignUi.DesignFontSet.FileName : null,
                 };
                 compiled = ScreenBuilder.Build(ir, options, assetPath, hooks?.FontDefinition);
+
+                // localized texts bind String Table entries (no static copy in the UXML); the tables are checked now and
+                // written after the manual-edit guard
+                if (profile.localization != null && profile.localization.enabled)
+                {
+                    tables = hooks?.Tables ?? DesignStringTables.Current;
+                    if (tables == null)
+                        return Fail("the profile localizes the screens' texts, but Unity Localization (com.unity.localization 1.5 or newer) is not installed; " +
+                                    "install it, or turn localization off in the DesignUiProfile");
+                    tableRequest = ScreenLocalization.Bind(compiled, profile);
+                    var tableErrors = tables.Check(tableRequest);
+                    if (tableErrors.Count > 0) return new CompileResult { Ok = false, Errors = tableErrors.ToArray() };
+                }
 
                 // fonts per locale: element rules keep var(--font-…); DesignFonts.uss defines them per .locale-<code>; every kit
                 // line box has a twin variant, and so has each of them scaled by a text-size step
@@ -234,22 +254,45 @@ namespace DesignUi.Editor
                                      ". Move the change into the design, or compile with discardManualEdits to overwrite them." },
                 };
 
+            // ---- the screen's String Table entries (asset-specific saves of the touched tables) -----------------------
+            var notes = new List<string>(compiled.Notes);
+            LocalizationReport localization = null;
+            IReadOnlyDictionary<string, IReadOnlyList<string>> localeStrings = null;
+            if (tableRequest != null)
+            {
+                try
+                {
+                    localization = tables.Write(tableRequest);
+                    localeStrings = tables.Strings(tableRequest.Collection, tableRequest.Texts.Select(t => t.Key));
+                }
+                catch (Exception e) when (e is InvalidOperationException || e is ArgumentException || e is IOException || e is UnauthorizedAccessException)
+                {
+                    return Fail("writing the String Tables of collection '" + tableRequest.Collection + "' failed: " + e.Message);
+                }
+            }
+
             // ---- the locales' font twins (assets DesignFonts.uss references), then what changed in one batch ------
             FontTwinGenerator.TwinRun twins;
-            var notes = new List<string>(compiled.Notes);
             string fontSet;
             try
             {
                 twins = FontMap.EnsureTwins(fonts);
                 var missingGlyphs = FontMap.PrepareTwins(fonts, twins, ScreenStrings(ir.Root));
                 if (missingGlyphs.Length > 0) notes.Add("no font of the locales' chains has these characters of the screen: " + missingGlyphs);
+                // every locale's table texts of the screen's keys go to the twins that locale renders with
+                if (localeStrings != null)
+                    foreach (var kv in localeStrings.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                    {
+                        var missing = FontMap.PrepareTwins(fonts, twins, kv.Value, FontMap.FontLocaleFor(fonts, kv.Key));
+                        if (missing.Length > 0) notes.Add("no font of locale '" + kv.Key + "' has these characters of its translations: " + missing);
+                    }
                 // the locales' twins for DesignText at runtime, next to DesignFonts.uss (inside the project only); written before
                 // the screen's UXML is imported, whose root references it
                 var setFolder = FontSetFolder(outFolder);
                 if (setFolder != null) EnsureAssetFolder(setFolder);
                 fontSet = FontMap.WriteFontSet(fonts, twins, outFolder, profile.textSizes);
             }
-            catch (FontSetupException e) { return Fail(e.Message); }
+            catch (FontSetupException e) { return new CompileResult { Ok = false, Errors = new[] { e.Message }, Localization = localization }; } // the tables stay written
 
             var writes = new List<KeyValuePair<string, byte[]>>();
             Plan(screenDir, outputs, writes);
@@ -322,15 +365,32 @@ namespace DesignUi.Editor
                 if (batch) AssetDatabase.StopAssetEditing(); // imports everything queued in this batch
             }
             if (fontSet != null) written.Add(fontSet);
-            if (failure != null) return new CompileResult { Ok = false, Written = written, Errors = new[] { failure }, Screen = ir.Screen, Folder = screenDir };
+            if (failure != null) return new CompileResult { Ok = false, Written = written, Errors = new[] { failure }, Screen = ir.Screen, Folder = screenDir, Localization = localization };
             return new CompileResult
             {
                 Ok = true, Written = written, Orphans = FindOrphans(outFolder, folderName, profile.designRoot), StaleAssets = plan?.StaleAssets ?? new string[0],
-                Screen = ir.Screen, Folder = screenDir, Notes = notes,
+                Screen = ir.Screen, Folder = screenDir, Notes = notes, Localization = localization,
             };
         }
 
         public static string ViewFileName(string className) => className + "View.g.cs";
+
+        /// <summary>
+        /// An element with <c>data-u-action</c> inside another one (lint U-MRK-012): nested interactive content is invalid HTML
+        /// and ambiguous in UI Toolkit, where both would raise their action on one click.
+        /// </summary>
+        static void CheckNestedActions(IrNode node, IrNode outer)
+        {
+            if (node == null || node.External) return;
+            if (node.Action != null)
+            {
+                if (outer != null)
+                    throw new IrFormatException("'" + node.Id + "' (data-u-action '" + node.Action + "') is inside '" + outer.Id + "' (data-u-action '" + outer.Action +
+                                                "'); move the action to one element");
+                outer = node;
+            }
+            foreach (var c in node.Children ?? new IrNode[0]) CheckNestedActions(c, outer);
+        }
 
         /// <summary>The undrawn attribute texts per element name, or null when there are none.</summary>
         static Dictionary<string, Dictionary<string, AccessibilityText>> Accessibility(CompiledScreen compiled)

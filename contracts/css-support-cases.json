@@ -23062,7 +23062,7 @@
               "bind": null,
               "children": [
                 {
-                  "action": "press-case",
+                  "action": null,
                   "anims": [],
                   "asset": null,
                   "attrTexts": {},
@@ -23158,7 +23158,7 @@
         "screenMatch": 0.5,
         "source": {
           "path": "ancestor-active--background-color--ffffff.html",
-          "sha256": "f5ef9758c3295f2b8cb6c193261f5ecb7b95a9ee1f500af239f4eb6f37ff0b0a"
+          "sha256": "7316bfff257bf431023c0025c7fbe655d7caeac62b2392809a2c1f9c4dab6ec1"
         },
         "states": [
           "default"
@@ -31163,8 +31163,8 @@
     },
     "ancestor-active": {
       "css": ".p{position:relative;display:flex;flex-direction:row;width:400px;height:200px;flex-shrink:0} .p{background-color:#123c47} .c{width:100px;height:50px;flex-shrink:0;background-color:#16c2d5} .p:active .c{{decl}} .c:active{opacity:0.5}",
-      "description": "an action item styled for its own :active and, by the declaration, for its action ancestor's :active",
-      "html": "<div class=\"p\" data-u-id=\"host\" data-u-action=\"press-host\"><div class=\"c\" data-u-id=\"case\" data-u-action=\"press-case\"></div></div>"
+      "description": "an item styled for its own :active and, by the declaration, for its action ancestor's :active (actions do not nest)",
+      "html": "<div class=\"p\" data-u-id=\"host\" data-u-action=\"press-host\"><div class=\"c\" data-u-id=\"case\"></div></div>"
     },
     "ancestor-active-only": {
       "css": ".p{position:relative;display:flex;flex-direction:row;width:400px;height:200px;flex-shrink:0} .p{background-color:#123c47} .c{width:100px;height:50px;flex-shrink:0;background-color:#16c2d5} .p:active .c{{decl}}",

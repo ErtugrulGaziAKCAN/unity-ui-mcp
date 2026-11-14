@@ -484,12 +484,16 @@ no key.
 
 **At import (localization writer).**
 
-- Writes only this screen's keys: English source and Turkish entry.
-- Never overwrites an existing different value. Conflicts are reported and left for a human.
-- Saves only the touched table assets (asset-specific save; no project-wide save).
+- Writes only this screen's keys: English source and Turkish entry. Keys are exact and case-sensitive; an existing key
+  with the same English is reused, and only a missing Turkish entry of it is added.
+- Never overwrites an existing different value. Conflicts are reported and left for a human; nothing of a conflicting
+  key is written.
+- Saves only the touched table assets (asset-specific save; no project-wide save). Creating a collection can make
+  Addressables save the whole project, so it is refused while any asset or open scene has unsaved changes.
 - Other active locales fall back to English and are reported as "translation pending"; fallback is not counted as
-  translated.
-- New collections follow the profile's naming, Addressables address, labels and preload rules.
+  translated. Entries whose Smart flag differs from the profile's argument format are reported as warnings.
+- New collections follow the profile's naming, Addressables labels and preload rules; their addresses stay Unity
+  Localization's own (`<collection>_<locale>`), which it loads tables by.
 
 **In Unity.**
 
@@ -638,7 +642,7 @@ Codex); streamable HTTP is added in M4. It is started per Unity project:
 
 | Tool | Does |
 |---|---|
-| `design_ui_rules` | Returns the kit's `RULES.md` (rendered from the kit's own files when the kit has none) and the same contract as one compact JSON (every rule with severity and fix, the allowed CSS in brief, text styles, fonts), so any AI producing HTML can follow the contract; an optional `section` returns one RULES.md section or only the JSON (the Markdown is also exposed as an MCP resource) |
+| `design_ui_rules` | Returns the kit's `RULES.md` (rendered from the kit's own files when the kit has none) with an index of its sections, so any AI producing HTML can follow the contract; an optional `section` returns one RULES.md section, or `json`: the same contract as one compact JSON (every rule with severity and fix, the allowed CSS in brief, text styles, fonts) (the Markdown is also exposed as an MCP resource) |
 | `design_ui_list` | Lists screens under `designRoot` with status: new, design changed since import, imported, verified, failed; also reports the Unity connection (bridge found or not, project path) |
 | `design_ui_lint` | Lints one design folder or ZIP; returns findings with rule id, element path and fix |
 | `design_ui_import` | Exports the design (IR, goldens) and compiles it into the Unity project through the Unity runner |

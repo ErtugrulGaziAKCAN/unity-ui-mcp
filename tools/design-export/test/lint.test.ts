@@ -113,6 +113,23 @@ describe("lint engine", () => {
     expect(f[0].path).toBe('[data-u-screen=lint.sample] > div[data-u-id="gelen-kutusu-İ"]');
   });
 
+  it("accepts localization keys in any letter case, exactly as the String Table spells them, but ids stay lowercase and everything ASCII", async () => {
+    const dir = tmp();
+    const mrk5 = async (body: string) => (await lintFile(write(dir, body))).filter((x) => x.ruleId === "U-MRK-005").map((x) => x.detail);
+    expect(await mrk5('<p data-l10n="inbox.main.unreadOnly" data-en="Unread only">Yalnız okunmamışlar</p>' +
+      '<p data-l10n="inbox.filter.type.Match" data-en="Match">Maç</p>')).toEqual([]);
+    expect(await mrk5('<input data-u-id="query" data-l10n-placeholder="inbox.main.searchHint" data-en-placeholder="Search" placeholder="Ara">')).toEqual([]);
+    expect(await mrk5('<p data-l10n="inbox.main.İptal" data-en="Cancel">İptal</p>')).toEqual([
+      'data-l10n="inbox.main.İptal" does not match ^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$',
+    ]);
+    expect(await mrk5('<p data-l10n="inbox.main.kapalı" data-en="Closed">Kapalı</p>')).toEqual([
+      'data-l10n="inbox.main.kapalı" does not match ^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$',
+    ]);
+    expect(await mrk5('<p data-u-id="unreadOnly" data-u-bind="unread">3</p>')).toEqual([
+      'data-u-id="unreadOnly" does not match ^[a-z0-9]+([._-][a-z0-9]+)*$',
+    ]);
+  });
+
   it("checks ids inside repeat items against the item view's members, and screen ids against the screen view's", async () => {
     const dir = tmp();
     const list = (id: string) => `<div style="display:flex;flex-direction:column">` +

@@ -25,6 +25,13 @@ namespace DesignUi
         /// <summary>The screen's animation player (attached on first use or on the first attach of an animated screen), or null.</summary>
         public DesignUiAnimationPlayer Animations => Animated ? DesignUiAnimationPlayer.Attach(this) : null;
 
+        /// <summary>
+        /// The locale code of English, the source and fallback language of the screen's localized texts (written by the
+        /// compiler when the profile localizes), or null.
+        /// </summary>
+        [UxmlAttribute("source-locale")]
+        public string SourceLocale { get; set; }
+
         public DesignScreen()
         {
             RegisterCallback<AttachToPanelEvent>(OnAttach);
