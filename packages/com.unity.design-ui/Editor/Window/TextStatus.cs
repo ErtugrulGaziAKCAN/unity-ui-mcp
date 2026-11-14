@@ -83,6 +83,7 @@ namespace DesignUi.Editor
             }
             string Rel(string key, string fallback) => config[key]?.Type == JTokenType.String ? config.Value<string>(key) : fallback;
             var fontsCss = Rel("fontsCss", "fonts/fonts.css");
+            var tokensCss = Path.Combine(kitDir, Rel("tokensCss", "tokens.css"));
             var styles = Path.Combine(kitDir, Rel("textStyles", "text-styles.json"));
             try { if (File.Exists(styles)) boxes = KitTextStyles.LineBoxesOf(styles); }
             catch (Exception e) when (e is IOException || e is JsonException) { }
@@ -110,6 +111,17 @@ namespace DesignUi.Editor
                 if (!File.Exists(copy)) stale.Add(Path.GetFileName(source) + " is missing");
                 else if (!SameBytes(Path.GetFullPath(source), copy)) stale.Add(Path.GetFileName(source) + " differs from " + source);
             }
+
+            // the font tokens name the synced families (kit sync writes them; a token it cannot map stays stale)
+            try
+            {
+                if (File.Exists(tokensCss))
+                {
+                    var tokens = KitFontTokens.Apply(File.ReadAllText(tokensCss), plan);
+                    if (tokens.Stale.Count > 0) stale.Add(Path.GetFileName(tokensCss) + ": " + string.Join(", ", tokens.Stale) + " name" + (tokens.Stale.Count == 1 ? "s" : "") + " no synced font family");
+                }
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { stale.Add(Path.GetFileName(tokensCss) + " cannot be read: " + e.Message); }
 
             // the profile's values the sync writes into kit.config.json
             var viewports = new JArray((profile.viewports ?? new Vector2Int[0]).Select(v => (object)new JArray(v.x, v.y)).ToArray());

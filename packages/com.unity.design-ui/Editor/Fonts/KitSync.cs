@@ -40,7 +40,9 @@ namespace DesignUi.Editor
     /// <item><c>fonts/&lt;file&gt;</c>: the source TTF/OTF of every font TMP searches for a locale, with the licence files next to it;</item>
     /// <item><c>fonts/fonts.css</c>: one <c>@font-face</c> per family and weight (family = the TMP face's family name; weights from the TMP weight table);</item>
     /// <item><c>fonts/fonts.json</c>: locale → families, in TMP's search order;</item>
-    /// <item><c>kit.config.json</c>: <c>reference</c>, <c>viewports</c>, <c>screenMatch</c> and <c>locales</c> from the profile; other keys are kept.</item>
+    /// <item><c>kit.config.json</c>: <c>reference</c>, <c>viewports</c>, <c>screenMatch</c> and <c>locales</c> from the profile; other keys are kept;</item>
+    /// <item><c>tokens.css</c> (when the kit has one): each <c>--font-*</c> token names a synced family (<see cref="KitFontTokens"/>); a
+    /// token that maps to none is reported and kept.</item>
     /// </list>
     /// The paths of <c>fonts.css</c> and the text styles come from <c>kit.config.json</c>; a relative kit folder is
     /// resolved against the Unity project root (and noted). Every check runs before any write: a failed sync changes no
@@ -91,6 +93,7 @@ namespace DesignUi.Editor
             }
             var fontsCss = KitRelative(config, "fontsCss", "fonts/fonts.css", errors);
             var textStyles = KitRelative(config, "textStyles", "text-styles.json", errors);
+            var tokensCss = KitRelative(config, "tokensCss", "tokens.css", errors);
             if (profile.referenceResolution.x <= 0 || profile.referenceResolution.y <= 0) errors.Add("the DesignUiProfile's reference resolution must be positive");
             if (profile.viewports == null || profile.viewports.Length == 0 || profile.viewports.Any(v => v.x <= 0 || v.y <= 0))
                 errors.Add("the DesignUiProfile needs at least one viewport, each with a positive size");
@@ -118,6 +121,9 @@ namespace DesignUi.Editor
             if (readability != null) warnings.Add(readability);
             if (errors.Count == 0) plan.LineBoxes = KitTextStyles.LineBoxesOf(kitDir + "/" + textStyles);
             var copies = errors.Count == 0 ? FontFiles(faces, errors) : null;
+            KitFontTokens.Result tokens = null;
+            try { if (errors.Count == 0 && File.Exists(kitDir + "/" + tokensCss)) tokens = KitFontTokens.Apply(File.ReadAllText(kitDir + "/" + tokensCss), plan); }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { errors.Add("cannot read " + tokensCss + " in the kit folder '" + kitDir + "': " + e.Message); }
             if (errors.Count > 0) return Failed(errors, warnings, notes, kitDir);
 
             // ---- UI Toolkit twins (own fallbacks, then the global ones) --------------------------------------------------
@@ -137,6 +143,15 @@ namespace DesignUi.Editor
             outputs[fontsJson] = Utf8(FontsJson(plan));
             outputs[ConfigFileName] = UpdatedConfig(config, configBytes, profile, plan);
             var text = new HashSet<string>(StringComparer.Ordinal) { fontsCss, fontsJson, ConfigFileName };
+            // the font tokens name the synced families, so designs that use them pass lint against fonts.css
+            if (tokens != null)
+            {
+                outputs[tokensCss] = Utf8(tokens.Text);
+                text.Add(tokensCss);
+                warnings.AddRange(tokens.Changed);
+                warnings.AddRange(tokens.Unmapped);
+                notes.AddRange(tokens.Recased);
+            }
 
             var written = new List<string>();
             try

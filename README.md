@@ -186,7 +186,9 @@ its Assembly Definition References (the compiler stops with an error naming the 
   borders, filters, states, pseudo-states, controls, text shadow, object fit, icons, transitions, keyframes) for the
   fidelity suite. `pending.json` lists screens the suite skips for now, with the reason: the filters screen fails lint
   (U-CSS-015) until `css-support.json` enables the filter functions it uses.
-- `fonts/` is written by kit sync from the Unity project; the kit has no fonts until a sync ran.
+- `fonts/` is written by kit sync from the Unity project; the kit has no fonts until a sync ran. Kit sync also writes
+  the `--font-*` tokens in `tokens.css` from the synced fonts' family names, and `kit build --check` fails when a font
+  token names a family `fonts/fonts.css` does not declare.
 
 `design-export kit build design-kit` regenerates `base.css`, `RULES.md` and the base block of every kit page after a
 change to the tokens, text styles, components or lint (`--check` only reports). `design-export kit claude design-kit

@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { KitConfig } from "../kit.js";
+import { firstFamily } from "../lint/css-values.js";
+import { readKitTokens } from "./tokens.js";
 
 /** One @font-face of the kit's fonts CSS (written by kit sync): the family, its descriptors and the file it loads. */
 export interface KitFontFile { family: string; weight: string; style: string; file: string }
@@ -30,4 +32,25 @@ export function readKitFontFiles(kit: KitConfig): KitFontFile[] | null {
 export function readKitLocaleFonts(kit: KitConfig): Record<string, string[]> | null {
   const file = path.join(kit.dir, kit.fontsCss.replace(/\.css$/i, ".json"));
   return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, string[]>) : null;
+}
+
+/**
+ * Every `--font-*` token of tokens.css whose first family the fonts CSS does not declare (compared ignoring letter case,
+ * as lint does): designs that use such a token fail lint (U-CSS-010). Kit sync writes the font tokens from the Unity
+ * project's fonts; the kit build reports what is left.
+ */
+export function fontTokenErrors(kit: KitConfig): string[] {
+  const tokens = readKitTokens(kit).filter((t) => t.family === "font");
+  if (tokens.length === 0) return [];
+  const faces = readKitFontFiles(kit);
+  const declared = [...new Set((faces ?? []).map((f) => f.family))];
+  const known = new Set(declared.map((f) => f.toLowerCase()));
+  const fix = "Run kit sync in the Unity project (it writes the font tokens from the project's fonts), or set the token to a declared family.";
+  return tokens.flatMap((t) => {
+    const family = firstFamily(t.value);
+    if (faces === null) return [`tokens.css --${t.name} names the font family "${family}", but the kit has no ${kit.fontsCss}: run kit sync in the Unity project first.`];
+    if (known.has(family.toLowerCase())) return [];
+    return [`tokens.css --${t.name} names the font family "${family}", which ${kit.fontsCss} does not declare ` +
+      `(it declares ${declared.map((f) => `"${f}"`).join(", ") || "no family"}): designs that use the token fail lint (U-CSS-010). ${fix}`];
+  });
 }

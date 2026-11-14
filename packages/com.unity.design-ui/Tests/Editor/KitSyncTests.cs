@@ -314,6 +314,102 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(File.Exists(kit + "/fonts/Old.ttf"));
         }
 
+        // ---- the kit's font tokens (tokens.css) ------------------------------------------------------------------
+
+        /// <summary>tokens.css up to the font tokens: a header comment that mentions a token, and a colour token.</summary>
+        const string TokensHead =
+            "/*\n * Design kit tokens. A comment like --font-fake: \"Not A Token\"; is not a token.\n */\n" +
+            ":root {\n  --color-surface-900: #0b1f26; /* Screen background. */\n";
+
+        static string Tokens(string kit, string fontLines)
+        {
+            File.WriteAllText(kit + "/tokens.css", TokensHead + fontLines + "}\n");
+            return kit + "/tokens.css";
+        }
+
+        [Test]
+        public void Run_WritesEachFontTokenFromTheSyncedFontsFamily_KeepingItsLineAndComment()
+        {
+            var kit = Kit();
+            var family = _regular.faceInfo.familyName;
+            var tokens = Tokens(kit, "  --font-ui: \"Kit Regular\"; /* The kit font family. */\n");
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            Assert.AreEqual(TokensHead + "  --font-ui: \"" + family + "\"; /* The kit font family. */\n}\n", File.ReadAllText(tokens));
+            CollectionAssert.Contains(r.Written.ToArray(), "tokens.css");
+            var warning = r.Warnings.Single(w => w.StartsWith("tokens.css --font-ui", StringComparison.Ordinal));
+            StringAssert.Contains("was \"Kit Regular\"", warning);
+            StringAssert.Contains("written as \"" + family + "\", the family of the TMP font asset 'Kit Regular'", warning);
+            StringAssert.Contains("U-CSS-010", warning);
+            Assert.IsTrue(TextStatus.Check(profile, kit).KitCurrent, TextStatus.Check(profile, kit).Kit);
+
+            var again = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(again.Ok, Errors(again));
+            CollectionAssert.DoesNotContain(again.Written.ToArray(), "tokens.css");
+            Assert.IsFalse(again.Warnings.Any(w => w.StartsWith("tokens.css", StringComparison.Ordinal)), string.Join("\n", again.Warnings));
+
+            // a token that names no synced family again makes the kit out of date
+            Tokens(kit, "  --font-ui: \"Kit Regular\"; /* The kit font family. */\n");
+            var status = TextStatus.Check(profile, kit);
+            Assert.IsFalse(status.KitCurrent);
+            StringAssert.Contains("--font-ui", status.Kit);
+        }
+
+        [Test]
+        public void Run_MapsAFontTokenThatDiffersOnlyInLetterCase_AndKeepsSyncedFamiliesAndTheRestOfTheStack()
+        {
+            var kit = Kit();
+            var family = _regular.faceInfo.familyName;
+            var tokens = Tokens(kit, "  --font-ui: '" + family.ToLowerInvariant() + "', sans-serif; /* UI. */\n  --font-arabic: \"Kit Arabic Sans\"; /* Arabic. */\n");
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            Assert.AreEqual(TokensHead + "  --font-ui: \"" + family + "\", sans-serif; /* UI. */\n  --font-arabic: \"Kit Arabic Sans\"; /* Arabic. */\n}\n", File.ReadAllText(tokens));
+            Assert.IsFalse(r.Warnings.Any(w => w.StartsWith("tokens.css", StringComparison.Ordinal)), "lint compares families ignoring case: " + string.Join("\n", r.Warnings));
+            Assert.IsTrue(r.Notes.Any(n => n.StartsWith("tokens.css --font-ui", StringComparison.Ordinal)), string.Join("\n", r.Notes));
+        }
+
+        [Test]
+        public void Run_TheKitsOnlyFontToken_TakesTheReferenceLocalesFont()
+        {
+            var kit = Kit();
+            var family = _regular.faceInfo.familyName;
+            var tokens = Tokens(kit, "  --font-ui: \"Inter UI\"; /* The kit font family. */\n");
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            StringAssert.Contains("  --font-ui: \"" + family + "\"; /* The kit font family. */\n", File.ReadAllText(tokens));
+            StringAssert.Contains("the reference locale's font", r.Warnings.Single(w => w.StartsWith("tokens.css --font-ui", StringComparison.Ordinal)));
+        }
+
+        [Test]
+        public void Run_AFontTokenThatNoSyncedFontMapsTo_IsReportedAndKept()
+        {
+            var kit = Kit();
+            var family = _regular.faceInfo.familyName;
+            var tokens = Tokens(kit, "  --font-ui: \"Kit Regular\"; /* UI. */\n  --font-mono: \"Fira Code\"; /* Code. */\n");
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            Assert.AreEqual(TokensHead + "  --font-ui: \"" + family + "\"; /* UI. */\n  --font-mono: \"Fira Code\"; /* Code. */\n}\n", File.ReadAllText(tokens));
+            var warning = r.Warnings.Single(w => w.StartsWith("tokens.css --font-mono", StringComparison.Ordinal));
+            StringAssert.Contains("names \"Fira Code\", which no synced font has", warning);
+            StringAssert.Contains("\"Kit Arabic Sans\"", warning, "lists the synced families");
+            StringAssert.Contains("--font-mono", TextStatus.Check(profile, kit).Kit);
+        }
+
+        [Test]
+        public void Run_AKitWithoutTokensCss_GetsNone()
+        {
+            var kit = Kit();
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            Assert.IsFalse(File.Exists(kit + "/tokens.css"));
+            CollectionAssert.DoesNotContain(r.Files.ToArray(), "tokens.css");
+        }
+
         /// <summary>A resolver with fixed answers (TMP Settings' global fallbacks stand in as every locale's fallbacks).</summary>
         sealed class FixedResolver : IFontResolver
         {

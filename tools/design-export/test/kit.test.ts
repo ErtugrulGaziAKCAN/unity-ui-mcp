@@ -171,6 +171,34 @@ describe("kit build", () => {
     expect(buildKit(dir, { check: true }).warnings).toEqual([]);
   });
 
+  it("fails when a --font-* token names a family fonts.css does not declare (both modes; letter case as lint compares it)", async () => {
+    expect(buildKit(KIT_DIR, { check: true }).errors).toEqual([]);
+    const dir = kitCopy();
+    const tokens = path.join(dir, "tokens.css");
+    const css = fs.readFileSync(tokens, "utf8");
+    fs.writeFileSync(tokens, css.replace('--font-ui: "Inter UI";', '--font-ui: "Inter 18pt", sans-serif;'));
+    buildKit(dir); // RULES.md lists the tokens: only the font check is left
+    const r = buildKit(dir, { check: true });
+    expect(r.changed).toEqual([]);
+    expect(r.errors).toEqual([
+      'tokens.css --font-ui names the font family "Inter 18pt", which fonts/fonts.css does not declare (it declares "Inter UI"): ' +
+      "designs that use the token fail lint (U-CSS-010). Run kit sync in the Unity project (it writes the font tokens from the project's fonts), or set the token to a declared family.",
+    ]);
+    const check = io();
+    expect(await runCli(["kit", "build", dir, "--check"], check.io)).toBe(1);
+    expect(check.out.join("")).toContain('error: tokens.css --font-ui names the font family "Inter 18pt"');
+    const build = io();
+    expect(await runCli(["kit", "build", dir], build.io)).toBe(1);
+    expect(build.out.join("")).toContain("error: tokens.css --font-ui");
+
+    fs.writeFileSync(tokens, css.replace('--font-ui: "Inter UI";', "--font-ui: inter ui;"));
+    buildKit(dir);
+    expect(buildKit(dir, { check: true }).errors).toEqual([]);
+    // without the fonts CSS no family is declared
+    fs.rmSync(path.join(dir, "fonts", "fonts.css"));
+    expect(buildKit(dir, { check: true }).errors).toEqual([expect.stringMatching(/^tokens\.css --font-ui names the font family "inter ui", but the kit has no fonts\/fonts\.css: run kit sync/)]);
+  });
+
   it("CLI: kit build --check exits 0 when current and 1 when stale", async () => {
     const ok = io();
     expect(await runCli(["kit", "build", KIT_DIR, "--check"], ok.io)).toBe(0);

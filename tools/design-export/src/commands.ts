@@ -17,12 +17,14 @@ Commands:
   export <designDir> --kit <kitDir> --out <dir>  Export a screen: IR, goldens, assets, sample data
   compare <exportDir> --unity <captureDir> --report <file.html>
                                                  Compare Unity captures with the goldens; write the report and verdict.json
-  kit build <kitDir> [--check]                   Regenerate base.css, RULES.md and the base block of kit pages
+  kit build <kitDir> [--check]                   Regenerate base.css, RULES.md and the base block of kit pages;
+                                                 check that the font tokens name families fonts.css declares
   kit claude <kitDir> <outDir> [--title <name>] [--force]
                                                  Write the kit as a Claude Design System folder (<outDir>/project)
 
 Exit codes: 0 ok (compare: every capture passes), 1 lint errors (compare: a capture fails or is not run;
-kit build --check: generated files are stale), 2 usage or internal error.
+kit build --check: generated files are stale; kit build: a --font-* token names a family fonts.css does not
+declare), 2 usage or internal error.
 `;
 
 const line = (f: Finding) => `${f.severity.padEnd(7)} ${f.ruleId} ${f.path}: ${f.detail}${f.fix ? `\n        fix: ${f.fix}` : ""}`;
@@ -96,8 +98,9 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       const r = buildKit(path.resolve(dir), { check: o.check });
       for (const f of r.changed) io.out(`${o.check ? "stale" : "wrote"} ${f}\n`);
       for (const w of r.warnings) io.out(`warning: ${w}\n`);
-      if (!r.changed.length) io.out("kit is current\n");
-      return o.check && r.changed.length ? 1 : 0;
+      for (const e of r.errors) io.out(`error: ${e}\n`);
+      if (!r.changed.length && !r.errors.length) io.out("kit is current\n");
+      return r.errors.length || (o.check && r.changed.length) ? 1 : 0;
     }) as never);
 
   kitCmd.command("claude").allowExcessArguments(false).argument("<kitDir>").argument("<outDir>")

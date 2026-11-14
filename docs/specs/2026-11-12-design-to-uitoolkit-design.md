@@ -295,7 +295,10 @@ locale X", including its fallback chain and weight table.
 **Font sync** (`design_ui_kit_sync`) reads the resolved fonts' source font files (`m_SourceFontFile_EditorRef`)
 and writes them with `@font-face` rules into the kit, keyed by locale. Claude Design and the exporter's Chromium
 therefore render with the same files Unity uses. Lint rejects any other `font-family`. Sync warns when more than
-one `TMP Settings` asset is reachable through `Resources`.
+one `TMP Settings` asset is reachable through `Resources`. Sync also writes each `--font-*` token of `tokens.css` from
+the synced fonts' family names (the TMP face family can differ from the asset name), keeping the line and its comment,
+and reports a token it cannot map; `design-export kit build --check` fails when a `--font-*` token names a family
+`fonts.css` does not declare.
 
 **Font twins.** UI Toolkit text needs TextCore `FontAsset`; `TMP_FontAsset` derives from `TMP_Asset` and cannot be
 referenced from USS. The twin generator creates one UI Toolkit FontAsset per resolved TMP font asset from the same
