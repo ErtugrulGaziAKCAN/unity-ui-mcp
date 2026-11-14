@@ -81,3 +81,13 @@ describe("oldPackageId", () => {
     expect(oldPackageId(dir)).toEqual([`Packages/${OLD_PACKAGE_NAME} (an embedded copy)`]);
   });
 });
+
+describe("the Unity package", () => {
+  const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+  it("carries the repository's licence, so an install from the git URL has the file", () => {
+    const pkg = path.join(repo, "packages", PACKAGE_NAME);
+    expect(fs.readFileSync(path.join(pkg, "LICENSE.md"), "utf8")).toBe(fs.readFileSync(path.join(repo, "LICENSE"), "utf8"));
+    expect(fs.readFileSync(path.join(pkg, "LICENSE.md.meta"), "utf8")).toMatch(/^fileFormatVersion: 2\nguid: [0-9a-f]{32}\n/);
+    expect(JSON.parse(fs.readFileSync(path.join(pkg, "package.json"), "utf8")).license).toBe("MIT");
+  });
+});
