@@ -519,6 +519,18 @@ describe("buildIr: layers, text runs and lossless values", () => {
     expect((weeks[0].days[0].events as Record<string, unknown>[])[0].$hidden).toBeUndefined();
   });
 
+  it("a class the markup shows never bakes its layer's display into base (a repeat's first item, a collapsed panel)", async () => {
+    const r = await build(fx("class-display.html"));
+    const time = byId(r.ir.root, "time");
+    // the first card is is-untimed in the markup: its time is hidden there, but only the class layer hides it
+    expect(time.style["anc(card):class:is-untimed"]).toEqual({ display: "none" });
+    expect(time.style.base.display).toBe("block");
+    const body = byId(r.ir.root, "body");
+    expect(body.style["anc(panel):class:is-collapsed"]).toEqual({ display: "none" });
+    expect(body.style.base.display).toBe("block");
+    expect(byId(r.ir.root, "panel").classes).toContain("is-collapsed");
+  });
+
   it("an ancestor's transition of an inherited colour is copied to the text", async () => {
     const stl = byId((await build(fx("review-style.html"))).ir.root, "stl");
     expect(stl.style["state:dark"]).toEqual({ color: "#16c2d5" });

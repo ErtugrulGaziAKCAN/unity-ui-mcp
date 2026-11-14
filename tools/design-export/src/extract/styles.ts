@@ -236,6 +236,16 @@ export function unions(sets: string[][], bps: ReadonlyMap<string, Breakpoint>): 
   return Array.from(out.values());
 }
 
+/** The browser's default display of an element (its tag's user-agent rule; inline without one). */
+const UA_BLOCK = new Set(["div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "section", "header", "footer", "nav", "main", "aside", "article", "ul", "ol",
+  "form", "fieldset", "figure", "figcaption", "blockquote", "dl", "dt", "dd", "address", "details", "summary", "hr", "pre", "body", "html", "dialog", "menu", "legend"]);
+const UA_INLINE_BLOCK = new Set(["button", "input", "select", "textarea", "meter", "progress"]);
+export function uaDisplay(e: { ns: string; tag: string }): string {
+  if (e.ns !== "html") return "inline";
+  const t = e.tag.toLowerCase();
+  return t === "li" ? "list-item" : UA_BLOCK.has(t) ? "block" : UA_INLINE_BLOCK.has(t) ? "inline-block" : "inline";
+}
+
 export interface InheritCopy { prop: string; from: number; fromKey: string; key: string }
 
 /**
@@ -685,10 +695,13 @@ export class StyleExtractor {
     const blockify = (d: string) => ((parent && /flex/.test(parent.computed.display)) || e.computed.position === "absolute"
       ? ({ inline: "block", "inline-block": "block", "inline-flex": "flex", "list-item": "block" } as Record<string, string>)[d] ?? d
       : d === "list-item" || (d === "inline" && lone) ? "block" : d);
+    // base without its own display: the computed one, unless a layer sets display, whose class or state the markup may
+    // show right now (a repeat's first item, a collapsed panel): then the browser default of the tag, never that layer's
+    const layerDisplay = Array.from(out).some(([k, m]) => k !== "base" && m.has("display"));
     for (const [name, layer] of out) {
       const d = layer.get("display");
       if (d) layer.set("display", { ...d, value: blockify(d.value.trim()) });
-      else if (name === "base") layer.set("display", { value: blockify(e.computed.display ?? "block"), refs: [] });
+      else if (name === "base") layer.set("display", { value: blockify(layerDisplay ? uaDisplay(e) : e.computed.display ?? "block"), refs: [] });
     }
 
     // CSS initial values that render differently from USS's (findings O-6)
