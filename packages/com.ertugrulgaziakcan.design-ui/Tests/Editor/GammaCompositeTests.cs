@@ -409,11 +409,36 @@ namespace DesignUi.Editor.Tests
             region.Attach();
             var copy = doc.panelSettings;
             Assert.IsTrue(DesignUiGammaComposite.Drives(copy));
+            var own = composite.TargetOf(copy);
+            Assert.IsNotNull(own);
             region.Detach(); // its last user: the copy goes
             yield return null;
+            Assert.IsTrue(own == null, "the released copy's texture is released (not kept until the composite detaches)");
             Assert.IsFalse(DesignUiGammaComposite.Drives(copy));
             Assert.IsTrue(DesignUiGammaComposite.Drives(settings));
             Assert.AreSame(composite.Target, settings.targetTexture);
+            composite.Detach();
+        }
+
+        [UnityTest]
+        public IEnumerator ADrivenCopyDestroyedWithoutRelease_HasItsTextureReleased_AtTheNextResizeOrComposite()
+        {
+            const int W = 64, H = 64;
+            var settings = DesignPanel();
+            var go = new GameObject("GammaCompositeTests composite");
+            _objects.Add(go);
+            var composite = go.AddComponent<DesignUiGammaComposite>();
+            composite.Attach(settings, new Vector2Int(W, H), new Vector2Int(W, H));
+            var copy = Object.Instantiate(settings);
+            DesignUiGammaComposite.CopyMade(settings, copy); // as a region does
+            var own = composite.TargetOf(copy);
+            Assert.IsNotNull(own);
+            Object.DestroyImmediate(copy); // destroyed by other code, never released
+            yield return null;
+            composite.Resize(new Vector2Int(2 * W, 2 * H), new Vector2Int(2 * W, 2 * H));
+            Assert.IsTrue(own == null, "its texture is released");
+            Assert.IsTrue(composite.TargetOf(copy) == null, "and not made again at the new size: the destroyed copy is no longer driven");
+            Assert.AreEqual(2 * W, composite.Target.width, "the asset keeps rendering");
             composite.Detach();
         }
 

@@ -14,8 +14,9 @@ namespace DesignUi
     /// <c>R8G8B8A8_UNorm</c> RenderTexture with <see cref="PanelSettings.forceGammaRendering"/> on, and the texture is
     /// composited over the screen, decoded to linear light, so the screen stores the panel's colours unchanged. Within the
     /// panel every colour matches the verifier's capture; where the panel is translucent over the game's own camera image,
-    /// that last blend is in linear light. Costs a screen-sized colour and depth-stencil texture (2 × 4 bytes per pixel,
-    /// 29.5 MB at 2560×1440) and one full-screen pass per frame. Does nothing in a Gamma project.
+    /// that last blend is in linear light. Costs, per PanelSettings it renders (the asset and each region's sort-order copy of
+    /// it), a screen-sized colour and depth-stencil texture (2 × 4 bytes per pixel, 29.5 MB at 2560×1440, 66 MB at
+    /// 3840×2160) and one full-screen pass per frame. Does nothing in a Gamma project.
     /// <para>
     /// The texture is drawn where UI Toolkit would draw the panel on screen (<see cref="DesignUiOverlayOrder"/>): over the
     /// Screen Space - Overlay canvases of a lower or the same sort order and under those of a higher one, and among other
@@ -79,7 +80,7 @@ namespace DesignUi
         /// <summary>The texture <paramref name="settings"/> (the asset or a copy of it) renders into while the component drives it, else null.</summary>
         public RenderTexture TargetOf(PanelSettings settings)
         {
-            foreach (var d in m_Driven) if (d.Settings == settings) return d.Target;
+            foreach (var d in m_Driven) if (ReferenceEquals(d.Settings, settings)) return d.Target;
             return null;
         }
 
@@ -122,7 +123,8 @@ namespace DesignUi
         /// <summary>The region released <paramref name="copy"/> (it is destroyed next): no composite renders it any more.</summary>
         internal static void CopyReleased(PanelSettings copy)
         {
-            if (copy == null) return;
+            // by reference: a copy already destroyed still has its texture to release
+            if ((object)copy == null) return;
             s_Copies.Remove(copy);
             foreach (var c in s_Attached.ToArray()) c?.Undrive(copy);
         }
@@ -235,8 +237,23 @@ namespace DesignUi
         {
             for (int i = m_Driven.Count - 1; i >= 0; i--)
             {
-                if (m_Driven[i].Settings != settings) continue;
+                if (!ReferenceEquals(m_Driven[i].Settings, settings)) continue; // Unity's == calls any two destroyed objects equal
                 Restore(m_Driven[i]);
+                m_Driven.RemoveAt(i);
+            }
+        }
+
+        /// <summary>
+        /// Releases the textures of driven PanelSettings that were destroyed without being released (a copy destroyed by other
+        /// code): nothing renders into them any more, and a resize would otherwise make them again.
+        /// </summary>
+        void PruneDestroyed()
+        {
+            for (int i = m_Driven.Count - 1; i >= 0; i--)
+            {
+                var d = m_Driven[i];
+                if ((object)d.Settings == null || d.Settings != null) continue;
+                Release(ref d.Target);
                 m_Driven.RemoveAt(i);
             }
         }
@@ -296,6 +313,7 @@ namespace DesignUi
             if (m_Owned == null) return;
             m_Size = target;
             m_Screen = screen;
+            PruneDestroyed();
             foreach (var d in m_Driven)
             {
                 var old = d.Target;
@@ -312,6 +330,7 @@ namespace DesignUi
         /// </summary>
         public void Composite(RenderTexture destination)
         {
+            PruneDestroyed();
             if (m_Driven.Count == 0 || !EnsureMaterial()) return;
             // in the panels' sort order, as UI Toolkit draws them on screen (the asset before a copy of the same order)
             s_Order.Clear();

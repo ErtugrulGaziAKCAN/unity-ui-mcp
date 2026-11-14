@@ -1265,6 +1265,19 @@ describe("compareScreen", () => {
 });
 
 describe("writeReport and writeVerdict", () => {
+  it("lists the viewport classes and the measured scaled-class limits it applies", async () => {
+    const f = screenFixture((_, s) => s);
+    const out = tmp(), report = path.join(out, "report.html");
+    const v = await compareScreen(f.exportDir, f.unityDir, { ...T, scaled: { ssimElement: 0.985 } });
+    writeReport(v, f.exportDir, f.unityDir, report);
+    const html = fs.readFileSync(report, "utf8");
+    expect(html).toContain("<h2>Viewport classes</h2>");
+    expect(html).toContain("<code>scaled: ssimElement</code></th><td class=\"num\">0.985</td>");
+    // without a scaled block nothing is listed for it
+    writeReport(await compareScreen(f.exportDir, f.unityDir, T), f.exportDir, f.unityDir, report);
+    expect(fs.readFileSync(report, "utf8")).not.toContain("scaled: ");
+  });
+
   it("with kept pictures shows thumbnails and an issue crop of each failing capture only, and works without the captures", async () => {
     const f = screenFixture((name, s) => {
       if (name === "busy@320x192") s.boxes.elements.panel.x += 3;

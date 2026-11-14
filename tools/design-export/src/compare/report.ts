@@ -42,6 +42,10 @@ function thresholdRows(t: Thresholds): string {
     ["textInkCoverage", `±${Math.round(t.textInkCoverage * 100)} %`, `text ink amount per line: between ${lo.toFixed(2)}× and ${hi.toFixed(2)}× the design's`],
     ["textInkMedianTolerance", `±${Math.round(t.textInkMedianTolerance * 100)} %`, "text ink amount per line against the capture's median ratio of text of the same polarity (light on dark, dark on light), when it has 3 or more such lines"],
   ];
+  // the measured limits that replace these at scaled viewports (fidelity-thresholds.json "scaled")
+  for (const [k, v] of Object.entries(t.scaled ?? {})) {
+    rows.push([`scaled: ${k}`, Array.isArray(v) ? JSON.stringify(v) : String(v), "at scaled viewports only: the measured scaled-class limit used instead of the value above"]);
+  }
   return rows.map(([k, v, what]) => `<tr><th scope="row"><code>${k}</code></th><td class="num">${esc(v)}</td><td>${esc(what)}</td></tr>`).join("");
 }
 
