@@ -242,7 +242,10 @@ browser blends in sRGB. Captured that way, 2248 of the suite's 2355 captures fai
 translucent colours up to ΔE2000 37). Add `DesignUiGammaComposite` (Add Component > Design UI > Gamma Composite) with
 the design PanelSettings once to the game: the panel then renders into a screen-sized UNorm texture with
 `forceGammaRendering` and is composited over the screen, with the colours verify captures and pointer input mapped
-to the texture (cost: 29.5 MB of textures and one full-screen pass, 0.14 ms at 2560×1440 on an M4 Pro). Measured in
+to the texture (cost: 29.5 MB of textures and one full-screen pass, 0.14 ms at 2560×1440 on an M4 Pro). It is drawn
+where UI Toolkit would draw the panel: over Screen Space - Overlay canvases of a lower or the same sort order, under
+those of a higher one, among other panels by sort order, as pointer input goes
+([docs/findings/composite-order.md](docs/findings/composite-order.md)). Measured in
 EditMode and a batchmode Play check on the Built-in render pipeline; URP and player builds are not verified yet. The
 profile's `colorPath` is Gamma Composite by default; Linear Panel makes verify capture an ordinary on-screen panel
 instead, and its answer warns. Verify, the Design UI window and a `DesignUiPanelRegion` at runtime warn when no

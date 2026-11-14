@@ -13,8 +13,9 @@
 a Linear project
 ([`PanelSettings.forceGammaRendering`](https://docs.unity.com/en-us/engine/6000.3/script-reference/unityengine/uielements/panelsettings/forcegammarendering)):
 the panel renders into a screen-sized `R8G8B8A8_UNorm` RenderTexture with `forceGammaRendering` on, which is exactly the
-verifier's setup, and at the end of every frame a full-screen pass (`Hidden/DesignUi/GammaComposite`, in the package's
-Resources) composites it over the screen. The texture holds sRGB-encoded premultiplied colours; the pass decodes them to
+verifier's setup, and a full-screen pass (`Hidden/DesignUi/GammaComposite`, in the package's Resources) composites it
+over the screen where UI Toolkit would draw the panel among overlay canvases and other panels, by sort order
+([composite-order.md](composite-order.md); before, at the end of every frame, over everything). The texture holds sRGB-encoded premultiplied colours; the pass decodes them to
 linear light, so the screen's sRGB target stores the panel's bytes again.
 
 Measured (`GammaCompositeTests`, composite into an `R8G8B8A8_SRGB` target that stands in for the screen):
@@ -52,8 +53,9 @@ pass to the back buffer did not run there; the same composite drawn into an sRGB
 Where the composite does not reach the panel, the tools say so: verify's capture records whether any scene or prefab
 of the project has the component (`unity.gammaCompositeInProject`), and a Linear project on the Gamma Composite path
 without it gets a verify warning and a line in the Design UI window; at runtime a `DesignUiPanelRegion` whose panel no
-composite renders logs a one-time warning (also when it renders on a sort-order copy made before the composite was
-enabled).
+composite renders warns once per region, on its first frame after it attaches, when every component enabled with it
+has run its OnEnable (a composite on the same GameObject, attached before or after the region, gives no warning; also
+when the region renders on a sort-order copy made before the composite was enabled).
 
 ## The verifier follows the profile
 

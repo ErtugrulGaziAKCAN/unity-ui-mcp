@@ -45,11 +45,7 @@ namespace DesignUi
         VisualElement m_Root;
         PanelSettings m_Source, m_Copy;
         Canvas m_Canvas;
-        bool m_IsAttached, m_WarnedNoFonts, m_ColourChecked;
-        static bool s_ColourWarned;
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetColourWarning() => s_ColourWarned = false;
+        bool m_IsAttached, m_WarnedNoFonts, m_ColourChecked, m_ColourWarned;
         float m_PreviousDocumentOrder;
         IDesignLocaleSource m_LocaleSource, m_OwnedLocaleSource;
         IDesignTextSizeSource m_TextSizes;
@@ -173,7 +169,7 @@ namespace DesignUi
 
         void OnEnable() => Attach();
         void OnDisable() => Detach();
-        void LateUpdate() => Refresh();
+        void LateUpdate() => FrameRefresh();
         void OnTransformParentChanged() => m_Canvas = null;
         void OnCanvasHierarchyChanged() => m_Canvas = null;
 
@@ -202,8 +198,33 @@ namespace DesignUi
             }
             m_PreviousDocumentOrder = doc.sortingOrder;
             doc.sortingOrder = settings.documentOrder;
-            Canvas.willRenderCanvases += Refresh;
+            Canvas.willRenderCanvases += FrameRefresh;
             Refresh();
+        }
+
+        /// <summary>
+        /// Every frame (LateUpdate, and before the canvases render): the colour check once per attach, then
+        /// <see cref="Refresh"/>. Not in <see cref="Attach"/>: a composite on the same GameObject, or enabled with it, attaches
+        /// after the region's OnEnable, and by the first frame every component's OnEnable has run.
+        /// </summary>
+        void FrameRefresh()
+        {
+            if (!m_ColourChecked && m_IsAttached && Application.isPlaying) CheckColour();
+            Refresh();
+        }
+
+        /// <summary>
+        /// Warns (once per region) when this Linear-colour-space project renders the region's panel without a composite;
+        /// called on the region's first frame after each attach.
+        /// </summary>
+        internal void CheckColour()
+        {
+            m_ColourChecked = true;
+            if (m_ColourWarned || m_Attached == null) return;
+            var warning = ColourWarning(name, m_Attached.panelSettings, m_Copy != null);
+            if (warning == null) return;
+            m_ColourWarned = true;
+            Debug.LogWarning(warning, this);
         }
 
         /// <summary>
@@ -224,7 +245,7 @@ namespace DesignUi
             if (!m_IsAttached) return;
             m_IsAttached = false;
             m_ColourChecked = false;
-            Canvas.willRenderCanvases -= Refresh;
+            Canvas.willRenderCanvases -= FrameRefresh;
             Bind(null);
             (m_OwnedLocaleSource as IDisposable)?.Dispose();
             m_OwnedLocaleSource = null;
@@ -246,17 +267,6 @@ namespace DesignUi
         public void Refresh()
         {
             if (!m_IsAttached || m_Attached == null) return;
-            // once, after every component's OnEnable ran: a Linear project shows the verified colours only through the composite
-            if (!m_ColourChecked && Application.isPlaying)
-            {
-                m_ColourChecked = true;
-                var warning = ColourWarning(name, m_Attached.panelSettings, m_Copy != null);
-                if (warning != null && !s_ColourWarned)
-                {
-                    s_ColourWarned = true;
-                    Debug.LogWarning(warning, this);
-                }
-            }
             var root = m_Attached.rootVisualElement;
             if (root != m_Root)
             {

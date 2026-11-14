@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
@@ -414,6 +415,162 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(DesignUiGammaComposite.Drives(settings));
             Assert.AreSame(composite.Target, settings.targetTexture);
             composite.Detach();
+        }
+
+        // ---- draw order among overlay canvases and other panels ------------------------------------------------------
+
+        static System.Delegate CanvasHook(string name) =>
+            (System.Delegate)typeof(Canvas).GetProperty(name, System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public).GetValue(null);
+
+        Material _quad;
+
+        /// <summary>A solid rectangle (pixels, y from the top) drawn into the bound target, as an overlay canvas draws.</summary>
+        void Quad(RectInt r, Color c, int w, int h)
+        {
+            if (_quad == null)
+            {
+                _quad = new Material(Shader.Find("Hidden/Internal-Colored"));
+                _quad.SetColor("_Color", Color.white);
+                _objects.Add(_quad);
+            }
+            _quad.SetPass(0);
+            GL.PushMatrix();
+            GL.LoadPixelMatrix(0, w, h, 0);
+            GL.Begin(GL.QUADS);
+            GL.Color(c);
+            GL.Vertex3(r.xMin, r.yMin, 0); GL.Vertex3(r.xMax, r.yMin, 0); GL.Vertex3(r.xMax, r.yMax, 0); GL.Vertex3(r.xMin, r.yMax, 0);
+            GL.End();
+            GL.PopMatrix();
+        }
+
+        /// <summary>
+        /// One overlay pass of display 0 into <paramref name="screen"/>, the way Unity 6000.3 calls the hooks while it draws
+        /// its Screen Space - Overlay canvases (docs/findings/composite-order.md): begin, then before each canvas (in sort
+        /// order) the call with the canvas's sort order and the canvas, then end. The canvases are solid rectangles.
+        /// </summary>
+        void OverlayPass(RenderTexture screen, params (int order, RectInt rect, Color color)[] canvases)
+        {
+            var active = RenderTexture.active;
+            RenderTexture.active = screen;
+            ((System.Action<int>)CanvasHook("externBeginRenderOverlays"))(0);
+            foreach (var c in canvases.OrderBy(c => c.order))
+            {
+                ((System.Action<int, int>)CanvasHook("externRenderOverlaysBefore"))(0, c.order);
+                Quad(c.rect, c.color, screen.width, screen.height);
+            }
+            ((System.Action<int>)CanvasHook("externEndRenderOverlays"))(0);
+            RenderTexture.active = active;
+        }
+
+        /// <summary>An on-screen runtime panel (screen-sized, scale 1) with one box: another game panel.</summary>
+        PanelSettings OnScreenBox(string name, float order, RectInt r, Color c)
+        {
+            var settings = DesignPanel();
+            settings.name = name;
+            settings.sortingOrder = order;
+            var go = new GameObject("GammaCompositeTests " + name);
+            _objects.Add(go);
+            var doc = go.AddComponent<UIDocument>();
+            doc.panelSettings = settings;
+            Box(doc.rootVisualElement, r.x, r.y, r.width, r.height, c);
+            return settings;
+        }
+
+        static readonly Color Cyan = new Color32(0x16, 0xc2, 0xd5, 0xff);
+
+        /// <summary>
+        /// The region's box (#16c2d5 at 100..300 × 100..300, sort order 10 through the composite) against overlay canvases of
+        /// sort order 5 (under), 10 (the same: under) and 15 (over), and on-screen panels of sort order 8 (under), 12 (over)
+        /// and 10 (made before the region's copy: under; made after it: over).
+        /// </summary>
+        IEnumerator AssertDrawOrder(DesignUiGammaComposite composite, string when)
+        {
+            int w = UnityEngine.Screen.width, h = UnityEngine.Screen.height;
+            yield return Frames(4);
+            var screen = Screen(w, h, Color.black);
+            OverlayPass(screen,
+                (15, new RectInt(250, 250, 100, 100), Color.blue),
+                (5, new RectInt(50, 50, 100, 100), Color.red),
+                (10, new RectInt(250, 50, 100, 100), Color.green));
+            var px = Bytes(screen);
+            var failures = new List<string>();
+            void Expect(string expected, int x, int y, string what)
+            {
+                var c = At(px, w, h, x, y);
+                var e = (Color32)Hex(expected);
+                if (Mathf.Abs(e.r - c.r) > 1 || Mathf.Abs(e.g - c.g) > 1 || Mathf.Abs(e.b - c.b) > 1)
+                    failures.Add(what + " at (" + x + ", " + y + "): expected " + expected + ", got #" + c.r.ToString("x2") + c.g.ToString("x2") + c.b.ToString("x2"));
+            }
+            Expect("#ff0000", 60, 60, "the canvas under the region, outside it");
+            Expect("#16c2d5", 120, 120, "the region over the canvas of a lower sort order");
+            Expect("#16c2d5", 270, 120, "the region over the canvas of its own sort order");
+            Expect("#00ff00", 330, 120, "the canvas of the region's sort order, outside it");
+            Expect("#0000ff", 270, 270, "the canvas of a higher sort order over the region");
+            Expect("#ffff00", 200, 330, "the panel of a lower sort order, outside the region");
+            Expect("#16c2d5", 200, 290, "the region over the panel of a lower sort order");
+            Expect("#ff00ff", 120, 290, "the panel of a higher sort order over the region");
+            Expect("#16c2d5", 160, 120, "the region over the panel of its sort order made before it");
+            Expect("#ffffff", 220, 220, "the panel of its sort order made after it, over the region");
+            Expect("#16c2d5", 150, 150, "the region itself");
+            Assert.IsEmpty(failures, when + ":\n" + string.Join("\n", failures));
+        }
+
+        (DesignUiPanelRegion region, UIDocument doc) OrderRegion(PanelSettings settings)
+        {
+            var (region, doc) = Region(settings, UnityEngine.Screen.width, UnityEngine.Screen.height);
+            region.Settings = new DesignUiHostSettings { sortingOrder = 10 };
+            doc.rootVisualElement.Clear();
+            Box(doc.rootVisualElement, 100, 100, 200, 200, Cyan);
+            return (region, doc);
+        }
+
+        [UnityTest]
+        public IEnumerator DrawOrder_FollowsSortOrder_AmongOverlayCanvasesAndPanels_InBothAttachOrders_AndAfterAResize()
+        {
+            int w = UnityEngine.Screen.width, h = UnityEngine.Screen.height;
+            Assert.IsTrue(DesignUiOverlayOrder.Supported, "this Unity version has the overlay hooks the composite draws in");
+            var settings = DesignPanel();
+            OnScreenBox("panel 8", 8, new RectInt(150, 280, 100, 120), new Color(1, 1, 0, 1));
+            OnScreenBox("panel 12", 12, new RectInt(50, 250, 100, 100), Color.magenta);
+            OnScreenBox("panel 10 before", 10, new RectInt(150, 100, 30, 40), Color.green * 0.5f + Color.black * 0.5f);
+
+            // the composite first, the region's copy made after it attached
+            var go = new GameObject("GammaCompositeTests composite");
+            _objects.Add(go);
+            var composite = go.AddComponent<DesignUiGammaComposite>();
+            composite.Attach(settings, new Vector2Int(w, h), new Vector2Int(w, h));
+            var (region, doc) = OrderRegion(settings);
+            region.Attach();
+            Assert.AreNotSame(settings, doc.panelSettings, "the region renders on a copy with sort order 10");
+            OnScreenBox("panel 10 after", 10, new RectInt(200, 200, 40, 40), Color.white);
+            yield return AssertDrawOrder(composite, "copy made after the composite");
+
+            composite.Resize(new Vector2Int(w, h), new Vector2Int(w, h));
+            yield return AssertDrawOrder(composite, "after a resize");
+
+            // other code wraps the hooks after the composite (a profiler, another package): the composite's next Update
+            // leaves that wrapper alone (wrapping it again would call itself) and still draws inside it
+            var flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+            var beforeHook = typeof(Canvas).GetProperty("externRenderOverlaysBefore", flags);
+            var inner = (System.Action<int, int>)beforeHook.GetValue(null);
+            int calls = 0;
+            beforeHook.SetValue(null, (System.Action<int, int>)((d, o) => { calls++; inner(d, o); }));
+            DesignUiOverlayOrder.Install();
+            yield return AssertDrawOrder(composite, "inside another wrapper");
+            Assert.AreEqual(3, calls, "the other wrapper ran once per canvas");
+            beforeHook.SetValue(null, inner);
+
+            // the region's copy first, the composite attaching after it
+            composite.Detach();
+            region.Detach();
+            region.Attach();
+            OnScreenBox("panel 10 after 2", 10, new RectInt(200, 200, 40, 40), Color.white);
+            composite.Attach(settings, new Vector2Int(w, h), new Vector2Int(w, h));
+            yield return AssertDrawOrder(composite, "copy made before the composite");
+
+            composite.Detach();
+            Assert.IsFalse(DesignUiOverlayOrder.Installed, "the last composite gives the overlay hooks back");
+            region.Detach();
         }
 
         /// <summary>The cost of one composite at 2560×1440 (logged; the findings quote it).</summary>

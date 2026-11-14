@@ -137,7 +137,11 @@ Oyunun dokunduğu tek kod üretilen View sınıfıdır. Ona veri veren ve olayla
 (varsayılan: paketin `DesignUiPanelSettings`'i) kullanan bir `UIDocument` koy. uGUI kabuğunun içindeysen ekranın
 dolduracağı RectTransform'a `DesignUiPanelRegion` ekle: ekran o dikdörtgeni izler, kabuğun canvas'larıyla doğru sırada
 çizilir (profilin `host` ayarları), dilin fontlarını ve sağdan sola kurallarını uygular, sana `IsPointerOverPanel`,
-`EscapePressed`, `FocusEntered` ve `FocusLeft` bilgisini verir.
+`EscapePressed`, `FocusEntered` ve `FocusLeft` bilgisini verir. Linear renk uzayındaki bir projede aynı PanelSettings ile
+`DesignUiGammaComposite` ekle (örneğin ekranın GameObject'ine): ekran o zaman UI Toolkit'in bir paneli çizdiği yerde
+çizilir; sıralaması daha düşük **ya da aynı** olan Screen Space - Overlay canvas'larının üstünde, daha yüksek olanların
+altında (aynı sıralamadaki panellerde sonra yapılan üstte) ve fare/dokunma girdisi de bu sırayı izler. Ekranı örtmesi
+gereken bir menünün sıralaması region'ınkinden yüksek olmalı. Composite yoksa region bir kez uyarır.
 
 ```csharp
 using UnityEngine;

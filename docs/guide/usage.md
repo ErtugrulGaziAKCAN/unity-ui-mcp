@@ -137,7 +137,11 @@ The generated view is the only code the game touches. A presenter (yours) gives 
 PanelSettings (the package's `DesignUiPanelSettings` by default) under your UI. Inside a uGUI shell, add
 `DesignUiPanelRegion` to the RectTransform the screen should fill: the screen follows that rect, sorts with the shell's
 canvases (the profile's `host` settings), applies the locale's fonts and right-to-left rules, and tells you
-`IsPointerOverPanel`, `EscapePressed`, `FocusEntered` and `FocusLeft`.
+`IsPointerOverPanel`, `EscapePressed`, `FocusEntered` and `FocusLeft`. In a Linear-colour-space project add
+`DesignUiGammaComposite` with the same PanelSettings (for example on the screen's GameObject): the screen is then drawn
+as UI Toolkit draws a panel, over Screen Space - Overlay canvases of a lower **or the same** sort order and under those
+of a higher one (panels of the same sort order: the one made later on top), and pointer input follows that order. A
+menu that must cover the screen needs a higher sort order than the region's. Without a composite the region warns once.
 
 ```csharp
 using UnityEngine;

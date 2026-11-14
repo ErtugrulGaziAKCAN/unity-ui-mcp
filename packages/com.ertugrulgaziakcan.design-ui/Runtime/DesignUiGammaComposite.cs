@@ -11,11 +11,18 @@ namespace DesignUi
     /// Shows the panels of a PanelSettings asset as the design shows them in a Linear-colour-space project. UI Toolkit
     /// blends an on-screen panel in linear light there, the design's browser in sRGB, so translucent colours drift (up to
     /// ΔE2000 22 measured). This component takes Unity's documented route instead: the panel renders into a screen-sized
-    /// <c>R8G8B8A8_UNorm</c> RenderTexture with <see cref="PanelSettings.forceGammaRendering"/> on, and at the end of every
-    /// frame the texture is composited over the screen, decoded to linear light, so the screen stores the panel's colours
-    /// unchanged. Within the panel every colour matches the verifier's capture; where the panel is translucent over the
-    /// game's own camera image, that last blend is in linear light. Costs a screen-sized colour and depth-stencil texture
-    /// (2 × 4 bytes per pixel, 29.5 MB at 2560×1440) and one full-screen pass per frame. Does nothing in a Gamma project.
+    /// <c>R8G8B8A8_UNorm</c> RenderTexture with <see cref="PanelSettings.forceGammaRendering"/> on, and the texture is
+    /// composited over the screen, decoded to linear light, so the screen stores the panel's colours unchanged. Within the
+    /// panel every colour matches the verifier's capture; where the panel is translucent over the game's own camera image,
+    /// that last blend is in linear light. Costs a screen-sized colour and depth-stencil texture (2 × 4 bytes per pixel,
+    /// 29.5 MB at 2560×1440) and one full-screen pass per frame. Does nothing in a Gamma project.
+    /// <para>
+    /// The texture is drawn where UI Toolkit would draw the panel on screen (<see cref="DesignUiOverlayOrder"/>): over the
+    /// Screen Space - Overlay canvases of a lower or the same sort order and under those of a higher one, and among other
+    /// runtime panels by sort order (the same sort order: in the order the panels were made), the order pointer input
+    /// follows. Where this Unity version does not allow that, or no overlay pass ran in a frame, it is drawn at the end of
+    /// the frame, over everything (said once in the console).
+    /// </para>
     /// <para>
     /// Add it once per PanelSettings asset (for example next to the UIDocument). While it is enabled it owns the asset's
     /// <c>targetTexture</c>, <c>forceGammaRendering</c>, clear settings and screen-to-panel function, and gives them back
@@ -63,6 +70,8 @@ namespace DesignUi
         PanelSettings m_Owned;
         Vector2Int m_Size, m_Screen;
         Coroutine m_Loop;
+        bool m_Ordered;
+        static bool s_WarnedUnordered;
 
         /// <summary>The texture the given PanelSettings asset renders into while the component runs, else null.</summary>
         public RenderTexture Target => m_Driven.Count > 0 ? m_Driven[0].Target : null;
@@ -140,6 +149,8 @@ namespace DesignUi
 
         void Update()
         {
+            // UI Toolkit (re)sets the overlay hooks when it starts: wrap them again when they were replaced
+            if (m_Ordered) DesignUiOverlayOrder.Install();
             var target = Target;
             if (target != null && (target.width != Screen.width || target.height != Screen.height))
                 Resize(new Vector2Int(Screen.width, Screen.height), new Vector2Int(Screen.width, Screen.height));
@@ -151,6 +162,8 @@ namespace DesignUi
             while (true)
             {
                 yield return end;
+                // drawn in this frame's overlay pass at the panel's place: nothing left to do
+                if (m_Ordered && DesignUiOverlayOrder.LastPassFrame == Time.frameCount) continue;
                 Composite(null);
             }
         }
@@ -169,6 +182,15 @@ namespace DesignUi
             Drive(settings, null);
             foreach (var kv in new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<PanelSettings, PanelSettings>>(s_Copies))
                 if (kv.Value == settings && kv.Key != null) Drive(kv.Key, null);
+            m_Ordered = DesignUiOverlayOrder.Add(this);
+            if (!m_Ordered && !s_WarnedUnordered && Application.isPlaying)
+            {
+                s_WarnedUnordered = true;
+                Debug.LogWarning("DesignUiGammaComposite: this Unity version does not let the composite draw the panel at its sort order among " +
+                                 "Screen Space - Overlay canvases and other panels, so it draws it at the end of the frame, over all of them " +
+                                 "(pointer input still follows the sort order). Keep overlay canvases that must cover the screen off it, " +
+                                 "or report the Unity version.", this);
+            }
         }
 
         /// <summary>
@@ -258,6 +280,8 @@ namespace DesignUi
         /// <summary>Gives the PanelSettings (the asset and the copies it drives) their own settings back and releases the textures.</summary>
         internal void Detach()
         {
+            DesignUiOverlayOrder.Remove(this);
+            m_Ordered = false;
             foreach (var d in m_Driven) Restore(d);
             m_Driven.Clear();
             m_Owned = null;
@@ -288,13 +312,7 @@ namespace DesignUi
         /// </summary>
         public void Composite(RenderTexture destination)
         {
-            if (m_Driven.Count == 0) return;
-            if (m_Material == null)
-            {
-                var shader = Resources.Load<Shader>(ShaderResource);
-                if (shader == null) return;
-                m_Material = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
-            }
+            if (m_Driven.Count == 0 || !EnsureMaterial()) return;
             // in the panels' sort order, as UI Toolkit draws them on screen (the asset before a copy of the same order)
             s_Order.Clear();
             for (int i = 0; i < m_Driven.Count; i++) if (m_Driven[i].Target != null && m_Driven[i].Settings != null) s_Order.Add((m_Driven[i].Settings.sortingOrder, i));
@@ -303,6 +321,38 @@ namespace DesignUi
         }
 
         static readonly System.Collections.Generic.List<(float order, int index)> s_Order = new System.Collections.Generic.List<(float, int)>();
+
+        bool EnsureMaterial()
+        {
+            if (m_Material != null) return true;
+            var shader = Resources.Load<Shader>(ShaderResource);
+            if (shader == null) return false;
+            m_Material = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+            return true;
+        }
+
+        /// <summary>
+        /// Draws the texture of <paramref name="settings"/> (the asset or a copy this composite renders) over the target the
+        /// overlay pass has bound, as <see cref="Composite"/> does: called by <see cref="DesignUiOverlayOrder"/> when UI
+        /// Toolkit's walk over its screen panels reaches that panel. False when this composite does not render it.
+        /// </summary>
+        internal bool DrawInPass(PanelSettings settings)
+        {
+            var target = TargetOf(settings);
+            if (target == null || !EnsureMaterial()) return false;
+            m_Material.mainTexture = target;
+            if (!m_Material.SetPass(0)) return false;
+            GL.PushMatrix();
+            GL.LoadOrtho();
+            GL.Begin(GL.QUADS);
+            GL.TexCoord2(0, 0); GL.Vertex3(0, 0, 0);
+            GL.TexCoord2(0, 1); GL.Vertex3(0, 1, 0);
+            GL.TexCoord2(1, 1); GL.Vertex3(1, 1, 0);
+            GL.TexCoord2(1, 0); GL.Vertex3(1, 0, 0);
+            GL.End();
+            GL.PopMatrix();
+            return true;
+        }
 
         static RenderTexture CreateTarget(int width, int height)
         {
