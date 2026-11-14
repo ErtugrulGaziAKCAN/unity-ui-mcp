@@ -274,8 +274,13 @@ namespace DesignUi.Editor.Tests
             yield return Frames(1);
             var shown = Color.Lerp(Hex("#16c2d5"), Hex("#123c47"), 0.25f);
             AssertColor(shown, el.resolvedStyle.backgroundColor, "re-entered: from the shown value");
-            m.At(700);
-            AssertColor(Color.Lerp(shown, Hex("#16c2d5"), 0.5f), el.resolvedStyle.backgroundColor, "and on to the hover value");
+            // back to where the running transition started: it reverses in the share it had run (CSS reversing shortening,
+            // linear 100 of 400 ms: 100 ms)
+            m.At(550);
+            AssertColor(Color.Lerp(shown, Hex("#16c2d5"), 0.5f), el.resolvedStyle.backgroundColor, "and on to the hover value, 50 of 100 ms");
+            m.At(600);
+            Assert.AreEqual(StyleKeyword.Null, el.style.backgroundColor.keyword, "the shortened transition ended");
+            AssertColor(Hex("#16c2d5"), el.resolvedStyle.backgroundColor, "the hover rule's value");
         }
 
         [UnityTest]
@@ -447,7 +452,8 @@ namespace DesignUi.Editor.Tests
             player.Tick();
             Assert.IsTrue(player.IsPlaying(menu, "menu-in", out frozen) && !frozen, "on again: it plays");
             Assert.AreEqual(-20f, menu.resolvedStyle.translate.y, 1e-3, "50 of 100 ms");
-            Assert.AreEqual(-112.5f, panel.resolvedStyle.translate.x, 1e-3, "on again: from -150 to 0, 50 of 200 ms");
+            // back to where the running transition started: CSS shortens it to the share it ran (100 of 200 ms)
+            Assert.AreEqual(-75f, panel.resolvedStyle.translate.x, 1e-3, "on again: from -150 to 0, 50 of 100 ms");
         }
 
         [UnityTest]
@@ -574,7 +580,7 @@ namespace DesignUi.Editor.Tests
             m.At(600);
             Assert.AreEqual(60f, dot.resolvedStyle.translate.x, 2e-3, "it ends 600 ms after it started");
 
-            // a transition delayed by −100 ms of 400: 25 % at the change
+            // a transition delayed by −100 ms of 400: 25 % at the change; reversed half-way: its duration and delay both halve
             var t = m["neg-t"];
             m.At(1000);
             DesignView.SetClass(t, "is-on", true, null);
@@ -583,6 +589,12 @@ namespace DesignUi.Editor.Tests
             AssertColor(Rgb(50, 25, 10), t.resolvedStyle.backgroundColor, "Chromium rgb(50, 25, 10)");
             m.At(1100);
             AssertColor(Rgb(100, 50, 20), t.resolvedStyle.backgroundColor, "Chromium rgb(100, 50, 20)");
+            DesignView.SetClass(t, "is-on", false, null);
+            yield return Frames(1);
+            m.At(1100);
+            AssertColor(Rgb(75, 37.5f, 15), t.resolvedStyle.backgroundColor, "Chromium: 200 ms, delay −50 ms, rgb(75, 38, 15) at once");
+            m.At(1250);
+            Assert.AreEqual(StyleKeyword.Null, t.style.backgroundColor.keyword, "ended after 200 − 50 ms");
 
             // 100 ms − 200 ms: never starts
             var never = m["never"];
@@ -591,6 +603,32 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(m.Player.IsTransitioning(never, DesignAnimProperty.BackgroundColor));
             AssertColor(Hex("#c86428"), never.resolvedStyle.backgroundColor, "the new value at once");
         }
+
+        [UnityTest]
+        public IEnumerator AnInterruptedTransitionBackToItsStart_ReversesInTheShareItHadRun()
+        {
+            var m = new Mounted();
+            yield return MountIr(m, TimingIr(), "AnimTiming");
+            var rev = m["rev"];
+            m.At(2000);
+            DesignView.SetClass(rev, "is-on", true, null);
+            yield return Frames(1);
+            m.At(2100);
+            Assert.AreEqual(3.26808f, rev.resolvedStyle.rotate.angle.ToDegrees(), 1e-4, "ease, 100 of 400 ms (Chromium 3.26808deg)");
+            DesignView.SetClass(rev, "is-on", false, null);
+            yield return Frames(1);
+            // Chromium: the reverse transition runs 400 × ease(0.25) = 163.404 ms from 3.26808deg to 0
+            m.At(2100 + 40.85105913555371);
+            Assert.AreEqual(1.93304f, rev.resolvedStyle.rotate.angle.ToDegrees(), 1e-4);
+            m.At(2100 + 81.70211827110742);
+            Assert.AreEqual(0.645762f, rev.resolvedStyle.rotate.angle.ToDegrees(), 1e-4);
+            m.At(2100 + 122.55317740666113);
+            Assert.AreEqual(0.129223f, rev.resolvedStyle.rotate.angle.ToDegrees(), 1e-4);
+            m.At(2100 + 163.41);
+            Assert.AreEqual(StyleKeyword.Null, rev.style.rotate.keyword, "ended after the shortened duration");
+            Assert.IsFalse(m.Player.IsTransitioning(rev, DesignAnimProperty.Rotate));
+        }
+
         [UnityTest]
         public IEnumerator PlayState_PausingHoldsTheFrame_ResumingContinuesFromIt()
         {

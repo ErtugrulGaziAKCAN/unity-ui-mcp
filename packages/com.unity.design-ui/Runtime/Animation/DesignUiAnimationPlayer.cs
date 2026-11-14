@@ -20,7 +20,9 @@ namespace DesignUi
     /// writes the value the element showed (its current animated value, or the previous rule's value) as an inline style
     /// at once, animates it to the new rule's value with the new rule's duration, delay (a negative one starts inside the
     /// transition) and timing function, and removes the inline style at the end, handing the property back to the USS
-    /// rule. No transition on an element's first style or while it is not displayed (CSS: no before-change style).</item>
+    /// rule. A transition interrupted by a change back to its start value runs back in the share of its duration it had
+    /// covered (the reversing shortening factor). No transition on an element's first style or while it is not displayed
+    /// (CSS: no before-change style).</item>
     /// <item>Keyframe animations: the winning <c>--dui-a</c> list starts when the element first gets a box (shown), and when
     /// the list changes: an animation whose name stays keeps running (with the new timing and play state: pausing holds
     /// the frame, resuming continues from it), new names start, removed ones stop and hand their properties back (a layer
@@ -218,13 +220,18 @@ namespace DesignUi
         {
             public readonly VisualElement Element;
             public bool Initialized, WasDisplayed, InActive;
-            // transitions, one slot per transitioned property
+            // transitions, one slot per transitioned property; a running one has its own start, duration, delay and timing
             public string ListText;
             public DesignAnimProperty[] Props = new DesignAnimProperty[0];
             public DesignAnimationData.TransitionEntry[] Entries = new DesignAnimationData.TransitionEntry[0];
+            /// <summary>The end value of the running transition, else the value the rule gives (shown).</summary>
             public DesignAnimValue[] Target = new DesignAnimValue[0];
             public bool[] Running = new bool[0];
-            public double[] Start = new double[0];
+            public double[] Start = new double[0], Duration = new double[0], Delay = new double[0];
+            /// <summary>CSS Transitions §3.4: the reversing shortening factor and the reversing-adjusted start value.</summary>
+            public double[] Factor = new double[0];
+            public DesignAnimValue[] ReversingStart = new DesignAnimValue[0];
+            public DesignTimingFunction[] Timing = new DesignTimingFunction[0];
             public DesignAnimValue[] From = new DesignAnimValue[0];
             public DesignAnimValue[] Shown = new DesignAnimValue[0];
             // keyframe animations
@@ -245,6 +252,11 @@ namespace DesignUi
                 Target = new DesignAnimValue[n];
                 Running = new bool[n];
                 Start = new double[n];
+                Duration = new double[n];
+                Delay = new double[n];
+                Factor = new double[n];
+                ReversingStart = new DesignAnimValue[n];
+                Timing = new DesignTimingFunction[n];
                 From = new DesignAnimValue[n];
                 Shown = new DesignAnimValue[n];
             }
@@ -315,17 +327,37 @@ namespace DesignUi
                     a.Running[i] = false;
                     continue;
                 }
+                // the running transition already ends at the new value, or the shown value is it: nothing changes
                 if (DesignAnimProperties.Same(p, target, a.Target[i])) continue;
-                var current = a.Running[i] ? TransitionValue(a, i, now) : a.Target[i];
+                bool running = a.Running[i];
+                var current = running ? TransitionValue(a, i, now) : a.Target[i];
+                var oldEnd = a.Target[i];
                 a.Target[i] = target;
-                if (m_ReducedMotion || !entry.Animates || !DesignAnimProperties.Interpolable(p, current, target))
+                // CSS Transitions §3: no transition (a running one is cancelled) without a positive combined duration, between
+                // values that do not interpolate, or when the running transition shows the new value already
+                if (m_ReducedMotion || !entry.Animates || !DesignAnimProperties.Interpolable(p, current, target) ||
+                    (running && DesignAnimProperties.Same(p, current, target)))
                 {
                     a.Running[i] = false;
                     continue;
                 }
+                double factor = 1;
+                var reversingStart = current;
+                if (running && DesignAnimProperties.Same(p, a.ReversingStart[i], target))
+                {
+                    // back to where the running transition started: it runs back in the share of its duration it had covered
+                    // (|output now × old factor + 1 − old factor|, clamped to [0, 1]), from the end value it was heading to
+                    factor = Math.Min(1, Math.Abs(Output(a, i, now) * a.Factor[i] + 1 - a.Factor[i]));
+                    reversingStart = oldEnd;
+                }
                 a.Running[i] = true;
                 a.Start[i] = now;
                 a.From[i] = current;
+                a.Factor[i] = factor;
+                a.ReversingStart[i] = reversingStart;
+                a.Duration[i] = entry.Duration * factor;
+                a.Delay[i] = entry.Delay >= 0 ? entry.Delay : entry.Delay * factor;
+                a.Timing[i] = entry.Timing;
             }
 
             // keyframe animations
@@ -411,14 +443,18 @@ namespace DesignUi
             return OwnValue(a, p);
         }
 
-        static DesignAnimValue TransitionValue(Animated a, int i, double now)
+        /// <summary>The running transition's eased progress (the output of its timing function) at <paramref name="now"/>.</summary>
+        static double Output(Animated a, int i, double now)
         {
-            var e = a.Entries[i];
-            double t = now - a.Start[i] - e.Delay;
+            double t = now - a.Start[i] - a.Delay[i];
             bool before = t < 0;
-            double progress = before ? 0 : e.Duration <= 0 ? 1 : Math.Min(1, t / e.Duration);
-            return DesignAnimProperties.Interpolate(a.Props[i], a.From[i], a.Target[i], e.Timing.Evaluate(progress, before));
+            double d = a.Duration[i];
+            double progress = before ? 0 : d <= 0 ? 1 : Math.Min(1, t / d);
+            return a.Timing[i].Evaluate(progress, before);
         }
+
+        static DesignAnimValue TransitionValue(Animated a, int i, double now) =>
+            DesignAnimProperties.Interpolate(a.Props[i], a.From[i], a.Target[i], Output(a, i, now));
 
         /// <summary>Writes the element's animated values at <paramref name="now"/>; returns whether they still change with time.</summary>
         bool Apply(Animated a, double now)
@@ -430,8 +466,7 @@ namespace DesignUi
             for (int i = 0; i < a.Props.Length; i++)
             {
                 if (!a.Running[i]) continue;
-                var e = a.Entries[i];
-                if (now - a.Start[i] >= e.Delay + e.Duration)
+                if (now - a.Start[i] >= a.Delay[i] + a.Duration[i])
                 {
                     a.Running[i] = false; // ended: the USS rule's value shows again
                     a.Shown[i] = a.Target[i];
