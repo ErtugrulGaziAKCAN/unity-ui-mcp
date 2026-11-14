@@ -406,6 +406,30 @@ describe("compareCapture: fix round checks", () => {
     expect(border.issues.find((i) => i.kind === "edge")!.detail).toMatch(/border/);
   });
 
+  it("judges a text line a later element partly covers on its visible part only", () => {
+    // an open popup (later in paint order, with a baked shadow below it) covers the right half of the label's line; its
+    // content differs between the renderers (bright text in the design, a softer shadow in Unity)
+    const ctx: CaptureContext = {
+      order: ["root", "card", "label", "panel", "popup"], backgrounds: new Set(["root", "card", "panel", "popup"]),
+      painters: new Set(["root", "card", "panel", "popup"]), fontPx: { label: 16 }, shadows: { popup: { x: 86, y: 40, w: 70, h: 60 } },
+    };
+    const pop = (s: ReturnType<typeof scene>, text: Rgb, shade: Rgb) => {
+      fill(s.png, { x: 86, y: 52, w: 70, h: 48 }, shade); // the shadow's band below the popup
+      fill(s.png, { x: 90, y: 44, w: 60, h: 40 }, [20, 40, 52]);
+      glyphs(s.png, { x: 96, y: 52, w: 40, h: 12 }, text);
+      s.boxes.elements.popup = el(90, 44, 60, 40);
+      return s;
+    };
+    const g = pop(scene(), [255, 255, 255], [60, 30, 30]), u = pop(scene(), [90, 200, 255], [90, 40, 40]);
+    const v = compareCapture(g, u, [], T, ctx);
+    expect(v.issues.filter((i) => i.id === "label")).toEqual([]);
+    expect(v.elements.find((r) => r.id === "label")!.ink).toBe(0);
+    // the visible part is still judged: a wrong colour there fails
+    const wrong = pop(scene(), [90, 200, 255], [90, 40, 40]);
+    glyphs(wrong.png, { x: 50, y: 52, w: 36, h: 12 }, [250, 210, 60]);
+    expect(compareCapture(g, wrong, [], T, ctx).issues.map((i) => `${i.id}:${i.kind}`)).toContain("label:ink");
+  });
+
   it("checks the text ink: colour and amount", () => {
     expect(compareCapture(badge(), badge(), [], T, bctx).elements.find((r) => r.id === "badge")).toMatchObject({ ink: 0, inkRatio: 1 });
     const colour = compareCapture(badge(), badge({ text: [250, 210, 60] }), [], T, bctx);

@@ -559,13 +559,23 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
      * Boxes painted over the element on either side: later elements in paint order that paint something (IR), else
      * the elements it contains. A point under one of them on either side is not this element's colour.
      */
-    const covering = (id: string): Rect[] => {
+    const coveringIds = (id: string): string[] => {
       const ge = g.elements[id];
-      const ids = paintIndex.has(id)
+      return paintIndex.has(id)
         ? order.slice(paintIndex.get(id)! + 1).filter((x) => paints(x))
         : Object.entries(g.elements).filter(([x, e]) => x !== id && e.visible && e.w * e.h < ge.w * ge.h
           && e.x >= ge.x && e.y >= ge.y && e.x + e.w <= ge.x + ge.w && e.y + e.h <= ge.y + ge.h).map(([x]) => x);
-      return ids.flatMap((x) => [g.elements[x], u.elements[x]]).filter((e): e is Box => !!e && e.visible);
+    };
+    const covering = (id: string): Rect[] =>
+      coveringIds(id).flatMap((x) => [g.elements[x], u.elements[x]]).filter((e): e is Box => !!e && e.visible);
+    /**
+     * What later elements paint over a text: their boxes and their baked shadows (an open popup and its shadow over a card
+     * title). A text line is judged on the pixels outside them only.
+     */
+    const coveringText = (id: string): Rect[] => {
+      const ids = coveringIds(id);
+      const shadows = ids.map((x) => (g.elements[x]?.visible || u.elements[x]?.visible ? ctx.shadows?.[x] : undefined)).filter((r): r is Rect => !!r);
+      return [...covering(id), ...shadows];
     };
     const onText = (x: number, y: number) => {
       for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) if (textMask[yy * w + xx]) return true;
@@ -700,11 +710,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // the font size in device px: the IR's, else the line box over the kit's largest ratio (4/3), never more than the real size
         const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
         let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number } | null = null, maxDe = 0;
+        const over = coveringText(id);
         ge.lines.forEach((gl, i) => {
           const win = grow(unionRect(gl, ue.lines[i]), 1);
-          const a = inkIn(gp, win);
+          const hidden = over.filter((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y);
+          const a = inkIn(gp, win, hidden);
           if (!a) return;
-          const b = inkIn(up, win);
+          const b = inkIn(up, win, hidden);
           inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow: !!ctx.textShadows?.has(id) });
           if (b) {
             const de = deltaE2000(a.ink, b.ink), limit = inkColourLimit(t, px, i);

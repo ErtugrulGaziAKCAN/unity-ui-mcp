@@ -200,17 +200,23 @@ function medianOf(hist: Uint32Array, n: number): number {
  * anti-alias differently). Coverage sums each ink-side pixel's difference relative to the ink's, capped at 1: an area
  * in pixels that grows with weight and size. Null when nothing differs from the background by 8 luma levels.
  */
-export function inkIn(img: Rgba, r: Rect): Ink | null {
+export function inkIn(img: Rgba, r: Rect, exclude: readonly Rect[] = []): Ink | null {
   const x0 = Math.max(0, Math.floor(r.x)), x1 = Math.min(img.w, Math.ceil(r.x + r.w));
   const y0 = Math.max(0, Math.floor(r.y)), y1 = Math.min(img.h, Math.ceil(r.y + r.h));
-  const n = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
-  if (!n) return null;
-  const d = img.data, lum = new Float64Array(n), off = new Int32Array(n), lh = new Uint32Array(256);
+  const all = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+  if (!all) return null;
+  // a pixel that shares area with an excluded rect (a later element painting over the text) is not the text's
+  const hidden = (x: number, y: number) => exclude.some((e) => e.x < x + 1 && e.x + e.w > x && e.y < y + 1 && e.y + e.h > y);
+  const d = img.data, lum = new Float64Array(all), off = new Int32Array(all), lh = new Uint32Array(256);
   let i = 0;
-  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++, i++) {
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    if (exclude.length && hidden(x, y)) continue;
     const o = (y * img.w + x) * 4, l = luma(d, o);
     lum[i] = l; off[i] = o; lh[Math.min(255, Math.round(l))]++;
+    i++;
   }
+  const n = i;
+  if (!n) return null;
   const bgL = medianOf(lh, n);
   // background colour: per-channel medians of the pixels at the background luma
   const ch = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];

@@ -21,6 +21,8 @@ Unity package (`com.unity.design-ui`) and the Node tools share the version numbe
   again, asset by asset (also after an import logged "Uxml object has an invalid child element").
 - Box and baseline limits are compared with a float tolerance of 0.001 px (Unity's float32 layout): a frame at a half
   CSS pixel at scale 0.75 that UI Toolkit snaps measured 1.000008 px against the ±1 px limit.
+- A text line partly covered by a later element (an open popup and its baked shadow over a card title) is judged on its
+  visible pixels only; the popup's own pixels had moved the line's ink colour (ΔE 2.19 at 2560, 5.13 at 1920).
 - `design_ui_import` no longer skips Unity for an unchanged export after the design-ui package, the profile or the kit
   changed: `last-import.json` records the package stamp (`git:<commit>`, `registry:<version>` or the hash of a local
   package's files) and the profile's hash, and the skip compares them with the IR and kit hashes.
