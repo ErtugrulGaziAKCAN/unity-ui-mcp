@@ -7,6 +7,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Added
 
+- Capture slots and a disk check for `scripts/capture-on-copy.sh`: one capture-on-copy Unity runs at a time on the
+  machine by default (`--slots N` or `CAPTURE_COPY_SLOTS`; the others wait and say so; a slot whose holder process is
+  gone is taken over), and the copy needs `--min-free-gb` (default 10; rsync adds the project's size) free where it
+  goes, else the script stops before copying with how much is free (exit 2). The usage guide says how a project with its
+  own heavy-job runner points `command.capture` at it instead.
 - Viewport classes. `kit.config.json` `viewports` entries are `[w, h]` (exact) or `{ "size": [w, h], "class": "exact" |
   "scaled" }`; the profile has **Viewports** (exact) and **Scaled Viewports**, kit sync writes both, the IR carries
   `scaledViewports`. Exact viewports keep every kit value whole device pixels (kit build, kit sync and lint judge only
@@ -79,6 +84,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- `scripts/capture-on-copy.sh` no longer copies the open Editor's process and lock files into the project copy: the
+  copy's Unity read the copied `Library/ilpp.pid` as its own and stopped the open Editor's IL post-processing runner.
+  `Library/ilpp.pid` and every other `*.pid` in the `Library`, `Library/EditorInstance.json`, the asset databases'
+  `-lock` files, search index locks, `Temp/` and `UnityLockfile` are deleted from the copy (APFS clone and rsync alike)
+  before Unity starts.
+- `scripts/setup.sh` removes a `"testables"` entry of the package's id before 0.1.0 instead of renaming it to the new
+  id (the project's manifest never lists the package's tests); `--dry-run` prints the same plan.
 - `DesignUiGammaComposite` renders a `DesignUiPanelRegion`'s sort-order copy of its PanelSettings, whether the copy was
   made before or after the composite attached, in a texture of its own that follows screen resizes; the copy gets its
   own settings (or the asset's, when it was made from the driven asset) back on detach.

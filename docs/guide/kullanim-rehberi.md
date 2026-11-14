@@ -226,14 +226,36 @@ açamaz). Deponun `scripts/capture-on-copy.sh` betiği bunu yapar ve `scripts/se
 }
 ```
 
-Betik projeyi geçici bir klasöre kopyalar (macOS'ta APFS klonu: `Library` bedavaya gelir; başka sistemlerde rsync),
-paketin testlerini (`"testables"`) yalnız **kopyanın** `Packages/manifest.json` dosyasına yazar, EditMode testi
-`DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv`'i orada batchmode'da çalıştırır ve Unity bitince, yakalama
-başarılı da olsa başarısız da olsa kopyayı siler. Senin projenin manifest'i paketin testlerini hiçbir zaman listelemez
+Betik bir yakalama yuvası bekler (varsayılan olarak makinede aynı anda tek bir capture-on-copy Unity'si), kopyanın
+gideceği diskte yer olup olmadığına bakar, projeyi geçici bir klasöre kopyalar (macOS'ta APFS klonu: `Library` bedavaya
+gelir; başka sistemlerde rsync), açık editörün süreç ve kilit dosyalarını kopyadan siler (`Library/ilpp.pid` ve
+`Library` içindeki her `*.pid`, `Library/EditorInstance.json`, varlık veritabanlarının `-lock` dosyaları, arama dizini
+kilitleri, `UnityLockfile` ile birlikte `Temp/`: `ilpp.pid`'i taşıyan bir kopyanın Unity'si **açık** editörün IL
+post-processing sürecini durdurur), paketin testlerini (`"testables"`) yalnız **kopyanın** `Packages/manifest.json`
+dosyasına yazar, EditMode testi `DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv`'i orada batchmode'da
+çalıştırır ve Unity bitince, yakalama başarılı da olsa başarısız da olsa kopyayı siler ve yuvayı bırakır. Senin projenin manifest'i paketin testlerini hiçbir zaman listelemez
 (listeleseydi, proje ayarlarını değiştiren paket testleri senin Test Runner'ına girerdi) ve projene hiçbir sahne, varlık
 ya da yardımcı dosya eklenmez. Sunucu dışa aktarım ve çıktı klasörlerini ortam değişkenleriyle verir
 (`DESIGN_UI_EXPORT_DIR`, `DESIGN_UI_OUT_DIR`; `{exportDir}` ve `{outDir}` yer tutucuları olarak da); Unity, Unity Hub'daki
 proje sürümüdür ya da `UNITY_BIN`. Kendi betiğin de aynı biçimde çalışır, yeter ki ardını temizlesin.
+
+Her yakalama ağır bir Unity işidir. Betiğin seçenekleri komut şablonuna yazılır (sunucu kendi ortamındaki `DESIGN_UI_*`
+değişkenlerini aktarmaz; aynı adlı `CAPTURE_COPY_*` değişkenleri de çalışır):
+
+| Seçenek | Değişken | Varsayılan | Ne yapar |
+|---|---|---|---|
+| `--slots N` | `CAPTURE_COPY_SLOTS` | 1 | makinede aynı anda çalışan capture-on-copy Unity'si; diğerleri beklediğini yazar ve bekler. Sahibi öldürülmüş bir yuva devralınır. |
+| `--min-free-gb N` | `CAPTURE_COPY_MIN_FREE_GB` | 10 | kopyanın gideceği yerde (`TMPDIR`) gereken boş disk; rsync'te projenin boyutu da eklenir. Altında betik hiçbir şey kopyalamadan durur, ne kadar boş yer olduğunu söyler ve 2 ile çıkar. |
+| `--lock-dir DIR` | `CAPTURE_COPY_LOCK_DIR` | `<TMPDIR>/design-ui-capture-slots` | yuvaların klasörü: onu paylaşan yakalamalar yuvaları da paylaşır. |
+
+```json
+"capture": ["<klon>/scripts/capture-on-copy.sh", "{projectDir}", "--slots", "1", "--min-free-gb", "20"]
+```
+
+Ağır Unity işleri için kendi çalıştırıcısı olan bir proje (makine çapında iş sınırı, yalıtılmış klonlar)
+`command.capture`'a o çalıştırıcının komutunu yazar: aynı `{projectDir}`, `{exportDir}` ve `{outDir}` yer tutucularını ve
+`DESIGN_UI_EXPORT_DIR` / `DESIGN_UI_OUT_DIR` değişkenlerini alır, yukarıdaki EditMode testini kendi kopyasında çalıştırır
+(paketi o kopyanın `testables` listesine yazarak), `DESIGN_UI_OUT_DIR`'e yazar ve kopyasını siler.
 
 Yakalama, çıktı klasörüne her iş için bir PNG, `boxes.json`, `boxes.meta.json` ve en son `capture-done.json` yazar;
 sunucu ardından karşılaştırır ve raporu yazar. Başarısız olan, zaman aşımına uğrayan ya da bitmeyen bir çalışma, yarım

@@ -106,7 +106,8 @@ The config setup writes:
 An existing `design-ui.config.json` is kept as it is; when it has no `mcpServer`, setup prints the line to add (the
 Design UI window's client snippets need it), and when its `kitDir` is the clone's `design-kit`, setup prints how to copy
 the kit into the project and what to set (kit sync refuses to write into the clone). Setup never adds `"testables"` to
-the project's manifest: only the temporary copy a capture runs on lists the package's tests.
+the project's manifest: only the temporary copy a capture runs on lists the package's tests. A `"testables"` entry of the
+package's id before 0.1.0 (`com.unity.design-ui`) is removed, not renamed; `--dry-run` shows the same plan.
 
 ## 5. Run it
 
@@ -151,8 +152,9 @@ Then tell the user what is left on the Unity side. These are their steps in the 
 6. **Localized screens** need Unity Localization 1.5 or later; the profile's localization settings name each screen's
    String Table collection. Creating a collection needs Addressables settings and a project without unsaved changes.
 7. **Verification** renders on a temporary copy of the project, never in the open Editor: setup's capture command
-   (`scripts/capture-on-copy.sh`) copies the project, captures there with the Unity Hub install of the project's version
-   (or `UNITY_BIN`) and removes the copy (see "Verification captures" in `docs/guide/usage.md`). Disk use stays bounded
+   (`scripts/capture-on-copy.sh`) takes one capture slot per machine (`--slots`), checks the free disk (`--min-free-gb`),
+   copies the project without the open Editor's process and lock files, captures there with the Unity Hub install of the
+   project's version (or `UNITY_BIN`) and removes the copy (see "Verification captures" in `docs/guide/usage.md`). Disk use stays bounded
    by itself (`cacheBudgetMB`, `design_ui_clean`); nobody deletes the tools' files by hand.
 8. **Start a new chat** of the MCP client in the client folder (Claude Code: a new session there; Cursor, Codex or
    Claude Desktop: restart after adding the snippet). The server is named `design-ui`. Typing `/unity-ui-mcp` (or

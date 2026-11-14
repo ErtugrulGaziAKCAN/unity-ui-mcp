@@ -221,7 +221,7 @@ describe("scripts/setup.sh", () => {
 
   const OLD = "com.unity.design-ui", NEW = "com.ertugrulgaziakcan.design-ui";
 
-  it("replaces the package id before 0.1.0 in place (dependency key, URL and testables); --dry-run shows it first", () => {
+  it("replaces the package id before 0.1.0 in place and removes its testables entry; --dry-run shows the same plan first", () => {
     const e = setupEnv();
     const file = path.join(e.project, "Packages", "manifest.json");
     const oldUrl = `https://github.com/x/unity-ui-mcp.git?path=/packages/${OLD}#m0-m1`;
@@ -239,17 +239,42 @@ describe("scripts/setup.sh", () => {
     const dry = e.run("--dry-run", "--package", "local", "--client", "none");
     expect(dry.code, dry.out).toBe(0);
     expect(dry.out).toContain(`would replace the old package id "${OLD}": "${oldUrl}" with "${NEW}": ${JSON.stringify(value)} in Packages/manifest.json`);
-    expect(dry.out).toContain(`would replace "${OLD}" with "${NEW}" in the "testables" of Packages/manifest.json`);
+    // the user's manifest never lists the package's tests: captures list them in their temporary copy only
+    const removal = `remove "${OLD}" from the "testables" of Packages/manifest.json (the package tests are listed only in the temporary copy a capture makes)`;
+    expect(dry.out).toContain(`would ${removal}`);
+    expect(dry.out).not.toContain(`with "${NEW}" in the "testables"`);
     expect(dry.out).not.toContain("would add");
     expect(read(file)).toBe(before);
 
     const r = e.run("--package", "local", "--client", "none");
     expect(r.code, r.out).toBe(0);
-    expect(read(file)).toBe(before.replace(`"${OLD}": "${oldUrl}"`, `"${NEW}": ${JSON.stringify(value)}`).replace(`"${OLD}"]`, `"${NEW}"]`));
+    expect(r.out).toContain(`change: ${removal}`);
+    // the same plan as the dry run, change for change
+    const planned = (out: string, prefix: string) => out.split("\n").filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length));
+    expect(planned(r.out, "  change: ")).toEqual(planned(dry.out, "  would "));
+    expect(read(file)).toBe(before.replace(`"${OLD}": "${oldUrl}"`, `"${NEW}": ${JSON.stringify(value)}`).replace(`, "${OLD}"]`, `]`));
+    expect(JSON.parse(read(file)).testables).toEqual(["com.unity.test-framework"]);
     const again = e.run("--package", "local", "--client", "none");
     expect(again.code, again.out).toBe(0);
     expect(again.out).toContain(`kept existing entry "${NEW}"`);
     expect(again.out).toContain("Nothing to change");
+  });
+
+  it("removes the old package id's only testables entry and leaves the user's other manifest keys alone", () => {
+    const e = setupEnv();
+    const file = path.join(e.project, "Packages", "manifest.json");
+    fs.writeFileSync(file, `{
+  "dependencies": {
+    "${OLD}": "file:/old"
+  },
+  "testables": [ "${OLD}" ]
+}
+`);
+    const r = e.run("--package", "local", "--client", "none");
+    expect(r.code, r.out).toBe(0);
+    const json = JSON.parse(read(file));
+    expect(json.testables).toEqual([]);
+    expect(Object.keys(json.dependencies)).toEqual([NEW]);
   });
 
   it("removes the old package id when the new one is listed too, and warns about an embedded copy under the old id", () => {
@@ -267,7 +292,7 @@ describe("scripts/setup.sh", () => {
     const r = e.run("--client", "none");
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain(`remove the old package id "${OLD}": "file:/old" from Packages/manifest.json (it lists "${NEW}" too)`);
-    expect(r.out).toContain(`remove "${OLD}" from the "testables" of Packages/manifest.json`);
+    expect(r.out).toContain(`remove "${OLD}" from the "testables" of Packages/manifest.json (the package tests are listed only in the temporary copy a capture makes)`);
     expect(r.out).toContain(`kept existing entry "${NEW}": "file:/mine"`);
     expect(r.out).toContain(`warning: Packages/${OLD} is an embedded copy`);
     expect(read(file)).toBe(`{

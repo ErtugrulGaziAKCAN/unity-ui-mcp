@@ -226,14 +226,36 @@ repository's `scripts/capture-on-copy.sh` does it, and `scripts/setup.sh` puts i
 }
 ```
 
-It copies the project into a temporary folder (an APFS clone on macOS, so the `Library` comes along at no cost; rsync
-elsewhere), lists the package's tests (`"testables"`) in the **copy's** `Packages/manifest.json` only, runs the EditMode
-test `DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv` there in batchmode, and removes the copy when Unity exits,
-whether the capture succeeded or failed. Your project's manifest never lists the package's tests (that would put the
+It waits for a capture slot (one capture-on-copy Unity at a time on the machine by default), checks the free disk where
+the copy goes, copies the project into a temporary folder (an APFS clone on macOS, so the `Library` comes along at no
+cost; rsync elsewhere), deletes the open Editor's process and lock files from the copy (`Library/ilpp.pid` and every
+other `*.pid` in the `Library`, `Library/EditorInstance.json`, the asset databases' `-lock` files, search index locks,
+`Temp/` with its `UnityLockfile`: a copy that keeps `ilpp.pid` makes its Unity stop the **open** Editor's IL
+post-processing runner), lists the package's tests (`"testables"`) in the **copy's** `Packages/manifest.json` only, runs
+the EditMode test `DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv` there in batchmode, and removes the copy and
+gives the slot back when Unity exits, whether the capture succeeded or failed. Your project's manifest never lists the package's tests (that would put the
 package's own test suite, which switches project settings, into your Test Runner), and no scene, asset or helper file is
 ever added to your project. The server passes the export and output folders in the environment (`DESIGN_UI_EXPORT_DIR`,
 `DESIGN_UI_OUT_DIR`, also as the `{exportDir}` and `{outDir}` placeholders); the Unity binary is the Unity Hub install of
 the project's version, or `UNITY_BIN`. A script of your own works the same way, as long as it cleans up after itself.
+
+Each capture is a heavy Unity job. The script's options go into the command template (the server passes none of its own
+`DESIGN_UI_*` environment variables on; the `CAPTURE_COPY_*` variables of the same names work too):
+
+| Option | Variable | Default | What it does |
+|---|---|---|---|
+| `--slots N` | `CAPTURE_COPY_SLOTS` | 1 | capture-on-copy Unity runs at a time on the machine; the others print that they wait and wait. A slot whose holder was killed is taken over. |
+| `--min-free-gb N` | `CAPTURE_COPY_MIN_FREE_GB` | 10 | free disk the copy needs where it goes (`TMPDIR`); with rsync also the project's size. Below it the script stops before copying, says how much is free and exits 2. |
+| `--lock-dir DIR` | `CAPTURE_COPY_LOCK_DIR` | `<TMPDIR>/design-ui-capture-slots` | the slots' folder: captures that share it share the slots. |
+
+```json
+"capture": ["<clone>/scripts/capture-on-copy.sh", "{projectDir}", "--slots", "1", "--min-free-gb", "20"]
+```
+
+A project that already has a runner for heavy Unity jobs (a machine-wide job limit, isolated clones) puts that runner's
+command into `command.capture` instead: it gets the same `{projectDir}`, `{exportDir}` and `{outDir}` placeholders and
+`DESIGN_UI_EXPORT_DIR` / `DESIGN_UI_OUT_DIR`, runs the EditMode test above on its copy (listing the package in that copy's
+`testables`), writes into `DESIGN_UI_OUT_DIR` and removes its copy.
 
 The capture writes a PNG per job, `boxes.json`, `boxes.meta.json` and, last, `capture-done.json` into the output folder;
 the server then compares and writes the report. A run that fails, times out or does not finish keeps its partial

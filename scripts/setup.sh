@@ -7,8 +7,8 @@
 # Idempotent: a second run changes nothing. --dry-run prints every change without making it.
 # It also links the /unity-ui-mcp skill (scripts/install-skill.sh) and edits the chosen clients' MCP config.
 # In the Unity project it only adds the com.ertugrulgaziakcan.design-ui entry to Packages/manifest.json (when absent;
-# an entry under the package's id before 0.1.0 is replaced by it; it never adds "testables", it only renames an existing
-# entry of the old id), and writes
+# an entry under the package's id before 0.1.0 is replaced by it; it never adds "testables" and removes the old id from
+# them: captures list the package's tests in their temporary project copy only), and writes
 # design-ui.config.json with a copy of the design kit in <designRoot>/design-kit (both when absent). It never commits or
 # pushes anything. Bash only (macOS, Linux; on Windows use WSL or Git Bash, or the manual steps in
 # INSTALL.md).
@@ -227,16 +227,15 @@ if (has(json.dependencies, oldName)) {
     ? `CHANGE remove the old package id "${oldName}": ${old} from Packages/manifest.json (it lists "${name}" too)`
     : `CHANGE replace the old package id "${oldName}": ${old} with "${name}": ${JSON.stringify(value)} in Packages/manifest.json`);
 }
+// 2. the old id in "testables": removed, never renamed. The project manifest does not list the package tests (they
+// would compile into the game test assemblies); a capture lists them in its temporary copy of the project only.
 for (let i = Array.isArray(current.testables) ? current.testables.indexOf(oldName) : -1; i >= 0; i = current.testables.indexOf(oldName)) {
-  const listed = current.testables.includes(name);
-  const testables = listed ? current.testables.filter((t, k) => k !== i) : current.testables.map((t, k) => (k === i ? name : t));
+  const testables = current.testables.filter((t, k) => k !== i);
   const token = new RegExp(`"${esc(oldName)}"`, "g");
-  if (!edit(token, (m) => listed ? without(m) : [[m.index, m.index + m[0].length, JSON.stringify(name)]], { ...current, testables })) {
-    fail(`could not replace the old package id "${oldName}" in the "testables" of Packages/manifest.json; replace it by hand with "${name}"`);
+  if (!edit(token, without, { ...current, testables })) {
+    fail(`could not remove the old package id "${oldName}" from the "testables" of Packages/manifest.json; remove it by hand`);
   }
-  results.push(listed
-    ? `CHANGE remove "${oldName}" from the "testables" of Packages/manifest.json (it lists "${name}" too)`
-    : `CHANGE replace "${oldName}" with "${name}" in the "testables" of Packages/manifest.json`);
+  results.push(`CHANGE remove "${oldName}" from the "testables" of Packages/manifest.json (the package tests are listed only in the temporary copy a capture makes)`);
 }
 if (hadName) {
   results.push(`KEEP kept existing entry "${name}": ${JSON.stringify(json.dependencies[name])}`);

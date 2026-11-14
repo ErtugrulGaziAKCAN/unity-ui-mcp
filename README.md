@@ -302,8 +302,11 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
   (no silent fallback); `"command"` runs the argv templates instead.
 - `unityRunner.captureVia` must be `"command"`: verification never runs in your open Editor. `command.capture` runs the
   EditMode test `DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv` in batchmode **on a copy of the project**
-  (Unity cannot open a project twice): `scripts/capture-on-copy.sh` makes a temporary copy, lists the package's tests in
-  the copy's manifest only, and removes the copy afterwards; see the [usage guide](docs/guide/usage.md#verification-captures).
+  (Unity cannot open a project twice): `scripts/capture-on-copy.sh` waits for a capture slot (one at a time per machine by
+  default, `--slots`), checks the free disk (`--min-free-gb`), makes a temporary copy without the open Editor's process
+  and lock files, lists the package's tests in the copy's manifest only, and removes the copy afterwards; a project with
+  its own heavy-job runner puts that runner's command there instead; see the
+  [usage guide](docs/guide/usage.md#verification-captures).
 - Templates take `{projectDir}` `{profile}` `{exportDir}` `{outDir}` `{kitDir}`, also passed as `DESIGN_UI_*`
   environment variables. They run as programs with your rights: only use a config you trust.
 - `timeoutSec` limits one Unity step (the script compile after an import included); while it runs, the server sends
