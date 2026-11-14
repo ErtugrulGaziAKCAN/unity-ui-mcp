@@ -949,10 +949,11 @@ including right-to-left and CJK languages). It sets the M2 localization scope an
 - Determinism: the same input and Chromium build export a byte-identical IR (tested).
 - **Fidelity suite** (`scripts/fidelity.sh`): the kit's fidelity fixtures (`design-kit/fixtures/fidelity/`: layout,
   text styles, colours and gradients, shadows, radii and borders, filters, states, pseudo-states, controls, text
-  shadow, object fit, icons, transitions, keyframes, initial triggers, repeat items) and its nine components, exported in
+  shadow, object fit, icons, transitions, keyframes, initial triggers, repeat items, letter spacing, text spacing and
+  overflow, sizing and visibility, background images) and its nine components, exported in
   Chromium, compiled and captured in `samples/FidelityProject` and compared at 2560×1440, 1920×1080 and 1280×720; each
-  must pass §15 thresholds. This is the regression net for every change to the pipeline. In 0.1.0 all 2340 captures
-  pass (1140 static captures and 1200 animation samples; none failed, not captured or incomplete).
+  must pass §15 thresholds. This is the regression net for every change to the pipeline. All 2355 captures pass
+  (1155 static captures and 1200 animation samples; none failed, not captured or incomplete).
 - Shared contracts (`contracts/`): CSS support cases, IR and boxes samples and the member-name rule, checked by both
   the Node and the Unity tests.
 

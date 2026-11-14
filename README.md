@@ -205,9 +205,9 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`):
 | Structure (SSIM, non-text) | ≥ 0.99 for the capture and for each element (small elements ≥ 0.984, pictures ≥ 0.985, rotated animation samples ≥ 0.975) |
 | Animation samples | at the delay and every quarter of each animation, the same limits |
 
-The fidelity suite (`scripts/fidelity.sh`: 15 fidelity fixtures and the 9 kit components, at the three viewports)
-passes **2340 of 2340 captures** in 0.1.0: 1140 static captures and 1200 animation samples, none failed, not captured
-or incomplete.
+The fidelity suite (`scripts/fidelity.sh`: 19 fidelity fixtures and the 9 kit components, at the three viewports)
+passes **2355 of 2355 captures**: 1155 static captures and 1200 animation samples, none failed, not captured or
+incomplete.
 
 **Linear colour space.** UI Toolkit blends an ordinary on-screen panel of a Linear project in linear light; the design's
 browser blends in sRGB. Captured that way, 2248 of the suite's 2355 captures fail (text ink 0.63–1.42× the design's,
@@ -226,7 +226,7 @@ Measured on the sample project (macOS, Apple silicon, warm browser):
 | Import through the Editor bridge, view class unchanged | 0.2 s Unity request; 4.5 s for the whole tool call with its export |
 | Import that changes the view class | 1.8–3.3 s Unity step (script compile and domain reload); longer in a large project |
 | Unity capture | about 33 ms per capture job after one mount per viewport |
-| Fidelity suite Unity steps (24 screens) | import 17 s, capture 86 s |
+| Fidelity suite Unity steps (28 screens) | import 25 s, capture 84 s |
 
 ## MCP tools
 

@@ -51,6 +51,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 - Nothing adds `"testables"` to a project's manifest: only the temporary copy a capture runs on lists the package's
   tests (they switch project settings and are no business of a game's Test Runner).
 
+### Verification
+
+- The fidelity suite (19 fixtures, 9 components) passes 2355 of 2355 captures at the three viewports (1155 static
+  captures and 1200 animation samples).
+
 ### Fixed
 
 - Kit sync and imports through the Editor wait for the script compile as long as `unityRunner.timeoutSec` allows (it
