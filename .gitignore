@@ -12,7 +12,6 @@ samples/FidelityProject/obj/
 samples/FidelityProject/UserSettings/
 samples/FidelityProject/*.csproj
 samples/FidelityProject/*.sln
-spike/out/
 
 # Local, project-specific notes and the working plan (never published)
 private/

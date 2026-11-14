@@ -1,8 +1,8 @@
 /**
  * Colour difference for the fidelity comparison (spec §15): CIEDE2000 on sRGB 8-bit values as they are stored in the
  * PNGs. Both sides are compared without any colour conversion other than sRGB → CIELAB (D65), the route measured in
- * findings §10 (the Unity verifier writes its UNorm readback bytes unchanged). The formula is the same as the M0
- * spike's (`spike/compare-unity.ts`), checked against Sharma, Wu and Dalal (2005).
+ * findings §10 (the Unity verifier writes its UNorm readback bytes unchanged). The formula is the one the M0
+ * measurements used, checked against Sharma, Wu and Dalal (2005).
  */
 export type Rgb = [number, number, number];
 export type Lab = [number, number, number];

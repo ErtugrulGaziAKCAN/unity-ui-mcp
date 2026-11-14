@@ -1,5 +1,5 @@
 /**
- * The pinned SSIM of the fidelity comparison (spec §15, findings §11; reference: `spike/m0-metrics.ts`):
+ * The pinned SSIM of the fidelity comparison (spec §15, M0 findings §11, which define it and record its reference values):
  *
  * - non-overlapping 8×8 blocks of the 8-px grid on BT.601 luma (`0.299 R + 0.587 G + 0.114 B`),
  *   `C1 = (0.01·255)²`, `C2 = (0.03·255)²`, sample variance (n − 1); blocks that do not fit the image are left out;

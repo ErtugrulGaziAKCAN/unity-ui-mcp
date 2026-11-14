@@ -137,10 +137,9 @@ describe("PNG decoding", () => {
   });
 
   it("decodes RGB captures (Chromium) and other PNGs like the generic decoder", async () => {
-    const spikeOut = path.resolve(here, "../../../spike/out");
-    const files = [path.join(here, "fixtures", "lint", "assets", "logo.png"),
-      ...["chromium/f11-gradients/chromium.png", "unity-gamma/f13-hover-active/unity.png"].map((f) => path.join(spikeOut, f))].filter((f) => fs.existsSync(f));
-    expect(files.length).toBeGreaterThan(0);
+    // a Chromium screenshot (colour type 2, RGB) and an RGBA asset (colour type 6)
+    const files = [path.join(here, "fixtures", "compare", "chromium-rgb.png"), path.join(here, "fixtures", "lint", "assets", "logo.png")];
+    expect(files.map((f) => fs.readFileSync(f)[25])).toEqual([2, 6]);
     for (const f of files) {
       const b = fs.readFileSync(f), fast = await decodePngAsync(b), slow = decodePng(b);
       expect([fast.w, fast.h]).toEqual([slow.w, slow.h]);
@@ -1215,52 +1214,5 @@ describe("design-export compare", () => {
     expect(areas([[1024, 0.995]])).toThrow(/must lie between 0.97 and ssimElement/);
     expect(small({ ssimRotated: 0.96 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
     expect(small({ ssimRotated: 0.995 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
-  });
-});
-
-// ---- the M0 reference computation (spike/m0-metrics.ts), on the spike's own captures when they are present ------
-
-const spikeOut = path.resolve(here, "../../../spike/out");
-const haveSpike = fs.existsSync(path.join(spikeOut, "m0-metrics", "summary.json")) && fs.existsSync(path.join(spikeOut, "unity-gamma"));
-
-describe.skipIf(!haveSpike)("M0 reference numbers (spike/out, git-ignored)", () => {
-  type SpikeEl = { id: string; x: number; y: number; w: number; h: number; text?: { lines?: { x: number; y: number; w: number; h: number; baseline?: number }[]; baseline?: number } };
-  const toBoxes = (name: string, els: SpikeEl[]): CaptureBoxes => ({
-    capture: name, viewport: [2560, 1440], scale: 1, external: [],
-    elements: Object.fromEntries(els.map((e) => [e.id, el(e.x, e.y, e.w, e.h, {
-      text: !!e.text, lines: (e.text?.lines ?? []).map((l) => ({ x: l.x, y: l.y, w: l.w, h: l.h, baseline: l.baseline ?? e.text!.baseline ?? l.y })),
-    })])),
-  });
-  /** Shadow rects from the fixture CSS, as spike/m0-metrics.ts derives them. */
-  const shadowRects = (html: string, els: SpikeEl[]) => {
-    const out: Record<string, { x: number; y: number; w: number; h: number }> = {};
-    for (const m of html.matchAll(/#([\w-]+)\s*\{[^}]*box-shadow:\s*(-?[\d.]+)(?:px)?\s+(-?[\d.]+)(?:px)?\s+([\d.]+)(?:px)?(?:\s+(-?[\d.]+)px)?/g)) {
-      const e = els.find((x) => x.id === m[1]);
-      if (!e) continue;
-      const grow = +m[4] + (m[5] ? +m[5] : 0);
-      out[e.id] = { x: e.x + +m[2] - grow, y: e.y + +m[3] - grow, w: e.w + 2 * grow, h: e.h + 2 * grow };
-    }
-    return out;
-  };
-  const summary = haveSpike ? JSON.parse(fs.readFileSync(path.join(spikeOut, "m0-metrics", "summary.json"), "utf8")) : { fixtures: {} };
-  const fixtures = Object.keys(summary.fixtures).sort();
-
-  it.each(fixtures)("%s: whole-capture and per-element SSIM equal the reference", (fx) => {
-    const cB = JSON.parse(fs.readFileSync(path.join(spikeOut, "chromium", fx, "chromium-boxes.json"), "utf8"));
-    const uB = JSON.parse(fs.readFileSync(path.join(spikeOut, "unity-gamma", fx, "unity-boxes.json"), "utf8"));
-    const g = { png: decodePng(fs.readFileSync(path.join(spikeOut, "chromium", fx, "chromium.png"))), boxes: toBoxes(fx, cB.elements) };
-    const u = { png: decodePng(fs.readFileSync(path.join(spikeOut, "unity-gamma", fx, "unity.png"))), boxes: toBoxes(fx, uB.elements) };
-    const html = fs.readFileSync(path.resolve(here, "../../../spike/fixtures", `${fx}.html`), "utf8");
-    const ctx: CaptureContext = { root: "root", shadows: shadowRects(html, cB.elements), backgrounds: new Set() };
-    const v = compareCapture(g, u, [], { ...T, boxPx: 1e9, baselinePx: 1e9 }, ctx);
-    const ref = summary.fixtures[fx];
-    expect(+v.ssim!.toFixed(6)).toBe(ref.wholeCopyMask);
-    // the reference measures non-text elements; text-carrying elements are measured with their lines copied (not in M0)
-    const mine = Object.fromEntries(v.elements.filter((r) => r.ssim !== null && !g.boxes.elements[r.id].text).map((r) => [r.id, +r.ssim!.toFixed(5)]));
-    expect(mine).toEqual(Object.fromEntries(ref.elements.map((r: { id: string; withShadow: number }) => [r.id, r.withShadow])));
-    // the 1-px offsets never rescue a real defect: M0's failing elements still fail (missing shadows, pill as ellipse, dashed as solid)
-    const failing = v.issues.filter((i) => i.kind === "ssim").map((i) => i.id).sort();
-    const known: Record<string, string[]> = { "f12-box-shadow": ["f12-glow", "f12-grid", "f12-hard", "f12-radius"], "f14-radius-border": ["f14-dashed", "f14-pill"] };
-    if (known[fx]) expect(failing).toEqual(known[fx]);
   });
 });

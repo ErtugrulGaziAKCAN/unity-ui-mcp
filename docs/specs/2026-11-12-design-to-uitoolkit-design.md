@@ -637,7 +637,7 @@ copied from the design, plus samples of its background, border and corner diagon
 but leave no sample point are reported as "not sampled".
 
 SSIM is the mean over non-overlapping 8×8 blocks of BT.601 luma with `C1 = (0.01·255)²`, `C2 = (0.03·255)²`
-(reference implementation: `spike/m0-metrics.ts`). For an element it is the mean over the blocks that overlap the
+(implemented in `tools/design-export/src/compare/ssim.ts`, defined and calibrated in M0 findings §11). For an element it is the mean over the blocks that overlap the
 bounding box of its golden box and, when it has one, its baked-shadow rect from the IR's `shadow` field
 (`x + offset.x`, `y + offset.y`, `w + offset.w`, `h + offset.h`: offset x/y is the shadow image's top-left relative to
 the element's border box, offset w/h is the image size minus the element size). Glyph rasterization differences are
