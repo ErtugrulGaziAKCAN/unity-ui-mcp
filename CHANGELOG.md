@@ -7,6 +7,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Added
 
+- Lint **U-CSS-046**: a padding, margin or gap (the compiler writes a gap as margins) that is not a whole number of device
+  pixels at an exact viewport. UI Toolkit lays these lengths out as whole device pixels, halves up (measured: position
+  offsets and translations are not snapped, `docs/findings/viewport-classes.md`), so a 10 px padding is 8 device px at
+  1920×1080 where the design has 7.5 and the text inside moves about a pixel. The finding names the element, the property,
+  the viewports and the nearest valid lengths (multiples of 4 px with the default kit). New fidelity fixture
+  `half-pixel-frame` (frames centred at a fraction of a device pixel, grid paddings inside).
 - Capture slots and a disk check for `scripts/capture-on-copy.sh`: one capture-on-copy Unity runs at a time on the
   machine by default (`--slots N` or `CAPTURE_COPY_SLOTS`; the others wait and say so; a slot whose holder process is
   gone is taken over), and the copy needs `--min-free-gb` (default 10; rsync adds the project's size) free where it

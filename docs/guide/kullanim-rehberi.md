@@ -307,6 +307,7 @@ Unity'de: `Window > Design UI > Import Screen…` ve `Window > Design UI > Kit S
 | U-CSS-038 | gri tonlamalı yumuşatması olmayan metin | kit'in temel stil sayfasını koru |
 | U-CSS-039 | parçaları üst üste binen elemanda 1'den küçük opacity | kit'in disabled renkleri |
 | U-CSS-040 | cihaz pikseline oturmayan ince bir kenarlık ya da çizgi | listelenen uzunluklar |
+| U-CSS-046 | cihaz pikseline oturmayan bir padding, margin ya da gap (10 px, 1920×1080'de 7,5 cihaz pikseli) | bulgunun söylediği en yakın uzunluklar, 4 px'in katları |
 | U-CSS-013, U-CSS-042 | yerleşim özelliğinin animasyonu | `translate` ya da `scale` |
 | U-MRK-003 | `data-u-id`'si olmayan kontrol, bağlı ya da aksiyonlu eleman | bir kimlik ekle |
 | U-MRK-004 | `data-l10n` ve `data-en`'i olmayan görünür metin | anahtarı ve İngilizce metni ekle |

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.half-pixel-frame</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 16px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 16px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
+.text-subtitle-bold { font-size: 32px; line-height: 40px; font-weight: 700; }
+.text-title { font-size: 36px; line-height: 48px; font-weight: 400; }
+.text-title-bold { font-size: 36px; line-height: 48px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 60px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 60px; font-weight: 700; }
+.text-display { font-size: 64px; line-height: 80px; font-weight: 400; }
+.text-display-bold { font-size: 64px; line-height: 80px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; align-items: center; width: 2560px; height: 1440px; position: relative; padding-top: 32px; background-color: var(--color-surface-900); }
+.frame { display: flex; flex-direction: column; flex-shrink: 0; padding: 16px; margin-bottom: 32px; background-color: var(--color-surface-800); }
+.frame-even { width: 1764px; }
+.frame-odd { width: 1766px; }
+.week { display: flex; flex-direction: row; }
+.gap { margin-top: 4px; }
+.weekday { width: 244px; flex-shrink: 0; margin-right: 4px; padding: 8px 0 8px 16px; color: var(--color-text-secondary); }
+.day { display: flex; flex-direction: column; align-items: flex-start; width: 244px; height: 132px; flex-shrink: 0; margin-right: 4px; padding: 12px; background-color: var(--color-surface-700); }
+.last { margin-right: 0; }
+.num { color: var(--color-text-primary); white-space: nowrap; }
+.chip { margin-top: 8px; padding: 4px 8px; white-space: nowrap; color: var(--color-text-primary); background-color: var(--color-surface-500); }
+
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.half-pixel-frame">
+  <!-- a frame centred on the screen at a fraction of a device pixel: 398 px is 298.5 device px at 1920×1080; the second
+       frame at 397 px is 297.75 at 1920×1080, 198.5 at 1280×720 and 595.5 at 3840×2160. Inside, every padding, margin and
+       gap is a multiple of 4 px (whole device px at every exact viewport, lint U-CSS-046), so text keeps the design's place.
+       Text is body size or larger (12 device px or more at every exact viewport): the ink of smaller text scatters between
+       the renderers by itself (docs/findings/text-ink.md section 7), which is not what this page measures -->
+  <div class="frame frame-even" data-u-id="frame-even">
+    <div class="week">
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-1" data-en="Mon">Pzt</p>
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-2" data-en="Tue">Sal</p>
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-3" data-en="Wed">Çar</p>
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-4" data-en="Thu">Per</p>
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-5" data-en="Fri">Cum</p>
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-6" data-en="Sat">Cmt</p>
+      <p class="weekday text-body last" data-l10n="fidelity.half-pixel-frame.weekday-7" data-en="Sun">Paz</p>
+    </div>
+    <div class="week gap">
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-1" data-en="1">1</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-2" data-en="2">2</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-3" data-en="3">3</p>
+        <p class="chip text-body" data-l10n="fidelity.half-pixel-frame.event-3" data-en="Cup match">Kupa maçı</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-4" data-en="4">4</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-5" data-en="5">5</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-6" data-en="6">6</p>
+      </div>
+      <div class="day last">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-7" data-en="7">7</p>
+      </div>
+    </div>
+    <div class="week gap">
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-8" data-en="8">8</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-9" data-en="9">9</p>
+        <p class="chip text-body" data-l10n="fidelity.half-pixel-frame.event-9" data-en="Training">Antrenman</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-10" data-en="10">10</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-11" data-en="11">11</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-12" data-en="12">12</p>
+        <p class="chip text-body" data-l10n="fidelity.half-pixel-frame.event-12" data-en="Sponsor">Sponsor</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-13" data-en="13">13</p>
+      </div>
+      <div class="day last">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-14" data-en="14">14</p>
+      </div>
+    </div>
+    <div class="week gap">
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-15" data-en="15">15</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-16" data-en="16">16</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-17" data-en="17">17</p>
+        <p class="chip text-body" data-l10n="fidelity.half-pixel-frame.event-17" data-en="Away game">Deplasman</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-18" data-en="18">18</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-19" data-en="19">19</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-20" data-en="20">20</p>
+        <p class="chip text-body" data-l10n="fidelity.half-pixel-frame.event-20" data-en="Press">Basın</p>
+      </div>
+      <div class="day last">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-21" data-en="21">21</p>
+      </div>
+    </div>
+  </div>
+  <div class="frame frame-odd" data-u-id="frame-odd">
+    <div class="week">
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-1" data-en="Mon">Pzt</p>
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-2" data-en="Tue">Sal</p>
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-3" data-en="Wed">Çar</p>
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-4" data-en="Thu">Per</p>
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-5" data-en="Fri">Cum</p>
+      <p class="weekday text-body" data-l10n="fidelity.half-pixel-frame.weekday-6" data-en="Sat">Cmt</p>
+      <p class="weekday text-body last" data-l10n="fidelity.half-pixel-frame.weekday-7" data-en="Sun">Paz</p>
+    </div>
+    <div class="week gap">
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-22" data-en="22">22</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-23" data-en="23">23</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-24" data-en="24">24</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-25" data-en="25">25</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-26" data-en="26">26</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-27" data-en="27">27</p>
+      </div>
+      <div class="day last">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-28" data-en="28">28</p>
+      </div>
+    </div>
+    <div class="week gap">
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-29" data-en="29">29</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-30" data-en="30">30</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-31" data-en="31">31</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-32" data-en="32">32</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-33" data-en="33">33</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-34" data-en="34">34</p>
+      </div>
+      <div class="day last">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-35" data-en="35">35</p>
+      </div>
+    </div>
+    <div class="week gap">
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-36" data-en="36">36</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-37" data-en="37">37</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-38" data-en="38">38</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-39" data-en="39">39</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-40" data-en="40">40</p>
+      </div>
+      <div class="day">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-41" data-en="41">41</p>
+      </div>
+      <div class="day last">
+        <p class="num text-body-bold" data-l10n="fidelity.half-pixel-frame.day-42" data-en="42">42</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

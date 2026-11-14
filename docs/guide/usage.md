@@ -306,6 +306,7 @@ In Unity: `Window > Design UI > Import Screen…` and `Window > Design UI > Kit 
 | U-CSS-038 | text without grayscale smoothing | keep the kit base stylesheet |
 | U-CSS-039 | opacity below 1 on an element with overlapping parts | the kit's disabled colours |
 | U-CSS-040 | a thin border or line off the device grid | the listed lengths |
+| U-CSS-046 | a padding, margin or gap off the device grid (10 px is 7.5 device px at 1920×1080) | the nearest lengths named, multiples of 4 px |
 | U-CSS-013, U-CSS-042 | an animation of a layout property | `translate` or `scale` |
 | U-MRK-003 | a control, bound or action element without `data-u-id` | add one |
 | U-MRK-004 | a visible text without `data-l10n` and `data-en` | add the key and English text |

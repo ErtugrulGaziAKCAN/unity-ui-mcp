@@ -345,6 +345,38 @@ describe("device grid, group opacity and stacking rules", () => {
     expect(f[0].fix).not.toMatch(/draw a thinner line/);
   });
 
+  it("U-CSS-046: a padding, margin or gap off the device grid at an exact viewport names the element, property, viewport and nearest lengths", async () => {
+    // the pilot's grid: a frame centred at 398 px (298.5 device px at 1920×1080) and cells padded 10 / 14 px
+    const body = `<div class="frame"><div class="grid"><div class="day">1</div><div class="weekday">Mon</div><div class="gapped"><div class="i"></div><div class="i"></div></div><div class="hover" data-u-id="h" tabindex="0"></div><div class="moved"></div></div></div>`;
+    const css = `.frame{display:flex;flex-direction:row;justify-content:center;width:2560px;height:600px} .grid{display:flex;flex-direction:column;width:1764px;height:600px}
+      .day{padding:10px} .weekday{padding-left:14px} .gapped{display:flex;flex-direction:row;column-gap:6px;margin-top:0.5rem} .i{width:40px;height:40px;background-color:#16c2d5}
+      .hover{width:40px;height:40px;padding:4px} .hover:hover{padding:2px 4px} .moved{position:relative;left:10px;top:6px;width:40px;height:40px;transform:translate(10px,2px);margin-left:-12px}`;
+    const f = await ids(body, css, "U-CSS-046");
+    const by = (cls: number) => f.find((x) => x.path.endsWith(cls === 3 ? "div[data-u-id=h]" : `div:0 > div:${cls}`));
+    expect(f.map((x) => x.path.replace(/^.* > /, ""))).toEqual(["div:0", "div:1", "div:2", "div[data-u-id=h]"]);
+    expect(by(0)!.detail).toMatch(/padding-top: 10px is 7\.5 device px at 1920×1080 .*nearest whole at every exact viewport: 8px or 12px/);
+    expect(by(1)!.detail).toMatch(/padding-left: 14px is 10\.5 device px at 1920×1080 .*12px or 16px/);
+    expect(by(2)!.detail).toMatch(/column-gap: 6px is 4\.5 device px at 1920×1080 .*4px or 8px/);
+    expect(by(2)!.detail).not.toMatch(/margin-top/); // 0.5rem is 8px
+    expect(by(3)!.detail).toMatch(/padding-top: 2px is 1\.5 device px at 1920×1080.*\.hover:hover/);
+    expect(by(0)!.fix).toMatch(/multiples of 4px/);
+
+    // offsets, translate and a negative margin of 12 px are laid out as given or on the grid: nothing for div:4
+    expect(f.some((x) => x.path.endsWith("div:4"))).toBe(false);
+    // a kit without 1920×1080: these lengths are whole at 1 and 0.5; 1920×1080 as a scaled viewport is exempt
+    const { p, done } = page(body, css);
+    try {
+      const noHalf = (await lintFile(p, { ...kit, viewports: [[2560, 1440], [1280, 720]] })).filter((x) => x.ruleId === "U-CSS-046");
+      expect(noHalf).toEqual([]);
+      const scaled = (await lintFile(p, { ...kit, viewports: [[2560, 1440], [1920, 1080], [1280, 720]], scaledViewports: [[1920, 1080]] }))
+        .filter((x) => x.ruleId === "U-CSS-046");
+      expect(scaled).toEqual([]);
+      // 1 px is half a device pixel at 1280×720
+      const odd = await ids(`<div class="odd"></div>`, `.odd{width:40px;height:40px;margin-bottom:1px}`, "U-CSS-046");
+      expect(odd[0].detail).toMatch(/margin-bottom: 1px is 0\.75 device px at 1920×1080, 0\.5 device px at 1280×720 .*0px or 4px/);
+    } finally { done(); }
+  });
+
   it("U-CSS-039: rejects a fade through (0, 1) on overlapping parts: keyframes, a transition, an inline style, a child", async () => {
     const card = `.card{width:200px;height:80px;background-color:#123c47;border:4px solid #2b6573}`;
     expect(await ids(`<div class="card fade"></div>`, `${card} .fade{animation:appear 200ms linear} @keyframes appear{from{opacity:0}to{opacity:1}}`, "U-CSS-039")).toHaveLength(1);

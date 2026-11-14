@@ -189,6 +189,10 @@ The kit's [RULES.md](design-kit/RULES.md) is the contract (`design_ui_rules` ser
   stems than UI Toolkit.
 - **Borders and lines on the device grid.** A border, hard shadow edge or line under 8 px must stay whole at every
   exact viewport (U-CSS-040).
+- **Paddings, margins and gaps on the device grid.** UI Toolkit lays them out as whole device pixels (10 px is 8 device px
+  at 1920×1080 where the browser lays out 7.5), so they must be whole at every exact viewport: multiples of 4 px with the
+  default kit (U-CSS-046, which names the nearest valid lengths). Position offsets and translations are laid out as
+  given.
 - **Opacity** below 1 only on one-part elements (U-CSS-039); use the kit's disabled colours.
 - **Animations** only of transforms, opacity, colours and border radii; a size or position change is a `translate`
   or `scale` (U-CSS-013, U-CSS-042).

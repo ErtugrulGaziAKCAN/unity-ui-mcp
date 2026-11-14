@@ -4678,7 +4678,7 @@
                       "background-color": "#16c2d5",
                       "display": "block",
                       "height": "50px",
-                      "margin-top": "-25px",
+                      "margin-top": "-24px",
                       "position": "relative",
                       "width": "100px",
                       "z-index": "1"
@@ -4743,7 +4743,7 @@
         "screenMatch": 0.5,
         "source": {
           "path": "after-static--z-index--1-position-relative.html",
-          "sha256": "2e4689977385da688fc034dfdac94961d4cfdd4727ba4f70e54eaf3a9ec1e8af"
+          "sha256": "7224fbf585b10254b6dd024238f4aba0b0d8351b2f16254e6249d4ff9fd5b0b4"
         },
         "states": [
           "default"
@@ -4858,7 +4858,7 @@
                       "background-color": "#ffffff",
                       "display": "block",
                       "height": "50px",
-                      "margin-top": "-25px",
+                      "margin-top": "-24px",
                       "width": "100px"
                     }
                   },
@@ -4921,7 +4921,7 @@
         "screenMatch": 0.5,
         "source": {
           "path": "before-static--z-index--1-position-relative.html",
-          "sha256": "c69ee50d428233ebc11304201b364a019bc65c7f011a9f0a793d0591a279a8d4"
+          "sha256": "44fc343a8fadcd0175511f56d940088347669aaab910bbc9ab6186b8febe5d2c"
         },
         "states": [
           "default"
@@ -5188,7 +5188,7 @@
                       "background-color": "#ffffff",
                       "display": "block",
                       "height": "50px",
-                      "margin-top": "-25px",
+                      "margin-top": "-24px",
                       "width": "100px"
                     }
                   },
@@ -5251,7 +5251,7 @@
         "screenMatch": 0.5,
         "source": {
           "path": "before-static--position--relative.html",
-          "sha256": "7e42610c6ec24b7a2645861504fff23ecf31486852c128e5e216f54a1ec256d3"
+          "sha256": "7ec189d7f47907fb3b7728df8cadf21c8d1e02a6a0120964b70ca288994012c4"
         },
         "states": [
           "default"
@@ -5369,7 +5369,7 @@
                       "display": "block",
                       "flex-shrink": "0",
                       "height": "50px",
-                      "margin-left": "-50px",
+                      "margin-left": "-48px",
                       "width": "100px"
                     }
                   },
@@ -5433,7 +5433,7 @@
         "screenMatch": 0.5,
         "source": {
           "path": "flex-before-static--position--relative.html",
-          "sha256": "f3ebad9f2f0ddda89413883d2a4dad6efbfaf8b16c8fe3ee99e0ce2f15283f0c"
+          "sha256": "23f513277f5e4773c5530f1be89c69fed2c9f6f54aa1926650c171c5eb886df6"
         },
         "states": [
           "default"
@@ -5548,7 +5548,7 @@
                       "background-color": "#16c2d5",
                       "display": "block",
                       "height": "50px",
-                      "margin-top": "-25px",
+                      "margin-top": "-24px",
                       "position": "relative",
                       "width": "100px"
                     }
@@ -5612,7 +5612,7 @@
         "screenMatch": 0.5,
         "source": {
           "path": "after-static--position--relative.html",
-          "sha256": "c9b1dfbdfa3af9e473c221083749e71ee7d69fbfeb91ed40f17048622b070b64"
+          "sha256": "2a02c657e5cc4d9a3ba08a141025b4bd292b8e0c36a15edd0d78c3a7c59bf5cd"
         },
         "states": [
           "default"
@@ -7174,6 +7174,188 @@
       "property": "column-gap",
       "unity": "compile",
       "value": "12px"
+    },
+    {
+      "context": "container",
+      "export": "ok",
+      "id": "container--gap--6px",
+      "ir": {
+        "breakpoints": [],
+        "fonts": [],
+        "irVersion": 1,
+        "referenceViewport": [
+          2560,
+          1440
+        ],
+        "root": {
+          "action": null,
+          "anims": [],
+          "asset": null,
+          "attrTexts": {},
+          "background": null,
+          "backgroundLayers": {},
+          "bind": null,
+          "children": [
+            {
+              "action": null,
+              "anims": [],
+              "asset": null,
+              "attrTexts": {},
+              "background": null,
+              "backgroundLayers": {},
+              "bind": null,
+              "children": [
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [],
+                  "classes": [
+                    "i"
+                  ],
+                  "external": false,
+                  "id": "case__0",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "flex-shrink": "0",
+                      "height": "50px",
+                      "width": "50px"
+                    }
+                  },
+                  "text": null
+                },
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [],
+                  "classes": [
+                    "i"
+                  ],
+                  "external": false,
+                  "id": "case__1",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "flex-shrink": "0",
+                      "height": "50px",
+                      "width": "50px"
+                    }
+                  },
+                  "text": null
+                }
+              ],
+              "classes": [
+                "c"
+              ],
+              "external": false,
+              "id": "case",
+              "initial": null,
+              "insetShadow": null,
+              "insetShadowLayers": {},
+              "kind": "container",
+              "repeat": null,
+              "shadow": null,
+              "shadowLayers": {},
+              "style": {
+                "base": {
+                  "column-gap": "6px",
+                  "display": "flex",
+                  "flex-direction": "row",
+                  "flex-shrink": "0",
+                  "height": "100px",
+                  "position": "relative",
+                  "row-gap": "6px",
+                  "width": "400px"
+                }
+              },
+              "text": null
+            }
+          ],
+          "classes": [
+            "screen"
+          ],
+          "external": false,
+          "id": "root",
+          "initial": null,
+          "insetShadow": null,
+          "insetShadowLayers": {},
+          "kind": "container",
+          "repeat": null,
+          "shadow": null,
+          "shadowLayers": {},
+          "style": {
+            "base": {
+              "background-color": "#0b1f26",
+              "color": "#ffffff",
+              "display": "flex",
+              "flex-direction": "column",
+              "font-family": "\"Inter UI\"",
+              "font-size": "16px",
+              "height": "1440px",
+              "line-height": "20px",
+              "position": "relative",
+              "width": "2560px"
+            }
+          },
+          "text": null
+        },
+        "screen": "cases",
+        "screenMatch": 0.5,
+        "source": {
+          "path": "container--gap--6px.html",
+          "sha256": "b0382a13180ada6a5c5360ddecdb3ebfce51b49909ad04aa982b3f01d53ace5c"
+        },
+        "states": [
+          "default"
+        ],
+        "tokens": {},
+        "viewports": [
+          [
+            2560,
+            1440
+          ],
+          [
+            1920,
+            1080
+          ],
+          [
+            1280,
+            720
+          ]
+        ]
+      },
+      "lint": [
+        "U-CSS-046"
+      ],
+      "property": "gap",
+      "unity": "compile",
+      "value": "6px"
     },
     {
       "context": "container",
@@ -12468,6 +12650,158 @@
       "property": "padding",
       "unity": "compile",
       "value": "4px 8px"
+    },
+    {
+      "context": "flex-item",
+      "export": "ok",
+      "id": "flex-item--padding--10px-14px",
+      "ir": {
+        "breakpoints": [],
+        "fonts": [],
+        "irVersion": 1,
+        "referenceViewport": [
+          2560,
+          1440
+        ],
+        "root": {
+          "action": null,
+          "anims": [],
+          "asset": null,
+          "attrTexts": {},
+          "background": null,
+          "backgroundLayers": {},
+          "bind": null,
+          "children": [
+            {
+              "action": null,
+              "anims": [],
+              "asset": null,
+              "attrTexts": {},
+              "background": null,
+              "backgroundLayers": {},
+              "bind": null,
+              "children": [
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [],
+                  "classes": [
+                    "c"
+                  ],
+                  "external": false,
+                  "id": "case",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "flex-shrink": "0",
+                      "height": "50px",
+                      "padding-bottom": "10px",
+                      "padding-left": "14px",
+                      "padding-right": "14px",
+                      "padding-top": "10px",
+                      "width": "100px"
+                    }
+                  },
+                  "text": null
+                }
+              ],
+              "classes": [
+                "p"
+              ],
+              "external": false,
+              "id": "root__0",
+              "initial": null,
+              "insetShadow": null,
+              "insetShadowLayers": {},
+              "kind": "container",
+              "repeat": null,
+              "shadow": null,
+              "shadowLayers": {},
+              "style": {
+                "base": {
+                  "display": "flex",
+                  "flex-direction": "row",
+                  "flex-shrink": "0",
+                  "height": "200px",
+                  "position": "relative",
+                  "width": "400px"
+                }
+              },
+              "text": null
+            }
+          ],
+          "classes": [
+            "screen"
+          ],
+          "external": false,
+          "id": "root",
+          "initial": null,
+          "insetShadow": null,
+          "insetShadowLayers": {},
+          "kind": "container",
+          "repeat": null,
+          "shadow": null,
+          "shadowLayers": {},
+          "style": {
+            "base": {
+              "background-color": "#0b1f26",
+              "color": "#ffffff",
+              "display": "flex",
+              "flex-direction": "column",
+              "font-family": "\"Inter UI\"",
+              "font-size": "16px",
+              "height": "1440px",
+              "line-height": "20px",
+              "position": "relative",
+              "width": "2560px"
+            }
+          },
+          "text": null
+        },
+        "screen": "cases",
+        "screenMatch": 0.5,
+        "source": {
+          "path": "flex-item--padding--10px-14px.html",
+          "sha256": "9708a33874d912f69861a7ed683ca1e2b6f74032d6ac1f8779b8b98d60bfa9ed"
+        },
+        "states": [
+          "default"
+        ],
+        "tokens": {},
+        "viewports": [
+          [
+            2560,
+            1440
+          ],
+          [
+            1920,
+            1080
+          ],
+          [
+            1280,
+            720
+          ]
+        ]
+      },
+      "lint": [
+        "U-CSS-046"
+      ],
+      "property": "padding",
+      "unity": "compile",
+      "value": "10px 14px"
     },
     {
       "context": "flex-item",
@@ -33239,7 +33573,7 @@
       "html": "<div class=\"p\"><div class=\"g\"></div><div class=\"c\" data-u-id=\"case\"></div></div>"
     },
     "after-static": {
-      "css": ".p{position:relative;display:block;width:400px;height:200px;flex-shrink:0} .s{width:100px;height:50px;background-color:#ffffff} .c{width:100px;height:50px;margin-top:-25px;background-color:#16c2d5} .c{{decl}}",
+      "css": ".p{position:relative;display:block;width:400px;height:200px;flex-shrink:0} .s{width:100px;height:50px;background-color:#ffffff} .c{width:100px;height:50px;margin-top:-24px;background-color:#16c2d5} .c{{decl}}",
       "description": "a 100×50 block child after a static sibling, overlapping it by 25px",
       "html": "<div class=\"p\"><div class=\"s\"></div><div class=\"c\" data-u-id=\"case\"></div></div>"
     },
@@ -33254,7 +33588,7 @@
       "html": "<div class=\"p\" data-u-id=\"host\" data-u-action=\"press-host\"><div class=\"c\" data-u-id=\"case\"></div></div>"
     },
     "before-static": {
-      "css": ".p{position:relative;display:block;width:400px;height:200px;flex-shrink:0} .c{width:100px;height:50px;background-color:#16c2d5} .c{{decl}} .s{width:100px;height:50px;margin-top:-25px;background-color:#ffffff}",
+      "css": ".p{position:relative;display:block;width:400px;height:200px;flex-shrink:0} .c{width:100px;height:50px;background-color:#16c2d5} .c{{decl}} .s{width:100px;height:50px;margin-top:-24px;background-color:#ffffff}",
       "description": "a 100×50 block child before a static sibling that overlaps it by 25px",
       "html": "<div class=\"p\"><div class=\"c\" data-u-id=\"case\"></div><div class=\"s\"></div></div>"
     },
@@ -33314,7 +33648,7 @@
       "html": "<div class=\"p\"><svg class=\"c\" data-u-id=\"case\" viewBox=\"0 0 10 10\"><path d=\"M0 0h10v10z\" fill=\"#ffffff\"></path></svg></div>"
     },
     "flex-before-static": {
-      "css": ".p{position:relative;display:flex;flex-direction:row;width:400px;height:200px;flex-shrink:0} .c{width:100px;height:50px;flex-shrink:0;background-color:#16c2d5} .c{{decl}} .s{width:100px;height:50px;flex-shrink:0;margin-left:-50px;background-color:#ffffff}",
+      "css": ".p{position:relative;display:flex;flex-direction:row;width:400px;height:200px;flex-shrink:0} .c{width:100px;height:50px;flex-shrink:0;background-color:#16c2d5} .c{{decl}} .s{width:100px;height:50px;flex-shrink:0;margin-left:-48px;background-color:#ffffff}",
       "description": "a 100×50 flex item before a static item that overlaps it by 50px",
       "html": "<div class=\"p\"><div class=\"c\" data-u-id=\"case\"></div><div class=\"s\"></div></div>"
     },
@@ -33458,7 +33792,8 @@
     "U-CSS-039": "which painted parts of a subtree overlap needs the rendered boxes; the compiler fades each part, as UI Toolkit does",
     "U-CSS-040": "border widths on the device grid need the kit's viewport scales; the compiler writes the width the design gives",
     "U-CSS-041": "what a box, translate or shadow reaches needs the rendered boxes; the compiler keeps the hierarchy order",
-    "U-CSS-045": "whether max-width sets a box's width while its text wraps needs the rendered layout"
+    "U-CSS-045": "whether max-width sets a box's width while its text wraps needs the rendered layout",
+    "U-CSS-046": "paddings, margins and gaps on the device grid need the kit's viewport scales; the compiler writes the length the design gives"
   },
   "note": [
     "Shared verdicts of css-support.json for the exporter's lint and the Unity compiler.",

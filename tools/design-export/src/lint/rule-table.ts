@@ -76,6 +76,10 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-CSS-043": { when: "`@keyframes` and a transition of the same property on one element", fix: "one of them; the other on another property or a wrapper" },
   "U-CSS-044": { when: "negative `letter-spacing` on a text with less right padding than the spacing", fix: "right padding of at least the spacing, or letter-spacing ≥ 0" },
   "U-CSS-045": { when: "a box whose width `max-width` sets while its text wraps (UI Toolkit sizes it to its longest line)", fix: "a width of its own, or text that fits on one line" },
+  "U-CSS-046": {
+    when: "a padding, margin or gap that is not a whole number of device pixels at an exact viewport (UI Toolkit lays these out on whole device pixels)",
+    fix: "the nearest lengths the finding names (multiples of 4px with the default kit)",
+  },
   "U-DC-001": { when: "`{{…}}` holes in a Claude Design artboard", fix: "static sample text" },
   "U-DC-002": { when: "`<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import`", fix: "write rows out, `data-u-repeat` on the first" },
   "U-DC-003": { when: "UI built by script", fix: "static markup" },

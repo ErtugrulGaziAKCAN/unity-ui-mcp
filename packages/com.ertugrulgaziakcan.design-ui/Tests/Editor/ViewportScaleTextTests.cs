@@ -294,6 +294,75 @@ namespace DesignUi.Editor.Tests
         /// bordered elements therefore drifts from Chromium, which lays the fractions out. A Unity version that changes this
         /// fails here, and the scaled class can be measured again.
         /// </summary>
+        /// <summary>
+        /// Which lengths UI Toolkit puts on whole device pixels before layout at an exact viewport's scale (0.75, 1920×1080),
+        /// where a length that is not a multiple of 4 px is a fraction of a device pixel (10 px is 7.5). Each chain nests ten
+        /// elements, each moved 10 px from its parent by one property: CSS puts the last one 75 device px from the first
+        /// one's parent; a length snapped to 8 before layout puts it at 80. Measured: padding, margin (a lowered gap is a
+        /// margin) and border widths are snapped, halves up; position offsets (left, right, top, relative or absolute) and
+        /// translate are not (lint U-CSS-046 and U-CSS-040 hold the snapped ones to the device grid).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator LengthsUiToolkitSnaps_AtAnExactViewport_BoxModelYes_OffsetsAndTranslateNo()
+        {
+            const double scale = 0.75;
+            _settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+            _settings.scaleMode = PanelScaleMode.ConstantPixelSize;
+            _settings.scale = (float)scale;
+            _settings.targetTexture = Texture(800, 600);
+            _go = new GameObject("SnappedLengths");
+            var doc = _go.AddComponent<UIDocument>();
+            doc.panelSettings = _settings;
+            var chains = new Dictionary<string, (VisualElement first, VisualElement last, bool vertical)>();
+            int row = 0;
+            void Chain(string name, Action<VisualElement, int> style, bool vertical = false)
+            {
+                var top = new VisualElement();
+                top.style.position = Position.Absolute;
+                top.style.left = 40 + (vertical ? 200 * row : 0);
+                top.style.top = vertical ? 20 : 20 + 30 * row;
+                top.style.width = 600;
+                top.style.height = 600;
+                row++;
+                doc.rootVisualElement.Add(top);
+                var parent = top;
+                for (int level = 1; level <= 10; level++)
+                {
+                    var e = new VisualElement();
+                    e.style.width = 600 - 20 * level;
+                    e.style.height = 600 - 20 * level;
+                    e.style.flexShrink = 0;
+                    parent.Add(e);
+                    style(e, level);
+                    parent = e;
+                }
+                chains[name] = (top, parent, vertical);
+            }
+            row = 0;
+            Chain("padding-left", (e, _) => e.parent.style.paddingLeft = 10);
+            Chain("margin-left (a lowered gap too)", (e, _) => e.style.marginLeft = 10);
+            Chain("border-left-width", (e, _) => e.parent.style.borderLeftWidth = 10);
+            Chain("left, relative", (e, _) => { e.style.position = Position.Relative; e.style.left = 10; });
+            Chain("left, absolute", (e, _) => { e.style.position = Position.Absolute; e.style.left = 10; });
+            Chain("right, absolute", (e, level) => { e.style.position = Position.Absolute; e.style.right = 10; });
+            Chain("translate", (e, _) => e.style.translate = new Translate(10, 0));
+            Chain("width (explicit, shrinking 20 px a level)", (e, _) => { });
+            row = 0;
+            Chain("top, absolute", (e, _) => { e.style.position = Position.Absolute; e.style.top = 10; }, vertical: true);
+            Chain("padding-top", (e, _) => e.parent.style.paddingTop = 10, vertical: true);
+            yield return Frames(4);
+            var moved = chains.ToDictionary(kv => kv.Key, kv => kv.Value.vertical
+                ? ((double)kv.Value.last.worldBound.y - kv.Value.first.worldBound.y) * scale
+                : ((double)kv.Value.last.worldBound.x - kv.Value.first.worldBound.x) * scale);
+            Debug.Log("Ten nested 10 px moves at scale 0.75, device px (CSS 75; snapped lengths 80):\n" +
+                      string.Join("\n", moved.Select(kv => kv.Key + ": " + kv.Value.ToString("0.###"))));
+            foreach (var what in new[] { "padding-left", "margin-left (a lowered gap too)", "border-left-width", "padding-top" })
+                Assert.AreEqual(80, moved[what], 0.01, what + ": 10 px laid out as 8 device px, not 7.5");
+            foreach (var what in new[] { "left, relative", "left, absolute", "right, absolute", "top, absolute", "translate" })
+                Assert.AreEqual(75, moved[what], 0.01, what + ": not snapped, 10 px is 7.5 device px");
+            Assert.AreEqual(0, moved["width (explicit, shrinking 20 px a level)"], 0.01, "the chain without moves stays put");
+        }
+
         [UnityTest]
         public IEnumerator BoxModelLengths_AreWholeDevicePixelsAtAScaledViewport_ExplicitHeightsAreNot()
         {

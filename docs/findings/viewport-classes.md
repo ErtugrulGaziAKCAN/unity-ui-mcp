@@ -83,7 +83,25 @@ A column of ten rows, each a 20 px child with 4 px on both sides (a panel at eac
 | 0.53346 | 147 (each side 2) | 147 | 147 | 149 | 157 | 149.37 |
 
 UI Toolkit 6000.3 snaps every padding, margin and border width to whole device pixels (halves up) before layout, while
-Chromium lays the exact fractions out. At a scaled viewport each such edge is up to half a device pixel off, and a stack
+Chromium lays the exact fractions out.
+
+The same holds at an exact viewport for lengths that are not multiples of 4 px. Ten nested elements, each moved 10 px from
+its parent by one property, at scale 0.75 (1920×1080; CSS 75 device px, 80 when each 7.5 is laid out as 8;
+`ViewportScaleTextTests.LengthsUiToolkitSnaps_…`):
+
+| Property | Device px after ten moves |
+|---|---|
+| `padding-left`, `padding-top`, `margin-left` (a lowered `gap` is a margin), `border-left-width` | 80 (snapped) |
+| `left` and `top` (relative or absolute), `right` (absolute), `translate` | 75 (laid out as given) |
+
+So a design whose paddings, margins or gaps are not whole device pixels at an exact viewport moves everything inside or
+after them by half a device pixel per edge in Unity, and text by about one: a real screen with a frame centred at 398 px
+(298.5 device px at 1920×1080) and grid cells padded 10 px and 14 px (7.5 → 8 and 10.5 → 11) drew every text line 0.97 to
+1.21 device px right of the design's. Lint **U-CSS-046** rejects such lengths at every exact viewport the kit declares,
+naming the element, the property, the viewport and the nearest whole lengths (multiples of 4 px with the default kit);
+U-CSS-040 keeps borders there. The fixture `design-kit/fixtures/fidelity/half-pixel-frame.html` centres two frames at
+fractions of a device pixel (398 px: 298.5 at 1920×1080; 397 px: 297.75 at 1920×1080, 198.5 at 1280×720, 595.5 at
+3840×2160) with 4 px grid paddings, margins and gaps inside. At a scaled viewport each such edge is up to half a device pixel off, and a stack
 of padded, bordered or spaced elements adds the errors up (the key/value rows: 4 px padding is 2.5 → 3 device px at 0.625,
 +1 per row; 2.134 → 2 at 0.53346, −0.27 per row). Explicit heights and widths are not snapped. No compiled length can
 give a fractional edge, and a class-wide rule cannot spread the rounding over the rows that share it, so this is not
@@ -105,6 +123,11 @@ fixture's 2130 captures take 330 s of it):
 | 1280×720 | exact | 785 | 1 |
 | 1600×900 | scaled | 431 | 355 |
 | 1366×768 | scaled | 17 | 769 |
+
+With the `half-pixel-frame` fixture (frames centred at fractions of a device pixel, section "Box-model lengths") the
+suite has 21 fixtures and 4722 captures: that fixture passes at the four exact viewports and fails at the two scaled
+ones; every other count is the table's (3840×2160 698/89, 2560×1440 and 1920×1080 787/0, 1280×720 786/1, 1600×900
+431/356, 1366×768 17/770).
 
 - 3840×2160: 35 captures move text-sized buttons by 1.01–1.02 px (the width ceil above); 54 fail element SSIM only:
   raster pictures drawn 1.5× larger (0.948–0.962 against the picture limit 0.985) and the toggle fixture's effects tile
