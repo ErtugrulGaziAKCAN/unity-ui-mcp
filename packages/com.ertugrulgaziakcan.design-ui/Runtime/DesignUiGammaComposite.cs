@@ -19,7 +19,10 @@ namespace DesignUi
     /// <para>
     /// Add it once per PanelSettings asset (for example next to the UIDocument). While it is enabled it owns the asset's
     /// <c>targetTexture</c>, <c>forceGammaRendering</c>, clear settings and screen-to-panel function, and gives them back
-    /// when disabled or destroyed. Pointer input maps screen pixels to the texture's pixels, as for an on-screen panel.
+    /// when disabled or destroyed. Pointer input maps screen pixels to the texture's pixels, as for an on-screen panel. A
+    /// <see cref="DesignUiPanelRegion"/> that renders its document on a runtime copy of the asset (its own sort order) is
+    /// followed: the copy renders into a texture of its own, whether it was made before or after the composite attached,
+    /// is resized with the screen and gets its own settings back; the textures are composited in sort order.
     /// </para>
     /// </summary>
     [AddComponentMenu("Design UI/Gamma Composite")]
@@ -32,31 +35,87 @@ namespace DesignUi
         [Tooltip("The PanelSettings whose panels render in gamma space and are composited over the screen (the profile's design PanelSettings).")]
         public PanelSettings panelSettings;
 
-        RenderTexture m_Target;
+        /// <summary>
+        /// One PanelSettings the composite renders: the asset it was given, or a runtime copy of it a DesignUiPanelRegion made
+        /// for its own sort order. Each renders into its own texture (a panel clears its target), and keeps what it had before,
+        /// which <see cref="Detach"/> gives back.
+        /// </summary>
+        sealed class Driven
+        {
+            public PanelSettings Settings;
+            public RenderTexture Target;
+            public RenderTexture OldTarget;
+            public Func<Vector2, Vector3> OldMapping;
+            public bool OldForceGamma, OldClearColor;
+            public Color OldClearValue;
+            public Vector2Int Screen;
+
+            public Vector2 ScreenToTexture(Vector2 screen)
+            {
+                if (Target == null || Screen.x <= 0 || Screen.y <= 0) return screen;
+                return new Vector2(screen.x * Target.width / Screen.x, screen.y * Target.height / Screen.y);
+            }
+        }
+
+        /// <summary>The asset first, then its copies in the order they were driven.</summary>
+        readonly System.Collections.Generic.List<Driven> m_Driven = new System.Collections.Generic.List<Driven>();
         Material m_Material;
         PanelSettings m_Owned;
-        RenderTexture m_OldTarget;
-        Func<Vector2, Vector3> m_OldMapping;
-        Vector2Int m_Screen;
-        bool m_OldForceGamma, m_OldClearColor;
-        Color m_OldClearValue;
+        Vector2Int m_Size, m_Screen;
         Coroutine m_Loop;
 
-        /// <summary>The texture the panels render into while the component runs, else null.</summary>
-        public RenderTexture Target => m_Target;
+        /// <summary>The texture the given PanelSettings asset renders into while the component runs, else null.</summary>
+        public RenderTexture Target => m_Driven.Count > 0 ? m_Driven[0].Target : null;
+
+        /// <summary>The texture <paramref name="settings"/> (the asset or a copy of it) renders into while the component drives it, else null.</summary>
+        public RenderTexture TargetOf(PanelSettings settings)
+        {
+            foreach (var d in m_Driven) if (d.Settings == settings) return d.Target;
+            return null;
+        }
 
         static readonly System.Collections.Generic.List<DesignUiGammaComposite> s_Attached = new System.Collections.Generic.List<DesignUiGammaComposite>();
+        /// <summary>The runtime copies of PanelSettings assets (a region's sort order) and the asset each was made from.</summary>
+        static readonly System.Collections.Generic.Dictionary<PanelSettings, PanelSettings> s_Copies = new System.Collections.Generic.Dictionary<PanelSettings, PanelSettings>();
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            s_Attached.Clear();
+            s_Copies.Clear();
+        }
 
         /// <summary>
-        /// Whether an attached composite renders these PanelSettings (its own, or a runtime copy made from it while it was
-        /// attached, which shares its texture).
+        /// Whether an attached composite renders these PanelSettings: its own asset, or a runtime copy of it a region made,
+        /// before or after the composite attached.
         /// </summary>
         public static bool Drives(PanelSettings settings)
         {
             if (settings == null) return false;
             foreach (var c in s_Attached)
-                if (c != null && (c.m_Owned == settings || c.m_Target != null && settings.targetTexture == c.m_Target)) return true;
+                if (c != null && c.TargetOf(settings) != null) return true;
             return false;
+        }
+
+        /// <summary>
+        /// A region made <paramref name="copy"/> of <paramref name="source"/> (its own sort order): a composite that drives the
+        /// source drives the copy too, from now on. Made while driven, the copy holds the composite's settings; what it gets
+        /// back on <see cref="Detach"/> is what the source had before the composite.
+        /// </summary>
+        internal static void CopyMade(PanelSettings source, PanelSettings copy)
+        {
+            if (source == null || copy == null) return;
+            s_Copies[copy] = source;
+            foreach (var c in s_Attached.ToArray())
+                if (c != null && c.m_Owned == source) c.Drive(copy, c.m_Driven.Count > 0 ? c.m_Driven[0] : null);
+        }
+
+        /// <summary>The region released <paramref name="copy"/> (it is destroyed next): no composite renders it any more.</summary>
+        internal static void CopyReleased(PanelSettings copy)
+        {
+            if (copy == null) return;
+            s_Copies.Remove(copy);
+            foreach (var c in s_Attached.ToArray()) c?.Undrive(copy);
         }
 
         /// <summary>Whether the project needs the composite: only a Linear-colour-space project blends UI in linear light.</summary>
@@ -81,7 +140,8 @@ namespace DesignUi
 
         void Update()
         {
-            if (m_Target != null && (m_Target.width != Screen.width || m_Target.height != Screen.height))
+            var target = Target;
+            if (target != null && (target.width != Screen.width || target.height != Screen.height))
                 Resize(new Vector2Int(Screen.width, Screen.height), new Vector2Int(Screen.width, Screen.height));
         }
 
@@ -95,34 +155,81 @@ namespace DesignUi
             }
         }
 
-        /// <summary>Makes <paramref name="settings"/> render into a new gamma-space texture of the given size.</summary>
+        /// <summary>
+        /// Makes <paramref name="settings"/> and every runtime copy a region made of it render into new gamma-space
+        /// textures of the given size.
+        /// </summary>
         internal void Attach(PanelSettings settings, Vector2Int target, Vector2Int screen)
         {
-            int width = target.x, height = target.y;
             Detach();
             m_Owned = settings;
-            m_OldTarget = settings.targetTexture;
-            m_OldForceGamma = settings.forceGammaRendering;
-            m_OldClearColor = settings.clearColor;
-            m_OldClearValue = settings.colorClearValue;
-            m_Target = CreateTarget(width, height);
-            settings.targetTexture = m_Target;
+            m_Size = target;
+            m_Screen = screen;
+            s_Attached.Add(this);
+            Drive(settings, null);
+            foreach (var kv in new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<PanelSettings, PanelSettings>>(s_Copies))
+                if (kv.Value == settings && kv.Key != null) Drive(kv.Key, null);
+        }
+
+        /// <summary>
+        /// Renders <paramref name="settings"/> into a texture of its own; <paramref name="madeFrom"/>: the driven asset a copy
+        /// was made from while driven (it holds the composite's settings; it gets back what the asset had), else null (it
+        /// keeps its own).
+        /// </summary>
+        void Drive(PanelSettings settings, Driven madeFrom)
+        {
+            if (settings == null || TargetOf(settings) != null) return;
+            var d = new Driven { Settings = settings, Screen = m_Screen };
+            if (madeFrom != null)
+            {
+                d.OldTarget = madeFrom.OldTarget;
+                d.OldForceGamma = madeFrom.OldForceGamma;
+                d.OldClearColor = madeFrom.OldClearColor;
+                d.OldClearValue = madeFrom.OldClearValue;
+            }
+            else
+            {
+                d.OldTarget = settings.targetTexture;
+                d.OldForceGamma = settings.forceGammaRendering;
+                d.OldClearColor = settings.clearColor;
+                d.OldClearValue = settings.colorClearValue;
+            }
+            d.Target = CreateTarget(m_Size.x, m_Size.y);
+            settings.targetTexture = d.Target;
             settings.forceGammaRendering = true;
             settings.clearColor = true;
             settings.colorClearValue = Color.clear;
             // pointer input: UI Toolkit passes screen pixels (origin top left, as for an on-screen panel) through this
             // function and divides by the panel's scale; it gives the texture's pixels, so a texture of another size than
-            // the screen maps too (tested against an on-screen panel: GammaCompositeTests)
-            m_OldMapping = AssignedMapping(settings);
-            m_Screen = screen;
-            settings.SetScreenToPanelSpaceFunction(ScreenToTexture);
-            s_Attached.Add(this);
+            // the screen maps too (tested against an on-screen panel: GammaCompositeTests). A copy has none of its own
+            // (a delegate is not copied), so it gets UI Toolkit's own back.
+            d.OldMapping = AssignedMapping(settings);
+            settings.SetScreenToPanelSpaceFunction(d.ScreenToTexture);
+            m_Driven.Add(d);
         }
 
-        Vector2 ScreenToTexture(Vector2 screen)
+        /// <summary>Gives one driven PanelSettings what it had and releases its texture.</summary>
+        void Undrive(PanelSettings settings)
         {
-            if (m_Target == null || m_Screen.x <= 0 || m_Screen.y <= 0) return screen;
-            return new Vector2(screen.x * m_Target.width / m_Screen.x, screen.y * m_Target.height / m_Screen.y);
+            for (int i = m_Driven.Count - 1; i >= 0; i--)
+            {
+                if (m_Driven[i].Settings != settings) continue;
+                Restore(m_Driven[i]);
+                m_Driven.RemoveAt(i);
+            }
+        }
+
+        static void Restore(Driven d)
+        {
+            if (d.Settings != null)
+            {
+                d.Settings.targetTexture = d.OldTarget;
+                d.Settings.forceGammaRendering = d.OldForceGamma;
+                d.Settings.clearColor = d.OldClearColor;
+                d.Settings.colorClearValue = d.OldClearValue;
+                RestoreMapping(d.Settings, d.OldMapping);
+            }
+            Release(ref d.Target);
         }
 
         // PanelSettings has no getter for its screen-to-panel function (Unity 6000.3: the assigned one is m_AssignedScreenToPanel,
@@ -148,33 +255,31 @@ namespace DesignUi
             s_AssignedMapping?.SetValue(settings, null);
         }
 
-        /// <summary>Gives the PanelSettings its own settings back and releases the texture.</summary>
+        /// <summary>Gives the PanelSettings (the asset and the copies it drives) their own settings back and releases the textures.</summary>
         internal void Detach()
         {
-            if (m_Owned != null)
-            {
-                m_Owned.targetTexture = m_OldTarget;
-                m_Owned.forceGammaRendering = m_OldForceGamma;
-                m_Owned.clearColor = m_OldClearColor;
-                m_Owned.colorClearValue = m_OldClearValue;
-                RestoreMapping(m_Owned, m_OldMapping);
-            }
+            foreach (var d in m_Driven) Restore(d);
+            m_Driven.Clear();
             m_Owned = null;
-            m_OldMapping = null;
             s_Attached.Remove(this);
-            Release(ref m_Target);
             if (m_Material != null) Free(m_Material);
             m_Material = null;
         }
 
+        /// <summary>New textures of the given size for every driven PanelSettings (the screen changed size); the old ones are released.</summary>
         internal void Resize(Vector2Int target, Vector2Int screen)
         {
             if (m_Owned == null) return;
-            var old = m_Target;
-            m_Target = CreateTarget(target.x, target.y);
+            m_Size = target;
             m_Screen = screen;
-            m_Owned.targetTexture = m_Target;
-            Release(ref old);
+            foreach (var d in m_Driven)
+            {
+                var old = d.Target;
+                d.Target = CreateTarget(target.x, target.y);
+                d.Screen = screen;
+                if (d.Settings != null) d.Settings.targetTexture = d.Target;
+                Release(ref old);
+            }
         }
 
         /// <summary>
@@ -183,15 +288,21 @@ namespace DesignUi
         /// </summary>
         public void Composite(RenderTexture destination)
         {
-            if (m_Target == null) return;
+            if (m_Driven.Count == 0) return;
             if (m_Material == null)
             {
                 var shader = Resources.Load<Shader>(ShaderResource);
                 if (shader == null) return;
                 m_Material = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
             }
-            Graphics.Blit(m_Target, destination, m_Material);
+            // in the panels' sort order, as UI Toolkit draws them on screen (the asset before a copy of the same order)
+            s_Order.Clear();
+            for (int i = 0; i < m_Driven.Count; i++) if (m_Driven[i].Target != null && m_Driven[i].Settings != null) s_Order.Add((m_Driven[i].Settings.sortingOrder, i));
+            s_Order.Sort((a, b) => a.order != b.order ? a.order.CompareTo(b.order) : a.index.CompareTo(b.index));
+            foreach (var (_, i) in s_Order) Graphics.Blit(m_Driven[i].Target, destination, m_Material);
         }
+
+        static readonly System.Collections.Generic.List<(float order, int index)> s_Order = new System.Collections.Generic.List<(float, int)>();
 
         static RenderTexture CreateTarget(int width, int height)
         {

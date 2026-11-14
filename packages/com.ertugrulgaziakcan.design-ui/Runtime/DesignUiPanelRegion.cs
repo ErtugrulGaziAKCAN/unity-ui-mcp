@@ -215,8 +215,7 @@ namespace DesignUi
             if (settings == null || QualitySettings.activeColorSpace != ColorSpace.Linear || DesignUiGammaComposite.Drives(settings)) return null;
             return "DesignUiPanelRegion '" + region + "': this Linear-colour-space project renders the screen on PanelSettings '" + settings.name +
                    "' without DesignUiGammaComposite, so translucent colours and text edges blend in linear light and will not match the design. " +
-                   "Add Design UI > Gamma Composite with that PanelSettings asset" +
-                   (sortOrderCopy ? " (the region renders on a copy with its own sort order, made when it was enabled: give the asset the region's sort order so no copy is made, or enable the composite before the region)" : "") + ".";
+                   "Add Design UI > Gamma Composite with " + (sortOrderCopy ? "the PanelSettings asset this copy was made from (the region renders on a copy with its own sort order; the composite of the asset renders such copies too)" : "that PanelSettings asset") + ".";
         }
 
         /// <summary>Stops following the frame and gives the document its own PanelSettings back. Called on disable.</summary>
@@ -472,6 +471,8 @@ namespace DesignUi
                 copy.hideFlags = HideFlags.DontSave;
                 copy.sortingOrder = order;
                 s_Entries.Add(new Entry { Source = source, Copy = copy, Order = order, Users = 1 });
+                // a gamma composite that renders the source renders the copy too (made before or after it attaches)
+                DesignUiGammaComposite.CopyMade(source, copy);
                 return copy;
             }
 
@@ -483,6 +484,7 @@ namespace DesignUi
                     if (x.Copy != copy) continue;
                     if (--x.Users > 0) return;
                     s_Entries.RemoveAt(i);
+                    DesignUiGammaComposite.CopyReleased(x.Copy);
                     if (x.Copy == null) return;
                     if (Application.isPlaying) Object.Destroy(x.Copy);
                     else Object.DestroyImmediate(x.Copy);

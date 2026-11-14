@@ -28,9 +28,16 @@ namespace DesignUi.Editor.Tests
             if (QualitySettings.activeColorSpace != ColorSpace.Linear) Assert.Ignore("the composite does nothing in a Gamma project");
         }
 
+        System.Func<IDesignLocaleSource> _defaultLocales;
+        bool _localesSaved;
+
         [TearDown]
         public void Cleanup()
         {
+            if (_localesSaved) DesignLocaleSources.Default = _defaultLocales;
+            _localesSaved = false;
+            foreach (var o in _objects)
+                if (o is GameObject g && g.TryGetComponent<DesignUiPanelRegion>(out var r)) r.Detach();
             foreach (var o in _objects)
             {
                 if (o is GameObject go && go.TryGetComponent<DesignUiGammaComposite>(out var c)) c.Detach();
@@ -259,7 +266,7 @@ namespace DesignUi.Editor.Tests
             _objects.Add(settings);
             StringAssert.Contains("renders the screen on PanelSettings 'Design Panel' without DesignUiGammaComposite",
                 DesignUiPanelRegion.ColourWarning("Inbox", settings, false));
-            StringAssert.Contains("give the asset the region's sort order", DesignUiPanelRegion.ColourWarning("Inbox", settings, true));
+            StringAssert.Contains("the PanelSettings asset this copy was made from", DesignUiPanelRegion.ColourWarning("Inbox", settings, true));
 
             var go = new GameObject("GammaCompositeTests");
             _objects.Add(go);
@@ -267,11 +274,146 @@ namespace DesignUi.Editor.Tests
             composite.Attach(settings, new Vector2Int(64, 64), new Vector2Int(64, 64));
             Assert.IsTrue(DesignUiGammaComposite.Drives(settings));
             Assert.IsNull(DesignUiPanelRegion.ColourWarning("Inbox", settings, false));
-            var copy = Object.Instantiate(settings); // a region's sort-order copy made while the composite is attached
-            _objects.Add(copy);
-            Assert.IsNull(DesignUiPanelRegion.ColourWarning("Inbox", copy, true), "the copy renders into the composite's texture");
+            var stray = Object.Instantiate(settings); // a copy no region made: nothing tells the composite about it
+            _objects.Add(stray);
+            Assert.IsNotNull(DesignUiPanelRegion.ColourWarning("Inbox", stray, true));
             composite.Detach();
             Assert.IsFalse(DesignUiGammaComposite.Drives(settings));
+        }
+
+        // ---- a region's sort-order copy -------------------------------------------------------------------------------
+
+        /// <summary>
+        /// A region whose document renders on a runtime copy of <paramref name="settings"/> (sort order 7; the asset has 0),
+        /// framing the whole <paramref name="w"/>×<paramref name="h"/> texture, with a #16c2d5 box at (10, 10, 40, 30).
+        /// </summary>
+        (DesignUiPanelRegion region, UIDocument doc) Region(PanelSettings settings, int w, int h)
+        {
+            var go = new GameObject("GammaCompositeTests region", typeof(RectTransform));
+            _objects.Add(go);
+            var rect = (RectTransform)go.transform;
+            rect.sizeDelta = new Vector2(w, h);
+            rect.position = new Vector3(w / 2f, h / 2f, 0);
+            var docGo = new GameObject("GammaCompositeTests region document");
+            _objects.Add(docGo);
+            var doc = docGo.AddComponent<UIDocument>();
+            doc.panelSettings = settings;
+            Box(doc.rootVisualElement, 10, 10, 40, 30, Hex("#16c2d5"));
+            if (!_localesSaved)
+            {
+                // the Unity Localization adapter registers itself as the default source when the package is installed
+                _defaultLocales = DesignLocaleSources.Default;
+                _localesSaved = true;
+                DesignLocaleSources.Default = null;
+            }
+            var region = go.AddComponent<DesignUiPanelRegion>();
+            region.Document = doc;
+            region.Settings = new DesignUiHostSettings { sortingOrder = 7 };
+            return (region, doc);
+        }
+
+        PanelSettings DesignPanel()
+        {
+            var settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+            settings.scaleMode = PanelScaleMode.ConstantPixelSize;
+            settings.scale = 1f;
+            settings.sortingOrder = 0;
+            _objects.Add(settings);
+            return settings;
+        }
+
+        /// <summary>The composite renders the copy into a texture of its own and stores the region's colours.</summary>
+        IEnumerator AssertRendersTheCopy(DesignUiGammaComposite composite, PanelSettings copy, int w, int h, string when)
+        {
+            var own = composite.TargetOf(copy);
+            Assert.IsNotNull(own, when + ": the composite drives the region's copy");
+            Assert.AreSame(own, copy.targetTexture, when);
+            Assert.AreNotSame(composite.Target, own, when + ": a texture of its own (a panel clears its target)");
+            Assert.IsTrue(copy.forceGammaRendering, when);
+            Assert.IsTrue(DesignUiGammaComposite.Drives(copy), when);
+            Assert.AreEqual(new Vector2Int(w, h), new Vector2Int(own.width, own.height), when + ": the composite's size");
+            yield return Frames(4);
+            var screen = Screen(w, h, Color.black);
+            composite.Composite(screen);
+            AssertNear("#16c2d5", At(Bytes(screen), w, h, 30, 25), 1, when + ": the region's box through the composite");
+        }
+
+        [UnityTest]
+        public IEnumerator RegionCopy_MadeBeforeTheCompositeAttaches_IsRendered_AndGetsItsOwnSettingsBack()
+        {
+            const int W = 160, H = 90;
+            var settings = DesignPanel();
+            var (region, doc) = Region(settings, W, H);
+            region.Attach();
+            var copy = doc.panelSettings;
+            Assert.AreNotSame(settings, copy, "the region renders on a copy for its sort order");
+            Assert.IsNull(copy.targetTexture);
+            var go = new GameObject("GammaCompositeTests composite");
+            _objects.Add(go);
+            var composite = go.AddComponent<DesignUiGammaComposite>();
+            composite.Attach(settings, new Vector2Int(W, H), new Vector2Int(W, H));
+            yield return AssertRendersTheCopy(composite, copy, W, H, "copy made before");
+
+            composite.Detach();
+            Assert.IsNull(copy.targetTexture, "the copy's own target is back");
+            Assert.IsFalse(copy.forceGammaRendering);
+            Assert.IsFalse(DesignUiGammaComposite.Drives(copy));
+            region.Detach();
+        }
+
+        [UnityTest]
+        public IEnumerator RegionCopy_MadeAfterTheCompositeAttached_IsRendered_FollowsAResize_AndGetsTheAssetsSettingsBack()
+        {
+            const int W = 160, H = 90;
+            var settings = DesignPanel();
+            var go = new GameObject("GammaCompositeTests composite");
+            _objects.Add(go);
+            var composite = go.AddComponent<DesignUiGammaComposite>();
+            composite.Attach(settings, new Vector2Int(W, H), new Vector2Int(W, H));
+            var (region, doc) = Region(settings, W, H);
+            region.Attach();
+            var copy = doc.panelSettings;
+            Assert.AreNotSame(settings, copy);
+            yield return AssertRendersTheCopy(composite, copy, W, H, "copy made after");
+
+            // a resize gives the copy a new texture of the new size; the old one is released
+            var before = composite.TargetOf(copy);
+            composite.Resize(new Vector2Int(2 * W, 2 * H), new Vector2Int(2 * W, 2 * H));
+            Assert.IsTrue(before == null, "the copy's earlier texture is released");
+            // the shell's frame follows the screen too
+            var rect = (RectTransform)region.transform;
+            rect.sizeDelta = new Vector2(2 * W, 2 * H);
+            rect.position = new Vector3(W, H, 0);
+            region.Refresh();
+            yield return AssertRendersTheCopy(composite, copy, 2 * W, 2 * H, "after a resize");
+
+            composite.Detach();
+            Assert.IsNull(copy.targetTexture, "what the asset had before the composite (the copy was made from the driven asset)");
+            Assert.IsFalse(copy.forceGammaRendering);
+            Assert.IsNull(settings.targetTexture);
+            region.Detach();
+            Assert.AreSame(settings, doc.panelSettings);
+        }
+
+        [UnityTest]
+        public IEnumerator RegionCopy_Released_IsNoLongerDriven_TheAssetStillIs()
+        {
+            const int W = 64, H = 64;
+            var settings = DesignPanel();
+            var go = new GameObject("GammaCompositeTests composite");
+            _objects.Add(go);
+            var composite = go.AddComponent<DesignUiGammaComposite>();
+            composite.Attach(settings, new Vector2Int(W, H), new Vector2Int(W, H));
+            var (region, doc) = Region(settings, W, H);
+            region.Attach();
+            var copy = doc.panelSettings;
+            Assert.IsTrue(DesignUiGammaComposite.Drives(copy));
+            region.Detach(); // its last user: the copy goes
+            yield return null;
+            Assert.IsFalse(DesignUiGammaComposite.Drives(copy));
+            Assert.IsTrue(DesignUiGammaComposite.Drives(settings));
+            Assert.AreSame(composite.Target, settings.targetTexture);
+            composite.Detach();
         }
 
         /// <summary>The cost of one composite at 2560×1440 (logged; the findings quote it).</summary>
