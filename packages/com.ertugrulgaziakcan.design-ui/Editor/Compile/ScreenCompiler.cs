@@ -303,12 +303,6 @@ namespace DesignUi.Editor
                 var setFolder = FontSetFolder(outFolder);
                 if (setFolder != null) EnsureAssetFolder(setFolder);
                 fontSet = FontMap.WriteFontSet(fonts, twins, outFolder, profile.textSizes);
-                // twins of faces, line boxes and fonts nothing uses any more leave the twin folder
-                var pruned = TwinPrune.Run(profile, fonts, twins);
-                if (pruned.Skipped != null) notes.Add(pruned.Skipped);
-                if (pruned.Deleted.Count > 0)
-                    notes.Add("removed " + pruned.Deleted.Count + " font twin" + (pruned.Deleted.Count == 1 ? "" : "s") +
-                              " no text style, compiled screen or locale font uses: " + string.Join(", ", pruned.Deleted));
             }
             catch (FontSetupException e) { return new CompileResult { Ok = false, Errors = new[] { e.Message }, Localization = localization }; } // the tables stay written
 
@@ -335,6 +329,7 @@ namespace DesignUi.Editor
                 files = files,
                 removedElements = compiled.RemovedElements.ToArray(),
                 faces = screenFaces.Select(f => f.Face).Distinct().OrderBy(f => f).Select(FontMap.FaceName).ToArray(),
+                lineBoxes = (fonts?.LineBoxes ?? new FontTwinGenerator.LineBox[0]).Select(TwinPrune.LineBoxName).ToArray(),
                 root = compiled.Root.Name,
                 view = viewFile,
                 clickable = compiled.AllElements().Where(e => e.Clickable).Select(e => e.Name).ToArray(),
@@ -389,6 +384,17 @@ namespace DesignUi.Editor
             }
             if (fontSet != null) written.Add(fontSet);
             if (failure != null) return new CompileResult { Ok = false, Written = written, Errors = new[] { failure }, Screen = ir.Screen, Folder = screenDir, Localization = localization };
+            // twins of faces, line boxes and fonts nothing uses any more leave the twin folder, once the screen's files (and
+            // its DesignFonts.uss) no longer point at them
+            if (fonts != null && twins != null)
+            {
+                var pruned = TwinPrune.Run(profile, fonts, twins);
+                if (pruned.Skipped != null) notes.Add(pruned.Skipped);
+                if (!FontTwinLink.Supported) notes.Add(FontTwinLink.FallbackNote);
+                if (pruned.Deleted.Count > 0)
+                    notes.Add("removed " + pruned.Deleted.Count + " font twin" + (pruned.Deleted.Count == 1 ? "" : "s") +
+                              " no text style, compiled screen or locale font uses: " + string.Join(", ", pruned.Deleted));
+            }
             return new CompileResult
             {
                 Ok = true, Written = written, Orphans = FindOrphans(outFolder, folderName, profile.designRoot), StaleAssets = plan?.StaleAssets ?? new string[0],

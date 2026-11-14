@@ -58,6 +58,11 @@ namespace DesignUi
             }
         }
 
+        /// <summary>What kit sync and imports report when <see cref="Supported"/> is false.</summary>
+        public static string FallbackNote =>
+            "line-box font variants are not linked to their twins' atlases on this Unity version (" + Lookup + "): each keeps glyphs and atlas pages of " +
+            "its own, so the twin folder takes more disk (they render the same)";
+
         /// <summary>Whether this Unity version's FontAsset has every field a link sets.</summary>
         public static bool Supported => Array.TrueForAll(s_All, f => f != null);
 

@@ -442,6 +442,37 @@ namespace DesignUi.Editor.Tests
             return path;
         }
 
+        /// <summary>
+        /// A line box only a compiled screen's export table had (its manifest records the boxes it was compiled with) keeps
+        /// its twins while that screen exists, although the kit's table no longer has it.
+        /// </summary>
+        [Test]
+        public void Prune_KeepsTheLineBoxesACompiledScreenUses_UntilTheScreenIsGone()
+        {
+            var regular = FontFixture.CreateTmp(FontFixture.RegularTtf, "Prune Screens");
+            var profile = Profile(regular, Kit(OneBox));
+            var outDir = Path.Combine(Path.GetTempPath(), "design-ui-foot-out-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
+            _cleanupDirs.Add(outDir);
+            Directory.CreateDirectory(outDir + "/OldScreen");
+            profile.outputFolder = outDir;
+            new GeneratedManifest { screen = "old.screen", files = new Dictionary<string, string>(), lineBoxes = new[] { "32/40" } }
+                .Save(outDir + "/OldScreen/" + ScreenCompiler.ManifestFileName);
+            var plan = FontMap.Plan(profile, new ProfileLocaleFontResolver(profile, null));
+            plan.LineBoxes = new[] { FontTwinGenerator.LineBox.For(16, 20), FontTwinGenerator.LineBox.For(32, 40) };
+            FontMap.EnsureTwins(plan);
+            CollectionAssert.Contains(Files(Twins), "Prune Screens UITK r125s32.asset");
+
+            var r = KitSync.Run(profile, profile.kitDir, new ProfileLocaleFontResolver(profile, null));
+            Assert.IsTrue(r.Ok, string.Join("\n", r.Errors));
+            CollectionAssert.Contains(Files(Twins), "Prune Screens UITK r125s32.asset", "the old screen still renders with its 32/40 box");
+
+            Directory.Delete(outDir + "/OldScreen", true);
+            r = KitSync.Run(profile, profile.kitDir, new ProfileLocaleFontResolver(profile, null));
+            Assert.IsTrue(r.Ok, string.Join("\n", r.Errors));
+            CollectionAssert.DoesNotContain(Files(Twins), "Prune Screens UITK r125s32.asset", "nothing uses the box any more");
+            CollectionAssert.Contains(Files(Twins), "Prune Screens UITK r125s16.asset");
+        }
+
         [Test]
         public void Prune_KeepsTheTwinsOfAnotherProfileInTheSameFolder()
         {

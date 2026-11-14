@@ -13,7 +13,8 @@ namespace DesignUi.Editor
     /// to now. Kit sync and every import run it after their twins are current.
     /// <para>The twins kept are those of every profile whose <c>fontTwinFolder</c> is this one, each planned as its kit sync
     /// and imports make them (the locales' fonts, their fallbacks and weight faces of the faces the kit's text styles and the
-    /// compiled screens use, plain and per line box of the kit's text-style table and its text-size steps), plus the twins of
+    /// compiled screens use, plain and per line box of the kit's text-style table and its text-size steps and of the compiled
+    /// screens' manifests), plus the twins of
     /// the run that just ran. Only twin files directly in the folder are candidates (<see cref="TwinPlayGuard.IsTwin"/>), each
     /// deleted on its own (AssetDatabase.DeleteAsset). When a profile sharing the folder cannot be planned, nothing is
     /// deleted and the reason is returned.</para>
@@ -50,6 +51,15 @@ namespace DesignUi.Editor
                 {
                     var boxes = plan.LineBoxes;
                     plan.LineBoxes = ScreenCompiler.ScaledLineBoxes(KitTextStyles.LineBoxesOf(styles), profile.textSizes);
+                    try { keep.UnionWith(Paths(plan)); }
+                    finally { plan.LineBoxes = boxes; }
+                }
+                // and the line boxes the compiled screens were made with (an export's own table may have had others)
+                var screenBoxes = ScreenLineBoxes(profile);
+                if (screenBoxes.Count > 0)
+                {
+                    var boxes = plan.LineBoxes;
+                    plan.LineBoxes = screenBoxes;
                     try { keep.UnionWith(Paths(plan)); }
                     finally { plan.LineBoxes = boxes; }
                 }
@@ -100,10 +110,39 @@ namespace DesignUi.Editor
             if (plan.Errors.Count > 0) { why = plan.Errors[0]; return null; }
             var styles = !string.IsNullOrEmpty(profile.kitDir) ? Path.Combine(profile.kitDir, KitTextStyles.FileName) : null;
             var kitBoxes = styles != null && File.Exists(styles) ? KitTextStyles.LineBoxesOf(styles) : new FontTwinGenerator.LineBox[0];
-            plan.LineBoxes = ScreenCompiler.ScaledLineBoxes(kitBoxes, profile.textSizes);
+            plan.LineBoxes = ScreenCompiler.ScaledLineBoxes(kitBoxes, profile.textSizes).Concat(ScreenLineBoxes(profile))
+                .GroupBy(b => b.Key).Select(g => g.First()).ToList();
             plan.Faces = FontMap.ProfileFaces(profile, styles);
             return Paths(plan);
         }
+
+        /// <summary>The line boxes every compiled screen of the profile records in its manifest (<see cref="GeneratedManifest.lineBoxes"/>).</summary>
+        internal static List<FontTwinGenerator.LineBox> ScreenLineBoxes(DesignUiProfile profile)
+        {
+            var boxes = new Dictionary<string, FontTwinGenerator.LineBox>(StringComparer.Ordinal);
+            var outFolder = profile?.outputFolder?.Replace('\\', '/').TrimEnd('/');
+            if (string.IsNullOrEmpty(outFolder) || !Directory.Exists(outFolder)) return boxes.Values.ToList();
+            foreach (var dir in Directory.GetDirectories(outFolder))
+            {
+                GeneratedManifest m;
+                try { m = GeneratedManifest.Load(GeneratedManifest.Combine(dir.Replace('\\', '/'), ScreenCompiler.ManifestFileName)); }
+                catch (InvalidDataException) { continue; }
+                foreach (var entry in m?.lineBoxes ?? new string[0])
+                {
+                    var parts = (entry ?? "").Split('/');
+                    if (parts.Length != 2 ||
+                        !double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var size) ||
+                        !double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var line)) continue;
+                    var box = FontTwinGenerator.LineBox.For(size, line);
+                    if (box != null) boxes[box.Key] = box;
+                }
+            }
+            return boxes.Values.OrderBy(b => b.Key, StringComparer.Ordinal).ToList();
+        }
+
+        /// <summary>A line box as a manifest records it: <c>fontSize/lineHeight</c> (CSS px, invariant culture).</summary>
+        internal static string LineBoxName(FontTwinGenerator.LineBox box) =>
+            box.FontSize.ToString("R", System.Globalization.CultureInfo.InvariantCulture) + "/" + box.LineHeight.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
 
         /// <summary>The paths of the twins a run of <paramref name="plan"/> makes (<see cref="FontTwinGenerator.GetOrCreateTwin"/>'s reach).</summary>
         internal static HashSet<string> Paths(FontMap.FontsPlan plan)

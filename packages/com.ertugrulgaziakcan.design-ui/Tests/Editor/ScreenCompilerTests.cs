@@ -147,6 +147,43 @@ namespace DesignUi.Editor.Tests
             foreach (var kv in Times(AssetsRoot)) Assert.AreEqual(times[kv.Key], kv.Value, "untouched: " + kv.Key);
         }
 
+        /// <summary>
+        /// Unused twins leave only after the screen's files are written: a write that fails keeps them, so the previous
+        /// DesignFonts.uss never points at a deleted twin; the next compile that writes removes them.
+        /// </summary>
+        [Test]
+        public void Compile_AFailedWrite_RemovesNoTwins_TheNextCompileDoes()
+        {
+            var export = ShowcaseExport();
+            var profile = Profile(AssetsRoot);
+            var first = ScreenCompiler.Compile(export, profile, false, NoView());
+            Assert.IsTrue(first.Ok, string.Join("\n", first.Errors));
+            var strayFont = FontFixture.CreateTmp(FontFixture.BoldTtf, "Compile Stray");
+            Assert.IsNotNull(FontTwinGenerator.GetOrCreateTwin(strayFont, profile.fontTwinFolder));
+            var stray = FontTwinGenerator.TwinPath(strayFont, profile.fontTwinFolder);
+            Assert.IsTrue(File.Exists(stray), stray);
+
+            // another colour: the USS must be written again, and it cannot be
+            var ir = Showcase();
+            SetHash(ir, ShadowFile, File.ReadAllBytes(Path.Combine(export, ShadowFile)));
+            ir.Root.Children[0].Style["base"]["background-color"] = "#123456";
+            WriteIr(export, ir);
+            var uss = AssetsRoot + "/TestShowcase/TestShowcase.uss";
+            File.SetAttributes(uss, FileAttributes.ReadOnly);
+            try
+            {
+                var failed = ScreenCompiler.Compile(export, profile, false, NoView());
+                Assert.IsFalse(failed.Ok, "the write fails");
+                Assert.IsTrue(File.Exists(stray), "no twin is removed by a compile whose files were not written");
+            }
+            finally { File.SetAttributes(uss, FileAttributes.Normal); }
+
+            var next = ScreenCompiler.Compile(export, profile, false, NoView());
+            Assert.IsTrue(next.Ok, string.Join("\n", next.Errors));
+            Assert.IsFalse(File.Exists(stray), "removed once the screen is written");
+            Assert.IsTrue(next.Notes.Any(n => n.Contains("Compile Stray")), string.Join("\n", next.Notes));
+        }
+
         [Test]
         public void Compile_ColourOnlyChange_RewritesStylesButNotTheViewCode()
         {

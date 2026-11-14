@@ -129,6 +129,28 @@ namespace DesignUi.Editor.Tests
             Assert.IsNotNull(AssetDatabase.LoadAssetAtPath<UnityEngine.TextCore.Text.FontAsset>(FontFixture.TwinFolder + "/Kit Regular UITK.asset"));
         }
 
+        /// <summary>A clone's own tracked design-kit is never written: the sync refuses it and says where the kit belongs.</summary>
+        [Test]
+        public void Run_IntoAUnityUiMcpClonesOwnDesignKit_IsRefused_AndWritesNothing()
+        {
+            var clone = Path.Combine(Path.GetTempPath(), "design-ui-clone-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
+            _temp.Add(clone);
+            Directory.CreateDirectory(clone + "/packages/com.ertugrulgaziakcan.design-ui");
+            File.WriteAllText(clone + "/packages/com.ertugrulgaziakcan.design-ui/package.json", "{}");
+            Directory.CreateDirectory(clone + "/tools/design-ui-mcp");
+            File.WriteAllText(clone + "/tools/design-ui-mcp/package.json", "{}");
+            var kit = clone + "/design-kit";
+            Directory.CreateDirectory(kit);
+            File.WriteAllText(kit + "/kit.config.json", KitConfig);
+            File.WriteAllText(kit + "/text-styles.json", LineBoxStyles);
+            var r = KitSync.Run(Profile(), kit, null);
+            Assert.IsFalse(r.Ok);
+            StringAssert.Contains("unity-ui-mcp clone's own design-kit", Errors(r));
+            Assert.IsFalse(Directory.Exists(kit + "/fonts"), "nothing written");
+            // the same folder under another name is an ordinary kit
+            Assert.IsFalse(KitSync.IsCloneKit(Kit()));
+        }
+
         [Test]
         public void Run_Twice_SecondRunWritesNothing()
         {

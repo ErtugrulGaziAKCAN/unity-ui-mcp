@@ -67,6 +67,20 @@ namespace DesignUi.Editor
         /// <summary>A licence file of one font family (RobotoMono-LICENSE.txt): group 1 is the family prefix.</summary>
         static readonly Regex PrefixedLicence = new Regex(@"^(.+?)[._ -](ofl|licen[cs]e|copying|notice)([._ -].*)?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        /// <summary>
+        /// Whether a kit folder is a unity-ui-mcp clone's own <c>design-kit</c> (tracked in that repository: a later pull
+        /// fails, and a project's fonts would land in a public checkout). The MCP server's kit sync checks the same.
+        /// </summary>
+        internal static bool IsCloneKit(string kitDir)
+        {
+            if (string.IsNullOrEmpty(kitDir)) return false;
+            var full = Path.GetFullPath(kitDir).Replace('\\', '/').TrimEnd('/');
+            var repo = Path.GetDirectoryName(full);
+            return Path.GetFileName(full) == "design-kit" && repo != null &&
+                   File.Exists(Path.Combine(repo, "packages", "com.ertugrulgaziakcan.design-ui", "package.json")) &&
+                   File.Exists(Path.Combine(repo, "tools", "design-ui-mcp", "package.json"));
+        }
+
         public static KitSyncResult Run(DesignUiProfile profile, string kitDir, IFontResolver resolver)
         {
             var errors = new List<string>();
@@ -84,6 +98,13 @@ namespace DesignUi.Editor
             }
             kitDir = kitDir.Replace('\\', '/').TrimEnd('/');
             if (!Directory.Exists(kitDir)) return Failed(new[] { "the kit folder '" + kitDir + "' does not exist" }, warnings, notes, kitDir);
+            if (IsCloneKit(kitDir))
+                return Failed(new[]
+                {
+                    "the kit folder '" + kitDir + "' is the unity-ui-mcp clone's own design-kit: kit sync would write the project's fonts into the clone. " +
+                    "Copy it into the project (for example <designRoot>/design-kit, without its fixtures folder) and point the profile's kit folder and " +
+                    "design-ui.config.json's kitDir there; scripts/setup.sh does this for a new project.",
+                }, warnings, notes, kitDir);
 
             // ---- the kit's configuration -------------------------------------------------------------------------------
             byte[] configBytes;
@@ -151,6 +172,7 @@ namespace DesignUi.Editor
             // twins of faces, line boxes and fonts nothing uses any more leave the folder
             var pruned = TwinPrune.Run(profile, plan, twins, kitDir);
             if (pruned.Skipped != null) warnings.Add(pruned.Skipped);
+            if (!FontTwinLink.Supported) warnings.Add(FontTwinLink.FallbackNote);
 
             // ---- kit outputs ---------------------------------------------------------------------------------------------
             var fontsDir = Path.GetDirectoryName(fontsCss)?.Replace('\\', '/') ?? "";

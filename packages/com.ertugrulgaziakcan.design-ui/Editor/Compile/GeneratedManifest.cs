@@ -84,6 +84,12 @@ namespace DesignUi.Editor
         /// (<see cref="FontMap.ProfileFaces"/>). Null in the shared manifest and in one written before faces were recorded.
         /// </summary>
         public string[] faces;
+        /// <summary>
+        /// The line boxes (<c>fontSize/lineHeight</c> in CSS px, text-size steps included) the screen was compiled with:
+        /// their twin variants stay while the screen exists (<see cref="TwinPrune"/>). Null in the shared manifest and in
+        /// one written before line boxes were recorded.
+        /// </summary>
+        public string[] lineBoxes;
         /// <summary>Shared manifest only: the union of all screens' tokens (USS variable name to value).</summary>
         public Dictionary<string, string> tokens;
         /// <summary>Shared manifest only: screen folder name to the screen id compiled into it.</summary>
