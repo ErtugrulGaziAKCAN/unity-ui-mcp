@@ -125,4 +125,3 @@ Licensed under the MIT License (`LICENSE`); the bundled Inter font stays under t
 
 - The fidelity suite passes 2340 of 2340 captures at the three viewports (1140 static captures and 1200 animation
   samples).
-- GitHub Actions runs the Node test suites and type checks on every push and pull request.
