@@ -1,4 +1,5 @@
 import type { KitConfig } from "../kit.js";
+import { viewportClassOf } from "../viewport.js";
 import { CSS_SUPPORT_DATA, CSS_SUPPORT_JSON, enabledFilterFunctions, type CssSupportData, type PropertySupport } from "../lint/allowed-css.js";
 import { RULES } from "../lint/index.js";
 import { RULE_SUMMARIES } from "../lint/rule-table.js";
@@ -112,7 +113,7 @@ function textStylesMarkdown(styles: readonly TextStyle[], kit: KitConfig): strin
     "|---|---|---|---|---|",
     ...styles.map((s) => `| ${s.name} | \`.text-${s.name}\` | ${s.fontSize} | ${s.lineHeight} | ${s.weight} |`),
     "",
-    "UI Toolkit cannot set a line height, so the kit's Unity font twins carry each style's CSS line box (whole pixels at every supported viewport): " +
+    "UI Toolkit cannot set a line height, so the kit's Unity font twins carry each style's CSS line box (whole pixels at every exact viewport): " +
     `a text block is exactly lines × line height tall on both sides. Weights are ${weights.join(" and ")} only, ` +
     "each with a real face in the reference locale's font (U-FONT-001); no italic unless the kit font has an italic face. Inside one line of text, " +
     "`<b>`/`<strong>` and `<span>` with another colour or kit size are rich text; `<br>` breaks the line. The table is `text-styles.json`; " +
@@ -215,7 +216,12 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
   const base = renderBaseCss(styles).trimEnd();
   const [rw, rh] = kit.reference;
   const ref = `${rw}×${rh}`;
-  const viewports = kit.viewports.map((v) => `${v[0]}×${v[1]}`).join(", ");
+  const label = (v: [number, number]) => `${v[0]}×${v[1]}`;
+  const scaled = kit.viewports.filter((v) => viewportClassOf(kit.scaledViewports, v) === "scaled");
+  const exact = kit.viewports.filter((v) => viewportClassOf(kit.scaledViewports, v) === "exact");
+  const viewports = exact.map(label).join(", ") + (scaled.length
+    ? ` (exact: every kit value is whole device px there) and ${scaled.map(label).join(", ")} (scaled: no design value is whole there; laid out and verified within ±1 device px)`
+    : "");
   const claude = audience === "claude";
   const filters = enabledFilterFunctions();
   const fontTokens = tokens.filter((t) => t.family === "font");

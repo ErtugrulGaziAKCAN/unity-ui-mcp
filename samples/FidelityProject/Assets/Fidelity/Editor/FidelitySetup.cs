@@ -86,12 +86,34 @@ namespace FidelityProject
             var colorPath = Env("DESIGN_UI_FIDELITY_COLOR_PATH");
             Assert.IsTrue(colorPath == null || colorPath == "linear", "DESIGN_UI_FIDELITY_COLOR_PATH is 'linear' or unset");
             profile.colorPath = colorPath == "linear" ? DesignColorPath.LinearPanel : DesignColorPath.GammaComposite;
+            // the run's kit declares the viewports (both classes); kit sync writes the profile's back, so they stay the kit's
+            KitViewports(kit, profile);
             Save(profile);
 
             var r = DesignUiOps.KitSync(path, kit);
             Debug.Log("Fidelity setup: " + path + " (" + renderMode + ", " + pointSize + "/" + padding + ", text generator " +
                       (Env("DESIGN_UI_FIDELITY_TEXT_GENERATOR") ?? "standard") + ")\nKit sync (code " + r.Code + "):\n" + r.Log);
             Assert.AreEqual(0, r.Code, r.Log);
+        }
+
+        /// <summary>
+        /// The kit's <c>kit.config.json</c> viewports into the profile: a plain <c>[w, h]</c> is an exact viewport, an entry
+        /// <c>{ "size": [w, h], "class": "scaled" }</c> a scaled one.
+        /// </summary>
+        static void KitViewports(string kit, DesignUiProfile profile)
+        {
+            var config = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(Path.Combine(kit, "kit.config.json")));
+            var exact = new System.Collections.Generic.List<Vector2Int>();
+            var scaled = new System.Collections.Generic.List<Vector2Int>();
+            foreach (var entry in (Newtonsoft.Json.Linq.JArray)config["viewports"])
+            {
+                var obj = entry as Newtonsoft.Json.Linq.JObject;
+                var size = (Newtonsoft.Json.Linq.JArray)(obj != null ? obj["size"] : entry);
+                var v = new Vector2Int((int)size[0], (int)size[1]);
+                if (obj != null && (string)obj["class"] == "scaled") scaled.Add(v); else exact.Add(v);
+            }
+            profile.viewports = exact.ToArray();
+            profile.scaledViewports = scaled.ToArray();
         }
 
         /// <summary>The package's design PanelSettings, or a copy whose theme also sets the text generator on the panel root.</summary>

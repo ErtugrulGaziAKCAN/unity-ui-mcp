@@ -4,7 +4,7 @@ The contract for HTML screens (from Claude Design or any other source) that the 
 
 ## A screen in brief
 
-1. One page per screen. Its root element carries `data-u-screen="<screen.id>"` and is exactly 2560×1440 px (`width: 2560px; height: 1440px`) at (0, 0), `position: relative`. Screens are verified at 2560×1440, 1920×1080, 1280×720.
+1. One page per screen. Its root element carries `data-u-screen="<screen.id>"` and is exactly 2560×1440 px (`width: 2560px; height: 1440px`) at (0, 0), `position: relative`. Screens are verified at 2560×1440, 1920×1080, 1280×720, 3840×2160 (exact: every kit value is whole device px there) and 1600×900, 1366×768 (scaled: no design value is whole there; laid out and verified within ±1 device px).
 2. The style starts with the base stylesheet (`base.css`, below); it sizes boxes as UI Toolkit does and writes out every browser default.
 3. Lay out with flex only. Colours, spacing, radii and shadows come from the tokens through `var(--name)`.
 4. Every text uses a kit text style class (`.text-body`, `.text-title-bold`, …) and the kit font; never declare `@font-face`.
@@ -102,7 +102,7 @@ Every text uses exactly one of these size / line-height / weight combinations (U
 | display | `.text-display` | 64 | 80 | 400 |
 | display-bold | `.text-display-bold` | 64 | 80 | 700 |
 
-UI Toolkit cannot set a line height, so the kit's Unity font twins carry each style's CSS line box (whole pixels at every supported viewport): a text block is exactly lines × line height tall on both sides. Weights are 400 and 700 only, each with a real face in the reference locale's font (U-FONT-001); no italic unless the kit font has an italic face. Inside one line of text, `<b>`/`<strong>` and `<span>` with another colour or kit size are rich text; `<br>` breaks the line. The table is `text-styles.json`; every listing of it (this table, the base stylesheet's classes, the design system's type styles) is generated from that file.
+UI Toolkit cannot set a line height, so the kit's Unity font twins carry each style's CSS line box (whole pixels at every exact viewport): a text block is exactly lines × line height tall on both sides. Weights are 400 and 700 only, each with a real face in the reference locale's font (U-FONT-001); no italic unless the kit font has an italic face. Inside one line of text, `<b>`/`<strong>` and `<span>` with another colour or kit size are rich text; `<br>` breaks the line. The table is `text-styles.json`; every listing of it (this table, the base stylesheet's classes, the design system's type styles) is generated from that file.
 
 Readability: caption and label are under 10 device px at 1280×720: keep them for secondary text (kit build and kit sync warn once).
 

@@ -13,7 +13,8 @@
 #                folder's result in <out>/logs/import-results.tsv
 #   4. capture   one Unity run: DesignCaptureTests.CaptureFromEnv, each imported export into <out>/<name>/unity, with this
 #                run's id (DESIGN_UI_RUN_ID): only a capture-done.json carrying it counts as captured
-#   5. compare   design-export compare <out>/<name>/export --unity <out>/<name>/unity --report <out>/<name>/report.html
+#   5. compare   design-export compare <out>/<name>/export --unity <out>/<name>/unity --report <out>/<name>/report.html,
+#                FIDELITY_COMPARE_JOBS fixtures at a time (default 4)
 #   6. summary   one row per fixture x viewport x job (PASS, FAIL with the first issue, not captured with the reason,
 #                incomplete for a job the design hides in every context) and
 #                the timings, printed and written to <out>/summary.md
@@ -177,6 +178,18 @@ if [ ${#EXPORTED[@]} -gt 0 ]; then
     [ $capture_rc -eq 0 ] || echo "fidelity: the capture run failed (exit $capture_rc); see $OUT/logs/capture.log" >&2
 
     # ---- 5. compare -----------------------------------------------------------------------------------------------
+    # one comparison per fixture, FIDELITY_COMPARE_JOBS of them at a time (default 4): each is one Node process that
+    # compares on one core, so a six-viewport suite would otherwise wait on them one by one
+    compare_one() {
+      local name="$1" dir="$OUT/$1" t0 rc=0
+      t0=$(now)
+      "$TSX" "$CLI" compare "$dir/export" --unity "$dir/unity" --report "$dir/report.html" > "$OUT/logs/compare-$name.log" 2>&1 || rc=$?
+      timing "$name" compare $(( $(now) - t0 ))
+      if [ $rc -le 1 ] && [ -f "$dir/verdict.json" ]; then record "$name" compare ok ""
+      else record "$name" compare failed "$(tail -1 "$OUT/logs/compare-$name.log")"; fi
+    }
+    JOBS="${FIDELITY_COMPARE_JOBS:-4}"
+    t_compare=$(now)
     for name in "${IMPORTED[@]}"; do
       dir="$OUT/$name"; marker="$dir/unity/capture-done.json"
       run="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("runId",""))' "$marker" 2>/dev/null || true)"
@@ -189,12 +202,11 @@ if [ ${#EXPORTED[@]} -gt 0 ]; then
         continue
       fi
       record "$name" capture ok ""
-      t0=$(now); rc=0
-      "$TSX" "$CLI" compare "$dir/export" --unity "$dir/unity" --report "$dir/report.html" > "$OUT/logs/compare-$name.log" 2>&1 || rc=$?
-      timing "$name" compare $(( $(now) - t0 ))
-      if [ $rc -le 1 ] && [ -f "$dir/verdict.json" ]; then record "$name" compare ok ""
-      else record "$name" compare failed "$(tail -1 "$OUT/logs/compare-$name.log")"; fi
+      while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do sleep 0.2; done
+      compare_one "$name" &
     done
+    wait
+    timing "*" compares $(( $(now) - t_compare ))
   fi
 fi
 
@@ -213,6 +225,7 @@ const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
 // an animation sample: <state>@<w>x<h>.anim.<element id>.<n> (static names carry a pseudo-state or an is-* class there)
 const isAnim = (capture) => /@\d+x\d+\.anim\./.test(capture);
 let pending = 0;
+const classes = {};
 for (const name of names) {
   const skipped = status.find((s) => s[0] === name && s[2] === "skipped");
   if (skipped) { rows.push([name, "–", "–", "pending", skipped[3]]); pending++; continue; }
@@ -224,8 +237,18 @@ for (const name of names) {
     continue;
   }
   const jobs = [];
+  // a viewport's class from the verdict (byClass); an exact viewport is shown bare, a scaled one as "w×h (scaled)"
+  const scaledVps = new Set((verdict.byClass?.scaled?.viewports ?? []).map((v) => v.join("×")));
+  const tag = (vp) => (scaledVps.has(vp) ? `${vp} (scaled)` : vp);
+  for (const k of ["exact", "scaled"]) {
+    const b = verdict.byClass?.[k];
+    if (!b) continue;
+    const cl = (classes[k] ??= { viewports: new Set(), pass: 0, fail: 0, notRun: 0 });
+    b.viewports.forEach((v) => cl.viewports.add(v.join("×")));
+    cl.pass += b.pass; cl.fail += b.fail; cl.notRun += b.notRun;
+  }
   for (const c of verdict.captures) {
-    const vp = c.info?.viewport ? c.info.viewport.join("×") : (c.capture.split("@")[1] ?? "").split(".")[0];
+    const vp = tag(c.info?.viewport ? c.info.viewport.join("×") : (c.capture.split("@")[1] ?? "").split(".")[0].replace("x", "×"));
     const job = c.capture.replace(/@\d+x\d+/, "");
     const first = c.issues[0];
     const detail = c.pass ? "" : `${c.issues.length} issue(s); ${first ? `${first.id} ${first.kind}: ${first.detail}` : ""}`;
@@ -235,14 +258,14 @@ for (const name of names) {
   }
   for (const n of verdict.notRun) {
     const reason = verdict.notRunReasons?.[n] ?? "not captured";
-    const vp = (n.split("@")[1] ?? "").split(".")[0].replace("x", "×");
+    const vp = tag((n.split("@")[1] ?? "").split(".")[0].replace("x", "×"));
     jobs.push([name, vp, n.replace(/@\d+x\d+/, ""), "not captured", reason, isAnim(n)]);
     notCaptured++; failures.push(`${name} ${n}`);
     if (isAnim(n)) anim.notCaptured++;
   }
   // jobs the design hides in every context: no golden, so the screen is incomplete (never a pass)
   for (const n of verdict.hidden ?? []) {
-    const vp = (n.split("@")[1] ?? "").split(".")[0].replace("x", "×");
+    const vp = tag((n.split("@")[1] ?? "").split(".")[0].replace("x", "×"));
     jobs.push([name, vp, n.replace(/@\d+x\d+/, ""), "incomplete", `hidden in the design: ${verdict.hiddenReasons?.[n] ?? ""}`, false]);
     incomplete++; failures.push(`${name} ${n}`);
   }
@@ -251,7 +274,7 @@ for (const name of names) {
     jobs.push([name, "–", "–", "FAIL", `the comparison does not pass the screen (${verdict.captures.length} captures, ${verdict.notRun.length} not run)`, false]);
     fail++; failures.push(name);
   }
-  jobs.sort((a, b) => (b[1].split("×")[0] - a[1].split("×")[0]) || a[2].localeCompare(b[2]));
+  jobs.sort((a, b) => (parseInt(b[1]) - parseInt(a[1])) || a[2].localeCompare(b[2]));
   rows.push(...jobs);
 }
 // passing animation samples: one line per fixture x viewport; a failing or missing sample keeps its own line
@@ -275,11 +298,14 @@ const timing = ["| Step | Time |", "|---|---|",
     const meta = read(path.join(out, n, "unity", "boxes.meta.json"));
     return `| capture ${n} (its part of the capture run) | ${meta?.timings?.totalMs != null ? `${Math.round(meta.timings.totalMs)} ms` : "–"} |`;
   }),
-  ...names.map((n) => `| compare ${n} | ${step(n, "compare")} ms |`)];
+  ...names.map((n) => `| compare ${n} | ${step(n, "compare")} ms |`),
+  `| compare, all fixtures (wall clock, parallel) | ${(step("*", "compares") / 1000).toFixed(1)} s |`];
 const animTotal = anim.pass + anim.fail + anim.notCaptured;
 const head = `${pass} PASS, ${fail} FAIL, ${notCaptured} not captured, ${incomplete} incomplete (hidden in the design)` + (pending ? `, ${pending} fixture(s) pending (skipped, listed in pending.json)` : "") +
   (animTotal ? `; of these, animation samples: ${anim.pass} PASS, ${anim.fail} FAIL, ${anim.notCaptured} not captured` : "");
-const md = `# Fidelity summary\n\n${head}\n\n${table.join("\n")}\n\n## Timings\n\n${timing.join("\n")}\n`;
+const classTable = ["| Viewport class | Viewports | PASS | FAIL | not captured |", "|---|---|---|---|---|",
+  ...["exact", "scaled"].filter((k) => classes[k]).map((k) => `| ${k} | ${[...classes[k].viewports].sort((a, b) => parseInt(b) - parseInt(a)).join(", ")} | ${classes[k].pass} | ${classes[k].fail} | ${classes[k].notRun} |`)];
+const md = `# Fidelity summary\n\n${head}\n\n${classTable.length > 2 ? `${classTable.join("\n")}\n\n` : ""}${table.join("\n")}\n\n## Timings\n\n${timing.join("\n")}\n`;
 fs.writeFileSync(path.join(out, "summary.md"), md);
 process.stdout.write(md);
 process.exitCode = failures.length ? 1 : 0;

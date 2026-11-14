@@ -401,6 +401,7 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     source: { path: path.basename(htmlPath), sha256: fileSha(htmlPath) },
     referenceViewport: [kit.reference[0], kit.reference[1]],
     viewports: kit.viewports.map((v) => [v[0], v[1]] as [number, number]),
+    ...(kit.scaledViewports?.length ? { scaledViewports: kit.scaledViewports.map((v) => [v[0], v[1]] as [number, number]) } : {}),
     screenMatch: kit.screenMatch,
     states: ["default", ...stateList],
     breakpoints: Array.from(ex.breakpoints.values()).filter((b) => plans.some((p) => Array.from(ex.raw(p.i).keys()).some((k) => k.split("+").includes(`bp:${b.name}`))))

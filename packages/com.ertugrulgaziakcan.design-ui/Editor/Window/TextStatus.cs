@@ -134,7 +134,7 @@ namespace DesignUi.Editor
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { stale.Add(Path.GetFileName(tokensCss) + " cannot be read: " + e.Message); }
 
             // the profile's values the sync writes into kit.config.json
-            var viewports = new JArray((profile.viewports ?? new Vector2Int[0]).Select(v => (object)new JArray(v.x, v.y)).ToArray());
+            var viewports = KitSync.ViewportsJson(profile);
             if (!JToken.DeepEquals(config["locales"], new JArray(plan.Locales.Cast<object>().ToArray())) ||
                 !JToken.DeepEquals(config["reference"], new JArray(profile.referenceResolution.x, profile.referenceResolution.y)) ||
                 !JToken.DeepEquals(config["viewports"], viewports))

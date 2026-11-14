@@ -7,7 +7,7 @@ import { decodePng, type Rgba } from "../src/bake/png.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
 import type { CaptureJob } from "../src/capture/matrix.js";
 import { deltaE2000, deltaE2000Lab, isTransparentColor } from "../src/compare/color.js";
-import { compareCapture, compareScreen, readThresholds, summarizeIssues, WHOLE, type CaptureContext, type Thresholds } from "../src/compare/compare.js";
+import { classLines, compareCapture, compareScreen, readThresholds, summarizeIssues, WHOLE, type CaptureContext, type Thresholds } from "../src/compare/compare.js";
 import { captureContext, indexIr } from "../src/compare/context.js";
 import { flatAt, nearCurve, ringPoints, type RingPoint } from "../src/compare/samples.js";
 import { decodePngAsync, encodePng } from "../src/compare/png.js";
@@ -1098,6 +1098,23 @@ describe("compareScreen", () => {
     expect(v.animations).toEqual([{ element: "panel", sampled: ["panel"], viewport: [320, 192], frames: [
       { capture: "default@320x192.anim.panel.0", time: 0 }, { capture: "default@320x192.anim.panel.1", time: 150 },
     ] }]);
+  });
+
+  it("reports each capture's viewport class and the captures per class (an IR without scaledViewports: all exact)", async () => {
+    const f = screenFixture((name, s) => (name === "busy@320x192" ? null : s));
+    const exact = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(exact.byClass).toEqual({ exact: { viewports: [[320, 192]], pass: 3, fail: 0, notRun: 1 } });
+    expect(exact.captures[0].info?.viewportClass).toBe("exact");
+    expect(classLines(exact)).toEqual(["exact 320×192: 3 pass, 0 fail, 1 not run"]);
+    const ir = { irVersion: 1, screen: "inbox", referenceViewport: [320, 192], viewports: [[320, 192]], scaledViewports: [[320, 192]], screenMatch: 0.5, breakpoints: [],
+      root: { id: "root", kind: "container", style: { base: {} }, children: [
+        { id: "card", kind: "container", style: { base: {} }, children: [{ id: "label", kind: "text", style: { base: {} }, children: [] }] },
+        { id: "panel", kind: "container", style: { base: {} }, children: [] }] } };
+    fs.writeFileSync(path.join(f.exportDir, "screen.ir.json"), JSON.stringify(ir));
+    const scaled = await compareScreen(f.exportDir, f.unityDir, { ...T, scaled: { ssimElement: 0.98 } });
+    expect(scaled.byClass).toEqual({ scaled: { viewports: [[320, 192]], pass: 3, fail: 0, notRun: 1 } });
+    expect(scaled.captures.map((c) => c.info?.viewportClass)).toEqual(["scaled", "scaled", "scaled"]);
+    expect(classLines(scaled)).toEqual(["scaled 320×192: 3 pass, 0 fail, 1 not run"]);
   });
 
   it("marks a golden capture without a Unity capture as not run and the screen as not passing; extra Unity captures are only listed", async () => {

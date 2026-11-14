@@ -11,7 +11,8 @@ import { readKitFontFiles } from "./kitFonts.js";
  * RULES.md is the readable form of the same sources.
  */
 export interface RulesJson {
-  kit: { reference: [number, number]; viewports: [number, number][]; locales: string[] };
+  /** `viewports`: every declared viewport; `scaledViewports`: those of class scaled (exempt from the whole-device-pixel rules). */
+  kit: { reference: [number, number]; viewports: [number, number][]; scaledViewports: [number, number][]; locales: string[] };
   /** Rule id → [severity, fix], in registry order. */
   rules: Record<string, [string, string]>;
   css: {
@@ -32,7 +33,7 @@ export function rulesJson(kit: KitConfig): RulesJson {
   const fonts: Record<string, string[]> = {};
   for (const f of readKitFontFiles(kit) ?? []) (fonts[f.family] ??= []).push(f.style === "normal" ? f.weight : `${f.weight} ${f.style}`);
   return {
-    kit: { reference: kit.reference, viewports: kit.viewports, locales: kit.locales },
+    kit: { reference: kit.reference, viewports: kit.viewports, scaledViewports: kit.scaledViewports ?? [], locales: kit.locales },
     rules: Object.fromEntries(RULES.map((r) => [r.id, [r.severity, RULE_SUMMARIES[r.id]?.fix ?? "see the finding's fix"]])),
     css: {
       properties: {

@@ -56,9 +56,18 @@ describe("whole device pixels at every declared viewport scale", () => {
     expect(textStyleScaleProblems(old, kit)).toEqual([
       "caption: line height 15 px is 11.25 device px at 1920×1080 (scale 0.75)",
       "caption: line height 15 px is 7.5 device px at 1280×720 (scale 0.5)",
+      "caption: line height 15 px is 22.5 device px at 3840×2160 (scale 1.5)",
     ]);
-    // a viewport whose scale is not a multiple of 1/4 needs finer sizes
-    const odd = { ...kit, viewports: [[2560, 1440], [1366, 768]] as [number, number][] };
+    // a viewport whose scale is not a multiple of 1/4 needs finer sizes when it is exact
+    const odd = { ...kit, viewports: [[2560, 1440], [1366, 768]] as [number, number][], scaledViewports: [] };
     expect(textStyleScaleProblems([{ name: "label", fontSize: 16, lineHeight: 20, weight: 400 }], odd).length).toBeGreaterThan(0);
+  });
+
+  it("judges exact viewports only: a scaled viewport is exempt", () => {
+    const kit = readKit(kitDir);
+    expect(kit.scaledViewports).toEqual([[1600, 900], [1366, 768]]);
+    const label = [{ name: "label", fontSize: 16, lineHeight: 20, weight: 400 }];
+    expect(textStyleScaleProblems(label, { ...kit, viewports: [[2560, 1440], [1366, 768]], scaledViewports: [[1366, 768]] })).toEqual([]);
+    expect(textStyleScaleProblems(label, { ...kit, viewports: [[2560, 1440], [1366, 768]], scaledViewports: [] })).not.toEqual([]);
   });
 });

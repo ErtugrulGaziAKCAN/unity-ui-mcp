@@ -5,6 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { viewportLabel } from "../viewport.js";
 import type { CaptureVerdict, ElementIssue, ScreenVerdict, Thresholds } from "./compare.js";
 import type { ReportPictures } from "./pictures.js";
 
@@ -49,10 +50,21 @@ function timingRows(timings: Record<string, number>): string {
   return keys.map((k) => `<tr><th scope="row">${esc(k)}</th><td class="num">${typeof timings[k] === "number" ? esc(ms(timings[k])) : '<span class="muted" title="not measured in this run">—</span>'}</td></tr>`).join("");
 }
 
+/** The captures per viewport class (exact: every kit value whole device px; scaled: verified within ±1 device px geometry). */
+function classSection(v: ScreenVerdict): string {
+  const rows = (["exact", "scaled"] as const).filter((k) => v.byClass?.[k]).map((k) => {
+    const c = v.byClass[k]!;
+    return `<tr><th scope="row">${k}</th><td>${c.viewports.map((x) => `${x[0]}×${x[1]}`).join(", ")}</td><td class="num">${c.pass}</td><td class="num">${c.fail}</td><td class="num">${c.notRun}</td></tr>`;
+  });
+  if (!rows.length) return "";
+  return `<section><h2>Viewport classes</h2><p class="muted">Exact viewports: every kit value is whole device pixels there. Scaled viewports: no design value can be whole there (Unity rounds to whole device pixels); they are laid out and verified with the same ±${v.thresholds.boxPx} device px geometry limits${v.thresholds.scaled && Object.keys(v.thresholds.scaled).length ? " and the measured scaled-class limits listed under Thresholds" : ""}.</p>` +
+    `<table><thead><tr><th>Class</th><th>Viewports</th><th>Pass</th><th>Fail</th><th>Not run</th></tr></thead><tbody>${rows.join("")}</tbody></table></section>\n`;
+}
+
 function applied(c: CaptureVerdict): string {
   const i = c.info;
   if (!i) return "";
-  const parts = [`state <b>${esc(i.state)}</b>`, `${i.viewport[0]}×${i.viewport[1]}`];
+  const parts = [`state <b>${esc(i.state)}</b>`, esc(viewportLabel(i.viewport, i.viewportClass ?? "exact"))];
   for (const a of i.apply) parts.push(a.kind === "pseudo" ? `:${esc(a.pseudo)} on <code>${esc(a.elementId)}</code>` : `.${esc(a.name)} on <code>${esc(a.elementId)}</code>`);
   if (i.anim) parts.push(`animation of <code>${esc(i.anim.element)}</code> at ${esc(i.anim.time)} ms`);
   return parts.join(" · ");
@@ -286,7 +298,7 @@ ${v.warnings.length ? `<div class="warning" role="alert"><strong>Checks skipped 
   <div class="card"><div class="v">${worstBox ? `${num(worstBox.maxBoxDelta!.px, 2)} px` : "—"}</div><div class="k">largest box Δ ${worstBox ? `<code>${esc(worstBox.maxBoxDelta!.id)}</code> ` : ""}${link(worstBox, worstBox ? esc(worstBox.capture) : "")}</div></div>
   <div class="card"><div class="v">${worstDE ? num(worstDE.maxDeltaE!.deltaE, 2) : "—"}</div><div class="k">largest ΔE2000 ${worstDE ? `<code>${esc(worstDE.maxDeltaE!.id)}</code> ` : ""}${link(worstDE, worstDE ? esc(worstDE.capture) : "")}</div></div>
 </div>
-<div class="grid2">
+${classSection(v)}<div class="grid2">
   <section><h2>Timings</h2><table><tbody>${timingRows(v.timings)}</tbody></table></section>
   <section><h2>Thresholds</h2><table><tbody>${thresholdRows(v.thresholds)}</tbody></table></section>
 </div>

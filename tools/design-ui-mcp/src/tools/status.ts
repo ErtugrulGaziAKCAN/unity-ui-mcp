@@ -8,13 +8,14 @@ import { requireConfig } from "../context.js";
 import { designPath, findEntry, resolveScreen } from "../design.js";
 import { mb, screenCache, screenCaches } from "../cache.js";
 import { versionDrift } from "../drift.js";
-import { IR_VERSION } from "../exporter.js";
+import { IR_VERSION, viewportClassOf } from "../exporter.js";
 import { cloneKitMessage, isCloneKit } from "../kit-location.js";
 import { chromiumSandbox } from "../exporter.js";
 import { OLD_PACKAGE_NAME, oldPackageId, PACKAGE_NAME } from "../package-stamp.js";
 import { MISSING, unityStep } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { exportDirOf, importedEntry, readLastImport, readLastVerify, statusOf } from "../status.js";
+import { kitViewports } from "./rules.js";
 import { VERSION } from "../version.js";
 
 /** The screen argument of status and verify. */
@@ -134,10 +135,23 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
         screens: [...caches].sort((a, b) => b.bytes - a.bytes).map((c) => ({ folder: c.folder, bytes: c.bytes, exportBytes: c.exportBytes, lastUsed: new Date(c.lastUsed).toISOString(), busy: c.busy })),
       } : null;
       const sandbox = chromiumSandbox();
+      // the kit's viewports by class (exact: every kit value whole device px; scaled: laid out and verified, exempt from those rules)
+      let viewports: { exact: [number, number][]; scaled: [number, number][]; text: string } | null = null;
+      if (cfg && fs.existsSync(path.join(cfg.kitDir, "kit.config.json"))) {
+        try {
+          const kit = ctx.runtime.kit(cfg.kitDir).kit;
+          viewports = {
+            exact: kit.viewports.filter((v) => viewportClassOf(kit.scaledViewports, v) === "exact"),
+            scaled: kit.viewports.filter((v) => viewportClassOf(kit.scaledViewports, v) === "scaled"),
+            text: kitViewports(kit),
+          };
+        } catch (e) { viewports = { exact: [], scaled: [], text: `kit.config.json cannot be read: ${(e as Error).message}` }; }
+      }
       const lines = [
         `design-ui MCP server ${VERSION} for ${ctx.projectDir}`,
         cfg ? `config: ${cfg.configPath} (designRoot ${cfg.designRoot}, Unity runner ${cfg.unityRunner.prefer})` : `config problem: ${ctx.configError}`,
         ...(cfg && isCloneKit(cfg.kitDir) ? [`warning: ${cloneKitMessage(cfg.kitDir, cfg.designRoot, cfg.configPath)}`] : []),
+        ...(viewports ? [`viewports: ${viewports.text} (exact: every kit value is whole device px; scaled: verified within ±1 device px, exempt from the whole-pixel rules)`] : []),
         ...(oldId ? [`old package id: ${OLD_PACKAGE_NAME} in ${old.join(", ")}; ${oldId.fix}`] : []),
         ...(unity ? [`Unity bridge: ${unity.bridge} — ${unity.detail}`] : []),
         ...(unity?.bridge === "connected" && unity.version
@@ -156,7 +170,8 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
         ...Object.entries(tools).map(([name, a]) => `- ${name}: ${a.note}`),
       ];
       return toolResult(lines.join("\n"), {
-        server: "design-ui", version: VERSION, project: ctx.projectDir, config, package: { id: PACKAGE_NAME, oldId }, tools,
+        server: "design-ui", version: VERSION, project: ctx.projectDir, config, viewports: viewports ? { exact: viewports.exact, scaled: viewports.scaled } : null,
+        package: { id: PACKAGE_NAME, oldId }, tools,
         pipeline: { export: !!ctx.pipeline.exportScreen, compare: !!ctx.pipeline.compareScreen, capture: !!ctx.pipeline.unityCapture },
         unity, versionDrift: unity?.bridge === "connected" ? versionDrift(unity.version, unity.irVersion) : null, irVersion: IR_VERSION,
         browser: { warm: ctx.runtime.browserWarm, launches: ctx.runtime.browserLaunches, sandbox }, cache, timings: t.done(),

@@ -53,6 +53,13 @@
       },
       "minItems": 1
     },
+    "scaledViewports": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/size"
+      },
+      "description": "The viewports of class scaled (a subset of viewports): laid out and verified, exempt from the whole-device-pixel rules. Absent: every viewport is exact."
+    },
     "screenMatch": {
       "type": "number",
       "minimum": 0,

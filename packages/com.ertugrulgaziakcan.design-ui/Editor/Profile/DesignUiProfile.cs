@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using TMPro;
 using UnityEditor;
 using UnityEngine;
@@ -34,7 +36,10 @@ namespace DesignUi.Editor
         public string fontTwinFolder = "Assets/UI/Generated/Fonts";
         public string generatedNamespace = "DesignUi.Generated";
         public Vector2Int referenceResolution = new Vector2Int(2560, 1440);
-        public Vector2Int[] viewports = { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720) };
+        [Tooltip("Exact viewports: every kit value (text sizes, line heights, borders, thin lines) is a whole number of device pixels there; kit sync, lint and verify hold designs to that. Declare the resolutions whose panel scale keeps the kit's grid whole (with the 2560×1440 reference: 1280×720, 1920×1080, 2560×1440, 3840×2160).")]
+        public Vector2Int[] viewports = { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720), new Vector2Int(3840, 2160) };
+        [Tooltip("Scaled viewports: resolutions the game supports where no design value can be whole device pixels (1366×768 is scale 0.5335). They are laid out and verified within ±1 device px and exempt from the whole-pixel rules; text there renders through font twins made for that scale.")]
+        public Vector2Int[] scaledViewports = { new Vector2Int(1600, 900), new Vector2Int(1366, 768) };
         [Range(0f, 1f)] public float screenMatch = 0.5f;
         public string referenceLocale = "tr";
         public string[] locales = new string[0];
@@ -56,6 +61,20 @@ namespace DesignUi.Editor
         [Tooltip("How the game shows design screens in a Linear-colour-space project, and so what verify captures. Gamma Composite: the panel renders through DesignUiGammaComposite (a UNorm texture with forceGammaRendering, composited over the screen), so translucent colours blend as in the design. Linear Panel: an ordinary on-screen panel, which blends translucent colours in linear light (they drift from the design). No effect in a Gamma project.")]
         public DesignColorPath colorPath = DesignColorPath.GammaComposite;
 
+        /// <summary>Every declared viewport with its class, exact ones first, in the profile's order (a scaled viewport also listed as exact counts once, as exact).</summary>
+        public IReadOnlyList<(Vector2Int size, DesignViewportClass cls)> DeclaredViewports()
+        {
+            var list = new List<(Vector2Int, DesignViewportClass)>();
+            foreach (var v in viewports ?? new Vector2Int[0])
+                if (!list.Exists(x => x.Item1 == v)) list.Add((v, DesignViewportClass.Exact));
+            foreach (var v in scaledViewports ?? new Vector2Int[0])
+                if (!list.Exists(x => x.Item1 == v)) list.Add((v, DesignViewportClass.Scaled));
+            return list;
+        }
+
+        /// <summary>The scaled viewports that are not also listed as exact.</summary>
+        public IEnumerable<Vector2Int> ScaledOnly => DeclaredViewports().Where(v => v.cls == DesignViewportClass.Scaled).Select(v => v.size);
+
         /// <summary>PanelSettings for design screens: <see cref="panelSettings"/>, or the package's settings when empty.</summary>
         public PanelSettings DesignPanelSettings => panelSettings != null ? panelSettings : LoadDefaultPanelSettings();
 
@@ -69,6 +88,16 @@ namespace DesignUi.Editor
             panelSettings = LoadDefaultPanelSettings();
             if (panelSettings != null) host.sortingOrder = panelSettings.sortingOrder; // a region keeps the asset's order until changed here
         }
+    }
+
+    /// <summary>
+    /// A declared viewport's class (kit.config.json <c>viewports</c>): <see cref="Exact"/> where every kit value is whole device
+    /// pixels, <see cref="Scaled"/> where none can be (laid out and verified, exempt from the whole-pixel rules).
+    /// </summary>
+    public enum DesignViewportClass
+    {
+        Exact = 0,
+        Scaled = 1,
     }
 
     /// <summary>How the game shows design screens in a Linear-colour-space project (<see cref="DesignUiProfile.colorPath"/>).</summary>

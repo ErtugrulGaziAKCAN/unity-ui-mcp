@@ -105,7 +105,11 @@ export interface IrNode {
 }
 export interface IrScreen {
   irVersion: 1; screen: string; source: { path: string; sha256: string };
-  referenceViewport: [number, number]; viewports: [number, number][]; screenMatch: number; states: string[];
+  /**
+   * `viewports`: every declared viewport, both classes; `scaledViewports` (absent: none): those of class `scaled`, which
+   * are laid out and verified but exempt from the whole-device-pixel rules (viewport.ts ViewportClass).
+   */
+  referenceViewport: [number, number]; viewports: [number, number][]; scaledViewports?: [number, number][]; screenMatch: number; states: string[];
   breakpoints: { name: string; minWidth?: number; maxWidth?: number; minAspect?: number; maxAspect?: number }[];
   tokens: Record<string, string>;
   fonts: { locale: string; family: string; file: string; sha256: string; weight: number }[];

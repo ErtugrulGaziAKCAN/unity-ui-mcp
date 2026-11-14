@@ -58,6 +58,7 @@ import type { Rgba } from "../bake/png.js";
 import type { CaptureBoxes } from "../boxes/types.js";
 import { validateBoxes } from "../boxes/validate.js";
 import type { CaptureApply, CaptureJob } from "../capture/matrix.js";
+import { viewportClassOf, type ViewportClass } from "../viewport.js";
 import { deltaE2000, hex } from "./color.js";
 import { captureContext, indexIr, type CaptureContext, type IrIndex } from "./context.js";
 import { decodePngAsync, encodePngAsync } from "./png.js";
@@ -122,6 +123,11 @@ export interface Thresholds {
    * between 0.97 and `ssimElement`.
    */
   ssimRotated: number;
+  /**
+   * Measured limits for captures at scaled viewports (fidelity-thresholds.json `scaled`), which replace the file's own
+   * values there; never the geometry limits. Absent: scaled viewports use the same thresholds.
+   */
+  scaled?: Partial<Omit<Thresholds, "scaled" | "boxPx" | "baselinePx">>;
 }
 
 /** `tools/design-export/fidelity-thresholds.json`, the only place the thresholds live (keys starting with `$` are comments). */
@@ -132,8 +138,7 @@ const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssi
 /** No measured policy may accept an element SSIM below this. */
 export const SSIM_FLOOR = 0.97;
 
-export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
-  const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+function checkThresholds(raw: Record<string, unknown>, file: string): Thresholds {
   for (const k of THRESHOLD_KEYS) if (typeof raw[k] !== "number" || !Number.isFinite(raw[k])) throw new Error(`${file}: "${k}" must be a number`);
   const table = raw.textInkDeltaESmall;
   const pairs = Array.isArray(table) && table.length > 0 && table.every((p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0));
@@ -164,12 +169,40 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
   if ((raw.textInkShadowHigh as number) < 1 + (raw.textInkCoverage as number) - 1e-9) throw new Error(`${file}: "textInkShadowHigh" must be at least 1 + textInkCoverage`);
   if (!inRange(raw.ssimRotated as number)) throw new Error(`${file}: "ssimRotated" must lie between ${SSIM_FLOOR} and ssimElement`);
   return {
-    ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater" | "textInkBandSmall">),
+    ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater" | "textInkBandSmall" | "scaled">),
     textInkBandSmall: [bandSmall[0], bandSmall[1]],
     textInkDeltaESmall: (table as number[][]).map(([px, de]) => [px, de] as [number, number]),
     ssimElementSmall: (areas as number[][]).map(([a, v]) => [a, v] as [number, number]),
     textInkDeltaELater: (later as number[][]).map(([px, de]) => [px, de] as [number, number]),
   };
+}
+
+/** Threshold keys a scaled-class block may not change: geometry stays ±boxPx / ±baselinePx at every viewport. */
+const GEOMETRY_KEYS = new Set(["boxPx", "baselinePx"]);
+
+/**
+ * Reads the thresholds file. An optional `scaled` object holds measured limits for captures at scaled viewports
+ * (viewport.ts ViewportClass): keys of the file other than the geometry limits (boxPx, baselinePx), each checked like the
+ * file's own value; keys starting with `$` are comments.
+ */
+export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
+  const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  const base = checkThresholds(raw, file);
+  if (raw.scaled === undefined) return base;
+  if (!isObj(raw.scaled)) throw new Error(`${file}: "scaled" must be an object of threshold keys`);
+  const own = Object.fromEntries(Object.entries(raw.scaled).filter(([k]) => !k.startsWith("$")));
+  for (const k of Object.keys(own)) {
+    if (GEOMETRY_KEYS.has(k)) throw new Error(`${file}: "scaled" cannot change "${k}": boxes and baselines stay within the same device px limit at every viewport`);
+    if (!(k in base) || k === "scaled") throw new Error(`${file}: "scaled" has an unknown threshold key "${k}"`);
+  }
+  const merged = checkThresholds({ ...raw, ...own }, `${file} (scaled)`);
+  const scaled = Object.fromEntries(Object.keys(own).map((k) => [k, merged[k as keyof Thresholds]])) as Thresholds["scaled"];
+  return { ...base, scaled };
+}
+
+/** The thresholds a capture at a viewport of `cls` is held to: the file's, with the measured scaled-class limits at scaled viewports. */
+export function thresholdsFor(t: Thresholds, cls: ViewportClass): Thresholds {
+  return cls === "scaled" && t.scaled ? { ...t, ...t.scaled } : t;
 }
 
 /**
@@ -243,6 +276,8 @@ export interface ElementRow {
 export interface CaptureInfo {
   state: string;
   viewport: [number, number];
+  /** The viewport's class (the IR's scaledViewports; an added coverage viewport is exact). */
+  viewportClass: ViewportClass;
   apply: CaptureApply[];
   anim: { element: string; sample: number; time: number; series: string } | null;
 }
@@ -284,6 +319,9 @@ export interface CaptureVerdict {
   ms?: number;
 }
 
+/** The captures of one viewport class (ScreenVerdict.byClass). */
+export interface ClassSummary { viewports: [number, number][]; pass: number; fail: number; notRun: number }
+
 export interface AnimStrip {
   /** The animated element the series is named after, and every element it samples. */
   element: string;
@@ -321,6 +359,11 @@ export interface ScreenVerdict {
   /** Compiler-removed wrappers (no boxes in Unity by design). */
   removed: string[];
   animations: AnimStrip[];
+  /**
+   * Per viewport class: its viewports (those with a golden capture, sorted widest first) and how many captures passed,
+   * failed or did not run there. A class without captures is left out.
+   */
+  byClass: Partial<Record<ViewportClass, ClassSummary>>;
   /** Checks the comparison had to skip for the whole screen (e.g. no IR: no shadow bands). Shown as a warning. */
   warnings: string[];
   /** Other remarks (e.g. no capture matrix: name order, no animation strips). */
@@ -1037,9 +1080,10 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
     const ctx: CaptureContext = ix
       ? captureContext(ix, entry ?? { state: name.split("@")[0], viewport: gb.viewport, apply: [] }, gb)
       : {};
-    const { verdict, heat } = analyze({ png: gpng, boxes: gb }, { png: upng, boxes: unityBoxes[name] }, removed!, t, ctx, !!opts.diffDir);
+    const cls = viewportClassOf(ix?.scaledViewports, entry?.viewport ?? gb.viewport);
+    const { verdict, heat } = analyze({ png: gpng, boxes: gb }, { png: upng, boxes: unityBoxes[name] }, removed!, thresholdsFor(t, cls), ctx, !!opts.diffDir);
     verdict.info = entry ? {
-      state: entry.state, viewport: entry.viewport, apply: entry.apply,
+      state: entry.state, viewport: entry.viewport, viewportClass: cls, apply: entry.apply,
       anim: entry.anim ? { element: entry.anim.sampled[0].elementId, sample: entry.anim.sample, time: entry.anim.time, series: entry.anim.sampled.map((r) => r.elementId).join(",") } : null,
     } : null;
     verdict.diff = null;
@@ -1068,11 +1112,32 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   Object.assign(timings, opts.timings ?? {});
   timings.compare = Math.round(performance.now() - t0);
   if (!names.length) notes.push("the export has no golden captures");
+  // per viewport class: a capture's viewport from its matrix entry, else from its golden boxes
+  const byClass: Partial<Record<ViewportClass, ClassSummary>> = {};
+  const count = (name: string, what: "pass" | "fail" | "notRun") => {
+    const vp = byName.get(name)?.viewport ?? goldenBoxes[name]?.viewport;
+    if (!vp) return;
+    const cls = viewportClassOf(ix?.scaledViewports, vp);
+    const c = (byClass[cls] ??= { viewports: [], pass: 0, fail: 0, notRun: 0 });
+    if (!c.viewports.some((v) => v[0] === vp[0] && v[1] === vp[1])) c.viewports.push([vp[0], vp[1]]);
+    c[what]++;
+  };
+  for (const c of captures) count(c.capture, c.pass ? "pass" : "fail");
+  for (const n of notRun) count(n, "notRun");
+  for (const c of Object.values(byClass)) c!.viewports.sort((a, b) => b[0] - a[0] || b[1] - a[1]);
   return {
     screen, pass: status === "pass", status,
     captures, notRun, notRunReasons, hidden, hiddenReasons, extra, thresholds: t, timings, platform, removed: [...removed!].sort(),
-    animations: animationStrips(entries.filter((e) => known.has(e.name))), warnings, notes, colour,
+    animations: animationStrips(entries.filter((e) => known.has(e.name))), byClass, warnings, notes, colour,
   };
+}
+
+/** One line per viewport class of a verdict: `exact 2560×1440, 1920×1080: 40 pass, 0 fail` (not-run captures when any). */
+export function classLines(v: Pick<ScreenVerdict, "byClass">): string[] {
+  return (["exact", "scaled"] as ViewportClass[]).filter((k) => v.byClass?.[k]).map((k) => {
+    const c = v.byClass[k]!;
+    return `${k} ${c.viewports.map((x) => `${x[0]}×${x[1]}`).join(", ")}: ${c.pass} pass, ${c.fail} fail${c.notRun ? `, ${c.notRun} not run` : ""}`;
+  });
 }
 
 const KIND_RANK: IssueKind[] = ["size", "missing", "extra", "visibility", "lines", "box", "baseline", "inkExtent", "ssim", "edge", "color", "ink", "inkCoverage", "shadow"];

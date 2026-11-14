@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Browser } from "playwright";
 import type { BridgeStatus } from "./bridge.js";
 import type { DesignUiConfig, UnityStep } from "./config.js";
-import { readThresholds, runCompare, runExport, summarizeIssues, writeReport, writeReportPictures, writeVerdict, type Finding, type KitConfig, type ReportPictures } from "./exporter.js";
+import { readThresholds, runCompare, runExport, summarizeIssues, writeReport, writeReportPictures, writeVerdict, type ClassSummary, type Finding, type KitConfig, type ReportPictures, type ViewportClass } from "./exporter.js";
 
 export interface ExportOutcome {
   /** false when lint found errors: nothing but the lint report was written. */
@@ -42,6 +42,8 @@ export interface CompareOutcome {
   colour?: { space: string; path: string } | null;
   /** Painted backgrounds left without any colour sample, over all captures. */
   notSampled?: number;
+  /** Per viewport class (exact, scaled): its viewports and how many captures passed, failed or did not run there. */
+  byClass?: Partial<Record<ViewportClass, ClassSummary>>;
   /**
    * Makes this run the screen's result: writes the report (with the pictures it keeps of failing captures) and
    * verdict.json, then deletes this run's Unity captures and difference images and the previous run's. Called only once a
@@ -100,7 +102,7 @@ export const INSTALLED_PIPELINE: Pipeline = {
     return {
       pass: v.pass, status: v.status, hidden: v.hidden, topIssues: summarizeIssues(v, 20, { notRun: false }), notRun: v.notRun, compared: v.captures.length,
       extra: v.extra, verdictFile, timings: v.timings, warnings: v.warnings, colour: v.colour ?? null,
-      notSampled: v.captures.reduce((a, c) => a + c.notSampled.length, 0),
+      notSampled: v.captures.reduce((a, c) => a + c.notSampled.length, 0), byClass: v.byClass,
       publish: () => {
         rm(pics);
         if (fs.existsSync(picsNext)) fs.renameSync(picsNext, pics);

@@ -46,7 +46,9 @@ namespace DesignUi.Editor
     /// <item><c>fonts/&lt;file&gt;</c>: the source TTF/OTF of every font TMP searches for a locale, with the licence files next to it;</item>
     /// <item><c>fonts/fonts.css</c>: one <c>@font-face</c> per family and weight (family = the TMP face's family name; weights from the TMP weight table);</item>
     /// <item><c>fonts/fonts.json</c>: locale → families, in TMP's search order;</item>
-    /// <item><c>kit.config.json</c>: <c>reference</c>, <c>viewports</c>, <c>screenMatch</c> and <c>locales</c> from the profile; other keys are kept;</item>
+    /// <item><c>kit.config.json</c>: <c>reference</c>, <c>viewports</c> (exact ones as <c>[w, h]</c>, scaled ones as
+    /// <c>{ "size": [w, h], "class": "scaled" }</c>, <see cref="ViewportsJson"/>), <c>screenMatch</c> and <c>locales</c> from the
+    /// profile; other keys are kept;</item>
     /// <item><c>tokens.css</c> (when the kit has one): each <c>--font-*</c> token names a synced family (<see cref="KitFontTokens"/>); a
     /// token that maps to none is reported and kept.</item>
     /// </list>
@@ -124,6 +126,10 @@ namespace DesignUi.Editor
             if (profile.referenceResolution.x <= 0 || profile.referenceResolution.y <= 0) errors.Add("the DesignUiProfile's reference resolution must be positive");
             if (profile.viewports == null || profile.viewports.Length == 0 || profile.viewports.Any(v => v.x <= 0 || v.y <= 0))
                 errors.Add("the DesignUiProfile needs at least one viewport, each with a positive size");
+            if ((profile.scaledViewports ?? new UnityEngine.Vector2Int[0]).Any(v => v.x <= 0 || v.y <= 0))
+                errors.Add("every scaled viewport of the DesignUiProfile needs a positive size");
+            if ((profile.scaledViewports ?? new UnityEngine.Vector2Int[0]).Contains(profile.referenceResolution))
+                errors.Add("the reference resolution " + profile.referenceResolution.x + "×" + profile.referenceResolution.y + " is scale 1, an exact viewport; remove it from the profile's scaled viewports");
 
             var settings = FindTmpSettingsAssets();
             if (settings.Count > 1) warnings.Add("Multiple TMP Settings assets under Resources: " + string.Join(", ", settings));
@@ -140,10 +146,10 @@ namespace DesignUi.Editor
 
             // ---- every check before any write: faces and files, text styles against the twins' face metrics -------------
             var faces = Faces(plan, errors);
-            var scales = (profile.viewports ?? new UnityEngine.Vector2Int[0]).Where(v => v.x > 0 && v.y > 0)
-                .Select(v => (v, BoxesWriter.Scale(v, profile.referenceResolution, profile.screenMatch))).ToList();
+            // whole device pixels are required at the exact viewports only; readability is judged at the smallest of all
+            var scales = ExactScales(profile);
             errors.AddRange(ValidateTextStyles(kitDir + "/" + textStyles, plan.Fonts[plan.ReferenceLocale].Primary, scales));
-            var readability = errors.Count == 0 ? ReadabilityWarning(kitDir + "/" + textStyles, scales) : null;
+            var readability = errors.Count == 0 ? ReadabilityWarning(kitDir + "/" + textStyles, AllScales(profile)) : null;
             if (readability != null) warnings.Add(readability);
             // every line box of the table and of its text-size steps: the twins an import makes (and keeps)
             if (errors.Count == 0) plan.LineBoxes = ScreenCompiler.ScaledLineBoxes(KitTextStyles.LineBoxesOf(kitDir + "/" + textStyles), profile.textSizes);
@@ -240,7 +246,7 @@ namespace DesignUi.Editor
         // ---- text styles (docs/findings/m0.md: line height and text styles, bold policy) ---------------------------
 
         /// <summary>
-        /// Checks every kit text style against the reference locale's font and the profile's viewports: the weight has a real
+        /// Checks every kit text style against the reference locale's font and the profile's exact viewports: the weight has a real
         /// face (the TMP weight table, 400 = the font itself) whose font loads; <c>fontSize × scale</c> and
         /// <c>lineHeight × scale</c> are whole device pixels at every viewport scale (<paramref name="scales"/>: UI Toolkit
         /// sets text at whole device pixels and rounds a text element's height up to them, so anything else drifts from
@@ -315,8 +321,9 @@ namespace DesignUi.Editor
                     errors.Add(prefix + string.Join(" and ", new[] { fWhole ? null : "fontSize " + Fmt(f) + " px", lWhole ? null : "lineHeight " + Fmt(l) + " px" }.Where(x => x != null)) +
                                " is not whole device pixels at the viewport " + viewport.x + "×" + viewport.y + " (scale " + Fmt(scale) + ": " +
                                string.Join(", ", new[] { fWhole ? null : Fmt(fs), lWhole ? null : Fmt(ls) }.Where(x => x != null)) +
-                               " px). Text sizes and line heights must be whole device pixels at every viewport the profile declares (UI Toolkit sets text at " +
-                               "whole device pixels and rounds a text's height up to them, so stacked text drifts from the design); use multiples of " + step +
+                               " px). Text sizes and line heights must be whole device pixels at every exact viewport the profile declares (UI Toolkit sets text at " +
+                               "whole device pixels and rounds a text's height up to them, so stacked text drifts from the design; a resolution where that cannot hold " +
+                               "belongs in the profile's scaled viewports); use multiples of " + step +
                                " px, for example fontSize " + Fmt(F(f)) + " with lineHeight " + Fmt(F(l)) + ".");
                     break;
                 }
@@ -534,12 +541,31 @@ namespace DesignUi.Editor
         {
             var updated = (JObject)config.DeepClone();
             updated["reference"] = new JArray(profile.referenceResolution.x, profile.referenceResolution.y);
-            updated["viewports"] = new JArray(profile.viewports.Select(v => (object)new JArray(v.x, v.y)).ToArray());
+            updated["viewports"] = ViewportsJson(profile);
             updated["screenMatch"] = double.Parse(profile.screenMatch.ToString("R", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
             updated["locales"] = new JArray(plan.Locales.Cast<object>().ToArray());
             if (updated["referenceLocale"] != null) updated["referenceLocale"] = plan.ReferenceLocale;
             return JToken.DeepEquals(config, updated) ? original : Utf8(updated.ToString(Formatting.None) + "\n");
         }
+
+        /// <summary>
+        /// The profile's viewports as kit.config.json writes them: each exact one as <c>[w, h]</c>, then each scaled one as
+        /// <c>{ "size": [w, h], "class": "scaled" }</c> (the exporter reads both forms; a plain pair is exact).
+        /// </summary>
+        internal static JArray ViewportsJson(DesignUiProfile profile) =>
+            new JArray(profile.DeclaredViewports().Select(v => v.cls == DesignViewportClass.Exact
+                ? (object)new JArray(v.size.x, v.size.y)
+                : new JObject { ["size"] = new JArray(v.size.x, v.size.y), ["class"] = "scaled" }).ToArray());
+
+        /// <summary>The panel scale of each exact viewport: where every kit value must be whole device pixels.</summary>
+        internal static List<(UnityEngine.Vector2Int viewport, double scale)> ExactScales(DesignUiProfile profile) =>
+            profile.DeclaredViewports().Where(v => v.cls == DesignViewportClass.Exact && v.size.x > 0 && v.size.y > 0)
+                .Select(v => (v.size, BoxesWriter.Scale(v.size, profile.referenceResolution, profile.screenMatch))).ToList();
+
+        /// <summary>The panel scale of every declared viewport, both classes.</summary>
+        internal static List<(UnityEngine.Vector2Int viewport, double scale)> AllScales(DesignUiProfile profile) =>
+            profile.DeclaredViewports().Where(v => v.size.x > 0 && v.size.y > 0)
+                .Select(v => (v.size, BoxesWriter.Scale(v.size, profile.referenceResolution, profile.screenMatch))).ToList();
 
         static string KitRelative(JObject config, string key, string fallback, List<string> errors)
         {

@@ -4,8 +4,9 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ServerContext } from "../context.js";
-import { renderRules, rulesJson, splitSections, type KitConfig, type RulesJson } from "../exporter.js";
+import { renderRules, rulesJson, splitSections, viewportClassOf, type KitConfig, type RulesJson } from "../exporter.js";
 import { REPO_KIT_DIR } from "../paths.js";
+
 import { guarded, Timings, toolResult } from "../result.js";
 
 /**
@@ -15,6 +16,16 @@ import { guarded, Timings, toolResult } from "../result.js";
  * gets one rendered from its own files. Nothing here is a copy: both come from the exporter's kit and lint data.
  */
 const isStub = (md: string) => md.replace(/^#.*$/gm, "").trim().length < 40;
+
+/**
+ * The kit's viewports by class: `exact 2560×1440, 1920×1080; scaled 1366×768` (exact: every kit value whole device px;
+ * scaled: laid out and verified, exempt from the whole-device-pixel rules).
+ */
+export function kitViewports(kit: Pick<KitConfig, "viewports" | "scaledViewports">): string {
+  const of = (cls: "exact" | "scaled") => kit.viewports.filter((v) => viewportClassOf(kit.scaledViewports, v) === cls).map((v) => v.join("×"));
+  const scaled = of("scaled");
+  return `exact ${of("exact").join(", ")}` + (scaled.length ? `; scaled ${scaled.join(", ")}` : "");
+}
 
 export interface RulesBundle {
   markdown: string;
@@ -38,7 +49,7 @@ export function buildRules(ctx: ServerContext, t: Timings): RulesBundle {
 
   const sections = splitSections(rules).map((s) => s.id);
   const header = [
-    `Kit: ${kitDir} (reference ${kit.reference.join("×")}, viewports ${kit.viewports.map((v) => v.join("×")).join(", ")}, locales ${kit.locales.join(", ")})`,
+    `Kit: ${kitDir} (reference ${kit.reference.join("×")}, viewports ${kitViewports(kit)}, locales ${kit.locales.join(", ")})`,
     ...notes.map((n) => `> ${n}`),
     `Sections (design_ui_rules { section } returns one): ${sections.join(", ")}; json is the same contract as compact JSON (rules, css, textStyles, fonts).`,
   ].join("\n");

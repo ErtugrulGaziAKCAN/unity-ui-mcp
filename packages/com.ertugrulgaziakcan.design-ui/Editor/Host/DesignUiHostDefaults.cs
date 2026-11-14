@@ -36,7 +36,10 @@ namespace DesignUi.Editor
             if (fonts != null && region.Fonts == null) region.Fonts = fonts;
         }
 
-        /// <summary>The panel scale of each of the profile's viewports (Unity's linear blend at the profile's match, spec 12).</summary>
+        /// <summary>
+        /// The panel scale of each of the profile's exact viewports (Unity's linear blend at the profile's match, spec 12): a
+        /// text-size step is checked at each; scaled viewports are exempt from whole device pixels.
+        /// </summary>
         internal static float[] ViewportScales(DesignUiProfile profile)
         {
             var reference = profile.referenceResolution;

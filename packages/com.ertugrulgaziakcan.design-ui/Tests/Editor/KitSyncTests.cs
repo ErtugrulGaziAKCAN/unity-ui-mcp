@@ -80,6 +80,7 @@ namespace DesignUi.Editor.Tests
             p.fontTwinFolder = FontFixture.TwinFolder;
             p.referenceResolution = new Vector2Int(2560, 1440);
             p.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720) };
+            p.scaledViewports = new Vector2Int[0];
             p.screenMatch = 0.25f;
             return p;
         }
@@ -233,6 +234,69 @@ namespace DesignUi.Editor.Tests
             var r = KitSync.Run(profile, kit, Resolver(profile));
             Assert.IsFalse(r.Ok);
             StringAssert.Contains("at the viewport 1000×1440 (scale 0.390625", r.Errors.Single());
+        }
+
+        [Test]
+        public void Run_WritesScaledViewportsWithTheirClass_AndTheTextStatusCallsThatCurrent()
+        {
+            var kit = Kit();
+            var profile = Profile();
+            profile.screenMatch = 0.5f;
+            profile.scaledViewports = new[] { new Vector2Int(1600, 900), new Vector2Int(1366, 768) };
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            var config = JObject.Parse(File.ReadAllText(kit + "/kit.config.json"));
+            Assert.IsTrue(JToken.DeepEquals(JArray.Parse(
+                "[[2560,1440],[1920,1080],[1280,720],{\"size\":[1600,900],\"class\":\"scaled\"},{\"size\":[1366,768],\"class\":\"scaled\"}]"),
+                config["viewports"]), config.ToString());
+            Assert.IsTrue(JToken.DeepEquals(config["viewports"], KitSync.ViewportsJson(profile)), "the Text section compares the same form");
+            // a viewport in both lists counts once, as exact
+            profile.scaledViewports = new[] { new Vector2Int(1280, 720), new Vector2Int(1366, 768) };
+            CollectionAssert.AreEqual(new[] { new Vector2Int(1366, 768) }, profile.ScaledOnly.ToArray());
+        }
+
+        [Test]
+        public void Run_AScaledViewportIsExemptFromWholeDevicePixels_AnExactOneIsNot()
+        {
+            // 16/20 is 8.535/10.669 device px at 1366×768 (scale 0.53346 with match 0.5): fine as scaled, an error as exact
+            var kit = Kit("{ \"x\": { \"fontSize\": 16, \"lineHeight\": 20, \"weight\": 400 } }");
+            var profile = Profile();
+            profile.screenMatch = 0.5f;
+            profile.scaledViewports = new[] { new Vector2Int(1366, 768) };
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            profile.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1366, 768) };
+            profile.scaledViewports = new Vector2Int[0];
+            r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsFalse(r.Ok);
+            StringAssert.Contains("at the viewport 1366×768", r.Errors.Single());
+            StringAssert.Contains("scaled viewports", r.Errors.Single());
+        }
+
+        [Test]
+        public void Run_TheReferenceResolutionAsAScaledViewport_Fails()
+        {
+            var kit = Kit();
+            var profile = Profile();
+            profile.scaledViewports = new[] { new Vector2Int(2560, 1440) };
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsFalse(r.Ok);
+            StringAssert.Contains("the reference resolution 2560×1440 is scale 1, an exact viewport", Errors(r));
+            Assert.AreEqual(KitConfig, File.ReadAllText(kit + "/kit.config.json"), "nothing written");
+        }
+
+        [Test]
+        public void Run_ReadabilityIsJudgedAtTheSmallestViewportOfEitherClass()
+        {
+            var profile = Profile();
+            profile.screenMatch = 0.5f;
+            profile.viewports = new[] { new Vector2Int(2560, 1440) };
+            profile.scaledViewports = new[] { new Vector2Int(1366, 768) };
+            var r = KitSync.Run(profile, Kit(), Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            var small = r.Warnings.Where(w => w.StartsWith("text styles under 10 device px", StringComparison.Ordinal)).ToList();
+            Assert.AreEqual(1, small.Count, string.Join("\n", r.Warnings));
+            StringAssert.StartsWith("text styles under 10 device px at 1366×768", small[0]);
         }
 
         [Test]

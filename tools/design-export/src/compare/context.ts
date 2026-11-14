@@ -83,6 +83,8 @@ export interface IrIndex {
   parent: Map<string, string>;
   view: Pick<IrScreen, "referenceViewport" | "screenMatch">;
   breakpoints: Map<string, IrScreen["breakpoints"][number]>;
+  /** The IR's viewports of class scaled (none for an IR without them). */
+  scaledViewports: [number, number][];
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -107,6 +109,9 @@ export function indexIr(json: unknown): IrIndex {
     order, nodes, parent,
     view: { referenceViewport: ref, screenMatch: typeof json.screenMatch === "number" ? json.screenMatch : 0.5 },
     breakpoints: new Map(bps.map((b) => [b.name, b])),
+    scaledViewports: Array.isArray(json.scaledViewports)
+      ? (json.scaledViewports as unknown[]).filter((v): v is [number, number] => Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === "number"))
+      : [],
   };
 }
 

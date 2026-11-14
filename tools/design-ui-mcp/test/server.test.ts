@@ -12,6 +12,7 @@ import { Runtime } from "../src/runtime.js";
 import { createServer, createUnconfiguredServer, TOOL_NAMES, VERSION } from "../src/server.js";
 import { screenStatus } from "../src/status.js";
 import { keepFailedRun } from "../src/tools/verify.js";
+import { kitViewports } from "../src/tools/rules.js";
 import { fileURLToPath } from "node:url";
 import { call, connect, manualClock, startStubBridge, STUB_RUNNER, tempDir, tempProject, writeZip, type StubBridge, FIXTURES } from "./helpers.js";
 
@@ -87,6 +88,9 @@ describe("server surface", () => {
     expect(instructions).not.toMatch(/Live in this version: [^\n]*design_ui_import/);
     const r = await call(client, "design_ui_status");
     expect(r.data.tools.design_ui_verify.available).toBe(false);
+    // the kit's viewports by class
+    expect(r.data.viewports).toEqual({ exact: [[2560, 1440], [1920, 1080], [1280, 720]], scaled: [] });
+    expect(r.text).toMatch(/^viewports: exact 2560×1440, 1920×1080, 1280×720 \(exact: every kit value/m);
     p.writeConfig({ unityRunner: { prefer: "command", command: { import: [], capture: [], kitSync: [] } } });
     const s = await call(await serverFor(p.dir), "design_ui_status");
     expect(s.data.tools.design_ui_import).toMatchObject({ available: false });
@@ -1374,6 +1378,9 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(r.text).toMatch(/^PASS: clean-screen/);
     expect(r.isError).toBeFalsy();
     expect(r.data).toMatchObject({ verdict: "pass", compared: 2, notRun: [], extra: [], reportPath: path.join(dir, "report.html") });
+    // the captures per viewport class (this export declares no scaled viewport: all exact)
+    expect(r.text).toMatch(/^Viewports exact 64×48: 2 pass, 0 fail$/m);
+    expect(r.data.byClass).toEqual({ exact: { viewports: [[64, 48]], pass: 2, fail: 0, notRun: 0 } });
     // lint from the exporter's report; export, import and capture as this server measured them
     expect(r.data.steps).toMatchObject({ lint: 11 });
     expect(typeof r.data.steps.export).toBe("number");
@@ -1486,5 +1493,12 @@ describe("without design-ui.config.json", () => {
     const s = await call(client, "design_ui_status");
     expect(s.isError).toBeFalsy();
     expect(s.data.config).toMatchObject({ ok: false });
+  });
+});
+
+describe("viewport classes", () => {
+  it("names the kit's viewports by class, exact first", () => {
+    expect(kitViewports({ viewports: [[2560, 1440], [1366, 768], [1280, 720]], scaledViewports: [[1366, 768]] })).toBe("exact 2560×1440, 1280×720; scaled 1366×768");
+    expect(kitViewports({ viewports: [[2560, 1440]] })).toBe("exact 2560×1440");
   });
 });

@@ -1,6 +1,5 @@
 import { parseShadow, splitShadows } from "../../bake/shadow.js";
-import { declaredViewports } from "../../capture/matrix.js";
-import type { KitConfig } from "../../kit.js";
+import { exactViewports, type KitConfig } from "../../kit.js";
 import { logicalViewport } from "../../viewport.js";
 import { px } from "../css-values.js";
 import { layoutOf } from "../layout.js";
@@ -12,10 +11,12 @@ const WIDTHS = new Set(["border-top-width", "border-right-width", "border-bottom
 const KEYWORDS: Record<string, number> = { thin: 1, medium: 3, thick: 5 };
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
-/** The panel scale of every viewport the kit declares (the reference first). */
-export function kitScales(kit: Pick<KitConfig, "reference" | "viewports" | "screenMatch">): { viewport: [number, number]; scale: number }[] {
-  return declaredViewports({ referenceViewport: kit.reference, viewports: kit.viewports })
-    .map((viewport) => ({ viewport, scale: logicalViewport(viewport, kit.reference, kit.screenMatch).scale }));
+/**
+ * The panel scale of every exact viewport the kit declares (the reference first when the kit does not list it): the
+ * viewports where every kit value must be whole device px. Scaled viewports (viewport.ts ViewportClass) are exempt.
+ */
+export function kitScales(kit: Pick<KitConfig, "reference" | "viewports" | "scaledViewports" | "screenMatch">): { viewport: [number, number]; scale: number }[] {
+  return exactViewports(kit).map((viewport) => ({ viewport, scale: logicalViewport(viewport, kit.reference, kit.screenMatch).scale }));
 }
 
 /** Border widths (whole CSS px, up to 64) that are whole device px at every scale: the first three. */
@@ -55,7 +56,7 @@ function thinBoxes(s: DomSnapshot, scales: { viewport: [number, number]; scale: 
       return off ? [`${L.name(e.index)} is ${round6(v)}px ${what}: ${round6(v * off.scale)} device px at ${off.viewport[0]}×${off.viewport[1]}`] : [];
     });
     if (bad.length) out.push(make(rule, e.path, `${bad.join("; ")} (a painted line UI Toolkit draws on whole device px)`,
-      `Give a painted line or bar under ${THIN_BOX_PX}px a thickness of ${lengths}, a whole number of device pixels at every viewport the kit ` +
+      `Give a painted line or bar under ${THIN_BOX_PX}px a thickness of ${lengths}, a whole number of device pixels at every exact viewport the kit ` +
       `declares (${scales.map((x) => `${x.viewport[0]}×${x.viewport[1]}`).join(", ")}), or make it ${THIN_BOX_PX}px or more. UI Toolkit puts both of its ` +
       `edges on whole device pixels, so any other thickness comes out thicker or vanishes where Chromium draws the fraction anti-aliased.`));
   }
@@ -71,7 +72,7 @@ export function chromiumBorderWidth(declared: number): number {
  * Border widths on the device grid (docs/findings/borders.md): Chromium lays a border out and paints it at its exact device
  * width (2px at scale 0.75: 1.5 device px, one solid pixel and an anti-aliased one, the content 1.5 px in), UI Toolkit lays
  * out and paints whole device pixels (rounding half up, at least 1: 2). No width the compiler could write makes Unity paint
- * a fraction, so a border is an error unless its width is whole device px at every viewport the kit declares. The same
+ * a fraction, so a border is an error unless its width is whole device px at every exact viewport the kit declares. The same
  * holds for the hard edges of a box-shadow without blur (a spread ring, an offset copy): its offsets and spread.
  */
 export const rule: Rule = {
@@ -80,7 +81,7 @@ export const rule: Rule = {
     const scales = kitScales(kit);
     const ok = wholeBorderWidths(scales.map((x) => x.scale));
     const list = ok.length ? `${ok.map((w) => `${w}px`).join(", ")} …` : "none below 64px";
-    const fix = `Use a border width that is a whole number of device pixels at every viewport the kit declares ` +
+    const fix = `Use a border width that is a whole number of device pixels at every exact viewport the kit declares ` +
       `(${scales.map((x) => `${x.viewport[0]}×${x.viewport[1]}`).join(", ")}): ${list}, or no border; the same lengths for a ` +
       `line drawn as an element and for the offsets and spread of a box-shadow without blur. UI Toolkit draws a ` +
       `border as whole device pixels, rounding 1.5 up to 2, where Chromium draws the fraction anti-aliased; the layout after the ` +

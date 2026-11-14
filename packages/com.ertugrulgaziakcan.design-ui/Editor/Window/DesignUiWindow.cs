@@ -49,7 +49,7 @@ namespace DesignUi.Editor
         static string s_Version;
         Label m_Status, m_Project, m_Last, m_LastOperation, m_Package, m_PackageId;
         Toggle m_Enable;
-        Label m_ConfigPath, m_DesignRoot, m_LastReport, m_ProfileNote, m_OpResult, m_TextResolver, m_TextKit, m_TextTwins, m_TextFaces, m_TextFontSet, m_TextColour, m_ServerPath, m_CopyResult;
+        Label m_ConfigPath, m_DesignRoot, m_LastReport, m_ProfileNote, m_Viewports, m_OpResult, m_TextResolver, m_TextKit, m_TextTwins, m_TextFaces, m_TextFontSet, m_TextColour, m_ServerPath, m_CopyResult;
         Button m_OpenConfig, m_OpenDesignRoot, m_OpenReport, m_CreateProfile;
         ObjectField m_ProfileField;
 
@@ -114,6 +114,7 @@ namespace DesignUi.Editor
             project.Add(Row(m_ProfileField, m_CreateProfile = Btn("create-profile", "Create Profile", () => CreateProfile())));
             m_ProfileField.style.flexGrow = 1;
             project.Add(m_ProfileNote = Wrapped("profile-note"));
+            project.Add(m_Viewports = Wrapped("viewports"));
 
             root.Add(Section("Operations", out var ops));
             ops.Add(Row(Btn("kit-sync", "Kit Sync", KitSync), Btn("import-screen", "Import Screen…", ImportScreen)));
@@ -271,6 +272,10 @@ namespace DesignUi.Editor
                 : configured == null ? "No DesignUiProfile at " + m_Config.ProfilePath + (m_Config.ProfileAsset != null ? " (profileAsset in design-ui.config.json)." : " (the default path).")
                 : m_Config.ProfilePath;
 
+            var shown = m_ProfileOverride != null ? m_ProfileOverride : configured;
+            m_Viewports.text = ViewportsText(shown);
+            SetShown(m_Viewports, shown != null);
+
             m_ServerPath.text = m_Config.ServerPath == null ? McpClientSnippets.UnknownServer
                 : "Server: " + m_Config.ServerPath + (File.Exists(m_Config.ServerPath) ? "" : " (not built yet: run scripts/setup.sh in that clone)");
 
@@ -280,6 +285,19 @@ namespace DesignUi.Editor
 
             // another profile or kit folder (the config changed, a profile was created or picked): check the Text row again
             if (TextKey() != m_TextCheckedFor) RefreshText();
+        }
+
+        /// <summary>
+        /// The profile's viewports by class: <c>Viewports: exact 2560×1440, …; scaled 1366×768</c>, with what each class means.
+        /// </summary>
+        internal static string ViewportsText(DesignUiProfile profile)
+        {
+            if (profile == null) return "";
+            string List(DesignViewportClass cls) => string.Join(", ", profile.DeclaredViewports().Where(v => v.cls == cls).Select(v => v.size.x + "×" + v.size.y));
+            var exact = List(DesignViewportClass.Exact);
+            var scaled = List(DesignViewportClass.Scaled);
+            return "Viewports: exact " + (exact.Length > 0 ? exact : "none") + " (every kit value whole device px)" +
+                   (scaled.Length > 0 ? "; scaled " + scaled + " (verified within ±1 device px, exempt from the whole-pixel rules)" : "");
         }
 
         /// <summary>The package id since 0.1.0.</summary>

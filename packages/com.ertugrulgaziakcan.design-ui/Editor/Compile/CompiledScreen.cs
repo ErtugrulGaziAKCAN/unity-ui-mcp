@@ -148,7 +148,7 @@ namespace DesignUi.Editor
         public IReadOnlyList<DesignUi.DesignTextSize> TextSizes;
         /// <summary>The profile's right-to-left alignment rule (<c>.rtl</c> rules), or null for none.</summary>
         public DesignUi.RtlTextAlignment? RtlAlignment;
-        /// <summary>The declared viewports and their panel scales: text-size steps are checked at each.</summary>
+        /// <summary>The exact viewports and their panel scales: text-size steps are checked at each (scaled viewports are exempt).</summary>
         public IReadOnlyList<(Vector2Int viewport, double scale)> Viewports;
         /// <summary>The compiled font set (<c>DesignFonts.asset</c>) relative to the screen's UXML, for the screen root's reference, or null.</summary>
         public string FontSet;

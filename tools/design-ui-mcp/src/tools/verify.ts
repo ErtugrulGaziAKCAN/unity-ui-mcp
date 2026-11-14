@@ -4,6 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { requireConfig, withProgress, type ServerContext } from "../context.js";
 import { designPath, exportedPage, resolveScreen, sha256, sourceSha } from "../design.js";
+import { classLines } from "../exporter.js";
 import { MISSING, unityStep } from "../pipeline.js";
 import { FAILED_RUNS_KEPT as KEPT, markBusy } from "../cache.js";
 import { guarded, Timings, toolResult } from "../result.js";
@@ -140,6 +141,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         });
         const lines = [
           `${verdict.toUpperCase()}: ${screen} (report: ${reportPath})`,
+          ...classLines({ byClass: v.byClass ?? {} }).map((l) => `Viewports ${l}`),
           ...v.topIssues.slice(0, 10).map((i) => `- ${i}`),
           ...(v.notRun.length ? [`Not run: ${v.notRun.join(", ")}`] : []),
           ...(hidden.length ? [`Hidden in the design (no golden, not compared; show them in a state, class or repeat item, or remove their layers): ${hidden.join(", ")}`] : []),
@@ -151,7 +153,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         ];
         return toolResult(lines.join("\n"), {
           screen, entry, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun, hidden,
-          extra: v.extra ?? [], warnings: v.warnings ?? [], colour: v.colour ?? null, notSampled: v.notSampled ?? 0, steps: v.timings ?? steps, timings: t.done(),
+          extra: v.extra ?? [], warnings: v.warnings ?? [], colour: v.colour ?? null, notSampled: v.notSampled ?? 0, byClass: v.byClass ?? {}, steps: v.timings ?? steps, timings: t.done(),
         }, verdict !== "pass");
       }));
     });

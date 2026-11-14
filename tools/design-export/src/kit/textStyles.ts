@@ -1,7 +1,6 @@
-import type { KitConfig } from "../kit.js";
+import { exactViewports, type KitConfig } from "../kit.js";
 import type { TextStyle } from "../lint/text-styles.js";
 import { declaredViewports } from "../capture/matrix.js";
-import { kitScales } from "../lint/rules/U-CSS-040.js";
 import { logicalViewport } from "../viewport.js";
 
 /**
@@ -56,12 +55,13 @@ export function textStylesJson(rows: TextStyleRow[]): Record<string, { fontSize:
 }
 
 /**
- * Sizes and line heights that are not whole device pixels at a declared viewport's panel scale (Unity rounds font
- * sizes to whole device pixels and ceils text heights): one message per style, value and viewport; [] when all hold.
+ * Sizes and line heights that are not whole device pixels at an exact viewport's panel scale (Unity rounds font sizes
+ * to whole device pixels and ceils text heights): one message per style, value and viewport; [] when all hold. Scaled
+ * viewports are exempt (no value is whole there; the font twins and the compiler handle them).
  */
-export function textStyleScaleProblems(styles: readonly TextStyle[], kit: Pick<KitConfig, "reference" | "viewports" | "screenMatch">): string[] {
+export function textStyleScaleProblems(styles: readonly TextStyle[], kit: Pick<KitConfig, "reference" | "viewports" | "scaledViewports" | "screenMatch">): string[] {
   const out: string[] = [];
-  const vps = declaredViewports({ referenceViewport: kit.reference, viewports: kit.viewports });
+  const vps = exactViewports(kit);
   for (const s of styles) {
     for (const [what, v] of [["font size", s.fontSize], ["line height", s.lineHeight]] as const) {
       for (const vp of vps) {
@@ -75,17 +75,19 @@ export function textStyleScaleProblems(styles: readonly TextStyle[], kit: Pick<K
 }
 
 /** Throws with every problem of textStyleScaleProblems (kit build and the Claude export refuse such a table). */
-export function assertWholeDevicePixels(styles: readonly TextStyle[], kit: Pick<KitConfig, "reference" | "viewports" | "screenMatch" | "textStyles">): void {
+export function assertWholeDevicePixels(styles: readonly TextStyle[], kit: Pick<KitConfig, "reference" | "viewports" | "scaledViewports" | "screenMatch" | "textStyles">): void {
   const problems = textStyleScaleProblems(styles, kit);
-  if (problems.length) throw new Error(`${kit.textStyles}: text styles must be whole device px at every declared viewport scale: ${problems.join("; ")}`);
+  if (problems.length) throw new Error(`${kit.textStyles}: text styles must be whole device px at every exact viewport scale: ${problems.join("; ")}`);
 }
 
 /** Text under this many device px at the kit's smallest viewport is hard to read, and the renderers differ most there. */
 export const MIN_READABLE_DEVICE_PX = 10;
 
-/** The kit's text styles under MIN_READABLE_DEVICE_PX device px at its smallest declared viewport (by panel scale). */
+/** The kit's text styles under MIN_READABLE_DEVICE_PX device px at its smallest declared viewport of either class (by panel scale). */
 export function smallTextStyles(styles: readonly TextStyle[], kit: Pick<KitConfig, "reference" | "viewports" | "screenMatch">): { viewport: [number, number]; scale: number; styles: TextStyle[] } {
-  const smallest = kitScales(kit).reduce((a, b) => (b.scale < a.scale ? b : a));
+  const smallest = declaredViewports({ referenceViewport: kit.reference, viewports: kit.viewports })
+    .map((viewport) => ({ viewport, scale: logicalViewport(viewport, kit.reference, kit.screenMatch).scale }))
+    .reduce((a, b) => (b.scale < a.scale ? b : a));
   return { ...smallest, styles: styles.filter((s) => s.fontSize * smallest.scale < MIN_READABLE_DEVICE_PX - 1e-9) };
 }
 

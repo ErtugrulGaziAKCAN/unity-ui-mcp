@@ -17,7 +17,7 @@
  */
 import type { IrAnim, IrNode, IrScreen } from "../ir/types.js";
 import { dimKind, dimsOf } from "../extract/layers.js";
-import { logicalViewport } from "../viewport.js";
+import { logicalViewport, viewportClassOf } from "../viewport.js";
 
 export type PseudoKind = "hover" | "active" | "focus" | "disabled" | "checked";
 const PSEUDO: ReadonlySet<string> = new Set(["hover", "active", "focus", "disabled", "checked"]);
@@ -108,9 +108,9 @@ export function breakpointsHold(bps: readonly Bp[], viewport: [number, number], 
 }
 
 /**
- * The largest step 1/q (q up to 64) that every declared viewport's scale is a multiple of (0.25 for 1, 0.75 and 0.5), or
- * null. A design whose lengths are whole device px at every declared scale (kit text styles, U-CSS-040 borders) is whole
- * at any scale that is a multiple of it too.
+ * The largest step 1/q (q up to 64) that every given viewport's scale is a multiple of (0.25 for 1, 0.75 and 0.5), or
+ * null. A design whose lengths are whole device px at every exact viewport's scale (kit text styles, U-CSS-040 borders)
+ * is whole at any scale that is a multiple of it too; callers pass the exact viewports.
  */
 export function scaleStep(ir: Pick<IrScreen, "referenceViewport" | "screenMatch">, declared: readonly [number, number][]): number | null {
   const scales = declared.map((v) => logicalViewport(v, ir.referenceViewport, ir.screenMatch).scale);
@@ -162,7 +162,7 @@ export function coverageViewport(bps: readonly Bp[], ir: Pick<IrScreen, "referen
   return best?.vp ?? null;
 }
 
-/** Declared viewports: the IR's, with the reference first when it is missing. */
+/** Declared viewports of both classes: the IR's, with the reference first when it is missing. */
 export function declaredViewports(ir: Pick<IrScreen, "referenceViewport" | "viewports">): [number, number][] {
   const out: [number, number][] = [];
   const add = (v: [number, number]) => { if (!out.some((o) => o[0] === v[0] && o[1] === v[1])) out.push([v[0], v[1]]); };
@@ -367,7 +367,8 @@ export function buildMatrix(ir: IrScreen): CaptureJob[] {
     let vps = names.length ? declared.filter((v) => breakpointsHold(bps, v, ir)) : declared;
     if (!vps.length) {
       const reuse = added.find((a) => breakpointsHold(bps, a.vp, ir));
-      const vp = reuse?.vp ?? coverageViewport(bps, ir, declared);
+      // an added viewport sits near an exact one, on the exact viewports' scale step (a scaled viewport has no step)
+      const vp = reuse?.vp ?? coverageViewport(bps, ir, declared.filter((v) => viewportClassOf(ir.scaledViewports, v) === "exact"));
       if (!vp) throw new Error(`${what}: no viewport activates breakpoint(s) ${names.join(", ")} (with Scale With Screen Size at match ${ir.screenMatch}, the logical size depends on the aspect ratio only)`);
       const entry = reuse ?? { vp, bps: new Set<string>() };
       if (!reuse) added.push(entry);

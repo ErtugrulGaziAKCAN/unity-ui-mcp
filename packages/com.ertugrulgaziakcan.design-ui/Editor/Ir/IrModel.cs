@@ -318,6 +318,8 @@ namespace DesignUi.Editor
         [JsonProperty("source")] public IrSource Source;
         [JsonProperty("referenceViewport")] public int[] ReferenceViewport;
         [JsonProperty("viewports")] public int[][] Viewports;
+        /// <summary>The viewports of class scaled (a subset of <see cref="Viewports"/>), or null: every viewport is exact.</summary>
+        [JsonProperty("scaledViewports", NullValueHandling = NullValueHandling.Ignore)] public int[][] ScaledViewports;
         [JsonProperty("screenMatch")] public float ScreenMatch;
         [JsonProperty("states")] public string[] States = new string[0];
         [JsonProperty("breakpoints")] public IrBreakpoint[] Breakpoints = new IrBreakpoint[0];
