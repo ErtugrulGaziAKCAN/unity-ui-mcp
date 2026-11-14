@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0}.screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}p{margin:0}
+.weeks{display:flex;flex-direction:column;flex-shrink:0}
+.week{display:flex;flex-direction:row;height:120px;flex-shrink:0}
+.day{display:flex;flex-direction:column;width:200px;flex-shrink:0;background-color:#0f2a33}
+.day.is-today{background-color:#123c47}
+.day.is-empty .events{display:none}
+.pick{display:flex;width:120px;height:24px;flex-shrink:0;appearance:none;padding:0;border:none;background-color:#123c47;color:#ffffff;font-family:"Inter UI";font-size:16px;font-weight:400;line-height:20px;text-align:left}
+.pick:disabled{background-color:#333333}
+.events{display:flex;flex-direction:column;flex-shrink:0}
+.card{display:flex;height:24px;flex-shrink:0;background-color:#19505d}
+.card.is-late{background-color:#f0605d}
+.mark{width:20px;height:20px;flex-shrink:0;appearance:none;margin:0;border:none;background-color:#123c47}
+.mark:checked{background-color:#16c2d5}
+</style></head><body><div class="screen" data-u-screen="nested">
+<div class="weeks" data-u-id="weeks">
+<div class="week" data-u-repeat="weeks" data-u-id="week">
+<div class="day" data-u-repeat="days" data-u-id="day"><button class="pick" data-u-id="pick" data-u-action="pick" data-u-bind="day.number">1</button><input class="mark" type="checkbox" data-u-id="mark" data-u-action="mark"><div class="events"><div class="card is-late" data-u-repeat="events" data-u-id="card"><p data-u-id="title" data-u-bind="event.title">A</p></div><div class="card" data-u-id="card"><p data-u-id="title" data-u-bind="event.title">B</p></div></div></div>
+<div class="day is-empty" data-u-id="day"><button class="pick" data-u-id="pick" data-u-action="pick" data-u-bind="day.number">2</button><input class="mark" type="checkbox" data-u-id="mark" data-u-action="mark"><div class="events"><div class="card" data-u-repeat="events" data-u-id="card"><p data-u-id="title" data-u-bind="event.title">—</p></div></div></div>
+</div>
+<div class="week" data-u-id="week">
+<div class="day is-today" data-u-repeat="days" data-u-id="day"><button class="pick" data-u-id="pick" data-u-action="pick" data-u-bind="day.number">8</button><input class="mark" type="checkbox" data-u-id="mark" data-u-action="mark" checked><div class="events"><div class="card" data-u-repeat="events" data-u-id="card"><p data-u-id="title" data-u-bind="event.title">C</p></div><div class="card is-late" data-u-id="card"><p data-u-id="title" data-u-bind="event.title">D</p></div><div class="card" data-u-id="card" hidden style="display: none"><p data-u-id="title" data-u-bind="event.title">—</p></div></div></div>
+<div class="day" data-u-id="day"><button class="pick" data-u-id="pick" data-u-action="pick" data-u-bind="day.number" disabled>9</button><input class="mark" type="checkbox" data-u-id="mark" data-u-action="mark"><div class="events"><div class="card" data-u-repeat="events" data-u-id="card"><p data-u-id="title" data-u-bind="event.title" style="display: none">E</p></div></div></div>
+</div>
+</div>
+</div></body></html>

@@ -117,6 +117,20 @@ describe("buildMatrix", () => {
     ]);
   });
 
+  it("a control its markup disables is never focused or pressed either (a pointer still hovers it)", () => {
+    const ir = screen(node("root", { children: [
+      node("next", { initial: { disabled: true, checked: false }, style: layers("focus", "active", "hover", "disabled") }),
+      node("prev", { initial: { disabled: false, checked: false }, style: layers("focus", "active") }),
+    ] }), { viewports: [[2560, 1440]] });
+    expect(names(buildMatrix(ir))).toEqual([
+      "default@2560x1440",
+      "default@2560x1440.active.prev",
+      "default@2560x1440.disabled.next",
+      "default@2560x1440.focus.prev",
+      "default@2560x1440.hover.next",
+    ]);
+  });
+
   it("adds a viewport just inside a breakpoint no declared viewport reaches, and marks it", () => {
     const ir = screen(node("root", { children: [node("x", { style: layers("bp:max-width-1919", "bp:max-width-1919+hover", "bp:wide+hover") })] }), {
       breakpoints: [{ name: "max-width-1919", maxWidth: 1919 }, { name: "wide", minWidth: 2000 }],
@@ -549,6 +563,43 @@ describe("captures", () => {
       } finally { await d.close(); }
     });
   });
+
+  it("captures an interaction of a hidden element in the context where it shows, and lists one hidden in every context", async () => {
+    const d = await openDesign(fx("hidden-contexts.html"), kit, [2560, 1440], browser);
+    let b: IrBuild;
+    try { b = await buildIr(d, await collectSnapshot(d.page, d.cdp, kit), kit, tmp(), fx("hidden-contexts.html")); } finally { await d.close(); }
+    const dir = tmp();
+    const jobs = buildMatrix(b.ir).filter((j) => j.viewport[0] === 1280);
+    expect(names(jobs)).toEqual(expect.arrayContaining(["default@1280x720.hover.option", "default@1280x720.hover.link", "default@1280x720.hover.drawer-btn",
+      "default@1280x720.hover.retry", "default@1280x720.hover.ghost", "default@1280x720.is-selected.option"]));
+    const r = await captureMatrix(fx("hidden-contexts.html"), kit, b.ir, b.elements, dir, { browser, jobs });
+    const got = names(r.jobs);
+    // a closed popup, a collapsed row, a zero-width clipping drawer, a state's content: the context each layer gives
+    expect(got).toEqual(expect.arrayContaining([
+      "default@1280x720.is-open.menu.hover.option", "default@1280x720.is-open.menu.hover.option.is-selected.option", "default@1280x720.is-open.menu.is-selected.option",
+      "default@1280x720.hover.link.is-expanded.row", "default@1280x720.focus.link.is-expanded.row", "default@1280x720.is-open.drawer.hover.drawer-btn",
+      "busy@1280x720.hover.retry", "busy@1280x720.focus.retry", "default@1280x720.hover.plain", "default@1280x720.focus.plain",
+    ]));
+    for (const gone of ["hover.option", "is-selected.option", "hover.link", "focus.link", "hover.drawer-btn", "hover.retry", "focus.retry", "hover.ghost"]) {
+      expect(got, gone).not.toContain(`default@1280x720.${gone}`);
+    }
+    // every element that can be hovered in the design keeps a hover capture; the one no context shows is listed
+    for (const id of ["plain", "option", "link", "drawer-btn", "retry"]) expect(got.some((n) => n.includes(`.hover.${id}`)), id).toBe(true);
+    const matrix = JSON.parse(fs.readFileSync(path.join(dir, "matrix.json"), "utf8"));
+    expect(matrix.captures.map((c: { name: string }) => c.name)).toEqual(got);
+    expect(matrix.hidden).toEqual([{ name: "default@1280x720.hover.ghost", reason: expect.stringMatching(/not visible.*in any context/) }]);
+    const option = matrix.captures.find((c: { name: string }) => c.name === "default@1280x720.is-open.menu.hover.option");
+    expect(option.context).toEqual({ state: "default", apply: [{ kind: "class", name: "is-open", elementId: "menu" }] });
+    expect(matrix.captures.find((c: { name: string }) => c.name === "busy@1280x720.hover.retry").context).toEqual({ state: "busy", apply: [] });
+    expect(matrix.captures.find((c: { name: string }) => c.name === "default@1280x720.hover.plain").context).toBeUndefined();
+    for (const n of ["default@1280x720.is-open.menu.hover.option", "default@1280x720.hover.link.is-expanded.row", "default@1280x720.is-open.drawer.hover.drawer-btn", "busy@1280x720.hover.retry"]) {
+      const target = /hover\.([a-z-]+)/.exec(n)![1];
+      expect(r.boxes[n].elements[target].visible, n).toBe(true);
+      expect(r.boxes[n].elements[target].w, n).toBeGreaterThan(0);
+      expect(fs.existsSync(path.join(dir, `${n}.png`))).toBe(true);
+    }
+    expect(fs.existsSync(path.join(dir, "default@1280x720.hover.ghost.png"))).toBe(false);
+  }, 60000);
 
   it("a failing viewport stops the others and fails the matrix once every page is closed", async () => {
     const all = buildMatrix(built.ir);

@@ -364,6 +364,92 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(0, differing, "the localized screen's capture is the static compile's, pixel for pixel");
         }
 
+        /// <summary>Weeks of days of cards (nested inline repeats) whose written-out items carry their own classes, states and hidden elements.</summary>
+        static IrScreen NestedItems()
+        {
+            var pick = Node("pick", "button", ("width", "30px"), ("height", "16px"), ("flex-shrink", "0"), ("background-color", "#123c47")).With("disabled", ("background-color", "#ff0000"));
+            pick.Initial = new IrInitial();
+            var card = Box("card", "#19505d", ("width", "30px"), ("height", "10px"));
+            var day = Node("day", "container", ("display", "flex"), ("flex-direction", "column"), ("width", "40px"), ("height", "40px"), ("flex-shrink", "0"),
+                ("background-color", "#0f2a33")).With("class:is-today", ("background-color", "#16c2d5")).Add(pick, card);
+            var week = Node("week", "container", ("display", "flex"), ("flex-direction", "row"), ("height", "40px"), ("flex-shrink", "0")).Add(day);
+            week.Repeat = new IrRepeat { Name = "days", Mode = "inline", Count = 2 };
+            var weeks = Node("weeks", "container", ("display", "flex"), ("flex-direction", "column"), ("flex-shrink", "0")).Add(week);
+            weeks.Repeat = new IrRepeat { Name = "weeks", Mode = "inline", Count = 2 };
+            return Small(BlackRoot(weeks));
+        }
+
+        const string NestedFixtures = "{ \"weeks\": [ { \"days\": [ {}, {} ] }, { \"days\": [ " +
+                                      "{ \"$classes\": { \"day\": [\"is-today\"] }, \"$states\": { \"pick\": [\"disabled\"] }, \"$hidden\": { \"card\": true } }, {} ] } ] }";
+
+        [UnityTest]
+        public IEnumerator Run_RepeatItems_ShowTheirOwnClassesStatesAndHiddenElements_InNestedRepeats()
+        {
+            var export = Export(NestedItems(), NestedFixtures);
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var req = Request(export, screen, "default@320x180", 320, 180);
+            float todayY = 0;
+            req.Inspect = tree =>
+            {
+                var weeks = tree.Q("weeks").Children().ToList();
+                Assert.AreEqual(2, weeks.Count);
+                var days = weeks[1].Children().ToList();
+                Assert.AreEqual(2, days.Count);
+                Assert.IsTrue(days[0].ClassListContains("is-today"), "the second week's first day is today (its own $classes)");
+                Assert.IsFalse(days[1].ClassListContains("is-today"));
+                Assert.IsFalse(weeks[0].Children().First().ClassListContains("is-today"));
+                Assert.IsFalse(days[0].Q<Button>().enabledSelf, "its pick button is disabled ($states)");
+                Assert.IsTrue(days[1].Q<Button>().enabledSelf);
+                Assert.IsTrue(weeks[0].Children().First().Q<Button>().enabledSelf, "the template's own state elsewhere");
+                Assert.AreEqual(DisplayStyle.None, days[0].Children().Last().resolvedStyle.display, "its card is hidden ($hidden)");
+                Assert.AreEqual(DisplayStyle.Flex, days[1].Children().Last().resolvedStyle.display);
+                todayY = days[0].worldBound.yMax - 2;
+            };
+            yield return DesignCapture.Run(req, profile);
+            var tex = Png(req);
+            Assert.AreEqual("#16c2d5", Hex(Pixel(tex, 20, (int)todayY)), "today's background in the capture");
+        }
+
+        [UnityTest]
+        public IEnumerator Run_ALocalizingProfileWithIndexedArguments_FillsTheArgumentsFromTheSampleData()
+        {
+            // the String Tables hold {0} (indexed), the design writes {count}: the capture shows the design's reference text with
+            // the sample value, at the root and inside repeat items, never a placeholder
+            var count = Words("count", "{count} olay", ("align-self", "flex-start"));
+            count.Text.Key = "capture.count";
+            count.Text.En = "{count} events";
+            count.Text.Args = new[] { "count" };
+            var more = Words("more", "+{hidden} daha", ("align-self", "flex-start"));
+            more.Text.Key = "capture.more";
+            more.Text.En = "+{hidden} more";
+            more.Text.Args = new[] { "hidden" };
+            var row = Node("row", "container", ("height", "20px"), ("flex-shrink", "0")).Add(more);
+            var rows = Node("rows", "container", ("display", "flex"), ("flex-direction", "column")).Add(row);
+            rows.Repeat = new IrRepeat { Name = "rows", Mode = "inline", Count = 2 };
+            var export = Export(Small(BlackRoot(count, rows)), "{ \"count\": \"4\", \"rows\": [ { \"hidden\": \"2\" }, { \"hidden\": \"5\" } ] }");
+            var localizing = Profile(new Vector2Int(320, 180), 0.5f);
+            localizing.outputFolder = Out + "/Indexed";
+            localizing.localization.enabled = true;
+            localizing.localization.argumentFormat = DesignArgumentFormat.Indexed;
+            localizing.localization.screenTables = new[] { new DesignScreenTable { screen = "capture.test", collection = "CaptureTest" } };
+            var compiled = ScreenCompiler.Compile(export, localizing, false, new CompileHooks { ViewCode = _ => null, Tables = new NoTables() });
+            Assert.IsTrue(compiled.Ok, string.Join("\n", compiled.Errors));
+            var screen = Out + "/Indexed/" + Naming.Pascal("capture.test");
+            StringAssert.Contains("DesignUi.DesignLocalizedString", File.ReadAllText(screen + "/" + Naming.Pascal("capture.test") + ".uxml"));
+            var req = Request(export, screen, "default@320x180", 320, 180);
+            string countText = null;
+            List<string> moreTexts = null;
+            req.Inspect = tree =>
+            {
+                countText = tree.Q<Label>("count").text;
+                moreTexts = tree.Q("rows").Query<Label>().ToList().Select(l => l.text).ToList();
+            };
+            yield return DesignCapture.Run(req, localizing);
+            Assert.AreEqual("4 olay", countText, "the design's reference (tr) text with the sample value");
+            CollectionAssert.AreEqual(new[] { "+2 daha", "+5 daha" }, moreTexts, "each item's own value");
+        }
+
         [UnityTest]
         public IEnumerator Run_ABoundText_GetsItsCharactersAndKerningBeforeItIsAssigned()
         {

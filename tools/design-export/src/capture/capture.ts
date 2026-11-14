@@ -25,7 +25,7 @@ import { stableStringify } from "../ir/stableStringify.js";
 import type { KitConfig } from "../kit.js";
 import { openDesign, type LoadedDesign } from "../load.js";
 import { logicalViewport } from "../viewport.js";
-import { buildMatrix, captureName, unsampledAnims, type AnimRef, type CaptureJob, type ScreenSetup } from "./matrix.js";
+import { buildMatrix, captureName, contextCandidates, jobInContext, unsampledAnims, type AnimRef, type CaptureApply, type CaptureJob, type ScreenSetup } from "./matrix.js";
 
 /** IR id → index of its DOM element in `[body, ...body.querySelectorAll("*")]` (from `buildIr`). */
 export type ElementMap = Record<string, number>;
@@ -37,7 +37,11 @@ export interface MatrixTimings {
   /** Per capture name: setup, screenshot, boxes and writes. */
   jobs: Record<string, number>;
 }
-export interface MatrixResult { jobs: CaptureJob[]; boxes: Record<string, CaptureBoxes>; timings: MatrixTimings }
+/** A job not captured: the elements it applies to are not on the screen in its setup or in any context (matrix.json `hidden`). */
+export interface HiddenJob { name: string; reason: string }
+/** The state and items a job got so that the elements it applies to are on the screen (matrix.json `context`). */
+export interface JobContext { state: string; apply: CaptureApply[] }
+export interface MatrixResult { jobs: CaptureJob[]; boxes: Record<string, CaptureBoxes>; timings: MatrixTimings; hidden: HiddenJob[]; contexts: Record<string, JobContext> }
 export interface MatrixOptions {
   /** Browser to open pages in (else one is launched and closed). */
   browser?: Browser;
@@ -219,6 +223,36 @@ function pageTextCeil(arg: { items: number[]; ir: number[]; scale: number }): nu
     sheet.textContent = rules.join("\n");
   }
   return want.length;
+}
+
+/**
+ * Whether each element is on the screen: it has a box of some size, nothing makes it invisible (visibility, an
+ * ancestor's opacity 0) and its box is not clipped away by an ancestor's overflow or by the screen root (a collapsed or
+ * zero-size container, a closed popup, a display: none ancestor).
+ */
+function pageVisible(arg: { items: number[]; root: number }): boolean[] {
+  const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
+  const rootEl = els[arg.root];
+  const px = (v: string) => parseFloat(v) || 0;
+  return arg.items.map((i) => {
+    const el = els[i];
+    if (!el || el.getClientRects().length === 0) return false;
+    const b = el.getBoundingClientRect();
+    let left = b.left, top = b.top, right = b.right, bottom = b.bottom;
+    if (right - left <= 0 || bottom - top <= 0 || getComputedStyle(el).visibility !== "visible") return false;
+    for (let x: Element | null = el; x && x !== document.documentElement; x = x.parentElement) {
+      const cs = getComputedStyle(x);
+      if (parseFloat(cs.opacity) === 0) return false;
+      const c = x.getBoundingClientRect();
+      if (x !== el && cs.overflowX !== "visible") { left = Math.max(left, c.left + px(cs.borderLeftWidth)); right = Math.min(right, c.right - px(cs.borderRightWidth)); }
+      if (x !== el && cs.overflowY !== "visible") { top = Math.max(top, c.top + px(cs.borderTopWidth)); bottom = Math.min(bottom, c.bottom - px(cs.borderBottomWidth)); }
+      if (x === rootEl) {
+        left = Math.max(left, c.left); right = Math.min(right, c.right); top = Math.max(top, c.top); bottom = Math.min(bottom, c.bottom);
+        break;
+      }
+    }
+    return right - left > 0 && bottom - top > 0;
+  });
 }
 
 /** Removes what pageTextCeil added. */
@@ -634,6 +668,14 @@ export class CaptureSession {
     this.series = null;
   }
 
+  /** Whether each IR element is on the screen with `setup` applied (pageVisible); the page keeps that setup. */
+  async visibleAt(setup: ScreenSetup, ids: readonly string[]): Promise<boolean[]> {
+    await this.endSeries();
+    await this.goTo(setup);
+    await this.d.page.evaluate(pageSettle);
+    return this.d.page.evaluate(pageVisible, { items: ids.map((id) => this.index(id)), root: this.elements[this.ir.root.id] });
+  }
+
   /** Captures one job: writes `<goldensDir>/<name>.png` and returns its boxes. */
   async capture(job: CaptureJob, goldensDir: string): Promise<CaptureBoxes> {
     if (job.viewport[0] !== this.viewport[0] || job.viewport[1] !== this.viewport[1]) throw new Error(`${captureName(job)}: this page renders viewport ${vpName(this.viewport)}`);
@@ -706,6 +748,65 @@ export class CaptureSession {
   }
 }
 
+const contextLabel = (c: { state?: string; item?: CaptureApply }) => (c.state !== undefined ? `state ${c.state}` : `${c.item!.kind === "class" ? c.item!.name : ""} on ${c.item!.elementId}`);
+
+/**
+ * Static jobs whose elements are not on the screen in their own setup (inside a closed popup, a collapsed row, a
+ * zero-size or clipping container, a state's content) are captured where the design shows them: the job gets the
+ * screen state or the classes of its elements' and their ancestors' layers that bring them on screen (one of them,
+ * else the fewest of all of them), so an interaction or class of a hidden element is still captured, in a context
+ * the Unity capture applies the same way. A job whose elements no such context shows is not captured and is listed.
+ */
+async function resolveContexts(s: CaptureSession, ir: IrScreen, list: CaptureJob[]): Promise<{ resolved: Map<string, { job: CaptureJob; context: JobContext | null }>; hidden: HiddenJob[] }> {
+  const resolved = new Map<string, { job: CaptureJob; context: JobContext | null }>();
+  const hidden: HiddenJob[] = [];
+  const known = new Map<string, JobContext | null>(); // per target set and state: the context found (null: none)
+  const allOn = async (setup: ScreenSetup, ids: readonly string[]) => (await s.visibleAt(setup, ids)).every((v) => v);
+  for (const job of list) {
+    const name = captureName(job);
+    const targets = Array.from(new Set(job.apply.filter((a) => !(a.kind === "class" && a.absent)).map((a) => a.elementId)));
+    if (job.anim || targets.length === 0 || await allOn({ state: job.state, apply: job.apply }, targets)) { resolved.set(name, { job, context: null }); continue; }
+    const key = `${job.state}|${targets.join(",")}`;
+    const tryContext = async (state: string, extra: CaptureApply[]) => {
+      const j = jobInContext(ir, job, state, extra);
+      return (await allOn({ state: j.state, apply: j.apply }, targets)) ? j : null;
+    };
+    let found: CaptureJob | null = null, context: JobContext | null = null;
+    const cached = known.get(key);
+    // the context found for the same elements in the same state usually fits the next job on them too
+    if (cached) { found = await tryContext(cached.state, cached.apply); if (found) context = cached; }
+    if (!found && cached !== null) {
+      const candidates = contextCandidates(ir, targets).filter((c) => c.state === undefined || job.state === "default")
+        .filter((c) => !c.item || !job.apply.some((a) => a.kind === "class" && !a.absent && a.name === (c.item as { name: string }).name && a.elementId === c.item!.elementId));
+      // one context at a time, outermost first
+      for (const c of candidates) {
+        const state = c.state ?? job.state, extra = c.item ? [c.item] : [];
+        found = await tryContext(state, extra);
+        if (found) { context = { state, apply: extra }; break; }
+      }
+      // else every class at once (with each state, or none), then without each one that is not needed
+      if (!found) {
+        const items = candidates.filter((c) => c.item).map((c) => c.item!);
+        const states = [job.state, ...candidates.filter((c) => c.state !== undefined).map((c) => c.state!)];
+        for (const state of items.length ? states : []) {
+          let kept = items.slice();
+          if (!(await tryContext(state, kept))) continue;
+          for (const it of items) { const without = kept.filter((x) => x !== it); if (await tryContext(state, without)) kept = without; }
+          found = await tryContext(state, kept);
+          if (found) { context = { state, apply: kept }; break; }
+        }
+      }
+      known.set(key, context);
+    }
+    if (found && context) { resolved.set(name, { job: found, context }); continue; }
+    hidden.push({
+      name, reason: `${targets.join(", ")} not visible in this setup or in any context its layers give` +
+        ` (tried ${contextCandidates(ir, targets).map(contextLabel).join(", ") || "none"})`,
+    });
+  }
+  return { resolved, hidden };
+}
+
 function writeBoxes(goldensDir: string, boxes: Record<string, CaptureBoxes>): void {
   fs.mkdirSync(goldensDir, { recursive: true });
   fs.writeFileSync(path.join(goldensDir, "boxes.json"), stableStringify(boxes));
@@ -744,6 +845,9 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
   const timings: MatrixTimings = { totalMs: 0, viewports: {}, jobs: {} };
   const boxes: Record<string, CaptureBoxes> = {};
   const frozen = new Map<string, [string, string][]>();
+  // per original job name: the job captured for it (in a context where its elements show), or null when none shows them
+  const outcome = new Map<string, { job: CaptureJob; context: JobContext | null } | null>();
+  const hidden: HiddenJob[] = [];
   const reusable = async (vp: [number, number]): Promise<LoadedDesign | undefined> => {
     const lv = logicalViewport(vp, ir.referenceViewport, ir.screenMatch);
     for (const d of opts.open ?? []) {
@@ -765,8 +869,16 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
       const t2 = performance.now();
       const s = await CaptureSession.open(d, ir, elements, vp);
       try {
-        for (const j of list) {
+        const r = await resolveContexts(s, ir, list);
+        hidden.push(...r.hidden);
+        const done = new Set<string>();
+        for (const original of list) {
           if (failure) return;
+          const o = r.resolved.get(captureName(original)) ?? null;
+          outcome.set(captureName(original), o);
+          if (!o || done.has(captureName(o.job))) continue;
+          const j = o.job;
+          done.add(captureName(j));
           const t3 = performance.now();
           const b = await s.capture(j, goldensDir);
           boxes[b.capture] = b;
@@ -789,15 +901,31 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
     });
     await Promise.allSettled(workers);
     if (failure) throw (failure as { error: unknown }).error;
+    // the jobs as captured, in the matrix's order: a job moved into a context takes its place, one already there is kept once
+    const captured: CaptureJob[] = [];
+    const contexts: Record<string, JobContext> = {};
+    for (const j of jobs) {
+      const o = outcome.get(captureName(j));
+      if (!o || contexts[captureName(o.job)] !== undefined || captured.some((c) => captureName(c) === captureName(o.job))) continue;
+      captured.push(o.job);
+      if (o.context) contexts[captureName(o.job)] = o.context;
+    }
+    hidden.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     writeBoxes(goldensDir, boxes);
     fs.writeFileSync(path.join(goldensDir, "matrix.json"), stableStringify({
       chromium: browser.version(),
       platform: `${process.platform}-${process.arch}`,
-      // frozen: the keyframe animations a static capture shows at their frozen end frame (the Unity capture writes that frame)
-      captures: jobs.map((j) => { const name = captureName(j), f = frozen.get(name); return { name, ...j, ...(f ? { frozen: f } : {}) }; }),
+      // frozen: the keyframe animations a static capture shows at their frozen end frame (the Unity capture writes that frame);
+      // context: what a job of a hidden element got so that it shows (its state and the items added to its apply)
+      captures: captured.map((j) => {
+        const name = captureName(j), f = frozen.get(name), c = contexts[name];
+        return { name, ...j, ...(f ? { frozen: f } : {}), ...(c ? { context: c } : {}) };
+      }),
+      // hidden: static jobs whose elements no state or class context shows (not captured)
+      ...(hidden.length ? { hidden } : {}),
       unsampled: unsampledAnims(ir),
     }));
+    timings.totalMs = ms(t0);
+    return { jobs: captured, boxes, timings, hidden, contexts };
   } finally { if (ownBrowser) await browser.close(); }
-  timings.totalMs = ms(t0);
-  return { jobs, boxes, timings };
 }

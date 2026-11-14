@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}
+body{margin:0}
+.screen{display:flex;flex-direction:column;align-items:flex-start;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+p{margin:0}
+.b{display:flex;width:160px;height:40px;flex-shrink:0;margin:0 0 8px 0;padding:0;border:0;appearance:none;background-color:#123c47;color:#ffffff;font-family:"Inter UI";font-size:16px;line-height:20px}
+.b:hover{background-color:#16c2d5}
+.b:focus{background-color:#ff0000}
+.menu{display:none;flex-direction:column;width:200px;flex-shrink:0;margin-bottom:8px;background-color:#0f2a33}
+.menu.is-open{display:flex}
+.option{display:flex;width:160px;height:40px;flex-shrink:0;padding:0;border:0;appearance:none;background-color:#123c47}
+.option:hover{background-color:#19505d}
+.option.is-selected{background-color:#216372}
+.row{display:flex;flex-direction:column;width:300px;flex-shrink:0;margin-bottom:8px;background-color:#123c47}
+.head{height:40px;flex-shrink:0}
+.details{display:none;flex-direction:column;flex-shrink:0;padding:8px}
+.row.is-expanded .details{display:flex}
+.drawer{display:flex;width:0px;height:60px;flex-shrink:0;margin-bottom:8px;overflow:hidden;background-color:#0f2a33}
+.drawer.is-open{width:200px}
+.busy{display:none;flex-shrink:0}
+.state-busy .busy{display:flex}
+.ghost{display:none;width:40px;height:40px;flex-shrink:0;padding:0;border:0;appearance:none;background-color:#123c47}
+.ghost:hover{background-color:#16c2d5}
+</style></head><body><div class="screen" data-u-screen="hidden.contexts">
+<button class="b" data-u-id="plain" data-u-action="plain"></button>
+<div class="menu" data-u-id="menu"><button class="option is-selected" data-u-repeat="options" data-u-id="option" data-u-action="pick"></button><button class="option" data-u-id="option" data-u-action="pick"></button></div>
+<div class="row" data-u-id="row"><div class="head"></div><div class="details"><button class="b" data-u-id="link" data-u-action="open"></button></div></div>
+<div class="drawer" data-u-id="drawer"><button class="b" data-u-id="drawer-btn" data-u-action="note"></button></div>
+<div class="busy" data-u-state="busy"><button class="b" data-u-id="retry" data-u-action="retry"></button></div>
+<button class="ghost" data-u-id="ghost" data-u-action="ghost"></button>
+</div></body></html>

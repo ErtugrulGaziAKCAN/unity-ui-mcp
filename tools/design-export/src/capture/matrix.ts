@@ -11,8 +11,8 @@
  *   the same change starts playing on the same clock (`runs`) and all other animations frozen.
  *
  * Pseudo-states follow a real pointer (findings R6, O-5): hover on an element also hovers its ancestors, active implies
- * hover, so `hover` on an ancestor of the hovered or pressed element is implied and dropped; a disabled control is never
- * focused or pressed, so such unions are not captured. Captures with the same state, viewport and applied set are one
+ * hover, so `hover` on an ancestor of the hovered or pressed element is implied and dropped; a disabled control (by the
+ * capture or by its markup) is never focused or pressed, so such captures are not made. Captures with the same state, viewport and applied set are one
  * capture.
  */
 import type { IrAnim, IrNode, IrScreen } from "../ir/types.js";
@@ -226,9 +226,9 @@ function absentOf(t: Tree, apply: CaptureApply[]): CaptureApply[] {
   return apply.flatMap((a) => (a.kind === "class" && (t.nodes.get(a.elementId)?.classes ?? []).includes(a.name) ? [{ ...a, absent: true as const }] : []));
 }
 
-/** A disabled element that is also focused or pressed: a state no screen can reach. */
-const unreachable = (apply: CaptureApply[]) => apply.some((a) => a.kind === "pseudo" && a.pseudo === "disabled"
-  && apply.some((b) => b.kind === "pseudo" && (b.pseudo === "focus" || b.pseudo === "active") && b.elementId === a.elementId));
+/** A disabled element (by the setup or by its own markup) that is also focused or pressed: a state no screen can reach. */
+const unreachable = (t: Tree, apply: CaptureApply[]) => apply.some((b) => b.kind === "pseudo" && (b.pseudo === "focus" || b.pseudo === "active")
+  && (t.nodes.get(b.elementId)?.initial?.disabled === true || apply.some((a) => a.kind === "pseudo" && a.pseudo === "disabled" && a.elementId === b.elementId)));
 
 const setupKey = (s: ScreenSetup) => `${s.state}${s.apply.map((a) => `.${a.kind}.${applyLabel(a)}.${a.elementId}`).join("")}`;
 
@@ -263,6 +263,44 @@ function unsampledReason(a: IrAnim): string | null {
   if (a.playState === "paused") return "paused: it never advances";
   if (a.iterations === 0) return "zero iterations";
   return null;
+}
+
+/**
+ * What can show a hidden element (spec §7, interaction jobs in hidden containers): the screen states and the classes
+ * the layers of the element and its ancestors name (`state:<n>`, own `class:<c>`, `anc(<id>):class:<c>`), outermost
+ * first, without duplicates. A popup's `is-open`, a collapsed row's `is-expanded` or a state's content are among them.
+ */
+export function contextCandidates(ir: IrScreen, ids: readonly string[]): { state?: string; item?: CaptureApply }[] {
+  const t = treeOf(ir);
+  const out: { state?: string; item?: CaptureApply }[] = [];
+  const seen = new Set<string>();
+  const add = (c: { state?: string; item?: CaptureApply }) => {
+    const k = c.state !== undefined ? `state ${c.state}` : `class ${c.item!.kind === "class" ? c.item!.name : ""} ${c.item!.elementId}`;
+    if (!seen.has(k)) { seen.add(k); out.push(c); }
+  };
+  for (const id of ids) {
+    const path: string[] = [];
+    for (let x: string | undefined = id; x !== undefined; x = t.parent.get(x)) path.unshift(x);
+    for (const p of path) {
+      for (const key of layerKeys(t.nodes.get(p)!)) {
+        for (const d of dimsOf(key)) {
+          const k = dimKind(d);
+          if (k === "state") { const st = d.slice(6); if (ir.states.includes(st) && st !== "default") add({ state: st }); }
+          else if (k === "anc") {
+            const m = /^anc\(([^)]+)\):class:(.+)$/.exec(d);
+            if (m && t.nodes.has(m[1])) add({ item: { kind: "class", name: m[2], elementId: m[1] } });
+          } else if (d.startsWith("class:")) add({ item: { kind: "class", name: d.slice(6), elementId: p } });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** The job in another state with more applied (normalized and sorted as the matrix writes them), its name following. */
+export function jobInContext(ir: IrScreen, job: CaptureJob, state: string, extra: readonly CaptureApply[]): CaptureJob {
+  const apply = normalize(treeOf(ir), [...job.apply, ...extra]);
+  return { ...job, state, apply, pseudo: apply.length === 1 && apply[0].kind === "pseudo" ? { kind: apply[0].pseudo, elementId: apply[0].elementId } : null };
 }
 
 /**
@@ -319,7 +357,7 @@ export function buildMatrix(ir: IrScreen): CaptureJob[] {
   for (const id of t.order) {
     for (const key of layerKeys(t.nodes.get(id)!)) {
       const s = setupOfKey(t, ir, id, key);
-      if (unreachable(s.apply)) continue;
+      if (unreachable(t, s.apply)) continue;
       for (const vp of viewportsFor(s.bps, `${id}: layer ${key}`)) addJob(job(s.state, vp, s.apply));
     }
   }

@@ -44,9 +44,11 @@ export { repeatSamples };
 
 /**
  * Sample values of the design (verification only): bind and Smart String argument names → text, repeat name → one
- * object per item; `$classes` maps template element ids to the is-* classes that item shows.
+ * object per item. Per item, by template element id: `$classes` the is-* classes that item shows, `$states` its
+ * controls' disabled/checked where they differ from the template's (the states that are on), `$hidden` whether its
+ * own markup hides the element (hidden attribute, inline display: none) where that differs from the template.
  */
-export interface SampleData { [name: string]: string | SampleData[] | Record<string, string[]> }
+export interface SampleData { [name: string]: string | SampleData[] | Record<string, string[]> | Record<string, boolean> }
 /** `elements`: IR id → index of its DOM element in document order (`[body, ...body.querySelectorAll("*")]`), for captures. */
 export interface IrBuild { ir: IrScreen; fixtures: SampleData; timings: Record<string, number>; elements: Record<string, number> }
 
@@ -288,13 +290,36 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
   // ---- 6. fixtures, fonts, tokens -----------------------------------------------------------------------------
   const sample = (i: number) => (el(i).tag === "select" ? irText(s, i, page.seqs, styles, page.rendered)?.tr ?? "" : plainText(s, i, page.seqs, page.rendered));
   const isClasses = (i: number) => (el(i).attrs.class ?? "").split(/\s+/).filter((c) => /^is-./.test(c));
-  // is-* classes of a sample's elements, by the id of the template element at the same place
-  const itemClasses = (x: number, tpl: number, out: Record<string, string[]>) => {
+  // the IR's template of each repeat (the first item of its first container): every written-out item, in whichever
+  // container, is recorded by the ids of the template element at the same place (a nested repeat's later containers
+  // hold items that are not in the IR)
+  const irTemplate = new Map<string, number>();
+  for (const p of plans) { const name = el(p.i).attrs["data-u-repeat"]; if (name !== undefined && !irTemplate.has(name)) irTemplate.set(name, p.i); }
+  // what an item's own markup sets on a control: disabled and checked (an IR node's `initial` holds the template's)
+  const controlStates = (i: number): string[] | null => {
+    const e = el(i);
+    if (e.ns !== "html" || !CONTROLS.has(e.tag)) return null;
+    const toggle = e.tag === "input" && /^(checkbox|radio)$/i.test(e.attrs.type ?? "");
+    return [...(e.attrs.disabled !== undefined ? ["disabled"] : []), ...(toggle && e.attrs.checked !== undefined ? ["checked"] : [])];
+  };
+  // an element its own markup hides: the hidden attribute or an inline display: none, rendering nothing
+  const markupHidden = (i: number) => {
+    const e = el(i);
+    return !e.rendered && (e.attrs.hidden !== undefined || (e.inline ?? []).some((d) => d.name === "display" && d.value.trim().toLowerCase() === "none"));
+  };
+  interface ItemState { classes: Record<string, string[]>; states: Record<string, string[]>; hidden: Record<string, boolean> }
+  // a sample's is-* classes, control states and markup hiding, by the id of the template element at the same place;
+  // states and hiding only where they differ from the template's (its own markup is the IR's)
+  const itemState = (x: number, tpl: number, out: ItemState) => {
     const id = ids.get(tpl);
     const cls = isClasses(x);
-    if (id && cls.length) out[id] = cls;
+    if (id && cls.length) out.classes[id] = cls;
+    const sx = controlStates(x), st = controlStates(tpl);
+    if (id && sx && st && sx.join() !== st.join()) out.states[id] = sx;
+    const hx = markupHidden(x), ht = markupHidden(tpl);
+    if (id && hx !== ht) out.hidden[id] = hx;
     const kx = itemChildren(s, el(x)), kt = itemChildren(s, el(tpl));
-    kx.forEach((k, n) => { if (kt[n] !== undefined && el(k).attrs["data-u-repeat"] === undefined) itemClasses(k, kt[n], out); });
+    kx.forEach((k, n) => { if (kt[n] !== undefined && el(k).attrs["data-u-repeat"] === undefined) itemState(k, kt[n], out); });
   };
   const fixtures: SampleData = {};
   const collect = (i: number, out: SampleData) => {
@@ -307,12 +332,15 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
       const name = el(c).attrs["data-u-repeat"];
       if (name === undefined) { collect(c, out); continue; }
       const samples = repeatSamples(s, c);
+      const tpl = irTemplate.get(name) ?? c;
       out[name] = samples.map((x) => {
         const o: SampleData = {};
         collect(x, o);
-        const cls: Record<string, string[]> = {};
-        itemClasses(x, c, cls);
-        if (Object.keys(cls).length) o.$classes = cls;
+        const st: ItemState = { classes: {}, states: {}, hidden: {} };
+        itemState(x, tpl, st);
+        if (Object.keys(st.classes).length) o.$classes = st.classes;
+        if (Object.keys(st.states).length) o.$states = st.states;
+        if (Object.keys(st.hidden).length) o.$hidden = st.hidden;
         return o;
       });
       k += samples.length - 1;

@@ -501,6 +501,24 @@ describe("buildIr: layers, text runs and lossless values", () => {
     expect(r.fixtures.items).toEqual([{ label: "One", $classes: { rows__0: ["is-selected"] } }, { label: "Two" }, { label: "Three", $classes: { rows__0: ["is-selected"] } }]);
   });
 
+  it("records each written-out item's classes, states and hidden elements, in nested repeats too, by the template's ids", async () => {
+    const r = await build(fx("nested-items.html"));
+    const weeks = r.fixtures.weeks as { days: Record<string, unknown>[] }[];
+    expect(weeks).toHaveLength(2);
+    // the second week's items sit in a container that is not the IR's template: they map to the template's ids all the same
+    expect(weeks.map((w) => w.days.map((d) => d.$classes ?? null))).toEqual([[null, { day: ["is-empty"] }], [{ day: ["is-today"] }, null]]);
+    expect(weeks.map((w) => w.days.map((d) => (d.events as Record<string, unknown>[]).map((e) => e.$classes ?? null)))).toEqual([
+      [[{ card: ["is-late"] }, null], [null]],
+      [[null, { card: ["is-late"] }, null], [null]],
+    ]);
+    // disabled and checked of an item's controls where they differ from the template's (pick enabled, mark unchecked)
+    expect(weeks.map((w) => w.days.map((d) => d.$states ?? null))).toEqual([[null, null], [{ mark: ["checked"] }, { pick: ["disabled"] }]]);
+    // an element its own markup hides (the hidden attribute, an inline display: none), where the template's shows
+    expect((weeks[1].days[0].events as Record<string, unknown>[]).map((e) => e.$hidden ?? null)).toEqual([null, null, { card: true }]);
+    expect((weeks[1].days[1].events as Record<string, unknown>[])[0].$hidden).toEqual({ title: true });
+    expect((weeks[0].days[0].events as Record<string, unknown>[])[0].$hidden).toBeUndefined();
+  });
+
   it("an ancestor's transition of an inherited colour is copied to the text", async () => {
     const stl = byId((await build(fx("review-style.html"))).ir.root, "stl");
     expect(stl.style["state:dark"]).toEqual({ color: "#16c2d5" });

@@ -9,13 +9,17 @@ namespace DesignUi.Editor
 {
     /// <summary>
     /// The sample values of a design (<c>fixtures/sample-data.json</c>, spec 7), used only by verification and never by
-    /// game data or saves: bind and Smart String argument names map to text, a repeat name maps to one object per item,
-    /// and an item's <c>$classes</c> maps template element ids to the <c>is-*</c> classes that item shows.
+    /// game data or saves: bind and Smart String argument names map to text, a repeat name maps to one object per item.
+    /// Per item, by template element id: <c>$classes</c> the <c>is-*</c> classes that item shows, <c>$states</c> the
+    /// states of its controls that are on (<c>disabled</c>, <c>checked</c>) where they differ from the template's, and
+    /// <c>$hidden</c> whether the item's own markup hides the element (true) or shows it (false) where the template differs.
     /// </summary>
     public sealed class IrFixtures
     {
         public const string FileName = "sample-data.json";
         public const string ClassesKey = "$classes";
+        public const string StatesKey = "$states";
+        public const string HiddenKey = "$hidden";
 
         /// <summary>Bind and argument name to sample text.</summary>
         public readonly Dictionary<string, string> Values = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -23,6 +27,10 @@ namespace DesignUi.Editor
         public readonly Dictionary<string, List<IrFixtures>> Repeats = new Dictionary<string, List<IrFixtures>>(StringComparer.Ordinal);
         /// <summary>Repeat items only: template element id to the <c>is-*</c> classes this item shows (empty when none).</summary>
         public readonly Dictionary<string, string[]> Classes = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        /// <summary>Repeat items only: template element id to the control states that are on in this item (disabled, checked).</summary>
+        public readonly Dictionary<string, string[]> States = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        /// <summary>Repeat items only: template element id to whether this item's markup hides the element (true) or shows it (false).</summary>
+        public readonly Dictionary<string, bool> Hidden = new Dictionary<string, bool>(StringComparer.Ordinal);
 
         public static IrFixtures Read(string path)
         {
@@ -53,6 +61,27 @@ namespace DesignUi.Editor
                         if (!(c.Value is JArray list) || list.Any(x => x.Type != JTokenType.String) || list.Any(x => !((string)x).StartsWith("is-", StringComparison.Ordinal)))
                             throw new IrFormatException("fixtures " + at + "/" + c.Name + " must be a list of is-* classes");
                         result.Classes[c.Name] = list.Select(x => (string)x).ToArray();
+                    }
+                    continue;
+                }
+                if (p.Name == StatesKey)
+                {
+                    if (!(p.Value is JObject states)) throw new IrFormatException("fixtures " + at + " must map template ids to state lists");
+                    foreach (var c in states.Properties())
+                    {
+                        if (!(c.Value is JArray list) || list.Any(x => x.Type != JTokenType.String) || list.Any(x => (string)x != "disabled" && (string)x != "checked"))
+                            throw new IrFormatException("fixtures " + at + "/" + c.Name + " must be a list of the states disabled and checked");
+                        result.States[c.Name] = list.Select(x => (string)x).ToArray();
+                    }
+                    continue;
+                }
+                if (p.Name == HiddenKey)
+                {
+                    if (!(p.Value is JObject hidden)) throw new IrFormatException("fixtures " + at + " must map template ids to true or false");
+                    foreach (var c in hidden.Properties())
+                    {
+                        if (c.Value.Type != JTokenType.Boolean) throw new IrFormatException("fixtures " + at + "/" + c.Name + " must be true or false");
+                        result.Hidden[c.Name] = (bool)c.Value;
                     }
                     continue;
                 }

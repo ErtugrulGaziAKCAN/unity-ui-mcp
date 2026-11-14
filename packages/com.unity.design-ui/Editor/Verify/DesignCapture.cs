@@ -37,9 +37,10 @@ namespace DesignUi.Editor
     /// <item>Screen: the compiled UXML, the reference locale's class on the screen root and the shared <c>DesignFonts.uss</c>;
     /// the runtime wiring of the generated view (a Clickable on the manifest's elements, a PseudoStateMirror from an element
     /// to its shadow host); sample data from <c>fixtures/sample-data.json</c> by element name: bound texts, Smart String
-    /// arguments, and repeat items (their count, their texts and their <c>$classes</c>; inline items are cloned from the
-    /// template and renamed, so only the first item carries the design ids, as in the golden; list items fill the
-    /// ListView's slots). A localized text (a screen compiled with the profile's localization: a String Table binding
+    /// arguments, and repeat items (their count, their texts, their <c>$classes</c>, their controls' <c>$states</c> and the
+    /// elements their markup hides or shows, <c>$hidden</c>, applied as the generated view applies classes, enabled state and
+    /// display; inline items are cloned from the repeat's item template, as the view clones them, and renamed, so only the
+    /// first item carries the design ids, as in the golden; list items fill the ListView's slots). A localized text (a screen compiled with the profile's localization: a String Table binding
     /// and no text in the UXML) shows the design's reference text, the IR's <c>tr</c> with its arguments from the sample
     /// data, exactly as the golden shows it; its binding is taken off first, so no table can replace it.</item>
     /// <item>Job: the state class on the root, classes on their elements (and on a shadow host that mirrors them), disabled and
@@ -881,6 +882,7 @@ namespace DesignUi.Editor
             readonly Screen _screen;
             readonly HashSet<VisualElement> _wired = new HashSet<VisualElement>();
             readonly List<PseudoStateMirror> _mirrors = new List<PseudoStateMirror>();
+            readonly Dictionary<string, VisualTreeAsset> _templates = new Dictionary<string, VisualTreeAsset>(StringComparer.Ordinal);
 
             public SampleFiller(Screen screen)
             {
@@ -892,6 +894,37 @@ namespace DesignUi.Editor
                 var roots = new[] { docRoot };
                 Fill(_screen.Ir.Root, roots, new Scope(_screen.Fixtures, null), _screen.Tree);
                 Wire(roots);
+                SyncMirrors(); // the items' disabled and checked reach their shadow hosts at once
+            }
+
+            /// <summary>The item template of a repeat (<c>&lt;Repeat&gt;Item.uxml</c>), the one its generated view clones items from; null when the screen has none.</summary>
+            VisualTreeAsset ItemTemplate(RepeatEntry entry)
+            {
+                if (string.IsNullOrEmpty(entry.template)) return null;
+                if (!_templates.TryGetValue(entry.template, out var t))
+                    _templates[entry.template] = t = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(_screen.Folder + "/" + entry.template);
+                return t;
+            }
+
+            /// <summary>An inline repeat's item roots cloned from its item template, else from the whole screen's tree (an older compile).</summary>
+            List<VisualElement> CloneItem(RepeatEntry entry, VisualTreeAsset source)
+            {
+                var template = ItemTemplate(entry);
+                if (template != null)
+                {
+                    var holder = new VisualElement();
+                    template.CloneTree(holder);
+                    var roots = holder.Children().ToList();
+                    if (roots.Count == entry.items.Length && roots.Select(r => r.name).SequenceEqual(entry.items))
+                    {
+                        foreach (var r in roots) r.RemoveFromHierarchy();
+                        return roots;
+                    }
+                }
+                var fresh = source.Instantiate();
+                var clones = entry.items.Select(n => BoxesWriter.Find(fresh, n) ?? throw new InvalidOperationException("no repeat item '" + n + "' in the template")).ToList();
+                foreach (var c in clones) c.RemoveFromHierarchy();
+                return clones;
             }
 
             /// <summary>Puts a class the job applies on (or takes it off) the shadow hosts that mirror it for the element.</summary>
@@ -1050,9 +1083,7 @@ namespace DesignUi.Editor
                 int at = container.IndexOf(first[first.Count - 1]) + 1;
                 for (int i = 1; i < count; i++)
                 {
-                    var fresh = source.Instantiate();
-                    var clones = entry.items.Select(n => BoxesWriter.Find(fresh, n) ?? throw new InvalidOperationException("no repeat item '" + n + "' in the template")).ToList();
-                    foreach (var c in clones) c.RemoveFromHierarchy();
+                    var clones = CloneItem(entry, source);
                     FillItem(node, clones, new Scope(Item(i), scope), source);
                     Wire(clones);
                     foreach (var c in clones)
@@ -1083,7 +1114,11 @@ namespace DesignUi.Editor
                 list.itemsSource = Enumerable.Range(0, count).ToList();
             }
 
-            /// <summary>Fills one item (the repeat node's children below the item's compiled roots) and gives it its classes.</summary>
+            /// <summary>
+            /// Fills one item (the repeat node's children below the item's compiled roots) and gives it what its written-out
+            /// sample shows: its classes (on the element and the shadow hosts that mirror them), its controls' disabled and
+            /// checked states, and the elements its markup hides or shows (on the element and its shadow host).
+            /// </summary>
             void FillItem(IrNode repeatNode, IReadOnlyList<VisualElement> itemRoots, Scope scope, VisualTreeAsset source)
             {
                 foreach (var c in repeatNode.Children ?? new IrNode[0]) Fill(c, itemRoots, scope, source);
@@ -1097,6 +1132,21 @@ namespace DesignUi.Editor
                         foreach (var m in _screen.Manifest.mirrors.Where(m => m.element == kv.Key && m.classes != null && m.classes.Contains(cls)))
                             Find(itemRoots, m.host)?.AddToClassList(cls);
                     }
+                }
+                foreach (var kv in scope.Data.States)
+                {
+                    var el = Find(itemRoots, kv.Key);
+                    if (el == null) continue;
+                    DesignUi.DesignView.SetEnabled(el, !kv.Value.Contains("disabled"), null);
+                    if (el is INotifyValueChanged<bool> toggle) toggle.SetValueWithoutNotify(kv.Value.Contains("checked"));
+                }
+                foreach (var kv in scope.Data.Hidden)
+                {
+                    var display = kv.Value ? DisplayStyle.None : DisplayStyle.Flex;
+                    var el = Find(itemRoots, kv.Key);
+                    if (el != null) el.style.display = display;
+                    var host = Find(itemRoots, kv.Key + "__shadowhost");
+                    if (host != null) host.style.display = display;
                 }
             }
 
