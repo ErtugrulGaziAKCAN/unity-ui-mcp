@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
 import { readKit, type KitConfig } from "../src/kit.js";
 import { logicalViewport } from "../src/viewport.js";
-import { openDesign, unwrapDcHtml, usedFamilies, declaredFontFaces } from "../src/load.js";
+import { openDesign, releasePointer, unwrapDcHtml, usedFamilies, declaredFontFaces } from "../src/load.js";
 import { chromiumSandbox, launchChromium } from "../src/browser.js";
 import os from "node:os";
 
@@ -286,6 +286,26 @@ describe("openDesign", () => {
       expect(own[0].src).toContain("local(");
       await d.close();
     } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
+  it("opens the page with no pointer over it, though headless Chromium on Linux starts one at the top-left corner", async () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, "corner.html"), `<!doctype html><html><head><style>body{margin:0} .corner{width:100px;height:100px;background-color:#123c47}
+      .corner:hover{background-color:#16c2d5}</style></head><body><div class="corner"></div></body></html>`);
+    const d = await openDesign(path.join(dir, "corner.html"), kit, [2560, 1440], shared);
+    try {
+      const hovered = () => d.page.evaluate(() => Array.from(document.querySelectorAll(":hover"), (e) => e.localName));
+      expect(await hovered()).toEqual([]);
+      // a pointer at the corner hovers the element there and its ancestors; releasing it hovers nothing
+      await d.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 0, y: 0 });
+      expect(await hovered()).toEqual(["html", "body", "div"]);
+      await releasePointer(d.cdp);
+      expect(await hovered()).toEqual([]);
+      // a viewport change (lint and export measure breakpoint layers so) brings no pointer back
+      await d.page.setViewportSize({ width: 1280, height: 720 });
+      await d.page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      expect(await hovered()).toEqual([]);
+    } finally { await d.close(); fs.rmSync(dir, { recursive: true }); }
   });
 
   it("freezes animations at their end state", async () => {

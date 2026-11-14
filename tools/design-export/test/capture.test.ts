@@ -4,8 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
-import { chromium, type Browser } from "playwright";
+import type { Browser } from "playwright";
 import { readKit, type KitConfig } from "../src/kit.js";
+import { launchChromium } from "../src/browser.js";
 import { openDesign } from "../src/load.js";
 import { collectSnapshot } from "../src/lint/index.js";
 import { buildIr, type IrBuild } from "../src/extract/tree.js";
@@ -252,7 +253,8 @@ describe("captures", () => {
   let browser: Browser;
   let built: IrBuild;
   beforeAll(async () => {
-    browser = await chromium.launch();
+    // with the pipeline's Chromium flags, which lay out and rasterize the goldens
+    browser = await launchChromium();
     const d = await openDesign(fx("screen.html"), kit, [2560, 1440], browser);
     try { built = await buildIr(d, await collectSnapshot(d.page, d.cdp, kit), kit, tmp(), fx("screen.html")); } finally { await d.close(); }
   });
@@ -704,8 +706,8 @@ describe("captures", () => {
             const content = b[id].w - inline;
             // to Chromium's layout precision (1/64 CSS px)
             expect(Math.abs(content - Math.round(content)), `${id} at ${vp[0]}: ${content}`).toBeLessThan(s / 64 + 1e-6);
-            expect(content - b[id].lines[0].w, `${id} at ${vp[0]}`).toBeGreaterThan(0);
-            expect(content - b[id].lines[0].w, `${id} at ${vp[0]}`).toBeLessThan(1);
+            expect(content - b[id].lines[0].w, `${id} at ${vp[0]}: text ${b[id].lines[0].w}`).toBeGreaterThan(0);
+            expect(content - b[id].lines[0].w, `${id} at ${vp[0]}: text ${b[id].lines[0].w}`).toBeLessThan(1);
           }
           // with letter-spacing, UI Toolkit's standard generator measures the text without the spacing after the last
           // character and the compiler adds that spacing as right padding: the text rounded up without it, plus it
