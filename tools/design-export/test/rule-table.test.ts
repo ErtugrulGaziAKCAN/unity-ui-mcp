@@ -16,7 +16,7 @@ describe("lint rule table", () => {
   });
 
   it("covers the newer rules", () => {
-    for (const id of ["U-CSS-031", "U-CSS-032", "U-CSS-033", "U-CSS-034", "U-CSS-035", "U-CSS-036", "U-CSS-037", "U-CSS-038", "U-CSS-039", "U-CSS-040", "U-CSS-041", "U-MRK-008", "U-MRK-009", "U-MRK-010", "U-MRK-011", "I-MRK-001"]) {
+    for (const id of ["U-CSS-031", "U-CSS-032", "U-CSS-033", "U-CSS-034", "U-CSS-035", "U-CSS-036", "U-CSS-037", "U-CSS-038", "U-CSS-039", "U-CSS-040", "U-CSS-041", "U-MRK-008", "U-MRK-009", "U-MRK-010", "U-MRK-011", "U-MRK-012", "I-MRK-001"]) {
       expect(RULE_SUMMARIES[id], id).toBeDefined();
     }
   });
