@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { chromium, type Browser } from "playwright";
 import { CHROMIUM_ARGS, launchChromium } from "./browser.js";
-import { captureMatrix } from "./capture/capture.js";
+import { captureMatrix, type HiddenJob } from "./capture/capture.js";
 import { buildIr } from "./extract/tree.js";
 import { stableStringify } from "./ir/stableStringify.js";
 import { validateIr } from "./ir/validate.js";
@@ -32,6 +32,17 @@ export interface ExportResult {
   totalMs: number;
   /** Non-fatal problems (e.g. the replaced export folder could not be deleted). */
   warnings: string[];
+  /**
+   * Capture jobs whose elements no state, class context or written-out repeat item shows (goldens/matrix.json
+   * `hidden`): they have no golden, so a verify of this export is incomplete until the design shows them somewhere.
+   */
+  hidden: HiddenJob[];
+}
+
+/** The hidden jobs an export's goldens/matrix.json lists (none when it has none or cannot be read). */
+function hiddenOf(outDir: string): HiddenJob[] {
+  const m = readJsonIf<{ hidden?: HiddenJob[] }>(path.join(outDir, "goldens", "matrix.json"));
+  return Array.isArray(m?.hidden) ? m!.hidden.filter((h) => h && typeof h.name === "string") : [];
 }
 
 export interface ExportOptions {
@@ -312,7 +323,7 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
         && OUTPUTS.every((f) => fs.existsSync(path.join(outDir, f)))) {
         const lintReport = readJsonIf<{ findings: Finding[] }>(path.join(outDir, "lint-report.json"));
         return {
-          ok: true, skipped: true, findings: lintReport?.findings ?? [], outDir, warnings,
+          ok: true, skipped: true, findings: lintReport?.findings ?? [], outDir, warnings, hidden: hiddenOf(outDir),
           timings: { load: 0, lint: 0, extract: 0, bake: 0, capture: 0, write: 0 }, totalMs: ms(t0),
         };
       }
@@ -340,7 +351,7 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
           });
           fs.writeFileSync(path.join(fresh, "lint-report.json"), lintJson);
           lap("write");
-          if (errors.length) return { ok: false, findings, timings, lintJson };
+          if (errors.length) return { ok: false, findings, timings, lintJson, hidden: [] as HiddenJob[] };
 
           const build = await buildIr(d, snapshot, kit, fresh, htmlPath);
           const problems = validateIr(build.ir);
@@ -363,11 +374,11 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
 
           fs.writeFileSync(path.join(fresh, "export-report.json"), stableStringify({
             ok: true, source: path.basename(htmlPath), sourceSha, kitSha, toolSha, screen: build.ir.screen,
-            warnings: findings.length, captures: matrix.jobs.length, timings, totalMs: ms(t0),
+            warnings: findings.length, captures: matrix.jobs.length, hidden: matrix.hidden.length, timings, totalMs: ms(t0),
             detail: { extract: build.timings, capture: matrix.timings },
           }));
           lap("write");
-          return { ok: true, findings, timings, lintJson };
+          return { ok: true, findings, timings, lintJson, hidden: matrix.hidden };
         } finally { await d.close(); }
       });
       if (!result.ok && opts.lintReportFile) {
@@ -375,11 +386,11 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
         fs.rmSync(fresh, { recursive: true, force: true });
         fs.mkdirSync(path.dirname(opts.lintReportFile), { recursive: true });
         fs.writeFileSync(opts.lintReportFile, result.lintJson);
-        return { ok: false, findings: result.findings, outDir, timings: result.timings, totalMs: ms(t0), warnings };
+        return { ok: false, findings: result.findings, outDir, timings: result.timings, totalMs: ms(t0), warnings, hidden: [] };
       }
       replaceDir(fresh, outDir, warnings);
       if (result.ok && opts.lintReportFile) fs.rmSync(opts.lintReportFile, { force: true });
-      return { ok: result.ok, findings: result.findings, outDir, timings: result.timings, totalMs: ms(t0), warnings };
+      return { ok: result.ok, findings: result.findings, outDir, timings: result.timings, totalMs: ms(t0), warnings, hidden: result.hidden };
     } catch (e) {
       fs.rmSync(fresh, { recursive: true, force: true });
       throw e;

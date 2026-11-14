@@ -25,11 +25,38 @@ namespace DesignUi.Editor
         /// <c>absent</c>): the off side of a trigger the artboard starts in.
         /// </summary>
         public bool Absent;
+        /// <summary>
+        /// The element in a later written-out repeat item (matrix.json <c>item</c>): the item of each repeat around it,
+        /// outermost first; null for the IR's own element (the first item of each). The capture finds it by the name the
+        /// sample filler gives that item's copy (<see cref="ItemSuffix"/>).
+        /// </summary>
+        public int[] Item;
 
         public static CaptureApply Pseudo(string pseudo, string elementId) => new CaptureApply { Kind = PseudoKind, Name = pseudo, ElementId = elementId };
         public static CaptureApply Class(string name, string elementId) => new CaptureApply { Kind = ClassKind, Name = name, ElementId = elementId };
 
-        public override string ToString() => Kind + " " + (Absent ? "without " : "") + Name + " on " + ElementId;
+        /// <summary>
+        /// The suffix the sample filler appends to the design names in written-out repeat items: <c>#k</c> per repeat,
+        /// innermost first, for each repeat whose item is a later one or that sits inside a later item of an outer repeat
+        /// (<c>day#3</c>, <c>day#0#1</c>, <c>day#3#1</c>); empty for the IR's own items.
+        /// </summary>
+        public static string ItemSuffix(int[] item)
+        {
+            if (item == null) return "";
+            var sb = new System.Text.StringBuilder();
+            for (int k = item.Length - 1; k >= 0; k--)
+            {
+                bool outerLater = false;
+                for (int j = 0; j < k; j++) outerLater |= item[j] > 0;
+                if (item[k] > 0 || outerLater) sb.Append('#').Append(item[k]);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>The name of the element this item applies to on the capture's screen.</summary>
+        public string Target => ElementId + ItemSuffix(Item);
+
+        public override string ToString() => Kind + " " + (Absent ? "without " : "") + Name + " on " + Target;
     }
 
     /// <summary>One Unity capture of a compiled screen.</summary>
@@ -157,14 +184,21 @@ namespace DesignUi.Editor
             {
                 var kind = (string)a["kind"];
                 var element = (string)a["elementId"];
-                if (kind == CaptureApply.PseudoKind) apply.Add(CaptureApply.Pseudo((string)a["pseudo"], element));
+                CaptureApply c;
+                if (kind == CaptureApply.PseudoKind) c = CaptureApply.Pseudo((string)a["pseudo"], element);
                 else if (kind == CaptureApply.ClassKind)
                 {
-                    var c = CaptureApply.Class((string)a["name"], element);
+                    c = CaptureApply.Class((string)a["name"], element);
                     c.Absent = a["absent"]?.Type == JTokenType.Boolean && (bool)a["absent"];
-                    apply.Add(c);
                 }
                 else throw new IrFormatException("'" + path + "': capture '" + name + "' applies an unknown kind '" + kind + "'");
+                if (a["item"] is JArray item)
+                {
+                    if (item.Any(k => k.Type != JTokenType.Integer || (int)k < 0))
+                        throw new IrFormatException("'" + path + "': capture '" + name + "' names repeat items that are not item numbers: " + item.ToString(Newtonsoft.Json.Formatting.None));
+                    c.Item = item.Select(k => (int)k).ToArray();
+                }
+                apply.Add(c);
             }
             return apply;
         }

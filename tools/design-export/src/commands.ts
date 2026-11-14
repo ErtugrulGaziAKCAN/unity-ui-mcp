@@ -61,6 +61,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         io.out(`lint found errors; wrote ${path.join(r.outDir, "lint-report.json")} only\n`);
       } else io.out(`exported to ${r.outDir} in ${r.totalMs} ms ` +
         `(${["load", "lint", "extract", "bake", "capture", "write"].map((k) => `${k} ${r.timings[k]}`).join(", ")})\n`);
+      // jobs the design shows in no context: no golden, so a verify of this export is incomplete
+      for (const h of r.hidden) io.out(`hidden in the design (not captured, a verify is incomplete): ${h.name}: ${h.reason}\n`);
       return r.ok ? 0 : 1;
     }) as never);
 
@@ -78,9 +80,10 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       writeReport(v, exportDir, unityDir, report);
       const verdictFile = o.verdict ? path.resolve(o.verdict) : path.join(path.dirname(report), "verdict.json");
       writeVerdict(v, verdictFile);
-      const total = v.captures.length + v.notRun.length, passed = v.captures.filter((c) => c.pass).length;
-      io.out(`${v.pass ? "PASS" : "FAIL"} ${v.screen}: ${passed}/${total} captures pass (compare ${v.timings.compare} ms)\n`);
+      const total = v.captures.length + v.notRun.length + v.hidden.length, passed = v.captures.filter((c) => c.pass).length;
+      io.out(`${v.status.toUpperCase()} ${v.screen}: ${passed}/${total} captures pass (compare ${v.timings.compare} ms)\n`);
       if (v.notRun.length) io.out(`not run: ${v.notRun.join(", ")}\n`);
+      if (v.hidden.length) io.out(`hidden in the design (not compared): ${v.hidden.join(", ")}\n`);
       if (v.extra.length) io.out(`extra Unity captures (not compared): ${v.extra.join(", ")}\n`);
       for (const w of v.warnings) io.out(`warning: ${w}\n`);
       const notSampled = v.captures.reduce((a, c) => a + c.notSampled.length, 0);

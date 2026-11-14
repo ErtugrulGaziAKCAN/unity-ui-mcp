@@ -104,6 +104,28 @@ describe("exportScreen: inbox-mini", () => {
     expect((await exportScreen(design, KIT, o2, { browser })).skipped).toBe(true);
   }, 240_000);
 
+  it("reports the jobs the design shows in no context (fresh and unchanged exports, export-report.json, the command line)", async () => {
+    const design = path.join(tmp(), "d");
+    fs.cpSync(fx("inbox-mini"), design, { recursive: true });
+    const html = path.join(design, "inbox-mini.html");
+    fs.writeFileSync(html, fs.readFileSync(html, "utf8")
+      .replace("</style>", ".ghost{display:none;width:40px;height:40px;flex-shrink:0;background-color:#123c47}.ghost:hover{background-color:#16c2d5}</style>")
+      .replace('<div class="card" data-u-id="card"></div>', '<div class="card" data-u-id="card"></div><div class="ghost" data-u-id="ghost"></div>'));
+    const o = path.join(tmp(), "out");
+    const r = await exportScreen(design, KIT, o, { browser });
+    expect(r.ok).toBe(true);
+    expect(r.hidden.map((h) => h.name)).toEqual(["default@1280x720.hover.ghost", "default@1920x1080.hover.ghost", "default@2560x1440.hover.ghost"]);
+    expect(r.hidden[0].reason).toMatch(/ghost not visible/);
+    expect(readJson(o, "export-report.json").hidden).toBe(3);
+    const again = await exportScreen(design, KIT, o, { browser });
+    expect(again.skipped).toBe(true);
+    expect(again.hidden).toEqual(r.hidden);
+    const out: string[] = [];
+    expect(await runCli(["export", design, "--kit", KIT, "--out", o], { out: (x) => out.push(x), err: () => {} })).toBe(0);
+    expect(out.join("")).toContain("hidden in the design (not captured, a verify is incomplete): default@1280x720.hover.ghost");
+    expect((await exportScreen(fx("inbox-mini"), KIT, path.join(tmp(), "o"), { browser })).hidden).toEqual([]);
+  }, 240_000);
+
   it("accepts the html file path as input", async () => {
     const o = path.join(tmp(), "out");
     const r = await exportScreen(fx("inbox-mini", "inbox-mini.html"), KIT, o, { browser });

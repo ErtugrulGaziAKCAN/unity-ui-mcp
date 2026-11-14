@@ -111,23 +111,26 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         return toolResult(`Unity capture of ${screen} (via ${run.via}) ${what}; no verdict. ` +
           `The previous report and verdict are unchanged.${kept(evidence)}`, { screen, verdict: null, notRun: v.notRun, logTail: run.logTail, evidence, timings: t.done() }, true);
       }
-      const verdict = v.pass && v.notRun.length === 0 ? "pass" : "fail";
+      // a job the design shows in no context, or one that did not run, was not compared: incomplete, never a pass
+      const hidden = v.hidden ?? [];
+      const verdict = v.status ?? (v.pass && v.notRun.length === 0 && hidden.length === 0 ? "pass" : "fail");
       // the report and last-verify.json are written together, only now that the verdict is decided
       if (v.publish) v.publish(); else dropStaging();
       writeLastVerify(dir, {
         screen, ...(entry ? { entry } : {}), sourceSha: imp.sourceSha, irSha: imp.irSha, verdict, reportPath, verifiedAt: new Date().toISOString(),
-        topIssues: v.topIssues, notRun: v.notRun,
+        topIssues: v.topIssues, notRun: v.notRun, hidden,
       });
       const lines = [
         `${verdict.toUpperCase()}: ${screen} (report: ${reportPath})`,
         ...v.topIssues.slice(0, 10).map((i) => `- ${i}`),
         ...(v.notRun.length ? [`Not run: ${v.notRun.join(", ")}`] : []),
+        ...(hidden.length ? [`Hidden in the design (no golden, not compared; show them in a state, class or repeat item, or remove their layers): ${hidden.join(", ")}`] : []),
         ...(v.extra?.length ? [`Extra Unity captures (not compared): ${v.extra.join(", ")}`] : []),
         ...(v.warnings ?? []).map((w) => `Warning: ${w}`),
         ...(v.notSampled ? [`Backgrounds not sampled (every point covered or on text): ${v.notSampled}`] : []),
       ];
       return toolResult(lines.join("\n"), {
-        screen, entry, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun,
+        screen, entry, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun, hidden,
         extra: v.extra ?? [], warnings: v.warnings ?? [], notSampled: v.notSampled ?? 0, steps: v.timings ?? steps, timings: t.done(),
       }, verdict !== "pass");
     });

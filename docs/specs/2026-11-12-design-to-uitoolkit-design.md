@@ -585,8 +585,17 @@ The route and setup measured in M0 (`docs/findings/m0.md`):
   of the font twin. If that API is missing, the line count is `round(contentHeight / L)` (§5.3 text styles) and break
   positions are reported as not compared.
 
+**Hidden elements.** A static job whose elements the design does not show in its own setup (a closed popup, a
+collapsed row, a clipping drawer, a state's content) is captured in the context that shows them: a state or the
+classes of the layers of its elements and their ancestors; an element only a later written-out repeat item shows (its
+first item's markup hides it) is captured in that item (`item` on the job's applied items, `~<items>` in its name;
+Unity applies it to the same written-out item of the sample data). A job no context shows has no golden: matrix.json
+lists it under `hidden`, the export result and `design_ui_import` name it, and the comparison reports it, so the
+verdict is **incomplete**, never a pass.
+
 **Comparison.** `design-export compare` aligns Unity output with the goldens and writes one HTML report: side by
-side, overlay slider, difference heatmap, per-element box deltas, locale checks and performance numbers.
+side, overlay slider, difference heatmap, per-element box deltas, locale checks and performance numbers. Its status is
+`fail` when a capture fails or did not run, else `incomplete` when the design hides a job, else `pass`.
 
 Thresholds (`tools/design-export/fidelity-thresholds.json`), calibrated in M0:
 

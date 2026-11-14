@@ -14,10 +14,11 @@
 #   4. capture   one Unity run: DesignCaptureTests.CaptureFromEnv, each imported export into <out>/<name>/unity, with this
 #                run's id (DESIGN_UI_RUN_ID): only a capture-done.json carrying it counts as captured
 #   5. compare   design-export compare <out>/<name>/export --unity <out>/<name>/unity --report <out>/<name>/report.html
-#   6. summary   one row per fixture x viewport x job (PASS, FAIL with the first issue, not captured with the reason) and
+#   6. summary   one row per fixture x viewport x job (PASS, FAIL with the first issue, not captured with the reason,
+#                incomplete for a job the design hides in every context) and
 #                the timings, printed and written to <out>/summary.md
 # Exit: 0 every job passes (static captures and animation samples alike), 1 a job fails, a job or a fixture is not
-# captured, or a step fails; 2 usage.
+# captured, a job is hidden in the design (incomplete), or a step fails; 2 usage.
 #
 # Environment: DESIGN_UI_FIDELITY_ROOT (Assets/... folder in the project copy; default below, a folder the copy keeps
 # between runs), the setup's measurement knobs (see samples/FidelityProject/Assets/Fidelity/Editor/FidelitySetup.cs) and
@@ -206,7 +207,7 @@ const read = (f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } cat
 const status = fs.readFileSync(path.join(out, "status.tsv"), "utf8").split("\n").filter(Boolean).map((l) => l.split("\t"));
 const times = fs.readFileSync(path.join(out, "timings.tsv"), "utf8").split("\n").filter(Boolean).map((l) => l.split("\t"));
 const rows = [], failures = [];
-let pass = 0, fail = 0, notCaptured = 0;
+let pass = 0, fail = 0, notCaptured = 0, incomplete = 0;
 const anim = { pass: 0, fail: 0, notCaptured: 0 };
 const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
 // an animation sample: <state>@<w>x<h>.anim.<element id>.<n> (static names carry a pseudo-state or an is-* class there)
@@ -239,8 +240,14 @@ for (const name of names) {
     notCaptured++; failures.push(`${name} ${n}`);
     if (isAnim(n)) anim.notCaptured++;
   }
+  // jobs the design hides in every context: no golden, so the screen is incomplete (never a pass)
+  for (const n of verdict.hidden ?? []) {
+    const vp = (n.split("@")[1] ?? "").split(".")[0].replace("x", "×");
+    jobs.push([name, vp, n.replace(/@\d+x\d+/, ""), "incomplete", `hidden in the design: ${verdict.hiddenReasons?.[n] ?? ""}`, false]);
+    incomplete++; failures.push(`${name} ${n}`);
+  }
   // the comparison's own verdict counts too (e.g. a screen with no capture at all is not a pass)
-  if (!verdict.pass && !jobs.some((j) => j[3] === "FAIL" || j[3] === "not captured")) {
+  if (!verdict.pass && !jobs.some((j) => j[3] === "FAIL" || j[3] === "not captured" || j[3] === "incomplete")) {
     jobs.push([name, "–", "–", "FAIL", `the comparison does not pass the screen (${verdict.captures.length} captures, ${verdict.notRun.length} not run)`, false]);
     fail++; failures.push(name);
   }
@@ -270,7 +277,7 @@ const timing = ["| Step | Time |", "|---|---|",
   }),
   ...names.map((n) => `| compare ${n} | ${step(n, "compare")} ms |`)];
 const animTotal = anim.pass + anim.fail + anim.notCaptured;
-const head = `${pass} PASS, ${fail} FAIL, ${notCaptured} not captured` + (pending ? `, ${pending} fixture(s) pending (skipped, listed in pending.json)` : "") +
+const head = `${pass} PASS, ${fail} FAIL, ${notCaptured} not captured, ${incomplete} incomplete (hidden in the design)` + (pending ? `, ${pending} fixture(s) pending (skipped, listed in pending.json)` : "") +
   (animTotal ? `; of these, animation samples: ${anim.pass} PASS, ${anim.fail} FAIL, ${anim.notCaptured} not captured` : "");
 const md = `# Fidelity summary\n\n${head}\n\n${table.join("\n")}\n\n## Timings\n\n${timing.join("\n")}\n`;
 fs.writeFileSync(path.join(out, "summary.md"), md);

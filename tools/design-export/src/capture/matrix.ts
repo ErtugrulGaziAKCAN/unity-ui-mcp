@@ -25,11 +25,13 @@ const PSEUDO: ReadonlySet<string> = new Set(["hover", "active", "focus", "disabl
 /**
  * One thing applied to one element besides the screen state: a forced pseudo-state or an added is-* class. `absent`
  * (animation series only): the class is taken off an element whose markup has it, so a trigger the artboard starts in
- * (a panel that starts `is-open`) can be left and entered.
+ * (a panel that starts `is-open`) can be left and entered. `item`: the element in a later written-out repeat item, the
+ * item of each repeat around it, outermost first (absent: the IR's own element, the first item of each); an element
+ * only a later item shows (its first item's markup hides it) is captured there.
  */
 export type CaptureApply =
-  | { kind: "pseudo"; pseudo: PseudoKind; elementId: string }
-  | { kind: "class"; name: string; elementId: string; absent?: true };
+  | { kind: "pseudo"; pseudo: PseudoKind; elementId: string; item?: number[] }
+  | { kind: "class"; name: string; elementId: string; absent?: true; item?: number[] };
 
 /** A screen condition: state (class `state-<n>` on the root; none for default) plus what is applied. */
 export interface ScreenSetup { state: string; apply: CaptureApply[] }
@@ -72,14 +74,19 @@ type Bp = IrScreen["breakpoints"][number];
 
 const r6 = (n: number) => { const r = Math.round(n * 1e6) / 1e6; return Object.is(r, -0) ? 0 : r; };
 const applyLabel = (a: CaptureApply) => (a.kind === "pseudo" ? a.pseudo : (a.absent ? "!" : "") + a.name);
+/** `~<i>-<j>` for an element in later repeat items; empty for the IR's own. */
+const itemLabel = (a: CaptureApply) => (a.item?.length ? `~${a.item.join("-")}` : "");
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-const sortApply = (list: CaptureApply[]) => list.sort((a, b) => cmp(a.elementId, b.elementId) || cmp(applyLabel(a), applyLabel(b)));
+const sortApply = (list: CaptureApply[]) => list.sort((a, b) => cmp(a.elementId, b.elementId) || cmp(applyLabel(a), applyLabel(b)) || cmp(itemLabel(a), itemLabel(b)));
 
-/** `<state>@<w>x<h>`, then `.<pseudo|class>.<element id>` per applied item; animation samples `<state>@<w>x<h>.anim.<element id>.<n>`. */
+/**
+ * `<state>@<w>x<h>`, then `.<pseudo|class>.<element id>[~<items>]` per applied item; animation samples
+ * `<state>@<w>x<h>.anim.<element id>.<n>`.
+ */
 export function captureName(job: CaptureJob): string {
   const base = `${job.state}@${job.viewport[0]}x${job.viewport[1]}`;
   if (job.anim) return `${base}.anim.${job.anim.sampled[0].elementId}.${job.anim.sample}`;
-  return base + job.apply.map((a) => `.${applyLabel(a)}.${a.elementId}`).join("");
+  return base + job.apply.map((a) => `.${applyLabel(a)}.${a.elementId}${itemLabel(a)}`).join("");
 }
 
 /**
@@ -215,10 +222,23 @@ function setupOfKey(t: Tree, ir: IrScreen, id: string, key: string): { bps: stri
 /** Real-pointer semantics: active implies hover on the same element; hover is implied on ancestors of a hovered or pressed element. */
 function normalize(t: Tree, list: CaptureApply[]): CaptureApply[] {
   const seen = new Set<string>(), out: CaptureApply[] = [];
-  for (const a of list) { const k = `${a.kind} ${applyLabel(a)} ${a.elementId}`; if (!seen.has(k)) { seen.add(k); out.push(a); } }
+  for (const a of list) { const k = `${a.kind} ${applyLabel(a)} ${a.elementId}${itemLabel(a)}`; if (!seen.has(k)) { seen.add(k); out.push(a); } }
   const pointer = out.filter((a) => a.kind === "pseudo" && (a.pseudo === "hover" || a.pseudo === "active"));
+  // an ancestor in another written-out item is not the pointed element's ancestor
+  const items = (a: CaptureApply) => { const n = repeatChain(t, a.elementId).length; return Array.from({ length: n }, (_, k) => a.item?.[k] ?? 0); };
+  const sameItems = (a: CaptureApply, b: CaptureApply) => { const x = items(a), y = items(b); return x.every((k, n) => y[n] === k); };
   return sortApply(out.filter((a) => !(a.kind === "pseudo" && a.pseudo === "hover"
-    && pointer.some((b) => b !== a && isAncestorOrSelf(t, a.elementId, b.elementId)))));
+    && pointer.some((b) => b !== a && isAncestorOrSelf(t, a.elementId, b.elementId) && sameItems(a, b)))));
+}
+
+/** The repeat item templates (children of IR nodes with a repeat) on the path from the root to `id`, outermost first. */
+function repeatChain(t: Tree, id: string): string[] {
+  const out: string[] = [];
+  for (let x: string | undefined = id; x !== undefined; x = t.parent.get(x)) {
+    const p = t.parent.get(x);
+    if (p !== undefined && t.nodes.get(p)?.repeat) out.unshift(x);
+  }
+  return out;
 }
 
 /** The class items of a trigger whose element has the class in its markup, as `absent` items (the trigger's off side). */
@@ -301,6 +321,28 @@ export function contextCandidates(ir: IrScreen, ids: readonly string[]): { state
 export function jobInContext(ir: IrScreen, job: CaptureJob, state: string, extra: readonly CaptureApply[]): CaptureJob {
   const apply = normalize(treeOf(ir), [...job.apply, ...extra]);
   return { ...job, state, apply, pseudo: apply.length === 1 && apply[0].kind === "pseudo" ? { kind: apply[0].pseudo, elementId: apply[0].elementId } : null };
+}
+
+/** How many written-out repeats are around an IR element (the length of its `item` paths). */
+export function repeatDepth(ir: IrScreen, id: string): number {
+  return repeatChain(treeOf(ir), id).length;
+}
+
+/**
+ * The job moved into later written-out repeat items: every applied element inside the repeats around `target` gets the
+ * items of `item` (outermost first) that hold it; elements outside them stay. A path of first items only is the IR's own.
+ */
+export function jobInItem(ir: IrScreen, job: CaptureJob, target: string, item: readonly number[]): CaptureJob {
+  const t = treeOf(ir);
+  const chain = repeatChain(t, target);
+  const apply = normalize(t, job.apply.map((a): CaptureApply => {
+    const c = repeatChain(t, a.elementId);
+    const { item: _, ...rest } = a;
+    if (!c.length || c.length > chain.length || c.some((x, k) => x !== chain[k])) return a;
+    const path = item.slice(0, c.length);
+    return (path.some((k) => k > 0) ? { ...rest, item: path } : rest) as CaptureApply;
+  }));
+  return { ...job, apply, pseudo: apply.length === 1 && apply[0].kind === "pseudo" ? { kind: apply[0].pseudo, elementId: apply[0].elementId } : null };
 }
 
 /**

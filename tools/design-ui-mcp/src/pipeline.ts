@@ -9,6 +9,8 @@ export interface ExportOutcome {
   /** false when lint found errors: nothing but the lint report was written. */
   ok: boolean;
   findings: Finding[];
+  /** Capture jobs the design shows in no context (no golden): a verify of this export is incomplete. */
+  hidden?: { name: string; reason: string }[];
   timings?: Record<string, number>;
   /** true when the exporter found the design, kit and tool unchanged and kept the previous export. */
   skipped?: boolean;
@@ -18,6 +20,10 @@ export type ExportScreen = (entry: string, kit: KitConfig, outDir: string, brows
 
 export interface CompareOutcome {
   pass: boolean;
+  /** "fail" when a compared capture fails; else "incomplete" when a job was not compared (not run or hidden); else "pass". */
+  status?: "pass" | "fail" | "incomplete";
+  /** Jobs the design shows in no context: no golden, not compared (the screen is incomplete). */
+  hidden?: string[];
   /** Short human-readable issues, worst first. */
   topIssues: string[];
   /** Captures that could not be compared (never counted as a pass). */
@@ -72,7 +78,7 @@ export const INSTALLED_PIPELINE: Pipeline = {
   exportScreen: async (entry, kit, outDir, browser) => {
     // a lint failure keeps the previous export; its report goes next to the export folder
     const r = await runExport(entry, kit, outDir, { browser, lintReportFile: path.join(path.dirname(outDir), "lint-report.json") });
-    return { ok: r.ok, findings: r.findings, timings: { ...r.timings, total: r.totalMs }, skipped: r.skipped };
+    return { ok: r.ok, findings: r.findings, timings: { ...r.timings, total: r.totalMs }, skipped: r.skipped, hidden: r.hidden };
   },
   compareScreen: async (exportDir, unityDir, reportFile, opts = {}) => {
     // derived files live in the screen's bookkeeping folder, next to the Unity captures (a dot folder: not design
@@ -84,7 +90,7 @@ export const INSTALLED_PIPELINE: Pipeline = {
     const v = await runCompare(exportDir, unityDir, readThresholds(), { diffDir: path.join(next, "diff"), timings: opts.timings });
     const verdictFile = path.join(work, "verdict.json");
     return {
-      pass: v.pass, topIssues: summarizeIssues(v, 20, { notRun: false }), notRun: v.notRun, compared: v.captures.length,
+      pass: v.pass, status: v.status, hidden: v.hidden, topIssues: summarizeIssues(v, 20, { notRun: false }), notRun: v.notRun, compared: v.captures.length,
       extra: v.extra, verdictFile, timings: v.timings, warnings: v.warnings,
       notSampled: v.captures.reduce((a, c) => a + c.notSampled.length, 0),
       publish: () => {

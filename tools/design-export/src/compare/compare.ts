@@ -282,11 +282,23 @@ export interface AnimStrip {
 
 export interface ScreenVerdict {
   screen: string;
+  /** Every job of the design compared and passing: status "pass". */
   pass: boolean;
+  /**
+   * "fail" when a capture fails or did not run (or the design has none); else "incomplete" when the design hides a job
+   * in every context (no golden, nothing to compare); else "pass". An incomplete screen never passes.
+   */
+  status: "pass" | "fail" | "incomplete";
   captures: CaptureVerdict[];
   /** Golden captures without a Unity capture (never a pass). */
   notRun: string[];
   notRunReasons: Record<string, string>;
+  /**
+   * Jobs of the design's matrix whose elements no state, class context or written-out repeat item shows (matrix.json
+   * `hidden`): there is no golden to compare, so they are not compared, and the screen is incomplete.
+   */
+  hidden: string[];
+  hiddenReasons: Record<string, string>;
   /** Unity captures without a golden: reported, not failures. */
   extra: string[];
   thresholds: Thresholds;
@@ -933,6 +945,12 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
 
   const captures = runnable.map((n) => results.get(n)!);
   const notRun = names.filter((n) => n in notRunReasons);
+  // jobs the design shows in no context: no golden exists, so nothing can be compared for them
+  const hiddenReasons: Record<string, string> = {};
+  if (isObj(matrix) && Array.isArray(matrix.hidden))
+    for (const h of matrix.hidden) if (isObj(h) && typeof h.name === "string") hiddenReasons[h.name] = typeof h.reason === "string" && h.reason ? h.reason : "hidden in the design";
+  const hidden = Object.keys(hiddenReasons).sort();
+  const status = !names.length || notRun.length || captures.some((c) => !c.pass) ? "fail" : hidden.length ? "incomplete" : "pass";
   const timings: Record<string, number> = {};
   if (isObj(exportReport) && isObj(exportReport.timings)) {
     if (typeof exportReport.timings.lint === "number") timings.lint = exportReport.timings.lint;
@@ -942,8 +960,8 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   timings.compare = Math.round(performance.now() - t0);
   if (!names.length) notes.push("the export has no golden captures");
   return {
-    screen, pass: names.length > 0 && notRun.length === 0 && captures.every((c) => c.pass),
-    captures, notRun, notRunReasons, extra, thresholds: t, timings, platform, removed: [...removed!].sort(),
+    screen, pass: status === "pass", status,
+    captures, notRun, notRunReasons, hidden, hiddenReasons, extra, thresholds: t, timings, platform, removed: [...removed!].sort(),
     animations: animationStrips(entries.filter((e) => known.has(e.name))), warnings, notes,
   };
 }
@@ -955,6 +973,9 @@ export function summarizeIssues(v: ScreenVerdict, limit = 20, opts: { notRun?: b
   const all = v.captures.flatMap((c) => c.issues.map((i) => ({ c: c.capture, i })));
   all.sort((a, b) => KIND_RANK.indexOf(a.i.kind) - KIND_RANK.indexOf(b.i.kind));
   const lines = all.map(({ c, i }) => `${c}: ${i.id === WHOLE ? "whole capture" : i.id}: ${i.detail}`);
-  if (opts.notRun !== false) lines.push(...v.notRun.map((n) => `${n}: not run (${v.notRunReasons[n] ?? "no Unity capture"})`));
+  if (opts.notRun !== false) {
+    lines.push(...v.notRun.map((n) => `${n}: not run (${v.notRunReasons[n] ?? "no Unity capture"})`));
+    lines.push(...(v.hidden ?? []).map((n) => `${n}: hidden in the design, not compared (${v.hiddenReasons?.[n] ?? "no context shows it"})`));
+  }
   return lines.slice(0, limit);
 }

@@ -66,6 +66,11 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         ].join("\n"), { screen, exported: false, unityCalled: false, findings: out.findings, timings: t.done() }, true);
       }
       const exported = !out.skipped;
+      // capture jobs the design shows in no context have no golden: a verify of this export is incomplete
+      const hidden = (out.hidden ?? []).map((h) => h.name);
+      const hiddenLine = hidden.length
+        ? `\nHidden in the design (no golden, so a verify is incomplete; show them in a state, class or repeat item, or remove their layers): ${hidden.join(", ")}`
+        : "";
       if (!fs.existsSync(irFile)) throw new Error(`the export of ${screen} wrote no screen.ir.json in ${exportDir}`);
       const irBytes = fs.readFileSync(irFile);
       const irSha = sha256(irBytes);
@@ -84,8 +89,8 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         if (exported || last.sourceSha !== src || last.kitSha !== kit.sha || last.entry !== entryName || last.screen !== screen) {
           writeLastImport(dir, { ...last, screen, entry: entryName, sourceSha: src, kitSha: kit.sha });
         }
-        return toolResult(`${named} is unchanged since the last import (${last.importedAt}); Unity was not called.`, {
-          screen, entry: entryName, exported, unityCalled: false, via: last.via, irSha, sourceSha: src, exportDir, timings: t.done(),
+        return toolResult(`${named} is unchanged since the last import (${last.importedAt}); Unity was not called.${hiddenLine}`, {
+          screen, entry: entryName, exported, unityCalled: false, via: last.via, irSha, sourceSha: src, exportDir, hidden, timings: t.done(),
         });
       }
 
@@ -163,8 +168,8 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
             ? `, scripts compiled${run.compile?.state === "reloaded" ? ` and reloaded (${Math.round((run.timings.compileWait ?? 0) / 100) / 10} s)` : " (Unity did not report this import's compile result, but the project's scripts compile)"}`
             : ", no script change")
         : "";
-      return toolResult(withIssues(`Imported ${named} into Unity via ${run.via}${what}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${verifyArg}" }.`, run, false), {
-        ...base, unityTimings: run.timings, timings: t.done(),
+      return toolResult(withIssues(`Imported ${named} into Unity via ${run.via}${what}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${verifyArg}" }.${hiddenLine}`, run, false), {
+        ...base, hidden, unityTimings: run.timings, timings: t.done(),
       });
     });
   });

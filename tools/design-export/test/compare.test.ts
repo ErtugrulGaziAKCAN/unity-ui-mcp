@@ -989,6 +989,29 @@ describe("compareScreen", () => {
     expect(v.pass).toBe(false);
   });
 
+  it("lists the design's hidden jobs and calls a screen with any of them incomplete, never a pass", async () => {
+    const f = screenFixture((_, s) => s);
+    const all = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(all).toMatchObject({ pass: true, status: "pass", hidden: [] });
+    const mf = path.join(f.exportDir, "goldens", "matrix.json");
+    const m = JSON.parse(fs.readFileSync(mf, "utf8"));
+    m.hidden = [{ name: "default@320x192.hover.ghost", reason: "ghost not visible in this setup or in any context its layers give (tried none)" }];
+    fs.writeFileSync(mf, JSON.stringify(m));
+    const v = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(v.captures.every((c) => c.pass)).toBe(true);
+    expect(v).toMatchObject({ pass: false, status: "incomplete", hidden: ["default@320x192.hover.ghost"] });
+    expect(v.hiddenReasons["default@320x192.hover.ghost"]).toMatch(/not visible/);
+    expect(summarizeIssues(v)).toContain("default@320x192.hover.ghost: hidden in the design, not compared (ghost not visible in this setup or in any context its layers give (tried none))");
+    // a failing capture still makes it a fail
+    const bad = screenFixture((name, s) => (name === "busy@320x192" ? { ...s, png: fill(s.png, { x: 0, y: 0, w: 320, h: 192 }, [255, 0, 0]) } : s));
+    fs.writeFileSync(path.join(bad.exportDir, "goldens", "matrix.json"), JSON.stringify(m));
+    expect(await compareScreen(bad.exportDir, bad.unityDir, T)).toMatchObject({ pass: false, status: "fail" });
+    // a capture Unity did not make fails the screen, as before
+    const missing = screenFixture((name, s) => (name === "busy@320x192" ? null : s));
+    fs.writeFileSync(path.join(missing.exportDir, "goldens", "matrix.json"), JSON.stringify(m));
+    expect(await compareScreen(missing.exportDir, missing.unityDir, T)).toMatchObject({ pass: false, status: "fail" });
+  });
+
   it("does not run anything when the Unity folder is empty", async () => {
     const f = screenFixture(() => null);
     fs.rmSync(path.join(f.unityDir, "boxes.json"));
@@ -1142,8 +1165,17 @@ describe("design-export compare", () => {
     const report = path.join(tmp(), "r.html");
     const { o, io: cli } = io();
     expect(await runCli(["compare", f.exportDir, "--unity", f.unityDir, "--report", report], cli)).toBe(1);
-    expect(o.out).toMatch(/^FAIL inbox/m);
+    expect(o.out).toMatch(/^FAIL inbox: 3\/4 captures pass/m);
     expect(o.out).toContain("not run: busy@320x192");
+    // every capture passes, but the design hides a job in every context: incomplete
+    const g = screenFixture((_, s) => s);
+    const mf = path.join(g.exportDir, "goldens", "matrix.json");
+    fs.writeFileSync(mf, JSON.stringify({ ...JSON.parse(fs.readFileSync(mf, "utf8")), hidden: [{ name: "default@320x192.hover.ghost", reason: "not visible" }] }));
+    const h = io();
+    expect(await runCli(["compare", g.exportDir, "--unity", g.unityDir, "--report", report], h.io)).toBe(1);
+    expect(h.o.out).toMatch(/^INCOMPLETE inbox: 4\/5 captures pass/m);
+    expect(h.o.out).toContain("hidden in the design (not compared): default@320x192.hover.ghost");
+    expect(fs.readFileSync(report, "utf8")).toContain("INCOMPLETE");
     expect(await runCli(["compare", f.exportDir, "--report", report], io().io)).toBe(2);
     expect(await runCli(["compare", path.join(tmp(), "nothing"), "--unity", f.unityDir, "--report", report], io().io)).toBe(2);
   });

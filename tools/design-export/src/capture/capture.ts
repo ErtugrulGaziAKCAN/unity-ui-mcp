@@ -25,7 +25,7 @@ import { stableStringify } from "../ir/stableStringify.js";
 import type { KitConfig } from "../kit.js";
 import { openDesign, type LoadedDesign } from "../load.js";
 import { logicalViewport } from "../viewport.js";
-import { buildMatrix, captureName, contextCandidates, jobInContext, unsampledAnims, type AnimRef, type CaptureApply, type CaptureJob, type ScreenSetup } from "./matrix.js";
+import { buildMatrix, captureName, contextCandidates, jobInContext, jobInItem, unsampledAnims, type AnimRef, type CaptureApply, type CaptureJob, type ScreenSetup } from "./matrix.js";
 
 /** IR id → index of its DOM element in `[body, ...body.querySelectorAll("*")]` (from `buildIr`). */
 export type ElementMap = Record<string, number>;
@@ -39,8 +39,11 @@ export interface MatrixTimings {
 }
 /** A job not captured: the elements it applies to are not on the screen in its setup or in any context (matrix.json `hidden`). */
 export interface HiddenJob { name: string; reason: string }
-/** The state and items a job got so that the elements it applies to are on the screen (matrix.json `context`). */
-export interface JobContext { state: string; apply: CaptureApply[] }
+/**
+ * The state and items a job got so that the elements it applies to are on the screen (matrix.json `context`); `item`:
+ * the later written-out repeat items the job moved into (outermost first), when only those show its elements.
+ */
+export interface JobContext { state: string; apply: CaptureApply[]; item?: number[] }
 export interface MatrixResult { jobs: CaptureJob[]; boxes: Record<string, CaptureBoxes>; timings: MatrixTimings; hidden: HiddenJob[]; contexts: Record<string, JobContext> }
 export interface MatrixOptions {
   /** Browser to open pages in (else one is launched and closed). */
@@ -414,7 +417,7 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
 // ---- session -----------------------------------------------------------------------------------------------------
 
 interface CdpNode { nodeId: number; backendNodeId: number; nodeType: number; nodeName: string; attributes?: string[]; children?: CdpNode[] }
-interface DomEl { nodeId: number; backendNodeId: number; parent: number; attrs: Map<string, string> }
+interface DomEl { nodeId: number; backendNodeId: number; parent: number; tag: string; attrs: Map<string, string>; kids: number[] }
 /** `absent`: markup classes the setup takes off (CaptureApply `absent`). */
 interface Desired { classes: Map<string, [number, string]>; absent: Map<string, [number, string]>; props: Map<string, [number, "disabled" | "checked"]>; forced: Map<number, string[]> }
 const emptyDesired = (): Desired => ({ classes: new Map(), absent: new Map(), props: new Map(), forced: new Map() });
@@ -495,7 +498,8 @@ export class CaptureSession {
       const attrs = new Map<string, string>();
       for (let k = 0; k + 1 < (n.attributes?.length ?? 0); k += 2) attrs.set(n.attributes![k], n.attributes![k + 1]);
       const i = this.dom.length;
-      this.dom.push({ nodeId: n.nodeId, backendNodeId: n.backendNodeId, parent, attrs });
+      this.dom.push({ nodeId: n.nodeId, backendNodeId: n.backendNodeId, parent, tag: n.nodeName.toLowerCase(), attrs, kids: [] });
+      if (parent >= 0) this.dom[parent].kids.push(i);
       for (const c of n.children ?? []) if (c.nodeType === 1) add(c, i);
     };
     add(body, -1);
@@ -527,6 +531,76 @@ export class CaptureSession {
     return i;
   }
 
+  /** The written-out items of a repeat from DOM element `first` on: it and the following siblings with its tag and static classes (lint/repeat.ts). */
+  private itemsFrom(first: number): number[] {
+    const statics = (i: number) => (this.dom[i].attrs.get("class") ?? "").split(/\s+/).filter((c) => c && !/^(is|state)-/.test(c)).sort().join(" ");
+    const sibs = this.dom[this.dom[first].parent]?.kids ?? [first];
+    const out = [first];
+    for (const k of sibs.slice(sibs.indexOf(first) + 1)) {
+      if (this.dom[k].tag !== this.dom[first].tag || statics(k) !== statics(first) || this.dom[k].attrs.has("data-u-repeat")) break;
+      out.push(k);
+    }
+    return out;
+  }
+
+  /** The repeat items (data-u-repeat elements) at and above DOM element `i`, outermost first. */
+  private repeatRoots(i: number): number[] {
+    const out: number[] = [];
+    for (const x of this.chain(i)) if (this.dom[x].attrs.has("data-u-repeat")) out.unshift(x);
+    return out;
+  }
+
+  /** Follows the child positions that lead from `from` to `to` (a descendant) starting at `start` instead; -1 when the structure differs. */
+  private follow(start: number, from: number, to: number): number {
+    const steps: number[] = [];
+    for (let x = to; x !== from; x = this.dom[x].parent) steps.unshift(x);
+    let cur = start;
+    for (const x of steps) {
+      const next = this.dom[cur].kids[this.dom[this.dom[x].parent].kids.indexOf(x)];
+      if (next === undefined || this.dom[next].tag !== this.dom[x].tag || this.dom[next].attrs.get("data-u-id") !== this.dom[x].attrs.get("data-u-id")) return -1;
+      cur = next;
+    }
+    return cur;
+  }
+
+  /**
+   * The DOM element of IR element `id` in the written-out repeat items `item` (outermost first; absent or 0: the IR's
+   * own), or -1 when that item does not exist or differs in structure.
+   */
+  private at(id: string, item?: readonly number[]): number {
+    const t = this.index(id);
+    if (!item?.some((k) => k > 0)) return t;
+    const roots = this.repeatRoots(t);
+    if (item.length !== roots.length) throw new Error(`${id}: items ${item.join("-")} name ${item.length} repeats, but the element is in ${roots.length}`);
+    let cur = -1;
+    for (let j = 0; j < roots.length; j++) {
+      const first = j === 0 ? roots[0] : this.follow(cur, roots[j - 1], roots[j]);
+      if (first < 0) return -1;
+      cur = this.itemsFrom(first)[item[j]] ?? -1;
+      if (cur < 0) return -1;
+    }
+    return this.follow(cur, roots[roots.length - 1], t);
+  }
+
+  /** Every item path of the written-out repeats around IR element `id` but the IR's own, in document order; none outside repeats. */
+  itemPaths(id: string): number[][] {
+    const t = this.index(id), roots = this.repeatRoots(t), out: number[][] = [];
+    const walk = (j: number, cur: number, path: number[]) => {
+      if (j === roots.length) { if (path.some((k) => k > 0) && this.follow(cur, roots[roots.length - 1], t) >= 0) out.push(path); return; }
+      const first = j === 0 ? roots[0] : this.follow(cur, roots[j - 1], roots[j]);
+      if (first >= 0) this.itemsFrom(first).forEach((x, k) => walk(j + 1, x, [...path, k]));
+    };
+    if (roots.length) walk(0, -1, []);
+    return out;
+  }
+
+  /** The DOM element an applied item names (`item`: in a later written-out repeat item). */
+  private applied(a: { elementId: string; item?: readonly number[] }): number {
+    const i = this.at(a.elementId, a.item);
+    if (i < 0) throw new Error(`${a.elementId}: the written-out repeat items ${a.item!.join("-")} have no such element`);
+    return i;
+  }
+
   /** Element and its DOM ancestors up to the screen root. */
   private chain(i: number): number[] {
     const out: number[] = [];
@@ -542,7 +616,7 @@ export class CaptureSession {
     if (setup.state !== "default") want.classes.set(`${root}|state-${setup.state}`, [root, `state-${setup.state}`]);
     const force = (i: number, p: string) => { const l = want.forced.get(i) ?? []; if (!l.includes(p)) l.push(p); want.forced.set(i, l); };
     for (const a of setup.apply) {
-      const i = this.index(a.elementId);
+      const i = this.applied(a);
       if (a.kind === "class") { (a.absent ? want.absent : want.classes).set(`${i}|${a.name}`, [i, a.name]); continue; }
       if (a.pseudo === "disabled" || a.pseudo === "checked") want.props.set(`${i}|${a.pseudo}`, [i, a.pseudo]);
       else if (a.pseudo === "focus") force(i, "focus");
@@ -668,12 +742,16 @@ export class CaptureSession {
     this.series = null;
   }
 
-  /** Whether each IR element is on the screen with `setup` applied (pageVisible); the page keeps that setup. */
+  /**
+   * Whether each IR element is on the screen with `setup` applied (pageVisible); the page keeps that setup. An element
+   * the setup applies something to in later written-out repeat items is looked at there.
+   */
   async visibleAt(setup: ScreenSetup, ids: readonly string[]): Promise<boolean[]> {
     await this.endSeries();
     await this.goTo(setup);
     await this.d.page.evaluate(pageSettle);
-    return this.d.page.evaluate(pageVisible, { items: ids.map((id) => this.index(id)), root: this.elements[this.ir.root.id] });
+    const where = (id: string) => this.applied(setup.apply.find((a) => a.elementId === id && a.item) ?? { elementId: id });
+    return this.d.page.evaluate(pageVisible, { items: ids.map(where), root: this.elements[this.ir.root.id] });
   }
 
   /** Captures one job: writes `<goldensDir>/<name>.png` and returns its boxes. */
@@ -755,7 +833,9 @@ const contextLabel = (c: { state?: string; item?: CaptureApply }) => (c.state !=
  * zero-size or clipping container, a state's content) are captured where the design shows them: the job gets the
  * screen state or the classes of its elements' and their ancestors' layers that bring them on screen (one of them,
  * else the fewest of all of them), so an interaction or class of a hidden element is still captured, in a context
- * the Unity capture applies the same way. A job whose elements no such context shows is not captured and is listed.
+ * the Unity capture applies the same way. An element only a later written-out repeat item shows (the first item's
+ * markup hides it) is captured in the first such item (alone, else with one of those contexts). A job whose elements
+ * no such context shows is not captured and is listed.
  */
 async function resolveContexts(s: CaptureSession, ir: IrScreen, list: CaptureJob[]): Promise<{ resolved: Map<string, { job: CaptureJob; context: JobContext | null }>; hidden: HiddenJob[] }> {
   const resolved = new Map<string, { job: CaptureJob; context: JobContext | null }>();
@@ -767,33 +847,41 @@ async function resolveContexts(s: CaptureSession, ir: IrScreen, list: CaptureJob
     const targets = Array.from(new Set(job.apply.filter((a) => !(a.kind === "class" && a.absent)).map((a) => a.elementId)));
     if (job.anim || targets.length === 0 || await allOn({ state: job.state, apply: job.apply }, targets)) { resolved.set(name, { job, context: null }); continue; }
     const key = `${job.state}|${targets.join(",")}`;
-    const tryContext = async (state: string, extra: CaptureApply[]) => {
-      const j = jobInContext(ir, job, state, extra);
+    // the element whose written-out repeat items a job can move into (the first target inside a repeat)
+    const anchor = targets.find((id) => s.itemPaths(id).length > 0);
+    const paths = anchor !== undefined ? s.itemPaths(anchor) : [];
+    const tryContext = async (c: JobContext) => {
+      const moved = jobInContext(ir, job, c.state, c.apply);
+      const j = c.item && anchor !== undefined ? jobInItem(ir, moved, anchor, c.item) : moved;
       return (await allOn({ state: j.state, apply: j.apply }, targets)) ? j : null;
     };
     let found: CaptureJob | null = null, context: JobContext | null = null;
     const cached = known.get(key);
     // the context found for the same elements in the same state usually fits the next job on them too
-    if (cached) { found = await tryContext(cached.state, cached.apply); if (found) context = cached; }
+    if (cached) { found = await tryContext(cached); if (found) context = cached; }
     if (!found && cached !== null) {
       const candidates = contextCandidates(ir, targets).filter((c) => c.state === undefined || job.state === "default")
         .filter((c) => !c.item || !job.apply.some((a) => a.kind === "class" && !a.absent && a.name === (c.item as { name: string }).name && a.elementId === c.item!.elementId));
+      const attempt = async (c: JobContext) => { found = await tryContext(c); if (found) context = c; return found !== null; };
       // one context at a time, outermost first
-      for (const c of candidates) {
-        const state = c.state ?? job.state, extra = c.item ? [c.item] : [];
-        found = await tryContext(state, extra);
-        if (found) { context = { state, apply: extra }; break; }
-      }
+      for (const c of candidates) if (await attempt({ state: c.state ?? job.state, apply: c.item ? [c.item] : [] })) break;
       // else every class at once (with each state, or none), then without each one that is not needed
       if (!found) {
         const items = candidates.filter((c) => c.item).map((c) => c.item!);
         const states = [job.state, ...candidates.filter((c) => c.state !== undefined).map((c) => c.state!)];
         for (const state of items.length ? states : []) {
           let kept = items.slice();
-          if (!(await tryContext(state, kept))) continue;
-          for (const it of items) { const without = kept.filter((x) => x !== it); if (await tryContext(state, without)) kept = without; }
-          found = await tryContext(state, kept);
-          if (found) { context = { state, apply: kept }; break; }
+          if (!(await tryContext({ state, apply: kept }))) continue;
+          for (const it of items) { const without = kept.filter((x) => x !== it); if (await tryContext({ state, apply: without })) kept = without; }
+          if (await attempt({ state, apply: kept })) break;
+        }
+      }
+      // else a later written-out repeat item that shows them: alone, then with one context at a time
+      if (!found) {
+        search: for (const c of [null, ...candidates]) {
+          for (const item of paths) {
+            if (await attempt({ state: c?.state ?? job.state, apply: c?.item ? [c.item] : [], item })) break search;
+          }
         }
       }
       known.set(key, context);
@@ -801,7 +889,8 @@ async function resolveContexts(s: CaptureSession, ir: IrScreen, list: CaptureJob
     if (found && context) { resolved.set(name, { job: found, context }); continue; }
     hidden.push({
       name, reason: `${targets.join(", ")} not visible in this setup or in any context its layers give` +
-        ` (tried ${contextCandidates(ir, targets).map(contextLabel).join(", ") || "none"})`,
+        ` (tried ${contextCandidates(ir, targets).map(contextLabel).join(", ") || "none"}` +
+        `${paths.length ? `, and ${paths.length} later written-out repeat item${paths.length === 1 ? "" : "s"}` : ""})`,
     });
   }
   return { resolved, hidden };

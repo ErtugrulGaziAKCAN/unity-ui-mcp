@@ -824,10 +824,12 @@ namespace DesignUi.Editor
                 for (int i = 0; i < DocRoot.hierarchy.childCount; i++) m_Tops.Add(DocRoot.hierarchy[i]);
             }
 
-            static string Label(CaptureApply a) => a.Kind + " " + (a.Absent ? "!" : "") + a.Name + " " + a.ElementId;
+            static string Label(CaptureApply a) => a.Kind + " " + (a.Absent ? "!" : "") + a.Name + " " + a.Target;
 
+            /// <summary>The element an item applies to: the IR's own, or its copy in a later written-out repeat item.</summary>
             VisualElement Element(CaptureApply a) =>
-                Named(a.ElementId) ?? throw new InvalidOperationException("the capture applies " + a + ", but the screen has no element '" + a.ElementId + "'");
+                Named(a.Target) ?? throw new InvalidOperationException("the capture applies " + a + ", but the screen has no element '" + a.Target + "'" +
+                                                                       (a.Item != null ? " (the sample data has no such written-out repeat item)" : ""));
 
             static bool IsPointer(CaptureApply a) => a.Kind == CaptureApply.PseudoKind && (a.Name == "hover" || a.Name == "active");
             static bool IsFocus(CaptureApply a) => a.Kind == CaptureApply.PseudoKind && a.Name == "focus";
@@ -944,7 +946,7 @@ namespace DesignUi.Editor
             {
                 var el = Element(a);
                 // off again: what the screen had before the session changed it (its markup's and sample data's), not the opposite of on
-                var key = a.ElementId + "|" + a.Kind + "|" + a.Name;
+                var key = a.Target + "|" + a.Kind + "|" + a.Name;
                 if (a.Kind == CaptureApply.ClassKind)
                 {
                     // an absent item takes a markup class off; leaving it puts the class back; a class the element has (an
@@ -952,7 +954,7 @@ namespace DesignUi.Editor
                     if (!m_Originals.ContainsKey(key)) m_Originals[key] = el.ClassListContains(a.Name);
                     bool present = a.Absent ? !on && m_Originals[key] : on || m_Originals[key];
                     el.EnableInClassList(a.Name, present);
-                    m_Filler.MirrorClass(DocRoot, a.ElementId, a.Name, present);
+                    m_Filler.MirrorClass(DocRoot, a.ElementId, a.Name, present, CaptureApply.ItemSuffix(a.Item));
                     return;
                 }
                 switch (a.Name)
@@ -1149,11 +1151,14 @@ namespace DesignUi.Editor
         {
             public readonly IrFixtures Data;
             readonly Scope _parent;
+            /// <summary>The scope is a later written-out item of a repeat, or inside one: its own repeats' first items get a name suffix too.</summary>
+            public readonly bool InClone;
 
-            public Scope(IrFixtures data, Scope parent)
+            public Scope(IrFixtures data, Scope parent, bool clone = false)
             {
                 Data = data ?? new IrFixtures();
                 _parent = parent;
+                InClone = clone || (parent?.InClone ?? false);
             }
 
             public string Value(string name) => name != null && Data.Values.TryGetValue(name, out var v) ? v : _parent?.Value(name);
@@ -1216,11 +1221,14 @@ namespace DesignUi.Editor
                 return clones;
             }
 
-            /// <summary>Puts a class the job applies on (or takes it off) the shadow hosts that mirror it for the element.</summary>
-            public void MirrorClass(VisualElement docRoot, string elementId, string cls, bool on = true)
+            /// <summary>
+            /// Puts a class the job applies on (or takes it off) the shadow hosts that mirror it for the element (with
+            /// <paramref name="suffix"/>: its copy in a later written-out repeat item).
+            /// </summary>
+            public void MirrorClass(VisualElement docRoot, string elementId, string cls, bool on = true, string suffix = "")
             {
                 foreach (var m in _screen.Manifest.mirrors.Where(m => m.element == elementId && m.classes != null && m.classes.Contains(cls)))
-                    BoxesWriter.Find(docRoot, m.host)?.EnableInClassList(cls, on);
+                    BoxesWriter.Find(docRoot, m.host + suffix)?.EnableInClassList(cls, on);
             }
 
             /// <summary>Copies disabled and checked to the shadow hosts now (the mirror polls them only every 100 ms).</summary>
@@ -1373,7 +1381,7 @@ namespace DesignUi.Editor
                 for (int i = 1; i < count; i++)
                 {
                     var clones = CloneItem(entry, source);
-                    FillItem(node, clones, new Scope(Item(i), scope), source);
+                    FillItem(node, clones, new Scope(Item(i), scope, true), source);
                     Wire(clones);
                     foreach (var c in clones)
                     {
@@ -1381,6 +1389,13 @@ namespace DesignUi.Editor
                         Rename(c, "#" + i);
                         container.Insert(at++, c);
                     }
+                }
+                // the first item inside a later item of an outer repeat is named "#0" (then the outer item's "#k"), so every
+                // written-out copy has its own name (CaptureApply.ItemSuffix): wired first, while it still has the design ids
+                if (scope.InClone)
+                {
+                    Wire(first);
+                    foreach (var r in first) Rename(r, "#0");
                 }
             }
 
@@ -1396,9 +1411,9 @@ namespace DesignUi.Editor
                     slot.Clear();
                     template.CloneTree(slot);
                     var itemRoots = slot.Children().ToList();
-                    FillItem(node, itemRoots, new Scope(item(i), scope), template);
+                    FillItem(node, itemRoots, new Scope(item(i), scope, i > 0), template);
                     Wire(itemRoots);
-                    if (i > 0) foreach (var r in itemRoots) Rename(r, "#" + i);
+                    if (i > 0 || scope.InClone) foreach (var r in itemRoots) Rename(r, "#" + i);
                 };
                 list.itemsSource = Enumerable.Range(0, count).ToList();
             }

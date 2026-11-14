@@ -206,8 +206,10 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
   const golden = (n: string) => rel(dir, path.join(path.resolve(exportDir), "goldens", `${n}.png`));
   const unity = (n: string) => rel(dir, path.join(path.resolve(unityDir), `${n}.png`));
   const passed = v.captures.filter((c) => c.pass).length, failed = v.captures.length - passed;
+  const hidden = v.hidden ?? [];
   const verdict = v.pass ? '<span class="badge pass verdict">PASS</span>'
-    : v.captures.length === 0 ? '<span class="badge notrun verdict">NOT RUN</span>' : '<span class="badge fail verdict">FAIL</span>';
+    : v.captures.length === 0 ? '<span class="badge notrun verdict">NOT RUN</span>'
+      : v.status === "incomplete" ? '<span class="badge notrun verdict">INCOMPLETE</span>' : '<span class="badge fail verdict">FAIL</span>';
   const index = new Map(v.captures.map((c, i) => [c.capture, i]));
   const worstWhole = v.captures.filter((c) => c.ssim !== null).sort((a, b) => a.ssim! - b.ssim!)[0];
   const worstEl = v.captures.filter((c) => c.worstElement).sort((a, b) => a.worstElement!.ssim - b.worstElement!.ssim)[0];
@@ -223,6 +225,7 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
       `<td><a href="#${anchor(i)}">${esc(c.capture)}</a></td><td class="num">${num(c.ssim, 5)}</td>` +
       `<td>${c.worstElement ? `${num(c.worstElement.ssim, 5)} <code>${esc(c.worstElement.id)}</code>` : "—"}</td><td class="num">${c.issues.length}</td></tr>`),
     ...v.notRun.map((n) => `<tr data-name="${esc(n)}" data-pass="false"><td><span class="badge notrun">NOT RUN</span></td><td>${esc(n)}</td><td class="num">—</td><td class="muted">${esc(v.notRunReasons[n] ?? "")}</td><td class="num">—</td></tr>`),
+    ...hidden.map((n) => `<tr data-name="${esc(n)}" data-pass="false"><td><span class="badge notrun">HIDDEN</span></td><td>${esc(n)}</td><td class="num">—</td><td class="muted">${esc(v.hiddenReasons?.[n] ?? "")}</td><td class="num">—</td></tr>`),
   ].join("");
 
   const strips = v.animations.map((s) => `
@@ -241,14 +244,15 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
 <title>Fidelity report: ${esc(v.screen)}</title><style>${STYLE}</style></head>
 <body><main>
 <header><h1>Fidelity report: ${esc(v.screen)}</h1>${verdict}<span class="muted">${esc(new Date().toISOString().replace("T", " ").slice(0, 19))} UTC</span></header>
-<p class="muted">Unity captures compared with the design's goldens, capture by capture (states, pseudo-states, viewports, animation samples). The screen passes only when every capture runs and passes.</p>
+<p class="muted">Unity captures compared with the design's goldens, capture by capture (states, pseudo-states, viewports, animation samples). The screen passes only when every capture runs and passes; a job the design hides in every context has no golden, so a screen with one is incomplete.</p>
 ${v.warnings.length ? `<div class="warning" role="alert"><strong>Checks skipped for this screen</strong><ul>${v.warnings.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
 <p class="muted">Effective tolerance: boxes ±${v.thresholds.boxPx} px. Element SSIM and every colour sample use the Unity image offset by up to 1 px where that matches better, so a move or size change within the box allowance cannot fail them; a 2-px displacement, another shape, a missing shadow or a wrong colour still does. Images are linked, not embedded: keep this report next to the design captures (${esc(path.relative(dir, path.join(path.resolve(exportDir), "goldens")) || ".")}), the Unity captures (${esc(path.relative(dir, path.resolve(unityDir)) || ".")}) and the difference images.</p>
 <div class="cards">
-  <div class="card"><div class="v">${v.captures.length + v.notRun.length}</div><div class="k">captures in the design</div></div>
+  <div class="card"><div class="v">${v.captures.length + v.notRun.length + hidden.length}</div><div class="k">captures in the design</div></div>
   <div class="card"><div class="v" style="color:var(--pass)">${passed}</div><div class="k">pass</div></div>
   <div class="card"><div class="v" style="color:var(--fail)">${failed}</div><div class="k">fail</div></div>
   <div class="card"><div class="v" style="color:var(--warn)">${v.notRun.length}</div><div class="k">not run</div></div>
+  <div class="card"><div class="v"${hidden.length ? ' style="color:var(--warn)"' : ""}>${hidden.length}</div><div class="k">hidden in the design</div></div>
   <div class="card"><div class="v">${v.extra.length}</div><div class="k">extra Unity captures</div></div>
   <div class="card"><div class="v">${extraEls}</div><div class="k">elements only in Unity</div></div>
   <div class="card"><div class="v"${notSampled ? ' style="color:var(--warn)"' : ""}>${notSampled}</div><div class="k">backgrounds not sampled</div></div>
@@ -273,6 +277,7 @@ ${v.warnings.length ? `<div class="warning" role="alert"><strong>Checks skipped 
 <div class="toolbar"><label><input type="checkbox" id="failures"> Failures only</label><input type="search" id="q" placeholder="Filter captures by name" aria-label="Filter captures by name"><button type="button" id="theme">Theme: auto</button></div>
 <section><h2>Captures</h2><table class="idx"><thead><tr><th>Verdict</th><th>Capture</th><th>SSIM</th><th>Worst element</th><th>Issues</th></tr></thead><tbody>${indexRows || '<tr><td colspan="5" class="muted">No captures.</td></tr>'}</tbody></table></section>
 ${v.notRun.length ? `<section id="not-run"><h2>Not run</h2><table><tbody>${v.notRun.map((n) => `<tr data-name="${esc(n)}" data-pass="false"><th scope="row"><span class="badge notrun">NOT RUN</span> ${esc(n)}</th><td>${esc(v.notRunReasons[n] ?? "")}</td></tr>`).join("")}</tbody></table></section>` : ""}
+${hidden.length ? `<section id="hidden"><h2>Hidden in the design</h2><p class="muted">Jobs whose elements no state, class context or written-out repeat item shows: the design has no golden for them, so they are not compared and the screen is incomplete.</p><table><tbody>${hidden.map((n) => `<tr data-name="${esc(n)}" data-pass="false"><th scope="row"><span class="badge notrun">HIDDEN</span> ${esc(n)}</th><td>${esc(v.hiddenReasons?.[n] ?? "")}</td></tr>`).join("")}</tbody></table></section>` : ""}
 ${v.extra.length ? `<section><h2>Extra Unity captures</h2><p class="muted">Captures in the Unity folder without a design golden (not compared, not failures): ${v.extra.map((n) => `<code>${esc(n)}</code>`).join(", ")}</p></section>` : ""}
 ${v.animations.length ? `<section><h2>Animations</h2><p class="muted">Each animation's samples in time order: design frame above, Unity frame below.</p>${strips}</section>` : ""}
 <section><h2>Capture details</h2>${v.captures.map((c, i) => captureSection(c, i, {

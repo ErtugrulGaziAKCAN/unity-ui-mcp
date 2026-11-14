@@ -599,6 +599,13 @@ describe("captures", () => {
       expect(fs.existsSync(path.join(dir, `${n}.png`))).toBe(true);
     }
     expect(fs.existsSync(path.join(dir, "default@1280x720.hover.ghost.png"))).toBe(false);
+    // an element only a later written-out repeat item shows (the first two items' markup hides it): captured in the third
+    expect(got).toContain("default@1280x720.hover.more~2");
+    expect(got).not.toContain("default@1280x720.hover.more");
+    const more = matrix.captures.find((c: { name: string }) => c.name === "default@1280x720.hover.more~2");
+    expect(more.context).toEqual({ state: "default", apply: [], item: [2] });
+    expect(more.apply).toEqual([{ kind: "pseudo", pseudo: "hover", elementId: "more", item: [2] }]);
+    expect(fs.existsSync(path.join(dir, "default@1280x720.hover.more~2.png"))).toBe(true);
   }, 60000);
 
   it("a failing viewport stops the others and fails the matrix once every page is closed", async () => {

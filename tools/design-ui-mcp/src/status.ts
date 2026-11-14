@@ -3,7 +3,7 @@ import path from "node:path";
 import type { DesignUiConfig, RunnerRoute } from "./config.js";
 import { BOOKKEEPING_DIR, REPORT_FILE, findEntry, folderScreenId, resolveScreen, screenFolders, sourceSha } from "./design.js";
 
-export type ScreenState = "new" | "design-changed" | "imported" | "verified" | "failed";
+export type ScreenState = "new" | "design-changed" | "imported" | "verified" | "failed" | "incomplete";
 
 /** `<designRoot>/<screen>/.design-ui/last-import.json`, written after a successful import. */
 export interface ImportRecord {
@@ -28,11 +28,14 @@ export interface VerifyRecord {
   entry?: string;
   sourceSha: string;
   irSha: string;
-  verdict: "pass" | "fail";
+  /** "incomplete": nothing failed, but a job was not compared (not run, or hidden in the design); never a pass. */
+  verdict: "pass" | "fail" | "incomplete";
   reportPath: string;
   verifiedAt: string;
   topIssues: string[];
   notRun: string[];
+  /** Jobs the design shows in no context (not compared). */
+  hidden?: string[];
 }
 
 export const bookkeepingDir = (screenDir: string) => path.join(screenDir, BOOKKEEPING_DIR);
@@ -72,7 +75,7 @@ export interface ScreenStatus {
   sourceSha: string;
   /** Source hash at the last successful import, else null. */
   lastImportSha: string | null;
-  verdict: "pass" | "fail" | null;
+  verdict: "pass" | "fail" | "incomplete" | null;
   reportPath: string | null;
 }
 
@@ -90,7 +93,7 @@ export function statusOf(dir: string, entry: string | null = null): ScreenStatus
   let state: ScreenState;
   if (!imp) state = "new";
   else if (imp.sourceSha !== cur) state = "design-changed";
-  else if (current) state = ver!.verdict === "pass" ? "verified" : "failed";
+  else if (current) state = ver!.verdict === "pass" ? "verified" : ver!.verdict === "incomplete" ? "incomplete" : "failed";
   else state = "imported";
   return {
     state, sourceSha: cur, lastImportSha: imp?.sourceSha ?? null,

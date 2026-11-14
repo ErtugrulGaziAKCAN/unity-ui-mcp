@@ -454,6 +454,58 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("#16c2d5", Hex(Pixel(tex, 20, (int)todayY)), "today's background in the capture");
         }
 
+        /// <summary>
+        /// A job in a later written-out repeat item (matrix.json <c>item</c>, for an element only that item shows): the
+        /// capture hovers that item's copy, found by its own name even in nested repeats (the second week's first day is
+        /// not the first week's second day).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Run_AJobInALaterRepeatItem_PointsAtThatItemsCopy_InNestedRepeats()
+        {
+            var more = Node("more", "button", ("display", "none"), ("width", "30px"), ("height", "16px"), ("flex-shrink", "0"), ("background-color", "#123c47"))
+                .With("hover", ("background-color", "#16c2d5"));
+            more.Initial = new IrInitial();
+            var day = Node("day", "container", ("display", "flex"), ("flex-direction", "column"), ("width", "40px"), ("height", "40px"), ("flex-shrink", "0"),
+                ("background-color", "#0f2a33")).Add(more);
+            var week = Node("week", "container", ("display", "flex"), ("flex-direction", "row"), ("height", "40px"), ("flex-shrink", "0")).Add(day);
+            week.Repeat = new IrRepeat { Name = "days", Mode = "inline", Count = 2 };
+            var weeks = Node("weeks", "container", ("display", "flex"), ("flex-direction", "column"), ("flex-shrink", "0")).Add(week);
+            weeks.Repeat = new IrRepeat { Name = "weeks", Mode = "inline", Count = 2 };
+            // only the second week's first day shows its "more" button
+            var export = Export(Small(BlackRoot(weeks)), "{ \"weeks\": [ { \"days\": [ {}, {} ] }, { \"days\": [ { \"$hidden\": { \"more\": false } }, {} ] } ] }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var hover = CaptureApply.Pseudo("hover", "more");
+            hover.Item = new[] { 1, 0 };
+            Assert.AreEqual("more#0#1", hover.Target);
+            var req = Request(export, screen, "default@320x180.hover.more~1-0", 320, 180, hover);
+            Rect at = default;
+            req.Inspect = tree =>
+            {
+                CollectionAssert.AreEqual(new[] { "day", "day#1", "day#0#1", "day#1#1" }, tree.Query(className: null).ToList().Select(e => e.name).Where(n => n.StartsWith("day")).ToArray(),
+                    "every written-out day has its own name");
+                at = tree.Q("more#0#1").worldBound;
+            };
+            yield return DesignCapture.Run(req, profile);
+            Assert.Greater(at.width, 0, "the second week's first day shows its button");
+            Assert.AreEqual("#16c2d5", Hex(Pixel(Png(req), (int)at.center.x, (int)at.center.y)), "the pointer is on that copy");
+        }
+
+        [Test]
+        public void ReadMatrix_ReadsTheRepeatItemsAJobAppliesTo()
+        {
+            var dir = TempDir();
+            Directory.CreateDirectory(Path.Combine(dir, "goldens"));
+            File.WriteAllText(Path.Combine(dir, DesignCapture.MatrixPath), "{ \"captures\": [ { \"name\": \"default@320x180.hover.more~2\", \"state\": \"default\", " +
+                "\"viewport\": [320, 180], \"apply\": [ { \"kind\": \"pseudo\", \"pseudo\": \"hover\", \"elementId\": \"more\", \"item\": [2] } ] } ] }");
+            var job = CaptureJob.ReadMatrix(Path.Combine(dir, DesignCapture.MatrixPath)).Single();
+            CollectionAssert.AreEqual(new[] { 2 }, job.Apply[0].Item);
+            Assert.AreEqual("more#2", job.Apply[0].Target);
+            Assert.AreEqual("more", CaptureApply.Pseudo("hover", "more").Target, "the IR's own element");
+            Assert.AreEqual("more#3#2", new CaptureApply { ElementId = "more", Item = new[] { 2, 3 } }.Target);
+            Assert.AreEqual("more#3", new CaptureApply { ElementId = "more", Item = new[] { 0, 3 } }.Target);
+        }
+
         [UnityTest]
         public IEnumerator Run_ALocalizingProfileWithIndexedArguments_FillsTheArgumentsFromTheSampleData()
         {

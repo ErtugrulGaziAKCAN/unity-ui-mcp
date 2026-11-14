@@ -1095,6 +1095,30 @@ describe("design_ui_verify", () => {
     expect(st).toMatchObject({ state: "failed", verdict: "fail", reportPath: path.join(dir, "report.html") });
   });
 
+  it("calls a screen whose design hides a job in every context incomplete, never a pass, at import and at verify", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const pipeline = { ...stubPipeline(), unityCapture: true };
+    const exportScreen = pipeline.exportScreen!;
+    pipeline.exportScreen = async (...a) => ({ ...(await exportScreen(...a)), hidden: [{ name: "default@64x48.hover.ghost", reason: "ghost not visible" }] });
+    pipeline.compareScreen = async (_e, _u, reportFile) => {
+      fs.writeFileSync(reportFile, "<p>report</p>");
+      return { pass: false, status: "incomplete", hidden: ["default@64x48.hover.ghost"], topIssues: [], notRun: [] };
+    };
+    const client = await serverFor(p.dir, pipeline);
+    const imp = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(imp.isError).toBeFalsy();
+    expect(imp.text).toContain("Hidden in the design (no golden, so a verify is incomplete");
+    expect(imp.data.hidden).toEqual(["default@64x48.hover.ghost"]);
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/^INCOMPLETE: clean.screen /);
+    expect(r.text).toContain("Hidden in the design (no golden, not compared");
+    expect(r.data).toMatchObject({ verdict: "incomplete", hidden: ["default@64x48.hover.ghost"] });
+    expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"), "utf8"))).toMatchObject({ verdict: "incomplete", hidden: ["default@64x48.hover.ghost"] });
+    expect(screenStatus(readConfig(p.dir), "clean-screen")).toMatchObject({ state: "incomplete", verdict: "incomplete" });
+  });
+
   it("is not available yet after an import, and never reports a pass", async () => {
     const p = tempProject({ prefer: "command" });
     p.addScreen("clean-screen", "clean-screen");
