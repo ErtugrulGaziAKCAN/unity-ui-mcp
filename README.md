@@ -7,9 +7,10 @@ text, and per-locale fonts. Any MCP-capable AI client (Claude Code, Codex, Curso
 the design, import it into the open Unity Editor, verify it, read the report.
 
 The design is measured in a real browser (Chromium) and written to an intermediate representation (IR); Unity compiles
-that IR; then the Unity rendering is captured and compared with the browser's, box by box and pixel by pixel, at
-2560×1440, 1920×1080 and 1280×720, for every state, interaction state and animation sample. A design outside the
-rules fails lint with a rule id and a fix; nothing is silently approximated.
+that IR; then the Unity rendering is captured and compared with the browser's, box by box and pixel by pixel, at every
+viewport the kit declares (by default 3840×2160, 2560×1440, 1920×1080, 1600×900, 1366×768 and 1280×720), for every
+state, interaction state and animation sample. A design outside the rules fails lint with a rule id and a fix; nothing
+is silently approximated.
 
 | Part | What it is |
 |---|---|
@@ -181,17 +182,39 @@ The kit's [RULES.md](design-kit/RULES.md) is the contract (`design_ui_rules` ser
 
 - **Text styles only.** UI Toolkit has no `line-height`, so every text uses one of the kit text styles (caption 12/16
   to display 64/80 px, 400 or 700). Their sizes and line heights are multiples of 4 px, whole device pixels at every
-  viewport, and the font twins carry each style's CSS line box: a text block is exactly lines × line height on both
-  sides.
+  exact viewport, and the font twins carry each style's CSS line box: a text block is exactly lines × line height on
+  both sides. A text that does not wrap (`white-space: nowrap`, its lines its `<br>`s) gets exactly that height, so
+  stacked labels never drift.
 - **Grayscale font smoothing** on the root (the base stylesheet sets it): browsers on macOS otherwise draw thicker
   stems than UI Toolkit.
 - **Borders and lines on the device grid.** A border, hard shadow edge or line under 8 px must stay whole at every
-  viewport (U-CSS-040).
+  exact viewport (U-CSS-040).
 - **Opacity** below 1 only on one-part elements (U-CSS-039); use the kit's disabled colours.
 - **Animations** only of transforms, opacity, colours and border radii; a size or position change is a `translate`
   or `scale` (U-CSS-013, U-CSS-042).
 - Flex layout only (no grid, `calc()`, viewport units, floats); `box-shadow` and gradients are baked into images; fonts
   come only from the kit; no network resources.
+
+## Viewports: exact and scaled
+
+`kit.config.json` declares the resolutions a game ships (the profile's **Viewports** and **Scaled Viewports** mirror
+it; kit sync writes the profile's). Each has a class:
+
+- **exact** (`[w, h]`): the panel scale keeps the kit's 4 px grid whole, so every text size, line height, border and thin
+  line is a whole number of device pixels there; kit build, kit sync and lint hold the design to it. With the
+  2560×1440 reference that is 3840×2160 (scale 1.5), 2560×1440, 1920×1080 (0.75) and 1280×720 (0.5).
+- **scaled** (`{ "size": [w, h], "class": "scaled" }`): a resolution players use where no design value can be whole
+  (1600×900 is scale 0.625, so a 4 px border is 2.5 device px; 1366×768 is 0.5335, so nothing is). The screen is laid
+  out and verified there with the same limits (boxes, baselines and line extents within ±1 device px), but the
+  whole-pixel rules do not apply to it. Today scaled viewports fail verify where padded, spaced or bordered elements
+  stack (UI Toolkit lays those lengths out as whole device pixels; see Fidelity below). Unity sets text at whole device pixels: the compiler gives each scaled viewport
+  font twins whose face is scaled by exact / rounded size, and the screen root switches to them at that panel scale,
+  so text keeps the design's size and line box. For a designer nothing changes: design at 2560×1440 with the kit;
+  borders and fractional edges are drawn where Unity's whole pixels put them, within a pixel.
+
+Declare every resolution the game offers, in the class it belongs to; a resolution that is not declared still works
+(UI Toolkit scales the panel) but is not verified, and its text renders at Unity's rounded sizes. `design_ui_status`,
+`design_ui_verify` (captures per class) and `Window > Design UI > Status` show each viewport's class.
 
 ## Fidelity and speed
 
@@ -199,15 +222,20 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`):
 
 | Check | Limit |
 |---|---|
-| Element boxes | ±1 px at every viewport |
+| Element boxes | ±1 device px at every viewport, exact and scaled |
 | Text | same line count and breaks, baseline ±1 px, ink colour and amount per line, and where each line's first and last glyphs sit (and the width between them) ±1 px |
 | Colours at sampled points | ΔE2000 ≤ 1 |
 | Structure (SSIM, non-text) | ≥ 0.99 for the capture and for each element (small elements ≥ 0.984, pictures ≥ 0.985, rotated animation samples ≥ 0.975) |
 | Animation samples | at the delay and every quarter of each animation, the same limits |
 
-The fidelity suite (`scripts/fidelity.sh`: 19 fidelity fixtures and the 9 kit components, at the three viewports)
-passes **2355 of 2355 captures**: 1155 static captures and 1200 animation samples, none failed, not captured or
-incomplete.
+The fidelity suite (`scripts/fidelity.sh`: 20 fidelity fixtures and the 9 kit components, at the kit's six
+viewports, 4716 captures, 13.6 minutes) passes every capture at 2560×1440 and 1920×1080 and all but one at 1280×720 (a new fixture's
+8 device px digits, ink colour ΔE2000 4.65 against 4.5). It does **not** pass yet at 3840×2160 (89 of 786 fail: a row of
+text-sized buttons moves 1.02 px because UI Toolkit rounds each text's width up, and raster pictures drawn 1.5× larger)
+or at the scaled viewports (1600×900: 355 of 786 fail, 1366×768: 769 of 786): UI Toolkit lays every padding, margin and
+border out as whole device pixels, so stacked elements drift past the ±1 px limit there
+([docs/findings/viewport-classes.md](docs/findings/viewport-classes.md)). Nothing is waived: those viewports report
+FAIL until the layout is compensated or a different limit is decided.
 
 **Linear colour space.** UI Toolkit blends an ordinary on-screen panel of a Linear project in linear light; the design's
 browser blends in sRGB. Captured that way, 2248 of the suite's 2355 captures fail (text ink 0.63–1.42× the design's,
@@ -228,7 +256,7 @@ Measured on the sample project (macOS, Apple silicon, warm browser):
 | Import through the Editor bridge, view class unchanged | 0.2 s Unity request; 4.5 s for the whole tool call with its export |
 | Import that changes the view class | 1.8–3.3 s Unity step (script compile and domain reload); longer in a large project |
 | Unity capture | about 33 ms per capture job after one mount per viewport |
-| Fidelity suite Unity steps (28 screens) | import 25 s, capture 84 s |
+| Fidelity suite Unity steps (29 screens, six viewports) | import 28 s, capture 206 s |
 
 ## MCP tools
 

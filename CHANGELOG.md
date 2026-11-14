@@ -7,6 +7,24 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Added
 
+- Viewport classes. `kit.config.json` `viewports` entries are `[w, h]` (exact) or `{ "size": [w, h], "class": "exact" |
+  "scaled" }`; the profile has **Viewports** (exact) and **Scaled Viewports**, kit sync writes both, the IR carries
+  `scaledViewports`. Exact viewports keep every kit value whole device pixels (kit build, kit sync and lint judge only
+  them); scaled viewports are laid out and verified with the same ±1 device px geometry but exempt from those rules.
+  Default kit and profile: exact 2560×1440, 1920×1080, 1280×720 and 3840×2160, scaled 1600×900 and 1366×768. Verdicts,
+  reports, `design_ui_verify` and the fidelity summary count captures per class; `design_ui_status`, `design_ui_rules`
+  and the Design UI window list each viewport's class. `fidelity-thresholds.json` may hold measured scaled-class limits
+  under `scaled` (never boxes or baselines). The fidelity suite runs all six viewports (comparisons four fixtures at a
+  time); 2560×1440 and 1920×1080 pass, 1280×720 fails one capture, 3840×2160 and the scaled class do not pass yet
+  (UI Toolkit lays paddings, margins and borders out as whole device pixels: docs/findings/viewport-classes.md).
+- Text at scaled viewports keeps the design's size: Unity sets text at whole device pixels (a 12 px style at 1600×900
+  rendered 6.7 % wide), so kit sync and the compiler make twin variants with `faceInfo.scale = exact / rounded` for each
+  scaled viewport, and `DesignScreen` takes the class of the scale its panel renders at (`viewport-scales`), under which
+  `DesignFonts.uss` selects them.
+- Drift-free stacked text: a text that does not wrap and whose height is its content's gets an explicit height of
+  lines × line box plus its vertical padding and borders (text-size steps scale it), so stacked labels no longer drift
+  where a line box is a fraction of a device pixel. New fidelity fixture `stacked-text`.
+
 - Disk use stays bounded by itself. After a verify writes its report the run's Unity captures and difference images
   are deleted (the report keeps thumbnails and issue crops of its failing captures, in `<screen>/.design-ui/report/`);
   after every import and verify each screen keeps only its records, its latest export, its report's pictures and its
@@ -61,6 +79,9 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- `DesignUiGammaComposite` renders a `DesignUiPanelRegion`'s sort-order copy of its PanelSettings, whether the copy was
+  made before or after the composite attached, in a texture of its own that follows screen resizes; the copy gets its
+  own settings (or the asset's, when it was made from the driven asset) back on detach.
 - Linux: headless Chromium starts each page with the pointer at (0, 0), so the top-left element was `:hover` in the
   base state and lint, extract and capture saw no hover change there. The exporter now moves the pointer off the page
   after it loads.

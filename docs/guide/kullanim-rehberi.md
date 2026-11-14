@@ -42,7 +42,14 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
 7. **Localization** (isteğe bağlı): Unity Localization 1.5 veya üstü. Profilin localization ayarlarında her ekranın
    String Table koleksiyonunu (ya da varsayılan bir adlandırma kalıbını) ve tablolarının argüman biçimini (`{name}` Smart
    String ya da `{0}` sıralı) belirt.
-8. **Doğrulama görüntüleri:** kurulumun yazdığı yakalama komutu projenin geçici bir kopyasında çizer (aşağıda); projenin
+8. **Çözünürlükler.** Oyunun sunduğu her çözünürlüğü profilde bildir. **Viewports** (tam, exact): panel ölçeği kit'in
+   4 px ızgarasını tam tutanlar (2560×1440 referansıyla 3840×2160, 2560×1440, 1920×1080, 1280×720); orada her yazı
+   boyutu, satır yüksekliği ve kenarlık tam cihaz pikselidir, lint, kit build ve kit sync tasarımı buna göre denetler.
+   **Scaled Viewports** (ölçekli) oyuncuların kullandığı diğerleri (1600×900, 1366×768): orada hiçbir tasarım değeri tam
+   olamaz, bu yüzden bu kurallardan muaftır; verify yine de yerleşimi aynı ±1 cihaz pikseli sınırıyla denetler ve
+   derlenen fontlar yazıyı tasarımın boyutunda tutar. Kit sync iki listeyi de `kit.config.json`'a yazar; ikisinde de
+   olmayan bir çözünürlük çalışır ama doğrulanmaz.
+9. **Doğrulama görüntüleri:** kurulumun yazdığı yakalama komutu projenin geçici bir kopyasında çizer (aşağıda); projenin
    sürümündeki Unity Hub kurulumunu ya da `UNITY_BIN`'i kullanır.
 
 ## Claude Design'da tasarlamak
@@ -50,7 +57,9 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
 Kit'in Design System'ini canvas'a ekle. Sonra:
 
 - **Her ekran için bir artboard.** Başlığı ekran kimliği olsun (`club.overview`); kökü sabit 2560×1440 olsun ve
-  `data-u-screen="club.overview"` taşısın. Ekranlar 2560×1440, 1920×1080 ve 1280×720'de doğrulanır.
+  `data-u-screen="club.overview"` taşısın. Ekranlar kit'in bildirdiği her çözünürlükte doğrulanır: varsayılan olarak
+  tam (exact) 3840×2160, 2560×1440, 1920×1080 ve 1280×720 ile ölçekli (scaled) 1600×900 ve 1366×768 (aşağıda). Ölçekli
+  bir çözünürlük için tasarımda hiçbir şey değişmez.
 - **Stil, kit'in temel stil sayfasıyla başlar** (design system içinde gelir); renk, boşluk ve köşe için token kullan:
   `var(--color-surface-700)`, `var(--space-4)`, `var(--radius-md)`.
 - **Yerleşim yalnız flex ile.** Grid, `calc()`, `vw`/`vh`, float ya da `position: fixed` yok. `gap` yalnız satır

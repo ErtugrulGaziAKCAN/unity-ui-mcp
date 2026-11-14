@@ -42,7 +42,14 @@ fix; a difference after import is reported, never smoothed over.
 7. **Localization** (optional): Unity Localization 1.5 or later. In the profile's localization settings, name each
    screen's String Table collection (or a default pattern) and the argument format your tables use (`{name}` Smart
    Strings, or `{0}` indexed).
-8. **Verification captures**: setup's capture command renders on a temporary copy of the project (below); it needs the
+8. **Resolutions.** Declare in the profile every resolution the game offers. **Viewports** (exact) are those whose panel
+   scale keeps the kit's 4 px grid whole (with the 2560×1440 reference: 3840×2160, 2560×1440, 1920×1080, 1280×720):
+   every text size, line height and border is whole device pixels there, and lint, kit build and kit sync hold the
+   design to it. **Scaled Viewports** are the others players use (1600×900, 1366×768): no design value can be whole
+   there, so they are exempt from those rules; verify still lays them out and checks them with the same ±1 device px
+   geometry, and the compiled fonts keep the design's text size there. Kit sync writes both lists into
+   `kit.config.json`; a resolution in neither list works but is not verified.
+9. **Verification captures**: setup's capture command renders on a temporary copy of the project (below); it needs the
    Unity Hub install of the project's version, or `UNITY_BIN`.
 
 ## Designing in Claude Design
@@ -50,7 +57,9 @@ fix; a difference after import is reported, never smoothed over.
 Attach the kit's Design System to the canvas. Then:
 
 - **One artboard per screen**, titled with the screen id (`club.overview`), with a fixed 2560×1440 root that carries
-  `data-u-screen="club.overview"`. Screens are verified at 2560×1440, 1920×1080 and 1280×720.
+  `data-u-screen="club.overview"`. Screens are verified at every viewport the kit declares: by default the exact
+  3840×2160, 2560×1440, 1920×1080 and 1280×720 and the scaled 1600×900 and 1366×768 (below). Nothing changes in the
+  design for a scaled viewport.
 - **Start the style with the kit's base stylesheet** (the design system includes it) and use the tokens:
   `var(--color-surface-700)`, `var(--space-4)`, `var(--radius-md)`.
 - **Layout with flex only.** No grid, `calc()`, `vw`/`vh`, floats or `position: fixed`. `gap` only where items do not

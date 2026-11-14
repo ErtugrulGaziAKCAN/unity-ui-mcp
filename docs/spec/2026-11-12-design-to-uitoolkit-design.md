@@ -110,7 +110,8 @@ The kit is published to Claude as a Design System (§5.5). It contains:
 - `text-styles.json`: the kit text styles (§5.3); `base.css`, the base stylesheet every screen starts with, is generated
   from it.
 - `fonts/`: font files and `@font-face` rules produced by font sync (§6). Designs may not declare other fonts.
-- `kit.config.json`: reference size, viewports, screen match, locales, the enabled `filter` functions.
+- `kit.config.json`: reference size, viewports with their class (exact or scaled, §12), screen match, locales, the
+  enabled `filter` functions.
 - Component library (`components/`): button, toggle, text field, dropdown, tabs, card, list row, scroll area and
   dialog, each a lint-clean screen with its guidelines, compiled to Unity controls (§10).
 - `RULES.md`: the contract below, written for Claude Design, with allowed patterns, every lint rule with its fix and an
@@ -152,7 +153,7 @@ rows that cite them, and the fidelity suite (§19) checks every row against Chro
 | flex layout, `%`, `px`, `auto`, min/max sizes, margin, padding, `position: absolute`, top/right/bottom/left, overflow, border widths/colors, `rotate`/`scale`/`translate`/`transform-origin`, `aspect-ratio`, `text-shadow`, `white-space`, `text-overflow`, `visibility`, `font-style: italic` (with a real face), background geometry; `letter-spacing` and `word-spacing` converted to hundredths of an em | Direct USS | Allowed; every accepted value has a fidelity fixture (`docs/findings/measured-css.md`), and lint rejects what did not match (`flex-wrap: wrap-reverse`, `background-repeat: space/round`, `overflow-wrap: break-word/anywhere`, U-CSS-045). M0 parity was measured with UI Toolkit's initial values mirrored in the HTML (column flex, `position: relative`, `flex-shrink: 1`, `border-box`, `align-content: flex-start`); where a CSS initial value differs, the compiler must write it explicitly or lint must reject it (findings O-6) |
 | `filter` | USS built-in filter functions | Only the functions `css-support.json` enables, each once its fidelity fixture passes in Unity (U-CSS-015; `kit.config.json` `filterFunctions` mirrors the list). 0.1.0 enables `invert` (`docs/findings/filters.md`) |
 | `opacity` | Direct USS | Below 1, or faded, only on elements whose parts do not overlap (U-CSS-039): CSS fades the composited group, UI Toolkit each part (`docs/findings/opacity.md`); use the kit's `--color-disabled-*` colours instead |
-| Border widths, hard shadow edges, painted lines under 8 px | Direct USS, baked shadows | On the device grid at every declared viewport (U-CSS-040): UI Toolkit rounds a fractional border differently from Chromium (`docs/findings/borders.md`) |
+| Border widths, hard shadow edges, painted lines under 8 px | Direct USS, baked shadows | On the device grid at every exact viewport (U-CSS-040): UI Toolkit rounds a fractional border differently from Chromium (`docs/findings/borders.md`); scaled viewports are exempt (§12) |
 | `border-radius` | Resolved at export to one px radius per corner against the element's box, with CSS's overlapping-curves scaling (`9999px` on a 300×80 box becomes 40px; UI Toolkit would clamp each axis and draw an ellipse) | Circular corners only: elliptical radii (`/` syntax, `%` on a non-square box) are U-CSS-020 |
 | `border-style` | USS borders are always solid | Only `solid` or `none` (U-CSS-021) |
 | `align-items` / `align-self` | Direct USS, except `baseline` (rejected by USS) | No `baseline` values (U-CSS-018) |
@@ -196,7 +197,8 @@ multiples of 4 px, so both stay whole device pixels at the 0.75 and 0.5 viewport
 exactly `n × L` tall with baselines within 0.5 px, and texts stacked in a column add up without drift (a fractional line
 height would be ceiled per text). The kit ships Inter Regular and Bold in these seven sizes; the table is generated from
 the two ratios by `tools/design-export/src/kit/textStyles.ts`. `design-export kit build` and kit sync refuse a table
-whose font size or line height is not a whole number of device pixels at the scale of any declared viewport, and kit
+whose font size or line height is not a whole number of device pixels at the scale of any exact viewport (scaled
+viewports, §12, are exempt and get scaled font twins), and kit
 sync builds the twins with the same line box. Lint matches the numbers (U-CSS-016). Every listing of the table (RULES.md,
 the base stylesheet's `.text-<style>` classes, the Claude Design System's type styles) is generated from
 `text-styles.json`. The IR records the matched style name, and the USS writer formats numbers with the invariant
@@ -408,7 +410,8 @@ IR outline (`irVersion: 1`, validated with a JSON Schema shipped in the repo):
   "screen": "club.overview",
   "source": { "path": "club-overview.html", "sha256": "…" },
   "referenceViewport": [2560, 1440],
-  "viewports": [[2560, 1440], [1920, 1080], [1280, 720]],
+  "viewports": [[2560, 1440], [1920, 1080], [1280, 720], [3840, 2160], [1600, 900], [1366, 768]],
+  "scaledViewports": [[1600, 900], [1366, 768]],
   "states": ["default", "loading", "empty", "error"],
   "breakpoints": [{ "name": "narrow", "maxWidth": 1600 }],
   "tokens": { "color.surface": "#0b1f26" },
@@ -599,6 +602,34 @@ this section are in `docs/findings/animation.md`.
   geometry, so a resized window or a changed panel scale switches them in the game. The verifier's capture relies on
   that and checks the root applied the breakpoints the exporter recorded for the viewport.
 - Every declared viewport is compiled from the same IR and verified separately.
+- **Viewport classes.** `kit.config.json` `viewports` lists each declared viewport as `[w, h]` (class `exact`, the form
+  older kits use) or `{ "size": [w, h], "class": "exact" | "scaled" }`; the profile mirrors it (Viewports: exact, Scaled
+  Viewports: scaled) and kit sync writes the profile's. The IR carries `viewports` (both classes) and `scaledViewports`.
+  - *exact*: every kit value (text sizes, line heights, borders, hard shadow edges, painted lines) is a whole number of
+    device pixels there. Kit build, kit sync, lint (U-CSS-040, the text-style table check, coverage viewports on the
+    exact scales' step) and the text-size step notes judge the exact viewports only. Default: 3840×2160 (1.5),
+    2560×1440, 1920×1080 (0.75), 1280×720 (0.5).
+  - *scaled*: supported, laid out and verified, but exempt from the whole-device-pixel rules, since no design value can
+    be whole there (1366×768 is 0.53346). Default: 1600×900 (0.625), 1366×768. Verify holds them to the same thresholds:
+    boxes, baselines and line extents within ±1 device px plus `GEOMETRY_EPS`; a measured scaled-class limit for colour,
+    ink or SSIM may be recorded under `fidelity-thresholds.json` `scaled` (never the geometry limits). Verdicts, the
+    report, `design_ui_verify` and the fidelity summary count captures per class.
+  - *Fonts at a scaled viewport.* Unity sets text at whole device pixels, halves up (a 12 px style at 0.625 renders at
+    8 device px instead of 7.5: lines 6.7 % wider, line pitch 10.67 instead of 10). For each scaled viewport's panel scale
+    where a line box's font size is fractional, kit sync and the compiler make a twin variant with
+    `faceInfo.scale = exact / rounded` size (`<face> UITK <box>x<scale>.asset`); `DesignFonts.uss` points the line-box
+    variables at them under `.locale-<code>.vs-<scale>`, and the screen root (`DesignScreen`, UXML attribute
+    `viewport-scales`) carries the class of the scale its panel renders at (`IPanel.scaledPixelsPerPoint`, checked on
+    attach, geometry changes and every 100 ms). Measured: widths within 0.92 device px of Chromium's for every kit
+    style, n lines within one device pixel of n line boxes (`ViewportScaleTextTests`, docs/findings/viewport-classes.md).
+- **Drift-free stacked text.** UI Toolkit ceils each text element's measured height to whole device pixels; where a line
+  box is fractional (16/20 at 0.625: 12.5 px) a column of texts drifts by up to a pixel per text. The compiler gives a
+  text whose line count the design fixes (no wrapping in any layer: `text-wrap-mode: nowrap`, `white-space: nowrap` or
+  `pre`; its lines are its explicit breaks, the same count in every locale the IR carries) and whose height is its
+  content's (no height, min or max height in any layer; not grown in a column, not stretched in a row, not pinned by top
+  and bottom; no animated size, padding or border) an explicit `height` of `lines × line box + vertical padding and
+  borders` in every layer that changes them, scaled by the text-size steps. Wrapping text keeps its measured height (at
+  most one device pixel over per element).
 
 ## 13. Localization
 
