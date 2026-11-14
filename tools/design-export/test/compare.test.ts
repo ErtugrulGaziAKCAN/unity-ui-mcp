@@ -407,27 +407,57 @@ describe("compareCapture: fix round checks", () => {
   });
 
   it("judges a text line a later element partly covers on its visible part only", () => {
-    // an open popup (later in paint order, with a baked shadow below it) covers the right half of the label's line; its
-    // content differs between the renderers (bright text in the design, a softer shadow in Unity)
+    // an open popup (later in paint order, an opaque fill with rounded corners) covers the right half of the label's line;
+    // its content differs between the renderers (bright text in the design, another colour in Unity)
     const ctx: CaptureContext = {
       order: ["root", "card", "label", "panel", "popup"], backgrounds: new Set(["root", "card", "panel", "popup"]),
-      painters: new Set(["root", "card", "panel", "popup"]), fontPx: { label: 16 }, shadows: { popup: { x: 86, y: 40, w: 70, h: 60 } },
+      painters: new Set(["root", "card", "panel", "popup"]), opaque: new Set(["root", "card", "panel", "popup"]), fontPx: { label: 16 },
+      radii: { popup: [4, 4, 4, 4] },
     };
-    const pop = (s: ReturnType<typeof scene>, text: Rgb, shade: Rgb) => {
-      fill(s.png, { x: 86, y: 52, w: 70, h: 48 }, shade); // the shadow's band below the popup
+    const pop = (s: ReturnType<typeof scene>, text: Rgb) => {
       fill(s.png, { x: 90, y: 44, w: 60, h: 40 }, [20, 40, 52]);
       glyphs(s.png, { x: 96, y: 52, w: 40, h: 12 }, text);
       s.boxes.elements.popup = el(90, 44, 60, 40);
       return s;
     };
-    const g = pop(scene(), [255, 255, 255], [60, 30, 30]), u = pop(scene(), [90, 200, 255], [90, 40, 40]);
+    const g = pop(scene(), [255, 255, 255]), u = pop(scene(), [90, 200, 255]);
     const v = compareCapture(g, u, [], T, ctx);
     expect(v.issues.filter((i) => i.id === "label")).toEqual([]);
     expect(v.elements.find((r) => r.id === "label")!.ink).toBe(0);
+    expect(v.linesCovered).toEqual([]);
     // the visible part is still judged: a wrong colour there fails
-    const wrong = pop(scene(), [90, 200, 255], [90, 40, 40]);
-    glyphs(wrong.png, { x: 50, y: 52, w: 36, h: 12 }, [250, 210, 60]);
+    const wrong = pop(scene(), [90, 200, 255]);
+    glyphs(wrong.png, { x: 50, y: 52, w: 40, h: 12 }, [250, 210, 60]);
     expect(compareCapture(g, wrong, [], T, ctx).issues.map((i) => `${i.id}:${i.kind}`)).toContain("label:ink");
+  });
+
+  it("still judges text under a translucent scrim, a border-only box or a shadow", () => {
+    // a later full-screen scrim (half-transparent black: a painter, not opaque) over the label: a wrong text colour fails
+    const ctx: CaptureContext = {
+      order: ["root", "card", "label", "panel", "scrim"], backgrounds: new Set(["root", "card", "panel", "scrim"]),
+      painters: new Set(["root", "card", "panel", "scrim"]), opaque: new Set(["root", "card", "panel"]), fontPx: { label: 16 },
+      shadows: { scrim: { x: 0, y: 0, w: 320, h: 192 } },
+    };
+    const scrim = (s: ReturnType<typeof scene>, text: Rgb) => {
+      glyphs(s.png, { x: 50, y: 52, w: 80, h: 12 }, text);
+      for (let i = 0; i < s.png.data.length; i += 4) for (let k = 0; k < 3; k++) s.png.data[i + k] = Math.round(s.png.data[i + k] / 2);
+      s.boxes.elements.scrim = el(0, 0, 320, 192);
+      return s;
+    };
+    const g = scrim(scene(), [250, 250, 250]);
+    expect(compareCapture(g, scrim(scene(), [250, 250, 250]), [], T, ctx).issues.filter((i) => i.id === "label")).toEqual([]);
+    expect(compareCapture(g, scrim(scene(), [250, 210, 60]), [], T, ctx).issues.map((i) => `${i.id}:${i.kind}`)).toContain("label:ink");
+  });
+
+  it("reports a line an opaque later element covers entirely as not judged (covered)", () => {
+    const ctx: CaptureContext = {
+      order: ["root", "card", "label", "panel", "sheet"], backgrounds: new Set(["root", "card", "panel", "sheet"]),
+      painters: new Set(["root", "card", "panel", "sheet"]), opaque: new Set(["root", "card", "panel", "sheet"]), fontPx: { label: 16 },
+    };
+    const sheet = (s: ReturnType<typeof scene>) => { fill(s.png, { x: 40, y: 40, w: 110, h: 40 }, [20, 40, 52]); s.boxes.elements.sheet = el(40, 40, 110, 40); return s; };
+    const v = compareCapture(sheet(scene()), sheet(scene()), [], T, ctx);
+    expect(v.linesCovered).toEqual(["label: line 1 of 1"]);
+    expect(v.elements.find((r) => r.id === "label")!.lines).toBe("1/1, 1 not judged (covered)");
   });
 
   it("checks the text ink: colour and amount", () => {

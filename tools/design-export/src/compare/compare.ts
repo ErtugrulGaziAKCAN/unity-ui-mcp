@@ -254,6 +254,8 @@ export interface CaptureVerdict {
   pixelsOff: number | null;
   /** Text elements whose lines are not compared (their design text is not DOM text: inputs, selects). */
   linesNotCompared: string[];
+  /** Text lines an opaque later element covers entirely (an open dialog over the screen): their ink is not judged. */
+  linesCovered: string[];
   /** Elements that paint a background but had no colour sample left (every point covered or on text). */
   notSampled: string[];
   /** Unity pixels with alpha below 255 (compared premultiplied). */
@@ -328,6 +330,28 @@ export interface CompareOptions {
 }
 
 const EPS = 1e-6;
+
+/** Whether point (x, y) is inside a box with corner radii (top-left, top-right, bottom-right, bottom-left), grown by `grow`. */
+function insideRounded(b: Rect, r: readonly number[] | undefined, x: number, y: number, grow: number): boolean {
+  const x0 = b.x - grow, y0 = b.y - grow, x1 = b.x + b.w + grow, y1 = b.y + b.h + grow;
+  if (x < x0 || x > x1 || y < y0 || y > y1) return false;
+  if (!r) return true;
+  const corner = (rad: number, cx: number, cy: number) => rad <= 0 || (x - cx) ** 2 + (y - cy) ** 2 <= (rad + grow) ** 2;
+  const [tl, tr, br, bl] = r.map((v) => Math.max(0, v));
+  if (x < x0 + tl && y < y0 + tl) return corner(tl, x0 + tl, y0 + tl);
+  if (x > x1 - tr && y < y0 + tr) return corner(tr, x1 - tr, y0 + tr);
+  if (x > x1 - br && y > y1 - br) return corner(br, x1 - br, y1 - br);
+  if (x < x0 + bl && y > y1 - bl) return corner(bl, x0 + bl, y1 - bl);
+  return true;
+}
+
+/** Whether every pixel of a window inside the image is hidden. */
+function everyPixel(r: Rect, w: number, h: number, hidden: (x: number, y: number) => boolean): boolean {
+  const x0 = Math.max(0, Math.floor(r.x)), x1 = Math.min(w, Math.ceil(r.x + r.w)), y0 = Math.max(0, Math.floor(r.y)), y1 = Math.min(h, Math.ceil(r.y + r.h));
+  if (x1 <= x0 || y1 <= y0) return false;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (!hidden(x, y)) return false;
+  return true;
+}
 /**
  * Float tolerance of the box and baseline limits (device px): Unity reports its layout in float32, so a box UI Toolkit
  * snaps by exactly the limit (a frame at a half CSS pixel at scale 0.75: 366 → 274.5 device px, drawn at 275) arrives as
@@ -435,6 +459,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   const issues: ElementIssue[] = [];
   const rows: ElementRow[] = [];
   const linesNotCompared: string[] = [], notSampled: string[] = [];
+  /** Text lines an opaque later element covers entirely: their ink is not judged (`<id>: line <k> of <n>`). */
+  const linesCovered: string[] = [];
   const removedSet = new Set(removed);
   const issue = (id: string, kind: IssueKind, detail: string, at?: Rect) => issues.push(at ? { id, kind, detail, at } : { id, kind, detail });
   const newRow = (id: string, status: ElementRow["status"] = "ok"): ElementRow =>
@@ -569,13 +595,16 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const covering = (id: string): Rect[] =>
       coveringIds(id).flatMap((x) => [g.elements[x], u.elements[x]]).filter((e): e is Box => !!e && e.visible);
     /**
-     * What later elements paint over a text: their boxes and their baked shadows (an open popup and its shadow over a card
-     * title). A text line is judged on the pixels outside them only.
+     * Whether a pixel of a text's line is hidden by a later element: one whose fill is opaque (CaptureContext.opaque), within
+     * its painted shape (its box with its corner radii, half a pixel wider for the anti-aliased edge), on either side. A
+     * translucent scrim, a border-only box, a picture or a shadow hides nothing: the text under it is still judged.
      */
-    const coveringText = (id: string): Rect[] => {
-      const ids = coveringIds(id);
-      const shadows = ids.map((x) => (g.elements[x]?.visible || u.elements[x]?.visible ? ctx.shadows?.[x] : undefined)).filter((r): r is Rect => !!r);
-      return [...covering(id), ...shadows];
+    const hiddenBy = (id: string): ((x: number, y: number) => boolean) | null => {
+      if (!ctx.opaque) return null;
+      const shapes = coveringIds(id).filter((x) => ctx.opaque!.has(x))
+        .flatMap((x) => [g.elements[x], u.elements[x]].filter((e): e is Box => !!e && e.visible).map((b) => ({ b, r: ctx.radii?.[x] })));
+      if (!shapes.length) return null;
+      return (x, y) => shapes.some(({ b, r }) => insideRounded(b, r, x + 0.5, y + 0.5, 0.5));
     };
     const onText = (x: number, y: number) => {
       for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) if (textMask[yy * w + xx]) return true;
@@ -710,13 +739,14 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // the font size in device px: the IR's, else the line box over the kit's largest ratio (4/3), never more than the real size
         const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
         let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number } | null = null, maxDe = 0;
-        const over = coveringText(id);
+        const hidden = hiddenBy(id);
+        let covered = 0;
         ge.lines.forEach((gl, i) => {
           const win = grow(unionRect(gl, ue.lines[i]), 1);
-          const hidden = over.filter((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y);
-          const a = inkIn(gp, win, hidden);
+          if (hidden && everyPixel(win, w, h, hidden)) { covered++; linesCovered.push(`${id}: line ${i + 1} of ${ge.lines.length}`); return; }
+          const a = inkIn(gp, win, hidden ?? undefined);
           if (!a) return;
-          const b = inkIn(up, win, hidden);
+          const b = inkIn(up, win, hidden ?? undefined);
           inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow: !!ctx.textShadows?.has(id) });
           if (b) {
             const de = deltaE2000(a.ink, b.ink), limit = inkColourLimit(t, px, i);
@@ -724,6 +754,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
             if (!wDe || de - limit > wDe.de - wDe.limit) wDe = { de, i, a: a.ink, b: b.ink, limit };
           }
         });
+        if (covered) row.lines = `${row.lines}, ${covered} not judged (covered)`;
         if (wDe) {
           const x = wDe as { de: number; i: number; a: number[]; b: number[]; limit: number };
           row.ink = r6(maxDe);
@@ -805,7 +836,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   return {
     verdict: {
       capture: g.capture, pass: issues.length === 0, ssim: ssim === null ? null : r6(ssim), issues, size: [gp.w, gp.h],
-      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
+      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, linesCovered, notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
     },
     heat,
   };

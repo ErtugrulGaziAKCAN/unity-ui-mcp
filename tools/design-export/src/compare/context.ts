@@ -10,7 +10,7 @@
 import type { CaptureBoxes } from "../boxes/types.js";
 import { breakpointsHold, type CaptureApply } from "../capture/matrix.js";
 import type { BoxRect, IrScreen } from "../ir/types.js";
-import { isTransparentColor } from "./color.js";
+import { colorAlpha, isTransparentColor } from "./color.js";
 import type { Rect } from "./ssim.js";
 
 /** Per-capture facts from the IR; every field is optional (absent: the comparison works from the boxes alone). */
@@ -28,6 +28,12 @@ export interface CaptureContext {
    * shadow): only these can cover another element's colour samples. Null or absent: every visible element counts.
    */
   painters?: ReadonlySet<string> | null;
+  /**
+   * Elements whose fill hides what is under it: a background colour of alpha ≥ 0.99 under an opacity (its own times its
+   * ancestors') of 0.99 or more. Only these exclude a text's pixels from its ink check, within their painted shape (box and
+   * corner radii); a translucent scrim, a border-only box, a picture or a shadow does not. Absent: nothing is excluded.
+   */
+  opaque?: ReadonlySet<string> | null;
   /** Painted border widths per element in device px (top, right, bottom, left); absent: no border known. */
   borders?: Record<string, [number, number, number, number]>;
   /** Font size of each text element in device px (its `font-size` in this capture times the capture scale). */
@@ -157,7 +163,16 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
   const borders: Record<string, [number, number, number, number]> = {};
   const fontPx: Record<string, number> = {};
   const radii: Record<string, [number, number, number, number]> = {};
-  const pictures = new Set<string>(), textShadows = new Set<string>(), rotated = new Set<string>();
+  const pictures = new Set<string>(), textShadows = new Set<string>(), rotated = new Set<string>(), opaque = new Set<string>();
+  const opacity = new Map<string, number>();
+  const opacityOf = (id: string, holds: (key: string) => boolean): number => {
+    if (opacity.has(id)) return opacity.get(id)!;
+    const own = parseFloat(styleValue(ix.nodes.get(id)!, "opacity", holds) ?? "1");
+    const up = ix.parent.get(id);
+    const v = (Number.isFinite(own) ? own : 1) * (up ? opacityOf(up, holds) : 1);
+    opacity.set(id, v);
+    return v;
+  };
   for (const id of ix.order) {
     const n = ix.nodes.get(id)!;
     const holds = (key: string) => key.split("+").every((d) => test(d, id));
@@ -165,6 +180,7 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     const image = styleValue(n, "background-image", holds);
     const asset = resolve<unknown>(n.background ?? null, n.backgroundLayers, holds);
     if (!isTransparentColor(color) || (image !== undefined && image.trim() !== "none" && image.trim() !== "") || asset) backgrounds.add(id);
+    if (colorAlpha(color) >= 0.99 && opacityOf(id, (key) => key.split("+").every((d) => test(d, id))) >= 0.99) opaque.add(id);
     const sh = resolve<LooseShadow | null>(n.shadow ?? null, n.shadowLayers, holds);
     const inset = resolve<unknown>(n.insetShadow ?? null, n.insetShadowLayers, holds);
     const b = golden.elements[id];
@@ -196,5 +212,5 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     if (isObj(n.asset) && n.asset.kind === "image" && b && (Math.abs(b.w - Number(n.asset.width)) > 0.5 || Math.abs(b.h - Number(n.asset.height)) > 0.5)) pictures.add(id);
     if (setup.anim && b && typeof b.rotation === "number" && !axisAligned(b.rotation)) rotated.add(id);
   }
-  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, borders, fontPx, radii, pictures, textShadows, rotated };
+  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
 }

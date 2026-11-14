@@ -58,6 +58,22 @@ export function hex(c: readonly number[]): string {
  * Whether a CSS colour value (as the IR stores it: Chromium's specified value with var() resolved) paints nothing:
  * `transparent`, or an rgb()/rgba()/hsl()/hsla()/hex/color() value with alpha 0. Anything else counts as painted.
  */
+/** The alpha of a CSS colour (0 for none or transparent, 1 when it names none). */
+export function colorAlpha(value: string | undefined): number {
+  if (value === undefined) return 0;
+  const v = value.trim().toLowerCase();
+  if (v === "" || v === "transparent" || v === "none") return 0;
+  const hexM = /^#([0-9a-f]{4}|[0-9a-f]{8})$/.exec(v);
+  if (hexM) return parseInt(hexM[1].length === 4 ? hexM[1][3].repeat(2) : hexM[1].slice(6), 16) / 255;
+  const fn = /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\((.*)\)$/.exec(v);
+  if (!fn) return 1;
+  const body = fn[1].trim(), slash = body.lastIndexOf("/");
+  const alpha = slash >= 0 ? body.slice(slash + 1).trim() : body.split(",").length === 4 ? body.split(",")[3].trim() : null;
+  if (alpha === null) return 1;
+  const n = alpha.endsWith("%") ? parseFloat(alpha) / 100 : parseFloat(alpha);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
+}
+
 export function isTransparentColor(value: string | undefined): boolean {
   if (value === undefined) return true;
   const v = value.trim().toLowerCase();

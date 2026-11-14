@@ -113,6 +113,7 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     </dl>
     ${issues}
     ${c.linesNotCompared.length ? `<p class="muted">Lines not compared (text not in DOM text): ${c.linesNotCompared.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
+    ${(c.linesCovered ?? []).length ? `<p class="muted">Lines not judged (covered by an opaque later element): ${c.linesCovered.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${c.notSampled.length ? `<p class="warn-text">Background not sampled (every sample point covered or on text): ${c.notSampled.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${c.translucent ? `<p class="muted">${c.translucent} Unity pixels are translucent; colours were compared premultiplied.</p>` : ""}
     <details class="elements"><summary>Per-element measures (${c.elements.length})</summary>
@@ -216,6 +217,7 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
   const worstBox = v.captures.filter((c) => c.maxBoxDelta).sort((a, b) => b.maxBoxDelta!.px - a.maxBoxDelta!.px)[0];
   const worstDE = v.captures.filter((c) => c.maxDeltaE).sort((a, b) => b.maxDeltaE!.deltaE - a.maxDeltaE!.deltaE)[0];
   const linesNot = Array.from(new Set(v.captures.flatMap((c) => c.linesNotCompared))).sort();
+  const covered = v.captures.reduce((a, c) => a + (c.linesCovered ?? []).length, 0);
   const extraEls = v.captures.reduce((a, c) => a + c.issues.filter((i) => i.kind === "extra").length, 0);
   const notSampled = v.captures.reduce((a, c) => a + c.notSampled.length, 0);
   const link = (c: CaptureVerdict | undefined, text: string) => (c ? `<a href="#${anchor(index.get(c.capture)!)}">${text}</a>` : "—");
@@ -271,6 +273,7 @@ ${v.warnings.length ? `<div class="warning" role="alert"><strong>Checks skipped 
   <li>Goldens: ${v.platform ? `Chromium ${esc(v.platform.chromium)} on ${esc(v.platform.platform)}` : "platform not recorded"}; compare with captures of the same platform (goldens are platform-specific).</li>
   <li>Before the whole-capture SSIM, the boxes of text elements and external regions (inflated by 2 px) are copied from the design. An element that carries text is measured with only its lines copied, plus samples of its background, border and corners; its text is checked by line count, baselines, ink colour and ink amount (line widths are not compared).</li>
   ${linesNot.length ? `<li>Lines not compared (text not in DOM text): ${linesNot.map((x) => `<code>${esc(x)}</code>`).join(", ")}</li>` : ""}
+  ${covered ? `<li>Text lines not judged (covered by an opaque later element): ${covered}, listed with their capture</li>` : ""}
   ${v.removed.length ? `<li>Removed by the compiler (no Unity box by design): ${v.removed.map((x) => `<code>${esc(x)}</code>`).join(", ")}</li>` : ""}
   ${v.notes.map((n) => `<li>${esc(n)}</li>`).join("")}
 </ul></section>
