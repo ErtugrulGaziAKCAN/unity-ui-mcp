@@ -277,11 +277,17 @@ namespace DesignUi.Editor
             s_PendingPeak = 0;
             var flushed = Stopwatch.StartNew();
             int sinceFlush = 0;
+            double flushMs = 0;
             void Flush(bool force)
             {
-                if (!force && sinceFlush < FlushEveryJobs && flushed.Elapsed.TotalSeconds < FlushEverySeconds) return;
+                // every 25 jobs, but a flush rewrites the whole boxes.json (megabytes for a thousand animation samples): the
+                // next one waits ten times as long as the last one took, so flushing stays a small part of the run
+                bool due = sinceFlush >= FlushEveryJobs && flushed.Elapsed.TotalMilliseconds >= 10 * flushMs;
+                if (!force && !due && flushed.Elapsed.TotalSeconds < FlushEverySeconds) return;
+                var took = Stopwatch.StartNew();
                 BoxesWriter.WriteAll(Path.Combine(outDir, BoxesWriter.FileName), boxes);
                 WriteMeta(outDir, exportDir, screenFolder, result, run, "running", total.Elapsed.TotalMilliseconds);
+                flushMs = took.Elapsed.TotalMilliseconds;
                 sinceFlush = 0;
                 flushed.Restart();
             }
