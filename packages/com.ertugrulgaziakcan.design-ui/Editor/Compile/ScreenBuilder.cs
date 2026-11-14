@@ -132,6 +132,7 @@ namespace DesignUi.Editor
             var className = Pascal(ir.Screen, "screen id");
             var lowered = Lowering.Apply(ir.Root, ir.Breakpoints);
             var builder = new Builder(assetPath, fontDefinition, options, AncestorTargets(lowered), InheritedFamilies(lowered));
+            builder.PlanTextHeights(lowered, null);
             var root = builder.Draft(lowered, true, false);
             builder.RemoveWrappers(root);
             return builder.Finish(root, ir, className);
@@ -304,6 +305,25 @@ namespace DesignUi.Editor
             /// <summary>A selector suffix to a part of a control (e.g. a text field's input), or null for the element itself.</summary>
             public string Part;
             public List<UssDeclaration> Declarations;
+            /// <summary>The fixed-line text height this layer writes (<see cref="Builder.PlanTextHeights"/>), or null; the text-size steps scale it.</summary>
+            public TextHeight Height;
+        }
+
+        /// <summary>
+        /// The explicit height of a text element whose line count the design fixes, in one layer: <c>lines × line box +
+        /// vertical padding and borders</c> (CSS px, border box). The line box is the kit style's ratio times the layer's font
+        /// size, so a text-size step scales it with the size.
+        /// </summary>
+        sealed class TextHeight
+        {
+            public int Lines;
+            /// <summary>Line height over font size of the node's kit style.</summary>
+            public double Ratio;
+            public double FontSize;
+            /// <summary>Vertical padding and border widths (CSS px), unscaled by text-size steps.</summary>
+            public double Extra;
+
+            public double Px(double k = 1) => Math.Round(Lines * Ratio * FontSize * k + Extra, 6);
         }
 
         sealed class Draft
@@ -598,6 +618,12 @@ namespace DesignUi.Editor
                     var decls = StyleMapper.Map(css, basis, isText, key == Base).ToList();
                     ResolveFont(decls, css);
                     LineBoxFont(decls, node, key);
+                    var textHeight = TextHeightAt(node, key, css);
+                    if (textHeight != null)
+                    {
+                        decls.RemoveAll(x => x.Property == "height");
+                        decls.Add(new UssDeclaration("height", Number(textHeight.Px()) + "px"));
+                    }
                     if (images.Declarations.TryGetValue(key, out var image)) decls.AddRange(image);
                     if (node.AssetLayers.TryGetValue(key, out var layerImage))
                     {
@@ -623,7 +649,7 @@ namespace DesignUi.Editor
                     }
                     outer = Sorted(outer, node.Id);
                     inner = Sorted(inner, node.Id);
-                    if (outer.Count > 0) d.Layers.Add(new LayerRules { Key = key, Declarations = outer });
+                    if (outer.Count > 0) d.Layers.Add(new LayerRules { Key = key, Declarations = outer, Height = content == null || !content.Contains("height") ? textHeight : null });
                     if (inner.Count > 0) d.Layers.Add(new LayerRules { Key = key, Content = true, Declarations = inner });
                 }
             }
@@ -1021,6 +1047,121 @@ namespace DesignUi.Editor
                 }
             }
 
+            // ---- fixed-line text heights --------------------------------------------------------------------------
+
+            /// <summary>Text nodes whose line count the design fixes and whose height is their content's: their line count and style ratio.</summary>
+            readonly Dictionary<IrNode, (int lines, double ratio)> _fixedLines = new Dictionary<IrNode, (int, double)>();
+
+            static readonly HashSet<string> NonStretch = new HashSet<string>(StringComparer.Ordinal)
+                { "flex-start", "center", "flex-end", "baseline", "start", "end", "self-start", "self-end" };
+            static readonly string[] HeightProps = { "font-size", "padding-top", "padding-bottom", "border-top-width", "border-bottom-width", "border-top-style", "border-bottom-style" };
+
+            /// <summary>
+            /// UI Toolkit rounds a text element's measured height up to whole device pixels: at a scale where a line box is a
+            /// fraction of a device pixel each such element is up to a pixel taller than the design's and texts stacked below it
+            /// drift. A text whose line count the design fixes (no wrapping, <c>white-space: nowrap</c> or <c>pre</c>, in every
+            /// layer; its lines are its explicit breaks) and whose height is its content's gets an explicit height of exactly
+            /// <c>lines × line box</c> plus its vertical padding and borders (<see cref="TextHeight"/>), so layout uses the exact
+            /// value and nothing adds up. Its height is its content's when no layer sizes it (height, min or max height) and it is
+            /// not grown or stretched: in a column without flex-grow or flex-basis, in a row whose items are aligned (not
+            /// stretched), or absolute without both top and bottom. Wrapping text keeps its measured height (at most a device
+            /// pixel over the design per element).
+            /// </summary>
+            public void PlanTextHeights(IrNode node, IrNode parent)
+            {
+                foreach (var child in node.Children) PlanTextHeights(child, node);
+                if (FixedLines(node, parent, out var lines, out var ratio)) _fixedLines[node] = (lines, ratio);
+            }
+
+            bool FixedLines(IrNode node, IrNode parent, out int lines, out double ratio)
+            {
+                lines = 0;
+                ratio = 0;
+                if (parent == null || node.Text == null || node.Children.Length > 0 || node.Field != null || (node.Kind != "text" && node.Kind != "button")) return false;
+                var style = node.Text.Style;
+                if (style == null || _lineBoxes == null || !_lineBoxes.TryGetValue(style, out var key) || key == null || !_boxesByKey.TryGetValue(key, out var box)) return false;
+                var tr = node.Text.Tr ?? "";
+                if (node.Text.Rich && tr.IndexOf("<size=", StringComparison.Ordinal) >= 0) return false; // another size in a line changes its box
+                lines = tr.Split('\n').Length;
+                if (node.Text.En != null && node.Text.En.Split('\n').Length != lines) return false;
+                ratio = box.LineHeight / box.FontSize;
+                // an animation of the size, padding or borders changes the height between the layers' values
+                if ((node.Anims ?? new List<IrAnim>()).Any(a => (a.Properties ?? new string[0]).Any(p => p == "all" || HeightProps.Contains(p) || p.StartsWith("padding", StringComparison.Ordinal) || p.StartsWith("border", StringComparison.Ordinal))))
+                    return false;
+                var keys = node.Style.Keys.Select(LayerKey.Parse).ToList();
+                if (!keys.Any(k => k.Text == Base)) keys.Add(LayerKey.Parse(Base));
+                bool absolute = Get(node, Base, "position") == "absolute";
+                foreach (var k in keys)
+                {
+                    string At(string prop) => Lowering.Resolve(node, k, prop, true);
+                    var wrap = At("text-wrap-mode") ?? (At("white-space") is string ws ? (ws == "nowrap" || ws == "pre" ? "nowrap" : "wrap") : "wrap");
+                    if (wrap != "nowrap") return false;
+                    if (!IsNone(At("height"), "auto") || !IsNone(At("min-height"), "auto", "0", "0px") || !IsNone(At("max-height"), "none")) return false;
+                    if (absolute)
+                    {
+                        if (!IsNone(At("top"), "auto") && !IsNone(At("bottom"), "auto")) return false;
+                        continue;
+                    }
+                    if (!IsNone(At("flex-basis"), "auto", "content")) return false;
+                }
+                if (absolute) return true;
+                // the parent's direction and alignment in every layer of it (the node's own align-self in every layer of the node)
+                var parentKeys = parent.Style.Keys.Select(LayerKey.Parse).ToList();
+                if (!parentKeys.Any(k => k.Text == Base)) parentKeys.Add(LayerKey.Parse(Base));
+                foreach (var pk in parentKeys)
+                {
+                    var direction = Lowering.Resolve(parent, pk, "flex-direction", true) ?? "row";
+                    if (direction.StartsWith("column", StringComparison.Ordinal))
+                    {
+                        // the main axis: content-sized unless it grows
+                        foreach (var k in keys) if (!IsNone(Lowering.Resolve(node, k, "flex-grow", true), "0")) return false;
+                    }
+                    else
+                    {
+                        // the cross axis: content-sized only where it is aligned, not stretched
+                        foreach (var k in keys)
+                        {
+                            var self = Lowering.Resolve(node, k, "align-self", true);
+                            var align = self == null || self == "auto" ? Lowering.Resolve(parent, pk, "align-items", true) : self;
+                            if (align == null || !NonStretch.Contains(align)) return false;
+                        }
+                    }
+                }
+                // padding and borders in px (a percentage depends on the parent's width)
+                foreach (var k in keys)
+                    foreach (var prop in new[] { "padding-top", "padding-bottom", "border-top-width", "border-bottom-width" })
+                    {
+                        var v = Lowering.Resolve(node, k, prop, true);
+                        if (v != null && !PxValue.IsMatch(v)) return false;
+                    }
+                return true;
+            }
+
+            static bool IsNone(string value, params string[] none) => value == null || none.Contains(value.Trim());
+
+            /// <summary>The fixed-line text height a layer of the node writes: its base layer, and every layer that changes the size, padding or borders.</summary>
+            TextHeight TextHeightAt(IrNode node, string key, Dictionary<string, string> css)
+            {
+                if (!_fixedLines.TryGetValue(node, out var fixedLines)) return null;
+                if (key != Base && !HeightProps.Any(css.ContainsKey)) return null;
+                var k = LayerKey.Parse(key);
+                double Len(string prop) => Lowering.Resolve(node, k, prop, true) is string v ? Px(v, prop + " of '" + node.Id + "'") : 0;
+                double Border(string side)
+                {
+                    var style = Lowering.Resolve(node, k, "border-" + side + "-style", true);
+                    return style == null || style == "none" || style == "hidden" ? 0 : Len("border-" + side + "-width");
+                }
+                var size = Lowering.Resolve(node, k, "font-size", true);
+                if (size == null) return null;
+                return new TextHeight
+                {
+                    Lines = fixedLines.lines,
+                    Ratio = fixedLines.ratio,
+                    FontSize = Px(size, "font-size of '" + node.Id + "'"),
+                    Extra = Len("padding-top") + Len("padding-bottom") + Border("top") + Border("bottom"),
+                };
+            }
+
             /// <summary>
             /// A text node in a kit text style with a line-box variant names its family's variant variable
             /// (<c>var(--font-&lt;family&gt;-&lt;key&gt;)</c>) in every layer; its base layer names it even when the family is
@@ -1183,6 +1324,9 @@ namespace DesignUi.Editor
                 // the design's @media breakpoints: the screen root applies their bp-* classes from the panel's size at runtime
                 if (compiledRoot.Tag == ScreenTag && ir.Breakpoints != null && ir.Breakpoints.Length > 0)
                     compiledRoot.Attributes.Add(new KeyValuePair<string, string>("breakpoints", DesignUi.DesignBreakpoints.Encode(BreakpointsOf(ir))));
+                // the scaled viewports' panel scales: the root carries the class of the one it renders at (DesignFonts.uss)
+                if (compiledRoot.Tag == ScreenTag && _options.ViewportScales != null && _options.ViewportScales.Count > 0)
+                    compiledRoot.Attributes.Add(new KeyValuePair<string, string>("viewport-scales", DesignUi.DesignViewportScales.Encode(_options.ViewportScales)));
                 var names = new Dictionary<string, CompiledElement>(StringComparer.Ordinal);
                 foreach (var e in compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf()))))
                 {
@@ -1322,13 +1466,12 @@ namespace DesignUi.Editor
                         // a layer that sets a size or a line-box font (a font switch) needs its twin, or the base twin outranks it
                         var size = layer.Declarations.FirstOrDefault(x => x.Property == "font-size");
                         bool lineBoxFont = layer.Declarations.Any(x => x.Property == "-unity-font-definition" && LineBoxKeyOf(x.Value) != null);
-                        if (size.Property == null && !lineBoxFont) continue;
+                        if (size.Property == null && !lineBoxFont && layer.Height == null) continue;
                         double k = StepScale(step), px = size.Property == null ? double.NaN : Px(size.Value, "font-size of '" + d.Name + "' (layer '" + layer.Key + "'), which the text-size steps scale,");
-                // the scaled viewports' panel scales: the root carries the class of the one it renders at (DesignFonts.uss)
-                if (compiledRoot.Tag == ScreenTag && _options.ViewportScales != null && _options.ViewportScales.Count > 0)
-                    compiledRoot.Attributes.Add(new KeyValuePair<string, string>("viewport-scales", DesignUi.DesignViewportScales.Encode(_options.ViewportScales)));
                         var scaled = new List<UssDeclaration>();
                         if (size.Property != null) scaled.Add(new UssDeclaration("font-size", Number(px * k) + "px"));
+                        // a fixed-line text's height follows its line box (the padding and borders are not scaled)
+                        if (layer.Height != null) scaled.Add(new UssDeclaration("height", Number(layer.Height.Px(k)) + "px"));
                         FontTwinGenerator.LineBox box = null;
                         foreach (var decl in layer.Declarations.Where(x => x.Property == "-unity-font-definition"))
                         {

@@ -63,7 +63,7 @@ describe("fidelity fixtures lint clean", () => {
   it("there is one fixture per feature group", () => {
     expect(fixtures.map((f) => path.basename(f, ".html"))).toEqual([
       "background-images", "colors-gradients", "controls", "filters", "icons", "initial-trigger", "keyframes", "layout", "letter-spacing", "object-fit",
-      "pseudo-states", "repeat-items", "shadows-radii-borders", "sizing-visibility", "states", "text-shadow", "text-spacing", "text-styles", "transitions",
+      "pseudo-states", "repeat-items", "shadows-radii-borders", "sizing-visibility", "stacked-text", "states", "text-shadow", "text-spacing", "text-styles", "transitions",
     ]);
   });
   for (const file of fixtures.filter((f) => !PENDING[path.basename(f)])) {

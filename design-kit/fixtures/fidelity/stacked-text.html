@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.stacked-text</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 16px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 16px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
+.text-subtitle-bold { font-size: 32px; line-height: 40px; font-weight: 700; }
+.text-title { font-size: 36px; line-height: 48px; font-weight: 400; }
+.text-title-bold { font-size: 36px; line-height: 48px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 60px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 60px; font-weight: 700; }
+.text-display { font-size: 64px; line-height: 80px; font-weight: 400; }
+.text-display-bold { font-size: 64px; line-height: 80px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: row; width: 2560px; height: 1440px; position: relative; padding: 32px; background-color: var(--color-surface-900); }
+.column { display: flex; flex-direction: column; width: 560px; flex-shrink: 0; margin-right: 48px; }
+.line { white-space: nowrap; color: var(--color-text-primary); }
+.row { padding: 4px 8px; background-color: var(--color-surface-800); }
+.row-alt { padding: 4px 8px; background-color: var(--color-surface-700); }
+.cap { color: var(--color-text-secondary); }
+.pair { display: flex; flex-direction: row; align-items: center; padding: 4px 8px; background-color: var(--color-surface-800); }
+.pair-alt { display: flex; flex-direction: row; align-items: center; padding: 4px 8px; background-color: var(--color-surface-700); }
+.key { width: 240px; flex-shrink: 0; color: var(--color-text-secondary); }
+.value { color: var(--color-text-primary); }
+.para { width: 520px; color: var(--color-text-primary); margin-bottom: 16px; }
+.mark { height: 8px; background-color: var(--color-accent); }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.stacked-text">
+  <!-- stacked text where a line box is a fraction of a device pixel at a scaled viewport (16/20 at 1600×900: 12.5 px;
+       every style at 1366×768): single-line texts get exact heights, wrapping paragraphs keep their measured ones -->
+  <div class="column" data-u-id="list">
+    <p class="line text-label row" data-u-id="list-01" data-l10n="fidelity.stacked-text.list-01" data-en="Squad list">Kadro listesi</p>
+    <p class="line text-label row-alt" data-u-id="list-02" data-l10n="fidelity.stacked-text.list-02" data-en="Fixtures">Maç takvimi</p>
+    <p class="line text-label row" data-u-id="list-03" data-l10n="fidelity.stacked-text.list-03" data-en="Transfer budget">Transfer bütçesi</p>
+    <p class="line text-label row-alt" data-u-id="list-04" data-l10n="fidelity.stacked-text.list-04" data-en="Income and costs">Gelir ve giderler</p>
+    <p class="line text-label row" data-u-id="list-05" data-l10n="fidelity.stacked-text.list-05" data-en="Stadium upkeep">Stadyum bakımı</p>
+    <p class="line text-label row-alt" data-u-id="list-06" data-l10n="fidelity.stacked-text.list-06" data-en="Youth academy">Gençlik akademisi</p>
+    <p class="line text-label row" data-u-id="list-07" data-l10n="fidelity.stacked-text.list-07" data-en="Sponsor talks">Sponsor görüşmeleri</p>
+    <p class="line text-label row-alt" data-u-id="list-08" data-l10n="fidelity.stacked-text.list-08" data-en="Fan satisfaction">Taraftar memnuniyeti</p>
+    <p class="line text-label row" data-u-id="list-09" data-l10n="fidelity.stacked-text.list-09" data-en="Press conference">Basın toplantısı</p>
+    <p class="line text-label row-alt" data-u-id="list-10" data-l10n="fidelity.stacked-text.list-10" data-en="Medical team">Sağlık ekibi</p>
+    <p class="line text-label row" data-u-id="list-11" data-l10n="fidelity.stacked-text.list-11" data-en="Training plan">Antrenman planı</p>
+    <p class="line text-label row-alt" data-u-id="list-12" data-l10n="fidelity.stacked-text.list-12" data-en="Scout reports">Scout raporları</p>
+    <p class="line text-label row" data-u-id="list-13" data-l10n="fidelity.stacked-text.list-13" data-en="Ticket sales">Bilet satışları</p>
+    <p class="line text-label row-alt" data-u-id="list-14" data-l10n="fidelity.stacked-text.list-14" data-en="Board of directors">Yönetim kurulu</p>
+    <p class="line text-label row" data-u-id="list-15" data-l10n="fidelity.stacked-text.list-15" data-en="Club history">Kulüp tarihi</p>
+    <p class="line text-label row-alt" data-u-id="list-16" data-l10n="fidelity.stacked-text.list-16" data-en="Season goals">Sezon hedefleri</p>
+    <div class="mark" data-u-id="list-end"></div>
+  </div>
+  <div class="column" data-u-id="captions">
+    <p class="line text-caption cap" data-u-id="cap-01" data-l10n="fidelity.stacked-text.cap-01" data-en="Squad list">Kadro listesi</p>
+    <p class="line text-caption cap" data-u-id="cap-02" data-l10n="fidelity.stacked-text.cap-02" data-en="Fixtures">Maç takvimi</p>
+    <p class="line text-caption cap" data-u-id="cap-03" data-l10n="fidelity.stacked-text.cap-03" data-en="Transfer budget">Transfer bütçesi</p>
+    <p class="line text-caption cap" data-u-id="cap-04" data-l10n="fidelity.stacked-text.cap-04" data-en="Income and costs">Gelir ve giderler</p>
+    <p class="line text-caption cap" data-u-id="cap-05" data-l10n="fidelity.stacked-text.cap-05" data-en="Stadium upkeep">Stadyum bakımı</p>
+    <p class="line text-caption cap" data-u-id="cap-06" data-l10n="fidelity.stacked-text.cap-06" data-en="Youth academy">Gençlik akademisi</p>
+    <p class="line text-caption cap" data-u-id="cap-07" data-l10n="fidelity.stacked-text.cap-07" data-en="Sponsor talks">Sponsor görüşmeleri</p>
+    <p class="line text-caption cap" data-u-id="cap-08" data-l10n="fidelity.stacked-text.cap-08" data-en="Fan satisfaction">Taraftar memnuniyeti</p>
+    <p class="line text-caption cap" data-u-id="cap-09" data-l10n="fidelity.stacked-text.cap-09" data-en="Press conference">Basın toplantısı</p>
+    <p class="line text-caption cap" data-u-id="cap-10" data-l10n="fidelity.stacked-text.cap-10" data-en="Medical team">Sağlık ekibi</p>
+    <p class="line text-caption cap" data-u-id="cap-11" data-l10n="fidelity.stacked-text.cap-11" data-en="Training plan">Antrenman planı</p>
+    <p class="line text-caption cap" data-u-id="cap-12" data-l10n="fidelity.stacked-text.cap-12" data-en="Scout reports">Scout raporları</p>
+    <p class="line text-caption cap" data-u-id="cap-13" data-l10n="fidelity.stacked-text.cap-13" data-en="Ticket sales">Bilet satışları</p>
+    <p class="line text-caption cap" data-u-id="cap-14" data-l10n="fidelity.stacked-text.cap-14" data-en="Board of directors">Yönetim kurulu</p>
+    <p class="line text-caption cap" data-u-id="cap-15" data-l10n="fidelity.stacked-text.cap-15" data-en="Club history">Kulüp tarihi</p>
+    <p class="line text-caption cap" data-u-id="cap-16" data-l10n="fidelity.stacked-text.cap-16" data-en="Season goals">Sezon hedefleri</p>
+    <p class="line text-title" data-u-id="title-01" data-l10n="fidelity.stacked-text.title-01" data-en="Squad list">Kadro listesi</p>
+    <p class="line text-title" data-u-id="title-02" data-l10n="fidelity.stacked-text.title-02" data-en="Fixtures">Maç takvimi</p>
+    <p class="line text-title" data-u-id="title-03" data-l10n="fidelity.stacked-text.title-03" data-en="Transfer budget">Transfer bütçesi</p>
+    <p class="line text-title" data-u-id="title-04" data-l10n="fidelity.stacked-text.title-04" data-en="Income and costs">Gelir ve giderler</p>
+    <p class="line text-title" data-u-id="title-05" data-l10n="fidelity.stacked-text.title-05" data-en="Stadium upkeep">Stadyum bakımı</p>
+    <p class="line text-title" data-u-id="title-06" data-l10n="fidelity.stacked-text.title-06" data-en="Youth academy">Gençlik akademisi</p>
+    <div class="mark" data-u-id="caption-end"></div>
+  </div>
+  <div class="column" data-u-id="pairs">
+    <div class="pair"><p class="line text-label key" data-u-id="key-01" data-l10n="fidelity.stacked-text.key-01" data-en="Squad list">Kadro listesi</p><p class="line text-label value" data-u-id="value-01" data-l10n="fidelity.stacked-text.value-01" data-en="32 players">32 oyuncu</p></div>
+    <div class="pair-alt"><p class="line text-label key" data-u-id="key-02" data-l10n="fidelity.stacked-text.key-02" data-en="Fixtures">Maç takvimi</p><p class="line text-label value" data-u-id="value-02" data-l10n="fidelity.stacked-text.value-02" data-en="38 matches">38 maç</p></div>
+    <div class="pair"><p class="line text-label key" data-u-id="key-03" data-l10n="fidelity.stacked-text.key-03" data-en="Transfer budget">Transfer bütçesi</p><p class="line text-label value" data-u-id="value-03" data-l10n="fidelity.stacked-text.value-03" data-en="₺ 12 million">₺ 12 milyon</p></div>
+    <div class="pair-alt"><p class="line text-label key" data-u-id="key-04" data-l10n="fidelity.stacked-text.key-04" data-en="Income and costs">Gelir ve giderler</p><p class="line text-label value" data-u-id="value-04" data-l10n="fidelity.stacked-text.value-04" data-en="+₺ 4 million">+₺ 4 milyon</p></div>
+    <div class="pair"><p class="line text-label key" data-u-id="key-05" data-l10n="fidelity.stacked-text.key-05" data-en="Stadium upkeep">Stadyum bakımı</p><p class="line text-label value" data-u-id="value-05" data-l10n="fidelity.stacked-text.value-05" data-en="86%">%86</p></div>
+    <div class="pair-alt"><p class="line text-label key" data-u-id="key-06" data-l10n="fidelity.stacked-text.key-06" data-en="Youth academy">Gençlik akademisi</p><p class="line text-label value" data-u-id="value-06" data-l10n="fidelity.stacked-text.value-06" data-en="14 players">14 oyuncu</p></div>
+    <div class="pair"><p class="line text-label key" data-u-id="key-07" data-l10n="fidelity.stacked-text.key-07" data-en="Sponsor talks">Sponsor görüşmeleri</p><p class="line text-label value" data-u-id="value-07" data-l10n="fidelity.stacked-text.value-07" data-en="3 offers">3 teklif</p></div>
+    <div class="pair-alt"><p class="line text-label key" data-u-id="key-08" data-l10n="fidelity.stacked-text.key-08" data-en="Fan satisfaction">Taraftar memnuniyeti</p><p class="line text-label value" data-u-id="value-08" data-l10n="fidelity.stacked-text.value-08" data-en="72%">%72</p></div>
+    <div class="pair"><p class="line text-label key" data-u-id="key-09" data-l10n="fidelity.stacked-text.key-09" data-en="Press conference">Basın toplantısı</p><p class="line text-label value" data-u-id="value-09" data-l10n="fidelity.stacked-text.value-09" data-en="Friday 14:00">Cuma 14:00</p></div>
+    <div class="pair-alt"><p class="line text-label key" data-u-id="key-10" data-l10n="fidelity.stacked-text.key-10" data-en="Medical team">Sağlık ekibi</p><p class="line text-label value" data-u-id="value-10" data-l10n="fidelity.stacked-text.value-10" data-en="6 people">6 kişi</p></div>
+    <div class="pair"><p class="line text-label key" data-u-id="key-11" data-l10n="fidelity.stacked-text.key-11" data-en="Training plan">Antrenman planı</p><p class="line text-label value" data-u-id="value-11" data-l10n="fidelity.stacked-text.value-11" data-en="5 days">5 gün</p></div>
+    <div class="pair-alt"><p class="line text-label key" data-u-id="key-12" data-l10n="fidelity.stacked-text.key-12" data-en="Scout reports">Scout raporları</p><p class="line text-label value" data-u-id="value-12" data-l10n="fidelity.stacked-text.value-12" data-en="21 reports">21 rapor</p></div>
+    <div class="pair"><p class="line text-label key" data-u-id="key-13" data-l10n="fidelity.stacked-text.key-13" data-en="Ticket sales">Bilet satışları</p><p class="line text-label value" data-u-id="value-13" data-l10n="fidelity.stacked-text.value-13" data-en="41,200">41.200</p></div>
+    <div class="pair-alt"><p class="line text-label key" data-u-id="key-14" data-l10n="fidelity.stacked-text.key-14" data-en="Board of directors">Yönetim kurulu</p><p class="line text-label value" data-u-id="value-14" data-l10n="fidelity.stacked-text.value-14" data-en="9 members">9 üye</p></div>
+    <div class="mark" data-u-id="pairs-end"></div>
+  </div>
+  <div class="column" data-u-id="paragraphs">
+    <p class="para text-body" data-u-id="para-body" data-l10n="fidelity.stacked-text.para-body" data-en="The plan for the club's new season aims to give young players more time and to keep the budget in balance.">Kulübün yeni sezonu için hazırlanan plan, genç oyunculara daha fazla süre vermeyi ve bütçeyi dengede tutmayı amaçlıyor.</p>
+    <p class="para text-label" data-u-id="para-label" data-l10n="fidelity.stacked-text.para-label" data-en="Fans are waiting for the stadium to be renewed; next month the board will vote on two projects and announce the result to the press.">Taraftarlar stadyumun yenilenmesini bekliyor; yönetim kurulu önümüzdeki ay iki farklı projeyi oylayacak ve sonucu basına açıklayacak.</p>
+    <p class="para text-caption" data-u-id="para-caption" data-l10n="fidelity.stacked-text.para-caption" data-en="The figures in this report are based on last season's close and have not been audited; final results will be published at the end of the year.">Bu rapordaki rakamlar geçen sezonun kapanışına göre hesaplanmıştır ve bağımsız denetimden geçmemiştir; kesin sonuçlar yıl sonunda yayımlanacaktır.</p>
+    <p class="line text-label row" data-u-id="after-01" data-l10n="fidelity.stacked-text.after-01" data-en="Squad list">Kadro listesi</p>
+    <p class="line text-label row-alt" data-u-id="after-02" data-l10n="fidelity.stacked-text.after-02" data-en="Fixtures">Maç takvimi</p>
+    <p class="line text-label row" data-u-id="after-03" data-l10n="fidelity.stacked-text.after-03" data-en="Transfer budget">Transfer bütçesi</p>
+    <p class="line text-label row-alt" data-u-id="after-04" data-l10n="fidelity.stacked-text.after-04" data-en="Income and costs">Gelir ve giderler</p>
+    <p class="line text-label row" data-u-id="after-05" data-l10n="fidelity.stacked-text.after-05" data-en="Stadium upkeep">Stadyum bakımı</p>
+    <p class="line text-label row-alt" data-u-id="after-06" data-l10n="fidelity.stacked-text.after-06" data-en="Youth academy">Gençlik akademisi</p>
+    <div class="mark" data-u-id="paragraphs-end"></div>
+  </div>
+</div>
+</body>
+</html>
