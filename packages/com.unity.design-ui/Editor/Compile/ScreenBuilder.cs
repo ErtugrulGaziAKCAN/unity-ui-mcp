@@ -308,6 +308,8 @@ namespace DesignUi.Editor
             public string Tag;
             public bool IsRoot;
             public bool FirstItem;
+            /// <summary>The node has animation data (<see cref="AnimationEmitter"/>): it gets the player's marker class.</summary>
+            public bool Animated;
             public IrRepeat Repeat;
             public readonly List<LayerRules> Layers = new List<LayerRules>();
             public readonly List<string> IrClasses = new List<string>();
@@ -575,7 +577,15 @@ namespace DesignUi.Editor
                     throw new IrFormatException("tintable vector '" + node.Id + "' has no color in its base layer");
                 var images = BackgroundImages(node, painted);
                 var empty = new Dictionary<string, string>();
-                foreach (var key in OrderedLayers(node.Style.Keys.Concat(node.AssetLayers.Keys).Concat(node.ScaleModes.Keys).Distinct()))
+                // transitions and keyframe animations: custom properties for the animation player, next to the values they belong to
+                var anim = AnimationEmitter.Of(node);
+                if (anim != null)
+                {
+                    d.Animated = true;
+                    foreach (var note in anim.Notes) if (_noted.Add(note)) _notes.Add(note);
+                }
+                var animLayers = anim?.Layers ?? (IEnumerable<string>)new string[0];
+                foreach (var key in OrderedLayers(node.Style.Keys.Concat(node.AssetLayers.Keys).Concat(node.ScaleModes.Keys).Concat(animLayers).Distinct()))
                 {
                     ValidateLayer(key, node.Id);
                     if (!node.Style.TryGetValue(key, out var css)) css = empty;
@@ -596,6 +606,7 @@ namespace DesignUi.Editor
                         foreach (var color in decls.Where(x => x.Property == "color").ToList())
                             decls.Add(new UssDeclaration(TintProperty, color.Value));
                     if (images.CssBackground) BackgroundGeometry(decls, painted, node, key, images);
+                    if (anim != null) decls.AddRange(anim.For(key));
                     var inner = content == null ? new List<UssDeclaration>() : decls.Where(x => content.Contains(x.Property)).ToList();
                     var outer = content == null ? decls : decls.Where(x => !content.Contains(x.Property)).ToList();
                     if (key == Base)
@@ -1160,6 +1171,10 @@ namespace DesignUi.Editor
             public CompiledScreen Finish(Draft root, IrScreen ir, string className)
             {
                 var compiledRoot = Emit(root, new List<Ancestor>());
+                // an animated screen root attaches the animation player by itself (DesignScreen animated="true")
+                if (compiledRoot.Tag == ScreenTag && compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf())))
+                        .Any(e => e.Classes.Contains(DesignUi.DesignAnimationData.MarkerClass)))
+                    compiledRoot.Attributes.Add(new KeyValuePair<string, string>("animated", "true"));
                 var names = new Dictionary<string, CompiledElement>(StringComparer.Ordinal);
                 foreach (var e in compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf()))))
                 {
@@ -1196,6 +1211,7 @@ namespace DesignUi.Editor
                 if (d.Layers.Count > 0 || _ancestorTargets.Contains(d.Name) || (d.IsRoot && FlipsRtl)) e.Classes.Add(cls = ClassFor(d, ancestors));
                 e.Classes.AddRange(d.IrClasses);
                 if (d.FirstItem) e.Classes.Add(FirstItemClass);
+                if (d.Animated) e.Classes.Add(DesignUi.DesignAnimationData.MarkerClass);
                 if (node.MirrorPseudoState || (node.MirrorClasses != null && node.MirrorClasses.Length > 0))
                 {
                     if (node.MirrorPseudoState)

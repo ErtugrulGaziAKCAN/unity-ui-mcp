@@ -17930,12 +17930,304 @@
           ]
         ]
       },
+      "lint": [],
+      "property": "transition",
+      "unity": "compile",
+      "value": "opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
+    },
+    {
+      "context": "flex-item",
+      "export": "ok",
+      "id": "flex-item--transition--opacity-0-2s-steps-4-jump-end",
+      "ir": {
+        "breakpoints": [],
+        "fonts": [],
+        "irVersion": 1,
+        "referenceViewport": [
+          2560,
+          1440
+        ],
+        "root": {
+          "action": null,
+          "anims": [],
+          "asset": null,
+          "attrTexts": {},
+          "background": null,
+          "backgroundLayers": {},
+          "bind": null,
+          "children": [
+            {
+              "action": null,
+              "anims": [],
+              "asset": null,
+              "attrTexts": {},
+              "background": null,
+              "backgroundLayers": {},
+              "bind": null,
+              "children": [
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [],
+                  "classes": [
+                    "c"
+                  ],
+                  "external": false,
+                  "id": "case",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "flex-shrink": "0",
+                      "height": "50px",
+                      "width": "100px"
+                    }
+                  },
+                  "text": null
+                }
+              ],
+              "classes": [
+                "p"
+              ],
+              "external": false,
+              "id": "root__0",
+              "initial": null,
+              "insetShadow": null,
+              "insetShadowLayers": {},
+              "kind": "container",
+              "repeat": null,
+              "shadow": null,
+              "shadowLayers": {},
+              "style": {
+                "base": {
+                  "display": "flex",
+                  "flex-direction": "row",
+                  "flex-shrink": "0",
+                  "height": "200px",
+                  "position": "relative",
+                  "width": "400px"
+                }
+              },
+              "text": null
+            }
+          ],
+          "classes": [
+            "screen"
+          ],
+          "external": false,
+          "id": "root",
+          "initial": null,
+          "insetShadow": null,
+          "insetShadowLayers": {},
+          "kind": "container",
+          "repeat": null,
+          "shadow": null,
+          "shadowLayers": {},
+          "style": {
+            "base": {
+              "background-color": "#0b1f26",
+              "color": "#ffffff",
+              "display": "flex",
+              "flex-direction": "column",
+              "font-family": "\"Inter UI\"",
+              "font-size": "16px",
+              "height": "1440px",
+              "line-height": "20px",
+              "position": "relative",
+              "width": "2560px"
+            }
+          },
+          "text": null
+        },
+        "screen": "cases",
+        "screenMatch": 0.5,
+        "source": {
+          "path": "flex-item--transition--opacity-0-2s-steps-4-jump-end.html",
+          "sha256": "2bb41f0b815e99943909200ec4bc92d121e560c3a44590e6b92e66488b450109"
+        },
+        "states": [
+          "default"
+        ],
+        "tokens": {},
+        "viewports": [
+          [
+            2560,
+            1440
+          ],
+          [
+            1920,
+            1080
+          ],
+          [
+            1280,
+            720
+          ]
+        ]
+      },
+      "lint": [],
+      "property": "transition",
+      "unity": "compile",
+      "value": "opacity 0.2s steps(4, jump-end)"
+    },
+    {
+      "context": "flex-item",
+      "export": "ok",
+      "id": "flex-item--transition--opacity-0-2s-linear-0-0-5-1",
+      "ir": {
+        "breakpoints": [],
+        "fonts": [],
+        "irVersion": 1,
+        "referenceViewport": [
+          2560,
+          1440
+        ],
+        "root": {
+          "action": null,
+          "anims": [],
+          "asset": null,
+          "attrTexts": {},
+          "background": null,
+          "backgroundLayers": {},
+          "bind": null,
+          "children": [
+            {
+              "action": null,
+              "anims": [],
+              "asset": null,
+              "attrTexts": {},
+              "background": null,
+              "backgroundLayers": {},
+              "bind": null,
+              "children": [
+                {
+                  "action": null,
+                  "anims": [],
+                  "asset": null,
+                  "attrTexts": {},
+                  "background": null,
+                  "backgroundLayers": {},
+                  "bind": null,
+                  "children": [],
+                  "classes": [
+                    "c"
+                  ],
+                  "external": false,
+                  "id": "case",
+                  "initial": null,
+                  "insetShadow": null,
+                  "insetShadowLayers": {},
+                  "kind": "container",
+                  "repeat": null,
+                  "shadow": null,
+                  "shadowLayers": {},
+                  "style": {
+                    "base": {
+                      "background-color": "#16c2d5",
+                      "display": "block",
+                      "flex-shrink": "0",
+                      "height": "50px",
+                      "width": "100px"
+                    }
+                  },
+                  "text": null
+                }
+              ],
+              "classes": [
+                "p"
+              ],
+              "external": false,
+              "id": "root__0",
+              "initial": null,
+              "insetShadow": null,
+              "insetShadowLayers": {},
+              "kind": "container",
+              "repeat": null,
+              "shadow": null,
+              "shadowLayers": {},
+              "style": {
+                "base": {
+                  "display": "flex",
+                  "flex-direction": "row",
+                  "flex-shrink": "0",
+                  "height": "200px",
+                  "position": "relative",
+                  "width": "400px"
+                }
+              },
+              "text": null
+            }
+          ],
+          "classes": [
+            "screen"
+          ],
+          "external": false,
+          "id": "root",
+          "initial": null,
+          "insetShadow": null,
+          "insetShadowLayers": {},
+          "kind": "container",
+          "repeat": null,
+          "shadow": null,
+          "shadowLayers": {},
+          "style": {
+            "base": {
+              "background-color": "#0b1f26",
+              "color": "#ffffff",
+              "display": "flex",
+              "flex-direction": "column",
+              "font-family": "\"Inter UI\"",
+              "font-size": "16px",
+              "height": "1440px",
+              "line-height": "20px",
+              "position": "relative",
+              "width": "2560px"
+            }
+          },
+          "text": null
+        },
+        "screen": "cases",
+        "screenMatch": 0.5,
+        "source": {
+          "path": "flex-item--transition--opacity-0-2s-linear-0-0-5-1.html",
+          "sha256": "6ff49ecd396f857b7a94810613a26faa9569d67c4f2289b422a95eb68237129f"
+        },
+        "states": [
+          "default"
+        ],
+        "tokens": {},
+        "viewports": [
+          [
+            2560,
+            1440
+          ],
+          [
+            1920,
+            1080
+          ],
+          [
+            1280,
+            720
+          ]
+        ]
+      },
       "lint": [
         "U-CSS-008"
       ],
       "property": "transition",
       "unity": null,
-      "value": "opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1)"
+      "value": "opacity 0.2s linear(0, 0.5, 1)"
     },
     {
       "context": "flex-item",
@@ -18079,9 +18371,6 @@
         ]
       },
       "lint": [],
-      "notes": [
-        "W-CSS-001"
-      ],
       "property": "transition",
       "unity": "compile",
       "value": "all 0.2s ease"

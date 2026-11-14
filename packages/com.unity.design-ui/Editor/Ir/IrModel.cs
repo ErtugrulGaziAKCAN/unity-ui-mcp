@@ -139,7 +139,9 @@ namespace DesignUi.Editor
     /// animation runs when that layer starts to hold (<c>enter</c>) or stops holding (<c>leave</c>). Times are in ms.
     /// A transition has no name, one iteration, direction normal, fill mode none, play state running, restart true and no
     /// keyframes; a keyframe animation has a name, phase enter and at least one keyframe, and <see cref="Restart"/> is
-    /// false when its layer only changes the play state or timing of the running animation.
+    /// false when its layer only changes the play state or timing of the running animation. A keyframes entry without a
+    /// name or keyframes is its layer's <c>animation: none</c>: the element's animations (of <see cref="Properties"/>) stop
+    /// while that layer holds. <see cref="Delay"/> may be negative: the animation starts that far into its timeline.
     /// </summary>
     public sealed class IrAnim
     {

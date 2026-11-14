@@ -22,6 +22,7 @@
           "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" },
           "visible": { "type": "boolean", "description": "The element has a box, its computed visibility is visible, and neither it nor an ancestor has a computed opacity of 0 (so an animation sample at opacity 0 is not visible). Clipping by overflow and placement outside the viewport are ignored. A display: contents element is not visible and has a zero box." },
           "text": { "type": "boolean", "description": "The IR element carries text (IrNode.text is not null)." },
+          "rotation": { "type": "number", "description": "Design side only, optional: the element's rotation on the screen in degrees, its own rotate and transform plus its ancestors', in (-180, 180]; absent when it is 0. Unity captures do not write it." },
           "lines": {
             "description": "Text lines of the element's own text (text inside nested IR elements is excluded), top to bottom: one per baseline (text fragments whose baselines are within 0.5 device px form one line, whatever the line height). The lines are the laid-out lines, also those clipped by overflow. A line's rect is the union of its text fragments' boxes (font ascent + descent, not the line-height box); its width is the laid-out width (for text-overflow: ellipsis, the whole text's width). Empty for elements without a box and for form controls whose text is not in DOM text (input, select, textarea): compare their lines as not compared.",
             "type": "array",

@@ -162,6 +162,8 @@ describe("buildMatrix", () => {
       node("spinner", { style: { base: { display: "none" }, "state:loading": { display: "flex" } },
         anims: [anim({ kind: "keyframes", trigger: "show", name: "spin", iterations: "infinite", duration: 1000 })] }),
       node("k", { anims: [anim({ kind: "keyframes", trigger: "show", name: "pulse", duration: 1000 }), anim({ kind: "keyframes", trigger: "hover", name: "pulse", restart: false, playState: "paused" })] }),
+      node("still", { style: layers("class:is-still"), anims: [anim({ kind: "keyframes", trigger: "show", name: "pulse", duration: 1000 }),
+        anim({ kind: "keyframes", trigger: "class:is-still", name: null, duration: 0, keyframes: [] })] }),
     ] }), { states: ["default", "loading"], viewports: [[2560, 1440]] });
     const jobs = buildMatrix(ir).filter((j) => j.anim);
     const at = (n: string) => jobs.find((j) => captureName(j) === n)!;
@@ -186,7 +188,10 @@ describe("buildMatrix", () => {
     expect(at("loading@2560x1440.anim.spinner.0").anim!.from).toEqual({ state: "default", apply: [] });
     // a show animation of a visible element is sampled from load
     expect(at("default@2560x1440.anim.k.4").anim!.from).toBeNull();
-    expect(unsampledAnims(ir)).toEqual([{ elementId: "k", index: 1, reason: expect.stringMatching(/running animation/) }]);
+    expect(unsampledAnims(ir)).toEqual([{ elementId: "k", index: 1, reason: expect.stringMatching(/running animation/) },
+      { elementId: "still", index: 1, reason: expect.stringMatching(/animation: none/) }]);
+    // a layer's animation: none has nothing to sample: its static capture shows the element without the animation
+    expect(jobs.some((j) => j.anim!.sampled.some((r) => r.elementId === "still" && r.index === 1))).toBe(false);
   });
 
   it("refuses unknown states, elements and breakpoints", () => {
@@ -369,6 +374,72 @@ describe("captures", () => {
     const spin = jobs.find((j) => j.anim!.sampled[0].elementId === "spin" && j.anim!.time === 500)!;
     expect([spin.state, spin.anim!.from]).toEqual(["busy", { state: "default", apply: [] }]);
     expect(near(px(captureName(spin), "spin"), [157, 165, 168], 2)).toBe(true);
+  });
+
+  it("every series from the page's opening plays its animations, also a later one whose animation has no forwards fill", async () => {
+    const d0 = await openDesign(fx("load-series.html"), kit, [2560, 1440], browser);
+    let b: IrBuild;
+    try { b = await buildIr(d0, await collectSnapshot(d0.page, d0.cdp, kit), kit, tmp(), fx("load-series.html")); } finally { await d0.close(); }
+    const jobs = buildMatrix(b.ir).filter((j) => j.viewport[0] === 2560);
+    const series = (id: string) => jobs.filter((j) => j.anim && j.anim.sampled[0].elementId === id);
+    expect(series("b").map((j) => j.anim!.time)).toEqual([0, 100, 150, 200, 250, 300]);
+    const dir = tmp();
+    // a's series runs first and ends every animation; b's series (fill none, delay 100 ms) starts again at 0
+    const r = await captureMatrix(fx("load-series.html"), kit, b.ir, b.elements, dir, { browser, jobs });
+    const x = (j: CaptureJob, id: string) => r.boxes[captureName(j)].elements[id].x;
+    const own = x(series("a")[0], "b");
+    expect(series("b").map((j) => x(j, "b") - own)).toEqual([0, 0, 50, 100, 150, 0]); // before its delay and after its end: no effect
+    expect(series("b").map((j) => x(j, "a") - x(series("a")[0], "a"))).toEqual([0, 50, 75, 100, 125, 150]); // a runs on the same clock
+  });
+
+  it("a trigger class the markup already has: the page shows the layer's end, and the trigger still runs off and on", async () => {
+    const d0 = await openDesign(fx("initial-trigger.html"), kit, [2560, 1440], browser);
+    let b: IrBuild;
+    try { b = await buildIr(d0, await collectSnapshot(d0.page, d0.cdp, kit), kit, tmp(), fx("initial-trigger.html")); } finally { await d0.close(); }
+    const jobs = buildMatrix(b.ir).filter((j) => j.viewport[0] === 2560);
+    const open = { kind: "class", name: "is-open", elementId: "panel" } as const;
+    const entering = (j: CaptureJob) => j.apply.some((a) => a.kind === "class" && !a.absent);
+    const series = (id: string, enter: boolean) => jobs.filter((j) => j.anim && j.anim.sampled[0].elementId === id && entering(j) === enter);
+    // the off side takes the markup's class off; the on side has it
+    expect(series("panel", true)[0].anim!.from).toEqual({ state: "default", apply: [{ ...open, absent: true }] });
+    expect(series("panel", false)[0].apply).toEqual([{ ...open, absent: true }]);
+    expect(series("panel", false)[0].anim!.from).toEqual({ state: "default", apply: [open] });
+    expect(series("menu", true)).toHaveLength(5);
+    const dir = tmp();
+    const r = await captureMatrix(fx("initial-trigger.html"), kit, b.ir, b.elements, dir, { browser, jobs }); // did not start: an error before the fix
+    const x = (name: string, id: string) => r.boxes[name].elements[id].x, y = (name: string, id: string) => r.boxes[name].elements[id].y;
+    expect(x("default@2560x1440", "panel")).toBe(0); // the static screen: open, nothing running
+    expect(series("panel", true).map((j) => x(captureName(j), "panel"))).toEqual([-300, -225, -150, -75, 0]);
+    expect(series("panel", false).map((j) => x(captureName(j), "panel"))).toEqual([0, -75, -150, -225, -300]);
+    const menuY = y("default@2560x1440", "menu");
+    expect(series("menu", true).map((j) => y(captureName(j), "menu") - menuY)).toEqual([-40, -30, -20, -10, 0]);
+    // every page is given back with the markup's classes
+    const d1 = await openDesign(fx("initial-trigger.html"), kit, [2560, 1440], browser);
+    try {
+      const s = await CaptureSession.open(d1, b.ir, b.elements, [2560, 1440]);
+      for (const j of series("panel", false).slice(0, 2)) await s.capture(j, tmp());
+      await s.close();
+      expect(await d1.page.evaluate(() => document.querySelector(".panel")!.className)).toBe("panel is-open");
+    } finally { await d1.close(); }
+  });
+
+  it("records each element's rotation on the screen (own and ancestors' rotate and transform), at animation samples too", async () => {
+    const d0 = await openDesign(fx("rotation.html"), kit, [2560, 1440], browser);
+    let b: IrBuild;
+    try { b = await buildIr(d0, await collectSnapshot(d0.page, d0.cdp, kit), kit, tmp(), fx("rotation.html")); } finally { await d0.close(); }
+    const jobs = buildMatrix(b.ir).filter((j) => j.viewport[0] === 2560 && (!j.anim || j.anim.time === 250));
+    const dir = tmp();
+    const r = await captureMatrix(fx("rotation.html"), kit, b.ir, b.elements, dir, { browser, jobs });
+    const still = r.boxes["default@2560x1440"].elements;
+    expect(validateBoxes(r.boxes["default@2560x1440"])).toEqual([]);
+    expect(still.plain.rotation).toBeUndefined();
+    expect(still.tilt.rotation).toBeCloseTo(10, 4);
+    expect(still.wrap.rotation).toBeCloseTo(-30, 4);
+    expect(still.inner.rotation).toBeCloseTo(-30, 4);
+    expect(still.quarter.rotation).toBeCloseTo(90, 4);
+    expect(still.spin.rotation).toBeCloseTo(90, 4); // static captures show an animation's end
+    const sample = Object.values(r.boxes).find((x) => x.capture.includes(".anim.spin."))!;
+    expect(sample.elements.spin.rotation).toBeCloseTo(22.5, 4);
   });
 
   it("refuses an element map that does not fit the page, and a page at another viewport", async () => {

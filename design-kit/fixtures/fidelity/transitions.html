@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>fidelity.transitions</title>
 <!-- Transitions on every trigger kind (hover, active, focus, disabled, checked, screen state, is-* class), one column
-     per timing function. The animation player plays them; until it lands their samples are not captured. -->
+     per timing function, and a hover after a positive and after a negative delay (the transition starts inside it). -->
 <style>
 /* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
 :root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
@@ -55,6 +55,7 @@ textarea { resize: none; }
 .state-go .t-state { background-color: #f0605d; translate: 24px 0; }
 .t-class.is-on { background-color: #f2b544; rotate: 8deg; }
 .t-delay { transition-delay: 150ms; }
+.t-negdelay { transition-delay: -100ms; }
 .go-note { display: none; }
 .state-go .go-note { display: flex; }
 </style>
@@ -101,6 +102,7 @@ textarea { resize: none; }
   <div class="row">
     <p class="row-label text-body-bold" data-l10n="fidelity.transitions.delay" data-en="Hover after a delay">Gecikmeli üzerine gelme</p>
     <div class="cell t-hover tf-ease t-delay" data-u-id="hover-delay"></div>
+    <div class="cell t-hover tf-ease t-negdelay" data-u-id="hover-negdelay"></div>
     <p class="go-note text-body" data-u-state="go" data-l10n="fidelity.transitions.go" data-en="State go">Durum: başla</p>
   </div>
 </div>

@@ -76,7 +76,7 @@ const PROBES: Record<string, string[]> = {
   "29-supports-false": ["U-CSS-028"], "30-starting-style": ["U-CSS-028"], "40-pseudo-class-whitelist": ["U-CSS-027"],
   "41-l10n-on-ancestor": ["U-MRK-004"], "42-bind-action-turkish": ["U-MRK-005"], "43-has-sibling": ["U-CSS-027"],
   "44-common-ok": ["U-CSS-023", "U-CSS-024"], "45-onclick-div": ["U-MRK-003"], "46-ua-bold-strong-heading": ["U-CSS-026"],
-  "50-select-lh": [], "51-visibility": [], "52-anim-steps": ["U-CSS-008"], "53-kit-font-local": [], "60-all-unset": [],
+  "50-select-lh": [], "51-visibility": [], "52-anim-steps": [], "53-kit-font-local": [], "60-all-unset": [],
   "61-root-size": ["U-MRK-006"], "62-rem-body": [],
   // review round 2
   "70-reset-unused-button": [], "71-reset-unused-class": [], "72-link-only-block": [], "73-duplicate-sibling-ids": ["U-MRK-002"],
@@ -141,7 +141,7 @@ describe("lint engine", () => {
   });
 
   it("returns warnings without errors for a design with only warnings", async () => {
-    const f = await lintFile(fx("W-CSS-001.fail.html"));
+    const f = await lintFile(fx("W-FONT-002.fail.html"), KIT_FOR["W-FONT-002"]?.fail ?? kit);
     expect(f.length).toBeGreaterThan(0);
     expect(f.some((x) => x.severity === "error")).toBe(false);
   });
@@ -284,6 +284,58 @@ describe("device grid, group opacity and stacking rules", () => {
     expect(await ids(`<div class="one fade"></div>`, `.one{width:200px;height:80px;background-color:#123c47} .fade{animation:appear 200ms linear} @keyframes appear{from{opacity:0}to{opacity:1}}`, "U-CSS-039")).toEqual([]);
     expect(await ids(`<div class="card fade"></div>`, `${card} .fade{transition:opacity 200ms linear}`, "U-CSS-039")).toEqual([]);
     expect(await ids(`<div class="card fade"></div>`, `${card} .fade{opacity:0} .fade.is-open{opacity:1}`, "U-CSS-039")).toEqual([]);
+  });
+
+  it("animations: the easings and properties the animation player plays pass; linear() points and other properties fail", async () => {
+    const box = `.b{width:200px;height:80px;background-color:#123c47}`;
+    const t = (timing: string) => ids(`<div class="b"></div>`, `${box} .b{transition:background-color 200ms ${timing}}`, "U-CSS-008");
+    for (const ok of ["ease", "step-start", "steps(4, jump-end)", "steps(2)", "cubic-bezier(.68,-0.55,.27,1.55)"]) expect(await t(ok), ok).toEqual([]);
+    // (cubic-bezier() with x outside 0–1 and steps(0) are invalid CSS: the browser drops them, as Unity does)
+    for (const bad of ["linear(0, 0.5, 1)", "linear(0, 0.25 40%, 1)"]) expect(await t(bad), bad).toHaveLength(1);
+    expect(await ids(`<div class="b"></div>`, `${box} .b{transition-timing-function:cubic-bezier(0.1, 0.7, 1, 0.1)}`, "U-CSS-008")).toEqual([]);
+    // keyframes: radii play; layout properties (the player never lays out per frame) and other properties fail
+    const kf = (decl: string, rule: string) => ids(`<div class="b k"></div>`, `${box} .k{animation:a 200ms linear} @keyframes a{from{${decl}}to{${decl.replace(/\d+px/, "20px")}}}`, rule);
+    expect(await kf("border-top-left-radius:4px", "U-CSS-013")).toEqual([]);
+    for (const layout of ["width:10px", "margin-left:4px", "padding:4px", "inset:4px", "border-top-width:4px", "flex-basis:10px", "font-size:10px", "line-height:10px"]) {
+      expect((await kf(layout, "U-CSS-013")).map((x) => x.fix), layout).toEqual([expect.stringMatching(/translate or scale instead/)]);
+    }
+    expect(await kf("letter-spacing:1px", "U-CSS-013")).toHaveLength(1);
+  });
+
+  it("U-CSS-042: transitions only of what the player animates; layout properties point to transforms", async () => {
+    const box = `.b{width:200px;height:80px;flex-shrink:0;background-color:#123c47}`;
+    const t = (css: string) => ids(`<div class="b" data-u-id="b"></div>`, `${box} ${css}`, "U-CSS-042");
+    // named properties fail even when nothing changes them; all fails only for what a layer really changes
+    expect((await t(`.b{transition:height 200ms ease}`)).map((x) => [x.detail, x.fix])).toEqual([[expect.stringMatching(/transition of height \(base\); height lays the screen out/), expect.stringMatching(/translate or scale instead/)]]);
+    expect(await t(`.b{transition:letter-spacing 200ms ease}`)).toHaveLength(1);
+    expect(await t(`.b{transition:visibility 200ms ease}`)).toHaveLength(1);
+    expect(await t(`.b{transition:all 200ms ease} .b:hover{background-color:#16c2d5;scale:1.05}`)).toEqual([]);
+    expect((await t(`.b{transition:all 200ms ease} .b:hover{width:220px}`)).map((x) => x.detail)).toEqual([expect.stringMatching(/transition of width \(hover\)/)]);
+    // discrete properties change at once in CSS too; a zero or negative combined duration never transitions
+    expect(await t(`.b{transition:display 200ms ease, flex-direction 200ms ease}`)).toEqual([]);
+    expect(await t(`.b{transition:width 0s ease}`)).toEqual([]);
+    expect(await t(`.b{transition:width 100ms ease -200ms}`)).toEqual([]);
+    // box-shadow is U-CSS-014's
+    expect(await t(`.b{transition:box-shadow 200ms ease}`)).toEqual([]);
+  });
+
+  it("animation: none in a layer is valid CSS the player plays (Chromium expands it with animation-duration: auto)", async () => {
+    const css = `.b{width:200px;height:80px;flex-shrink:0;background-color:#123c47;animation:a 1s linear infinite} .b.is-still{animation:none} @keyframes a{from{translate:0 0}to{translate:0 4px}}`;
+    const page = (await (async () => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lint-none-")); const p = path.join(dir, "s.html");
+      fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
+        .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+        ${css}</style></head><body><div class="screen" data-u-screen="s"><div class="b" data-u-id="b"></div></div></body></html>`);
+      return p; })());
+    expect(show((await lintFile(page)).filter((f) => f.severity === "error"))).toEqual([]);
+  });
+
+  it("U-CSS-043: keyframes and a transition of the same property on one element", async () => {
+    const box = `.b{width:200px;height:80px;flex-shrink:0;background-color:#123c47;animation:a 1s linear infinite} @keyframes a{from{translate:0 0}to{translate:0 4px}}`;
+    const t = (css: string) => ids(`<div class="b" data-u-id="b"></div>`, `${box} ${css}`, "U-CSS-043");
+    expect(await t(`.b{transition:all 200ms ease} .b:hover{background-color:#16c2d5}`)).toEqual([]);
+    expect((await t(`.b{transition:all 200ms ease} .b:hover{translate:0 8px}`)).map((x) => x.detail)).toEqual([expect.stringMatching(/translate is animated by @keyframes a and transitioned \(hover\)/)]);
+    // a transform transition covers the keyframes' translate
+    expect(await t(`.b{transition:transform 200ms ease} .b:hover{transform:translateY(8px)}`)).toHaveLength(1);
   });
 
   it("U-CSS-041: judges positioned elements too, against later plain elements, in the base style", async () => {

@@ -45,6 +45,7 @@ namespace DesignUi.Editor.Tests
         /// <c>DESIGN_UI_RUN_ID</c> (optional) is the run id the done markers carry, so a runner accepts only this run's.
         /// </summary>
         [UnityTest]
+        [Timeout(1700000)] // a whole fidelity suite (statics and every animation sample) takes minutes; the clone tool stops Unity at 1800 s
         public IEnumerator CaptureFromEnv()
         {
             var export = Env("DESIGN_UI_EXPORT", "DESIGN_UI_EXPORT_DIR");
@@ -301,6 +302,68 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("#16c2d5", Hex(Pixel(tex, 90, y)), "the first item shows its fixture class");
         }
 
+        /// <summary>String Tables that accept everything and write nothing (the capture never reads them).</summary>
+        sealed class NoTables : IDesignStringTables
+        {
+            public IReadOnlyList<string> Check(StringTableRequest request) => new string[0];
+            public LocalizationReport Write(StringTableRequest request) => new LocalizationReport { Collection = request.Collection };
+            public IReadOnlyDictionary<string, IReadOnlyList<string>> Strings(string collection, IEnumerable<string> keys) => new Dictionary<string, IReadOnlyList<string>>();
+        }
+
+        [UnityTest]
+        public IEnumerator Run_ALocalizedScreen_ShowsTheDesignsReferenceText_AsTheStaticCompileDoes()
+        {
+            // keyed texts as a fidelity fixture writes them: a plain one, one with an argument from the sample data, a button
+            // label and an input's placeholder; compiled once with static design text and once bound to String Tables
+            var title = Words("title", "Kulüp", ("align-self", "flex-start"));
+            title.Text.Key = "capture.title";
+            title.Text.En = "Club";
+            var score = Words("score", "{team}: 3 maç", ("align-self", "flex-start"));
+            score.Text.Key = "capture.score";
+            score.Text.En = "{team}: 3 matches";
+            score.Text.Args = new[] { "team" };
+            var query = Node("query", "input", ("width", "200px"), ("height", "30px"), ("flex-shrink", "0"), ("background-color", "#123c47"),
+                ("color", "#ffffff"), ("font-family", "Inter"), ("font-size", "16px"));
+            query.Initial = new IrInitial();
+            query.Field = new IrField { PlaceholderColor = "#9be9f2" };
+            query.AttrTexts["placeholder"] = new IrText { Key = "capture.search", Tr = "Ara", En = "Search", Style = "label" };
+            var export = Export(Small(BlackRoot(title, score, query)), "{ \"team\": \"Kartal\" }");
+
+            var plain = Profile(new Vector2Int(320, 180), 0.5f);
+            var plainScreen = Compile(export, plain);
+            var localizing = Profile(new Vector2Int(320, 180), 0.5f);
+            localizing.outputFolder = Out + "/Localized";
+            localizing.localization.enabled = true;
+            localizing.localization.screenTables = new[] { new DesignScreenTable { screen = "capture.test", collection = "CaptureTest" } };
+            var compiled = ScreenCompiler.Compile(export, localizing, false, new CompileHooks { ViewCode = _ => null, Tables = new NoTables() });
+            Assert.IsTrue(compiled.Ok, string.Join("\n", compiled.Errors));
+            var localScreen = Out + "/Localized/" + Naming.Pascal("capture.test");
+            var uxml = File.ReadAllText(localScreen + "/" + Naming.Pascal("capture.test") + ".uxml");
+            StringAssert.DoesNotContain("Kulüp", uxml, "the localized compile holds no design text");
+            StringAssert.Contains("DesignUi.DesignLocalizedString", uxml);
+
+            var a = Request(export, plainScreen, "default@320x180", 320, 180);
+            yield return DesignCapture.Run(a, plain);
+            var b = Request(export, localScreen, "default@320x180", 320, 180);
+            string titleText = null, scoreText = null, placeholder = null;
+            b.Inspect = tree =>
+            {
+                titleText = tree.Q<Label>("title").text;
+                scoreText = tree.Q<Label>("score").text;
+                placeholder = tree.Q<TextField>("query").textEdition.placeholder;
+            };
+            yield return DesignCapture.Run(b, localizing);
+            Assert.AreEqual("Kulüp", titleText, "the reference locale's text (the IR's tr)");
+            Assert.AreEqual("Kartal: 3 maç", scoreText, "its argument from the sample data");
+            Assert.AreEqual("Ara", placeholder);
+            var pa = Png(a).GetPixels32();
+            var pb = Png(b).GetPixels32();
+            Assert.AreEqual(pa.Length, pb.Length);
+            int differing = 0;
+            for (int i = 0; i < pa.Length; i++) if (!pa[i].Equals(pb[i])) differing++;
+            Assert.AreEqual(0, differing, "the localized screen's capture is the static compile's, pixel for pixel");
+        }
+
         [UnityTest]
         public IEnumerator Run_ABoundText_GetsItsCharactersAndKerningBeforeItIsAssigned()
         {
@@ -553,19 +616,40 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual((double)box["x"] + (double)box["w"], orange.Last() + 1, 1.0, "and ends there");
         }
 
-        [UnityTest]
-        public IEnumerator CaptureAll_CapturesEveryStaticJob_ListsAnimationSamplesAsNotCaptured_AndCopiesTheManifest()
+        static string AnimJob(string name, string state, int w, int h, string apply, string sampled, string runs, string from, int sample, double time) =>
+            "{ \"name\": \"" + name + "\", \"state\": \"" + state + "\", \"viewport\": [" + w + ", " + h + "], \"apply\": [" + apply + "], \"pseudo\": null, \"coverage\": null, " +
+            "\"anim\": { \"sampled\": [" + sampled + "], \"runs\": [" + runs + "], \"from\": " + (from ?? "null") + ", \"sample\": " + sample + ", \"time\": " +
+            time.ToString(System.Globalization.CultureInfo.InvariantCulture) + " } }";
+
+        static string Ref(string id, int index) => "{ \"elementId\": \"" + id + "\", \"index\": " + index + " }";
+
+        /// <summary>A tile whose hover transitions its background (400 ms, linear) and a dot that slides 0 → 100px on show (1000 ms, linear, fill both).</summary>
+        static IrScreen AnimatedSmall()
         {
             var tile = Box("tile", "#112233").With("hover", ("background-color", "#445566"));
-            var ir = Small(Root(tile));
-            const string matrix = "{ \"captures\": [" +
-                                  "{ \"name\": \"default@320x180\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [], \"pseudo\": null, \"coverage\": null, \"anim\": null }," +
-                                  "{ \"name\": \"default@320x180.hover.tile\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [ { \"kind\": \"pseudo\", \"pseudo\": \"hover\", \"elementId\": \"tile\" } ], \"pseudo\": { \"kind\": \"hover\", \"elementId\": \"tile\" }, \"coverage\": null, \"anim\": null }," +
-                                  "{ \"name\": \"loading@160x90\", \"state\": \"loading\", \"viewport\": [160, 90], \"apply\": [], \"pseudo\": null, \"coverage\": null, \"anim\": null }," +
-                                  "{ \"name\": \"default@320x180.anim.tile.0\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [], \"pseudo\": null, \"coverage\": null, " +
-                                  "\"anim\": { \"sampled\": [ { \"elementId\": \"tile\", \"index\": 0 } ], \"runs\": [ { \"elementId\": \"tile\", \"index\": 0 } ], \"from\": null, \"sample\": 0, \"time\": 0 } }" +
-                                  "], \"unsampled\": [] }";
-            var export = Export(ir, null, matrix);
+            tile.Anims.AddRange(AnimationPlayerTests.BothWays("hover", 400, 0, "linear", "background-color"));
+            var dot = Box("dot", "#ff8800");
+            dot.Anims.Add(AnimationPlayerTests.Keyframes("show", "slide", 1000, 0, "linear", 1, "normal", "both",
+                (0, null, new[] { ("translate", "0px") }), (1, null, new[] { ("translate", "100px") })));
+            return Small(BlackRoot(tile, dot));
+        }
+
+        [UnityTest]
+        public IEnumerator CaptureAll_CapturesEveryJob_AnimationSamplesAtTheirTimes_AndCopiesTheManifest()
+        {
+            var hover = Pseudo("hover", "tile");
+            var from = "{ \"state\": \"default\", \"apply\": [] }";
+            var matrix = "{ \"captures\": [" +
+                         "{ \"name\": \"default@320x180\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [], \"pseudo\": null, \"coverage\": null, \"anim\": null, \"frozen\": [[\"dot\", \"slide\"]] }," +
+                         "{ \"name\": \"default@320x180.hover.tile\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [ " + hover + " ], \"pseudo\": { \"kind\": \"hover\", \"elementId\": \"tile\" }, \"coverage\": null, \"anim\": null }," +
+                         "{ \"name\": \"loading@160x90\", \"state\": \"loading\", \"viewport\": [160, 90], \"apply\": [], \"pseudo\": null, \"coverage\": null, \"anim\": null }," +
+                         AnimJob("default@320x180.anim.dot.0", "default", 320, 180, "", Ref("dot", 0), Ref("dot", 0), null, 0, 0) + "," +
+                         AnimJob("default@320x180.anim.dot.1", "default", 320, 180, "", Ref("dot", 0), Ref("dot", 0), null, 1, 500) + "," +
+                         AnimJob("default@320x180.anim.tile.0", "default", 320, 180, hover, Ref("tile", 0), Ref("tile", 0), from, 0, 0) + "," +
+                         AnimJob("default@320x180.anim.tile.1", "default", 320, 180, hover, Ref("tile", 0), Ref("tile", 0), from, 1, 200) + "," +
+                         AnimJob("default@320x180.anim.tile.2", "default", 320, 180, hover, Ref("tile", 0), Ref("tile", 0), from, 2, 400) +
+                         "], \"unsampled\": [] }";
+            var export = Export(AnimatedSmall(), null, matrix);
             var profile = Profile(new Vector2Int(320, 180), 0.5f);
             var screen = Compile(export, profile);
             var outDir = TempDir();
@@ -575,19 +659,79 @@ namespace DesignUi.Editor.Tests
             yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result);
 
             Assert.IsEmpty(result.Errors, string.Join("\n", result.Errors));
-            CollectionAssert.AreEqual(new[] { "default@320x180", "default@320x180.hover.tile", "loading@160x90" }, result.Captured);
-            Assert.AreEqual("default@320x180.anim.tile.0", result.NotCaptured.Single().Capture);
-            foreach (var name in result.Captured) Assert.IsTrue(File.Exists(Path.Combine(outDir, name + ".png")), name);
-            Assert.IsFalse(File.Exists(Path.Combine(outDir, "default@320x180.anim.tile.0.png")), "a not-captured job leaves no stale PNG");
+            Assert.IsEmpty(result.NotCaptured.Select(n => n.Capture + ": " + n.Reason));
+            Assert.AreEqual(8, result.Captured.Count);
             var boxes = JObject.Parse(File.ReadAllText(Path.Combine(outDir, "boxes.json")));
-            CollectionAssert.AreEquivalent(result.Captured, boxes.Properties().Select(p => p.Name), "boxes.json holds only captures, as the comparison expects");
+            CollectionAssert.AreEquivalent(result.Captured, boxes.Properties().Select(p => p.Name), "boxes.json holds every capture");
             Assert.AreEqual(0.5, (double)boxes["loading@160x90"]["scale"], 1e-9);
-            var meta = JObject.Parse(File.ReadAllText(Path.Combine(outDir, DesignCapture.MetaFileName)));
-            Assert.AreEqual("default@320x180.anim.tile.0", (string)meta["notCaptured"][0]["capture"]);
-            StringAssert.Contains("animation", (string)meta["notCaptured"][0]["reason"]);
+            double DotX(string capture) => (double)boxes[capture]["elements"]["dot"]["x"];
+            Assert.AreEqual(100, DotX("default@320x180") - DotX("default@320x180.anim.dot.0"), 0.51, "a static capture shows the slide's end frame (the golden's freeze)");
+            Assert.AreEqual(50, DotX("default@320x180.anim.dot.1") - DotX("default@320x180.anim.dot.0"), 0.51, "500 of 1000 ms after the screen opened");
+            Color32 TileAt(string capture)
+            {
+                var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false, true);
+                Assert.IsTrue(tex.LoadImage(File.ReadAllBytes(Path.Combine(outDir, capture + ".png"))));
+                var b = (JObject)boxes[capture]["elements"]["tile"];
+                var c = Pixel(tex, (int)((double)b["x"] + 10), (int)((double)b["y"] + 10));
+                UnityEngine.Object.DestroyImmediate(tex);
+                return c;
+            }
+            AssertNear("#112233", TileAt("default@320x180.anim.tile.0"), 1, "the change at 0 ms");
+            AssertNear("#2b3c4d", TileAt("default@320x180.anim.tile.1"), 2, "half-way at 200 ms (linear)");
+            AssertNear("#445566", TileAt("default@320x180.anim.tile.2"), 1, "the hover value at 400 ms");
+            AssertNear("#445566", TileAt("default@320x180.hover.tile"), 1, "a static hover capture shows the end of the transition");
             var copied = GeneratedManifest.Load(Path.Combine(outDir, ScreenCompiler.ManifestFileName));
             Assert.IsNotNull(copied, "the compiled manifest (removed wrappers) is next to the captures");
             Assert.AreEqual("capture.test", copied.screen);
+        }
+
+        [UnityTest]
+        public IEnumerator CaptureAll_ATriggerClassTheMarkupHas_IsTakenOffForTheOffSide_AndPutBack()
+        {
+            // the panel starts open (is-open in its markup); leaving the class slides it out, entering slides it in
+            var panel = Box("panel", "#ff8800").With("class:is-open", ("translate", "0px"));
+            panel.Style["base"]["translate"] = "-100px";
+            panel.Classes = new[] { "panel", "is-open" };
+            panel.Anims.AddRange(AnimationPlayerTests.BothWays("class:is-open", 200, 0, "linear", "translate"));
+            const string on = "{ \"kind\": \"class\", \"name\": \"is-open\", \"elementId\": \"panel\" }";
+            const string off = "{ \"kind\": \"class\", \"name\": \"is-open\", \"elementId\": \"panel\", \"absent\": true }";
+            var matrix = "{ \"captures\": [" +
+                         "{ \"name\": \"default@320x180\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [], \"pseudo\": null, \"coverage\": null, \"anim\": null }," +
+                         AnimJob("default@320x180.anim.panel.0", "default", 320, 180, on, Ref("panel", 0), Ref("panel", 0), "{ \"state\": \"default\", \"apply\": [" + off + "] }", 0, 100) + "," +
+                         AnimJob("default@320x180.anim.panel.1", "default", 320, 180, off, Ref("panel", 1), Ref("panel", 1), "{ \"state\": \"default\", \"apply\": [" + on + "] }", 1, 100) +
+                         "] }";
+            var export = Export(Small(BlackRoot(panel)), null, matrix);
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outDir = TempDir();
+            var result = new CaptureResult();
+            yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result);
+            Assert.IsEmpty(result.Errors, string.Join("\n", result.Errors));
+            Assert.IsEmpty(result.NotCaptured.Select(n => n.Capture + ": " + n.Reason));
+            var boxes = JObject.Parse(File.ReadAllText(Path.Combine(outDir, "boxes.json")));
+            double X(string capture) => (double)boxes[capture]["elements"]["panel"]["x"];
+            Assert.AreEqual(0, X("default@320x180"), 0.51, "the screen starts open, nothing running");
+            Assert.AreEqual(-50, X("default@320x180.anim.panel.0"), 0.51, "entering again: half way in at 100 of 200 ms");
+            Assert.AreEqual(-50, X("default@320x180.anim.panel.1"), 0.51, "leaving: half way out");
+        }
+
+        [UnityTest]
+        public IEnumerator CaptureAll_ListsTheSamplesOfAScreenWithoutAnimationData_AsNotCaptured()
+        {
+            var tile = Box("tile", "#112233").With("hover", ("background-color", "#445566"));
+            var matrix = "{ \"captures\": [" +
+                         AnimJob("default@320x180.anim.tile.0", "default", 320, 180, "", Ref("tile", 0), Ref("tile", 0), null, 0, 0) + "," +
+                         AnimJob("default@320x180.anim.tile.1", "default", 320, 180, "", Ref("tile", 0), Ref("tile", 0), null, 1, 100) + "] }";
+            var export = Export(Small(Root(tile)), null, matrix);
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outDir = TempDir();
+            var result = new CaptureResult();
+            yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result);
+            Assert.IsEmpty(result.Errors, string.Join("\n", result.Errors));
+            Assert.AreEqual(2, result.NotCaptured.Count);
+            StringAssert.Contains("no animation player", result.NotCaptured[0].Reason);
+            Assert.IsFalse(File.Exists(Path.Combine(outDir, "default@320x180.anim.tile.0.png")));
         }
 
         static string Job(string name, string state, int w, int h, params string[] apply) =>

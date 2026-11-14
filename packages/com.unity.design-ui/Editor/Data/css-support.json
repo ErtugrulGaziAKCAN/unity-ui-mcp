@@ -86,7 +86,7 @@
     "valueRule": "a dedicated lint rule judges this property's values (U-CSS-023 checks neither its keywords nor its units)",
     "valueFix": "the fix for any other rejected value of this property (rule U-CSS-023 unless valueRule names another)",
     "authoring": "authoring-level overrides the lint applies because the exporter rewrites the value before the IR (handling, extra types or keywords, comma lists)",
-    "lists": "initialValues, svgPresentation, transformFunctions, keyframeProperties, timingKeywords, mediaFeatures, mediaTypes, layoutTransitionProperties, pseudoElements, pseudoClasses, atRules, elements, inputTypes and browserDefaults are read by the exporter's lint only",
+    "lists": "initialValues, svgPresentation, transformFunctions, keyframeProperties, timingKeywords, timingFunctions, mediaFeatures, mediaTypes, layoutTransitionProperties, pseudoElements, pseudoClasses, atRules, elements, inputTypes and browserDefaults are read by the exporter's lint only",
     "typeUnits": "the units of each value type the mapper's validation accepts (units lists the length and percent units)",
     "exportResolved": "authoring forms the exporter resolves before the IR; see its note"
   },
@@ -203,6 +203,9 @@
     },
     "animation-duration": {
       "handling": "lowered",
+      "keywords": [
+        "auto"
+      ],
       "types": [
         "time"
       ],
@@ -257,7 +260,7 @@
       "handling": "lowered",
       "list": true,
       "valueRule": "U-CSS-008",
-      "valueFix": "Use one of linear, ease, ease-in, ease-out, ease-in-out as the timing function of transitions and animations.",
+      "valueFix": "Use linear, ease, ease-in, ease-out, ease-in-out, step-start, step-end, cubic-bezier() (x values 0 to 1) or steps() as the timing function of transitions and animations (no linear() points).",
       "note": "Recorded for the animation player (IrNode.Anims), never written as USS"
     },
     "appearance": {
@@ -1605,7 +1608,7 @@
       "handling": "lowered",
       "list": true,
       "valueRule": "U-CSS-008",
-      "valueFix": "Use one of linear, ease, ease-in, ease-out, ease-in-out as the timing function of transitions and animations.",
+      "valueFix": "Use linear, ease, ease-in, ease-out, ease-in-out, step-start, step-end, cubic-bezier() (x values 0 to 1) or steps() as the timing function of transitions and animations (no linear() points).",
       "note": "Recorded for the animation player (IrNode.Transitions), never written as USS, so nothing animates twice"
     },
     "translate": {
@@ -1881,6 +1884,7 @@
     "border-right-color",
     "border-bottom-color",
     "border-left-color",
+    "border-radius",
     "animation-timing-function"
   ],
   "timingKeywords": [
@@ -1888,7 +1892,13 @@
     "ease",
     "ease-in",
     "ease-out",
-    "ease-in-out"
+    "ease-in-out",
+    "step-start",
+    "step-end"
+  ],
+  "timingFunctions": [
+    "cubic-bezier",
+    "steps"
   ],
   "mediaFeatures": [
     "min-width",
@@ -1901,7 +1911,6 @@
     "screen"
   ],
   "layoutTransitionProperties": [
-    "all",
     "width",
     "height",
     "min-width",
@@ -1927,9 +1936,11 @@
     "flex-grow",
     "flex-shrink",
     "flex-basis",
-    "flex-direction",
-    "flex-wrap",
-    "flex-flow"
+    "border-width",
+    "border-top-width",
+    "border-right-width",
+    "border-bottom-width",
+    "border-left-width"
   ],
   "pseudoElements": [
     "before",

@@ -62,7 +62,7 @@ describe("kit components lint clean", () => {
 describe("fidelity fixtures lint clean", () => {
   it("there is one fixture per feature group", () => {
     expect(fixtures.map((f) => path.basename(f, ".html"))).toEqual([
-      "colors-gradients", "controls", "filters", "icons", "keyframes", "layout", "object-fit", "pseudo-states",
+      "colors-gradients", "controls", "filters", "icons", "initial-trigger", "keyframes", "layout", "object-fit", "pseudo-states",
       "shadows-radii-borders", "states", "text-shadow", "text-styles", "transitions",
     ]);
   });

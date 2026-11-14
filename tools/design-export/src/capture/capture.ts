@@ -100,6 +100,22 @@ function pageKeyframes(items: [number, [string, string, string, string, string][
   });
 }
 
+/**
+ * Starts the elements' CSS animations again (animation-name none, a style flush, the name back): new animations under the
+ * current timing, as when the page opened.
+ */
+function pageRestartAnimations(items: number[]): void {
+  const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
+  for (const i of items) {
+    const el = els[i] as HTMLElement;
+    const prev = el.style.getPropertyValue("animation-name"), priority = el.style.getPropertyPriority("animation-name");
+    el.style.setProperty("animation-name", "none", "important");
+    void getComputedStyle(el).animationName;
+    if (prev) el.style.setProperty("animation-name", prev, priority); else el.style.removeProperty("animation-name");
+    void getComputedStyle(el).animationName;
+  }
+}
+
 function pageRestoreStyle(items: [number, string | null][]): void {
   const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
   for (const [i, s] of items) { if (s === null) els[i].removeAttribute("style"); else els[i].setAttribute("style", s); }
@@ -255,7 +271,7 @@ function pageFinishAll(): void {
 }
 
 type LineBox = { x: number; y: number; w: number; h: number; baseline: number };
-type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; lines: LineBox[] };
+type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; rotation?: number; lines: LineBox[] };
 /**
  * Boxes of the IR elements in device px: border box, visibility, text lines with baselines (see the boxes schema for
  * the rules). Ascents are cached per font and per state of the page's font set (faces added or loaded since).
@@ -299,6 +315,21 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
     hiddenByOpacity.set(e, v);
     return v;
   };
+  // the rotation on the screen: the element's own rotate and transform plus its ancestors' (2D designs: about z)
+  const turned = new Map<Element, number>();
+  const rotation = (e: Element | null): number => {
+    if (!e || e === document.documentElement) return 0;
+    const hit = turned.get(e);
+    if (hit !== undefined) return hit;
+    const cs = getComputedStyle(e);
+    let a = 0;
+    const r = /(-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?)deg\s*$/i.exec(cs.rotate || "");
+    if (r && cs.rotate !== "none") a += parseFloat(r[1]);
+    if (cs.transform && cs.transform !== "none") { const m = new DOMMatrixReadOnly(cs.transform); a += (Math.atan2(m.b, m.a) * 180) / Math.PI; }
+    const v = a + rotation(e.parentElement);
+    turned.set(e, v);
+    return v;
+  };
   const out: [string, ElBox][] = [];
   for (const [id, i, isText] of arg.items) {
     const el = els[i];
@@ -308,6 +339,12 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
       const b = el.getBoundingClientRect();
       Object.assign(box, { x: dev(b.x), y: dev(b.y), w: dev(b.width), h: dev(b.height) });
       box.visible = getComputedStyle(el).visibility === "visible" && !transparent(el);
+      // in (-180, 180], rounded like the boxes; absent when 0
+      let deg = rotation(el) % 360;
+      if (deg <= -180) deg += 360;
+      else if (deg > 180) deg -= 360;
+      deg = Math.round(deg * 1e6) / 1e6;
+      if (deg !== 0 && !Object.is(deg, -0)) box.rotation = deg;
     }
     if (isText && rendered) {
       type Frag = { l: number; t: number; r: number; b: number; base: number };
@@ -344,8 +381,9 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
 
 interface CdpNode { nodeId: number; backendNodeId: number; nodeType: number; nodeName: string; attributes?: string[]; children?: CdpNode[] }
 interface DomEl { nodeId: number; backendNodeId: number; parent: number; attrs: Map<string, string> }
-interface Desired { classes: Map<string, [number, string]>; props: Map<string, [number, "disabled" | "checked"]>; forced: Map<number, string[]> }
-const emptyDesired = (): Desired => ({ classes: new Map(), props: new Map(), forced: new Map() });
+/** `absent`: markup classes the setup takes off (CaptureApply `absent`). */
+interface Desired { classes: Map<string, [number, string]>; absent: Map<string, [number, string]>; props: Map<string, [number, "disabled" | "checked"]>; forced: Map<number, string[]> }
+const emptyDesired = (): Desired => ({ classes: new Map(), absent: new Map(), props: new Map(), forced: new Map() });
 
 /**
  * One page at one viewport, reused across jobs. It works through its own CDP session, so its DOM node ids, forced
@@ -367,6 +405,8 @@ export class CaptureSession {
   private current: Desired = emptyDesired();
   /** Classes the session added (absent in the markup), by `i|class`. */
   private added = new Set<string>();
+  /** Markup classes the session took off (an `absent` item), by `i|class`: put back when no setup wants them off. */
+  private taken = new Map<string, [number, string]>();
   /** disabled/checked values before the session changed them, by `i|prop`. */
   private originals = new Map<string, boolean>();
   /** Style attributes before animation overrides. */
@@ -469,7 +509,7 @@ export class CaptureSession {
     const force = (i: number, p: string) => { const l = want.forced.get(i) ?? []; if (!l.includes(p)) l.push(p); want.forced.set(i, l); };
     for (const a of setup.apply) {
       const i = this.index(a.elementId);
-      if (a.kind === "class") { want.classes.set(`${i}|${a.name}`, [i, a.name]); continue; }
+      if (a.kind === "class") { (a.absent ? want.absent : want.classes).set(`${i}|${a.name}`, [i, a.name]); continue; }
       if (a.pseudo === "disabled" || a.pseudo === "checked") want.props.set(`${i}|${a.pseudo}`, [i, a.pseudo]);
       else if (a.pseudo === "focus") force(i, "focus");
       else {
@@ -489,14 +529,29 @@ export class CaptureSession {
   private async goTo(setup: ScreenSetup | null): Promise<void> {
     const want = this.desiredOf(setup), cur = this.current;
     const m: Mutation = { add: [], remove: [], set: [] };
+    // markup classes taken off: put back what no longer has to be off, take off what has to be
+    const restore = Array.from(this.taken).filter(([k]) => !want.absent.has(k));
+    const take = Array.from(want.absent).filter(([k]) => !this.taken.has(k) && !this.added.has(k));
+    for (const [, v] of restore) m.add.push(v);
+    for (const [, v] of take) m.remove.push(v);
     for (const [k, v] of cur.classes) if (!want.classes.has(k)) { if (this.added.has(k)) m.remove.push(v); else cur.classes.delete(k); }
-    for (const [k, v] of want.classes) if (!cur.classes.has(k)) m.add.push(v);
+    for (const [k, v] of want.classes) if (!cur.classes.has(k) && !this.taken.has(k)) m.add.push(v);
     for (const [k, [i, p]] of cur.props) if (!want.props.has(k)) m.set.push([i, p, this.originals.get(k) ?? false]);
     for (const [k, [i, p]] of want.props) if (!cur.props.has(k)) m.set.push([i, p, true]);
     if (m.add.length || m.remove.length || m.set.length) {
       const r = await this.d.page.evaluate(pageMutate, m);
-      for (const [i, c] of r.removed) { const k = `${i}|${c}`; this.added.delete(k); cur.classes.delete(k); }
-      for (const [i, c] of m.add) { const k = `${i}|${c}`; if (r.added.some(([x, y]) => x === i && y === c)) this.added.add(k); cur.classes.set(k, [i, c]); }
+      for (const [i, c] of r.removed) {
+        const k = `${i}|${c}`;
+        if (want.absent.has(k) && !this.added.has(k)) this.taken.set(k, [i, c]);
+        this.added.delete(k); cur.classes.delete(k);
+      }
+      for (const [i, c] of m.add) {
+        const k = `${i}|${c}`;
+        // a markup class put back is the markup's again, never the session's
+        if (this.taken.has(k)) { this.taken.delete(k); if (want.classes.has(k)) cur.classes.set(k, [i, c]); continue; }
+        if (r.added.some(([x, y]) => x === i && y === c)) this.added.add(k);
+        cur.classes.set(k, [i, c]);
+      }
       for (const [i, p, v] of r.previous) {
         const k = `${i}|${p}`;
         if (want.props.has(k)) { if (!this.originals.has(k)) this.originals.set(k, v); cur.props.set(k, [i, p]); }
@@ -548,12 +603,17 @@ export class CaptureSession {
     const kItems: [number, [string, string, string, string, string][]][] = Array.from(keyframes).map(([i, list]) =>
       [i, list.map((x) => [x.name ?? "", `${x.duration}ms`, `${x.delay}ms`, String(x.iterations), x.fillMode] as [string, string, string, string, string])]);
     if (kItems.length) save(await this.d.page.evaluate(pageKeyframes, kItems));
+    // a series from the page's opening: its animations started at load, and an earlier series on this page finished them
+    // (CDP drops an animation that ended without a forwards fill, so seeking it does nothing): every such series starts
+    // them again under the run timing and seeks animations of its own
+    const restart = !a.from && kItems.length > 0;
+    if (restart) await this.d.page.evaluate(pageRestartAnimations, kItems.map(([i]) => i));
     // the animations the runs cover, as the page has them, then their CDP ids (started events arrive asynchronously)
     const query: [number, string[], string[]][] = Array.from(new Set([...transitions.keys(), ...keyframes.keys()])).sort((x, y) => x - y).map((i) => [i,
       (transitions.get(i) ?? []).flatMap(domProps),
       (keyframes.get(i) ?? []).map((x) => x.name ?? "")]);
     const live = await this.d.page.evaluate(pageRunAnims, query);
-    const fresh = a.from !== null;
+    const fresh = a.from !== null || restart;
     const deadline = performance.now() + 5000;
     for (;;) {
       const ids = live.map(([i, name]) => this.registry.get(`${this.dom[i].backendNodeId}|${name}`)).map((r) => (r && (!fresh || r.seq > marker) ? r.id : null));
@@ -610,7 +670,8 @@ export class CaptureSession {
   }
 
   /**
-   * Gives the page back, also after a failure midway: overrides removed, every class it added removed, disabled/checked
+   * Gives the page back, also after a failure midway: overrides removed, every class it added removed and every markup
+   * class it took off put back, disabled/checked
    * restored, animations finished, forced pseudo-states cleared, the timeline running, its window global deleted and
    * its CDP agents disabled (its own CDP session detached).
    */
@@ -621,11 +682,12 @@ export class CaptureSession {
     this.savedStyles.clear();
     this.series = null;
     const m: Mutation = {
-      add: [], remove: Array.from(this.added, (k) => this.current.classes.get(k) ?? (k.split("|").map((x, n) => (n ? x : Number(x))) as [number, string])),
+      add: Array.from(this.taken.values()),
+      remove: Array.from(this.added, (k) => this.current.classes.get(k) ?? (k.split("|").map((x, n) => (n ? x : Number(x))) as [number, string])),
       set: Array.from(this.originals, ([k, v]) => { const [i, p] = k.split("|"); return [Number(i), p as "disabled" | "checked", v]; }),
     };
-    if (m.remove.length || m.set.length) await attempt(() => this.d.page.evaluate(pageMutate, m));
-    this.added.clear(); this.originals.clear();
+    if (m.add.length || m.remove.length || m.set.length) await attempt(() => this.d.page.evaluate(pageMutate, m));
+    this.added.clear(); this.taken.clear(); this.originals.clear();
     await attempt(() => this.d.page.evaluate(pageTextCeilRemove));
     if (this.radioNames.length) await attempt(() => this.d.page.evaluate(pageRadiosTogether, this.radioNames));
     this.radioNames = [];

@@ -39,14 +39,20 @@ namespace DesignUi.Editor
     /// to its shadow host); sample data from <c>fixtures/sample-data.json</c> by element name: bound texts, Smart String
     /// arguments, and repeat items (their count, their texts and their <c>$classes</c>; inline items are cloned from the
     /// template and renamed, so only the first item carries the design ids, as in the golden; list items fill the
-    /// ListView's slots).</item>
+    /// ListView's slots). A localized text (a screen compiled with the profile's localization: a String Table binding
+    /// and no text in the UXML) shows the design's reference text, the IR's <c>tr</c> with its arguments from the sample
+    /// data, exactly as the golden shows it; its binding is taken off first, so no table can replace it.</item>
     /// <item>Job: the state class on the root, classes on their elements (and on a shadow host that mirrors them), disabled and
     /// checked through SetEnabled and the toggle's value, focus through Focus, and hover and active through real pointer
     /// events at a point of the element that picks it (the element and its ancestors hover; a press makes it active).</item>
+    /// <item>Animations: the screen's <see cref="DesignUiAnimationPlayer"/> runs on a manual clock. A static capture holds it in
+    /// reduced motion, so every animation shows the frame the golden's freeze shows; an animation series opens the screen at
+    /// its <c>from</c> setup that way, then plays, applies the change at time 0 and steps the clock to each sample time
+    /// (<see cref="RunSeries"/>). Class items marked <c>absent</c> take a markup class off.</item>
     /// <item>Output: <c>&lt;OutDir&gt;/&lt;CaptureName&gt;.png</c> (the RenderTexture bytes unchanged, exactly the viewport's size)
     /// and the capture's entry in <c>&lt;OutDir&gt;/boxes.json</c> (<see cref="BoxesWriter"/>).</item>
     /// </list>
-    /// Frames: 20 editor updates after mounting, 5 after each change and pointer event.
+    /// Frames: 20 editor updates after mounting, 5 after each change and pointer event, 2 after each animation sample.
     /// </summary>
     public static class DesignCapture
     {
@@ -63,6 +69,8 @@ namespace DesignUi.Editor
         const string DefaultState = "default";
         const int MountFrames = 20;
         const int ChangeFrames = 5;
+        /// <summary>Editor updates between the player writing a sample's values and the capture (the panel repaints).</summary>
+        const int SampleFrames = 2;
         static readonly Color Sentinel = new Color(1f, 0f, 1f, 1f);
 
         /// <summary>
@@ -73,125 +81,81 @@ namespace DesignUi.Editor
         /// </summary>
         public static IEnumerator Run(CaptureRequest req, DesignUiProfile profile)
         {
-            var screen = Prepare(req, profile);
-            var mount = new Mount();
+            var session = new Session(req, profile);
             try
             {
-                mount.Open(req.Viewport, profile, screen.Tree);
-                var docRoot = mount.Document.rootVisualElement;
-                var root = BoxesWriter.Find(docRoot, screen.Manifest.root ?? screen.Ir.Root.Id)
-                           ?? throw new InvalidOperationException("the compiled screen has no root element '" + (screen.Manifest.root ?? screen.Ir.Root.Id) + "'");
-                if (screen.Fonts != null && !docRoot.styleSheets.Contains(screen.Fonts)) docRoot.styleSheets.Add(screen.Fonts);
-                root.AddToClassList(FontMap.LocaleClass(profile.referenceLocale));
-                var filler = new SampleFiller(screen);
-                filler.FillScreen(docRoot);
-                if (req.State != DefaultState) root.AddToClassList(ScreenBuilder.StateClassPrefix + req.State);
-                // the breakpoints that hold at this viewport, as classes on the screen root (the golden's @media rules)
-                foreach (var name in ActiveBreakpoints(screen.Ir, req.Viewport)) root.AddToClassList(ScreenBuilder.BreakpointClassPrefix + name);
-                for (int i = 0; i < MountFrames; i++) yield return null;
-                var panel = mount.Panel;
-                var scale = PanelScale(panel, req.Viewport);
-
-                var applied = Applied(req);
-                var pointer = new List<CaptureApply>();
-                bool changed = false;
-                VisualElement focus = null;
-                foreach (var a in applied)
-                {
-                    var el = BoxesWriter.Find(docRoot, a.ElementId) ?? throw new InvalidOperationException("the capture applies " + a + ", but the screen has no element '" + a.ElementId + "'");
-                    if (a.Kind == CaptureApply.ClassKind)
-                    {
-                        el.AddToClassList(a.Name);
-                        filler.MirrorClass(docRoot, a.ElementId, a.Name);
-                        changed = true;
-                        continue;
-                    }
-                    switch (a.Name)
-                    {
-                        case "hover":
-                        case "active":
-                            pointer.Add(a);
-                            break;
-                        case "focus":
-                            focus = el;
-                            break;
-                        case "disabled":
-                            el.SetEnabled(false);
-                            changed = true;
-                            break;
-                        case "checked":
-                            if (!(el is INotifyValueChanged<bool> toggle)) throw new NotCapturableException("checked applies to '" + a.ElementId + "', which is not a toggle in Unity");
-                            toggle.value = true;
-                            changed = true;
-                            break;
-                        default:
-                            throw new NotCapturableException("unknown pseudo-state '" + a.Name + "'");
-                    }
-                }
-                if (changed)
-                {
-                    filler.SyncMirrors();
-                    for (int i = 0; i < ChangeFrames; i++) yield return null;
-                }
-                if (pointer.Count > 1)
-                    throw new NotCapturableException("hover/active on " + string.Join(" and ", pointer.Select(p => "'" + p.ElementId + "'")) +
-                                                     ", which are not ancestors of each other: one pointer cannot be on both");
-                if (pointer.Count == 1)
-                {
-                    var target = BoxesWriter.Find(docRoot, pointer[0].ElementId);
-                    var at = PointOn(panel, target);
-                    if (at == null && Untouchable(target, out var covering))
-                    {
-                        // children cover every point: they stop taking the pointer, so only the element and its ancestors hover, as in the golden
-                        at = PointOn(panel, target);
-                        if (at != null) req.Notes.Add("the pointer is on '" + target.name + "' with its descendants ignoring the pointer (" + string.Join(", ", covering) + "): they cover it everywhere");
-                    }
-                    if (at == null)
-                        throw new NotCapturableException("no point of '" + pointer[0].ElementId + "' picks it (it ignores the pointer or other elements cover it), so a real pointer cannot " +
-                                                         pointer[0].Name + " it");
-                    SendPointer(panel, EventType.MouseMove, at.Value);
-                    mount.PointerAt = at;
-                    for (int i = 0; i < ChangeFrames; i++) yield return null;
-                    if (pointer[0].Name == "active")
-                    {
-                        SendPointer(panel, EventType.MouseDown, at.Value);
-                        mount.Pressed = true;
-                        for (int i = 0; i < ChangeFrames; i++) yield return null;
-                        // UI Toolkit focuses a focusable element on press; the golden forces :active (and :hover) only
-                        if (panel.focusController.focusedElement is VisualElement pressed && pressed != focus)
-                        {
-                            pressed.Blur();
-                            for (int i = 0; i < ChangeFrames; i++) yield return null;
-                        }
-                    }
-                }
-                if (focus != null)
-                {
-                    focus.Focus();
-                    for (int i = 0; i < ChangeFrames; i++) yield return null;
-                    var focused = panel.focusController.focusedElement as VisualElement;
-                    if (focused == null || focused != focus && !focus.Contains(focused))
-                        throw new NotCapturableException("'" + focus.name + "' does not take focus in Unity (not focusable, disabled or hidden; focused: " +
-                                                         (focused?.name ?? "nothing") + ")");
-                }
-
+                // a static capture shows every animation at its end, as the golden's freeze: the player's reduced motion
+                foreach (var f in session.Open(req.State, true)) yield return f;
+                foreach (var f in session.GoTo(req.State, Applied(req))) yield return f;
                 if (req.Frozen != null && req.Frozen.Count > 0)
                 {
-                    // the golden shows these keyframe animations frozen at their end frame (the player does not play them yet)
-                    FrozenFrames.ApplyAll(docRoot, screen.Ir, req.Frozen);
-                    req.Notes.Add("keyframe animations shown at their frozen end frame, as in the golden: " + string.Join(", ", req.Frozen));
-                    for (int i = 0; i < ChangeFrames; i++) yield return null;
+                    if (session.Player == null)
+                    {
+                        // a screen compiled without animation data: write the golden's frozen frames as inline styles
+                        FrozenFrames.ApplyAll(session.DocRoot, session.Screen.Ir, req.Frozen);
+                        req.Notes.Add("keyframe animations shown at their frozen end frame, as in the golden (the compiled screen has no animation player): " + string.Join(", ", req.Frozen));
+                        for (int i = 0; i < ChangeFrames; i++) yield return null;
+                    }
+                    else
+                    {
+                        var missing = req.Frozen.Where(f => !session.Plays(f.ElementId, f.Name)).ToList();
+                        if (missing.Count > 0) req.Notes.Add("the golden shows these keyframe animations at their end frame, the player does not play them: " + string.Join(", ", missing));
+                    }
                 }
-
-                Directory.CreateDirectory(req.OutDir);
-                File.WriteAllBytes(Path.Combine(req.OutDir, req.CaptureName + ".png"), mount.ReadPng());
-                BoxesWriter.Merge(Path.Combine(req.OutDir, BoxesWriter.FileName), BoxesWriter.Measure(req.CaptureName, docRoot, req.Viewport, scale, screen.Ir));
-                req.Inspect?.Invoke(root);
+                session.Write(req.CaptureName);
+                req.Inspect?.Invoke(session.Root);
             }
             finally
             {
-                mount.Dispose();
+                session.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Captures one animation series (spec 11): the jobs of one change, sample times ascending. The screen opens at the
+        /// series' <c>from</c> setup with every animation at its end (reduced motion, as the golden's freeze), then the
+        /// player plays and the change is applied at clock time 0 (a series without <c>from</c> plays from the screen's
+        /// opening); for each job the clock steps to its time, the player writes its values and the frame is captured.
+        /// <paramref name="done"/> counts the jobs written, so a caller can list the rest as not captured when it throws.
+        /// </summary>
+        internal static IEnumerator RunSeries(CaptureRequest req, IReadOnlyList<CaptureJob> jobs, DesignUiProfile profile, SeriesProgress done)
+        {
+            if (jobs == null || jobs.Count == 0 || jobs.Any(j => j.Anim == null)) throw new ArgumentException("an animation series needs animation jobs", nameof(jobs));
+            var first = jobs[0];
+            var from = first.Anim.From;
+            var session = new Session(req, profile);
+            try
+            {
+                foreach (var f in session.Open(from?.State ?? first.State, from != null)) yield return f;
+                if (session.Player == null)
+                    throw new NotCapturableException("the compiled screen has no animation player (no animation data in its USS): recompile it with this version of the package");
+                if (from != null)
+                {
+                    foreach (var f in session.GoTo(from.State, from.Apply)) yield return f;
+                    session.Player.ReducedMotion = false;
+                }
+                foreach (var f in session.GoTo(first.State, first.Apply)) yield return f;
+                var idle = first.Anim.Sampled.Where(r => !session.Started(r)).ToList();
+                if (idle.Count > 0) req.Notes.Add("the change did not start " + string.Join(", ", idle) + " in the player");
+                foreach (var job in jobs)
+                {
+                    session.Clock.Milliseconds = job.Anim.Time;
+                    session.Player.Tick();
+                    for (int i = 0; i < SampleFrames; i++) yield return null;
+                    session.Write(job.Name);
+                    done.Count++;
+                }
+            }
+            finally
+            {
+                session.Dispose();
+            }
+        }
+
+        /// <summary>How many jobs of a series <see cref="RunSeries"/> wrote.</summary>
+        internal sealed class SeriesProgress
+        {
+            public int Count;
         }
 
         /// <summary>
@@ -199,8 +163,9 @@ namespace DesignUi.Editor
         /// names, copies the compiled <c>.design-ui.json</c> (removed wrappers) next to them and writes
         /// <see cref="MetaFileName"/>. The files a capture owns (PNGs, boxes.json, the meta file, the copied manifest, the done
         /// marker) are deleted first, so nothing of an earlier run can be compared; the meta file says <c>running</c> until the
-        /// run completes, and <see cref="DoneFileName"/> is written last. Animation samples are listed as not captured until the animation player exists; a job that cannot be
-        /// made, or fails, is listed with its reason and leaves no PNG or boxes entry behind.
+        /// run completes, and <see cref="DoneFileName"/> is written last. Animation samples are captured series by series
+        /// (<see cref="RunSeries"/>). A job that cannot be made, or fails, is listed with its reason and leaves no PNG or boxes
+        /// entry behind.
         /// </summary>
         public static IEnumerator CaptureAll(string exportDir, string screenFolder, DesignUiProfile profile, string outDir, CaptureResult result, string runId = null)
         {
@@ -215,18 +180,70 @@ namespace DesignUi.Editor
             var manifest = Path.Combine(screenFolder, ScreenCompiler.ManifestFileName);
             if (!File.Exists(manifest)) throw new InvalidOperationException("'" + screenFolder + "' is not a compiled screen (no " + ScreenCompiler.ManifestFileName + ")");
             File.Copy(manifest, Path.Combine(outDir, ScreenCompiler.ManifestFileName), true);
-            var animated = AnimatedOnShow(IrReader.Read(Path.Combine(exportDir, ScreenCompiler.IrFileName)));
-            foreach (var job in jobs)
+            var boxes = new JObject(); // written once, before the done marker
+            for (int j = 0; j < jobs.Count; j++)
             {
+                var job = jobs[j];
                 if (job.Animation)
                 {
-                    NotCaptured(result, outDir, job.Name, "animation sample: the animation player that plays the design's animations in Unity is not available yet");
+                    // one series: the consecutive samples of one change, times ascending
+                    var series = new List<CaptureJob> { job };
+                    var key = job.Anim.SeriesKey(job);
+                    while (j + 1 < jobs.Count && jobs[j + 1].Animation && jobs[j + 1].Anim.SeriesKey(jobs[j + 1]) == key && jobs[j + 1].Anim.Time >= series[series.Count - 1].Anim.Time)
+                        series.Add(jobs[++j]);
+                    var sreq = new CaptureRequest
+                    {
+                        ExportDir = exportDir, ScreenFolder = screenFolder, State = job.State, Viewport = job.Viewport, Apply = job.Apply,
+                        OutDir = outDir, CaptureName = job.Name, Boxes = boxes,
+                    };
+                    var progress = new SeriesProgress();
+                    var swatch = Stopwatch.StartNew();
+                    var srun = RunSeries(sreq, series, profile, progress);
+                    string sfailure = null, sskipped = null;
+                    try
+                    {
+                        while (true)
+                        {
+                            bool more;
+                            try { more = srun.MoveNext(); }
+                            catch (NotCapturableException e) { sskipped = e.Message; break; }
+                            catch (Exception e) { sfailure = e.GetType().Name + ": " + e.Message; break; }
+                            if (!more) break;
+                            yield return srun.Current;
+                        }
+                    }
+                    finally
+                    {
+                        (srun as IDisposable)?.Dispose();
+                    }
+                    var each = Math.Round(swatch.Elapsed.TotalMilliseconds / series.Count, 1);
+                    for (int k = 0; k < series.Count; k++)
+                    {
+                        var name = series[k].Name;
+                        run.Times[name] = each;
+                        if (k < progress.Count)
+                        {
+                            result.Captured.Add(name);
+                            if (sreq.Notes.Count > 0) run.Notes[name] = new JArray(sreq.Notes);
+                        }
+                        else if (sfailure != null)
+                        {
+                            result.Errors.Add(name + ": " + sfailure);
+                            NotCaptured(result, outDir, name, "error: " + sfailure);
+                            boxes.Remove(name);
+                        }
+                        else
+                        {
+                            NotCaptured(result, outDir, name, sskipped ?? "the animation series stopped before this sample");
+                            boxes.Remove(name);
+                        }
+                    }
                     continue;
                 }
                 var req = new CaptureRequest
                 {
                     ExportDir = exportDir, ScreenFolder = screenFolder, State = job.State, Viewport = job.Viewport, Apply = job.Apply,
-                    Frozen = job.Frozen, OutDir = outDir, CaptureName = job.Name,
+                    Frozen = job.Frozen, OutDir = outDir, CaptureName = job.Name, Boxes = boxes,
                 };
                 var watch = Stopwatch.StartNew();
                 var capture = Run(req, profile);
@@ -252,17 +269,20 @@ namespace DesignUi.Editor
                 {
                     result.Errors.Add(job.Name + ": " + failure);
                     NotCaptured(result, outDir, job.Name, "error: " + failure);
+                    boxes.Remove(job.Name);
                 }
-                else if (skipped != null) NotCaptured(result, outDir, job.Name, skipped);
+                else if (skipped != null)
+                {
+                    NotCaptured(result, outDir, job.Name, skipped);
+                    boxes.Remove(job.Name);
+                }
                 else
                 {
                     result.Captured.Add(job.Name);
-                    var unfrozen = animated.Where(id => job.Frozen.All(f => f.ElementId != id)).ToList();
-                    if (unfrozen.Count > 0)
-                        req.Notes.Add("animations are not played yet: " + string.Join(", ", unfrozen) + " show their unanimated style, the golden a frozen frame");
                     if (req.Notes.Count > 0) run.Notes[job.Name] = new JArray(req.Notes);
                 }
             }
+            BoxesWriter.WriteAll(Path.Combine(outDir, BoxesWriter.FileName), boxes);
             WriteMeta(outDir, exportDir, screenFolder, result, run, "complete", total.Elapsed.TotalMilliseconds);
             WriteJson(Path.Combine(outDir, DoneFileName), new JObject
             {
@@ -488,6 +508,250 @@ namespace DesignUi.Editor
         }
 
         /// <summary>
+        /// One mounted screen and the setup applied to it (state, classes, disabled and checked, pointer, focus), changed
+        /// step by step as a real user and the view would change it, with the screen's animation player on a manual clock.
+        /// </summary>
+        sealed class Session : IDisposable
+        {
+            readonly CaptureRequest m_Req;
+            readonly DesignUiProfile m_Profile;
+            public readonly Screen Screen;
+            public readonly Mount Mount = new Mount();
+            public readonly DesignManualClock Clock = new DesignManualClock();
+            public VisualElement DocRoot, Root;
+            public IPanel Panel;
+            public DesignUiAnimationPlayer Player;
+            SampleFiller m_Filler;
+            double m_Scale;
+            string m_State = DefaultState;
+            List<CaptureApply> m_Applied = new List<CaptureApply>();
+            VisualElement m_PointerTarget, m_Focus;
+            Vector2? m_PointerAt;
+            bool m_Pressed;
+
+            public Session(CaptureRequest req, DesignUiProfile profile)
+            {
+                m_Req = req;
+                m_Profile = profile;
+                Screen = Prepare(req, profile);
+            }
+
+            /// <summary>Mounts the screen with its sample data, in <paramref name="state"/>, with the player's reduced motion as given.</summary>
+            public IEnumerable<object> Open(string state, bool reducedMotion)
+            {
+                Mount.Open(m_Req.Viewport, m_Profile, Screen.Tree);
+                DocRoot = Mount.Document.rootVisualElement;
+                Root = BoxesWriter.Find(DocRoot, Screen.Manifest.root ?? Screen.Ir.Root.Id)
+                       ?? throw new InvalidOperationException("the compiled screen has no root element '" + (Screen.Manifest.root ?? Screen.Ir.Root.Id) + "'");
+                // an animated compiled root (DesignScreen) attached its player when it was attached; any other root with
+                // animated elements gets it here, as its generated view would attach it; it runs on the capture's clock
+                Player = DesignUiAnimationPlayer.For(Root);
+                if (Player == null && Root.Q(className: DesignAnimationData.MarkerClass) != null) Player = DesignUiAnimationPlayer.Attach(Root);
+                if (Player != null)
+                {
+                    Player.Clock = Clock;
+                    Player.ReducedMotion = reducedMotion;
+                }
+                if (Screen.Fonts != null && !DocRoot.styleSheets.Contains(Screen.Fonts)) DocRoot.styleSheets.Add(Screen.Fonts);
+                Root.AddToClassList(FontMap.LocaleClass(m_Profile.referenceLocale));
+                m_Filler = new SampleFiller(Screen);
+                m_Filler.FillScreen(DocRoot);
+                Player?.Rescan(); // repeat items cloned from the template
+                if (state != DefaultState) Root.AddToClassList(ScreenBuilder.StateClassPrefix + state);
+                m_State = state;
+                // the breakpoints that hold at this viewport, as classes on the screen root (the golden's @media rules)
+                foreach (var name in ActiveBreakpoints(Screen.Ir, m_Req.Viewport)) Root.AddToClassList(ScreenBuilder.BreakpointClassPrefix + name);
+                for (int i = 0; i < MountFrames; i++) yield return null;
+                Player?.Rescan(); // list slots made by the ListView's first layout
+                Panel = Mount.Panel;
+                m_Scale = PanelScale(Panel, m_Req.Viewport);
+            }
+
+            static string Label(CaptureApply a) => a.Kind + " " + (a.Absent ? "!" : "") + a.Name + " " + a.ElementId;
+
+            VisualElement Element(CaptureApply a) =>
+                BoxesWriter.Find(DocRoot, a.ElementId) ?? throw new InvalidOperationException("the capture applies " + a + ", but the screen has no element '" + a.ElementId + "'");
+
+            static bool IsPointer(CaptureApply a) => a.Kind == CaptureApply.PseudoKind && (a.Name == "hover" || a.Name == "active");
+            static bool IsFocus(CaptureApply a) => a.Kind == CaptureApply.PseudoKind && a.Name == "focus";
+
+            /// <summary>Changes the screen from the current setup to <paramref name="state"/> with <paramref name="target"/> applied.</summary>
+            public IEnumerable<object> GoTo(string state, List<CaptureApply> target)
+            {
+                target = target ?? new List<CaptureApply>();
+                var now = new HashSet<string>(m_Applied.Select(Label));
+                var next = new HashSet<string>(target.Select(Label));
+                bool changed = false;
+                if (state != m_State)
+                {
+                    if (m_State != DefaultState) Root.RemoveFromClassList(ScreenBuilder.StateClassPrefix + m_State);
+                    if (state != DefaultState) Root.AddToClassList(ScreenBuilder.StateClassPrefix + state);
+                    m_State = state;
+                    changed = true;
+                }
+                foreach (var a in m_Applied.Where(a => !next.Contains(Label(a)) && !IsPointer(a) && !IsFocus(a)))
+                {
+                    Set(a, false);
+                    changed = true;
+                }
+                foreach (var a in target.Where(a => !now.Contains(Label(a)) && !IsPointer(a) && !IsFocus(a)))
+                {
+                    Set(a, true);
+                    changed = true;
+                }
+                if (changed)
+                {
+                    m_Filler.SyncMirrors();
+                    for (int i = 0; i < ChangeFrames; i++) yield return null;
+                }
+
+                var pointer = target.Where(IsPointer).ToList();
+                if (pointer.Count > 1)
+                    throw new NotCapturableException("hover/active on " + string.Join(" and ", pointer.Select(p => "'" + p.ElementId + "'")) +
+                                                     ", which are not ancestors of each other: one pointer cannot be on both");
+                var focusItem = target.FirstOrDefault(IsFocus);
+                var focus = focusItem != null ? Element(focusItem) : null;
+                var pointerTarget = pointer.Count == 1 ? Element(pointer[0]) : null;
+                bool press = pointer.Count == 1 && pointer[0].Name == "active";
+                if (m_Pressed && (pointerTarget != m_PointerTarget || !press))
+                {
+                    SendPointer(Panel, EventType.MouseUp, m_PointerAt.Value);
+                    m_Pressed = Mount.Pressed = false;
+                    for (int i = 0; i < ChangeFrames; i++) yield return null;
+                }
+                if (pointerTarget != m_PointerTarget)
+                {
+                    if (pointerTarget == null)
+                    {
+                        SendPointer(Panel, EventType.MouseMove, new Vector2(-10000f, -10000f));
+                        m_PointerAt = Mount.PointerAt = null;
+                    }
+                    else
+                    {
+                        var at = PointOn(Panel, pointerTarget);
+                        if (at == null && Untouchable(pointerTarget, out var covering))
+                        {
+                            // children cover every point: they stop taking the pointer, so only the element and its ancestors hover, as in the golden
+                            at = PointOn(Panel, pointerTarget);
+                            if (at != null) m_Req.Notes.Add("the pointer is on '" + pointerTarget.name + "' with its descendants ignoring the pointer (" + string.Join(", ", covering) + "): they cover it everywhere");
+                        }
+                        if (at == null)
+                            throw new NotCapturableException("no point of '" + pointer[0].ElementId + "' picks it (it ignores the pointer or other elements cover it), so a real pointer cannot " +
+                                                             pointer[0].Name + " it");
+                        SendPointer(Panel, EventType.MouseMove, at.Value);
+                        m_PointerAt = Mount.PointerAt = at;
+                    }
+                    m_PointerTarget = pointerTarget;
+                    for (int i = 0; i < ChangeFrames; i++) yield return null;
+                }
+                if (press && !m_Pressed)
+                {
+                    SendPointer(Panel, EventType.MouseDown, m_PointerAt.Value);
+                    m_Pressed = Mount.Pressed = true;
+                    for (int i = 0; i < ChangeFrames; i++) yield return null;
+                    // UI Toolkit focuses a focusable element on press; the golden forces :active (and :hover) only
+                    if (Panel.focusController.focusedElement is VisualElement pressed && pressed != focus)
+                    {
+                        pressed.Blur();
+                        for (int i = 0; i < ChangeFrames; i++) yield return null;
+                    }
+                }
+                if (m_Focus != null && m_Focus != focus)
+                {
+                    m_Focus.Blur();
+                    m_Focus = null;
+                    for (int i = 0; i < ChangeFrames; i++) yield return null;
+                }
+                if (focus != null && focus != m_Focus)
+                {
+                    focus.Focus();
+                    for (int i = 0; i < ChangeFrames; i++) yield return null;
+                    var focused = Panel.focusController.focusedElement as VisualElement;
+                    if (focused == null || focused != focus && !focus.Contains(focused))
+                        throw new NotCapturableException("'" + focus.name + "' does not take focus in Unity (not focusable, disabled or hidden; focused: " +
+                                                         (focused?.name ?? "nothing") + ")");
+                    m_Focus = focus;
+                }
+                m_Applied = new List<CaptureApply>(target);
+            }
+
+            /// <summary>Applies or removes a class, disabled or checked.</summary>
+            void Set(CaptureApply a, bool on)
+            {
+                var el = Element(a);
+                if (a.Kind == CaptureApply.ClassKind)
+                {
+                    // an absent item takes a markup class off; leaving it puts the class back
+                    bool present = a.Absent ? !on : on;
+                    el.EnableInClassList(a.Name, present);
+                    m_Filler.MirrorClass(DocRoot, a.ElementId, a.Name, present);
+                    return;
+                }
+                switch (a.Name)
+                {
+                    case "disabled":
+                        el.SetEnabled(!on);
+                        break;
+                    case "checked":
+                        if (!(el is INotifyValueChanged<bool> toggle)) throw new NotCapturableException("checked applies to '" + a.ElementId + "', which is not a toggle in Unity");
+                        toggle.value = on;
+                        break;
+                    default:
+                        throw new NotCapturableException("unknown pseudo-state '" + a.Name + "'");
+                }
+            }
+
+            /// <summary>The element of an IR id that carries its animations: it, or the shadow host its animations moved to.</summary>
+            IEnumerable<VisualElement> Animated(string id)
+            {
+                var el = BoxesWriter.Find(DocRoot, id);
+                if (el != null) yield return el;
+                var host = BoxesWriter.Find(DocRoot, id + "__shadowhost");
+                if (host != null) yield return host;
+            }
+
+            /// <summary>Whether the player plays keyframe animation <paramref name="name"/> on the element (or its shadow host).</summary>
+            public bool Plays(string id, string name) => Player != null && Animated(id).Any(e => Player.IsPlaying(e, name, out _));
+
+            /// <summary>Whether the player runs the IR animation (a transition of one of its properties, or the keyframe animation).</summary>
+            public bool Started(CaptureAnimRef r)
+            {
+                var node = Find(Screen.Ir.Root, r.ElementId);
+                var a = node?.Anims != null && r.Index < node.Anims.Count ? node.Anims[r.Index] : null;
+                if (a == null || Player == null) return false;
+                if (a.Kind == IrAnim.KeyframesKind) return Plays(r.ElementId, a.Name);
+                foreach (var e in Animated(r.ElementId))
+                    foreach (var prop in a.Properties ?? new string[0])
+                        if (DesignAnimProperties.TryGet(prop, out var p) && Player.IsTransitioning(e, p)) return true;
+                return false;
+            }
+
+            static IrNode Find(IrNode n, string id)
+            {
+                if (n == null) return null;
+                if (n.Id == id) return n;
+                foreach (var c in n.Children ?? new IrNode[0])
+                {
+                    var hit = Find(c, id);
+                    if (hit != null) return hit;
+                }
+                return null;
+            }
+
+            /// <summary>Writes the capture's PNG and its boxes entry.</summary>
+            public void Write(string name)
+            {
+                Directory.CreateDirectory(m_Req.OutDir);
+                File.WriteAllBytes(Path.Combine(m_Req.OutDir, name + ".png"), Mount.ReadPng());
+                var boxes = BoxesWriter.Measure(name, DocRoot, m_Req.Viewport, m_Scale, Screen.Ir);
+                if (m_Req.Boxes != null) m_Req.Boxes[name] = boxes;
+                else BoxesWriter.Merge(Path.Combine(m_Req.OutDir, BoxesWriter.FileName), boxes);
+            }
+
+            public void Dispose() => Mount.Dispose();
+        }
+
+        /// <summary>
         /// Makes the element's pickable descendants ignore the pointer (picking mode is not drawn) when they cover every
         /// point of it; returns whether any did and names them.
         /// </summary>
@@ -630,11 +894,11 @@ namespace DesignUi.Editor
                 Wire(roots);
             }
 
-            /// <summary>Puts a class the job applies on the shadow hosts that mirror it for the element.</summary>
-            public void MirrorClass(VisualElement docRoot, string elementId, string cls)
+            /// <summary>Puts a class the job applies on (or takes it off) the shadow hosts that mirror it for the element.</summary>
+            public void MirrorClass(VisualElement docRoot, string elementId, string cls, bool on = true)
             {
                 foreach (var m in _screen.Manifest.mirrors.Where(m => m.element == elementId && m.classes != null && m.classes.Contains(cls)))
-                    BoxesWriter.Find(docRoot, m.host)?.AddToClassList(cls);
+                    BoxesWriter.Find(docRoot, m.host)?.EnableInClassList(cls, on);
             }
 
             /// <summary>Copies disabled and checked to the shadow hosts now (the mirror polls them only every 100 ms).</summary>
@@ -656,13 +920,50 @@ namespace DesignUi.Editor
             void Fill(IrNode node, IReadOnlyList<VisualElement> roots, Scope scope, VisualTreeAsset source)
             {
                 var el = Find(roots, node.Id);
-                if (el != null) FillText(node, el, scope);
+                if (el != null)
+                {
+                    FillLocalized(node, el);
+                    FillText(node, el, scope);
+                }
                 if (node.Repeat != null)
                 {
                     Repeat(node, roots, scope, source);
                     return;
                 }
                 foreach (var c in node.Children ?? new IrNode[0]) Fill(c, roots, scope, source);
+            }
+
+            /// <summary>
+            /// The localized texts of an element (String Table bindings of a localizing profile's compile, which hold no text in
+            /// the UXML): each binding is taken off and the element shows the design's reference text (the IR's <c>tr</c>; a
+            /// text's arguments are filled in afterwards by <see cref="FillText"/>, as for a static compile).
+            /// </summary>
+            void FillLocalized(IrNode node, VisualElement el)
+            {
+                List<BindingId> localized = null;
+                foreach (var info in el.GetBindingInfos())
+                    if (info.binding is DesignUi.IDesignLocalizedText) (localized ?? (localized = new List<BindingId>())).Add(info.bindingId);
+                if (localized == null) return;
+                IrText Attr(string name) => node.AttrTexts != null && node.AttrTexts.TryGetValue(name, out var t) ? t : null;
+                foreach (var id in localized)
+                {
+                    el.ClearBinding(id);
+                    switch (id.ToString())
+                    {
+                        case "text":
+                        case "value":
+                            if (node.Text == null) break;
+                            PrepareFonts(node.Text.Tr ?? "");
+                            SetText(el, node.Text.Tr ?? "", node.Text.Rich);
+                            break;
+                        case "placeholderText":
+                            if (el is TextField field && Attr("placeholder") != null) field.textEdition.placeholder = Attr("placeholder").Tr ?? "";
+                            break;
+                        case "tooltip":
+                            if (Attr("title") != null) el.tooltip = Attr("title").Tr ?? "";
+                            break;
+                    }
+                }
             }
 
             /// <summary>
@@ -846,19 +1147,6 @@ namespace DesignUi.Editor
                 var path = Path.Combine(outDir, name);
                 if (File.Exists(path)) File.Delete(path);
             }
-        }
-
-        /// <summary>Elements whose keyframe animations start when the screen opens (the capture does not play them yet).</summary>
-        static List<string> AnimatedOnShow(IrScreen ir)
-        {
-            var ids = new List<string>();
-            void Walk(IrNode n)
-            {
-                if ((n.Anims ?? new List<IrAnim>()).Any(a => a.Kind == IrAnim.KeyframesKind && a.Trigger == LayerKey.ShowTrigger)) ids.Add(n.Id);
-                foreach (var c in n.Children ?? new IrNode[0]) Walk(c);
-            }
-            Walk(ir.Root);
-            return ids;
         }
 
         static void NotCaptured(CaptureResult result, string outDir, string name, string reason)

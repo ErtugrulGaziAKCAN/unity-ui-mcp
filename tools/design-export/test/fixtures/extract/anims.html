@@ -7,8 +7,17 @@ body{margin:0}
 .btn:active{opacity:0.5;transition:opacity 100ms linear}
 .spin{width:20px;height:20px;flex-shrink:0;animation:spin 1s ease-in 200ms infinite alternate both}
 .state-loading .spin{opacity:0.5;transition:opacity 0.4s ease}
+.neg{width:20px;height:20px;flex-shrink:0;background-color:#123c47;animation:spin 1s linear -250ms 1 normal both;transition:background-color 200ms linear -50ms}
+.neg:hover{background-color:#16c2d5}
+.gone{width:20px;height:20px;flex-shrink:0;background-color:#123c47;transition:background-color 100ms linear -200ms}
+.gone:hover{background-color:#16c2d5}
+.pulse{width:20px;height:20px;flex-shrink:0;animation:spin 1s linear infinite}
+.pulse.is-still{animation:none}
 @keyframes spin{from{transform:rotate(0deg)} 50%{transform:rotate(180deg);animation-timing-function:linear} to{transform:rotate(360deg)}}
 </style></head><body><div class="screen" data-u-screen="anims">
 <button class="btn" data-u-id="btn" data-u-action="go" style="appearance:none;border:0;padding:0;margin:0"></button>
 <div class="spin" data-u-id="spin"></div>
+<div class="neg" data-u-id="neg"></div>
+<div class="gone" data-u-id="gone"></div>
+<div class="pulse" data-u-id="pulse"></div>
 </div></body></html>

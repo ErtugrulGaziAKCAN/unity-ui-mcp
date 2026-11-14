@@ -37,6 +37,8 @@ export interface IrKeyframe { offset: number; values: StyleMap; easing: string |
  *   layer's transition, as CSS uses the destination style's). Keyframe animations are always `enter`.
  * - Times in ms; `timing` is the CSS timing function as Chromium serialises it (keywords, cubic-bezier(), steps()).
  * - Keyframes: `restart` false when the layer keeps the running animation and only changes its play state or timing.
+ *   `name` null with no keyframes: the trigger layer sets `animation-name: none`, so the element's animations (of
+ *   `properties`) stop while it holds and start again when it stops holding.
  * - Transitions: `name` null, `iterations` 1, `direction` normal, `fillMode` none, `playState` running, `restart` true, no keyframes.
  */
 export interface IrAnim {

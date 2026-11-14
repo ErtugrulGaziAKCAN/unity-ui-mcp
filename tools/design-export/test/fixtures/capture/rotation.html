@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0}
+.screen{display:flex;flex-direction:row;align-items:flex-start;width:2560px;height:1440px;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+.box{width:40px;height:40px;flex-shrink:0;margin-right:40px;background-color:#16c2d5}
+.tilt{rotate:10deg}
+.wrap{transform:translate(4px, 0) rotate(-30deg)}
+.quarter{rotate:90deg}
+.spin{animation:spin 1000ms linear 1 normal both}
+@keyframes spin{from{rotate:0deg}to{rotate:90deg}}
+</style></head><body><div class="screen" data-u-screen="rotation">
+<div class="box" data-u-id="plain"></div>
+<div class="box tilt" data-u-id="tilt"></div>
+<div class="box wrap" data-u-id="wrap"><div class="box" data-u-id="inner" style="width:10px;height:10px"></div></div>
+<div class="box quarter" data-u-id="quarter"></div>
+<div class="box spin" data-u-id="spin"></div>
+</div></body></html>

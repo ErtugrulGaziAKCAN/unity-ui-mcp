@@ -53,8 +53,8 @@ Neither UI Toolkit route is within the thresholds, so group opacity is a design 
   a transition of it in either direction. An opacity that changes without a transition jumps from end to end and stays
   allowed. Panels and dialogs appear by a transform (`translate`, `scale`) or a colour change; the kit texts no longer
   suggest transitioning opacity on such elements.
-- Open: animation samples are not captured yet. When the animation player lands, group fades through `filter: opacity()`
-  get measured with an in-between-frame tolerance, and this rule may be relaxed for them then.
+- With the animation player (2026-11-14): not relaxed. Every in-between frame of a group fade is a fractional group
+  opacity, the case measured above; see [animation.md](animation.md#group-fades-u-css-039).
 
 ## Reproduction
 

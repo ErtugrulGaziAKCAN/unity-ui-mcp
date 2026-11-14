@@ -65,7 +65,7 @@ namespace DesignUi.Editor
         static readonly string[] ObjectMembers = { "Equals", "GetHashCode", "GetType", "ToString", "MemberwiseClone", "Finalize", "ReferenceEquals" };
 
         /// <summary>Members a screen view declares besides its elements, values, actions and repeats.</summary>
-        static readonly string[] ScreenMembers = { "State", "SetState", "Find", "StateClasses", "ScreenRoot", "SetSelected", "SetClass", "SetEnabled" };
+        static readonly string[] ScreenMembers = { "State", "SetState", "Find", "StateClasses", "ScreenRoot", "SetSelected", "SetClass", "SetEnabled", "Animations" };
 
         /// <summary>Members an item view declares besides its elements, values, actions and repeats.</summary>
         static readonly string[] ItemMembers = { "Index", "BeginBind", "Find", "SetSelected", "SetClass", "SetEnabled" };
@@ -159,6 +159,9 @@ namespace DesignUi.Editor
             }
         }
 
+        /// <summary>Whether the screen has animation data (an element the animation player watches).</summary>
+        static bool Animated(CompiledScreen s) => s.AllElements().Any(e => e.Classes.Contains(DesignUi.DesignAnimationData.MarkerClass));
+
         /// <param name="s">The compiled screen.</param>
         /// <param name="ns">The namespace (the profile's <c>generatedNamespace</c>).</param>
         /// <param name="className">The class name, <c>&lt;Screen&gt;View</c>.</param>
@@ -227,6 +230,10 @@ namespace DesignUi.Editor
             sb.Append("        static readonly string[] StateClasses = { ")
               .Append(string.Join(", ", states.Select(x => x.name == "default" ? "null" : Quote(ScreenBuilder.StateClassPrefix + x.name)))).Append(" };\n\n");
             sb.Append("        readonly VisualElement ScreenRoot;\n");
+            if (Animated(s))
+                sb.Append("\n        /// <summary>The screen's animation player (spec 11): it plays the transitions and keyframe animations by itself; set\n")
+                  .Append("        /// ReducedMotion (a game's accessibility setting) or a clock here.</summary>\n")
+                  .Append("        public ").Append(Rt).Append("DesignUiAnimationPlayer Animations { get; }\n");
             Body(sb, screen, s, "        ");
             sb.Append("\n        /// <summary>Shows a state: its class on the screen root, the other states' classes removed.</summary>\n");
             sb.Append("        public void SetState(State state)\n        {\n");
@@ -432,6 +439,8 @@ namespace DesignUi.Editor
                 sb.Append(b).Append("ScreenRoot = ").Append(v.Ref(s.Root.Name)).Append(";\n");
                 // the context also reports a root that is not a DesignScreen to a locale controller above it when it is attached
                 sb.Append(b).Append(usesContext ? "m_Context = new " : "new ").Append(Rt).Append("DesignViewContext(ScreenRoot, ").Append(Quote(v.FullName)).Append(");\n");
+                // the player a DesignScreen root attaches by itself; any other root gets it here
+                if (Animated(s)) sb.Append(b).Append("Animations = ").Append(Rt).Append("DesignUiAnimationPlayer.Attach(ScreenRoot);\n");
             }
             foreach (var e in clickables)
                 sb.Append(b).Append(v.Ref(e.Name)).Append(".AddManipulator(new Clickable(() => { }));\n");

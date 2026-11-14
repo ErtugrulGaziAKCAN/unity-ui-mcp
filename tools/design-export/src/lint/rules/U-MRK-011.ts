@@ -5,7 +5,7 @@ import { isExternal, make } from "./util.js";
 /** Members every generated class inherits from object (the compiler's ViewCodeWriter.ObjectMembers). */
 export const OBJECT_MEMBERS = ["Equals", "GetHashCode", "GetType", "ToString", "MemberwiseClone", "Finalize", "ReferenceEquals"];
 /** Members the generated screen view declares (the compiler's ViewCodeWriter.ScreenMembers). */
-export const SCREEN_MEMBERS = ["State", "SetState", "Find", "StateClasses", "ScreenRoot", "SetSelected", "SetClass", "SetEnabled"];
+export const SCREEN_MEMBERS = ["State", "SetState", "Find", "StateClasses", "ScreenRoot", "SetSelected", "SetClass", "SetEnabled", "Animations"];
 /** Members a generated repeat item view declares (the compiler's ViewCodeWriter.ItemMembers). */
 export const ITEM_MEMBERS = ["Index", "BeginBind", "Find", "SetSelected", "SetClass", "SetEnabled"];
 
