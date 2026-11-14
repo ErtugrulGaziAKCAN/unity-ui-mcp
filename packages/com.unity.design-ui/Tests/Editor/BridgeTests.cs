@@ -172,6 +172,31 @@ namespace DesignUi.Editor.Tests
         }
 
         [UnityTest]
+        public IEnumerator Operations_AnswerTheirWarningsAndErrorsAsLists()
+        {
+            DesignUiBridge.KitSyncHandler = (p, k) => new OpResult(1, "Kit sync failed.\nerror: e1\nwarning: w1", null, new[] { "w1" }, new[] { "e1" });
+            var sync = Send("POST", "/kit-sync", Token(), "{\"profile\":\"/p\",\"kitDir\":\"/k\"}");
+            yield return Wait(sync);
+            Assert.AreEqual(200, sync.Result.status);
+            CollectionAssert.AreEqual(new[] { "w1" }, sync.Result.body["warnings"].Values<string>().ToArray());
+            CollectionAssert.AreEqual(new[] { "e1" }, sync.Result.body["errors"].Values<string>().ToArray());
+
+            DesignUiBridge.ImportHandler = (p, d, x) => new OpResult(0, "Imported.\norphan screen folder (not deleted): A", new string[0], new[] { "orphan screen folder (not deleted): A" }, null);
+            var import = Send("POST", "/import", Token(), "{\"profile\":\"/p\",\"exportDir\":\"/e\",\"discardManualEdits\":false}");
+            yield return Wait(import);
+            Assert.AreEqual(200, import.Result.status);
+            CollectionAssert.AreEqual(new[] { "orphan screen folder (not deleted): A" }, import.Result.body["warnings"].Values<string>().ToArray());
+            CollectionAssert.IsEmpty(import.Result.body["errors"].Values<string>().ToArray());
+
+            // a result with a log only answers empty lists
+            DesignUiBridge.KitSyncHandler = (p, k) => new OpResult(0, "ok");
+            var plain = Send("POST", "/kit-sync", Token(), "{\"profile\":\"/p\",\"kitDir\":\"/k\"}");
+            yield return Wait(plain);
+            CollectionAssert.IsEmpty(plain.Result.body["warnings"].Values<string>().ToArray());
+            CollectionAssert.IsEmpty(plain.Result.body["errors"].Values<string>().ToArray());
+        }
+
+        [UnityTest]
         public IEnumerator SecondOperationWhileBusy_Is409()
         {
             DesignUiBridge.ImportHandler = (p, d, x) => { Thread.Sleep(500); return new OpResult(0, "slow"); };

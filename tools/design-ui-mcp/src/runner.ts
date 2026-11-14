@@ -37,6 +37,11 @@ export class CompileWaitTimeout extends UnityRunnerError {
 
 export interface RunResult {
   code: number; logTail: string; via: RunnerRoute; timings: Record<string, number>;
+  /**
+   * The step's warnings and errors as Unity listed them, one entry each (Editor route; a bridge without the lists, and the
+   * command route, give empty lists). The log tail can lose them: a long log keeps only its end.
+   */
+  warnings: string[]; errors: string[];
   /** Editor route, a bridge that reports them: the import's changed files and compile state. */
   answer?: ImportAnswer;
   /** Editor route, after a script change: how the compile ended (waited for, or already ended inside the import). */
@@ -81,6 +86,20 @@ function importAnswer(res: any): ImportAnswer | null {
 export const PLACEHOLDERS = ["projectDir", "profile", "exportDir", "outDir", "kitDir"] as const;
 const LOG_TAIL_LINES = 40;
 const LOG_TAIL_CHARS = 4000;
+
+/**
+ * A Unity step's errors and warnings as summary lines (errors first): a result shows them before the log tail, which keeps
+ * only the end of a long log.
+ */
+export function unityIssues(run: { warnings?: string[]; errors?: string[] }): string[] {
+  const list = (what: string, items: string[]) => (items.length ? [`Unity ${what} (${items.length}):`, ...items.map((i) => `- ${i}`)] : []);
+  return [...list("errors", run.errors ?? []), ...list("warnings", run.warnings ?? [])];
+}
+
+/** A summary: the head line, Unity's errors and warnings, then the log tail (when there is one) last. */
+export function withIssues(head: string, run: { warnings?: string[]; errors?: string[]; logTail?: string }, logTail = true): string {
+  return [head, ...unityIssues(run), ...(logTail && run.logTail ? [`Log tail:\n${run.logTail}`] : [])].join("\n");
+}
 
 export function tail(log: string): string {
   const lines = log.replace(/\r\n/g, "\n").trimEnd().split("\n");
@@ -159,7 +178,7 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
   }
   timings.total = Math.round(performance.now() - t0);
   return {
-    code, logTail: tail(log), via: "editor", timings,
+    code, logTail: tail(log), via: "editor", timings, warnings: strings(res?.warnings), errors: strings(res?.errors),
     ...(answer && step === "import" ? { answer, scriptsFailed, scriptErrors } : {}), ...(compile ? { compile } : {}),
   };
 }
@@ -266,7 +285,7 @@ async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<str
         return;
       }
       resolve({
-        code: code ?? (signal ? 128 : 1), logTail: tail(log), via: "command",
+        code: code ?? (signal ? 128 : 1), logTail: tail(log), via: "command", warnings: [], errors: [],
         timings: { total: Math.round(performance.now() - t0) },
       });
     });

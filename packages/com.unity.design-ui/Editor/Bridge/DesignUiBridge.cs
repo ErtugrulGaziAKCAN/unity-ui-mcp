@@ -28,8 +28,10 @@ namespace DesignUi.Editor
     /// <summary>
     /// Loopback HTTP endpoint inside the open Editor. The listener thread never calls Unity APIs.
     /// <para>
-    /// <c>POST /import</c> answers as soon as the written files are imported: <c>{ code, log, changed, imported, compiled,
-    /// compiling, compileId, ms }</c>. When a generated C# file changed (<c>compiled</c>), Unity compiles and reloads the
+    /// <c>POST /import</c> answers as soon as the written files are imported: <c>{ code, log, warnings, errors, changed,
+    /// imported, compiled, compiling, compileId, ms }</c>; <c>POST /kit-sync</c> with <c>{ code, log, warnings, errors, ms }</c>.
+    /// <c>warnings</c> and <c>errors</c> list the operation's warnings and errors one by one (the log has them too, but a client
+    /// may keep only its end). When a generated C# file changed (<c>compiled</c>), Unity compiles and reloads the
     /// scripts afterwards; <c>compiling</c> stays true in <c>GET /status</c> until that reload (or until the compile fails or
     /// never starts), and <c>lastCompile</c> then says how it ended for that <c>compileId</c>.
     /// </para>
@@ -697,7 +699,13 @@ namespace DesignUi.Editor
                 item.Run = () => isImport ? ImportHandler(profile, dir, discard) : KitSyncHandler(profile, dir);
                 s_Work.Enqueue(item);
                 var result = await item.Done.Task.ConfigureAwait(false);
-                var answer = new JObject { ["code"] = result.Code, ["log"] = result.Log ?? "", ["ms"] = item.Ms };
+                var answer = new JObject
+                {
+                    ["code"] = result.Code, ["log"] = result.Log ?? "", ["ms"] = item.Ms,
+                    // the warnings and errors on their own, so a client shows them even when the log is longer than it keeps
+                    ["warnings"] = new JArray((result.Warnings ?? new string[0]).Cast<object>().ToArray()),
+                    ["errors"] = new JArray((result.Errors ?? new string[0]).Cast<object>().ToArray()),
+                };
                 if (item.Answer != null) foreach (var p in item.Answer.Properties()) answer[p.Name] = p.Value;
                 else answer["compiling"] = false;
                 Respond(ctx, 200, answer);

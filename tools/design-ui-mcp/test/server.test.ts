@@ -419,6 +419,28 @@ describe("design_ui_import", () => {
     expect(rec.timings).toHaveProperty("compile");
   });
 
+  it("on the editor route shows the import's warnings and errors before the log tail", async () => {
+    const p = tempProject({ prefer: "editor" });
+    p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = {
+      code: 0, log: "Imported clean-screen into Assets/UI/Generated/CleanScreen: 1 file written (5 ms).\nlocalization conflict (not overwritten): a.title",
+      changed: ["a.uss"], imported: ["Assets/a.uss"], compiled: [], compiling: false, compileId: null, ms: 5,
+      warnings: ["localization conflict (not overwritten): a.title"], errors: [],
+    };
+    const client = await serverFor(p.dir, stubPipeline());
+    const r = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(r.isError).toBeFalsy();
+    expect(r.data).toMatchObject({ warnings: ["localization conflict (not overwritten): a.title"], errors: [] });
+    expect((r.content[0] as { text: string }).text).toMatch(/^Imported clean-screen into Unity via editor: .*\nUnity warnings \(1\):\n- localization conflict \(not overwritten\): a\.title$/);
+
+    fs.appendFileSync(path.join(p.designRoot, "clean-screen", "screen.html"), "\n<!-- changed -->\n");
+    bridge.answer = { code: 1, log: "Import failed; nothing was written for the screen.\n" + "written: x\n".repeat(600), errors: ["the screen id 'x' is taken"], warnings: [] };
+    const failed = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(failed.isError).toBe(true);
+    expect((failed.content[0] as { text: string }).text).toMatch(/^Unity import of clean-screen failed \(exit 1, via editor\)\.\nUnity errors \(1\):\n- the screen id 'x' is taken\nLog tail:\n/);
+  });
+
   it("on the editor route is an error, and records nothing, when the generated scripts do not compile", async () => {
     const p = tempProject({ prefer: "editor" });
     const dir = p.addScreen("clean-screen", "clean-screen");
@@ -792,6 +814,36 @@ describe("design_ui_kit_sync", () => {
     const r = await call(await serverFor(p.dir), "design_ui_kit_sync");
     expect(r.isError).toBe(true);
     expect(r.text).toMatch(/401/);
+  });
+
+  /** A kit sync log whose font twin list alone is longer than the log tail. */
+  const longLog = (head: string) =>
+    `${head}\nwarning: two TMP Settings assets\nfont twins: ${Array.from({ length: 200 }, (_, i) => `Assets/UI/Fonts/Font ${i} UITK r125s16.asset`).join(", ")}`;
+  const summary = (r: { content: unknown[] }) => (r.content[0] as { text: string }).text;
+
+  it("shows Unity's warnings first and the log tail last, however long the log", async () => {
+    const p = tempProject({ prefer: "editor" });
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = { code: 0, log: longLog("Kit synced into /kit: 30 files, 0 written."), warnings: ["two TMP Settings assets", "label under 10 device px"], errors: [] };
+    const r = await call(await serverFor(p.dir), "design_ui_kit_sync");
+    expect(r.isError).toBeFalsy();
+    expect(r.data).toMatchObject({ warnings: ["two TMP Settings assets", "label under 10 device px"], errors: [] });
+    expect(summary(r)).toMatch(/^Kit synced into .* via editor\.\nUnity warnings \(2\):\n- two TMP Settings assets\n- label under 10 device px\nLog tail:\n…/);
+    expect(summary(r).length).toBeLessThan(4300);
+  });
+
+  it("a failed kit sync shows Unity's errors first", async () => {
+    const p = tempProject({ prefer: "editor" });
+    bridge = await startStubBridge(p.dir);
+    bridge.answer = { code: 1, log: longLog("Kit sync failed; nothing was written."), warnings: ["two TMP Settings assets"], errors: ["Font not resolvable: no font resolves for locale 'ja'"] };
+    const r = await call(await serverFor(p.dir), "design_ui_kit_sync");
+    expect(r.isError).toBe(true);
+    expect(summary(r)).toMatch(/^Kit sync failed \(exit 1, via editor\)\.\nUnity errors \(1\):\n- Font not resolvable: no font resolves for locale 'ja'\nUnity warnings \(1\):\n- two TMP Settings assets\nLog tail:\n/);
+    // an older bridge answers without the lists: the log tail alone, as before
+    bridge.answer = { code: 1, log: "Kit sync failed; nothing was written.\nerror: x" };
+    const old = await call(await serverFor(p.dir), "design_ui_kit_sync");
+    expect(old.data).toMatchObject({ warnings: [], errors: [] });
+    expect(summary(old)).toBe("Kit sync failed (exit 1, via editor).\nLog tail:\nKit sync failed; nothing was written.\nerror: x");
   });
 
   it("succeeds through the command route", async () => {

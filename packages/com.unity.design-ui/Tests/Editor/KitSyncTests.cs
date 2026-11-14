@@ -490,6 +490,30 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Ops_KitSync_ReturnsItsWarningsAndErrorsAsLists_BesidesTheLog()
+        {
+            var profile = Profile();
+            var path = FontFixture.Folder + "/Kit Profile.asset";
+            AssetDatabase.CreateAsset(profile, path);
+            var kit = Kit();
+            Directory.CreateDirectory(kit + "/fonts");
+            File.WriteAllText(kit + "/fonts/Old.ttf", "old");
+            var ok = DesignUiOps.KitSync(path, kit);
+            Assert.AreEqual(0, ok.Code, ok.Log);
+            Assert.IsTrue(ok.Warnings.Any(w => w.Contains("Old.ttf")), string.Join("\n", ok.Warnings));
+            Assert.IsTrue(ok.Warnings.Any(w => w.StartsWith("text styles under 10 device px", StringComparison.Ordinal)), string.Join("\n", ok.Warnings));
+            CollectionAssert.IsEmpty(ok.Errors);
+
+            profile.locales = new[] { "tr", "ja" };
+            FontFixture.Save(profile);
+            var failed = DesignUiOps.KitSync(path, kit);
+            Assert.AreEqual(1, failed.Code);
+            Assert.IsTrue(failed.Errors.Any(e => e.StartsWith("Font not resolvable", StringComparison.Ordinal) && e.Contains("'ja'")), string.Join("\n", failed.Errors));
+
+            StringAssert.Contains("Assets/Nope.asset", DesignUiOps.KitSync("Assets/Nope.asset", kit).Errors.Single());
+        }
+
+        [Test]
         public void Ops_KitSync_RunsForAProfileAsset()
         {
             var profile = Profile();

@@ -177,6 +177,39 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Import_ReturnsItsErrorsAndWarningsAsLists_BesidesTheLog()
+        {
+            var output = TempDir("out");
+            var profile = ProfileAsset(output);
+            var missingProfile = DesignUiOps.Import("Assets/Nope.asset", TempDir("export"), false);
+            StringAssert.Contains("No DesignUiProfile at 'Assets/Nope.asset'", missingProfile.Errors.Single());
+            var empty = DesignUiOps.Import(profile, TempDir("export"), false);
+            StringAssert.Contains("no screen.ir.json", empty.Errors.Single());
+
+            // the design root holds only the other screen: the first one's generated folder is then an orphan (a warning)
+            var design = TempDir("design");
+            Directory.CreateDirectory(Path.Combine(design, "other.screen"));
+            var asset = AssetDatabase.LoadAssetAtPath<DesignUiProfile>(profile);
+            asset.designRoot = design;
+            FontFixture.Save(asset);
+            var export = ExportOf(TempDir("export"), Panel("#123456"));
+            var first = DesignUiOps.Import(profile, export, false);
+            Assert.AreEqual(0, first.Code, first.Log);
+            CollectionAssert.IsEmpty(first.Errors);
+            CollectionAssert.IsEmpty(first.Warnings);
+            var other = DesignUiOps.Import(profile, ExportOf(TempDir("export"), Screen(Root(Node("panel", "container", ("height", "20px"))), "other.screen")), false);
+            Assert.AreEqual(0, other.Code, other.Log);
+            CollectionAssert.AreEqual(new[] { "orphan screen folder (not deleted): " + output + "/OpsScreen" }, other.Warnings.ToArray());
+
+            var uss = Path.Combine(output, "OpsScreen", "OpsScreen.uss");
+            File.AppendAllText(uss, "/* hand edit */\n");
+            ExportOf(export, Panel("#654321"));
+            var guarded = DesignUiOps.Import(profile, export, false);
+            Assert.AreEqual(1, guarded.Code);
+            Assert.IsTrue(guarded.Errors.Any(e => e.StartsWith("edited by hand: ", StringComparison.Ordinal) && e.Contains("OpsScreen.uss")), string.Join("\n", guarded.Errors));
+        }
+
+        [Test]
         public void Import_ARelativeExportFolder_IsResolvedAgainstTheProjectRoot()
         {
             var profile = ProfileAsset(TempDir("out"));

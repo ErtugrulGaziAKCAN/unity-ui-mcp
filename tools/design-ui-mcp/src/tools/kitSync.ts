@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { requireConfig, type ServerContext } from "../context.js";
 import { guarded, Timings, toolResult } from "../result.js";
-import { runUnity, UnityRunnerError } from "../runner.js";
+import { runUnity, UnityRunnerError, withIssues } from "../runner.js";
 
 export function registerKitSync(server: McpServer, ctx: ServerContext): void {
   server.registerTool("design_ui_kit_sync", {
@@ -22,10 +22,14 @@ export function registerKitSync(server: McpServer, ctx: ServerContext): void {
         return toolResult(`Kit sync not run: ${e.message}`, { kitDir: cfg.kitDir, timings: t.done() }, true);
       }
       ctx.runtime.invalidateKits();
-      const data = { kitDir: cfg.kitDir, via: run.via, code: run.code, logTail: run.logTail, unityTimings: run.timings, timings: t.done() };
-      if (run.code === 2) return toolResult(`Unity answered (code 2, via ${run.via}): ${run.logTail}`, data, true);
-      if (run.code !== 0) return toolResult(`Kit sync failed (exit ${run.code}, via ${run.via}). Log tail:\n${run.logTail}`, data, true);
-      return toolResult(`Kit synced into ${cfg.kitDir} via ${run.via}.${run.logTail ? `\n${run.logTail}` : ""}`, data);
+      const data = {
+        kitDir: cfg.kitDir, via: run.via, code: run.code, warnings: run.warnings, errors: run.errors, logTail: run.logTail,
+        unityTimings: run.timings, timings: t.done(),
+      };
+      // Unity's errors and warnings first: the log tail keeps only the end of a long log (the font twin list fills it)
+      if (run.code === 2) return toolResult(withIssues(`Unity answered (code 2, via ${run.via}).`, run), data, true);
+      if (run.code !== 0) return toolResult(withIssues(`Kit sync failed (exit ${run.code}, via ${run.via}).`, run), data, true);
+      return toolResult(withIssues(`Kit synced into ${cfg.kitDir} via ${run.via}.`, run), data);
     });
   });
 }

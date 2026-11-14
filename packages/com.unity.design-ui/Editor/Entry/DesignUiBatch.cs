@@ -132,6 +132,8 @@ namespace DesignUi.Editor
                 return one;
             }
             var log = new StringBuilder();
+            var warnings = new List<string>();
+            var errors = new List<string>();
             int failed = 0;
             foreach (var dir in exportDirs)
             {
@@ -139,9 +141,11 @@ namespace DesignUi.Editor
                 each?.Invoke(dir, r);
                 if (r.Code != 0) failed++;
                 log.Append("== ").Append(dir).Append('\n').Append(r.Log).Append('\n');
+                warnings.AddRange((r.Warnings ?? new string[0]).Select(w => dir + ": " + w));
+                errors.AddRange((r.Errors ?? new string[0]).Select(e => dir + ": " + e));
             }
             log.Append(failed == 0 ? "All " + exportDirs.Count + " export folders imported." : failed + " of " + exportDirs.Count + " export folders failed.");
-            return new OpResult(failed == 0 ? 0 : 1, log.ToString());
+            return new OpResult(failed == 0 ? 0 : 1, log.ToString(), null, warnings, errors);
         }
 
         /// <summary>A PATH-style list (<see cref="Path.PathSeparator"/>): its non-empty parts, trimmed.</summary>
