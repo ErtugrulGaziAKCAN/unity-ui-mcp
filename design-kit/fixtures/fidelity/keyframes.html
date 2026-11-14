@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <title>fidelity.keyframes</title>
-<!-- @keyframes animations: iteration counts, directions, fill modes, delays and per-keyframe easing, started on
-     show and by a screen state, a hover, a focus and an is-* class. The animation player plays them; until it lands
-     their samples are not captured. -->
+<!-- @keyframes animations: iteration counts, directions, fill modes, delays (a negative one too) and per-keyframe
+     easing, started on show and by a screen state, a hover, a focus and an is-* class; an is-* class that pauses a
+     running animation and one that stops it (animation: none). -->
 <style>
 /* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
 :root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
@@ -66,6 +66,11 @@ textarea { resize: none; }
 .on-hover:hover .dot { animation: pulse 600ms ease 0ms 2 normal both; }
 .on-focus:focus .dot { animation: slide 500ms ease-out 0ms 1 alternate both; }
 .on-class.is-live .dot { animation: fade 700ms linear infinite; }
+.neg-delay { animation: slide 800ms ease-in-out -200ms 1 normal both; }
+.on-held .dot { animation: spin 1200ms linear infinite; }
+.on-held.is-held .dot { animation-play-state: paused; }
+.on-still .dot { animation: pulse 1000ms ease-in-out infinite; }
+.on-still.is-still .dot { animation: none; }
 .run-note { display: none; }
 .state-run .run-note { display: flex; }
 .trigger { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 200px; height: 120px; flex-shrink: 0; margin-right: 48px; border-radius: 16px; background-color: var(--color-surface-700); }
@@ -108,6 +113,12 @@ textarea { resize: none; }
     <button class="trigger on-focus" data-u-id="on-focus" data-u-action="on-focus"><span class="dot"></span></button>
     <div class="trigger on-class" data-u-id="on-class"><div class="dot"></div></div>
     <p class="run-note text-body" data-u-state="run" data-l10n="fidelity.keyframes.run" data-en="State run">Durum: çalış</p>
+  </div>
+  <div class="row">
+    <p class="row-label text-body-bold" data-l10n="fidelity.keyframes.timeline" data-en="Negative delay, pause, none">Negatif gecikme, duraklatma, yok</p>
+    <div class="cell"><div class="dot neg-delay" data-u-id="neg-delay"></div></div>
+    <div class="trigger on-held" data-u-id="on-held"><div class="dot"></div></div>
+    <div class="trigger on-still" data-u-id="on-still"><div class="dot"></div></div>
   </div>
 </div>
 </body>

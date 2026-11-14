@@ -29,6 +29,32 @@ Measured on 6000.3.6f1 (probe test, deleted):
   in its base rule.
 - Writing colour, opacity, translate, rotate, scale and border colours inline allocates 0 bytes.
 
+Repeat items change identity without a style pass of their own: a ListView slot is bound to another index while it
+scrolls, and a pooled inline item is hidden and shown again through an inline `display`, which raises only a styles
+and layout version change (no `StyleSheet` change, so no `CustomStyleResolvedEvent`). The repeat helpers therefore call
+`DesignUiAnimationPlayer.Snap(subtree)` when a slot is bound to another index and when a pooled item is shown or
+hidden: the subtree's transitions and animations end and hand their properties back at once, and a class added and
+removed on the subtree root (a `StyleSheet` change, which restyles the subtree) makes its next style a first style, in
+the same style pass as the bind's own class changes. A shown item plays its show animations again and never transitions
+from the item the slot showed before; a hidden item stops animating.
+
+## What the player animates
+
+Colours (text, background, border sides, an icon's tint), `opacity`, `translate`, `rotate`, `scale` and border radii.
+For these `resolvedStyle` is the computed value (UnityCsReference 6000.3 `ResolvedStyleAccess`: radii are
+`computedStyle.border*Radius.value`, colours and transforms likewise), which the player needs as the underlying value of
+an implicit 0 %/100 % keyframe and as the own value of a transition that names no value. Box lengths are not: `width`,
+`height`, insets, margins, paddings and border widths read the Yoga layout (`layoutNode.LayoutWidth`, …), NaN before the
+first layout, 0 after `display: none`, px for `auto` and %. Layout properties therefore never animate: keyframes of them
+fail U-CSS-013 and transitions of them U-CSS-042, both with the fix to animate `translate` or `scale` instead (a layout
+pass per frame was also the cost W-CSS-001 warned about; that warning is retired).
+
+U-CSS-042 also rejects a transition of any other property CSS interpolates and the player does not (`letter-spacing`,
+`visibility`, `filter`, `text-shadow`, …), when `transition-property` names it or, with `all`, when a layer changes it
+(a transition of a discrete property such as `display` switches in CSS as in the player and passes). U-CSS-043 rejects
+keyframes and a transition of the same property on one element: while both run CSS shows the transition over the
+animation, and the player plays one value per property.
+
 ## Timing
 
 `DesignTimingFunction` and `DesignAnimationData.Progress`/`Evaluate` against Chromium (`getComputedTiming().progress`
@@ -42,27 +68,71 @@ One difference is not reproduced: a `steps(n, jump-start)` animation with a dela
 exactly its delay in Chromium (local time a hair below the delay), the player the first step (the specification's
 active phase). The fidelity suite samples no `steps()` animation; a sample at a step edge would show it.
 
+Measured in Chromium for this round (paused animations and transitions seeked with `currentTime`):
+
+- **Negative delays.** `slide 800ms ease-in-out -200ms`: −44.5006 px at current time 0, −24.8675 px at 100 ms, 0 at
+  200 ms, 60 px from 600 ms; the player gives the same (timing rows and a mounted screen). A transition of
+  `background-color 400ms linear -100ms` from `rgb(0, 0, 0)` to `rgb(200, 100, 40)` shows `rgb(50, 25, 10)` at the
+  change. CSS starts a transition only with a positive combined duration (duration + delay): exporter, compiler and
+  player all skip `100ms` with `-200ms`.
+- **Play state.** A layer that sets `animation-play-state: paused` on a running animation keeps it (same name) and holds
+  its current time; leaving the layer resumes from it (the player keeps a held local time per animation). An animation
+  paused from its start holds local time 0, which a negative delay puts inside its timeline.
+- **Reversing transitions** (CSS Transitions §3.4). `rotate 400ms ease` to 8deg, reversed at 100 ms (3.26808deg): the
+  reverse transition runs `400 × ease(0.25)` = 163.404 ms (Chromium's `getComputedTiming().duration`), 1.93304deg,
+  0.645762deg and 0.129223deg at its quarters; a reversed transition with a negative delay scales the delay too
+  (`-100ms` reversed half-way: 200 ms with `-50ms`, `rgb(75, 38, 15)` at once). The player matches within 1e-4 deg and
+  half a colour step.
+- **`animation: none` in a layer.** The exporter records it (an IR keyframes entry without a name); the compiler writes an
+  empty `--dui-a` for that layer, so the element's animations stop while the layer wins and start over when it stops
+  winning, as a CSS animation that leaves and re-enters `animation-name` does. Chromium expands the `animation: none`
+  shorthand with `animation-duration: auto`, which css-support now accepts (CSS: 0 s).
+
 ## Fidelity
 
-`scripts/fidelity.sh` (all fixtures and kit components, 2560×1440, 1920×1080, 1280×720): 2117 PASS, 4 FAIL, 0 not
-captured; static captures 957 PASS, animation samples 1160 PASS, 4 FAIL (transitions 966, keyframes 153 and
-initial-trigger 45 samples). Capture of the whole suite 113 s (every sample of a series reuses one mounted screen; the
-run's boxes are written once).
-
-The four failures are one element, the keyframes fixture's `wobble` (a 48 px circle, `transform: translate() rotate()`)
-at ±10° (`wobble.1` and `wobble.3` at 2560, `wobble.1` and `ease-steps.1` at 1280): element SSIM 0.978–0.981 against
-the area floor 0.984, with the box equal to 1e-4 px and every colour sample passing. Measured cause: Chromium draws an
-element under a running transform animation from its composited layer, resampled bilinearly, so the rotated circle's
-edge is soft (up to 41/255 per channel against Unity in a one-pixel ring); UI Toolkit draws the rotated mesh with its own
-edge anti-aliasing, as sharp as an unrotated circle. The same pattern on the `on-state` circle at 46.5° and 313° gives
-SSIM 0.993 (passes); larger rotated boxes (the transitions fixture's 8° class cells) pass at every sample. It is a
-renderer difference of animated frames, not a wrong value: no policy was added, the samples stay FAIL with this cause.
+`scripts/fidelity.sh` (all fixtures and kit components, 2560×1440, 1920×1080, 1280×720): 2160 PASS, 0 FAIL, 0 not
+captured; static captures 960 PASS, animation samples 1200 PASS (transitions 990, keyframes 165 and initial-trigger 45
+samples), with the rows this round added: a hover transition with a negative delay (transitions), a keyframe animation
+with a negative delay, a class that pauses a running animation and a class with `animation: none` (keyframes). Capture
+of the whole suite 119 s (every sample of a series reuses one mounted screen; the run's boxes are written once). Before
+the rotated-sample limit below the same run had 4 FAIL, the wobble samples.
 
 Two exporter defects found by the suite and fixed: a trigger class the artboard starts in (`is-open` in the markup) was
 never taken off for its off side (export failed for keyframes, transitions stood still), and every series from the
 page's opening after the first showed animations without a forwards fill as not running (CDP drops an animation that
 ended without a forwards fill; the fill-none and fill-backwards dots stood still in 38 golden samples while Unity, and
 Chromium in a fresh page, moved them).
+
+## Rotated animation samples
+
+In the previous round four samples failed on one element, the keyframes fixture's `wobble` (a 48 px circle,
+`transform: translate() rotate()`) at ±10°: element SSIM 0.978–0.981 against the area floor 0.984, with the box equal
+to 1e-4 px and every colour sample passing. Cause: Chromium draws an element under a running transform animation from
+its composited layer, resampled bilinearly, so the rotated circle's edge is soft (up to 41/255 per channel against Unity
+in a one-pixel ring); UI Toolkit draws the rotated mesh with its own edge anti-aliasing, as sharp as an unrotated circle.
+A renderer difference of animated frames, not a wrong value.
+
+Policy (measured): the design side's boxes now carry each element's rotation on the screen (`rotation`, its own and its
+ancestors' `rotate` and `transform`, in degrees; absent when 0), and the comparison gives an element an animation sample
+shows rotated off the axes (not a multiple of 90°) the element SSIM limit `ssimRotated`, only when every other check of
+the element (box, baselines, colour samples, ring, ink, shadow band) passes. Static captures keep their limits: without
+a running animation Chromium rasterizes a rotated element directly, as UI Toolkit does.
+
+Measured over the whole suite (this round's run, before the limit existed): 297 element samples of 9 elements an
+animation sample shows rotated off the axes, every one with all other checks passing.
+
+| Element | Samples | Rotations | Lowest SSIM | Median |
+|---|---|---|---|---|
+| keyframes `wobble` (48 px circle, `transform`) | 69 | −10° … 10° | 0.9779 (−10° at 1280) | 0.9912 |
+| keyframes `on-held` dot (48 px circle, `rotate`) | 51 | −157.5° … 150° | 0.9916 | 0.9949 |
+| keyframes `it-inf` (48 px circle, `rotate`) | 51 | −157.5° … 150° | 0.9916 | 0.9947 |
+| keyframes `on-state` (48 px circle, `rotate`) | 6 | −46.5° … 46.5° | 0.9923 | 0.9931 |
+| transitions `class-*` cells (200×96 px, 4 px border, radius 16) | 120 | 0.3° … 8° | 0.9923 | 0.9985 |
+
+By viewport the lowest are 0.9779 (1280×720), 0.9807 (2560×1440) and 0.9868 (1920×1080). Below 0.984 are only the
+four wobble samples that failed before. `ssimRotated` is 0.975: the lowest measured value minus 0.003, about three times
+the run-to-run change of the same wobble samples (0.978–0.981 in the previous round's run), and above the floor 0.97
+every measured policy keeps.
 
 ## Group fades (U-CSS-039)
 
