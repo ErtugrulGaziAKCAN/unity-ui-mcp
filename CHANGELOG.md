@@ -85,6 +85,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
+- Text at 8 device px (the 16 px label at 1280×720) measured over the suite: Unity draws about 5 % less ink there than at
+  other sizes, and the ink colour is off in both directions (more so where the design puts a line at a half device
+  pixel). No generic weight or sharpness adjustment fits both, and UI Toolkit 6000.3 gives runtime panels no SDF
+  sharpness; the limits and the kit's readability warning stay (`docs/findings/text-ink.md` section 9).
+- The fidelity suite (21 fixtures, 9 components, 4722 captures at six viewports) passes every capture at 2560×1440 and
+  1920×1080 and all but one at 1280×720; 3840×2160 and the scaled viewports fail as before (89, 356 and 770 of 787).
 - The fidelity suite (19 fixtures, 9 components) passes 2355 of 2355 captures at the three viewports (1155 static
   captures and 1200 animation samples).
 

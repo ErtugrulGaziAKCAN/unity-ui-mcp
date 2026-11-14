@@ -232,11 +232,12 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`):
 | Structure (SSIM, non-text) | ≥ 0.99 for the capture and for each element (small elements ≥ 0.984, pictures ≥ 0.985, rotated animation samples ≥ 0.975) |
 | Animation samples | at the delay and every quarter of each animation, the same limits |
 
-The fidelity suite (`scripts/fidelity.sh`: 20 fidelity fixtures and the 9 kit components, at the kit's six
-viewports, 4716 captures, 13.6 minutes) passes every capture at 2560×1440 and 1920×1080 and all but one at 1280×720 (a new fixture's
-8 device px digits, ink colour ΔE2000 4.65 against 4.5). It does **not** pass yet at 3840×2160 (89 of 786 fail: a row of
+The fidelity suite (`scripts/fidelity.sh`: 21 fidelity fixtures and the 9 kit components, at the kit's six
+viewports, 4722 captures, about 14 minutes) passes every capture at 2560×1440 and 1920×1080 and all but one at 1280×720
+(8 device px digits, ink colour ΔE2000 4.65 against 4.5: [docs/findings/text-ink.md](docs/findings/text-ink.md) section 9).
+It does **not** pass yet at 3840×2160 (89 of 787 fail: a row of
 text-sized buttons moves 1.02 px because UI Toolkit rounds each text's width up, and raster pictures drawn 1.5× larger)
-or at the scaled viewports (1600×900: 355 of 786 fail, 1366×768: 769 of 786): UI Toolkit lays every padding, margin and
+or at the scaled viewports (1600×900: 356 of 787 fail, 1366×768: 770 of 787): UI Toolkit lays every padding, margin and
 border out as whole device pixels, so stacked elements drift past the ±1 px limit there
 ([docs/findings/viewport-classes.md](docs/findings/viewport-classes.md)). Nothing is waived: those viewports report
 FAIL until the layout is compensated or a different limit is decided.

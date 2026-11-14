@@ -261,6 +261,51 @@ covered pixels, the glyphs themselves) are unchanged, so a wrong text colour, a 
 (0.94–1.00 is what the glyphs alone give) still fail; a bolder weight (+30 % ink or more) still fails above 1.15. A
 shadow without blur (an offset copy) keeps the usual band.
 
+## 9. Text at 8 device px: is there a generic adjustment?
+
+A real screen's 16 px labels at 1280×720 (8 device px) failed the ink colour limit (ΔE2000 5.16 against 4.5) and its
+status chips drew 0.66× the design's ink; the suite's `stacked-text` fixture fails once there (ΔE 4.65). The question was
+whether a rendering adjustment for text drawn at 10 device px or less (an SDF weight or sharpness per rendered size)
+brings it within the exact limits, which stay as they are.
+
+**Measured over the suite** (21 fixtures and 9 components, static captures at the four exact viewports; per text
+element the largest ink colour ΔE2000 and the worst line's ink amount, Unity ÷ design, from the verdicts; the size from
+the IR's text style):
+
+| Device px | Lines | Ink colour ΔE2000 median / p90 / max | Ink amount median | p10–p90 | min–max |
+|---|---|---|---|---|---|
+| 6 | 29 | 3.64 / 7.40 / 8.12 (limit 10) | 0.997 | 0.931–1.066 | 0.917–1.169 |
+| 8 | 114 | 1.52 / 3.27 / 5.66 | 0.908 | 0.863–0.969 | 0.835–1.051 |
+| 9 | 29 | 2.62 / 3.72 / 4.25 | 0.961 | 0.947–0.981 | 0.941–1.030 |
+| 12 | 359 | 0.00 / 1.31 / 3.41 | 0.947 | 0.929–0.982 | 0.890–1.041 |
+| 16 | 121 | 0.00 / 0.00 / 0.40 | 0.964 | 0.952–0.972 | 0.941–0.988 |
+
+- At 8 device px Unity draws about 5 % less ink than at the other sizes (median 0.908 against 0.95–0.96), but the ink
+  **colour** (the median of the most covered pixels) is off in both directions: `stacked-text`'s "41.200" is brighter in
+  Unity than in the design (`#cdd3d5` against `#b9c1c3`: Unity's stems are more concentrated), while the half-pixel
+  frame's digits below are dimmer (`#e1e6e8` against `#ffffff`) and the real screen's chips drew 0.66× the ink.
+- **Where the line starts matters.** A first version of `half-pixel-frame` used 16 px bold digits (8 device px at
+  1280×720) in two frames, one on whole device pixels and one at a half pixel. The frame on whole pixels: ink colour
+  ΔE2000 median 1.56, none over 4.5 (two single digits at 0.58× and 0.64× the ink); the frame at a half pixel: median
+  2.18, four of 21 digits over 4.5 (4.75–5.87), every one dimmer in Unity. UI Toolkit puts a text's box on whole device
+  pixels, the browser keeps the half pixel, so a one-pixel stem falls on other pixel columns: the boxes pass (within
+  ±1 px), the colour of the stem does not.
+
+**Levers, and why none is generic:**
+
+| Lever | What it would do here |
+|---|---|
+| A heavier weight per rendered size (SDF dilation, or an outline in the text's own colour) | more ink (towards the median), but brighter stems: worse for the lines Unity already draws brighter ("41.200"), better only for the dimmer ones; an outline also needs each element's colour in every state |
+| A softer edge (SDF sharpness) | the one that matches a softer browser stem; UI Toolkit 6000.3 passes the sharpness only to Editor panels, not runtime panels (section 3) |
+| Atlas sampling and padding, hinting, the advanced generator | measured in section 3: a few per cent either way, closer to neither golden |
+| Keeping the browser's half pixel | UI Toolkit lays boxes on whole device pixels (the layout cannot carry the fraction into the text) |
+
+**Result: no generic adjustment.** The kit's readability warning stays (kit build and kit sync name the styles under 10
+device px at the smallest viewport), the limits stay, and the fidelity fixtures that measure layout use text of 12
+device px or more (`half-pixel-frame`). What remains is a design decision: no text under 9 device px at an exact
+viewport (the 16 px label is 8 at 1280×720: a larger style there), a measured 8 px colour limit (later lines already
+take 6 at 8 px), or 1280×720 without a pixel verdict for such text.
+
 ## Reproduction
 
 ```
