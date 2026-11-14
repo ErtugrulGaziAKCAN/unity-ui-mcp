@@ -554,13 +554,26 @@ describe("buildIr: layers, text runs and lossless values", () => {
     expect((r.fixtures.rows as Record<string, unknown>[]).map((x) => x.$hidden ?? null)).toEqual([{ flag: true, tag: true }, { flag: true }, { badge: true }]);
   });
 
+  it("a later written-out item may leave a nested repeat empty: its sample data holds no item of it", async () => {
+    const r = await build(fx("nested-empty.html"));
+    expect(byId(r.ir.root, "events").repeat).toEqual({ name: "events", mode: "inline", count: 2 });
+    const rows = r.fixtures.rows as Record<string, unknown>[];
+    expect(rows.map((x) => x["day.label"])).toEqual(["1", "2", "3"]);
+    expect(rows.map((x) => x.events)).toEqual([[{ "event.title": "A" }, { "event.title": "B" }], [], [{ "event.title": "C" }]]);
+    // the template item writes one out: the IR's template comes from it
+    const html = fs.readFileSync(fx("nested-empty.html"), "utf8").replace(/(data-u-repeat="rows"[^\n]*?<div class="events" data-u-id="events">).*?(<\/div><\/div>)/, "$1$2");
+    const file = path.join(tmp(), "template-empty.html");
+    fs.writeFileSync(file, html);
+    await expect(build(file)).rejects.toThrow(/nested data-u-repeat "events".*the first item needs one/);
+  });
+
   it("refuses a written-out item that its own markup hides: the repeat alone shows and hides its items", async () => {
     const html = fs.readFileSync(fx("item-visibility.html"), "utf8")
       .replace('<div class="row" data-u-id="row"><span class="time" data-u-id="time" data-u-bind="row.time">13:00</span>',
         '<div class="row" data-u-id="row" style="display: none"><span class="time" data-u-id="time" data-u-bind="row.time">13:00</span>');
     const file = path.join(tmp(), "hidden-item.html");
     fs.writeFileSync(file, html);
-    await expect(build(file)).rejects.toThrow(/item 2 of data-u-repeat "rows" .*hidden by its own markup.*remove the item from the samples; the host sets the item count/);
+    await expect(build(file)).rejects.toThrow(/item 2 of data-u-repeat "rows" .*hidden by its own markup.*remove the item from the samples; for an empty nested list write no items in that sample/);
   });
 
   it("a class the markup shows never bakes its layer's display into base (a repeat's first item, a collapsed panel)", async () => {

@@ -1408,7 +1408,9 @@ namespace DesignUi.Editor
 
                 var container = Find(roots, entry.container) ?? throw new InvalidOperationException("no repeat container '" + entry.container + "'");
                 var first = entry.items.Select(n => BoxesWriter.Find(container, n) ?? throw new InvalidOperationException("no repeat item '" + n + "'")).ToList();
-                FillItem(node, first, new Scope(Item(0), scope), source);
+                // a later written-out item may leave a nested repeat empty: no item shows, as the view's SetItems(0) hides its first
+                if (count == 0) foreach (var r in first) DesignUi.DesignView.SetVisible(r, false);
+                else FillItem(node, first, new Scope(Item(0), scope), source);
                 int at = container.IndexOf(first[first.Count - 1]) + 1;
                 for (int i = 1; i < count; i++)
                 {

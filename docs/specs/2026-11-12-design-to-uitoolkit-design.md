@@ -361,7 +361,9 @@ sync and the status window's Text section name the chosen faces and count the ot
    `itemVisibility: true`, and every item whose markup hides it, the first included, records `$hidden: { <id>: true }`.
    An element hidden in every item keeps `display: none` as style; one hidden by a class or state keeps that layer.
    An item root is never sample-hidden: the repeat alone shows and hides its items from the count the host gives it,
-   so a written-out item whose own root its markup hides is refused (lint U-MRK-013 and the exporter).
+   so a written-out item whose own root its markup hides is refused (lint U-MRK-013 and the exporter). A later
+   written-out item may leave a nested repeat empty (no item of it written out; the template item needs one): its
+   sample data records the repeat with no items (`"events": []`), and the capture shows none, as `SetItems(0)` does.
 
 Output per screen:
 

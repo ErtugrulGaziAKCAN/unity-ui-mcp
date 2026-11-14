@@ -72,7 +72,7 @@ export function hiddenItems(s: DomSnapshot): { index: number; detail: string }[]
 }
 
 /** The fix of a hidden written-out item (lint U-MRK-013 and the exporter). */
-export const HIDDEN_ITEM_FIX = "remove the item from the samples; the host sets the item count";
+export const HIDDEN_ITEM_FIX = "remove the item from the samples; for an empty nested list write no items in that sample";
 
 /**
  * Markup hiding that is sample data: elements inside a data-u-repeat item whose written-out copies (every sample of the
@@ -140,15 +140,36 @@ export function shownDisplay(s: DomSnapshot, i: number): string {
   return e.computed.display;
 }
 
-/** The repeat whose item holds a copy: the data-u-repeat name of its nearest item ancestor (or itself). */
-export function repeatOf(s: DomSnapshot, i: number): string | undefined {
+/** The written-out repeat item that holds element `i` (its nearest item ancestor, or itself) and that repeat's name. */
+function itemAround(s: DomSnapshot, i: number): { item: number; name: string } | undefined {
   for (let a = i; a >= 0; a = s.elements[a].parent) {
     const p = s.elements[a].parent;
     if (p < 0) return undefined;
     const tpl = repeatTemplate(s, s.elements[p]);
-    if (tpl !== undefined && repeatSamples(s, tpl).includes(a)) return s.elements[tpl].attrs["data-u-repeat"];
+    if (tpl !== undefined && repeatSamples(s, tpl).includes(a)) return { item: a, name: s.elements[tpl].attrs["data-u-repeat"] };
   }
   return undefined;
+}
+
+/** The repeat whose item holds a copy: the data-u-repeat name of its nearest item ancestor (or itself). */
+export const repeatOf = (s: DomSnapshot, i: number): string | undefined => itemAround(s, i)?.name;
+
+/** Whether element `i` lies in a repeat's template item (the first written-out item, the IR's) rather than a later sample. */
+function inTemplateItem(s: DomSnapshot, i: number): boolean {
+  const around = itemAround(s, i);
+  return around !== undefined && s.elements.find((e) => e.attrs["data-u-repeat"] === around.name)?.index === around.item;
+}
+
+/**
+ * A nested repeat container that one of two items leaves empty: `ka`'s only item children are a data-u-repeat's items
+ * and `b` has no design children (or the other way round). A later written-out item may write out no item of a nested
+ * repeat (its sample data records none); the template item needs one, since the IR's nested template comes from it.
+ */
+function emptyNested(s: DomSnapshot, a: number, ka: number[], b: number, kb: number[]): { name: string; inTemplate: boolean } | null {
+  const nested = (k: number[]) => (k.length === 1 ? s.elements[k[0]].attrs["data-u-repeat"] : undefined);
+  const [full, empty] = kb.length === 0 && designChildren(s, s.elements[b]).length === 0 ? [ka, b] : ka.length === 0 && designChildren(s, s.elements[a]).length === 0 ? [kb, a] : [null, -1];
+  const name = full ? nested(full) : undefined;
+  return name === undefined ? null : { name, inTemplate: inTemplateItem(s, empty) };
 }
 
 /** Path by position from the screen root (id paths repeat across written-out items). */
@@ -174,7 +195,12 @@ export function structureDiff(s: DomSnapshot, a: number, b: number, item = true)
   }
   if ((x.texts.length > 0) !== (y.texts.length > 0)) return `text at ${x.texts.length ? pa() : pb()} only`;
   const ka = itemChildren(s, x), kb = itemChildren(s, y);
-  if (ka.length !== kb.length) return `${ka.length} child elements at ${pa()} vs ${kb.length} at ${pb()}`;
+  if (ka.length !== kb.length) {
+    const empty = emptyNested(s, a, ka, b, kb);
+    if (!empty) return `${ka.length} child elements at ${pa()} vs ${kb.length} at ${pb()}`;
+    if (empty.inTemplate) return `the template item writes out no item of its nested data-u-repeat "${empty.name}" (${ka.length ? pb() : pa()}): the first item needs one; a later item may leave it empty`;
+    return null;
+  }
   for (let j = 0; j < ka.length; j++) { const r = structureDiff(s, ka[j], kb[j], false); if (r) return r; }
   return null;
 }

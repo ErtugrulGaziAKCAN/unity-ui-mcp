@@ -456,6 +456,36 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
+        /// A later written-out row that leaves its nested repeat empty (sample data <c>events: []</c>): the capture shows none
+        /// of its events, as the view's SetItems(0) shows none, while the other rows show theirs.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Run_ALaterItemThatLeavesItsNestedRepeatEmpty_ShowsNoneOfItsItems()
+        {
+            var ev = Box("event", "#19505d", ("width", "30px"), ("height", "10px"));
+            var events = Node("events", "container", ("display", "flex"), ("flex-direction", "column"), ("flex-shrink", "0")).Add(ev);
+            events.Repeat = new IrRepeat { Name = "events", Mode = "inline", Count = 2 };
+            var row = Node("row", "container", ("display", "flex"), ("flex-direction", "column"), ("width", "40px"), ("flex-shrink", "0"),
+                ("background-color", "#0f2a33")).Add(events);
+            var rows = Node("rows", "container", ("display", "flex"), ("flex-direction", "row"), ("flex-shrink", "0")).Add(row);
+            rows.Repeat = new IrRepeat { Name = "rows", Mode = "inline", Count = 3 };
+            var export = Export(Small(BlackRoot(rows)), "{ \"rows\": [ { \"events\": [ {}, {} ] }, { \"events\": [] }, { \"events\": [ {} ] } ] }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var req = Request(export, screen, "default@320x180", 320, 180);
+            req.Inspect = tree =>
+            {
+                var items = tree.Q("rows").Children().ToList();
+                Assert.AreEqual(3, items.Count);
+                int Shown(VisualElement item, string container) => item.Q(container).Children().Count(c => c.resolvedStyle.display != DisplayStyle.None);
+                Assert.AreEqual(2, Shown(items[0], "events"));
+                Assert.AreEqual(0, Shown(items[1], "events#1"), "the second row's sample data has no events");
+                Assert.AreEqual(1, Shown(items[2], "events#2"));
+            };
+            yield return DesignCapture.Run(req, profile);
+        }
+
+        /// <summary>
         /// A job in a later written-out repeat item (matrix.json <c>item</c>, for an element only that item shows): the
         /// capture hovers that item's copy, found by its own name even in nested repeats (the second week's first day is
         /// not the first week's second day).

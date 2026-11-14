@@ -189,7 +189,7 @@ describe("lint engine", () => {
       const file = write(dir, rows(hiding), ".row{height:40px}");
       const f = (await lintFile(file)).filter((x) => x.ruleId === "U-MRK-013");
       expect(f.map((x) => x.detail), hiding).toEqual([expect.stringMatching(/item 3 of data-u-repeat "rows" .*hidden by its own markup/)]);
-      expect(f[0].fix).toContain("emove the item from the samples; the host sets the item count");
+      expect(f[0].fix).toContain("emove the item from the samples; for an empty nested list write no items in that sample");
       const d = await openDesign(file, kit, [2560, 1440], browser);
       try {
         const s = await collectSnapshot(d.page, d.cdp, kit);
@@ -198,6 +198,18 @@ describe("lint engine", () => {
         expect(Array.from(sampleHidden(s).keys()).filter((i) => roots.has(i)), "an item root is never a per-item visibility element").toEqual([]);
       } finally { await d.close(); }
     }
+  });
+
+  it("a later written-out item may leave a nested repeat empty; the template item still writes one out", async () => {
+    const dir = tmp();
+    const css = ".row{display:flex;flex-direction:column;flex-shrink:0}.events{display:flex;flex-direction:column;flex-shrink:0}";
+    const rows = (counts: number[]) => `<div style="display:flex;flex-direction:column">` + counts.map((n, k) =>
+      `<div${k ? "" : ' data-u-repeat="rows"'} data-u-id="row" class="row"><p data-u-id="name" data-u-bind="name">Ali</p><div class="events" data-u-id="events">` +
+      Array.from({ length: n }, (_, j) => `<p${j ? "" : ' data-u-repeat="events"'} data-u-id="event" data-u-bind="event">Maç</p>`).join("") + `</div></div>`).join("") + `</div>`;
+    expect(show(await lintFile(write(dir, rows([2, 0, 1]), css)))).toEqual([]);
+    expect(show(await lintFile(write(dir, rows([1, 2, 0]), css)))).toEqual([]);
+    const f = await lintFile(write(dir, rows([0, 2]), css));
+    expect(show(f)).toEqual([expect.stringMatching(/^U-MRK-010 .*nested data-u-repeat "events".*the first item needs one/)]);
   });
 
   it("returns warnings without errors for a design with only warnings", async () => {

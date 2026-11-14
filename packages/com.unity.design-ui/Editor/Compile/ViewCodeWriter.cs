@@ -388,7 +388,7 @@ namespace DesignUi.Editor
                                                 "(its name '" + e.Name + "' is structural): give it a data-u-id, which names its visibility setter (lint U-MRK-003)");
                 if (v.IsItem && v.Repeat.Items.Any(i => i.Name == e.VisibilityOwner))
                     throw new IrFormatException("'" + PathOf(e) + "' is the root of an item of repeat '" + v.Repeat.Name + "', which alone shows and hides its items: " +
-                                                "remove the item from the samples; the host sets the item count (lint U-MRK-013)");
+                                                "remove the item from the samples; for an empty nested list write no items in that sample (lint U-MRK-013)");
                 var member = "Set" + MemberOf(e.Name, "data-u-id", e) + "Visible";
                 v.Claim(member, "the visibility of element '" + e.Name + "'");
                 v.Visibilities.Add(new VisibilitySetter { Element = e, Member = member, Field = "m_Visible" + v.Visibilities.Count, Owner = v.Member(e.VisibilityOwner) });

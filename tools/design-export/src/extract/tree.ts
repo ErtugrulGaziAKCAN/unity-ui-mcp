@@ -318,7 +318,7 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     const toggle = e.tag === "input" && /^(checkbox|radio)$/i.test(e.attrs.type ?? "");
     return [...(e.attrs.disabled !== undefined ? ["disabled"] : []), ...(toggle && e.attrs.checked !== undefined ? ["checked"] : [])];
   };
-  interface ItemState { classes: Record<string, string[]>; states: Record<string, string[]>; hidden: Record<string, boolean> }
+  interface ItemState { classes: Record<string, string[]>; states: Record<string, string[]>; hidden: Record<string, boolean>; empty: string[] }
   // a sample's is-* classes, control states and markup hiding, by the id of the template element at the same place;
   // states only where they differ from the template's (its own markup is the IR's); hiding where it is sample data and
   // this item's markup hides the element (the template compiles shown)
@@ -329,6 +329,9 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     const sx = controlStates(x), st = controlStates(tpl);
     if (id && sx && st && sx.join() !== st.join()) out.states[id] = sx;
     if (id && sampled.has(x) && markupHidden(s, x)) out.hidden[id] = true;
+    // a nested repeat this later item writes out no item of (lint U-MRK-010 accepts it): its sample data holds none
+    const nested = repeatTemplate(s, el(tpl));
+    if (nested !== undefined && x !== tpl && designChildren(s, el(x)).length === 0) out.empty.push(el(nested).attrs["data-u-repeat"]);
     const kx = itemChildren(s, el(x)), kt = itemChildren(s, el(tpl));
     kx.forEach((k, n) => { if (kt[n] !== undefined && el(k).attrs["data-u-repeat"] === undefined) itemState(k, kt[n], out); });
   };
@@ -347,8 +350,9 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
       out[name] = samples.map((x) => {
         const o: SampleData = {};
         collect(x, o);
-        const st: ItemState = { classes: {}, states: {}, hidden: {} };
+        const st: ItemState = { classes: {}, states: {}, hidden: {}, empty: [] };
         itemState(x, tpl, st);
+        for (const name of st.empty) o[name] = [];
         if (Object.keys(st.classes).length) o.$classes = st.classes;
         if (Object.keys(st.states).length) o.$states = st.states;
         if (Object.keys(st.hidden).length) o.$hidden = st.hidden;
