@@ -294,6 +294,19 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("8px", Get(none, "padding-right"));
         }
 
+        /// <summary>
+        /// Negative spacing needs at least as much right padding (UI Toolkit lays negative padding out as 0, measured: a
+        /// negative margin keeps neither the box nor the line): the compiler rejects it as lint U-CSS-044 does.
+        /// </summary>
+        [Test]
+        public void NegativeLetterSpacing_WithoutEnoughRightPadding_IsRejected()
+        {
+            var e = Assert.Throws<UnsupportedStyleException>(() => Map(("letter-spacing", "-1.28px"), ("font-size", "64px")));
+            Assert.AreEqual("U-CSS-044", e.RuleId);
+            Assert.Throws<UnsupportedStyleException>(() => Map(("letter-spacing", "-1.28px"), ("font-size", "64px"), ("padding-right", "1px")));
+            Assert.AreEqual("0.72px", Get(Map(("letter-spacing", "-1.28px"), ("font-size", "64px"), ("padding-right", "2px")), "padding-right"));
+        }
+
         [Test]
         public void LetterSpacing_FollowsALayersFontSize_AndPaddingAndUndoesTheCompensation()
         {

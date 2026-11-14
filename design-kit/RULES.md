@@ -402,6 +402,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CSS-041 | error | a positioned or moved box or shadow over later elements | room, or `position: relative` on later ones |
 | U-CSS-042 | error | a transition of a property the animation player cannot animate (a layout property, letter-spacing, `visibility`, …) | transition transforms, opacity or colours; translate or scale for size and position |
 | U-CSS-043 | error | `@keyframes` and a transition of the same property on one element | one of them; the other on another property or a wrapper |
+| U-CSS-044 | error | negative `letter-spacing` on a text with less right padding than the spacing | right padding of at least the spacing, or letter-spacing ≥ 0 |
 | U-DC-001 | error | `{{…}}` holes in a Claude Design artboard | static sample text |
 | U-DC-002 | error | `<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import` | write rows out, `data-u-repeat` on the first |
 | U-DC-003 | error | UI built by script | static markup |

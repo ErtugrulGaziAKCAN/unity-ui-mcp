@@ -34,6 +34,11 @@ with another font size gets another spacing.
 - A text element with spacing gets that spacing as extra right padding: the standard generator leaves out the spacing after
   a line's last character, and the padding puts it back, so the box, the line breaks (the line has the same room) and
   centred or right-aligned text sit where Chromium puts them. A right padding in % with spacing is rejected (U-CSS-023).
+- Negative spacing needs at least as much right padding (lint U-CSS-044, the compiler likewise). Measured on a panel
+  (`LetterSpacingTests.NegativeRightPadding_IsLaidOutAsZero_AndANegativeMarginKeepsTheBox`): UI Toolkit resolves a negative
+  padding to 0 and leaves the box as it is; a negative right margin moves the next box but keeps a text-sized box and widens
+  a stretched one, so no other compensation gives Chromium's box. The fixture has right-aligned and centred tight headings
+  with 4 px right padding.
 - The golden's text-sized width (`capture.ts`) is the text without that last spacing rounded up to the device grid, plus
   the spacing, as UI Toolkit lays it out.
 - `letter-spacing` in `em` stays rejected by lint (U-CSS-023, write px); the conversion would be `em × 100`.
@@ -61,5 +66,6 @@ call prepared keep their flags until the next batch of that twin.
 - The advanced generator cuts the spacing to 1/64 device px per character: up to 0.016 device px less per character (0.3 px
   over 20 characters). The standard generator, which the verification and the reference locale use, is exact.
 - The advanced generator includes the last character's spacing in the width: with the compensation padding, a text-sized
-  box in a locale that uses it (shaping and right-to-left scripts) is one spacing wider than the design.
+  box in a locale that uses it (shaping and right-to-left scripts) is one spacing wider than the design, and centred or
+  right-aligned text sits half a spacing or one spacing to the left of it.
 - Text-size steps scale the font size and so the spacing (as an `em` value would); the padding does not follow them.

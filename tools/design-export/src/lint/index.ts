@@ -47,6 +47,7 @@ import { rule as U_CSS_040 } from "./rules/U-CSS-040.js";
 import { rule as U_CSS_041 } from "./rules/U-CSS-041.js";
 import { rule as U_CSS_042 } from "./rules/U-CSS-042.js";
 import { rule as U_CSS_043 } from "./rules/U-CSS-043.js";
+import { rule as U_CSS_044 } from "./rules/U-CSS-044.js";
 import { rule as I_MRK_001 } from "./rules/I-MRK-001.js";
 import { rule as U_DC_001 } from "./rules/U-DC-001.js";
 import { rule as U_DC_002 } from "./rules/U-DC-002.js";
@@ -122,6 +123,7 @@ export const RULES: readonly Rule[] = [
   U_CSS_041,
   U_CSS_042,
   U_CSS_043,
+  U_CSS_044,
   U_DC_001,
   U_DC_002,
   U_DC_003,

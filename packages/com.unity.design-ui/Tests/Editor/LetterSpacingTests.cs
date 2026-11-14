@@ -112,5 +112,56 @@ namespace DesignUi.Editor.Tests
             }
             Debug.Log("LETTERSPACING generator\tscale\tsize\tuss\tper-char-pt\tuss*size/100\tspacings-in-width\n" + string.Join("\n", table));
         }
+
+        /// <summary>
+        /// Why negative letter-spacing needs right padding (lint U-CSS-044): UI Toolkit lays a negative padding out as 0, and a
+        /// negative right margin moves the next box but keeps the text's own box (a text-sized label) or widens it (a stretched
+        /// one), so neither gives the box Chromium lays out with the last character's negative spacing.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator NegativeRightPadding_IsLaidOutAsZero_AndANegativeMarginKeepsTheBox()
+        {
+            var (root, font) = Panel(1f);
+            yield return null;
+            (Label label, VisualElement after, Label stretched) Row(float padding, float margin, int row)
+            {
+                var line = new VisualElement();
+                line.style.flexDirection = FlexDirection.Row;
+                line.style.position = Position.Absolute;
+                line.style.top = 60 * row;
+                var l = new Label("Season");
+                l.style.fontSize = 36;
+                l.style.unityFontDefinition = FontDefinition.FromSDFFont(font);
+                l.style.paddingLeft = 0;
+                l.style.paddingRight = padding;
+                l.style.marginRight = margin;
+                var next = new VisualElement();
+                next.style.width = 20;
+                next.style.height = 10;
+                line.Add(l);
+                line.Add(next);
+                root.Add(line);
+                var box = new VisualElement();
+                box.style.position = Position.Absolute;
+                box.style.top = 60 * row + 30;
+                box.style.width = 300;
+                var wide = new Label("Season");
+                wide.style.fontSize = 36;
+                wide.style.unityFontDefinition = FontDefinition.FromSDFFont(font);
+                wide.style.marginRight = margin;
+                box.Add(wide);
+                root.Add(box);
+                return (l, next, wide);
+            }
+            var plain = Row(0, 0, 0);
+            var padded = Row(-5, 0, 2);
+            var margined = Row(0, -5, 4);
+            for (int i = 0; i < 4; i++) yield return null;
+            Assert.AreEqual(0f, padded.label.resolvedStyle.paddingRight, "a negative padding resolves to 0");
+            Assert.AreEqual(plain.label.layout.width, padded.label.layout.width, "and leaves the box as it is");
+            Assert.AreEqual(plain.label.layout.width, margined.label.layout.width, "a negative margin keeps a text-sized box");
+            Assert.AreEqual(plain.after.layout.x - 5, margined.after.layout.x, 1e-3, "and moves the next box");
+            Assert.AreEqual(305f, margined.stretched.layout.width, 1e-3, "and widens a stretched one");
+        }
     }
 }

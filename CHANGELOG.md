@@ -24,6 +24,7 @@ Unity package (`com.unity.design-ui`) and the Node tools share the version numbe
   font size (measured with both generators), so the compiler writes `px × 100 / font-size` and gives a text the spacing
   after its last character as right padding (the standard generator draws none there, Chromium does). New fidelity
   fixture `letter-spacing.html` (tracked caps labels, tight headings, wrapped tracked text). docs/findings/letter-spacing.md.
+  Negative spacing needs at least as much right padding (new lint rule U-CSS-044): UI Toolkit lays out no negative padding.
 - Letter-spaced words keep their spacing around kerned pairs: TextCore stored kerning pairs with lookup flags it never
   sets, and a stray `IgnoreSpacingAdjustments` bit dropped the spacing of both characters ("Transfer dönemi" at −0.72 px:
   277 px instead of 276; Chromium 275.2). Twins keep no pair flags (cleared after every glyph batch, at twin generation and

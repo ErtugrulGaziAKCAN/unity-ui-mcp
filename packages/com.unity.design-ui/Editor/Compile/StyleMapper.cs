@@ -255,6 +255,9 @@ namespace DesignUi.Editor
                 throw new UnsupportedStyleException("padding-right", paddingRaw, "U-CSS-023",
                     "A text with letter-spacing needs its right padding in px: UI Toolkit draws no spacing after the last character, and the compiler adds it to that padding.");
             double padding = paddingRaw == null ? 0 : SpacingPx(paddingRaw, "padding-right");
+            if (padding + spacing < -1e-6) // UI Toolkit lays negative padding out as 0 (measured), lint U-CSS-044 rejects it
+                throw new UnsupportedStyleException("letter-spacing", Num(spacing) + "px", "U-CSS-044",
+                    "Give the text at least " + Num(-spacing) + "px of right padding, or use a letter-spacing of 0 or more: UI Toolkit draws no spacing after the last character and lays out no negative padding.");
             result.RemoveAll(d => d.Property == "padding-right");
             result.Add(new UssDeclaration("padding-right", Num(padding + spacing) + "px"));
         }

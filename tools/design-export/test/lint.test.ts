@@ -401,6 +401,15 @@ describe("device grid, group opacity and stacking rules", () => {
     expect(show((await lintFile(page)).filter((f) => f.severity === "error"))).toEqual([]);
   });
 
+  it("U-CSS-044: negative letter-spacing needs as much right padding as the spacing", async () => {
+    const text = (css: string) => ids(`<p class="t" data-u-id="t" data-l10n="s.t" data-en="Derby">Derbi</p>`,
+      `.t{font-size:48px;line-height:54px;flex-shrink:0;align-self:flex-start;${css}}`, "U-CSS-044");
+    expect(await text("letter-spacing:-1.28px")).toEqual([expect.objectContaining({ detail: expect.stringMatching(/needs at least 1\.28px of right padding/) })]);
+    expect(await text("letter-spacing:-1.28px;padding-right:1px")).toHaveLength(1);
+    expect(await text("letter-spacing:-1.28px;padding-right:2px")).toEqual([]);
+    expect(await text("letter-spacing:1.6px")).toEqual([]);
+  });
+
   it("U-CSS-043: keyframes and a transition of the same property on one element", async () => {
     const box = `.b{width:200px;height:80px;flex-shrink:0;background-color:#123c47;animation:a 1s linear infinite} @keyframes a{from{translate:0 0}to{translate:0 4px}}`;
     const t = (css: string) => ids(`<div class="b" data-u-id="b"></div>`, `${box} ${css}`, "U-CSS-043");
