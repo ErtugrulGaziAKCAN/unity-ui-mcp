@@ -39,7 +39,9 @@ namespace DesignUi.Editor
     /// to its shadow host); sample data from <c>fixtures/sample-data.json</c> by element name: bound texts, Smart String
     /// arguments, and repeat items (their count, their texts and their <c>$classes</c>; inline items are cloned from the
     /// template and renamed, so only the first item carries the design ids, as in the golden; list items fill the
-    /// ListView's slots).</item>
+    /// ListView's slots). A localized text (a screen compiled with the profile's localization: a String Table binding
+    /// and no text in the UXML) shows the design's reference text, the IR's <c>tr</c> with its arguments from the sample
+    /// data, exactly as the golden shows it; its binding is taken off first, so no table can replace it.</item>
     /// <item>Job: the state class on the root, classes on their elements (and on a shadow host that mirrors them), disabled and
     /// checked through SetEnabled and the toggle's value, focus through Focus, and hover and active through real pointer
     /// events at a point of the element that picks it (the element and its ancestors hover; a press makes it active).</item>
@@ -918,13 +920,50 @@ namespace DesignUi.Editor
             void Fill(IrNode node, IReadOnlyList<VisualElement> roots, Scope scope, VisualTreeAsset source)
             {
                 var el = Find(roots, node.Id);
-                if (el != null) FillText(node, el, scope);
+                if (el != null)
+                {
+                    FillLocalized(node, el);
+                    FillText(node, el, scope);
+                }
                 if (node.Repeat != null)
                 {
                     Repeat(node, roots, scope, source);
                     return;
                 }
                 foreach (var c in node.Children ?? new IrNode[0]) Fill(c, roots, scope, source);
+            }
+
+            /// <summary>
+            /// The localized texts of an element (String Table bindings of a localizing profile's compile, which hold no text in
+            /// the UXML): each binding is taken off and the element shows the design's reference text (the IR's <c>tr</c>; a
+            /// text's arguments are filled in afterwards by <see cref="FillText"/>, as for a static compile).
+            /// </summary>
+            void FillLocalized(IrNode node, VisualElement el)
+            {
+                List<BindingId> localized = null;
+                foreach (var info in el.GetBindingInfos())
+                    if (info.binding is DesignUi.IDesignLocalizedText) (localized ?? (localized = new List<BindingId>())).Add(info.bindingId);
+                if (localized == null) return;
+                IrText Attr(string name) => node.AttrTexts != null && node.AttrTexts.TryGetValue(name, out var t) ? t : null;
+                foreach (var id in localized)
+                {
+                    el.ClearBinding(id);
+                    switch (id.ToString())
+                    {
+                        case "text":
+                        case "value":
+                            if (node.Text == null) break;
+                            PrepareFonts(node.Text.Tr ?? "");
+                            SetText(el, node.Text.Tr ?? "", node.Text.Rich);
+                            break;
+                        case "placeholderText":
+                            if (el is TextField field && Attr("placeholder") != null) field.textEdition.placeholder = Attr("placeholder").Tr ?? "";
+                            break;
+                        case "tooltip":
+                            if (Attr("title") != null) el.tooltip = Attr("title").Tr ?? "";
+                            break;
+                    }
+                }
             }
 
             /// <summary>

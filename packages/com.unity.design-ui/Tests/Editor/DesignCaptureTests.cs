@@ -302,6 +302,68 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("#16c2d5", Hex(Pixel(tex, 90, y)), "the first item shows its fixture class");
         }
 
+        /// <summary>String Tables that accept everything and write nothing (the capture never reads them).</summary>
+        sealed class NoTables : IDesignStringTables
+        {
+            public IReadOnlyList<string> Check(StringTableRequest request) => new string[0];
+            public LocalizationReport Write(StringTableRequest request) => new LocalizationReport { Collection = request.Collection };
+            public IReadOnlyDictionary<string, IReadOnlyList<string>> Strings(string collection, IEnumerable<string> keys) => new Dictionary<string, IReadOnlyList<string>>();
+        }
+
+        [UnityTest]
+        public IEnumerator Run_ALocalizedScreen_ShowsTheDesignsReferenceText_AsTheStaticCompileDoes()
+        {
+            // keyed texts as a fidelity fixture writes them: a plain one, one with an argument from the sample data, a button
+            // label and an input's placeholder; compiled once with static design text and once bound to String Tables
+            var title = Words("title", "Kulüp", ("align-self", "flex-start"));
+            title.Text.Key = "capture.title";
+            title.Text.En = "Club";
+            var score = Words("score", "{team}: 3 maç", ("align-self", "flex-start"));
+            score.Text.Key = "capture.score";
+            score.Text.En = "{team}: 3 matches";
+            score.Text.Args = new[] { "team" };
+            var query = Node("query", "input", ("width", "200px"), ("height", "30px"), ("flex-shrink", "0"), ("background-color", "#123c47"),
+                ("color", "#ffffff"), ("font-family", "Inter"), ("font-size", "16px"));
+            query.Initial = new IrInitial();
+            query.Field = new IrField { PlaceholderColor = "#9be9f2" };
+            query.AttrTexts["placeholder"] = new IrText { Key = "capture.search", Tr = "Ara", En = "Search", Style = "label" };
+            var export = Export(Small(BlackRoot(title, score, query)), "{ \"team\": \"Kartal\" }");
+
+            var plain = Profile(new Vector2Int(320, 180), 0.5f);
+            var plainScreen = Compile(export, plain);
+            var localizing = Profile(new Vector2Int(320, 180), 0.5f);
+            localizing.outputFolder = Out + "/Localized";
+            localizing.localization.enabled = true;
+            localizing.localization.screenTables = new[] { new DesignScreenTable { screen = "capture.test", collection = "CaptureTest" } };
+            var compiled = ScreenCompiler.Compile(export, localizing, false, new CompileHooks { ViewCode = _ => null, Tables = new NoTables() });
+            Assert.IsTrue(compiled.Ok, string.Join("\n", compiled.Errors));
+            var localScreen = Out + "/Localized/" + Naming.Pascal("capture.test");
+            var uxml = File.ReadAllText(localScreen + "/" + Naming.Pascal("capture.test") + ".uxml");
+            StringAssert.DoesNotContain("Kulüp", uxml, "the localized compile holds no design text");
+            StringAssert.Contains("DesignUi.DesignLocalizedString", uxml);
+
+            var a = Request(export, plainScreen, "default@320x180", 320, 180);
+            yield return DesignCapture.Run(a, plain);
+            var b = Request(export, localScreen, "default@320x180", 320, 180);
+            string titleText = null, scoreText = null, placeholder = null;
+            b.Inspect = tree =>
+            {
+                titleText = tree.Q<Label>("title").text;
+                scoreText = tree.Q<Label>("score").text;
+                placeholder = tree.Q<TextField>("query").textEdition.placeholder;
+            };
+            yield return DesignCapture.Run(b, localizing);
+            Assert.AreEqual("Kulüp", titleText, "the reference locale's text (the IR's tr)");
+            Assert.AreEqual("Kartal: 3 maç", scoreText, "its argument from the sample data");
+            Assert.AreEqual("Ara", placeholder);
+            var pa = Png(a).GetPixels32();
+            var pb = Png(b).GetPixels32();
+            Assert.AreEqual(pa.Length, pb.Length);
+            int differing = 0;
+            for (int i = 0; i < pa.Length; i++) if (!pa[i].Equals(pb[i])) differing++;
+            Assert.AreEqual(0, differing, "the localized screen's capture is the static compile's, pixel for pixel");
+        }
+
         [UnityTest]
         public IEnumerator Run_ABoundText_GetsItsCharactersAndKerningBeforeItIsAssigned()
         {
