@@ -512,7 +512,26 @@ namespace DesignUi.Editor.Tests
             // a class the screen already shows (markup, or an item's sample class): a job that applies it again leaves it on
             var tag = Box("tag", "#0f2a33").With("class:is-on", ("background-color", "#3ccf7a"));
             tag.Classes = new[] { "is-on" };
-            var ir = Small(BlackRoot(go, off, tick, panel, tag));
+            // a container its child covers everywhere: hovering it makes the child ignore the pointer; a later job on the
+            // child picks it again
+            var dayNumber = Node("day-number", "container", ("width", "100%"), ("height", "100%"), ("background-color", "#2a5966"))
+                .With("hover", ("background-color", "#ffcc00"));
+            var day = Node("day", "container", ("width", "40px"), ("height", "20px"), ("flex-shrink", "0"), ("background-color", "#0f2a33"))
+                .With("hover", ("background-color", "#3ccf7a")).Add(dayNumber);
+            // a class that moves the hovered element: the pointer follows it
+            var opt = Node("opt", "container", ("width", "40px"), ("height", "20px"), ("flex-shrink", "0"), ("background-color", "#123c47"))
+                .With("hover", ("background-color", "#16c2d5"));
+            var strip = Node("strip", "container", ("display", "flex"), ("flex-direction", "row"), ("width", "120px"), ("height", "20px"), ("flex-shrink", "0"))
+                .With("class:is-shifted", ("padding-left", "60px")).Add(opt);
+            // a dropdown a press opens: the next job shows no menu
+            var pick = Words("pick", "Bir", ("width", "60px"), ("height", "20px"), ("flex-shrink", "0"), ("background-color", "#123c47"));
+            pick.Kind = "dropdown";
+            pick.Initial = new IrInitial();
+            // the row paints the dropdown's colour: a DropdownField's first frames draw a faint corner fringe that later frames
+            // do not (UI Toolkit's tessellation, on a fresh mount as on a kept one), which this test does not measure
+            var row = Node("row", "container", ("display", "flex"), ("flex-direction", "row"), ("height", "20px"), ("flex-shrink", "0"),
+                ("background-color", "#123c47")).Add(day, strip, pick);
+            var ir = Small(BlackRoot(go, off, tick, panel, tag, row));
             string J(string name, string state, params string[] apply) =>
                 "{ \"name\": \"" + name + "\", \"state\": \"" + state + "\", \"viewport\": [320, 180], \"apply\": [" + string.Join(", ", apply) + "] }";
             string P(string pseudo, string id) => "{ \"kind\": \"pseudo\", \"pseudo\": \"" + pseudo + "\", \"elementId\": \"" + id + "\" }";
@@ -526,6 +545,12 @@ namespace DesignUi.Editor.Tests
                 J("default@320x180.is-open.panel", "default", C("is-open", "panel")), J("default@320x180.is-on.tag", "default", C("is-on", "tag")),
                 J("loading@320x180", "loading"),
                 J("default@320x180.again", "default"),
+                J("default@320x180.hover.day", "default", P("hover", "day")), J("default@320x180.hover.day-number", "default", P("hover", "day-number")),
+                J("default@320x180.active.day", "default", P("active", "day")), J("default@320x180.active.day-number", "default", P("active", "day-number")),
+                J("default@320x180.hover.opt", "default", P("hover", "opt")),
+                J("default@320x180.hover.opt.is-shifted.strip", "default", P("hover", "opt"), C("is-shifted", "strip")),
+                J("default@320x180.active.pick", "default", P("active", "pick")), J("default@320x180.after-menu", "default"),
+                J("default@320x180.hover.tag", "default", P("hover", "tag")),
             };
             var export = Export(ir, null, "{ \"captures\": [" + string.Join(", ", jobs) + "] }");
             var profile = Profile(new Vector2Int(320, 180), 0.5f);
@@ -551,11 +576,114 @@ namespace DesignUi.Editor.Tests
                 var pixels = shared.GetPixels32();
                 Assert.AreEqual(fresh.Length, pixels.Length, job.Name);
                 int differing = 0;
-                for (int i = 0; i < fresh.Length; i++) if (!fresh[i].Equals(pixels[i])) differing++;
-                Assert.AreEqual(0, differing, job.Name + ": the mounted screen's capture is a fresh mount's, pixel for pixel");
+                var where = new List<string>();
+                for (int i = 0; i < fresh.Length; i++)
+                    if (!fresh[i].Equals(pixels[i]) && differing++ < 5)
+                        where.Add("(" + i % shared.width + ", " + (shared.height - 1 - i / shared.width) + ") " + Hex(fresh[i]) + " vs " + Hex(pixels[i]));
+                Assert.AreEqual(0, differing, job.Name + ": the mounted screen's capture is a fresh mount's, pixel for pixel; first: " + string.Join(", ", where));
                 Assert.IsTrue(JToken.DeepEquals(Boxes(one), all[job.Name]), job.Name + ": the same boxes");
             }
             // "again" (nothing applied) after the press on the toggle: had the release clicked it, it would show checked
+        }
+
+        /// <summary>
+        /// A job that leaves an overlay open on the panel (a dropdown's menu, which a press opens in some Unity versions and
+        /// which stays open until a click elsewhere) makes the next job mount the screen again: it shows no overlay.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator CaptureAll_AnOverlayAJobLeavesOpen_IsGoneInTheNextJob()
+        {
+            string J(string name, string apply) => "{ \"name\": \"" + name + "\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [" + apply + "] }";
+            var export = Export(Small(BlackRoot(Box("top", "#222222").With("hover", ("background-color", "#16c2d5")))), null,
+                "{ \"captures\": [" + J("default@320x180", "") + ", " + J("default@320x180.hover.top", Pseudo("hover", "top")) + ", " + J("default@320x180.again", "") + "] }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outAll = TempDir();
+            var result = new CaptureResult();
+            var run = DesignCapture.CaptureAll(export, screen, profile, outAll, result);
+            bool opened = false;
+            try
+            {
+                while (run.MoveNext())
+                {
+                    yield return run.Current;
+                    if (opened || result.Captured.Count != 1) continue;
+                    // while the second job runs, something opens an overlay on the document, as a dropdown's menu would
+                    var doc = Resources.FindObjectsOfTypeAll<UnityEngine.UIElements.UIDocument>().FirstOrDefault(d => d.name == "DesignCapture" && d.rootVisualElement?.panel != null);
+                    Assert.IsNotNull(doc, "the run's mounted screen");
+                    var menu = new VisualElement { name = "menu" };
+                    menu.style.position = Position.Absolute;
+                    menu.style.left = 200;
+                    menu.style.top = 100;
+                    menu.style.width = 60;
+                    menu.style.height = 40;
+                    menu.style.backgroundColor = Color.red;
+                    doc.rootVisualElement.Add(menu);
+                    opened = true;
+                }
+            }
+            finally { (run as IDisposable)?.Dispose(); }
+            Assert.IsTrue(opened);
+            Assert.AreEqual(3, result.Captured.Count, string.Join("\n", result.NotCaptured.Select(n => n.Capture + ": " + n.Reason)));
+            var tex = new Texture2D(2, 2);
+            _objects.Add(tex);
+            Assert.IsTrue(tex.LoadImage(File.ReadAllBytes(Path.Combine(outAll, "default@320x180.again.png"))));
+            Assert.AreEqual("#000000", Hex(Pixel(tex, 230, 120)), "the next job shows the screen without the overlay");
+        }
+
+        /// <summary>
+        /// A list repeat's slots are cloned again whenever the ListView binds them again (after a scroll or a refresh): the
+        /// next job measures the elements the list shows now, as a fresh mount does, not the ones it showed before.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator CaptureAll_AListThatBindsItsSlotsAgainBetweenJobs_MeasuresItsNewElements()
+        {
+            var subject = Words("subject", "Konu");
+            subject.Bind = "subject";
+            var row = Node("row", "container", ("height", "20px"), ("flex-shrink", "0"), ("background-color", "#123456"))
+                .With("class:is-on", ("background-color", "#3ccf7a")).Add(subject);
+            var rows = Node("rows", "list", ("display", "flex"), ("flex-direction", "column"), ("height", "100px"), ("flex-shrink", "0"),
+                ("overflow-y", "auto"), ("gap", "8px")).Add(row);
+            rows.Repeat = new IrRepeat { Name = "mails", Mode = "list", Count = 2 };
+            string J(string name, string apply) => "{ \"name\": \"" + name + "\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [" + apply + "] }";
+            var export = Export(Small(Root(Box("top", "#222222"), rows)), "{ \"mails\": [ { \"subject\": \"Bir\" }, { \"subject\": \"İki\" } ] }",
+                "{ \"captures\": [" + J("default@320x180", "") + ", " + J("default@320x180.hover.top", Pseudo("hover", "top")) + ", " +
+                J("default@320x180.is-on.row", ClassApply("is-on", "row")) + "] }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outAll = TempDir();
+            var result = new CaptureResult();
+            var run = DesignCapture.CaptureAll(export, screen, profile, outAll, result);
+            bool refreshed = false;
+            try
+            {
+                while (run.MoveNext())
+                {
+                    yield return run.Current;
+                    if (refreshed || result.Captured.Count != 1) continue;
+                    // while the second job runs (the first one measured the list) the list binds its slots again (bindItem
+                    // clones the item anew); the third job puts a class on the item
+                    var doc = Resources.FindObjectsOfTypeAll<UnityEngine.UIElements.UIDocument>().FirstOrDefault(d => d.name == "DesignCapture" && d.rootVisualElement?.panel != null);
+                    Assert.IsNotNull(doc, "the run's mounted screen");
+                    var before = doc.rootVisualElement.Q("row");
+                    doc.rootVisualElement.Q<ListView>("rows").RefreshItems();
+                    Assert.AreNotSame(before, doc.rootVisualElement.Q("row"), "the slot holds a new item element");
+                    refreshed = true;
+                }
+            }
+            finally { (run as IDisposable)?.Dispose(); }
+            Assert.IsTrue(refreshed);
+            Assert.AreEqual(3, result.Captured.Count, string.Join("\n", result.NotCaptured.Select(n => n.Capture + ": " + n.Reason)));
+            // the class goes on the item the list shows now
+            var one = Request(export, screen, "default@320x180.is-on.row", 320, 180, CaptureApply.Class("is-on", "row"));
+            yield return DesignCapture.Run(one, profile);
+            var shared = (JObject)JObject.Parse(File.ReadAllText(Path.Combine(outAll, BoxesWriter.FileName)))["default@320x180.is-on.row"];
+            Assert.IsTrue(JToken.DeepEquals(Boxes(one), shared), "the boxes of a fresh mount:\n" + Boxes(one)["elements"]?["row"] + "\nvs\n" + shared["elements"]?["row"]);
+            var tex = new Texture2D(2, 2);
+            _objects.Add(tex);
+            Assert.IsTrue(tex.LoadImage(File.ReadAllBytes(Path.Combine(outAll, "default@320x180.is-on.row.png"))));
+            var y = (int)(double)shared["elements"]["row"]["y"] + 2;
+            Assert.AreEqual(Hex(Pixel(Png(one), 90, y)), Hex(Pixel(tex, 90, y)), "the item shows the class, as on a fresh mount");
         }
 
         [UnityTest]

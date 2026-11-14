@@ -57,7 +57,10 @@ namespace DesignUi.Editor
     /// Frames: 20 editor updates after mounting, 5 after each change and pointer event, 2 after each animation sample.
     /// <para><see cref="CaptureAll"/> mounts a viewport's screen once and moves it from job to job, as the golden capture moves
     /// its page (classes and states off and on, the pointer and focus moved, a press released off the element so no click
-    /// happens, disabled and checked back to the markup's values, scroll offsets back to the mount's); a job's capture is the
+    /// happens, disabled and checked back to the markup's values, scroll offsets back to the mount's, descendants made to
+    /// ignore the pointer picking again once the pointer moves on; a setup change takes the pointer and focus off first, as
+    /// a fresh mount has none while its setup is applied; an element a list cloned anew is looked up again; a job that
+    /// leaves an overlay open, such as a dropdown's menu, makes the next job mount the screen again); a job's capture is the
     /// one <see cref="Run"/> makes on a freshly mounted screen. PNGs are encoded off the main thread.</para>
     /// </summary>
     public static class DesignCapture
@@ -213,7 +216,8 @@ namespace DesignUi.Editor
             }
             pngs.Add((req.CaptureName, session.Write(req.CaptureName, true)));
             req.Inspect?.Invoke(session.Root);
-            if (dirty) shared.Drop();
+            // an overlay the job opened (a dropdown's menu) stays open: the next job mounts the screen again
+            if (dirty || session.Overlaid()) shared.Drop();
         }
 
         /// <summary>How many jobs of a series <see cref="RunSeries"/> wrote.</summary>
@@ -696,6 +700,10 @@ namespace DesignUi.Editor
             VisualElement m_PointerTarget, m_Focus;
             Vector2? m_PointerAt;
             bool m_Pressed;
+            /// <summary>Descendants of the pointer target made to ignore the pointer (<see cref="Untouchable"/>), restored when it moves on.</summary>
+            readonly List<VisualElement> m_Untouched = new List<VisualElement>();
+            /// <summary>The panel's and the document's top elements after mounting: one added later is an overlay (an open dropdown menu).</summary>
+            readonly HashSet<VisualElement> m_Tops = new HashSet<VisualElement>();
 
             public Session(CaptureRequest req, DesignUiProfile profile, Screen screen = null)
             {
@@ -731,10 +739,55 @@ namespace DesignUi.Editor
 
             VisualElement Named(string id)
             {
-                if (m_Named.TryGetValue(id, out var e)) return e;
+                if (m_Named.TryGetValue(id, out var e))
+                {
+                    if (e == null || e.panel != null) return e;
+                    // an element left the tree (a list bound its slots again and cloned new items): every lookup is stale
+                    m_Named.Clear();
+                }
                 e = BoxesWriter.Find(DocRoot, id);
                 m_Named[id] = e;
                 return e;
+            }
+
+            /// <summary>
+            /// Whether the panel shows an element it did not have after mounting (a dropdown menu a press opened, which stays
+            /// open): the screen is not the one a fresh mount shows, so the next job mounts it again.
+            /// </summary>
+            public bool Overlaid()
+            {
+                var tree = Panel?.visualTree;
+                if (tree != null) for (int i = 0; i < tree.hierarchy.childCount; i++) if (!m_Tops.Contains(tree.hierarchy[i])) return true;
+                for (int i = 0; i < DocRoot.hierarchy.childCount; i++) if (!m_Tops.Contains(DocRoot.hierarchy[i])) return true;
+                return false;
+            }
+
+            /// <summary>The previous pointer target's descendants take the pointer again.</summary>
+            void RestorePicking()
+            {
+                foreach (var e in m_Untouched) e.pickingMode = PickingMode.Position;
+                m_Untouched.Clear();
+            }
+
+            /// <summary>
+            /// Takes the pointer off the screen (released off it: no click, so a toggle keeps its value) and focus off its
+            /// element, as on a freshly mounted screen; the pointer target's descendants take the pointer again.
+            /// </summary>
+            IEnumerable<object> Release()
+            {
+                var away = new Vector2(-10000f, -10000f);
+                SendPointer(Panel, EventType.MouseMove, away);
+                if (m_Pressed) SendPointer(Panel, EventType.MouseUp, away);
+                m_Pressed = Mount.Pressed = false;
+                m_PointerAt = Mount.PointerAt = null;
+                m_PointerTarget = null;
+                RestorePicking();
+                if (m_Focus != null)
+                {
+                    m_Focus.Blur();
+                    m_Focus = null;
+                }
+                for (int i = 0; i < ChangeFrames; i++) yield return null;
             }
 
             /// <summary>Mounts the screen with its sample data, in <paramref name="state"/>, with the player's reduced motion as given.</summary>
@@ -767,6 +820,8 @@ namespace DesignUi.Editor
                 Panel = Mount.Panel;
                 m_Scale = PanelScale(Panel, m_Req.Viewport);
                 DocRoot.Query<ScrollView>().ForEach(v => m_Scroll.Add((v, v.scrollOffset)));
+                for (int i = 0; i < Panel.visualTree.hierarchy.childCount; i++) m_Tops.Add(Panel.visualTree.hierarchy[i]);
+                for (int i = 0; i < DocRoot.hierarchy.childCount; i++) m_Tops.Add(DocRoot.hierarchy[i]);
             }
 
             static string Label(CaptureApply a) => a.Kind + " " + (a.Absent ? "!" : "") + a.Name + " " + a.ElementId;
@@ -783,24 +838,21 @@ namespace DesignUi.Editor
                 target = target ?? new List<CaptureApply>();
                 var now = new HashSet<string>(m_Applied.Select(Label));
                 var next = new HashSet<string>(target.Select(Label));
-                bool changed = false;
+                var off = m_Applied.Where(a => !next.Contains(Label(a)) && !IsPointer(a) && !IsFocus(a)).ToList();
+                var on = target.Where(a => !now.Contains(Label(a)) && !IsPointer(a) && !IsFocus(a)).ToList();
+                bool changed = state != m_State || off.Count > 0 || on.Count > 0;
+                // a fresh mount gets its setup before any pointer or focus: a kept screen whose setup changes lets go of
+                // them first, so the pointer then finds its target where the new setup puts it
+                if (Shared && changed && (m_PointerTarget != null || m_Pressed || m_Focus != null))
+                    foreach (var f in Release()) yield return f;
                 if (state != m_State)
                 {
                     if (m_State != DefaultState) Root.RemoveFromClassList(ScreenBuilder.StateClassPrefix + m_State);
                     if (state != DefaultState) Root.AddToClassList(ScreenBuilder.StateClassPrefix + state);
                     m_State = state;
-                    changed = true;
                 }
-                foreach (var a in m_Applied.Where(a => !next.Contains(Label(a)) && !IsPointer(a) && !IsFocus(a)))
-                {
-                    Set(a, false);
-                    changed = true;
-                }
-                foreach (var a in target.Where(a => !now.Contains(Label(a)) && !IsPointer(a) && !IsFocus(a)))
-                {
-                    Set(a, true);
-                    changed = true;
-                }
+                foreach (var a in off) Set(a, false);
+                foreach (var a in on) Set(a, true);
                 if (changed)
                 {
                     m_Filler.SyncMirrors();
@@ -832,6 +884,7 @@ namespace DesignUi.Editor
                 }
                 if (pointerTarget != m_PointerTarget)
                 {
+                    RestorePicking(); // the previous target's descendants take the pointer again
                     if (pointerTarget == null)
                     {
                         SendPointer(Panel, EventType.MouseMove, new Vector2(-10000f, -10000f));
@@ -840,7 +893,7 @@ namespace DesignUi.Editor
                     else
                     {
                         var at = PointOn(Panel, pointerTarget);
-                        if (at == null && Untouchable(pointerTarget, out var covering))
+                        if (at == null && Untouchable(pointerTarget, m_Untouched, out var covering))
                         {
                             // children cover every point: they stop taking the pointer, so only the element and its ancestors hover, as in the golden
                             at = PointOn(Panel, pointerTarget);
@@ -989,9 +1042,9 @@ namespace DesignUi.Editor
 
         /// <summary>
         /// Makes the element's pickable descendants ignore the pointer (picking mode is not drawn) when they cover every
-        /// point of it; returns whether any did and names them.
+        /// point of it; adds them to <paramref name="changed"/> (to restore later), returns whether any did and names them.
         /// </summary>
-        static bool Untouchable(VisualElement target, out List<string> covering)
+        static bool Untouchable(VisualElement target, List<VisualElement> changed, out List<string> covering)
         {
             covering = new List<string>();
             var stack = new Stack<VisualElement>();
@@ -1002,6 +1055,7 @@ namespace DesignUi.Editor
                 if (e.pickingMode == PickingMode.Position)
                 {
                     e.pickingMode = PickingMode.Ignore;
+                    changed.Add(e);
                     covering.Add(string.IsNullOrEmpty(e.name) ? e.GetType().Name : e.name);
                 }
                 for (int i = 0; i < e.hierarchy.childCount; i++) stack.Push(e.hierarchy[i]);
