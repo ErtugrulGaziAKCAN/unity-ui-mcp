@@ -335,6 +335,30 @@ namespace DesignUi.Editor.Tests
             }
         }
 
+        /// <summary>The bridge relays the refusal of an import or kit sync while the Editor is in Play mode.</summary>
+        [UnityTest]
+        public IEnumerator ImportAndKitSync_InPlayMode_AnswerExitPlayModeFirst()
+        {
+            var was = DesignUiOps.InPlayMode;
+            DesignUiOps.InPlayMode = () => true;
+            DesignUiBridge.ImportHandler = DesignUiOps.Import;
+            DesignUiBridge.KitSyncHandler = DesignUiOps.KitSync;
+            try
+            {
+                var import = Send("POST", "/import", Token(), "{\"profile\":\"Assets/P.asset\",\"exportDir\":\"/e\",\"discardManualEdits\":false}");
+                yield return Wait(import);
+                var sync = Send("POST", "/kit-sync", Token(), "{\"profile\":\"Assets/P.asset\",\"kitDir\":\"/k\"}");
+                yield return Wait(sync);
+                foreach (var t in new[] { import, sync })
+                {
+                    Assert.AreEqual(200, t.Result.status);
+                    Assert.AreEqual(1, t.Result.body.Value<int>("code"));
+                    StringAssert.StartsWith("Exit Play mode first", t.Result.body["errors"][0].Value<string>());
+                }
+            }
+            finally { DesignUiOps.InPlayMode = was; }
+        }
+
         [Test]
         public void Settings_DisableStopsAndEnableStarts()
         {

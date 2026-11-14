@@ -52,6 +52,15 @@ namespace DesignUi.Editor
         /// <summary>Whether an import failed only because generated files were edited by hand (it can be retried with discard).</summary>
         internal static bool HasManualEdits(OpResult r) => r.Code != 0 && (r.Log ?? "").Contains(ManualEditPrefix);
 
+        /// <summary>Whether the Editor is in (or entering) Play mode; tests replace it.</summary>
+        internal static Func<bool> InPlayMode = () => EditorApplication.isPlayingOrWillChangePlaymode;
+
+        /// <summary>
+        /// The refusal of an import or kit sync in Play mode: what they add to the font twins then would be taken back when Play
+        /// stops (<see cref="TwinPlayGuard"/>), so the twins would lose the characters an import pre-adds.
+        /// </summary>
+        internal const string PlayModeError = "Exit Play mode first: an import or kit sync in Play mode would lose what it adds to the font twins (Play's changes to them are taken back when Play stops).";
+
         /// <summary>
         /// Font sync into the kit folder (<c>KitSync.Run</c>) with the profile's resolver (<see cref="FontMap.ResolverFor"/>:
         /// its font resolver asset, else its per-locale fonts over TMP Settings). <paramref name="profilePath"/> is the profile's asset path (Assets/…); a relative
@@ -60,6 +69,7 @@ namespace DesignUi.Editor
         /// </summary>
         public static OpResult KitSync(string profilePath, string kitDir)
         {
+            if (InPlayMode()) return Failed(PlayModeError);
             var profile = string.IsNullOrEmpty(profilePath) ? null : AssetDatabase.LoadAssetAtPath<DesignUiProfile>(profilePath);
             if (profile == null) return Failed("No DesignUiProfile at '" + profilePath + "'.");
             KitSyncResult r;
@@ -101,6 +111,7 @@ namespace DesignUi.Editor
         /// </summary>
         public static OpResult Import(string profilePath, string exportDir, bool discardManualEdits)
         {
+            if (InPlayMode()) return Failed(PlayModeError);
             var profile = string.IsNullOrEmpty(profilePath) ? null : AssetDatabase.LoadAssetAtPath<DesignUiProfile>(profilePath);
             if (profile == null) return Failed("No DesignUiProfile at '" + profilePath + "'.");
             if (string.IsNullOrEmpty(exportDir)) return Failed("No export folder.");
