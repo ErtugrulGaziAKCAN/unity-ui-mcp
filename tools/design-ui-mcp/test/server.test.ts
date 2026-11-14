@@ -957,6 +957,47 @@ describe("a canvas folder with several artboards", () => {
   }, 120_000);
 });
 
+describe("version drift between this server and the Unity package", () => {
+  it("refuses an import before Unity when the package's major version or its IR version differs; warns on a minor drift", async () => {
+    const p = tempProject({ prefer: "editor" });
+    p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    const client = await serverFor(p.dir, stubPipeline());
+
+    bridge.statusVersion = "1.0.0"; bridge.statusIrVersion = 1;
+    const major = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(major.isError).toBe(true);
+    expect(major.text).toMatch(/^Import of clean\.screen not run: the Unity package com\.ertugrulgaziakcan\.design-ui is 1\.0\.0, this MCP server 0\.1\.0/);
+    expect(bridge.requests.some((q) => q.path === "/import")).toBe(false);
+
+    bridge.statusVersion = "0.1.0"; bridge.statusIrVersion = 2;
+    const ir = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(ir.isError).toBe(true);
+    expect(ir.text).toMatch(/reads IR version 2, the exporter writes IR version 1/);
+    expect(bridge.requests.some((q) => q.path === "/import")).toBe(false);
+
+    bridge.statusVersion = "0.2.0"; bridge.statusIrVersion = 1;
+    const minor = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(minor.isError, minor.text).toBeFalsy();
+    expect(minor.text).toMatch(/Warning: the Unity package com\.ertugrulgaziakcan\.design-ui is 0\.2\.0, this MCP server 0\.1\.0/);
+    expect(bridge.requests.some((q) => q.path === "/import")).toBe(true);
+    expect((await call(client, "design_ui_status")).text).toMatch(/package version: 0\.2\.0 \(server 0\.1\.0, IR 1\): minor drift/);
+  });
+
+  it("says nothing when the versions match, or when an older bridge does not report them", async () => {
+    const p = tempProject({ prefer: "editor" });
+    p.addScreen("clean-screen", "clean-screen");
+    bridge = await startStubBridge(p.dir);
+    const client = await serverFor(p.dir, stubPipeline());
+    const r = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(r.isError, r.text).toBeFalsy();
+    expect(r.text).not.toMatch(/Warning: the Unity package/);
+    bridge.statusVersion = "0.1.0"; bridge.statusIrVersion = 1;
+    const s = await call(client, "design_ui_status");
+    expect(s.text).toMatch(/package version: 0\.1\.0 \(server 0\.1\.0, IR 1\): matches/);
+  });
+});
+
 describe("design_ui_kit_sync", () => {
   it("never writes into the unity-ui-mcp clone's own design-kit: it says how to move the kit, and status warns", async () => {
     const p = tempProject({ prefer: "editor" });

@@ -20,6 +20,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Changed
 
+- Imports compare the Unity package with the MCP server first: the bridge's `/status` reports the package version and
+  the IR version it reads; another major version or IR version stops the import before Unity is called (isError, with
+  what to update), another minor version is a warning, and `design_ui_status` shows it. The package's IR reader names
+  an export of another IR version as such ("made by a newer design-export … update the package").
+
 - Setup copies the design kit into the project (`<designRoot>/design-kit`) and points `kitDir` there; kit sync never
   writes into the clone's tracked `design-kit` (it refuses, and status warns, for a config of an earlier setup, with the
   copy to make).

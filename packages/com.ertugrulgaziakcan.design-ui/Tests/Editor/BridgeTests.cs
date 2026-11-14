@@ -132,6 +132,10 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(200, t.Result.status);
             Assert.AreEqual(Path.GetFullPath(Root), Path.GetFullPath(t.Result.body.Value<string>("projectPath")));
             Assert.IsFalse(t.Result.body.Value<bool>("busy"));
+            // what the MCP server compares with its own before an import: the package version and the IR version it reads
+            StringAssert.IsMatch(@"^\d+\.\d+\.\d+", t.Result.body.Value<string>("version"));
+            Assert.AreEqual(UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(DesignUiBridge).Assembly)?.version, t.Result.body.Value<string>("version"));
+            Assert.AreEqual(IrReader.SupportedVersion, t.Result.body.Value<int>("irVersion"));
         }
 
         [UnityTest]

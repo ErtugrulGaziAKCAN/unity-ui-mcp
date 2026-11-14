@@ -83,6 +83,9 @@ export interface StubBridge {
   downPolls: number;
   /** `lastCompile` of GET /status. */
   lastCompile: unknown;
+  /** `version` and `irVersion` of GET /status (omitted while undefined, like an older bridge). */
+  statusVersion?: string;
+  statusIrVersion?: number;
   /** `scriptsFailed` of GET /status (omitted while undefined, like an older bridge). */
   scriptsFailed: boolean | undefined;
   /**
@@ -156,6 +159,8 @@ export async function startStubBridge(projectDir: string, opts: { tokenInFile?: 
         return send(200, {
           projectPath: opts.projectPath ?? projectDir, isCompiling: compiling, compiling, lastCompile: compiling ? null : state.lastCompile, busy: false, last: null,
           ...(state.scriptsFailed === undefined ? {} : { scriptsFailed: compiling ? false : state.scriptsFailed }),
+          ...(state.statusVersion === undefined ? {} : { version: state.statusVersion }),
+          ...(state.statusIrVersion === undefined ? {} : { irVersion: state.statusIrVersion }),
         });
       }
       if ((req.url === "/import" || req.url === "/kit-sync") && req.method === "POST") {

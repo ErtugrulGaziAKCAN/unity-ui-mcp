@@ -33,9 +33,17 @@ namespace DesignUi.Editor
             catch (JsonException e) { throw new IrFormatException("IR file is not valid JSON: " + e.Message, e); }
 
             var version = obj["irVersion"];
-            if (version == null || version.Type != JTokenType.Integer || version.Value<int>() != SupportedVersion)
-                throw new IrFormatException("irVersion " + (version == null ? "missing" : version.ToString()) +
-                                            " is not supported (expected " + SupportedVersion + ")");
+            if (version == null || version.Type != JTokenType.Integer)
+                throw new IrFormatException("irVersion " + (version == null ? "missing" : version.ToString()) + " is not supported (expected " + SupportedVersion + ")");
+            // the IR version is the schema's major version: another one is another format, never read field by field
+            int major = version.Value<int>();
+            if (major > SupportedVersion)
+                throw new IrFormatException("the export is IR version " + major + ", made by a newer design-export; this com.ertugrulgaziakcan.design-ui " +
+                                            "package reads IR version " + SupportedVersion + ": update the package to the version of the MCP server " +
+                                            "(scripts/setup.sh of the unity-ui-mcp clone), then import again");
+            if (major != SupportedVersion)
+                throw new IrFormatException("the export is IR version " + major + ", made by an older design-export; this com.ertugrulgaziakcan.design-ui " +
+                                            "package reads IR version " + SupportedVersion + ": export the design again with the current MCP server");
 
             IrScreen screen;
             try { screen = obj.ToObject<IrScreen>(JsonSerializer.Create(new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })); }

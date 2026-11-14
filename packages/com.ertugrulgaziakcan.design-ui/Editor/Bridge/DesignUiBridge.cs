@@ -646,6 +646,9 @@ namespace DesignUi.Editor
                 var body = new JObject
                 {
                     ["projectPath"] = s_ProjectPath,
+                    // the MCP server compares these with its own before an import (version drift)
+                    ["version"] = s_Version,
+                    ["irVersion"] = IrReader.SupportedVersion,
                     ["isCompiling"] = s_IsCompiling,
                     ["compiling"] = s_IsCompiling || s_PendingCompile != 0,
                     ["scriptsFailed"] = s_ScriptsFailed,

@@ -137,7 +137,10 @@ export interface BridgeStatus {
   /** The Unity project this server serves. */
   projectPath: string;
   port?: number;
+  /** The Unity package's version (GET /status; bridge.json of an older bridge). */
   version?: string;
+  /** The IR version the Unity package reads (GET /status; absent from an older bridge). */
+  irVersion?: number;
   isCompiling?: boolean;
   busy?: boolean;
   last?: unknown;
@@ -158,6 +161,8 @@ export async function bridgeStatus(projectDir: string, timeoutMs = 1500): Promis
     const s = await bridgeRequest(info, "GET", "/status", undefined, timeoutMs);
     return {
       ...base, bridge: "connected", isCompiling: !!s?.isCompiling, busy: !!s?.busy, last: s?.last ?? null,
+      ...(typeof s?.version === "string" ? { version: s.version } : {}),
+      ...(typeof s?.irVersion === "number" ? { irVersion: s.irVersion } : {}),
       detail: `Unity Editor bridge listening on 127.0.0.1:${info.port}${s?.isCompiling ? " (compiling)" : ""}`,
     };
   } catch (e) {

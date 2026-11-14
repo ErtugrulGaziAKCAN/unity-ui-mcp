@@ -7,6 +7,8 @@ import type { ServerContext } from "../context.js";
 import { requireConfig } from "../context.js";
 import { designPath, findEntry, resolveScreen } from "../design.js";
 import { mb, screenCache, screenCaches } from "../cache.js";
+import { versionDrift } from "../drift.js";
+import { IR_VERSION } from "../exporter.js";
 import { cloneKitMessage, isCloneKit } from "../kit-location.js";
 import { chromiumSandbox } from "../exporter.js";
 import { OLD_PACKAGE_NAME, oldPackageId, PACKAGE_NAME } from "../package-stamp.js";
@@ -138,6 +140,13 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
         ...(cfg && isCloneKit(cfg.kitDir) ? [`warning: ${cloneKitMessage(cfg.kitDir, cfg.designRoot, cfg.configPath)}`] : []),
         ...(oldId ? [`old package id: ${OLD_PACKAGE_NAME} in ${old.join(", ")}; ${oldId.fix}`] : []),
         ...(unity ? [`Unity bridge: ${unity.bridge} — ${unity.detail}`] : []),
+        ...(unity?.bridge === "connected" && unity.version
+          ? [(() => {
+            const d = versionDrift(unity.version, unity.irVersion);
+            const head = `package version: ${unity.version} (server ${VERSION}, IR ${unity.irVersion ?? "not reported"})`;
+            return d.level === "ok" ? `${head}: matches` : `${head}: ${d.level === "error" ? "imports refused" : "minor drift"}: ${d.message}`;
+          })()]
+          : []),
         `browser: ${ctx.runtime.browserWarm ? "warm" : "not started (starts on the first lint)"}` +
           (sandbox ? `, ${sandbox.enabled ? "with Chromium's sandbox" : `without Chromium's sandbox (${sandbox.reason})`}` : ""),
         ...(cache ? [`bookkeeping: ${mb(cache.total)} of the ${mb(cache.budget)} budget in ${caches.length} screen folder${caches.length === 1 ? "" : "s"}` +
@@ -149,7 +158,8 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
       return toolResult(lines.join("\n"), {
         server: "design-ui", version: VERSION, project: ctx.projectDir, config, package: { id: PACKAGE_NAME, oldId }, tools,
         pipeline: { export: !!ctx.pipeline.exportScreen, compare: !!ctx.pipeline.compareScreen, capture: !!ctx.pipeline.unityCapture },
-        unity, browser: { warm: ctx.runtime.browserWarm, launches: ctx.runtime.browserLaunches, sandbox }, cache, timings: t.done(),
+        unity, versionDrift: unity?.bridge === "connected" ? versionDrift(unity.version, unity.irVersion) : null, irVersion: IR_VERSION,
+        browser: { warm: ctx.runtime.browserWarm, launches: ctx.runtime.browserLaunches, sandbox }, cache, timings: t.done(),
       });
     });
   });

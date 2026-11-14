@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { bridgeStatus } from "../bridge.js";
 import { requireConfig, withProgress, type ServerContext } from "../context.js";
+import { versionDrift } from "../drift.js";
 import { designPath, findEntry, folderScreens, mixedScreens, resolveScreen, sha256, sourceSha } from "../design.js";
 import { packageStamp } from "../package-stamp.js";
 import { MISSING } from "../pipeline.js";
@@ -35,7 +38,18 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
     return guarded(t, async () => {
       const cfg = requireConfig(ctx);
       const ref = resolveScreen(design, cfg.designRoot);
-      return afterRun(cfg, await whileBusy(ref.dir, "import", async () => {
+      // the package the open Editor runs must read what this server exports: another major or IR version stops here
+      let drift: ReturnType<typeof versionDrift> = { level: "ok", message: null };
+      if (cfg.unityRunner.prefer === "editor") {
+        const st = await t.async("bridge", () => bridgeStatus(cfg.projectDir));
+        if (st.bridge === "connected") drift = versionDrift(st.version, st.irVersion);
+        if (drift.level === "error") {
+          const label = ref.entry ? designPath(ref.entry, cfg.designRoot) : ref.screen;
+          return toolResult(`Import of ${label} not run: ${drift.message}. Nothing was exported or written.`,
+            { screen: ref.screen, exported: false, unityCalled: false, versionDrift: drift, timings: t.done() }, true);
+        }
+      }
+      return afterRun(cfg, withWarning(drift.message, await whileBusy(ref.dir, "import", async () => {
         const { dir } = ref;
         // exactly the page a path names; a folder argument takes the folder's only page
         const entry = ref.entry ?? findEntry(dir, cfg.designRoot);
@@ -179,9 +193,19 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         return toolResult(withIssues(`Imported ${named} into Unity via ${run.via}${what}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${verifyArg}" }.${hiddenLine}`, run, false), {
           ...base, hidden, unityTimings: run.timings, timings: t.done(),
         });
-      }));
+      })));
     });
   });
+}
+
+/** Appends a version drift warning to a tool's answer (its first text and `versionWarning` in the data). */
+function withWarning(message: string | null, result: CallToolResult): CallToolResult {
+  if (!message) return result;
+  const line = `Warning: ${message}.`;
+  const content = result.content.map((c, i) => (i === 0 && c.type === "text" ? { ...c, text: `${c.text}\n${line}` } : c));
+  const data = result.structuredContent ? { ...result.structuredContent, versionWarning: message } : undefined;
+  if (data && content[1]?.type === "text") content[1] = { ...content[1], text: JSON.stringify(data, null, 2) };
+  return { ...result, content, ...(data ? { structuredContent: data } : {}) };
 }
 
 /** The SHA-256 of a file's bytes, or null when it cannot be read. */

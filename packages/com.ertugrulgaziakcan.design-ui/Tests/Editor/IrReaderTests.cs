@@ -125,8 +125,10 @@ namespace DesignUi.Editor.Tests
             var path = WriteTemp("{\"irVersion\":2,\"root\":{}}");
             try
             {
+                // an export of a newer exporter: the message says which side to update, never a field-level schema error
                 var e = Assert.Throws<IrFormatException>(() => IrReader.Read(path));
-                StringAssert.Contains("irVersion", e.Message);
+                StringAssert.StartsWith("the export is IR version 2, made by a newer design-export; this com.ertugrulgaziakcan.design-ui package reads IR version 1", e.Message);
+                StringAssert.Contains("update the package", e.Message);
             }
             finally { File.Delete(path); }
         }

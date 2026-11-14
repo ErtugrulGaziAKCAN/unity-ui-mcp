@@ -12,3 +12,4 @@ export { compareScreen as runCompare, readThresholds, summarizeIssues, type Scre
 export { writeReport, writeVerdict } from "../../design-export/src/compare/report.js";
 export { writeReportPictures, type ReportPictures } from "../../design-export/src/compare/pictures.js";
 export { chromiumSandbox, type SandboxState } from "../../design-export/src/browser.js";
+export { IR_VERSION } from "../../design-export/src/ir/types.js";

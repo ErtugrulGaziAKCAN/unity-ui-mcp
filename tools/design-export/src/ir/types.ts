@@ -111,3 +111,6 @@ export interface IrScreen {
   fonts: { locale: string; family: string; file: string; sha256: string; weight: number }[];
   root: IrNode;
 }
+
+/** The IR's schema version (its major version: another one is another format); the Unity package's IrReader reads this one. */
+export const IR_VERSION = 1 as const;
