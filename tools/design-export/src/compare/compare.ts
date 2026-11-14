@@ -107,12 +107,20 @@ export interface Thresholds {
    * ink; measured, docs/findings/text-ink.md section 8), at least 1 + `textInkCoverage`. The colour check is unchanged.
    */
   textInkShadowHigh: number;
+  /**
+   * Element SSIM limit of an element an animation sample shows rotated off the axes (not a multiple of 90°), when every
+   * other check of the element passes: Chromium draws an element under a running transform animation from its
+   * composited layer, resampled, UI Toolkit the rotated mesh with its own edge (measured, docs/findings/animation.md);
+   * between 0.97 and `ssimElement`.
+   */
+  ssimRotated: number;
 }
 
 /** `tools/design-export/fidelity-thresholds.json`, the only place the thresholds live (keys starting with `$` are comments). */
 export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.json", import.meta.url));
 const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage",
-  "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater", "textInkSmallPx", "textInkDeltaEFirstSmall", "textInkMedianToleranceSmall", "textInkShadowHigh"] as const;
+  "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater", "textInkSmallPx", "textInkDeltaEFirstSmall", "textInkMedianToleranceSmall", "textInkShadowHigh",
+  "ssimRotated"] as const;
 /** No measured policy may accept an element SSIM below this. */
 export const SSIM_FLOOR = 0.97;
 
@@ -146,6 +154,7 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
   if ((raw.textInkMedianToleranceSmall as number) < (raw.textInkMedianTolerance as number)) throw new Error(`${file}: "textInkMedianToleranceSmall" must be at least textInkMedianTolerance`);
   if ((raw.textInkDeltaEFirstSmall as number) < (raw.textInkDeltaE as number)) throw new Error(`${file}: "textInkDeltaEFirstSmall" must be at least textInkDeltaE`);
   if ((raw.textInkShadowHigh as number) < 1 + (raw.textInkCoverage as number) - 1e-9) throw new Error(`${file}: "textInkShadowHigh" must be at least 1 + textInkCoverage`);
+  if (!inRange(raw.ssimRotated as number)) throw new Error(`${file}: "ssimRotated" must lie between ${SSIM_FLOOR} and ssimElement`);
   return {
     ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater" | "textInkBandSmall">),
     textInkBandSmall: [bandSmall[0], bandSmall[1]],
@@ -157,12 +166,14 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
 
 /**
  * The measured lower element SSIM limit an element may meet when all its other checks pass: `ssimPicture` for a scaled
- * raster picture, else the `ssimElementSmall` limit of its region's area; null when only `ssimElement` applies.
+ * raster picture, `ssimRotated` for an element an animation sample shows rotated off the axes, else the
+ * `ssimElementSmall` limit of its region's area (the lowest that applies); null when only `ssimElement` applies.
  */
-export function relaxedSsimLimit(t: Thresholds, areaPx2: number, picture: boolean): { limit: number; why: string } | null {
+export function relaxedSsimLimit(t: Thresholds, areaPx2: number, picture: boolean, rotated = false): { limit: number; why: string } | null {
   const small = t.ssimElementSmall.find(([area]) => areaPx2 < area);
   const options = [
     ...(picture ? [{ limit: t.ssimPicture, why: "a raster picture drawn scaled" }] : []),
+    ...(rotated ? [{ limit: t.ssimRotated, why: "an element an animation sample shows rotated off the axes" }] : []),
     ...(small ? [{ limit: small[1], why: `an element under ${small[0]} device px²` }] : []),
   ].filter((o) => o.limit < t.ssimElement);
   return options.length ? options.reduce((a, b) => (b.limit < a.limit ? b : a)) : null;
@@ -746,7 +757,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const otherIssue = new Set(issues.filter((i) => i.kind !== "ssim").map((i) => i.id));
     for (const l of lowSsim) {
       const row = rowOf.get(l.id)!;
-      const relaxed = relaxedSsimLimit(t, l.region.w * l.region.h, !!ctx.pictures?.has(l.id));
+      const relaxed = relaxedSsimLimit(t, l.region.w * l.region.h, !!ctx.pictures?.has(l.id), !!ctx.rotated?.has(l.id));
       if (relaxed && !otherIssue.has(l.id) && l.best >= relaxed.limit - EPS) { row.ssimLimit = relaxed.limit; continue; }
       const why = relaxed ? (otherIssue.has(l.id) ? `; the limit ${relaxed.limit} for ${relaxed.why} needs its other checks to pass` : `; ${relaxed.limit} for ${relaxed.why}`) : "";
       issue(l.id, "ssim", `element SSIM ${l.s0.toFixed(5)} (${row.ssimShifted!.toFixed(5)} with offsets up to 1 px) over the ${l.carriesText ? "box with its text lines copied from the design" : "box"}${l.shadow ? " and baked shadow" : ""} (limit ${t.ssimElement}${why})`, l.region);

@@ -423,6 +423,25 @@ describe("captures", () => {
     } finally { await d1.close(); }
   });
 
+  it("records each element's rotation on the screen (own and ancestors' rotate and transform), at animation samples too", async () => {
+    const d0 = await openDesign(fx("rotation.html"), kit, [2560, 1440], browser);
+    let b: IrBuild;
+    try { b = await buildIr(d0, await collectSnapshot(d0.page, d0.cdp, kit), kit, tmp(), fx("rotation.html")); } finally { await d0.close(); }
+    const jobs = buildMatrix(b.ir).filter((j) => j.viewport[0] === 2560 && (!j.anim || j.anim.time === 250));
+    const dir = tmp();
+    const r = await captureMatrix(fx("rotation.html"), kit, b.ir, b.elements, dir, { browser, jobs });
+    const still = r.boxes["default@2560x1440"].elements;
+    expect(validateBoxes(r.boxes["default@2560x1440"])).toEqual([]);
+    expect(still.plain.rotation).toBeUndefined();
+    expect(still.tilt.rotation).toBeCloseTo(10, 4);
+    expect(still.wrap.rotation).toBeCloseTo(-30, 4);
+    expect(still.inner.rotation).toBeCloseTo(-30, 4);
+    expect(still.quarter.rotation).toBeCloseTo(90, 4);
+    expect(still.spin.rotation).toBeCloseTo(90, 4); // static captures show an animation's end
+    const sample = Object.values(r.boxes).find((x) => x.capture.includes(".anim.spin."))!;
+    expect(sample.elements.spin.rotation).toBeCloseTo(22.5, 4);
+  });
+
   it("refuses an element map that does not fit the page, and a page at another viewport", async () => {
     const d = await openDesign(fx("screen.html"), kit, [2560, 1440], browser);
     try {

@@ -21,7 +21,10 @@ const T: Thresholds = {
   textInkFullPx: 14, textInkDeltaESmall: [[12, 5], [9, 10], [0, 14]], textInkMedianTolerance: 0.2, ssimElementSmall: [], ssimPicture: 0.99,
   textInkDeltaELater: [], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
   textInkSmallPx: 0, textInkDeltaEFirstSmall: 3, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.2, textInkShadowHigh: 1.15,
+  ssimRotated: 0.99,
 };
+/** The measured element SSIM limit of rotated animation samples (fidelity-thresholds.json, docs/findings/animation.md). */
+const ROTATED = 0.975;
 const tmpDirs: string[] = [];
 const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), "compare-")); tmpDirs.push(d); return d; };
 afterAll(() => { for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });
@@ -599,6 +602,29 @@ describe("compareCapture: fix round checks", () => {
     expect(compareCapture(g, u, [], t).issues).toEqual([expect.objectContaining({ id: "pic", kind: "ssim" })]);
   });
 
+  it("lets an element an animation sample shows rotated off the axes meet ssimRotated only when its other checks pass", () => {
+    const mk = (rim: Rgb, inner: Rgb) => {
+      const png = canvas(320, 192, [30, 30, 30]);
+      fill(png, { x: 64, y: 32, w: 128, h: 128 }, rim);
+      fill(png, { x: 66, y: 34, w: 124, h: 124 }, inner);
+      return { png, boxes: { capture: "c", viewport: [320, 192] as [number, number], scale: 1, external: [], elements: { root: el(0, 0, 320, 192), dot: el(64, 32, 128, 128) } } };
+    };
+    // the design's rim is softer (Chromium resamples a layer under a running transform animation)
+    const g = mk([70, 110, 120], [22, 194, 213]), u = mk([50, 90, 100], [22, 194, 213]);
+    const row = compareCapture(g, u, [], T).elements.find((e) => e.id === "dot")!;
+    const best = Math.max(row.ssim!, row.ssimShifted ?? -1);
+    expect(best).toBeLessThan(0.99);
+    expect(best).toBeGreaterThan(0.97);
+    const t: Thresholds = { ...T, ssimRotated: 0.97 };
+    const relaxed = compareCapture(g, u, [], t, { rotated: new Set(["dot"]) });
+    expect(relaxed.issues).toEqual([]);
+    expect(relaxed.elements.find((e) => e.id === "dot")!.ssimLimit).toBe(0.97);
+    expect(compareCapture(g, u, [], t).issues).toEqual([expect.objectContaining({ id: "dot", kind: "ssim" })]);
+    // a wrong colour fails, and then the rotated limit does not apply
+    const wrong = compareCapture(g, mk([40, 60, 70], [200, 60, 60]), [], t, { rotated: new Set(["dot"]) });
+    expect(wrong.issues.filter((i) => i.id === "dot").map((i) => i.kind).sort()).toEqual(["color", "ssim"]);
+  });
+
   it("samples a border where both renderers paint it: Chromium snaps a box to whole CSS px, UI Toolkit to device px", () => {
     // a content-sized button at 1920×1080 (scale 0.75): laid out at x 180.996 (241.328 CSS px), Chromium paints it from
     // 241 CSS px = 180.75 device px (a quarter-covered first column), UI Toolkit from 181; a 3-px border either way
@@ -801,6 +827,14 @@ describe("IR context", () => {
     const b: CaptureBoxes = { ...boxes, elements: { root: el(0, 0, 1280, 720), photo: el(0, 0, 100, 180), natural: el(200, 0, 160, 90), icon: el(400, 0, 12, 12) } };
     const ctx = captureContext(pic, { state: "default", viewport: [1280, 720], apply: [] }, b);
     expect([...ctx.pictures!].sort()).toEqual(["photo"]);
+  });
+
+  it("knows which elements an animation sample shows rotated off the axes (the design's rotation on the screen)", () => {
+    const b: CaptureBoxes = { ...boxes, elements: { root: el(0, 0, 1280, 720), card: { ...el(100, 100, 200, 100), rotation: 10 }, btn: { ...el(120, 120, 50, 20), rotation: -90 } } };
+    const anim = { sampled: [{ elementId: "card", index: 0 }], runs: [{ elementId: "card", index: 0 }], from: null, sample: 1, time: 100 };
+    expect([...captureContext(ix, { state: "default", viewport: [1280, 720], apply: [], anim }, b).rotated!]).toEqual(["card"]);
+    // a static capture: Chromium draws a rotated element without a composited layer, as UI Toolkit does
+    expect([...captureContext(ix, { state: "default", viewport: [1280, 720], apply: [] }, b).rotated!]).toEqual([]);
   });
 
   it("knows which text has a blurred text-shadow in the capture", () => {
@@ -1111,6 +1145,7 @@ describe("design-export compare", () => {
       ...T, textInkDeltaE: 2, textInkRatio: 1, textInkCoverage: 0.1, textInkFullPx: 9, textInkDeltaESmall: [[8, 3], [0, 10]], textInkMedianTolerance: 0.15,
       ssimElementSmall: [[32768, 0.984]], ssimPicture: 0.985, textInkDeltaELater: [[9, 4.5], [8, 6]], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
       textInkSmallPx: 12, textInkDeltaEFirstSmall: 4.5, textInkBandSmall: [0.8, 1.25], textInkMedianToleranceSmall: 0.25, textInkShadowHigh: 1.15,
+      ssimRotated: ROTATED,
     });
     const bad = path.join(tmp(), "t.json");
     fs.writeFileSync(bad, JSON.stringify({ boxPx: 1 }));
@@ -1134,6 +1169,8 @@ describe("design-export compare", () => {
     expect(areas([[1024, 0.96]])).toThrow(/must lie between 0.97 and ssimElement/);
     expect(areas([], 0.95)).toThrow(/must lie between 0.97 and ssimElement/);
     expect(areas([[1024, 0.995]])).toThrow(/must lie between 0.97 and ssimElement/);
+    expect(small({ ssimRotated: 0.96 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
+    expect(small({ ssimRotated: 0.995 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
   });
 });
 

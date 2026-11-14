@@ -271,7 +271,7 @@ function pageFinishAll(): void {
 }
 
 type LineBox = { x: number; y: number; w: number; h: number; baseline: number };
-type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; lines: LineBox[] };
+type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; rotation?: number; lines: LineBox[] };
 /**
  * Boxes of the IR elements in device px: border box, visibility, text lines with baselines (see the boxes schema for
  * the rules). Ascents are cached per font and per state of the page's font set (faces added or loaded since).
@@ -315,6 +315,21 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
     hiddenByOpacity.set(e, v);
     return v;
   };
+  // the rotation on the screen: the element's own rotate and transform plus its ancestors' (2D designs: about z)
+  const turned = new Map<Element, number>();
+  const rotation = (e: Element | null): number => {
+    if (!e || e === document.documentElement) return 0;
+    const hit = turned.get(e);
+    if (hit !== undefined) return hit;
+    const cs = getComputedStyle(e);
+    let a = 0;
+    const r = /(-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?)deg\s*$/i.exec(cs.rotate || "");
+    if (r && cs.rotate !== "none") a += parseFloat(r[1]);
+    if (cs.transform && cs.transform !== "none") { const m = new DOMMatrixReadOnly(cs.transform); a += (Math.atan2(m.b, m.a) * 180) / Math.PI; }
+    const v = a + rotation(e.parentElement);
+    turned.set(e, v);
+    return v;
+  };
   const out: [string, ElBox][] = [];
   for (const [id, i, isText] of arg.items) {
     const el = els[i];
@@ -324,6 +339,12 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
       const b = el.getBoundingClientRect();
       Object.assign(box, { x: dev(b.x), y: dev(b.y), w: dev(b.width), h: dev(b.height) });
       box.visible = getComputedStyle(el).visibility === "visible" && !transparent(el);
+      // in (-180, 180], rounded like the boxes; absent when 0
+      let deg = rotation(el) % 360;
+      if (deg <= -180) deg += 360;
+      else if (deg > 180) deg -= 360;
+      deg = Math.round(deg * 1e6) / 1e6;
+      if (deg !== 0 && !Object.is(deg, -0)) box.rotation = deg;
     }
     if (isText && rendered) {
       type Frag = { l: number; t: number; r: number; b: number; base: number };

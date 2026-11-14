@@ -38,10 +38,18 @@ export interface CaptureContext {
   pictures?: ReadonlySet<string>;
   /** Text elements whose `text-shadow` in this capture has a blur radius above 0 (a glow around the glyphs). */
   textShadows?: ReadonlySet<string>;
+  /**
+   * Elements an animation sample shows rotated off the axes: the design's rotation on the screen (golden boxes
+   * `rotation`) is not a multiple of 90°. Empty for static captures.
+   */
+  rotated?: ReadonlySet<string>;
 }
 
-/** The screen setup of a capture: state, viewport and what is applied (matrix.json `captures[]`). */
-export interface CaptureSetup { state: string; viewport: [number, number]; apply: CaptureApply[] }
+/** The screen setup of a capture: state, viewport and what is applied (matrix.json `captures[]`); `anim` for an animation sample. */
+export interface CaptureSetup { state: string; viewport: [number, number]; apply: CaptureApply[]; anim?: unknown }
+
+/** A rotation in degrees that leaves a box's edges on the axes (a multiple of 90°, within 1e-3°). */
+const axisAligned = (deg: number) => { const r = Math.abs(deg) % 90; return r < 1e-3 || 90 - r < 1e-3; };
 
 interface LooseShadow { offset: BoxRect }
 interface LooseNode {
@@ -147,7 +155,7 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
   const borders: Record<string, [number, number, number, number]> = {};
   const fontPx: Record<string, number> = {};
   const radii: Record<string, [number, number, number, number]> = {};
-  const pictures = new Set<string>(), textShadows = new Set<string>();
+  const pictures = new Set<string>(), textShadows = new Set<string>(), rotated = new Set<string>();
   for (const id of ix.order) {
     const n = ix.nodes.get(id)!;
     const holds = (key: string) => key.split("+").every((d) => test(d, id));
@@ -184,6 +192,7 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     if (backgrounds.has(id) || borders[id] || sh || inset || n.asset || n.kind === "image" || n.kind === "vector") painters.add(id);
     // a raster picture is resampled unless its element box is its own size in device px
     if (isObj(n.asset) && n.asset.kind === "image" && b && (Math.abs(b.w - Number(n.asset.width)) > 0.5 || Math.abs(b.h - Number(n.asset.height)) > 0.5)) pictures.add(id);
+    if (setup.anim && b && typeof b.rotation === "number" && !axisAligned(b.rotation)) rotated.add(id);
   }
-  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, borders, fontPx, radii, pictures, textShadows };
+  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, borders, fontPx, radii, pictures, textShadows, rotated };
 }
