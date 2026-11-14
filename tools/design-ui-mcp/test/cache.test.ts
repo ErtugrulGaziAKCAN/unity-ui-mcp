@@ -83,6 +83,22 @@ describe("bookkeeping cleanup", () => {
     expect(isBusy(busy)).toBe(false);
   });
 
+  it("marks the report of a screen whose export the budget removed: its design pictures are gone until the next verify", () => {
+    const d = designRoot();
+    const old = d.screen("old", { importedAt: "2026-11-01T00:00:00.000Z", exportKB: 400 });
+    d.screen("fresh", { importedAt: "2026-11-05T00:00:00.000Z", exportKB: 400 });
+    const report = path.join(old, "report.html");
+    fs.writeFileSync(report, '<!doctype html><html><head><title>r</title></head><body><h1>old</h1><img src=".design-ui/export/goldens/default.png"></body></html>');
+    applyClean(planClean(d.root, 0.5));
+    expect(fs.existsSync(path.join(old, ".design-ui", "export"))).toBe(false);
+    const html = fs.readFileSync(report, "utf8");
+    expect(html).toContain("Export pruned; re-run verify for images");
+    expect(html.indexOf("Export pruned")).toBeLessThan(html.indexOf("<h1>old</h1>"));
+    // once only
+    applyClean({ ...planClean(d.root, 0.5), removals: [{ screen: "old", path: path.join(old, ".design-ui", "export"), bytes: 0, why: "test" }] });
+    expect(fs.readFileSync(report, "utf8").split("Export pruned").length).toBe(2);
+  });
+
   it("asked for one screen, lists only its removals; its export goes only when the whole designRoot is over budget", () => {
     const d = designRoot();
     d.screen("a", { importedAt: "2026-11-01T00:00:00.000Z", exportKB: 600 });
@@ -91,6 +107,20 @@ describe("bookkeeping cleanup", () => {
     // over 1 MB the oldest (a) goes first, which brings the total under budget: b keeps its export
     expect(planClean(d.root, 1, "b").removals.map((r) => path.basename(r.path)).sort()).toEqual(["diff", "unity"]);
     expect(planClean(d.root, 1, "a").removals.map((r) => path.basename(r.path)).sort()).toEqual(["diff", "export", "unity"]);
+  });
+
+  it("skips a removal whose screen a run started on after the plan was made", () => {
+    const d = designRoot();
+    const dir = d.screen("late");
+    const plan = planClean(d.root, 2048);
+    expect(plan.removals.some((r) => r.screen === "late")).toBe(true);
+    const done = markBusy(dir, "verify");
+    try {
+      const { removed, failed } = applyClean(plan);
+      expect(removed.filter((r) => r.screen === "late")).toEqual([]);
+      expect(failed.map((f) => f.error)).toEqual(failed.map(() => "an import or verify of the screen started; left for the next cleanup"));
+      expect(fs.existsSync(path.join(dir, ".design-ui", "unity"))).toBe(true);
+    } finally { done(); }
   });
 
   it("treats a run marker of a process that is gone as left over", () => {

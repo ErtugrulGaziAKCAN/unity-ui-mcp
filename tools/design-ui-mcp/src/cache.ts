@@ -158,9 +158,33 @@ export function planClean(designRoot: string, budgetMB: number, folder?: string)
 export function applyClean(plan: CleanPlan): { removed: Removal[]; failed: { removal: Removal; error: string }[] } {
   const removed: Removal[] = [], failed: { removal: Removal; error: string }[] = [];
   for (const r of plan.removals) {
-    try { fs.rmSync(r.path, { recursive: true, force: true }); removed.push(r); } catch (e) { failed.push({ removal: r, error: (e as Error).message }); }
+    // a run that started on the screen after the plan was made keeps what it writes
+    const at = r.path.lastIndexOf(`${path.sep}${BOOKKEEPING_DIR}${path.sep}`);
+    if (at > 0 && isBusy(r.path.slice(0, at))) { failed.push({ removal: r, error: "an import or verify of the screen started; left for the next cleanup" }); continue; }
+    try {
+      fs.rmSync(r.path, { recursive: true, force: true });
+      removed.push(r);
+      // the screen's report shows the export's design captures: say they are gone until the next verify
+      if (path.basename(r.path) === "export") markReportExportPruned(path.dirname(path.dirname(r.path)));
+    } catch (e) { failed.push({ removal: r, error: (e as Error).message }); }
   }
   return { removed, failed };
+}
+
+const PRUNED_NOTE = "Export pruned; re-run verify for images";
+
+/** Puts a note at the top of `<screenDir>/report.html` (once): its design captures went with the export. */
+function markReportExportPruned(screenDir: string): void {
+  const file = path.join(screenDir, "report.html");
+  let html: string;
+  try { html = fs.readFileSync(file, "utf8"); } catch { return; }
+  if (html.includes(PRUNED_NOTE)) return;
+  const note = `<p class="export-pruned" style="padding:8px 12px;background:#fff3cd;color:#3d2f00;border:1px solid #e0c36a">${PRUNED_NOTE}: ` +
+    "the cleanup removed this screen's export to keep the bookkeeping under cacheBudgetMB, so the design captures this report shows are gone " +
+    "(the pictures it kept of failing captures stay). design_ui_verify exports and reports the screen again.</p>";
+  const at = html.search(/<body[^>]*>/i);
+  const out = at < 0 ? note + html : html.replace(/<body[^>]*>/i, (m) => m + note);
+  try { fs.writeFileSync(`${file}.tmp`, out); fs.renameSync(`${file}.tmp`, file); } catch { /* the report stays as it was */ }
 }
 
 /** `12.3 MB` */

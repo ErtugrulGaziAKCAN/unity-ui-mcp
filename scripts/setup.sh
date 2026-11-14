@@ -7,7 +7,8 @@
 # Idempotent: a second run changes nothing. --dry-run prints every change without making it.
 # It also links the /unity-ui-mcp skill (scripts/install-skill.sh) and edits the chosen clients' MCP config.
 # In the Unity project it only adds the com.ertugrulgaziakcan.design-ui entry to Packages/manifest.json (when absent;
-# an entry under the package's id before 0.1.0 is replaced by it; it never adds "testables"), and writes
+# an entry under the package's id before 0.1.0 is replaced by it; it never adds "testables", it only renames an existing
+# entry of the old id), and writes
 # design-ui.config.json with a copy of the design kit in <designRoot>/design-kit (both when absent). It never commits or
 # pushes anything. Bash only (macOS, Linux; on Windows use WSL or Git Bash, or the manual steps in
 # INSTALL.md).

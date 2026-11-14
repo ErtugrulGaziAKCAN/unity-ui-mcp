@@ -66,6 +66,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   the network (allowed CDN scripts).
 - A verify whose comparison fails (an unreadable `boxes.json`) keeps its captures and log in `failed-<run>`.
 - `kit claude --force` replaces only a folder it wrote.
+- U-CSS-045 no longer flags a block-level box in a block parent, which stretches to its parent's width.
+- Font twin pruning keeps the line boxes any compiled screen was made with (its manifest records them), runs only after
+  the screen's files are written, and kit sync in Unity refuses a unity-ui-mcp clone's own `design-kit`. Kit sync and
+  imports say when this Unity version cannot link line-box variants to their twins' atlases.
+- A budget cleanup that removes a screen's export marks its report ("Export pruned; re-run verify for images"), and a
+  removal is skipped when an import or verify of the screen started after the cleanup planned it.
 - `scripts/install-skill.sh` creates Claude Code's skill folder when Claude Code has none yet.
 - `DesignText.Fonts` is cleared at the start and end of Play, so a font set of Play never prepares glyphs in edit mode.
 - The comparison sees horizontal text errors: each text line's first and last glyphs (and the width between them) are
