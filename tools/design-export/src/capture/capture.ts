@@ -100,6 +100,22 @@ function pageKeyframes(items: [number, [string, string, string, string, string][
   });
 }
 
+/**
+ * Starts the elements' CSS animations again (animation-name none, a style flush, the name back): new animations under the
+ * current timing, as when the page opened.
+ */
+function pageRestartAnimations(items: number[]): void {
+  const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
+  for (const i of items) {
+    const el = els[i] as HTMLElement;
+    const prev = el.style.getPropertyValue("animation-name"), priority = el.style.getPropertyPriority("animation-name");
+    el.style.setProperty("animation-name", "none", "important");
+    void getComputedStyle(el).animationName;
+    if (prev) el.style.setProperty("animation-name", prev, priority); else el.style.removeProperty("animation-name");
+    void getComputedStyle(el).animationName;
+  }
+}
+
 function pageRestoreStyle(items: [number, string | null][]): void {
   const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
   for (const [i, s] of items) { if (s === null) els[i].removeAttribute("style"); else els[i].setAttribute("style", s); }
@@ -566,12 +582,17 @@ export class CaptureSession {
     const kItems: [number, [string, string, string, string, string][]][] = Array.from(keyframes).map(([i, list]) =>
       [i, list.map((x) => [x.name ?? "", `${x.duration}ms`, `${x.delay}ms`, String(x.iterations), x.fillMode] as [string, string, string, string, string])]);
     if (kItems.length) save(await this.d.page.evaluate(pageKeyframes, kItems));
+    // a series from the page's opening: its animations started at load, and an earlier series on this page finished them
+    // (CDP drops an animation that ended without a forwards fill, so seeking it does nothing): every such series starts
+    // them again under the run timing and seeks animations of its own
+    const restart = !a.from && kItems.length > 0;
+    if (restart) await this.d.page.evaluate(pageRestartAnimations, kItems.map(([i]) => i));
     // the animations the runs cover, as the page has them, then their CDP ids (started events arrive asynchronously)
     const query: [number, string[], string[]][] = Array.from(new Set([...transitions.keys(), ...keyframes.keys()])).sort((x, y) => x - y).map((i) => [i,
       (transitions.get(i) ?? []).flatMap(domProps),
       (keyframes.get(i) ?? []).map((x) => x.name ?? "")]);
     const live = await this.d.page.evaluate(pageRunAnims, query);
-    const fresh = a.from !== null;
+    const fresh = a.from !== null || restart;
     const deadline = performance.now() + 5000;
     for (;;) {
       const ids = live.map(([i, name]) => this.registry.get(`${this.dom[i].backendNodeId}|${name}`)).map((r) => (r && (!fresh || r.seq > marker) ? r.id : null));

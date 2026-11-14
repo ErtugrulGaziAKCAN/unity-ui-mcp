@@ -371,6 +371,22 @@ describe("captures", () => {
     expect(near(px(captureName(spin), "spin"), [157, 165, 168], 2)).toBe(true);
   });
 
+  it("every series from the page's opening plays its animations, also a later one whose animation has no forwards fill", async () => {
+    const d0 = await openDesign(fx("load-series.html"), kit, [2560, 1440], browser);
+    let b: IrBuild;
+    try { b = await buildIr(d0, await collectSnapshot(d0.page, d0.cdp, kit), kit, tmp(), fx("load-series.html")); } finally { await d0.close(); }
+    const jobs = buildMatrix(b.ir).filter((j) => j.viewport[0] === 2560);
+    const series = (id: string) => jobs.filter((j) => j.anim && j.anim.sampled[0].elementId === id);
+    expect(series("b").map((j) => j.anim!.time)).toEqual([0, 100, 150, 200, 250, 300]);
+    const dir = tmp();
+    // a's series runs first and ends every animation; b's series (fill none, delay 100 ms) starts again at 0
+    const r = await captureMatrix(fx("load-series.html"), kit, b.ir, b.elements, dir, { browser, jobs });
+    const x = (j: CaptureJob, id: string) => r.boxes[captureName(j)].elements[id].x;
+    const own = x(series("a")[0], "b");
+    expect(series("b").map((j) => x(j, "b") - own)).toEqual([0, 0, 50, 100, 150, 0]); // before its delay and after its end: no effect
+    expect(series("b").map((j) => x(j, "a") - x(series("a")[0], "a"))).toEqual([0, 50, 75, 100, 125, 150]); // a runs on the same clock
+  });
+
   it("a trigger class the markup already has: the page shows the layer's end, and the trigger still runs off and on", async () => {
     const d0 = await openDesign(fx("initial-trigger.html"), kit, [2560, 1440], browser);
     let b: IrBuild;
