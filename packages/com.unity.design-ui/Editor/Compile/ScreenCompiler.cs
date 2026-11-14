@@ -318,12 +318,14 @@ namespace DesignUi.Editor
             screens[folderName] = ir.Screen;
             var files = outputs.ToDictionary(kv => kv.Key, kv => GeneratedManifest.ContentHash(kv.Key, kv.Value), StringComparer.Ordinal);
             foreach (var kv in carried) files[kv.Key] = kv.Value;
+            var stamp = PackageStamp.Current;
             var newManifest = new GeneratedManifest
             {
                 screen = ir.Screen,
                 sourceSha256 = ir.Source?.Sha256,
                 irSha256 = GeneratedManifest.Sha256Hex(File.ReadAllBytes(irPath)),
                 generatorVersion = GeneratorVersion,
+                packageStamp = stamp,
                 files = files,
                 removedElements = compiled.RemovedElements.ToArray(),
                 faces = screenFaces.Select(f => f.Face).Distinct().OrderBy(f => f).Select(FontMap.FaceName).ToArray(),
@@ -342,6 +344,7 @@ namespace DesignUi.Editor
             var newShared = new GeneratedManifest
             {
                 generatorVersion = GeneratorVersion,
+                packageStamp = stamp,
                 files = sharedOutputs.ToDictionary(kv => kv.Key, kv => GeneratedManifest.ContentHash(kv.Key, kv.Value), StringComparer.Ordinal),
                 tokens = new Dictionary<string, string>(tokens, StringComparer.Ordinal),
                 screens = new Dictionary<string, string>(screens, StringComparer.Ordinal),

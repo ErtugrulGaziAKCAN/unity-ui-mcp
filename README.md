@@ -271,6 +271,8 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
 | Verify gives no verdict | Read `<screen>/.design-ui/failed-<run>/` (the Unity log and what was captured). Check `unityRunner.command.capture` and `timeoutSec`. |
 | Verify is `incomplete` | Some capture job shows an element no state, class or sample row shows; the import named it. Make it visible in some context, or remove it. |
 | Arabic letters unshaped or reversed | Turn on Enable Advanced Text (and give players ICU data on their PanelSettings). |
+| Text drawn with the advanced generator is empty | A font asset unloaded and loaded again is lost to TextCore's registry; the locale controller and scene loads repair the twins (`TextAssetRegistry`). Host code drawing twins outside a locale controller calls `TextAssetRegistry.Repair(font)`. |
+| Empty localized labels, "Uxml object has an invalid child element" | A screen was imported before the package defined an element it uses. The package imports generated screens again after a package update (asset by asset); a screen still broken is fixed by importing its folder again. |
 | Low disk during verification | Each project copy a capture command uses carries its own `Library` (often several GB); remove copies you no longer need. |
 | `could not start Chromium` | `npx playwright install chromium` in the clone. |
 
