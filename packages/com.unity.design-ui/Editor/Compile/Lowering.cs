@@ -95,7 +95,7 @@ namespace DesignUi.Editor
             else if (pe == "auto") ignorePointer = false;
             else if (pe != null) throw new UnsupportedStyleException("pointer-events", pe);
             if (pe != null) BaseLayer(node).Remove("pointer-events");
-            node.PickingIgnore = ignorePointer;
+            node.PickingIgnore = ignorePointer || node.External; // an external element never takes the pointer (Unpaint)
 
             foreach (var child in node.Children) Process(child, blockSelf, flex, positioned, ignorePointer, false, bps);
             WrapShadows(node);
@@ -1008,8 +1008,62 @@ namespace DesignUi.Editor
             return s == "-0" ? "0" : s;
         }
 
-        /// <summary>A deep copy whose layer keys are canonical (<see cref="LayerKey"/>); two keys naming the same layer are an error.</summary>
+        /// <summary>
+        /// A deep copy whose layer keys are canonical (<see cref="LayerKey"/>); two keys naming the same layer are an error.
+        /// An external element comes out unpainted (<see cref="Unpaint"/>).
+        /// </summary>
         static IrNode Clone(IrNode n)
+        {
+            var copy = CloneNode(n);
+            if (copy.External) Unpaint(copy);
+            return copy;
+        }
+
+        const string Transparent = "rgba(0, 0, 0, 0)";
+        static readonly string[] Sides = { "top", "right", "bottom", "left" };
+
+        /// <summary>
+        /// An external element (<c>data-u-external</c>: what the host draws there, such as a game's shell around the screen)
+        /// keeps its box in the compiled screen: size, position, margins, padding and border widths stay, so the layout
+        /// around it is the design's. It paints nothing: no background or image, no border colour, no shadow, no text, no
+        /// children, and it ignores the pointer, so the host's own UI below the screen shows through and keeps its input.
+        /// </summary>
+        internal static void Unpaint(IrNode n)
+        {
+            foreach (var layer in n.Style.Values)
+            {
+                if (layer == null) continue;
+                foreach (var key in layer.Keys.ToList())
+                    if (Paints(key)) layer.Remove(key);
+                foreach (var side in Sides)
+                    if (layer.ContainsKey("border-" + side + "-width")) layer["border-" + side + "-color"] = Transparent;
+            }
+            foreach (var key in n.Style.Keys.Where(k => k != Base && n.Style[k] != null && n.Style[k].Count == 0).ToList()) n.Style.Remove(key);
+            n.Text = null;
+            n.AttrTexts?.Clear();
+            n.Asset = null;
+            n.Background = null;
+            n.BackgroundLayers?.Clear();
+            n.AssetLayers?.Clear();
+            n.Shadow = null;
+            n.ShadowLayers?.Clear();
+            n.InsetShadow = null;
+            n.InsetShadowLayers?.Clear();
+            n.Anims?.Clear();
+            n.Children = new IrNode[0];
+            n.Clickable = false;
+            n.Focusable = false;
+            n.PickingIgnore = true;
+        }
+
+        /// <summary>Properties that only paint (an external element keeps every other one).</summary>
+        static bool Paints(string prop) =>
+            prop.StartsWith("background", StringComparison.Ordinal) || prop.StartsWith("-unity-background", StringComparison.Ordinal) ||
+            prop.StartsWith("outline", StringComparison.Ordinal) || prop.StartsWith("-unity-text", StringComparison.Ordinal) ||
+            (prop.StartsWith("border-", StringComparison.Ordinal) && prop.EndsWith("-color", StringComparison.Ordinal)) ||
+            prop == "color" || prop == "box-shadow" || prop == "text-shadow" || prop == "opacity" || prop == "filter" || prop == "cursor";
+
+        static IrNode CloneNode(IrNode n)
         {
             return new IrNode
             {

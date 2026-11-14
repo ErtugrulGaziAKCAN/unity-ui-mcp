@@ -592,6 +592,46 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(File.Exists(Path.Combine(outDir, "default@320x180.n0.png")));
         }
 
+        /// <summary>
+        /// data-u-external (a host's shell drawn around the screen): the compiled element keeps its box, so the layout around
+        /// it is the design's, but paints nothing (no background, border colour or shadow) and takes no pointer.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Run_AnExternalElement_KeepsItsBox_AndPaintsNothing()
+        {
+            var shell = Shadowed(Node("shell", "container", ("width", "200px"), ("height", "40px"), ("flex-shrink", "0"), ("background-color", "#ff00ff"),
+                ("border-top-width", "4px"), ("border-top-color", "#00ff00"), ("margin-bottom", "10px")).With("hover", ("background-color", "#00ffff")));
+            shell.External = true;
+            var after = Box("after", "#123c47");
+            var export = Export(Small(BlackRoot(shell, after)));
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var uxml = File.ReadAllText(screen + "/" + Path.GetFileName(screen) + ".uxml");
+            StringAssert.Contains("name=\"shell\"", uxml, "the external element stays in the tree");
+            StringAssert.DoesNotContain("shell__shadowhost", uxml, "no shadow host");
+            StringAssert.DoesNotContain("#ff00ff", File.ReadAllText(screen + "/" + Path.GetFileName(screen) + ".uss"), "no background colour");
+
+            var req = Request(export, screen, "default@320x180", 320, 180);
+            float afterY = 0;
+            req.Inspect = tree =>
+            {
+                var el = tree.Q("shell");
+                Assert.AreEqual(200f, el.layout.width, 0.01f, "its box: width");
+                Assert.AreEqual(40f, el.layout.height, 0.01f, "its box: height");
+                Assert.AreEqual(4f, el.resolvedStyle.borderTopWidth, 0.01f, "border widths are layout: kept");
+                Assert.AreEqual(0f, el.resolvedStyle.borderTopColor.a, "but painted in no colour");
+                Assert.AreEqual(0f, el.resolvedStyle.backgroundColor.a, "no background");
+                Assert.AreEqual(PickingMode.Ignore, el.pickingMode, "the host's UI below takes the pointer");
+                Assert.AreEqual(0, el.childCount);
+                afterY = tree.Q("after").layout.y;
+            };
+            yield return DesignCapture.Run(req, profile);
+            Assert.AreEqual(50f, afterY, 0.01f, "the next element sits where the design puts it (40 + 10 margin)");
+            var tex = Png(req);
+            Assert.AreEqual("#000000", Hex(Pixel(tex, 100, 20)), "the screen's own background shows where the external element is");
+            Assert.AreEqual("#000000", Hex(Pixel(tex, 100, 1)), "no border colour");
+        }
+
         [UnityTest]
         public IEnumerator Run_ABoundText_GetsItsCharactersAndKerningBeforeItIsAssigned()
         {

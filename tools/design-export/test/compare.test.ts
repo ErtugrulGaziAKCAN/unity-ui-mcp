@@ -263,6 +263,15 @@ describe("compareCapture", () => {
     u2.boxes.elements.video = el(208, 48, 64, 64); u2.boxes.external = ["video"];
     fill(u2.png, { x: 208, y: 48, w: 64, h: 64 }, [0, 0, 0]);
     expect(compareCapture(g2, u2, [], T)).toMatchObject({ pass: true, ssim: 1 });
+
+    // the design paints an external placeholder (a host's shell), the compiled screen keeps its box and paints nothing
+    const g3 = scene(), u3 = scene();
+    g3.boxes.elements.shell = el(0, 0, 320, 40); g3.boxes.external = ["shell"];
+    u3.boxes.elements.shell = el(0, 0, 320, 40); u3.boxes.external = ["shell"];
+    fill(g3.png, { x: 0, y: 0, w: 320, h: 40 }, [11, 31, 38]);
+    const v3 = compareCapture(g3, u3, [], T);
+    expect(v3.issues).toEqual([]);
+    expect(v3.pass).toBe(true);
   });
 
   it("finds an element-sized defect with the element SSIM that the whole-capture SSIM dilutes", () => {
