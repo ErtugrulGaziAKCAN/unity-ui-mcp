@@ -67,7 +67,7 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void AfterAPackageChange_TheScreensUxmlAndUssAreImportedAgain_SharedSheetsFirst_Once()
+        public void AfterAPackageChange_TheScreensUxmlAndUssAndTheSharedSheetsAreImportedAgain_Once()
         {
             AssetDatabase.ImportAsset(Screen + "/Planner.uxml", ImportAssetOptions.ForceUpdate);
             Imported.Clear();

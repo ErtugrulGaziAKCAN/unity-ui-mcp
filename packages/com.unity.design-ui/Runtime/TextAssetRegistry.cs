@@ -79,6 +79,7 @@ namespace DesignUi
         /// <summary>
         /// Registers <paramref name="font"/>, every font of its fallback lists and every face of their weight tables, where the
         /// registry holds no live entry for them. Returns how many entries it wrote. Allocates nothing when all are registered.
+        /// Main thread only, outside text generation (UI Toolkit reads the registry from its text jobs).
         /// </summary>
         public static int Repair(FontAsset font)
         {
@@ -117,7 +118,7 @@ namespace DesignUi
             return n;
         }
 
-        /// <summary>Registers every font asset that is loaded now. Returns how many entries it wrote.</summary>
+        /// <summary>Registers every font asset that is loaded now. Returns how many entries it wrote. Main thread only.</summary>
         public static int RepairLoaded()
         {
             Find();

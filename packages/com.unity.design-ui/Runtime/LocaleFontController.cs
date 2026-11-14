@@ -385,6 +385,8 @@ namespace DesignUi
                                            : "Its text renders unshaped."));
             }
             UsesAdvancedText = use;
+            if (use && !TextAssetRegistry.Supported)
+                m_LocaleIssues.Add("font assets unloaded and loaded again may render nothing with the advanced generator on this Unity version: " + TextAssetRegistry.Lookup);
             // the advanced generator finds a font by its instance ID: twins unloaded and loaded again must be registered again
             // (TextAssetRegistry); a screen may request the generator in its own styles too, so this runs for every locale
             if (panel != null && m_Fonts != null && Locale != null) TextAssetRegistry.Repair(m_Fonts.FontsFor(Locale));

@@ -44,10 +44,12 @@ export function contentStamp(dir: string): string {
   const walk = (abs: string, rel: string) => {
     for (const d of fs.readdirSync(abs, { withFileTypes: true })) {
       if (d.name.startsWith(".") || d.name.endsWith("~")) continue;
-      if (!rel && d.isDirectory() && d.name === "Tests") continue;
       const r = rel ? `${rel}/${d.name}` : d.name;
-      if (d.isDirectory()) walk(path.join(abs, d.name), r);
-      else if (d.isFile()) files.push(r);
+      // a symbolic link counts as what it points to, as for the Unity side (File/Directory follow links)
+      const st = d.isSymbolicLink() ? fs.statSync(path.join(abs, d.name), { throwIfNoEntry: false }) : d;
+      if (!rel && st?.isDirectory() && d.name === "Tests") continue;
+      if (st?.isDirectory()) walk(path.join(abs, d.name), r);
+      else if (st?.isFile()) files.push(r);
     }
   };
   walk(dir, "");

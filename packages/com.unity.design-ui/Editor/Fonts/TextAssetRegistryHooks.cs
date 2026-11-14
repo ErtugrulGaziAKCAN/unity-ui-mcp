@@ -4,7 +4,8 @@ namespace DesignUi.Editor
 {
     /// <summary>
     /// The Editor's points for <see cref="TextAssetRegistry"/>: after a script reload (the Editor unloads assets then), when
-    /// Play starts or stops, and after font assets were imported (a twin written or reimported is loaded again).
+    /// Play starts or stops, when a scene is opened, and after font assets were imported (a twin written or reimported is
+    /// loaded again).
     /// </summary>
     [InitializeOnLoad]
     static class TextAssetRegistryHooks
@@ -13,6 +14,7 @@ namespace DesignUi.Editor
         {
             EditorApplication.delayCall += Repair;
             EditorApplication.playModeStateChanged += OnPlayMode;
+            UnityEditor.SceneManagement.EditorSceneManager.sceneOpened += (scene, mode) => Repair();
         }
 
         static void OnPlayMode(PlayModeStateChange change)

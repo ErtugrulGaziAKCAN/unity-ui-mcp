@@ -318,7 +318,7 @@ namespace DesignUi.Editor
             screens[folderName] = ir.Screen;
             var files = outputs.ToDictionary(kv => kv.Key, kv => GeneratedManifest.ContentHash(kv.Key, kv.Value), StringComparer.Ordinal);
             foreach (var kv in carried) files[kv.Key] = kv.Value;
-            var stamp = PackageStamp.Current;
+            var stamp = GeneratedScreenRefresh.Stamp; // computed once per script reload
             var newManifest = new GeneratedManifest
             {
                 screen = ir.Screen,

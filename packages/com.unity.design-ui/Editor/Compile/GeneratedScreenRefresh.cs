@@ -16,8 +16,9 @@ namespace DesignUi.Editor
     /// <para>Each generated screen folder is recorded with the package stamp (<see cref="PackageStamp"/>) its UXML and USS were
     /// imported under (<c>Library/DesignUi/generated-imports.json</c>, outside the project's files). After a script reload, a
     /// folder of a profile's output folder recorded under another stamp, or not at all, has its style sheets and UXML files
-    /// imported again: asset by asset, the shared sheets first, without a refresh or a save. That error, logged while a
-    /// generated screen is imported, makes every generated screen import again after the next script reload.</para>
+    /// imported again: asset by asset in one asset-editing batch (Unity orders the imports inside it), without a refresh or a
+    /// save. That error, logged by any UXML import (the message does not name the file), makes every generated screen
+    /// import again after the next script reload.</para>
     /// </summary>
     [InitializeOnLoad]
     public static class GeneratedScreenRefresh
