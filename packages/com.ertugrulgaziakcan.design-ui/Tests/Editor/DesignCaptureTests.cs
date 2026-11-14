@@ -121,9 +121,19 @@ namespace DesignUi.Editor.Tests
         {
             foreach (var o in _objects) if (o != null) UnityEngine.Object.DestroyImmediate(o);
             _objects.Clear();
-            foreach (var dir in _temp) if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            foreach (var dir in _temp) DeleteDir(dir);
             _temp.Clear();
             if (AssetDatabase.IsValidFolder(Out)) AssetDatabase.DeleteAsset(Out);
+        }
+
+        /// <summary>Deletes a folder; a run stopped midway may still be writing a PNG into it from an encode thread.</summary>
+        static void DeleteDir(string dir)
+        {
+            for (int attempt = 0; Directory.Exists(dir); attempt++)
+            {
+                try { Directory.Delete(dir, true); }
+                catch (IOException) when (attempt < 20) { System.Threading.Thread.Sleep(50); }
+            }
         }
 
         [OneTimeTearDown]
