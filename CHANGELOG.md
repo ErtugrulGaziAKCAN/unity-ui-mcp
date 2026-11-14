@@ -1,7 +1,7 @@
 # Changelog
 
 All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org); the
-Unity package (`com.unity.design-ui`) and the Node tools share the version number.
+Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the version number.
 
 ## Unreleased
 
@@ -69,8 +69,12 @@ Licensed under the MIT License (`LICENSE`); the bundled Inter font stays under t
   and text ink against calibrated thresholds; an offline HTML report and `verdict.json` with the verdicts `pass`,
   `fail` and `incomplete`.
 
-### Unity package (`com.unity.design-ui`, Unity 6000.3 or later)
+### Unity package (`com.ertugrulgaziakcan.design-ui`, Unity 6000.3 or later)
 
+- The package id changed before 0.1.0 from `com.unity.design-ui` (the `com.unity.` prefix is reserved for Unity's own
+  packages). Existing installs replace the dependency key and the git URL path
+  (`?path=/packages/com.ertugrulgaziakcan.design-ui`) in `Packages/manifest.json`: `scripts/setup.sh` does it, and
+  `design_ui_status` and `Window > Design UI > Status` report the old id while a project lists it.
 - Compiler: IR to UXML (screen root `dui:DesignScreen`), USS, item templates per repeat, shared tokens and font
   variables, images and vector assets, incremental writes in one asset-editing batch, and a guard against overwriting
   generated files that were edited by hand.

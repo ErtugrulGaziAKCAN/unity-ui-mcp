@@ -218,8 +218,9 @@ the MCP tool `design_ui_rules` serves it.
 
 Lint is a whitelist. Which CSS properties, keywords, units and value functions the pipeline handles, and how
 (direct, lowered, dropped or rejected with a rule id and fix), is recorded once in
-`packages/com.unity.design-ui/Editor/Data/css-support.json`; the exporter's lint (`tools/design-export/src/lint/allowed-css.ts`
-loads it) and the Unity style mapper both read it, so a property the mapper cannot reproduce can never pass lint.
+`packages/com.ertugrulgaziakcan.design-ui/Editor/Data/css-support.json`; the exporter's lint
+(`tools/design-export/src/lint/allowed-css.ts` loads it) and the Unity style mapper both read it, so a property the mapper
+cannot reproduce can never pass lint.
 Anything not listed is an error (U-CSS-023 for properties, U-CSS-024 for value functions). Missing assets (U-NET-002),
 font faces not from the kit (U-FONT-002), glyphs rendered by a platform fallback font (U-FONT-003), text without grayscale
 font smoothing (U-CSS-038) and markup outside
@@ -789,7 +790,7 @@ stored is a profile setting (§21, D2).
 Repository `unity-ui-mcp` (public):
 
 ```
-packages/com.unity.design-ui/        UPM package
+packages/com.ertugrulgaziakcan.design-ui/  UPM package
   Runtime/   DesignScreen, DesignView/DesignText, repeat helpers, LocaleFontController, animation player,
              DesignUiPanelRegion, optional Localization assembly (LocalizedString binding, locale source)
   Editor/    compiler, font resolver + twin generator, localization writer, Unity verifier, Editor bridge,
@@ -965,8 +966,8 @@ Decisions (resolved by the user on 2026-11-12):
   a presenter in the game.
 - **D2 Design sources and goldens:** stored in a folder the user specifies, set as `designRoot` in the project
   profile (each screen under `<designRoot>/<screen-id>/`). Never inside the product repository by default.
-- **D3 Package id:** `com.unity.design-ui`; C# root namespace `DesignUi`. Note: the `com.unity.` prefix is used by
-  Unity's own packages; a future official package with the same id would conflict.
+- **D3 Package id:** `com.ertugrulgaziakcan.design-ui`; C# root namespace `DesignUi`. Renamed by the user on
+  2026-11-14, before 0.1.0: the first id used the `com.unity.` prefix, which is reserved for Unity's own packages.
 - **D4 GitHub repository:** `unity-ui-mcp` under the user's account; public since 2026-11-12, with project-specific
   notes kept outside the repository.
 

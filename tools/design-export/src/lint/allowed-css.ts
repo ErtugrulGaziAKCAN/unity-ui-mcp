@@ -127,7 +127,7 @@ export interface CssSupportData extends Lists {
   valueFunctions: string[];
 }
 
-export const CSS_SUPPORT_FILE = fileURLToPath(new URL("../../../../packages/com.unity.design-ui/Editor/Data/css-support.json", import.meta.url));
+export const CSS_SUPPORT_FILE = fileURLToPath(new URL("../../../../packages/com.ertugrulgaziakcan.design-ui/Editor/Data/css-support.json", import.meta.url));
 
 export function readCssSupportFile(file = CSS_SUPPORT_FILE): CssSupportFile {
   return JSON.parse(fs.readFileSync(file, "utf8")) as CssSupportFile;

@@ -8,8 +8,8 @@ What gets installed:
 
 - **MCP server `design-ui`** (`tools/design-ui-mcp`): a local stdio server that any MCP client starts. It is built
   from this clone; it is not published on npm.
-- **Unity package `com.unity.design-ui`**: one entry in the project's `Packages/manifest.json`. It adds an Editor
-  bridge (loopback only, token in `Library/DesignUi/bridge.json`) that the server talks to, and the
+- **Unity package `com.ertugrulgaziakcan.design-ui`**: one entry in the project's `Packages/manifest.json`. It adds an
+  Editor bridge (loopback only, token in `Library/DesignUi/bridge.json`) that the server talks to, and the
   `Window > Design UI > Status` window.
 - **`design-ui.config.json`** in the Unity project: where designs live (`designRoot`), the design kit (`kitDir`), the
   profile asset path (`profileAsset`), the server path for the window's client snippets (`mcpServer`) and the Unity
@@ -196,13 +196,15 @@ node <clone folder>/tools/design-ui-mcp/dist/server.js --project <Unity project>
 The skill alone: `scripts/install-skill.sh`. Claude Code: `claude mcp add --scope local design-ui -- node <clone folder>/tools/design-ui-mcp/dist/server.js --project <Unity project>`
 (quote paths that contain spaces). Check it with `node <clone folder>/tools/design-ui-mcp/scripts/smoke.mjs --project <Unity project>`.
 The README lists the snippets for Cursor, Codex and Claude Desktop. The Unity package is the git URL
-`https://github.com/ErtugrulGaziAKCAN/unity-ui-mcp.git?path=/packages/com.unity.design-ui` (Package Manager → **+** →
-*Install package from git URL…*). `design-ui.config.json` needs `designRoot`, `kitDir` (the kit folder) and
-`profileAsset` (`Assets/DesignUi/DesignUiProfile.asset`); add `mcpServer` (the server's `dist/server.js`) for the
-window's snippets. The user writes these files; you show them.
+`https://github.com/ErtugrulGaziAKCAN/unity-ui-mcp.git?path=/packages/com.ertugrulgaziakcan.design-ui`
+(Package Manager → **+** → *Install package from git URL…*). `design-ui.config.json` needs `designRoot`, `kitDir`
+(the kit folder) and `profileAsset` (`Assets/DesignUi/DesignUiProfile.asset`); add `mcpServer` (the server's
+`dist/server.js`) for the window's snippets. The user writes these files; you show them.
 
 ## Updating
 
 `git -C <clone folder> pull --ff-only`, then run `scripts/setup.sh` again with the same arguments (it rebuilds the
 server when sources changed); new client sessions use the new server. Unity keeps the package commit it resolved in
-`packages-lock.json`: to update the package, remove its entry there (or add the git URL again).
+`packages-lock.json`: to update the package, remove its entry there (or add the git URL again). A project set up before
+0.1.0 lists the package under its old id (see CHANGELOG): setup replaces that entry with
+`com.ertugrulgaziakcan.design-ui` and its new git URL path (the dry run shows the replacement first).

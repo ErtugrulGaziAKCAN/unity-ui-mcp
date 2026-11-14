@@ -164,7 +164,7 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
   const info = findBridge(cfg.projectDir);
   if (!info) {
     throw new UnityRunnerError(
-      `Editor not reachable: Unity Editor bridge not found for ${cfg.projectDir}: open this project in Unity with the com.unity.design-ui package ` +
+      `Editor not reachable: Unity Editor bridge not found for ${cfg.projectDir}: open this project in Unity with the com.ertugrulgaziakcan.design-ui package ` +
       `(Window > Design UI > Status shows the bridge), or set "unityRunner.prefer": "command" in design-ui.config.json.`);
   }
   const route = step === "import" ? "/import" : step === "kitSync" ? "/kit-sync" : "/capture";
@@ -181,7 +181,7 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
     });
   } catch (e) {
     if (e instanceof BridgeHttpError && e.status === 404 && step === "capture") {
-      throw new UnityRunnerError(`this version of the com.unity.design-ui package has no Editor capture; use "unityRunner.captureVia": "command"`);
+      throw new UnityRunnerError(`this version of the com.ertugrulgaziakcan.design-ui package has no Editor capture; use "unityRunner.captureVia": "command"`);
     }
     if (e instanceof BridgeHttpError && e.timedOutMs !== null) {
       throw new UnityRunnerError(`Unity Editor bridge on 127.0.0.1:${info.port} did not answer POST ${route} within ${Math.round(e.timedOutMs / 1000)} s (unityRunner.timeoutSec in ` +

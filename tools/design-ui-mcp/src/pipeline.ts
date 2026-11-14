@@ -60,8 +60,8 @@ export interface Pipeline {
   exportScreen: ExportScreen | null;
   compareScreen: CompareScreen | null;
   /**
-   * Whether the Unity side of this version can capture a compiled screen for verification (the com.unity.design-ui
-   * capture test). Without it design_ui_verify answers "not available yet" and runs nothing.
+   * Whether the Unity side of this version can capture a compiled screen for verification (the
+   * com.ertugrulgaziakcan.design-ui capture test). Without it design_ui_verify answers "not available yet" and runs nothing.
    */
   unityCapture?: boolean;
 }
@@ -70,9 +70,9 @@ export interface Pipeline {
  * What this version ships: the exporter's export step runs in this process on the server's warm browser (lint, IR,
  * baked effects, goldens, assets, sample data), and the comparison of Unity captures with the goldens writes the HTML
  * report (`<screen>/report.html`; difference images and verdict.json in `<screen>/.design-ui/compare/`). The Unity
- * side (com.unity.design-ui) compiles an export (import, code 0 with a log) and captures a compiled screen for every
- * golden (the env-driven EditMode test DesignCaptureTests.CaptureFromEnv, finished by capture-done.json); whether those
- * Unity steps can run depends on the project's runner configuration (see unityStep).
+ * side (com.ertugrulgaziakcan.design-ui) compiles an export (import, code 0 with a log) and captures a compiled screen
+ * for every golden (the env-driven EditMode test DesignCaptureTests.CaptureFromEnv, finished by capture-done.json);
+ * whether those Unity steps can run depends on the project's runner configuration (see unityStep).
  */
 export const INSTALLED_PIPELINE: Pipeline = {
   exportScreen: async (entry, kit, outDir, browser) => {
@@ -112,7 +112,7 @@ export const MISSING = {
   export: "the design export step (browser capture to screen IR, goldens and assets) is not installed in this version of unity-ui-mcp",
   compile: "the Unity compile runs on an export, so it cannot run without the export step",
   compare: "verification (Unity capture and comparison against the design) is not installed in this version of unity-ui-mcp",
-  capture: "the Unity capture (the com.unity.design-ui test that renders the compiled screen for every golden capture) is not installed in this pipeline; the comparison against the design and the HTML report run once it is",
+  capture: "the Unity capture (the com.ertugrulgaziakcan.design-ui test that renders the compiled screen for every golden capture) is not installed in this pipeline; the comparison against the design and the HTML report run once it is",
 };
 
 /**
@@ -132,7 +132,7 @@ export function unityStep(cfg: DesignUiConfig | null, step: UnityStep, bridge?: 
   const route = step === "capture" ? cfg.unityRunner.captureVia : cfg.unityRunner.prefer;
   if (route === "editor") {
     if (step === "capture") {
-      return { ready: false, how: "the com.unity.design-ui package has no Editor capture (the open Editor is never put into a capture); set \"unityRunner.captureVia\": \"command\" with a capture command in design-ui.config.json" };
+      return { ready: false, how: "the com.ertugrulgaziakcan.design-ui package has no Editor capture (the open Editor is never put into a capture); set \"unityRunner.captureVia\": \"command\" with a capture command in design-ui.config.json" };
     }
     if (!bridge) return { ready: false, needsEditor: true, how: "in the open Unity Editor through its bridge (Window > Design UI > Status)" };
     return bridge.bridge === "connected"

@@ -1,5 +1,5 @@
 {
-  "description": "The package stamp of a local or embedded com.unity.design-ui package: these files written into a package folder give this stamp in the MCP server (src/package-stamp.ts) and in the Unity package (DesignUi.Editor.PackageStamp). Paths sorted ordinally with /, per file \"<path>\\n<sha256 hex of its bytes>\\n\"; left out: names starting with . or ending with ~, and the top-level Tests folder.",
+  "description": "The package stamp of a local or embedded com.ertugrulgaziakcan.design-ui package: these files written into a package folder give this stamp in the MCP server (src/package-stamp.ts) and in the Unity package (DesignUi.Editor.PackageStamp). Paths sorted ordinally with /, per file \"<path>\\n<sha256 hex of its bytes>\\n\"; left out: names starting with . or ending with ~, and the top-level Tests folder.",
   "files": {
     ".hidden/file": "left out\n",
     "Documentation~/index.md": "left out\n",
@@ -8,7 +8,7 @@
     "Runtime/DesignView.cs": "// view\n",
     "Runtime/DesignView.cs.meta": "guid: 0\n",
     "Tests/Editor/Test.cs": "// left out\n",
-    "package.json": "{\"name\":\"com.unity.design-ui\"}\n"
+    "package.json": "{\"name\":\"com.ertugrulgaziakcan.design-ui\"}\n"
   },
-  "stamp": "sha256:827d0ad7905b6775c89f48bc714e71b667175e1df9db47cb1778dc9805a86320"
+  "stamp": "sha256:402fb6c49a19a7e17acfb397c7518cf59d324bb52732e61370af86d06c076a33"
 }

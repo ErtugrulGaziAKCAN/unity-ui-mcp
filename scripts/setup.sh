@@ -6,9 +6,10 @@
 #
 # Idempotent: a second run changes nothing. --dry-run prints every change without making it.
 # It also links the /unity-ui-mcp skill (scripts/install-skill.sh) and edits the chosen clients' MCP config.
-# In the Unity project it only adds the com.unity.design-ui entry to Packages/manifest.json (when absent) and writes
-# design-ui.config.json (when absent). It never commits or pushes anything. Bash only (macOS, Linux; on Windows use
-# WSL or Git Bash, or the manual steps in INSTALL.md).
+# In the Unity project it only adds the com.ertugrulgaziakcan.design-ui entry to Packages/manifest.json (when absent;
+# an entry under the package's id before 0.1.0 is replaced by it) and writes design-ui.config.json (when absent). It
+# never commits or pushes anything. Bash only (macOS, Linux; on Windows use WSL or Git Bash, or the manual steps in
+# INSTALL.md).
 set -euo pipefail
 
 usage() {
@@ -157,9 +158,12 @@ for c in "${CLIENTS[@]}"; do
 done
 
 # 3. Unity package ----------------------------------------------------------------------------------------------------
-echo "[3/7] Unity package com.unity.design-ui"
+PKG_NAME="com.ertugrulgaziakcan.design-ui"
+# the package's id before 0.1.0: an existing project's entry under it is replaced (the git URL path changed with it)
+PKG_OLD_NAME="com.unity.design-ui"
+echo "[3/7] Unity package $PKG_NAME"
 if [ "$PACKAGE" = local ]; then
-  PKG_VALUE="file:$REPO/packages/com.unity.design-ui"
+  PKG_VALUE="file:$REPO/packages/$PKG_NAME"
 else
   ORIGIN="$(git -C "$REPO" remote get-url origin 2>/dev/null || true)"
   [ -n "$ORIGIN" ] || die "this clone has no origin remote; use --package local"
@@ -169,11 +173,11 @@ else
   esac
   case "$ORIGIN" in *.git) ;; *) ORIGIN="$ORIGIN.git" ;; esac
   REV="$(git -C "$REPO" symbolic-ref --quiet --short HEAD 2>/dev/null || git -C "$REPO" rev-parse HEAD)"
-  PKG_VALUE="$ORIGIN?path=/packages/com.unity.design-ui#$REV"
+  PKG_VALUE="$ORIGIN?path=/packages/$PKG_NAME#$REV"
 fi
-MANIFEST_RESULT="$("$NODE" - "$PROJECT/Packages/manifest.json" "com.unity.design-ui" "$PKG_VALUE" "$DRY" <<'NODE'
+MANIFEST_RESULT="$("$NODE" - "$PROJECT/Packages/manifest.json" "$PKG_NAME" "$PKG_VALUE" "$DRY" "$PKG_OLD_NAME" <<'NODE'
 const fs = require("fs");
-const [file, name, value, dry] = process.argv.slice(2);
+const [file, name, value, dry, oldName] = process.argv.slice(2);
 const fail = (msg) => { console.log(`FAIL ${msg}`); process.exit(0); };
 const raw = fs.readFileSync(file, "utf8");
 const bom = raw.startsWith("﻿") ? "﻿" : "";
@@ -183,36 +187,92 @@ try { json = JSON.parse(text); } catch (e) { fail(`Packages/manifest.json is not
 if (!json || typeof json.dependencies !== "object" || json.dependencies === null || Array.isArray(json.dependencies)) {
   fail(`Packages/manifest.json has no top-level "dependencies" object`);
 }
-if (Object.prototype.hasOwnProperty.call(json.dependencies, name)) {
-  console.log(`KEEP kept existing entry "${name}": ${JSON.stringify(json.dependencies[name])}`);
-  process.exit(0);
+const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const results = [];
+// every edit keeps the rest of the file byte for byte, and is taken only when the file then parses to what it should
+let edited = text;
+let current = json;
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const without = (m) => { // removals of a match with the comma (and space) after it, before it, or alone
+  const end = m.index + m[0].length;
+  const after = /^\s*,\s*/.exec(edited.slice(end)), before = /,\s*$/.exec(edited.slice(0, m.index));
+  return [...(after ? [[m.index, end + after[0].length, ""]] : []), ...(before ? [[m.index - before[0].length, end, ""]] : []), [m.index, end, ""]];
+};
+function edit(pattern, candidates, want) {
+  for (const m of edited.matchAll(pattern)) {
+    for (const [from, to, by] of candidates(m)) {
+      const candidate = edited.slice(0, from) + by + edited.slice(to);
+      let parsed;
+      try { parsed = JSON.parse(candidate); } catch { continue; }
+      if (same(parsed, want)) { edited = candidate; current = parsed; return true; }
+    }
+  }
+  return false;
 }
-// insert one line right after the top-level `"dependencies": {`, keeping the rest of the file byte for byte; a key
-// of the same name nested earlier (e.g. inside a registry entry) is skipped by the check below
-const eol = text.includes("\r\n") ? "\r\n" : "\n";
-let out = null;
-for (const m of text.matchAll(/"dependencies"\s*:\s*\{/g)) {
-  const at = m.index + m[0].length;
-  const rest = text.slice(at);
-  const indent = (/^\r?\n([ \t]+)\S/.exec(rest) || [null, "    "])[1];
-  const empty = /^\s*\}/.test(rest);
-  const line = `${eol}${indent}${JSON.stringify(name)}: ${JSON.stringify(value)}${empty ? "" : ","}`;
-  const candidate = text.slice(0, at) + line + (empty ? eol + rest.replace(/^\s*/, "") : rest);
-  let parsed;
-  try { parsed = JSON.parse(candidate); } catch { continue; }
-  if (parsed.dependencies && parsed.dependencies[name] === value) { out = candidate; break; }
+const hadName = has(json.dependencies, name);
+// 1. the package id before 0.1.0: its entry becomes this one in place (or goes, when this one is listed too)
+if (has(json.dependencies, oldName)) {
+  const old = JSON.stringify(json.dependencies[oldName]);
+  const deps = {};
+  for (const [k, v] of Object.entries(json.dependencies)) {
+    if (k === oldName) { if (!hadName) deps[name] = value; } else deps[k] = v;
+  }
+  const pair = new RegExp(`"${esc(oldName)}"\\s*:\\s*"(?:[^"\\\\]|\\\\.)*"`, "g");
+  const replaced = edit(pair, (m) => hadName ? without(m) : [[m.index, m.index + m[0].length, `${JSON.stringify(name)}: ${JSON.stringify(value)}`]], { ...json, dependencies: deps });
+  if (!replaced) fail(`could not replace the old package id "${oldName}" in Packages/manifest.json; replace that entry by hand with "${name}": ${JSON.stringify(value)}`);
+  results.push(hadName
+    ? `CHANGE remove the old package id "${oldName}": ${old} from Packages/manifest.json (it lists "${name}" too)`
+    : `CHANGE replace the old package id "${oldName}": ${old} with "${name}": ${JSON.stringify(value)} in Packages/manifest.json`);
 }
-if (out === null) fail(`could not add "${name}" to the top-level "dependencies" of Packages/manifest.json`);
-if (dry !== "1") fs.writeFileSync(file, bom + out);
-console.log(`CHANGE add "${name}": ${JSON.stringify(value)} to Packages/manifest.json`);
+for (let i = Array.isArray(current.testables) ? current.testables.indexOf(oldName) : -1; i >= 0; i = current.testables.indexOf(oldName)) {
+  const listed = current.testables.includes(name);
+  const testables = listed ? current.testables.filter((t, k) => k !== i) : current.testables.map((t, k) => (k === i ? name : t));
+  const token = new RegExp(`"${esc(oldName)}"`, "g");
+  if (!edit(token, (m) => listed ? without(m) : [[m.index, m.index + m[0].length, JSON.stringify(name)]], { ...current, testables })) {
+    fail(`could not replace the old package id "${oldName}" in the "testables" of Packages/manifest.json; replace it by hand with "${name}"`);
+  }
+  results.push(listed
+    ? `CHANGE remove "${oldName}" from the "testables" of Packages/manifest.json (it lists "${name}" too)`
+    : `CHANGE replace "${oldName}" with "${name}" in the "testables" of Packages/manifest.json`);
+}
+if (hadName) {
+  results.push(`KEEP kept existing entry "${name}": ${JSON.stringify(json.dependencies[name])}`);
+} else if (!has(current.dependencies, name)) {
+  // insert one line right after the top-level `"dependencies": {`; a key of the same name nested earlier (e.g. inside
+  // a registry entry) is skipped by the check below
+  const eol = edited.includes("\r\n") ? "\r\n" : "\n";
+  let out = null;
+  for (const m of edited.matchAll(/"dependencies"\s*:\s*\{/g)) {
+    const at = m.index + m[0].length;
+    const rest = edited.slice(at);
+    const indent = (/^\r?\n([ \t]+)\S/.exec(rest) || [null, "    "])[1];
+    const empty = /^\s*\}/.test(rest);
+    const line = `${eol}${indent}${JSON.stringify(name)}: ${JSON.stringify(value)}${empty ? "" : ","}`;
+    const candidate = edited.slice(0, at) + line + (empty ? eol + rest.replace(/^\s*/, "") : rest);
+    let parsed;
+    try { parsed = JSON.parse(candidate); } catch { continue; }
+    if (parsed.dependencies && parsed.dependencies[name] === value) { out = candidate; break; }
+  }
+  if (out === null) fail(`could not add "${name}" to the top-level "dependencies" of Packages/manifest.json`);
+  edited = out;
+  results.push(`CHANGE add "${name}": ${JSON.stringify(value)} to Packages/manifest.json`);
+}
+if (dry !== "1" && edited !== text) fs.writeFileSync(file, bom + edited);
+console.log(results.join("\n"));
 NODE
 )"
-case "$MANIFEST_RESULT" in
-  CHANGE*) change "${MANIFEST_RESULT#CHANGE }" ;;
-  KEEP*) info "${MANIFEST_RESULT#KEEP }" ;;
-  FAIL*) die "${MANIFEST_RESULT#FAIL }" ;;
-  *) die "unexpected manifest result: $MANIFEST_RESULT" ;;
-esac
+while IFS= read -r MANIFEST_LINE; do
+  case "$MANIFEST_LINE" in
+    CHANGE*) change "${MANIFEST_LINE#CHANGE }" ;;
+    KEEP*) info "${MANIFEST_LINE#KEEP }" ;;
+    FAIL*) die "${MANIFEST_LINE#FAIL }" ;;
+    *) die "unexpected manifest result: $MANIFEST_RESULT" ;;
+  esac
+done <<<"$MANIFEST_RESULT"
+if [ -d "$PROJECT/Packages/$PKG_OLD_NAME" ]; then
+  info "warning: Packages/$PKG_OLD_NAME is an embedded copy of the package under its id before 0.1.0; remove it (the package is $PKG_NAME now)"
+fi
 if [ "$PACKAGE" = git ] && [ "${DESIGN_UI_SETUP_OFFLINE:-0}" != 1 ] && ! git -C "$REPO" ls-remote --exit-code origin "$REV" >/dev/null 2>&1 && ! git -C "$REPO" ls-remote --exit-code origin "refs/heads/$REV" >/dev/null 2>&1; then
   info "warning: $REV was not found on origin; Unity can resolve the git URL only after it is pushed (or use --package local)"
 fi

@@ -207,7 +207,7 @@ ekranın oynatıcısı yoktur): geçişler sona atlar, animasyonlar duran karele
 `design_ui_verify` açık editörünü hiçbir zaman kullanmaz. `design-ui.config.json` içindeki
 `unityRunner.command.capture` komutunu çalıştırır. Bu komut projenin bir **kopyasında** çizmelidir (Unity aynı projeyi
 iki kez açamaz); kopyada derlenmiş ekran bulunmalı ve `Packages/manifest.json` paketin testlerini listelemelidir
-(`"testables": ["com.unity.design-ui"]`). Komut, EditMode testi
+(`"testables": ["com.ertugrulgaziakcan.design-ui"]`). Komut, EditMode testi
 `DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv`'i batchmode'da çalıştırır; sunucu dışa aktarım ve çıktı
 klasörlerini ortam değişkenleriyle verir (`DESIGN_UI_EXPORT_DIR`, `DESIGN_UI_OUT_DIR`; `{exportDir}` ve `{outDir}`
 yer tutucuları olarak da). Kendine uyarlayacağın bir örnek:

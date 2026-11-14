@@ -29,7 +29,7 @@ describe("lint rule table", () => {
   });
 
   it("U-MRK-011 names the members the compiler's view class reserves, as it names them", () => {
-    const cs = fs.readFileSync(new URL("../../../packages/com.unity.design-ui/Editor/Compile/ViewCodeWriter.cs", import.meta.url), "utf8");
+    const cs = fs.readFileSync(new URL("../../../packages/com.ertugrulgaziakcan.design-ui/Editor/Compile/ViewCodeWriter.cs", import.meta.url), "utf8");
     const names = (field: string): string[] => {
       const m = new RegExp(`static readonly string\\[\\] ${field} = \\{([^}]*)\\}`).exec(cs);
       expect(m, field).not.toBeNull();

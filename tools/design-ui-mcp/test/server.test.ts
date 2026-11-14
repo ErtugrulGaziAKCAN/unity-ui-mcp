@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { readConfig } from "../src/config.js";
 import { RULES } from "../src/exporter.js";
+import { OLD_PACKAGE_NAME, PACKAGE_NAME } from "../src/package-stamp.js";
 import { INSTALLED_PIPELINE, type Pipeline } from "../src/pipeline.js";
 import { encodePng } from "../../design-export/src/compare/png.js";
 import { RULE_SUMMARIES } from "../src/rule-table.js";
@@ -80,7 +81,7 @@ describe("server surface", () => {
     p.writeConfig({ unityRunner: { prefer: "editor", captureVia: "editor" } });
     const client = await serverFor(p.dir);
     const instructions = client.getInstructions() ?? "";
-    expect(instructions).toMatch(/design_ui_verify: the comparison is live, but the Unity capture cannot run: the com\.unity\.design-ui package has no Editor capture/);
+    expect(instructions).toMatch(/design_ui_verify: the comparison is live, but the Unity capture cannot run: the com\.ertugrulgaziakcan\.design-ui package has no Editor capture/);
     // the Editor route is live only while the bridge answers; the instructions are written once, so they say so
     expect(instructions).toMatch(/Live while the Unity Editor bridge answers[^\n]*\n- design_ui_import: [^\n]*design_ui_status shows whether it answers/);
     expect(instructions).not.toMatch(/Live in this version: [^\n]*design_ui_import/);
@@ -298,6 +299,24 @@ describe("design_ui_list and design_ui_status", () => {
     expect(r.data.config).toMatchObject({ ok: true, designRoot: p.designRoot });
   });
 
+  it("reports the package id before 0.1.0 when the project still lists it, and how to replace it", async () => {
+    const p = tempProject();
+    const clean = await call(await serverFor(p.dir), "design_ui_status");
+    expect(clean.data.package).toEqual({ id: PACKAGE_NAME, oldId: null });
+    expect(clean.text).not.toMatch(/old package id/);
+    fs.mkdirSync(path.join(p.dir, "Packages"));
+    fs.writeFileSync(path.join(p.dir, "Packages", "manifest.json"), JSON.stringify({
+      testables: [OLD_PACKAGE_NAME],
+      dependencies: { [OLD_PACKAGE_NAME]: `https://example.invalid/unity-ui-mcp.git?path=/packages/${OLD_PACKAGE_NAME}#main` },
+    }));
+    const r = await call(await serverFor(p.dir), "design_ui_status");
+    expect(r.isError).toBeFalsy();
+    expect(r.data.package.oldId).toMatchObject({ id: OLD_PACKAGE_NAME, where: ["Packages/manifest.json (dependencies)", "Packages/manifest.json (testables)"] });
+    expect(r.data.package.oldId.fix).toContain("scripts/setup.sh");
+    expect(r.text).toContain(`old package id: ${OLD_PACKAGE_NAME} in Packages/manifest.json (dependencies), Packages/manifest.json (testables); the package id is ${PACKAGE_NAME}`);
+    expect(r.text).toContain(`path=/packages/${PACKAGE_NAME}`);
+  });
+
   it("rejects a screen id outside designRoot", async () => {
     const p = tempProject();
     const r = await call(await serverFor(p.dir), "design_ui_status", { screen: "../Assets" });
@@ -355,9 +374,9 @@ describe("design_ui_import", () => {
   it("calls Unity again for an unchanged export when the package (the compiler) changed", async () => {
     const p = tempProject({ prefer: "command" });
     const dir = p.addScreen("clean-screen", "clean-screen");
-    const pkg = path.join(p.dir, "Packages", "com.unity.design-ui");
+    const pkg = path.join(p.dir, "Packages", "com.ertugrulgaziakcan.design-ui");
     fs.mkdirSync(path.join(pkg, "Editor"), { recursive: true });
-    fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "com.unity.design-ui", version: "0.1.0" }));
+    fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "com.ertugrulgaziakcan.design-ui", version: "0.1.0" }));
     fs.writeFileSync(path.join(pkg, "Editor", "Compiler.cs"), "// v1\n");
     const pipeline = stubPipeline();
     const client = await serverFor(p.dir, pipeline);
@@ -1029,7 +1048,7 @@ describe("design_ui_verify", () => {
     p.writeConfig({ unityRunner: { prefer: "command", captureVia: "editor" } });
     const r = await call(await serverFor(p.dir, { ...stubPipeline(), compareScreen: INSTALLED_PIPELINE.compareScreen, unityCapture: true }), "design_ui_verify", { screen: "clean-screen" });
     expect(r.isError).toBe(true);
-    expect(r.text).toMatch(/cannot capture: the com\.unity\.design-ui package has no Editor capture/);
+    expect(r.text).toMatch(/cannot capture: the com\.ertugrulgaziakcan\.design-ui package has no Editor capture/);
     expect(r.data).toMatchObject({ available: false, missing: ["capture"], verdict: null });
     expect(p.runnerCalls()).toEqual([]);
   });

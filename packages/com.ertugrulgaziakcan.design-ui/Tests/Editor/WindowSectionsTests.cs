@@ -192,6 +192,40 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void PackageSection_ReportsThePackageIdBefore010_WhileTheProjectListsIt()
+        {
+            const string old = DesignUiWindow.OldPackageName;
+            Assert.AreEqual("com.unity.design-ui", old);
+            var w = Open();
+            var label = w.rootVisualElement.Q<Label>("package-id");
+            Assert.AreEqual(DisplayStyle.None, label.style.display.value, "no manifest: nothing to report");
+
+            Directory.CreateDirectory(Full("Packages"));
+            File.WriteAllText(Full("Packages", "manifest.json"), "\uFEFF" + new JObject
+            {
+                ["testables"] = new JArray(old),
+                ["dependencies"] = new JObject { [old] = "https://example.invalid/unity-ui-mcp.git?path=/packages/" + old },
+            });
+            w.RefreshProject();
+            Assert.AreEqual(DisplayStyle.Flex, label.style.display.value);
+            StringAssert.StartsWith("Old package id " + old + " in Packages/manifest.json (dependencies), Packages/manifest.json (testables): " +
+                "the package id is com.ertugrulgaziakcan.design-ui since 0.1.0.", label.text);
+            StringAssert.Contains("scripts/setup.sh", label.text);
+            StringAssert.Contains("path=/packages/com.ertugrulgaziakcan.design-ui", label.text);
+
+            File.WriteAllText(Full("Packages", "manifest.json"), new JObject
+            {
+                ["dependencies"] = new JObject { ["com.ertugrulgaziakcan.design-ui"] = "file:../unity-ui-mcp/packages/com.ertugrulgaziakcan.design-ui" },
+            }.ToString());
+            Directory.CreateDirectory(Full("Packages", old));
+            w.RefreshProject();
+            Assert.AreEqual("Old package id " + old + " in Packages/" + old + " (an embedded copy)", label.text.Substring(0, label.text.IndexOf(':')));
+            Directory.Delete(Full("Packages", old));
+            w.RefreshProject();
+            Assert.AreEqual(DisplayStyle.None, label.style.display.value, "the new id only");
+        }
+
+        [Test]
         public void CopyButtons_CopyEachClientsSnippet_WithThisProjectsPath()
         {
             Config(new { mcpServer = "/srv/unity-ui-mcp/tools/design-ui-mcp/dist/server.js" });

@@ -5,8 +5,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/samples/FidelityProject/Packages/manifest.json"
-REL='"com.unity.design-ui": "file:../../../packages/com.unity.design-ui"'
-ABS="\"com.unity.design-ui\": \"file:$ROOT/packages/com.unity.design-ui\""
+REL='"com.ertugrulgaziakcan.design-ui": "file:../../../packages/com.ertugrulgaziakcan.design-ui"'
+ABS="\"com.ertugrulgaziakcan.design-ui\": \"file:$ROOT/packages/com.ertugrulgaziakcan.design-ui\""
 
 if ! grep -qF -- "$REL" "$MANIFEST"; then
   echo "unity-check: manifest entry is not the expected relative value:" >&2
@@ -35,7 +35,7 @@ P
 
 # a test that switches Enable Advanced Text makes Unity rewrite every PanelSettings asset, the package's too; it restores
 # them, and a run that leaves the package's asset changed says so
-PS="packages/com.unity.design-ui/Runtime/Themes/DesignUiPanelSettings.asset"
+PS="packages/com.ertugrulgaziakcan.design-ui/Runtime/Themes/DesignUiPanelSettings.asset"
 clean_before=0; git -C "$ROOT" diff --quiet -- "$PS" 2>/dev/null && clean_before=1
 set +e
 "$HOME/unity-clone-test/bin/unity-clone-test" --project "$ROOT/samples/FidelityProject" "$@"

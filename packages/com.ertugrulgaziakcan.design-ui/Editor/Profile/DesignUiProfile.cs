@@ -15,7 +15,7 @@ namespace DesignUi.Editor
     public sealed class DesignUiProfile : ScriptableObject
     {
         /// <summary>The package's minimal runtime theme: no Unity default theme, functional defaults only (spec 5.3).</summary>
-        public const string RuntimeThemePath = "Packages/com.unity.design-ui/Runtime/Themes/DesignUiRuntimeTheme.tss";
+        public const string RuntimeThemePath = "Packages/com.ertugrulgaziakcan.design-ui/Runtime/Themes/DesignUiRuntimeTheme.tss";
 
         /// <summary>
         /// The package's PanelSettings for design screens, in the verifier and in game: the runtime theme, Scale With
@@ -23,7 +23,7 @@ namespace DesignUi.Editor
         /// example the target texture); creating a PanelSettings without a theme makes the Editor write Unity's default
         /// runtime theme into the project.
         /// </summary>
-        public const string PanelSettingsPath = "Packages/com.unity.design-ui/Runtime/Themes/DesignUiPanelSettings.asset";
+        public const string PanelSettingsPath = "Packages/com.ertugrulgaziakcan.design-ui/Runtime/Themes/DesignUiPanelSettings.asset";
 
         [Tooltip("Folder with the design sources, IR and goldens, one subfolder per screen id (outside the product repository by default).")]
         public string designRoot;

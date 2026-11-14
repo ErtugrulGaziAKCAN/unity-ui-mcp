@@ -207,7 +207,7 @@ has no player): transitions jump to their end and animations show their still fr
 `design_ui_verify` never renders in your open Editor. It runs `unityRunner.command.capture` from
 `design-ui.config.json`, which must render on a **copy** of the project (Unity cannot open the same project twice) that
 has the compiled screen and lists the package's tests in its `Packages/manifest.json`
-(`"testables": ["com.unity.design-ui"]`). The command runs the EditMode test
+(`"testables": ["com.ertugrulgaziakcan.design-ui"]`). The command runs the EditMode test
 `DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv` in batchmode; the server passes the export and output folders
 in the environment (`DESIGN_UI_EXPORT_DIR`, `DESIGN_UI_OUT_DIR`, also as the `{exportDir}` and `{outDir}`
 placeholders). An example to adapt, with a script of your own:

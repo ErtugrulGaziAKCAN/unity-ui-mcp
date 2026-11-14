@@ -6,6 +6,7 @@ import { probeBridge, type BridgeStatus } from "../bridge.js";
 import type { ServerContext } from "../context.js";
 import { requireConfig } from "../context.js";
 import { designPath, findEntry, resolveScreen } from "../design.js";
+import { OLD_PACKAGE_NAME, oldPackageId, PACKAGE_NAME } from "../package-stamp.js";
 import { MISSING, unityStep } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { exportDirOf, importedEntry, readLastImport, readLastVerify, statusOf } from "../status.js";
@@ -40,7 +41,7 @@ export function availability(ctx: ServerContext, bridge?: BridgeStatus | null): 
         : compile.ready
           ? { available: true, needsEditor: compile.needsEditor, note: `live: export (lint, IR, goldens, assets), then the Unity compile ${compile.how}` }
           : compile.needsEditor
-            ? { available: false, needsEditor: true, note: `${compile.how}; the export is live, the Unity compile needs the open Unity Editor with the com.unity.design-ui bridge` }
+            ? { available: false, needsEditor: true, note: `${compile.how}; the export is live, the Unity compile needs the open Unity Editor with the com.ertugrulgaziakcan.design-ui bridge` }
             : { available: false, note: `the export is live, but the Unity compile cannot run: ${compile.how}` },
     design_ui_verify: !cmp
       ? { available: false, note: `not available yet: ${MISSING.compare}` }
@@ -54,7 +55,7 @@ export function availability(ctx: ServerContext, bridge?: BridgeStatus | null): 
       : kit.ready
         ? { available: true, needsEditor: kit.needsEditor, note: `live: ${kit.how}` }
         : kit.needsEditor
-          ? { available: false, needsEditor: true, note: `${kit.how}; kit sync needs the open Unity Editor with the com.unity.design-ui bridge` }
+          ? { available: false, needsEditor: true, note: `${kit.how}; kit sync needs the open Unity Editor with the com.ertugrulgaziakcan.design-ui bridge` }
           : { available: false, note: `the Unity kit sync cannot run: ${kit.how}` },
   };
 }
@@ -110,16 +111,24 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
           prefer: cfg.unityRunner.prefer, captureVia: cfg.unityRunner.captureVia,
         }
         : { ok: false, error: ctx.configError };
+      const old = oldPackageId(ctx.projectDir);
+      const oldId = old.length === 0 ? null : {
+        id: OLD_PACKAGE_NAME, where: old,
+        fix: `the package id is ${PACKAGE_NAME} since 0.1.0: run scripts/setup.sh of the unity-ui-mcp clone again (it replaces the old ` +
+          `dependency key and git URL path), or replace "${OLD_PACKAGE_NAME}" with "${PACKAGE_NAME}" in the manifest and the URL's ` +
+          `path=/packages/${PACKAGE_NAME} by hand`,
+      };
       const lines = [
         `design-ui MCP server ${VERSION} for ${ctx.projectDir}`,
         cfg ? `config: ${cfg.configPath} (designRoot ${cfg.designRoot}, Unity runner ${cfg.unityRunner.prefer})` : `config problem: ${ctx.configError}`,
+        ...(oldId ? [`old package id: ${OLD_PACKAGE_NAME} in ${old.join(", ")}; ${oldId.fix}`] : []),
         ...(unity ? [`Unity bridge: ${unity.bridge} — ${unity.detail}`] : []),
         `browser: ${ctx.runtime.browserWarm ? "warm" : "not started (starts on the first lint)"}`,
         "tools:",
         ...Object.entries(tools).map(([name, a]) => `- ${name}: ${a.note}`),
       ];
       return toolResult(lines.join("\n"), {
-        server: "design-ui", version: VERSION, project: ctx.projectDir, config, tools,
+        server: "design-ui", version: VERSION, project: ctx.projectDir, config, package: { id: PACKAGE_NAME, oldId }, tools,
         pipeline: { export: !!ctx.pipeline.exportScreen, compare: !!ctx.pipeline.compareScreen, capture: !!ctx.pipeline.unityCapture },
         unity, browser: { warm: ctx.runtime.browserWarm, launches: ctx.runtime.browserLaunches }, timings: t.done(),
       });

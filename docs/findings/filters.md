@@ -62,7 +62,7 @@ in text colour.
 
 ```
 cp -R design-kit <kit> ; set "filterFunctions" in <kit>/kit.config.json and filter.functions in
-  packages/com.unity.design-ui/Editor/Data/css-support.json to the functions to measure
+  packages/com.ertugrulgaziakcan.design-ui/Editor/Data/css-support.json to the functions to measure
 scripts/fidelity.sh --kit <kit> --out <out> design-kit/fixtures/fidelity/filters.html
 ```
 

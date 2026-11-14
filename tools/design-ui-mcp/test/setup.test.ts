@@ -91,7 +91,7 @@ describe("scripts/setup.sh", () => {
     const e = setupEnv();
     const r = e.run("--dry-run");
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain("would add \"com.unity.design-ui\"");
+    expect(r.out).toContain("would add \"com.ertugrulgaziakcan.design-ui\"");
     expect(r.out).toContain("would write");
     expect(r.out).toContain("would register MCP server design-ui");
     expect(r.out).toContain(`claude CLI: ${e.claudeStub}`);
@@ -105,9 +105,9 @@ describe("scripts/setup.sh", () => {
     const first = e.run();
     expect(first.code, first.out).toBe(0);
     const manifest = read(path.join(e.project, "Packages", "manifest.json"));
-    const added = manifest.split("\n").filter((l) => l.includes("com.unity.design-ui"));
+    const added = manifest.split("\n").filter((l) => l.includes("com.ertugrulgaziakcan.design-ui"));
     expect(added).toHaveLength(1);
-    expect(added[0]).toMatch(/^ {4}"com\.unity\.design-ui": "https:\/\/github\.com\/.+\.git\?path=\/packages\/com\.unity\.design-ui#.+",$/);
+    expect(added[0]).toMatch(/^ {4}"com\.ertugrulgaziakcan\.design-ui": "https:\/\/github\.com\/.+\.git\?path=\/packages\/com\.ertugrulgaziakcan\.design-ui#.+",$/);
     expect(manifest.replace(added[0] + "\n", "")).toBe(MANIFEST);
     const cfg = JSON.parse(read(path.join(e.project, "design-ui.config.json")));
     expect(cfg).toMatchObject({ designRoot: "Designs", kitDir: path.join(REPO, "design-kit"), mcpServer: SERVER_JS, unityRunner: { prefer: "editor" } });
@@ -184,7 +184,7 @@ describe("scripts/setup.sh", () => {
 
   it("keeps an existing package entry and an existing config", () => {
     const e = setupEnv();
-    const manifest = MANIFEST.replace(`"dependencies": {`, `"dependencies": {\n    "com.unity.design-ui": "file:/somewhere/else",`);
+    const manifest = MANIFEST.replace(`"dependencies": {`, `"dependencies": {\n    "com.ertugrulgaziakcan.design-ui": "file:/somewhere/else",`);
     fs.writeFileSync(path.join(e.project, "Packages", "manifest.json"), manifest);
     fs.writeFileSync(path.join(e.project, "design-ui.config.json"), "{\"mine\": true}\n");
     const r = e.run("--client", "none");
@@ -194,6 +194,66 @@ describe("scripts/setup.sh", () => {
     expect(read(path.join(e.project, "design-ui.config.json"))).toBe("{\"mine\": true}\n");
     expect(r.out).toContain(`has no "mcpServer" (the Design UI window's client snippets need it): add "mcpServer": ${JSON.stringify(SERVER_JS)}`);
     expect(r.out).toContain("Nothing to change");
+  });
+
+  const OLD = "com.unity.design-ui", NEW = "com.ertugrulgaziakcan.design-ui";
+
+  it("replaces the package id before 0.1.0 in place (dependency key, URL and testables); --dry-run shows it first", () => {
+    const e = setupEnv();
+    const file = path.join(e.project, "Packages", "manifest.json");
+    const oldUrl = `https://github.com/x/unity-ui-mcp.git?path=/packages/${OLD}#m0-m1`;
+    const before = `{
+  "testables": ["com.unity.test-framework", "${OLD}"],
+  "dependencies": {
+    "com.unity.test-framework": "1.6.0",
+    "${OLD}": "${oldUrl}",
+    "com.unity.modules.ui": "1.0.0"
+  }
+}
+`;
+    fs.writeFileSync(file, before);
+    const value = `file:${path.join(REPO, "packages", NEW)}`;
+    const dry = e.run("--dry-run", "--package", "local", "--client", "none");
+    expect(dry.code, dry.out).toBe(0);
+    expect(dry.out).toContain(`would replace the old package id "${OLD}": "${oldUrl}" with "${NEW}": ${JSON.stringify(value)} in Packages/manifest.json`);
+    expect(dry.out).toContain(`would replace "${OLD}" with "${NEW}" in the "testables" of Packages/manifest.json`);
+    expect(dry.out).not.toContain("would add");
+    expect(read(file)).toBe(before);
+
+    const r = e.run("--package", "local", "--client", "none");
+    expect(r.code, r.out).toBe(0);
+    expect(read(file)).toBe(before.replace(`"${OLD}": "${oldUrl}"`, `"${NEW}": ${JSON.stringify(value)}`).replace(`"${OLD}"]`, `"${NEW}"]`));
+    const again = e.run("--package", "local", "--client", "none");
+    expect(again.code, again.out).toBe(0);
+    expect(again.out).toContain(`kept existing entry "${NEW}"`);
+    expect(again.out).toContain("Nothing to change");
+  });
+
+  it("removes the old package id when the new one is listed too, and warns about an embedded copy under the old id", () => {
+    const e = setupEnv();
+    const file = path.join(e.project, "Packages", "manifest.json");
+    fs.writeFileSync(file, `{
+  "testables": ["${NEW}", "${OLD}"],
+  "dependencies": {
+    "${NEW}": "file:/mine",
+    "${OLD}": "file:/old"
+  }
+}
+`);
+    fs.mkdirSync(path.join(e.project, "Packages", OLD));
+    const r = e.run("--client", "none");
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(`remove the old package id "${OLD}": "file:/old" from Packages/manifest.json (it lists "${NEW}" too)`);
+    expect(r.out).toContain(`remove "${OLD}" from the "testables" of Packages/manifest.json`);
+    expect(r.out).toContain(`kept existing entry "${NEW}": "file:/mine"`);
+    expect(r.out).toContain(`warning: Packages/${OLD} is an embedded copy`);
+    expect(read(file)).toBe(`{
+  "testables": ["${NEW}"],
+  "dependencies": {
+    "${NEW}": "file:/mine"
+  }
+}
+`);
   });
 
   it("edits the top-level dependencies only, and keeps a UTF-8 BOM", () => {
@@ -212,7 +272,7 @@ describe("scripts/setup.sh", () => {
     const out = read(file);
     expect(out.startsWith("﻿")).toBe(true);
     const json = JSON.parse(out.slice(1));
-    expect(json.dependencies["com.unity.design-ui"]).toBe(`file:${path.join(REPO, "packages", "com.unity.design-ui")}`);
+    expect(json.dependencies["com.ertugrulgaziakcan.design-ui"]).toBe(`file:${path.join(REPO, "packages", "com.ertugrulgaziakcan.design-ui")}`);
     expect(json.scopedRegistries[0].dependencies).toEqual({});
     expect(out.split("\n").length).toBe(nested.split("\n").length + 1);
   });
@@ -221,7 +281,7 @@ describe("scripts/setup.sh", () => {
     const e = setupEnv();
     const r = e.run("--package", "local", "--client", "none", "--design-root", "UI/Designs");
     expect(r.code, r.out).toBe(0);
-    expect(read(path.join(e.project, "Packages", "manifest.json"))).toContain(`"com.unity.design-ui": "file:${path.join(REPO, "packages", "com.unity.design-ui")}",`);
+    expect(read(path.join(e.project, "Packages", "manifest.json"))).toContain(`"com.ertugrulgaziakcan.design-ui": "file:${path.join(REPO, "packages", "com.ertugrulgaziakcan.design-ui")}",`);
     expect(JSON.parse(read(path.join(e.project, "design-ui.config.json"))).designRoot).toBe("UI/Designs");
   });
 

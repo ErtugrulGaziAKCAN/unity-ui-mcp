@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -43,7 +47,7 @@ namespace DesignUi.Editor
         static string ProjectRoot => ProjectRootOverride ?? DesignUiBridgeSettings.ProjectRoot;
 
         static string s_Version;
-        Label m_Status, m_Project, m_Last, m_LastOperation, m_Package;
+        Label m_Status, m_Project, m_Last, m_LastOperation, m_Package, m_PackageId;
         Toggle m_Enable;
         Label m_ConfigPath, m_DesignRoot, m_LastReport, m_ProfileNote, m_OpResult, m_TextResolver, m_TextKit, m_TextTwins, m_TextFaces, m_TextFontSet, m_ServerPath, m_CopyResult;
         Button m_OpenConfig, m_OpenDesignRoot, m_OpenReport, m_CreateProfile;
@@ -139,6 +143,7 @@ namespace DesignUi.Editor
             root.Add(Section("Package", out var pkg));
             m_Package = new Label { name = "package" };
             pkg.Add(m_Package);
+            pkg.Add(m_PackageId = Wrapped("package-id"));
 
             DesignUiBridge.StateChanged -= Refresh;
             DesignUiBridge.StateChanged += Refresh;
@@ -268,8 +273,45 @@ namespace DesignUi.Editor
             m_ServerPath.text = m_Config.ServerPath == null ? McpClientSnippets.UnknownServer
                 : "Server: " + m_Config.ServerPath + (File.Exists(m_Config.ServerPath) ? "" : " (not built yet: run scripts/setup.sh in that clone)");
 
+            var oldId = OldPackageIdNote(ProjectRoot);
+            m_PackageId.text = oldId ?? "";
+            SetShown(m_PackageId, oldId != null);
+
             // another profile or kit folder (the config changed, a profile was created or picked): check the Text row again
             if (TextKey() != m_TextCheckedFor) RefreshText();
+        }
+
+        /// <summary>The package id since 0.1.0.</summary>
+        internal const string PackageName = "com.ertugrulgaziakcan.design-ui";
+
+        /// <summary>The package's id before 0.1.0 (the <c>com.unity.</c> prefix is reserved for Unity's own packages).</summary>
+        internal const string OldPackageName = "com.unity.design-ui";
+
+        /// <summary>
+        /// Where the project still names the package by its id before 0.1.0 (a dependency or <c>testables</c> entry of
+        /// <c>Packages/manifest.json</c>, or an embedded copy in <c>Packages/</c>) and how to replace it; null when nowhere.
+        /// The MCP server's design_ui_status reports the same.
+        /// </summary>
+        internal static string OldPackageIdNote(string projectRoot)
+        {
+            var where = new List<string>();
+            var manifest = Path.Combine(projectRoot, "Packages", "manifest.json");
+            try
+            {
+                if (File.Exists(manifest))
+                {
+                    var o = JObject.Parse(File.ReadAllText(manifest));
+                    if (o["dependencies"] is JObject deps && deps.Property(OldPackageName) != null) where.Add("Packages/manifest.json (dependencies)");
+                    if (o["testables"] is JArray testables && testables.Any(t => t.Type == JTokenType.String && (string)t == OldPackageName))
+                        where.Add("Packages/manifest.json (testables)");
+                }
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is JsonException) { }
+            if (Directory.Exists(Path.Combine(projectRoot, "Packages", OldPackageName))) where.Add("Packages/" + OldPackageName + " (an embedded copy)");
+            return where.Count == 0 ? null
+                : "Old package id " + OldPackageName + " in " + string.Join(", ", where) + ": the package id is " + PackageName +
+                  " since 0.1.0. Run scripts/setup.sh of your unity-ui-mcp clone again (it replaces the dependency key and the git URL path), " +
+                  "or replace them by hand (path=/packages/" + PackageName + ").";
         }
 
         string TextKey()

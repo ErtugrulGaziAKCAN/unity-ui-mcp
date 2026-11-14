@@ -3,12 +3,33 @@ import fs from "node:fs";
 import path from "node:path";
 
 /** The Unity package whose compiler turns an export into a screen. */
-export const PACKAGE_NAME = "com.unity.design-ui";
+export const PACKAGE_NAME = "com.ertugrulgaziakcan.design-ui";
+
+/**
+ * The package's id before 0.1.0 (the `com.unity.` prefix is reserved for Unity's own packages). scripts/setup.sh
+ * replaces a project's entry under it; design_ui_status reports one it finds ({@link oldPackageId}).
+ */
+export const OLD_PACKAGE_NAME = "com.unity.design-ui";
 
 const sha256 = (data: Buffer | string) => crypto.createHash("sha256").update(data).digest("hex");
 
 function readJson(file: string): any {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+  try { return JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "")); } catch { return null; }
+}
+
+/**
+ * Where a Unity project still names the package by its id before 0.1.0: a dependency or a `testables` entry in
+ * `Packages/manifest.json`, or an embedded copy in `Packages/`. Empty when there is none (or no readable manifest).
+ */
+export function oldPackageId(projectDir: string): string[] {
+  const packages = path.join(projectDir, "Packages");
+  const manifest = readJson(path.join(packages, "manifest.json"));
+  const deps = manifest?.dependencies;
+  const found: string[] = [];
+  if (deps && typeof deps === "object" && Object.prototype.hasOwnProperty.call(deps, OLD_PACKAGE_NAME)) found.push("Packages/manifest.json (dependencies)");
+  if (Array.isArray(manifest?.testables) && manifest.testables.includes(OLD_PACKAGE_NAME)) found.push("Packages/manifest.json (testables)");
+  if (fs.existsSync(path.join(packages, OLD_PACKAGE_NAME))) found.push(`Packages/${OLD_PACKAGE_NAME} (an embedded copy)`);
+  return found;
 }
 
 /**

@@ -150,7 +150,7 @@ export async function bridgeStatus(projectDir: string, timeoutMs = 1500): Promis
   if (!info) {
     return {
       bridge: "not-found", projectPath: projectDir,
-      detail: `no Unity Editor bridge for this project (${path.relative(projectDir, bridgeFile(projectDir))} missing or for another project): open the project in Unity with the com.unity.design-ui package`,
+      detail: `no Unity Editor bridge for this project (${path.relative(projectDir, bridgeFile(projectDir))} missing or for another project): open the project in Unity with the com.ertugrulgaziakcan.design-ui package`,
     };
   }
   const base = { projectPath: projectDir, port: info.port, version: info.version };

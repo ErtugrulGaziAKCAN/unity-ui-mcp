@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { packageStamp, PACKAGE_NAME } from "../src/package-stamp.js";
+import { OLD_PACKAGE_NAME, oldPackageId, packageStamp, PACKAGE_NAME } from "../src/package-stamp.js";
 import { tempDir } from "./helpers.js";
 
 function project(): string {
@@ -52,10 +52,32 @@ describe("packageStamp", () => {
     expect(packageStamp(embedded)).toBe(packageStamp(dir));
   });
 
+  it("is the id of the repository's Unity package, in its folder name and its package.json", () => {
+    const pkg = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../packages", PACKAGE_NAME, "package.json");
+    expect(JSON.parse(fs.readFileSync(pkg, "utf8")).name).toBe(PACKAGE_NAME);
+  });
+
   it("matches the package stamp contract shared with the Unity package", () => {
     const contract = JSON.parse(fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../contracts/package-stamp.json"), "utf8"));
     const dir = project();
     writePackage(path.join(dir, "Packages", PACKAGE_NAME), contract.files);
     expect(packageStamp(dir)).toBe(contract.stamp);
+  });
+});
+
+describe("oldPackageId", () => {
+  it("names where a project still uses the package id before 0.1.0", () => {
+    expect(OLD_PACKAGE_NAME).toBe("com.unity.design-ui");
+    const dir = project();
+    expect(oldPackageId(dir)).toEqual([]);
+    const manifest = path.join(dir, "Packages", "manifest.json");
+    fs.writeFileSync(manifest, JSON.stringify({ dependencies: { [PACKAGE_NAME]: "file:../x" }, testables: [PACKAGE_NAME] }));
+    expect(oldPackageId(dir)).toEqual([]);
+    // a UTF-8 BOM, as Unity and some editors write it
+    fs.writeFileSync(manifest, "\uFEFF" + JSON.stringify({ dependencies: { [OLD_PACKAGE_NAME]: "https://example.invalid/r.git?path=/packages/" + OLD_PACKAGE_NAME }, testables: [OLD_PACKAGE_NAME] }));
+    expect(oldPackageId(dir)).toEqual(["Packages/manifest.json (dependencies)", "Packages/manifest.json (testables)"]);
+    fs.writeFileSync(manifest, JSON.stringify({ dependencies: {} }));
+    fs.mkdirSync(path.join(dir, "Packages", OLD_PACKAGE_NAME));
+    expect(oldPackageId(dir)).toEqual([`Packages/${OLD_PACKAGE_NAME} (an embedded copy)`]);
   });
 });

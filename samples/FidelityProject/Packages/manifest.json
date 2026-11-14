@@ -1,7 +1,7 @@
 {
-  "testables": ["com.unity.design-ui"],
+  "testables": ["com.ertugrulgaziakcan.design-ui"],
   "dependencies": {
-    "com.unity.design-ui": "file:../../../packages/com.unity.design-ui",
+    "com.ertugrulgaziakcan.design-ui": "file:../../../packages/com.ertugrulgaziakcan.design-ui",
     "com.unity.localization": "1.5.10",
     "com.unity.test-framework": "1.6.0",
     "com.unity.multiplayer.center": "1.0.1",

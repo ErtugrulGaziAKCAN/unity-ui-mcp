@@ -484,7 +484,7 @@ namespace DesignUi.Editor.Tests
         public void Twin_FolderOutsideAssets_Throws()
         {
             var tmp = FontFixture.CreateTmp(FontFixture.RegularTtf, "Twin Outside");
-            Assert.Throws<FontSetupException>(() => FontTwinGenerator.GetOrCreateTwin(tmp, "Packages/com.unity.design-ui/Fonts"));
+            Assert.Throws<FontSetupException>(() => FontTwinGenerator.GetOrCreateTwin(tmp, "Packages/com.ertugrulgaziakcan.design-ui/Fonts"));
             Assert.Throws<FontSetupException>(() => FontTwinGenerator.GetOrCreateTwin(tmp, "/tmp/twins"));
         }
 

@@ -13,7 +13,7 @@ rules fails lint with a rule id and a fix; nothing is silently approximated.
 
 | Part | What it is |
 |---|---|
-| `packages/com.unity.design-ui` | Unity package (Unity 6000.3 or later): compiler, generated views, runtime helpers, Editor bridge, verifier |
+| `packages/com.ertugrulgaziakcan.design-ui` | Unity package (Unity 6000.3 or later): compiler, generated views, runtime helpers, Editor bridge, verifier |
 | `tools/design-ui-mcp` | MCP server (stdio) for any MCP client, one per Unity project |
 | `tools/design-export` | Node CLI behind the server: `lint`, `export`, `compare`, `kit build`, `kit claude` |
 | `skills/unity-ui-mcp` | The `/unity-ui-mcp` chat skill for Claude Code, Codex and Cursor |
@@ -73,11 +73,11 @@ scripts/setup.sh --project <UnityProjectDir> --dry-run   # then without --dry-ru
 Unity package (Package Manager → **+** → *Install package from git URL…*):
 
 ```
-https://github.com/ErtugrulGaziAKCAN/unity-ui-mcp.git?path=/packages/com.unity.design-ui
+https://github.com/ErtugrulGaziAKCAN/unity-ui-mcp.git?path=/packages/com.ertugrulgaziakcan.design-ui
 ```
 
 Without a `#revision` Unity takes the default branch; append `#<tag>` or `#<commit>` to pin a version. Unity records the
-commit in `packages-lock.json`; to update, add the URL again or remove the `com.unity.design-ui` entry from
+commit in `packages-lock.json`; to update, add the URL again or remove the `com.ertugrulgaziakcan.design-ui` entry from
 `packages-lock.json`.
 
 MCP server, one per Unity project, the same command for every client:
@@ -264,6 +264,7 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
 |---|---|
 | `unity.bridge: "not-found"` | The project is not open in Unity, the package is not resolved yet, or the bridge is off in `Window > Design UI > Status`. |
 | `unity.bridge: "not-responding"` | Unity is busy, reloading scripts or closed; wait and call `design_ui_list` again. `"unauthorized"`: press Restart in the window. |
+| "old package id" in `design_ui_status` or the Status window | The project lists the package under its id before 0.1.0 (see the changelog): run `scripts/setup.sh` again; it replaces the dependency key and the git URL path. |
 | `design_ui_*` tools missing | The chat started before the registration: start a new one in the folder the server is registered for. |
 | `No DesignUiProfile at …` | Create the profile: `Window > Design UI > Status`, **Create Profile**. |
 | Compile errors after an import | The import returns Unity's compiler messages. Generated view under an assembly definition: add `DesignUi.Runtime` to its references. A presenter using a removed `data-u-id`: put the id back or update the presenter. |

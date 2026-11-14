@@ -253,7 +253,7 @@ namespace DesignUi.Editor.Tests
             StringAssert.Contains("DesignUi.Runtime", error);
             Assert.IsFalse(Directory.Exists(output), "nothing is written");
 
-            foreach (var reference in new[] { "DesignUi.Runtime", "GUID:" + AssetDatabase.AssetPathToGUID("Packages/com.unity.design-ui/Runtime/DesignUi.Runtime.asmdef") })
+            foreach (var reference in new[] { "DesignUi.Runtime", "GUID:" + AssetDatabase.AssetPathToGUID("Packages/com.ertugrulgaziakcan.design-ui/Runtime/DesignUi.Runtime.asmdef") })
             {
                 File.WriteAllText(game + "/Game.UI.asmdef", "{ \"name\": \"Game.UI\", \"references\": [\"" + reference + "\"] }");
                 var ok = ScreenCompiler.Compile(ShowcaseExport(), Profile(output));

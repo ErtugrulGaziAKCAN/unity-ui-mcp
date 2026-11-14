@@ -31,8 +31,8 @@ Call `design_ui_list`. It lists the screens under `designRoot` and reports `unit
 
 - `connected`: continue.
 - anything else (`not-found`, `not-responding`, `unauthorized`): tell the user to open the project in Unity with the
-  `com.unity.design-ui` package installed (`Window > Design UI > Status` shows the bridge) and stop import and
-  verify. Lint needs no Unity: run `design_ui_lint` only if the user asked for lint alone, then stop.
+  `com.ertugrulgaziakcan.design-ui` package installed (`Window > Design UI > Status` shows the bridge) and stop import
+  and verify. Lint needs no Unity: run `design_ui_lint` only if the user asked for lint alone, then stop.
 
 Call `design_ui_status` once and read which tools are live in this version. Say honestly which steps are "not
 available yet" (a tool that is not available returns an error with the reason). Never replace such a step by hand

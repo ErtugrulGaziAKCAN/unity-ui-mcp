@@ -2,7 +2,7 @@
 // kit's text-style table, at every viewport of the kit, measured with the exporter's own page setup and kit fonts. The
 // panel proof (LineBoxStyleTableTests) checks Unity's first layout against it. Run it again whenever the table changes:
 //
-//   npx tsx packages/com.unity.design-ui/Tests/Editor/Data/tools~/chromium-kerning-line.mts [kitDir]
+//   npx tsx packages/com.ertugrulgaziakcan.design-ui/Tests/Editor/Data/tools~/chromium-kerning-line.mts [kitDir]
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

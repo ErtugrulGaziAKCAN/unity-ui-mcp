@@ -60,7 +60,7 @@ Neither UI Toolkit route is within the thresholds, so group opacity is a design 
 
 ```
 cp -R design-kit <kit>   # add "opacity" to filterFunctions in <kit>/kit.config.json and to filter.functions in
-                         # packages/com.unity.design-ui/Editor/Data/css-support.json (revert afterwards)
+                         # packages/com.ertugrulgaziakcan.design-ui/Editor/Data/css-support.json (revert afterwards)
 sed -E 's/opacity: ([0-9.]+);/filter: opacity(\1);/g; s/data-u-screen="([a-z.-]+)"/data-u-screen="m.fo-<name>"/' \
   design-kit/components/button.html > fo-button.html   # likewise toggle, pseudo-states, colors-gradients
 scripts/fidelity.sh --kit <kit> --out <out> fo-button.html fo-toggle.html fo-pseudo-states.html fo-colors-gradients.html
