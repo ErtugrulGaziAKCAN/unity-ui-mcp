@@ -61,6 +61,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- Linux: headless Chromium starts each page with the pointer at (0, 0), so the top-left element was `:hover` in the
+  base state and lint, extract and capture saw no hover change there. The exporter now moves the pointer off the page
+  after it loads.
+- Linux: Chromium hinted text to whole-pixel glyph advances, so goldens laid text out differently from UI Toolkit. The
+  exporter launches Chromium with unhinted text (no effect on macOS).
+- GitHub Actions (`.github/workflows/node.yml`) runs the Node suites and type checks on Linux with Node 20 and 22.
 - Kit sync and imports through the Editor wait for the script compile as long as `unityRunner.timeoutSec` allows (it
   was a fixed 300 s); `design_ui_import` and `design_ui_kit_sync` are marked destructive and `design_ui_lint` as reaching
   the network (allowed CDN scripts).

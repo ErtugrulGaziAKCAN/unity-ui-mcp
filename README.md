@@ -316,7 +316,8 @@ npx tsc --noEmit -p tools/design-export && npx tsc --noEmit -p tools/design-ui-m
 npx design-export kit build design-kit --check      # RULES.md, base.css and the kit pages are current
 ```
 
-Run these before a pull request. The Unity package tests
+Run these before a pull request. GitHub Actions (`.github/workflows/node.yml`) runs the same Node suites and type
+checks on Linux with Node 20 and 22 on every push and pull request. The Unity package tests
 (EditMode, in `samples/FidelityProject`) and the fidelity suite (`scripts/fidelity.sh`) need Unity and run locally:
 `samples/FidelityProject` references the package by a relative path, and `scripts/unity-check.sh` is the maintainer's
 wrapper for running them on an isolated copy.
