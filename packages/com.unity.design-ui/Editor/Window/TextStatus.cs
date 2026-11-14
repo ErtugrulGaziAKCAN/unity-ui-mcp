@@ -47,12 +47,14 @@ namespace DesignUi.Editor
 
             s.Resolver = FontMap.ResolverDescription(profile);
             FontMap.FontsPlan plan;
-            try { plan = FontMap.Plan(profile, FontMap.ResolverFor(profile)); }
+            IFontResolver resolver = null;
+            try { plan = FontMap.Plan(profile, resolver = FontMap.ResolverFor(profile)); }
             catch (FontSetupException e)
             {
                 s.Kit = s.Twins = e.Message;
                 return s;
             }
+            if (FontMap.FallbackNote(resolver) is string fellBack) s.Resolver += "; " + fellBack;
             var problems = plan.Errors.Concat(plan.Missing.Select(l => "Font not resolvable: " + FontMap.NoFont(l))).ToList();
             if (problems.Count > 0)
             {

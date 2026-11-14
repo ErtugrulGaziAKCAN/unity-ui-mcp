@@ -3,7 +3,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { requireConfig, type ServerContext } from "../context.js";
-import { designPath, findEntry, resolveScreen, sha256, sourceSha } from "../design.js";
+import { designPath, findEntry, folderScreens, mixedScreens, resolveScreen, sha256, sourceSha } from "../design.js";
 import { MISSING } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { CompileWaitTimeout, runUnity, UnityRunnerError, unityIssues, withIssues } from "../runner.js";
@@ -69,7 +69,13 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       if (!fs.existsSync(irFile)) throw new Error(`the export of ${screen} wrote no screen.ir.json in ${exportDir}`);
       const irBytes = fs.readFileSync(irFile);
       const irSha = sha256(irBytes);
-      if (page) screen = irScreen(irBytes) ?? ref.screen;
+      // the screen id is the export's (data-u-screen), the folder's bookkeeping key: the folder's other pages must name it too
+      screen = irScreen(irBytes) ?? ref.screen;
+      const mixed = mixedScreens(dir, cfg.designRoot, folderScreens(dir).map((x) => (x.page === entryName ? { page: x.page, screen } : x)));
+      if (mixed) {
+        return toolResult(`Import of ${page ?? screen} stopped: ${mixed}. Unity was not called and nothing was recorded.`,
+          { screen, entry: entryName, exported, unityCalled: false, exportDir, timings: t.done() }, true);
+      }
       const named = page ? `${screen} (${page})` : screen;
       const verifyArg = page ?? screen;
 
@@ -95,8 +101,8 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         if (!(e instanceof UnityRunnerError)) throw e;
         if (e instanceof CompileWaitTimeout) {
           // the files were written; only the compile's outcome is missing, so nothing is recorded
-          return toolResult(`Imported the files of ${named} into Unity, but ${e.message}. The import is not recorded; import again once Unity has compiled.`,
-            { screen, exported, unityCalled: true, via: "editor", unity: e.answer, exportDir, timings: t.done() }, true);
+          return toolResult([`Imported the files of ${named} into Unity, but ${e.message}. The import is not recorded; import again once Unity has compiled.`, ...unityIssues(e)].join("\n"),
+            { screen, exported, unityCalled: true, via: "editor", unity: e.answer, warnings: e.warnings, errors: e.errors, exportDir, timings: t.done() }, true);
         }
         return toolResult(`Import of ${named} not run: ${e.message}`, { screen, exported, unityCalled: false, exportDir, timings: t.done() }, true);
       }

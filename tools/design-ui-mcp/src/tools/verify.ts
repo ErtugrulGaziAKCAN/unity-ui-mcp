@@ -3,7 +3,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { requireConfig, type ServerContext } from "../context.js";
-import { designPath, resolveScreen, sourceSha } from "../design.js";
+import { designPath, exportedPage, resolveScreen, sha256, sourceSha } from "../design.js";
 import { MISSING, unityStep } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { runUnity, UnityRunnerError } from "../runner.js";
@@ -52,7 +52,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       // the folder keeps one import: a page verifies only when it is that import (another page's goldens are not its own)
       const entry = importedEntry(dir, imp);
       if (ref.entry && entry !== path.relative(dir, ref.entry)) {
-        return toolResult(`${page} is not the page ${screen} last imported (${entry ?? "a page this version cannot name"}, ${imp.importedAt}): ` +
+        return toolResult(`${page} is not the last import of its screen folder (${entry ?? "a page this version cannot name"}, ${imp.importedAt}): ` +
           `run design_ui_import { design: "${page}" } first, then verify it. No capture ran.`, { screen, entry: path.relative(dir, ref.entry), verdict: null, timings: t.done() }, true);
       }
       screen = imp.screen;
@@ -61,6 +61,16 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       }
 
       const exportDir = exportDirOf(dir), unityDir = unityDirOf(dir), reportPath = reportPathOf(dir);
+      // the export must be the recorded import's: a later import exports before Unity runs, and when its Unity step does not
+      // finish the folder's export holds that other page while the record still names this one
+      const exported = fs.existsSync(path.join(exportDir, "screen.ir.json")) ? fs.readFileSync(path.join(exportDir, "screen.ir.json")) : null;
+      if (!exported || sha256(exported) !== imp.irSha) {
+        const held = exported ? exportedPage(exported) : null;
+        const again = entry ? designPath(path.join(dir, entry), cfg.designRoot) : screen;
+        return toolResult(`${page ?? screen} cannot be verified: the export holds ${held ? designPath(path.join(dir, held), cfg.designRoot) : exported ? "another export" : "nothing"}; ` +
+          `import ${again} again first (its import of ${imp.importedAt} is recorded, but the export changed since). No capture ran.`,
+        { screen, entry, verdict: null, timings: t.done() }, true);
+      }
       // the capture goes to a fresh staging folder: captures left from an earlier run are never compared, and the
       // previous report, its captures and last-verify.json stay as they are until there is a new verdict
       const staging = `${unityDir}.next`;

@@ -188,6 +188,13 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.AreEqual(new[] { "orphan screen folder (not deleted): A" }, import.Result.body["warnings"].Values<string>().ToArray());
             CollectionAssert.IsEmpty(import.Result.body["errors"].Values<string>().ToArray());
 
+            // a handler that throws is an error in the list too
+            DesignUiBridge.KitSyncHandler = (p, k) => throw new InvalidOperationException("boom");
+            LogAssert.Expect(LogType.Exception, new Regex("boom"));
+            var thrown = Send("POST", "/kit-sync", Token(), "{\"profile\":\"/p\",\"kitDir\":\"/k\"}");
+            yield return Wait(thrown);
+            CollectionAssert.AreEqual(new[] { "Unhandled error: boom" }, thrown.Result.body["errors"].Values<string>().ToArray());
+
             // a result with a log only answers empty lists
             DesignUiBridge.KitSyncHandler = (p, k) => new OpResult(0, "ok");
             var plain = Send("POST", "/kit-sync", Token(), "{\"profile\":\"/p\",\"kitDir\":\"/k\"}");

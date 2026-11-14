@@ -289,16 +289,17 @@ locale X", including its fallback chain and weight table.
   The profile's `localeFonts` maps locales without code. A project with its own font system derives from the Editor
   base class `DesignUiFontResolver` (a `ScriptableObject`) in one of its Editor assemblies and sets the asset as the
   profile's `fontResolver`: kit sync, the compile and the Design UI window then ask it, a locale it gives no font for
-  falls back to `localeFonts` over TMP Settings, and a missing or throwing resolver is an error that names it. Runtime
-  needs nothing: the compiled `DesignFontSet` carries the answer.
+  falls back to `localeFonts` over TMP Settings, TMP Settings' global fallbacks follow its fonts as with the default
+  resolver (`IncludeGlobalFallbacks`, true by default, opts out), and a missing or throwing resolver is an error that
+  names it. Runtime needs nothing: the compiled `DesignFontSet` carries the answer.
 
 **Font sync** (`design_ui_kit_sync`) reads the resolved fonts' source font files (`m_SourceFontFile_EditorRef`)
 and writes them with `@font-face` rules into the kit, keyed by locale. Claude Design and the exporter's Chromium
 therefore render with the same files Unity uses. Lint rejects any other `font-family`. Sync warns when more than
 one `TMP Settings` asset is reachable through `Resources`. Sync also writes each `--font-*` token of `tokens.css` from
 the synced fonts' family names (the TMP face family can differ from the asset name), keeping the line and its comment,
-and reports a token it cannot map; `design-export kit build --check` fails when a `--font-*` token names a family
-`fonts.css` does not declare.
+and reports a token it cannot map; `design-export kit build` (and `--check`) fails when a `--font-*` token names a
+family `fonts.css` does not declare.
 
 **Font twins.** UI Toolkit text needs TextCore `FontAsset`; `TMP_FontAsset` derives from `TMP_Asset` and cannot be
 referenced from USS. The twin generator creates one UI Toolkit FontAsset per resolved TMP font asset from the same

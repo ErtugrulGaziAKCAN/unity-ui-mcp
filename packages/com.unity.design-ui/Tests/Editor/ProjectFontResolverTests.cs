@@ -178,6 +178,82 @@ namespace DesignUi.Editor.Tests
             StringAssert.Contains("the game's font table is not loaded", TextStatus.Check(profile, kit).Kit);
         }
 
+        /// <summary>An in-memory TMP Settings object with a default font asset and global fallbacks.</summary>
+        static TMP_Settings Settings(TMP_FontAsset defaultFont, params TMP_FontAsset[] globals)
+        {
+            var s = ScriptableObject.CreateInstance<TMP_Settings>();
+            using (var so = new SerializedObject(s))
+            {
+                so.FindProperty("m_defaultFontAsset").objectReferenceValue = defaultFont;
+                var list = so.FindProperty("m_fallbackFontAssets");
+                list.arraySize = globals.Length;
+                for (int i = 0; i < globals.Length; i++) list.GetArrayElementAtIndex(i).objectReferenceValue = globals[i];
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
+            return s;
+        }
+
+        [Test]
+        public void SwitchingToAResolver_KeepsTmpSettingsGlobalFallbacks_UnlessItOptsOut()
+        {
+            var global = FontFixture.CreateTmp(FontFixture.BoldTtf, "Resolver Global", family: "Kit Global Sans");
+            var tmpDefault = FontFixture.CreateTmp(FontFixture.BoldTtf, "Resolver Tmp Default", family: "Kit Default Sans");
+            var settings = Settings(tmpDefault, global);
+            try
+            {
+                var profile = Profile();
+                var builtIn = new ProfileLocaleFontResolver(profile, new TmpSettingsFontResolver(() => settings));
+                // the resolver answers every locale with the fonts the profile maps
+                var asset = Resolver(profile);
+                asset.fonts = new[] { new LocaleFont { locale = "tr", font = _mapped }, new LocaleFont { locale = "ar", font = _arabic } };
+                var project = new ProjectFontResolver(asset, builtIn, new TmpSettingsFontResolver(() => settings));
+
+                var before = FontMap.Plan(profile, builtIn);
+                var after = FontMap.Plan(profile, project);
+                foreach (var locale in new[] { "tr", "ar" })
+                {
+                    CollectionAssert.AreEqual(before.Chains[locale], after.Chains[locale], locale + ": the same fonts, in the same order");
+                    CollectionAssert.AreEqual(before.LocaleFamilies[locale], after.LocaleFamilies[locale], locale);
+                    CollectionAssert.Contains(after.Chains[locale], global, locale + ": TMP Settings' global fallback");
+                }
+                CollectionAssert.AreEqual(before.Globals, after.Globals);
+
+                asset.includeGlobals = false;
+                var without = FontMap.Plan(profile, new ProjectFontResolver(asset, builtIn, new TmpSettingsFontResolver(() => settings)));
+                CollectionAssert.AreEqual(new[] { _mapped }, without.Chains["tr"], "a resolver that opts out keeps only its own fonts");
+            }
+            finally { UnityEngine.Object.DestroyImmediate(settings); }
+        }
+
+        [Test]
+        public void AResolverReferenceSavedToAnAssetThatIsGone_IsAClearError_AfterTheProfileLoadsFromDisk()
+        {
+            var profile = Profile();
+            Resolver(profile);
+            var guid = AssetDatabase.AssetPathToGUID(ResolverPath);
+            var yaml = File.ReadAllText(ProfilePath);
+            StringAssert.Contains(guid, yaml, "the profile is saved as text");
+            File.WriteAllText(ProfilePath, yaml.Replace(guid, "0123456789abcdef0123456789abcdef"));
+            AssetDatabase.ImportAsset(ProfilePath, ImportAssetOptions.ForceUpdate);
+            var loaded = AssetDatabase.LoadAssetAtPath<DesignUiProfile>(ProfilePath);
+            Assert.IsTrue(loaded.fontResolver == null, "the reference does not load");
+            var sync = DesignUiOps.KitSync(ProfilePath, Kit());
+            Assert.AreEqual(1, sync.Code, sync.Log);
+            StringAssert.Contains("fontResolver is missing", sync.Log);
+            StringAssert.Contains("missing", TextStatus.Check(loaded, Kit()).Resolver);
+        }
+
+        [Test]
+        public void TheCompileAndTheStatusNameTheLocalesTheResolverGaveNoFontFor()
+        {
+            var profile = Profile();
+            Resolver(profile);
+            var result = ScreenCompiler.Compile(Export("Kit Resolver Sans"), profile, false, NoView());
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            StringAssert.Contains("the font resolver 'Game Fonts' gives no font for ar", string.Join("\n", result.Notes));
+            StringAssert.Contains("gives no font for ar", TextStatus.Check(profile, Kit()).Resolver);
+        }
+
         [Test]
         public void TheStatusShowsWhichResolverIsActive()
         {

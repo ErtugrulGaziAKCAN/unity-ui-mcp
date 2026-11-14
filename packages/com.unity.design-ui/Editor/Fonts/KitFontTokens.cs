@@ -13,12 +13,15 @@ namespace DesignUi.Editor
     /// (fonts.css declares exactly those families). Only the first family of a token's value changes; the rest of the line,
     /// its comment and every other line stay as they are. A token maps to a synced family when it names one (exactly), the
     /// TMP font asset of one, or one with the same USS name (letter case and punctuation aside); the kit's only font token
-    /// maps to the reference locale's font. Anything else is reported, never guessed.
+    /// maps to the reference locale's font (the kit's font, reported as a warning like every rewrite). Anything else is
+    /// reported and kept. Tokens are the declarations of the file's <c>:root { … }</c> block, as design-export reads them.
     /// </summary>
     internal static class KitFontTokens
     {
         static readonly Regex Comment = new Regex(@"/\*[\s\S]*?(\*/|$)", RegexOptions.CultureInvariant);
         static readonly Regex Token = new Regex(@"(--font-[A-Za-z0-9_-]+)\s*:([^;{}]*);", RegexOptions.CultureInvariant);
+        /// <summary>The tokens block as design-export reads it: from the first <c>:root {</c> to the file's last <c>}</c>.</summary>
+        static readonly Regex Root = new Regex(@":root\s*\{([\s\S]*)\}", RegexOptions.CultureInvariant);
 
         public sealed class Result
         {
@@ -43,7 +46,10 @@ namespace DesignUi.Editor
             foreach (Match c in Comment.Matches(css))
                 for (int i = c.Index; i < c.Index + c.Length; i++)
                     if (masked[i] != '\n') masked[i] = ' ';
-            var tokens = Token.Matches(masked.ToString()).Cast<Match>().ToList();
+            var root = Root.Match(masked.ToString());
+            if (!root.Success) return result;
+            var block = root.Groups[1];
+            var tokens = Token.Matches(masked.ToString()).Cast<Match>().Where(t => t.Index >= block.Index && t.Index + t.Length <= block.Index + block.Length).ToList();
             if (tokens.Count == 0) return result;
 
             var fonts = plan.Locales.Where(plan.Chains.ContainsKey).SelectMany(l => plan.Chains[l]).Where(f => f != null).Distinct().ToList();

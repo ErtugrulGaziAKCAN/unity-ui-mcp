@@ -42,9 +42,11 @@ describe("resolveScreen", () => {
     const d = path.join(root, "canvas");
     fs.mkdirSync(d);
     for (const n of ["month.dc.html", "empty-day.dc.html"]) fs.writeFileSync(path.join(d, n), html);
-    expect(resolveScreen("canvas/empty-day.dc.html", root)).toEqual({ screen: "canvas", dir: d, entry: path.join(d, "empty-day.dc.html") });
-    expect(resolveScreen(path.join(d, "month.dc.html"), root)).toEqual({ screen: "canvas", dir: d, entry: path.join(d, "month.dc.html") });
-    expect(resolveScreen("canvas", root)).toEqual({ screen: "canvas", dir: d, entry: null });
+    // the screen is the id the pages name (data-u-screen), not the folder name; the id finds the folder too
+    expect(resolveScreen("canvas/empty-day.dc.html", root)).toEqual({ screen: "clean.screen", dir: d, entry: path.join(d, "empty-day.dc.html") });
+    expect(resolveScreen(path.join(d, "month.dc.html"), root)).toEqual({ screen: "clean.screen", dir: d, entry: path.join(d, "month.dc.html") });
+    expect(resolveScreen("canvas", root)).toEqual({ screen: "clean.screen", dir: d, entry: null });
+    expect(resolveScreen("clean.screen", root)).toEqual({ screen: "clean.screen", dir: d, entry: null });
   });
   it("refuses a file that is not a design page", () => {
     const root = tempDir();

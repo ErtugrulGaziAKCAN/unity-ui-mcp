@@ -1,13 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { DesignUiConfig, RunnerRoute } from "./config.js";
-import { BOOKKEEPING_DIR, REPORT_FILE, findEntry, resolveScreen, screenFolders, sourceSha } from "./design.js";
+import { BOOKKEEPING_DIR, REPORT_FILE, findEntry, folderScreenId, resolveScreen, screenFolders, sourceSha } from "./design.js";
 
 export type ScreenState = "new" | "design-changed" | "imported" | "verified" | "failed";
 
 /** `<designRoot>/<screen>/.design-ui/last-import.json`, written after a successful import. */
 export interface ImportRecord {
-  /** The IR's screen id (the page's data-u-screen) for a page import; the folder name for a folder import. */
+  /** The IR's screen id (the page's data-u-screen): the bookkeeping key (records of older versions may hold the folder name). */
   screen: string;
   /** The page that was imported, relative to the screen folder (absent in records of older versions). */
   entry?: string;
@@ -105,16 +105,28 @@ export function screenStatus(cfg: DesignUiConfig, screenId: string): ScreenStatu
   return statusOf(ref.dir, ref.entry ? path.relative(ref.dir, ref.entry) : null);
 }
 
-export interface ScreenSummary extends ScreenStatus { screen: string; entry: string | null; problem?: string }
+export interface ScreenSummary extends ScreenStatus { screen: string; folder: string; entry: string | null; problem?: string }
 
-/** Screen folders with their state; the page is the folder's last import, else the page the folder resolves to. */
+/**
+ * Screen folders with the screen id their pages name and their state; the page is the folder's last import, else the
+ * page the folder resolves to. A folder whose pages name different screens, and a screen held by several folders, are
+ * problems.
+ */
 export function listScreens(cfg: DesignUiConfig): ScreenSummary[] {
-  return screenFolders(cfg.designRoot).map((screen) => {
-    const dir = path.join(cfg.designRoot, screen);
-    let entry: string | null = importedEntry(dir, readLastImport(dir)), problem: string | undefined;
+  const rows = screenFolders(cfg.designRoot).map((folder) => {
+    const dir = path.join(cfg.designRoot, folder);
+    let screen = folder, mixed: string | undefined, noEntry: string | undefined;
+    try { screen = folderScreenId(dir, cfg.designRoot); } catch (e) { mixed = (e as Error).message; }
+    let entry: string | null = importedEntry(dir, readLastImport(dir));
     if (entry === null) {
-      try { entry = path.relative(dir, findEntry(dir, cfg.designRoot)); } catch (e) { problem = (e as Error).message; }
+      try { entry = path.relative(dir, findEntry(dir, cfg.designRoot)); } catch (e) { noEntry = (e as Error).message; }
     }
-    return { screen, entry, ...statusOf(dir), ...(problem ? { problem } : {}) };
+    return { row: { screen, folder, entry, ...statusOf(dir) } as ScreenSummary, mixed, noEntry };
+  });
+  return rows.map(({ row, mixed, noEntry }) => {
+    const others = rows.filter((o) => o.row !== row && !o.mixed && o.row.screen === row.screen).map((o) => o.row.folder);
+    const twice = !mixed && others.length ? `screen ${row.screen} is also in ${others.join(", ")}: keep each screen's artboards in one folder` : undefined;
+    const problem = mixed ?? twice ?? noEntry;
+    return problem ? { ...row, problem } : row;
   });
 }

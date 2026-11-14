@@ -30,14 +30,15 @@ namespace DesignUi.Editor
 
         /// <summary>
         /// The resolver kit sync, the compile and the Design UI window use: the profile's <see cref="DesignUiProfile.fontResolver"/>
-        /// asset when it is set (a locale it gives no font for falls back to <see cref="DefaultResolver"/>), else DefaultResolver.
+        /// asset when it is set (followed by TMP Settings' global fallbacks unless it opts out; a locale it gives no font for falls
+        /// back to <see cref="DefaultResolver"/>), else DefaultResolver.
         /// Throws <see cref="FontSetupException"/> when the field references an asset that no longer loads; a resolver that
         /// throws is reported the same way when it is asked.
         /// </summary>
         public static IFontResolver ResolverFor(DesignUiProfile p)
         {
             if (p == null) throw new ArgumentNullException(nameof(p));
-            if (p.fontResolver != null) return new ProjectFontResolver(p.fontResolver, DefaultResolver(p));
+            if (p.fontResolver != null) return new ProjectFontResolver(p.fontResolver, DefaultResolver(p), new TmpSettingsFontResolver());
             if (MissingResolver(p)) throw new FontSetupException(MissingResolverMessage);
             return DefaultResolver(p);
         }
@@ -56,6 +57,13 @@ namespace DesignUi.Editor
                 return field != null && field.objectReferenceValue == null && field.objectReferenceInstanceIDValue != 0;
             }
         }
+
+        /// <summary>A note naming the locales a project resolver gave no font for (the built-in resolver answered them), or null.</summary>
+        internal static string FallbackNote(IFontResolver r) =>
+            r is ProjectFontResolver p && p.FallbackLocales.Count > 0
+                ? "the font resolver '" + p.Name + "' gives no font for " + string.Join(", ", p.FallbackLocales) +
+                  ": the profile's locale fonts over TMP Settings answer for " + (p.FallbackLocales.Count == 1 ? "it" : "them")
+                : null;
 
         /// <summary>Which resolver <see cref="ResolverFor"/> uses, for the Design UI window.</summary>
         internal static string ResolverDescription(DesignUiProfile p)

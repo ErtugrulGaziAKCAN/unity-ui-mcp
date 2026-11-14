@@ -130,6 +130,7 @@ namespace DesignUi.Editor
             CompiledScreen compiled;
             AssetPlan plan;
             FontMap.FontsPlan fonts;
+            IFontResolver resolver;
             string screenDir, folderName;
             IDesignStringTables tables = null;
             StringTableRequest tableRequest = null;
@@ -182,7 +183,8 @@ namespace DesignUi.Editor
 
                 // fonts per locale: element rules keep var(--font-…); DesignFonts.uss defines them per .locale-<code>; every kit
                 // line box has a twin variant, and so has each of them scaled by a text-size step
-                fonts = FontMap.Plan(profile, hooks?.Fonts ?? FontMap.ResolverFor(profile));
+                resolver = hooks?.Fonts ?? FontMap.ResolverFor(profile);
+                fonts = FontMap.Plan(profile, resolver);
                 fonts.LineBoxes = ScaledLineBoxes(kitBoxes, profile.textSizes);
                 var fontErrors = fonts.Errors.Concat(FontMap.ScreenErrors(fonts, compiled)).ToList();
                 if (fontErrors.Count > 0) return new CompileResult { Ok = false, Errors = fontErrors };
@@ -256,6 +258,7 @@ namespace DesignUi.Editor
 
             // ---- the screen's String Table entries (asset-specific saves of the touched tables) -----------------------
             var notes = new List<string>(compiled.Notes);
+            if (FontMap.FallbackNote(resolver) is string fellBack) notes.Add(fellBack);
             LocalizationReport localization = null;
             IReadOnlyDictionary<string, IReadOnlyList<string>> localeStrings = null;
             if (tableRequest != null)
@@ -558,15 +561,55 @@ namespace DesignUi.Editor
         {
             var result = new List<string>();
             if (string.IsNullOrEmpty(designRoot) || !Directory.Exists(designRoot) || !Directory.Exists(outFolder)) return result;
+            var screens = DesignRootScreens(designRoot);
             foreach (var dir in Directory.GetDirectories(outFolder).Select(d => d.Replace('\\', '/')).OrderBy(d => d, StringComparer.Ordinal))
             {
                 if (Path.GetFileName(dir) == current) continue;
                 GeneratedManifest m;
                 try { m = GeneratedManifest.Load(GeneratedManifest.Combine(dir, ManifestFileName)); }
                 catch (InvalidDataException) { continue; }
-                if (m?.screen != null && !Directory.Exists(Path.Combine(designRoot, m.screen))) result.Add(dir);
+                if (m?.screen != null && !screens.Contains(m.screen)) result.Add(dir);
             }
             return result;
+        }
+
+        /// <summary>The first <c>data-u-screen</c> attribute of an element in a page's markup.</summary>
+        static readonly System.Text.RegularExpressions.Regex ScreenAttribute = new System.Text.RegularExpressions.Regex(
+            @"<[A-Za-z][^>]*?\sdata-u-screen\s*=\s*(?:""([^""]*)""|'([^']*)'|([^\s>""']+))", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// The screens the design root holds, keyed like the MCP server's bookkeeping: the screen id each folder's pages name
+        /// (<c>data-u-screen</c> in their markup, report.html aside); a folder whose pages name none (a script builds them, or
+        /// it has no page) counts by its own name and by the screen its last import recorded.
+        /// </summary>
+        internal static HashSet<string> DesignRootScreens(string designRoot)
+        {
+            var screens = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var folder in Directory.GetDirectories(designRoot))
+            {
+                var name = Path.GetFileName(folder);
+                if (name.StartsWith(".", StringComparison.Ordinal)) continue;
+                var named = false;
+                foreach (var page in Directory.GetFiles(folder, "*.html"))
+                {
+                    if (string.Equals(Path.GetFileName(page), "report.html", StringComparison.OrdinalIgnoreCase)) continue;
+                    string html;
+                    try { html = File.ReadAllText(page); }
+                    catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { continue; }
+                    var m = ScreenAttribute.Match(html);
+                    var id = m.Success ? (m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value).Trim() : "";
+                    if (id.Length > 0) { screens.Add(id); named = true; }
+                }
+                if (named) continue;
+                screens.Add(name);
+                try
+                {
+                    var recorded = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(Path.Combine(folder, ".design-ui", "last-import.json")))["screen"];
+                    if (recorded?.Type == Newtonsoft.Json.Linq.JTokenType.String) screens.Add((string)recorded);
+                }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is Newtonsoft.Json.JsonException) { }
+            }
+            return screens;
         }
     }
 }

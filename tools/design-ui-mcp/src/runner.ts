@@ -32,7 +32,14 @@ export interface CompileOutcome { id: number | null; state: "reloaded" | "failed
 
 /** Thrown when the import ran (files written) but Unity was still compiling at the limit. */
 export class CompileWaitTimeout extends UnityRunnerError {
-  constructor(message: string, readonly answer: ImportAnswer) { super(message); }
+  /** The import's warnings and errors as Unity answered them (the import ran; only its compile result is missing). */
+  readonly warnings: string[];
+  readonly errors: string[];
+  constructor(message: string, readonly answer: ImportAnswer, issues: { warnings?: string[]; errors?: string[] } = {}) {
+    super(message);
+    this.warnings = issues.warnings ?? [];
+    this.errors = issues.errors ?? [];
+  }
 }
 
 export interface RunResult {
@@ -167,7 +174,7 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
   if (code === 0 && step !== "capture" && (!answer || answer.compiling)) {
     const t1 = performance.now();
     if (answer) {
-      const end = await waitForCompileEnd(cfg.projectDir, info, answer, opts);
+      const end = await waitForCompileEnd(cfg.projectDir, info, answer, opts, { warnings: strings(res?.warnings), errors: strings(res?.errors) });
       ({ compile, scriptsFailed } = end);
       scriptErrors = failedErrors(end.last);
     } else await waitForCompile(cfg.projectDir, info, opts); // a bridge without the compile fields: wait for "not compiling" to settle, as before
@@ -188,7 +195,7 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
  * domain reload, a failed compile or a compile that never starts). The bridge is down during the reload and may come back
  * on another port (re-read from bridge.json). `lastCompile` with this import's compileId says how it ended.
  */
-async function waitForCompileEnd(projectDir: string, first: BridgeInfo, answer: ImportAnswer, opts: RunnerOptions):
+async function waitForCompileEnd(projectDir: string, first: BridgeInfo, answer: ImportAnswer, opts: RunnerOptions, issues: { warnings: string[]; errors: string[] }):
   Promise<{ compile: CompileOutcome; scriptsFailed: boolean | null; last: unknown }> {
   const interval = opts.pollIntervalMs ?? 250;
   const limit = opts.compileTimeoutMs ?? 300_000;
@@ -206,7 +213,7 @@ async function waitForCompileEnd(projectDir: string, first: BridgeInfo, answer: 
     }
     if (Date.now() > deadline) {
       throw new CompileWaitTimeout(`the import wrote ${answer.changed.length} files, but Unity was still compiling the changed scripts ` +
-        `(${answer.compiled.join(", ")}) after ${Math.round(limit / 1000)} s; check the Unity console`, answer);
+        `(${answer.compiled.join(", ")}) after ${Math.round(limit / 1000)} s; check the Unity console`, answer, issues);
     }
     await sleep(interval);
   }

@@ -12,7 +12,17 @@ namespace DesignUi.Editor
     /// </summary>
     public abstract class DesignUiFontResolver : ScriptableObject, IFontResolver
     {
-        /// <summary>The locale's font, or null when the project's font system has none for it (the profile's mapping answers then).</summary>
+        /// <summary>
+        /// The locale's font, or null when the project's font system has none for it (the profile's mapping answers then).
+        /// <see cref="ResolvedFont.Fallbacks"/> may stay empty: TMP Settings' global fallbacks follow the answer's own
+        /// fallbacks, as with the built-in resolver, unless <see cref="IncludeGlobalFallbacks"/> is false.
+        /// </summary>
         public abstract ResolvedFont Resolve(string locale);
+
+        /// <summary>
+        /// Whether TMP Settings' global fallback font assets follow this resolver's fonts (TMP searches them after any font
+        /// at runtime). Default true; override it to return false when the answer's fallbacks are the complete list.
+        /// </summary>
+        public virtual bool IncludeGlobalFallbacks => true;
     }
 }

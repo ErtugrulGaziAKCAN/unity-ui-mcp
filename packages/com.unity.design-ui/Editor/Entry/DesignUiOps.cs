@@ -38,6 +38,9 @@ namespace DesignUi.Editor
         }
 
         static readonly string[] None = new string[0];
+
+        /// <summary>A failure whose only error is <paramref name="error"/>; the log is <paramref name="log"/>, else the error.</summary>
+        internal static OpResult Failure(int code, string error, string log = null) => new OpResult(code, log ?? error, null, null, new[] { error });
     }
 
     /// <summary>Entry points of the import pipeline (bridge, menu, batchmode).</summary>
@@ -81,7 +84,7 @@ namespace DesignUi.Editor
         }
 
         /// <summary>A failed operation whose only error is <paramref name="message"/> (also its log).</summary>
-        static OpResult Failed(string message) => new OpResult(1, message, null, null, new[] { message });
+        static OpResult Failed(string message) => OpResult.Failure(1, message);
 
         /// <summary>
         /// Compiles an export folder (<c>screen.ir.json</c>, assets, goldens) into the project with the profile

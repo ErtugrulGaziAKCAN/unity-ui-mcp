@@ -560,6 +560,28 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Compile_OrphanCheck_UsesTheScreenIdsTheDesignFoldersPagesName()
+        {
+            var output = TempDir();
+            var design = TempDir();
+            // "canvas" holds the artboards of test.alpha; "test.gamma" has no page markup, so its name is its screen
+            Directory.CreateDirectory(Path.Combine(design, "canvas"));
+            File.WriteAllText(Path.Combine(design, "canvas", "month.dc.html"), "<x-dc><div class=\"screen\" data-u-screen=\"test.alpha\"></div></x-dc>");
+            File.WriteAllText(Path.Combine(design, "canvas", "empty-day.dc.html"), "<x-dc>\n<div\n  data-u-screen='test.alpha'></div></x-dc>");
+            File.WriteAllText(Path.Combine(design, "canvas", "report.html"), "<div data-u-screen=\"test.delta\"></div>");
+            Directory.CreateDirectory(Path.Combine(design, "test.gamma"));
+            var profile = Profile(output);
+            profile.designRoot = design;
+            Assert.IsTrue(ScreenCompiler.Compile(Export(TestIr.Screen(Root(), "test.delta")), profile).Ok);
+            Assert.IsTrue(ScreenCompiler.Compile(Export(TestIr.Screen(Root(), "test.gamma")), profile).Ok);
+            var result = ScreenCompiler.Compile(Export(TestIr.Screen(Root(), "test.alpha")), profile);
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            CollectionAssert.AreEqual(new[] { output + "/TestDelta" }, result.Orphans.ToArray(), "the folder canvas holds test.alpha; a report names no screen");
+            var gamma = ScreenCompiler.Compile(Export(TestIr.Screen(Root(), "test.gamma")), profile);
+            CollectionAssert.AreEqual(new[] { output + "/TestDelta" }, gamma.Orphans.ToArray());
+        }
+
+        [Test]
         public void Compile_InvalidInput_ReportsErrorsAndWritesNothing()
         {
             var output = TempDir();

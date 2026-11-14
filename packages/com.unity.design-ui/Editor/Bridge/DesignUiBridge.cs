@@ -349,14 +349,14 @@ namespace DesignUi.Editor
             {
                 if (item.Generation != Volatile.Read(ref s_Generation))
                 {
-                    item.Done.TrySetResult(new OpResult(1, "Bridge stopped."));
+                    item.Done.TrySetResult(OpResult.Failure(1, "Bridge stopped."));
                     continue;
                 }
                 OpResult r;
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 int compilesBefore = s_CompilesFinished;
                 try { r = item.Run(); }
-                catch (Exception e) { r = new OpResult(1, "Unhandled error: " + e.Message); Debug.LogException(e); }
+                catch (Exception e) { r = OpResult.Failure(1, "Unhandled error: " + e.Message); Debug.LogException(e); }
                 item.Ms = watch.ElapsedMilliseconds;
                 if (item.Op == "import") item.Answer = ImportAnswer(r, compilesBefore);
                 Record(item.Op, r.Code, true, item.Answer?["compileId"]?.Type == JTokenType.Integer ? item.Answer.Value<int>("compileId") : 0);
@@ -500,13 +500,13 @@ namespace DesignUi.Editor
             }
             Interlocked.Increment(ref s_Generation);
             while (s_Work.TryDequeue(out var item))
-                item.Done.TrySetResult(new OpResult(1, "Bridge stopped."));
+                item.Done.TrySetResult(OpResult.Failure(1, "Bridge stopped."));
             // an answer being written (e.g. an import right before the reload it caused) goes out before the listener closes
             var sw = System.Diagnostics.Stopwatch.StartNew();
             while (l != null && IsBusy && sw.ElapsedMilliseconds < 2000)
             {
                 // a request that queued its work after the drain above is answered too (Update cannot run now)
-                while (s_Work.TryDequeue(out var late)) late.Done.TrySetResult(new OpResult(1, "Bridge stopped."));
+                while (s_Work.TryDequeue(out var late)) late.Done.TrySetResult(OpResult.Failure(1, "Bridge stopped."));
                 Thread.Sleep(5);
             }
             if (l != null)

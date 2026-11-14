@@ -400,6 +400,26 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Run_KeepsTokensCssBomAndLineEndings_WritesItWhole_AndOnlyTouchesRootTokens()
+        {
+            var kit = Kit();
+            var family = _regular.faceInfo.familyName;
+            // a block before :root is not the kit's tokens (design-export reads only :root)
+            var body = ".legacy { --font-ui: \"Kit Regular\"; /* old */ }\r\n:root {\r\n  --font-ui: \"Kit Regular\"; /* UI. */\r\n}\r\n";
+            var bom = new byte[] { 0xEF, 0xBB, 0xBF };
+            File.WriteAllBytes(kit + "/tokens.css", bom.Concat(System.Text.Encoding.UTF8.GetBytes(body)).ToArray());
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            var expected = body.Replace(":root {\r\n  --font-ui: \"Kit Regular\"", ":root {\r\n  --font-ui: \"" + family + "\"");
+            CollectionAssert.AreEqual(bom.Concat(System.Text.Encoding.UTF8.GetBytes(expected)).ToArray(), File.ReadAllBytes(kit + "/tokens.css"));
+            CollectionAssert.IsEmpty(Directory.GetFiles(kit).Where(f => f.Contains(".tmp")).ToArray(), "no temp file is left");
+
+            var again = KitSync.Run(profile, kit, Resolver(profile));
+            CollectionAssert.DoesNotContain(again.Written.ToArray(), "tokens.css", "a BOM or CRLF alone is no change");
+        }
+
+        [Test]
         public void Run_AKitWithoutTokensCss_GetsNone()
         {
             var kit = Kit();

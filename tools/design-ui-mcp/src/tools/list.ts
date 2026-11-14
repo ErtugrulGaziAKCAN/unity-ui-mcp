@@ -9,7 +9,8 @@ export function registerList(server: McpServer, ctx: ServerContext): void {
   server.registerTool("design_ui_list", {
     title: "List screens",
     description:
-      "Lists the design screens under designRoot (one folder per screen) with their state: new, design-changed (since the " +
+      "Lists the design screens under designRoot (one folder per screen; screen = the data-u-screen its pages name, folder = its " +
+      "folder) with their state: new, design-changed (since the " +
       "last import), imported, verified or failed; and whether the Unity Editor bridge of this project is connected " +
       "(unity.bridge: connected, not-found, not-responding or unauthorized).",
     annotations: { readOnlyHint: true, openWorldHint: false },

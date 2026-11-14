@@ -63,7 +63,7 @@ namespace DesignUi.Editor
         static OpResult Run(string command, string[] args, string importDone)
         {
             try { return RunUnguarded(command, args, importDone); }
-            catch (Exception e) { return new OpResult(1, "Design UI " + command + " stopped: " + e.GetType().Name + ": " + e.Message); }
+            catch (Exception e) { return OpResult.Failure(1, "Design UI " + command + " stopped: " + e.GetType().Name + ": " + e.Message); }
         }
 
         static OpResult RunUnguarded(string command, string[] args, string importDone)
@@ -124,7 +124,7 @@ namespace DesignUi.Editor
                 File.WriteAllText(doneFile, new Newtonsoft.Json.Linq.JObject { ["imports"] = done }.ToString() + "\n");
                 return r;
             }
-            if (exportDirs == null || exportDirs.Count == 0) return new OpResult(1, "No export folder.");
+            if (exportDirs == null || exportDirs.Count == 0) return OpResult.Failure(1, "No export folder.");
             if (exportDirs.Count == 1)
             {
                 var one = DesignUiOps.Import(profilePath, exportDirs[0], discardManualEdits);
@@ -154,6 +154,6 @@ namespace DesignUi.Editor
                 ? new string[0]
                 : value.Split(Path.PathSeparator).Select(p => p.Trim()).Where(p => p.Length > 0).ToArray();
 
-        static OpResult UsageError(string why) => new OpResult(2, why + "\n" + Usage);
+        static OpResult UsageError(string why) => OpResult.Failure(2, why, why + "\n" + Usage);
     }
 }

@@ -165,6 +165,7 @@ namespace DesignUi.Editor.Tests
             var r = DesignUiBatch.Run(command, Line(command, args));
             Assert.AreEqual(2, r.Code, r.Log);
             StringAssert.Contains("missing " + missing, r.Log);
+            Assert.AreEqual("missing " + missing, r.Errors.Single(), "the usage error, without the usage text");
             StringAssert.Contains("Usage: ", r.Log);
         }
 

@@ -40,7 +40,11 @@ export function readKitLocaleFonts(kit: KitConfig): Record<string, string[]> | n
  * project's fonts; the kit build reports what is left.
  */
 export function fontTokenErrors(kit: KitConfig): string[] {
-  const tokens = readKitTokens(kit).filter((t) => t.family === "font");
+  // a kit without tokens.css has no font tokens (kit sync supports that); one that does not parse cannot be checked
+  if (!fs.existsSync(path.join(kit.dir, kit.tokensCss))) return [];
+  let all;
+  try { all = readKitTokens(kit); } catch (e) { return [`${kit.tokensCss} cannot be read, so its font tokens were not checked: ${(e as Error).message}`]; }
+  const tokens = all.filter((t) => t.family === "font");
   if (tokens.length === 0) return [];
   const faces = readKitFontFiles(kit);
   const declared = [...new Set((faces ?? []).map((f) => f.family))];

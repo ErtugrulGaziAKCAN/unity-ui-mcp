@@ -79,10 +79,12 @@ found. The server reads `<UnityProjectDir>/design-ui.config.json`:
 }
 ```
 
-`designRoot` holds one folder per screen (its `.html` or Claude Design `.dc.html` page and assets); the server keeps
-its bookkeeping in `<screen>/.design-ui/`. A canvas folder with several artboards works too: pass the artboard's path
-(`<folder>/<artboard>.dc.html`) to lint, import, verify and status. The import takes exactly that page, its screen id
-is the page's `data-u-screen`, and the folder keeps one import (verify checks the artboard that was imported last). `unityRunner.prefer: "editor"` sends import and kit sync to the open
+`designRoot` holds one folder per screen (its `.html` or Claude Design `.dc.html` pages and assets); the server keeps
+its bookkeeping in `<folder>/.design-ui/`, keyed by the screen id the pages name (`data-u-screen`), so a screen id or
+the folder finds it. A canvas folder with several artboards of one screen works too: pass the artboard's path
+(`<folder>/<artboard>.dc.html`) to lint, import, verify and status. The import takes exactly that page, and the folder
+keeps one import: verify checks the artboard imported last, and refuses when the export no longer holds it. Pages
+that name different screens belong in different folders; import, list and status report such a folder as an error. `unityRunner.prefer: "editor"` sends import and kit sync to the open
 Editor's bridge and fails if it does not answer (no silent fallback); `"command"` runs the argv templates instead
 (placeholders `{projectDir}` `{profile}` `{exportDir}` `{outDir}` `{kitDir}`, also passed as `DESIGN_UI_*`
 environment variables; relative paths start from the Unity project folder). Captures for verification use the
@@ -187,8 +189,8 @@ its Assembly Definition References (the compiler stops with an error naming the 
   fidelity suite. `pending.json` lists screens the suite skips for now, with the reason: the filters screen fails lint
   (U-CSS-015) until `css-support.json` enables the filter functions it uses.
 - `fonts/` is written by kit sync from the Unity project; the kit has no fonts until a sync ran. Kit sync also writes
-  the `--font-*` tokens in `tokens.css` from the synced fonts' family names, and `kit build --check` fails when a font
-  token names a family `fonts/fonts.css` does not declare.
+  the `--font-*` tokens in `tokens.css` from the synced fonts' family names, and `kit build` (with or without `--check`)
+  fails when a font token names a family `fonts/fonts.css` does not declare.
 
 `design-export kit build design-kit` regenerates `base.css`, `RULES.md` and the base block of every kit page after a
 change to the tokens, text styles, components or lint (`--check` only reports). `design-export kit claude design-kit

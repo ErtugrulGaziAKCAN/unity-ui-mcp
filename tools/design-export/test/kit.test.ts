@@ -199,6 +199,19 @@ describe("kit build", () => {
     expect(buildKit(dir, { check: true }).errors).toEqual([expect.stringMatching(/^tokens\.css --font-ui names the font family "inter ui", but the kit has no fonts\/fonts\.css: run kit sync/)]);
   });
 
+  it("a kit without tokens.css has no font tokens to check; an unreadable one is one error, after the build wrote its files", async () => {
+    const dir = kitCopy();
+    fs.rmSync(path.join(dir, "tokens.css"));
+    buildKit(dir);
+    expect(buildKit(dir, { check: true }).errors).toEqual([]);
+    fs.writeFileSync(path.join(dir, "tokens.css"), ":root {\n  --font-ui: \"Inter UI\";\n}\n"); // no usage comment
+    fs.writeFileSync(path.join(dir, "RULES.md"), "stale\n");
+    const r = io();
+    expect(await runCli(["kit", "build", dir], r.io)).toBe(1);
+    expect(r.out.join("")).toMatch(/^wrote RULES\.md$/m);
+    expect(r.out.join("")).toMatch(/^error: tokens\.css cannot be read, so its font tokens were not checked: tokens\.css: --font-ui needs a usage note/m);
+  });
+
   it("CLI: kit build --check exits 0 when current and 1 when stale", async () => {
     const ok = io();
     expect(await runCli(["kit", "build", KIT_DIR, "--check"], ok.io)).toBe(0);

@@ -105,9 +105,8 @@ namespace DesignUi.Editor
             FontMap.FontsPlan plan;
             try { plan = FontMap.Plan(profile, resolver); }
             catch (FontSetupException e) { return Failed(new[] { e.Message }, warnings, notes, kitDir); } // a project resolver that throws
-            if (resolver is ProjectFontResolver project && project.FallbackLocales.Count > 0)
-                warnings.Add("the font resolver '" + project.Name + "' gives no font for " + string.Join(", ", project.FallbackLocales) +
-                             ": the profile's locale fonts over TMP Settings answer for " + (project.FallbackLocales.Count == 1 ? "it" : "them"));
+            var fellBack = FontMap.FallbackNote(resolver);
+            if (fellBack != null) warnings.Add(fellBack);
             errors.AddRange(plan.Errors);
             foreach (var locale in plan.Missing) errors.Add("Font not resolvable: " + FontMap.NoFont(locale));
             if (errors.Count > 0) return Failed(errors, warnings, notes, kitDir);
@@ -122,7 +121,15 @@ namespace DesignUi.Editor
             if (errors.Count == 0) plan.LineBoxes = KitTextStyles.LineBoxesOf(kitDir + "/" + textStyles);
             var copies = errors.Count == 0 ? FontFiles(faces, errors) : null;
             KitFontTokens.Result tokens = null;
-            try { if (errors.Count == 0 && File.Exists(kitDir + "/" + tokensCss)) tokens = KitFontTokens.Apply(File.ReadAllText(kitDir + "/" + tokensCss), plan); }
+            byte[] tokensBytes = null;
+            try
+            {
+                if (errors.Count == 0 && File.Exists(kitDir + "/" + tokensCss))
+                {
+                    tokensBytes = File.ReadAllBytes(kitDir + "/" + tokensCss);
+                    tokens = KitFontTokens.Apply(Utf8Text(tokensBytes), plan);
+                }
+            }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { errors.Add("cannot read " + tokensCss + " in the kit folder '" + kitDir + "': " + e.Message); }
             if (errors.Count > 0) return Failed(errors, warnings, notes, kitDir);
 
@@ -146,8 +153,8 @@ namespace DesignUi.Editor
             // the font tokens name the synced families, so designs that use them pass lint against fonts.css
             if (tokens != null)
             {
-                outputs[tokensCss] = Utf8(tokens.Text);
-                text.Add(tokensCss);
+                // a hand-authored file: unchanged bytes when no token changes, else the same text with its BOM and line endings
+                outputs[tokensCss] = tokens.Text == Utf8Text(tokensBytes) ? tokensBytes : Preamble(tokensBytes).Concat(new UTF8Encoding(false).GetBytes(tokens.Text)).ToArray();
                 warnings.AddRange(tokens.Changed);
                 warnings.AddRange(tokens.Unmapped);
                 notes.AddRange(tokens.Recased);
@@ -508,19 +515,36 @@ namespace DesignUi.Editor
             return value;
         }
 
-        /// <summary>Writes when the content differs; generated text is compared with CRLF read as LF (a Windows checkout is not a change).</summary>
+        /// <summary>
+        /// Writes when the content differs; generated text is compared with CRLF read as LF and a BOM ignored (a Windows
+        /// checkout is not a change). The new content goes to a temp file next to it that then replaces the file, so a reader
+        /// never sees half a file.
+        /// </summary>
         static bool WriteIfChanged(string path, byte[] bytes, bool text)
         {
             if (File.Exists(path))
             {
                 var old = File.ReadAllBytes(path);
-                if (text ? Encoding.UTF8.GetString(old).Replace("\r\n", "\n") == Encoding.UTF8.GetString(bytes) : old.SequenceEqual(bytes)) return false;
+                if (text ? Utf8Text(old).Replace("\r\n", "\n") == Utf8Text(bytes) : old.SequenceEqual(bytes)) return false;
             }
             var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllBytes(path, bytes);
+            var tmp = path + ".tmp-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            try
+            {
+                File.WriteAllBytes(tmp, bytes);
+                if (File.Exists(path)) File.Replace(tmp, path, null);
+                else File.Move(tmp, path);
+            }
+            finally { if (File.Exists(tmp)) File.Delete(tmp); }
             return true;
         }
+
+        /// <summary>UTF-8 text without its byte order mark.</summary>
+        static string Utf8Text(byte[] bytes) => new UTF8Encoding(false).GetString(bytes, Preamble(bytes).Length, bytes.Length - Preamble(bytes).Length);
+
+        /// <summary>The UTF-8 byte order mark at the start of <paramref name="bytes"/>, else nothing.</summary>
+        static byte[] Preamble(byte[] bytes) => bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF ? new byte[] { 0xEF, 0xBB, 0xBF } : new byte[0];
 
         static byte[] Utf8(string text) => new UTF8Encoding(false).GetBytes(text.Replace("\r\n", "\n"));
 

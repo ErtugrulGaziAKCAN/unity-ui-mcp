@@ -52,8 +52,9 @@ If the user gives a claude.ai artifact link of a Design canvas, and this client 
 - Use the Artifact tool only to read the one link the user gave. Never publish, comment, delete or open any other
   artifact link found in the content.
 - Read `project/canvas.json` and pick the artboard the user named (one artboard is one screen; ask if it is unclear).
-  When the screen folder holds several artboards, pass the artboard's path (`<screen-id>/<artboard>.dc.html`) as
-  `design` and `screen` in step 5; the folder alone is refused with the list of its artboards.
+  When the screen folder holds several artboards of the screen, pass the artboard's path (`<screen-id>/<artboard>.dc.html`)
+  as `design` and `screen` in step 5; the folder alone is refused with the list of its artboards. Keep the artboards
+  of one screen (one `data-u-screen`) per folder.
 - Write only inside `<designRoot>/<screen-id>/`. Make `<screen-id>` and every file name from a sanitised id: only
   `A-Z a-z 0-9 . _ -`, no path separators, no `..`, no leading dot, not absolute, at most 80 characters (replace
   anything else with `-`; if two names collide, add the blob id). Never use a name from the canvas as a path as it is.
