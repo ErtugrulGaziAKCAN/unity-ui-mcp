@@ -26,7 +26,7 @@ namespace DesignUi.Editor
     /// <item>one setter <c>Set&lt;Id&gt;Visible(bool visible)</c> per element the design's repeat items hide by markup in some
     /// items (<see cref="IrNode.ItemVisibility"/>: sample data, compiled shown), named from its <c>data-u-id</c>: it writes
     /// <see cref="DesignUi.DesignView.SetVisible"/> on the element that owns the visibility (the element, or its shadow
-    /// host) and skips an unchanged value without allocating;</item>
+    /// host) and skips an unchanged value without allocating; never on an item root, whose display the repeat owns;</item>
     /// <item>one setter per <c>data-u-repeat</c>, <c>Set&lt;Repeat&gt;(int count, Action&lt;&lt;Repeat&gt;ItemView, int&gt; bind)</c>,
     /// with a nested item view class of the same members over the item template: inline repeats are pooled items in the
     /// container, list repeats a virtualized ListView. Repeats nest (an item view has the setters of the repeats in its
@@ -386,6 +386,9 @@ namespace DesignUi.Editor
                 if (e.Name.IndexOf("__", StringComparison.Ordinal) >= 0)
                     throw new IrFormatException("'" + PathOf(e) + "' is shown in some of the design's repeat items and hidden by markup in others, but it has no data-u-id " +
                                                 "(its name '" + e.Name + "' is structural): give it a data-u-id, which names its visibility setter (lint U-MRK-003)");
+                if (v.IsItem && v.Repeat.Items.Any(i => i.Name == e.VisibilityOwner))
+                    throw new IrFormatException("'" + PathOf(e) + "' is the root of an item of repeat '" + v.Repeat.Name + "', which alone shows and hides its items: " +
+                                                "remove the item from the samples; the host sets the item count (lint U-MRK-013)");
                 var member = "Set" + MemberOf(e.Name, "data-u-id", e) + "Visible";
                 v.Claim(member, "the visibility of element '" + e.Name + "'");
                 v.Visibilities.Add(new VisibilitySetter { Element = e, Member = member, Field = "m_Visible" + v.Visibilities.Count, Owner = v.Member(e.VisibilityOwner) });

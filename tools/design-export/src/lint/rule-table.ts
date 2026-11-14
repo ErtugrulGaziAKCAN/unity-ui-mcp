@@ -100,6 +100,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
     when: "a `data-u-action` element inside another `data-u-action` element",
     fix: "one action per element; a button in a card: the card's action on a full-size layer element beside the button, not on the card container",
   },
+  "U-MRK-013": { when: "a written-out `data-u-repeat` item hidden by its own markup (`hidden`, inline `display: none`): the repeat alone shows and hides its items", fix: "remove the item from the samples; the host sets the item count" },
   "U-NET-001": { when: "any remote resource (fonts, stylesheets, images) except scripts from allowed origins", fix: "no remote resources; local files" },
   "U-NET-002": { when: "a local file or Claude Design blob that is missing", fix: "add the file, or map the blob in blobs.json" },
   "W-FONT-001": { when: "a weight or italic without a real face in another active locale's font (warning)", fix: "add the face or avoid the weight" },

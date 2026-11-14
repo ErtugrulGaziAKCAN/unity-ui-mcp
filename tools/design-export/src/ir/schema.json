@@ -541,7 +541,7 @@
           }
         },
         "itemVisibility": {
-          "description": "Repeat item elements only (absent elsewhere): the written-out items hide this element by their own markup (hidden attribute, inline display: none) in some items and show it in others. That hiding is sample data: style is the element shown, the item view gets a Set<Id>Visible(bool) setter and each sample item that hides it records $hidden.",
+          "description": "Elements inside a repeat item only, never its root (absent elsewhere): the written-out items hide this element by their own markup (hidden attribute, inline display: none) in some items and show it in others. That hiding is sample data: style is the element shown, the item view gets a Set<Id>Visible(bool) setter and each sample item that hides it records $hidden.",
           "const": true
         }
       }

@@ -514,12 +514,12 @@ describe("buildIr: layers, text runs and lossless values", () => {
     // disabled and checked of an item's controls where they differ from the template's (pick enabled, mark unchecked)
     expect(weeks.map((w) => w.days.map((d) => d.$states ?? null))).toEqual([[null, null], [{ mark: ["checked"] }, { pick: ["disabled"] }]]);
     // an element its own markup hides (the hidden attribute, an inline display: none), where the template's shows
-    expect((weeks[1].days[0].events as Record<string, unknown>[]).map((e) => e.$hidden ?? null)).toEqual([null, null, { card: true }]);
+    expect((weeks[1].days[0].events as Record<string, unknown>[]).map((e) => e.$hidden ?? null)).toEqual([null, null, { title: true }]);
     expect((weeks[1].days[1].events as Record<string, unknown>[])[0].$hidden).toEqual({ title: true });
     expect((weeks[0].days[0].events as Record<string, unknown>[])[0].$hidden).toBeUndefined();
-    // both vary across the items, so the item view shows and hides them
-    expect(byId(r.ir.root, "card").itemVisibility).toBe(true);
+    // it varies across the items, so the item view shows and hides it; an item root never (the repeat owns it)
     expect(byId(r.ir.root, "title").itemVisibility).toBe(true);
+    expect(byId(r.ir.root, "card").itemVisibility).toBeUndefined();
     expect(byId(r.ir.root, "pick").itemVisibility).toBeUndefined();
   });
 
@@ -552,6 +552,15 @@ describe("buildIr: layers, text runs and lossless values", () => {
     for (const id of ["rows", "row", "tag-label", "tag-dot"]) expect(byId(r.ir.root, id).itemVisibility, id).toBeUndefined();
     // each item records what its markup hides (the first item too); a shown element is the compiled default
     expect((r.fixtures.rows as Record<string, unknown>[]).map((x) => x.$hidden ?? null)).toEqual([{ flag: true, tag: true }, { flag: true }, { badge: true }]);
+  });
+
+  it("refuses a written-out item that its own markup hides: the repeat alone shows and hides its items", async () => {
+    const html = fs.readFileSync(fx("item-visibility.html"), "utf8")
+      .replace('<div class="row" data-u-id="row"><span class="time" data-u-id="time" data-u-bind="row.time">13:00</span>',
+        '<div class="row" data-u-id="row" style="display: none"><span class="time" data-u-id="time" data-u-bind="row.time">13:00</span>');
+    const file = path.join(tmp(), "hidden-item.html");
+    fs.writeFileSync(file, html);
+    await expect(build(file)).rejects.toThrow(/item 2 of data-u-repeat "rows" .*hidden by its own markup.*remove the item from the samples; the host sets the item count/);
   });
 
   it("a class the markup shows never bakes its layer's display into base (a repeat's first item, a collapsed panel)", async () => {

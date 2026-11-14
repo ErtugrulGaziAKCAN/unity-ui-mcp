@@ -26,7 +26,7 @@ import { kitScales, wholeBorderWidths } from "../lint/rules/U-CSS-040.js";
 import { DESIGN_ORIGIN, type LoadedDesign } from "../load.js";
 import { firstFamily, px } from "../lint/css-values.js";
 import { kitFonts, realFaces } from "../lint/fonts.js";
-import { designChildren, describeAt, itemChildren, markupHidden, repeatIssues, repeatSamples, repeatTemplate, sampleHidden } from "../lint/repeat.js";
+import { designChildren, describeAt, HIDDEN_ITEM_FIX, hiddenItems, itemChildren, markupHidden, repeatIssues, repeatSamples, repeatTemplate, sampleHidden } from "../lint/repeat.js";
 import { nonDesign } from "../lint/rules/util.js";
 import { annotateTextStyles, expandShorthands, rendersText, type DomSnapshot } from "../lint/snapshot.js";
 import { isRichInline, isTextElement, runPlans, type RunPlan } from "../lint/text-runs.js";
@@ -85,6 +85,9 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
   const root = s.elements.findIndex((e) => e.attrs["data-u-screen"] !== undefined);
   if (root < 0) throw new Error("no element with data-u-screen");
   const el = (i: number) => s.elements[i];
+  // a written-out item its own markup hides: the repeat alone shows and hides its items (lint U-MRK-013)
+  const hidden = hiddenItems(s);
+  if (hidden.length) throw new Error(`${hidden.map((h) => h.detail).join("; ")}: ${HIDDEN_ITEM_FIX}`);
 
   // ---- 1. tree plan: kinds, keyed text runs, repeats (template only), ids ------------------------------------
   const plan = (i: number, inScroll: boolean, inTemplate: boolean, promoted: boolean): Plan => {

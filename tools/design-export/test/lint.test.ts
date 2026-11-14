@@ -8,6 +8,7 @@ import { readKit, type KitConfig } from "../src/kit.js";
 import { openDesign } from "../src/load.js";
 import { collectSnapshot, lint, RULES, sortFindings, type Finding } from "../src/lint/index.js";
 import { memberPart } from "../src/lint/rules/U-MRK-005.js";
+import { repeatSamples, sampleHidden } from "../src/lint/repeat.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fx = (n: string) => path.join(here, "fixtures", "lint", n);
@@ -176,6 +177,27 @@ describe("lint engine", () => {
     // before every always-shown sibling of a gap container, the gap after it cannot follow the item's markup
     expect(await ids(rows((shown) => `<div data-u-id="dot" style="width:8px;height:8px;background-color:#16c2d5${shown ? "" : ";display:none"}"></div>`, ";gap:8px")))
       .toEqual([expect.stringMatching(/^U-CSS-034 .*dot.* is hidden by markup in some written-out items/)]);
+  });
+
+  it("a written-out item its own markup hides is no sample data: lint rejects it, and its root never gets a visibility setter", async () => {
+    const dir = tmp();
+    // the third item hidden by the hidden attribute (no display rule of its own) or by an inline display: none
+    const rows = (third: string) => `<div style="display:flex;flex-direction:column">` +
+      ["", "", third].map((hide, k) => `<div${k ? "" : ' data-u-repeat="rows"'} data-u-id="row" class="row"${hide}>` +
+        `<p data-u-id="name" data-u-bind="name">Ali</p></div>`).join("") + `</div>`;
+    for (const hiding of [" hidden", ' style="display: none"']) {
+      const file = write(dir, rows(hiding), ".row{height:40px}");
+      const f = (await lintFile(file)).filter((x) => x.ruleId === "U-MRK-013");
+      expect(f.map((x) => x.detail), hiding).toEqual([expect.stringMatching(/item 3 of data-u-repeat "rows" .*hidden by its own markup/)]);
+      expect(f[0].fix).toContain("emove the item from the samples; the host sets the item count");
+      const d = await openDesign(file, kit, [2560, 1440], browser);
+      try {
+        const s = await collectSnapshot(d.page, d.cdp, kit);
+        const roots = new Set(repeatSamples(s, s.elements.findIndex((e) => e.attrs["data-u-repeat"] === "rows")));
+        expect(roots.size).toBe(3);
+        expect(Array.from(sampleHidden(s).keys()).filter((i) => roots.has(i)), "an item root is never a per-item visibility element").toEqual([]);
+      } finally { await d.close(); }
+    }
   });
 
   it("returns warnings without errors for a design with only warnings", async () => {

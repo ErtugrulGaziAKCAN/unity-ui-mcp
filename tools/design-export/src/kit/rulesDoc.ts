@@ -254,7 +254,7 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
     "- Markup goes inside `<x-dc>`, page styles inside `<helmet><style>`; start that style with the kit stylesheet.",
     "- No `{{…}}` holes (U-DC-001), no `<sc-for>`, `<sc-if>`, `<dc-import>` or `x-import` (U-DC-002), no UI built by script (U-DC-003), and no `data-props` other than `$preview` (U-DC-004).",
     "- Repeated rows are written out as sample rows, with `data-u-repeat` on the first; the samples share its structure.",
-    "- A sample row may hide an element other rows show (an untimed event's time) with the `hidden` attribute or an inline `display: none`: that is sample data. The element compiles as shown, from its own rules, and its item view gets `Set<Id>Visible`, so give it a `data-u-id` (U-MRK-003). An element hidden in every row, or hidden by a class or state, keeps that.",
+    "- A sample row may hide an element other rows show (an untimed event's time) with the `hidden` attribute or an inline `display: none`: that is sample data. The element compiles as shown, from its own rules, and its item view gets `Set<Id>Visible`, so give it a `data-u-id` (U-MRK-003). An element hidden in every row, or hidden by a class or state, keeps that. A whole sample row is never hidden: leave it out, the host sets the item count (U-MRK-013).",
     "- Inline styles are allowed; they compile like rules.",
     "- Images are uploads (`/_blob/<id>`) or inline `<svg>`; nothing is loaded from the network (U-NET-001). Fonts come only from the kit.",
   );

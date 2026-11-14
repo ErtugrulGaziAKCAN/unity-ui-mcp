@@ -1,4 +1,4 @@
-import { nonDesign } from "./rules/util.js";
+import { isExternal, nonDesign } from "./rules/util.js";
 import type { DomSnapshot, SnapElement } from "./snapshot.js";
 
 /**
@@ -56,28 +56,51 @@ export function markupHidden(s: DomSnapshot, i: number): boolean {
 const sampleHiddenCache = new WeakMap<DomSnapshot, Map<number, number>>();
 
 /**
- * Markup hiding that is sample data: elements of a data-u-repeat item whose written-out copies (every sample of the
+ * Written-out items of a data-u-repeat whose own root their markup hides (markupHidden): the repeat alone shows and hides
+ * its items (the host sets their count), so such a sample is refused (lint U-MRK-013, the exporter), never sample data.
+ */
+export function hiddenItems(s: DomSnapshot): { index: number; detail: string }[] {
+  const out: { index: number; detail: string }[] = [];
+  for (const e of s.elements) {
+    const name = e.attrs["data-u-repeat"];
+    if (name === undefined || e.parent < 0 || nonDesign(s)[e.index] || isExternal(s, e.index)) continue;
+    repeatSamples(s, e.index).forEach((x, k) => {
+      if (markupHidden(s, x)) out.push({ index: x, detail: `item ${k + 1} of data-u-repeat "${name}" (${describeAt(s, x)}) is hidden by its own markup (the hidden attribute or an inline display: none); the repeat alone shows and hides its items` });
+    });
+  }
+  return out;
+}
+
+/** The fix of a hidden written-out item (lint U-MRK-013 and the exporter). */
+export const HIDDEN_ITEM_FIX = "remove the item from the samples; the host sets the item count";
+
+/**
+ * Markup hiding that is sample data: elements inside a data-u-repeat item whose written-out copies (every sample of the
  * repeat, in every container of a nested repeat) are hidden by their own markup (markupHidden) in some items and shown
  * in others. Maps each such copy to its template element, the first copy in document order (the IR's, which compiles
  * as shown and gets a per-item visibility setter). An element hidden in every copy is not listed: that hiding is style.
+ * Item roots are never listed: the repeat alone shows and hides its items (hiddenItems).
  */
 export function sampleHidden(s: DomSnapshot): Map<number, number> {
   const hit = sampleHiddenCache.get(s);
   if (hit) return hit;
   const copies = new Map<number, number[]>();
   const templates = new Map<string, number>();
-  // a copy and the template element at the same place, below them too (a nested repeat's items are its own)
-  const add = (x: number, t: number) => {
-    const list = copies.get(t);
-    if (list) list.push(x); else copies.set(t, [x]);
+  // the elements below a copy and below the template element at the same place (a nested repeat's items are its own)
+  const below = (x: number, t: number) => {
     const kx = itemChildren(s, s.elements[x]), kt = itemChildren(s, s.elements[t]);
-    kx.forEach((k, n) => { if (kt[n] !== undefined && s.elements[k].attrs["data-u-repeat"] === undefined) add(k, kt[n]); });
+    kx.forEach((k, n) => {
+      if (kt[n] === undefined || s.elements[k].attrs["data-u-repeat"] !== undefined) return;
+      const list = copies.get(kt[n]);
+      if (list) list.push(k); else copies.set(kt[n], [k]);
+      below(k, kt[n]);
+    });
   };
   for (const e of s.elements) {
     const name = e.attrs["data-u-repeat"];
     if (name === undefined || e.parent < 0 || nonDesign(s)[e.index]) continue;
     if (!templates.has(name)) templates.set(name, e.index);
-    for (const x of repeatSamples(s, e.index)) add(x, templates.get(name)!);
+    for (const x of repeatSamples(s, e.index)) below(x, templates.get(name)!);
   }
   const out = new Map<number, number>();
   for (const [t, xs] of copies) {

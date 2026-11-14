@@ -21,7 +21,7 @@ When a screen is drawn in Claude Design, the kit is attached as a Design System 
 - Markup goes inside `<x-dc>`, page styles inside `<helmet><style>`; start that style with the kit stylesheet.
 - No `{{…}}` holes (U-DC-001), no `<sc-for>`, `<sc-if>`, `<dc-import>` or `x-import` (U-DC-002), no UI built by script (U-DC-003), and no `data-props` other than `$preview` (U-DC-004).
 - Repeated rows are written out as sample rows, with `data-u-repeat` on the first; the samples share its structure.
-- A sample row may hide an element other rows show (an untimed event's time) with the `hidden` attribute or an inline `display: none`: that is sample data. The element compiles as shown, from its own rules, and its item view gets `Set<Id>Visible`, so give it a `data-u-id` (U-MRK-003). An element hidden in every row, or hidden by a class or state, keeps that.
+- A sample row may hide an element other rows show (an untimed event's time) with the `hidden` attribute or an inline `display: none`: that is sample data. The element compiles as shown, from its own rules, and its item view gets `Set<Id>Visible`, so give it a `data-u-id` (U-MRK-003). An element hidden in every row, or hidden by a class or state, keeps that. A whole sample row is never hidden: leave it out, the host sets the item count (U-MRK-013).
 - Inline styles are allowed; they compile like rules.
 - Images are uploads (`/_blob/<id>`) or inline `<svg>`; nothing is loaded from the network (U-NET-001). Fonts come only from the kit.
 
@@ -422,6 +422,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-MRK-010 | error | a `data-u-repeat` container with other children, a sample whose structure differs from the template, or a mode other than list/inline | only the items in the container, samples with the template's elements, ids, keys and binds |
 | U-MRK-011 | error | a `data-u-id` that gives a member the generated view class already has (`state`, `set-state`, `find`, `screen-root`, …) | another id, e.g. `state-label` |
 | U-MRK-012 | error | a `data-u-action` element inside another `data-u-action` element | one action per element; a button in a card: the card's action on a full-size layer element beside the button, not on the card container |
+| U-MRK-013 | error | a written-out `data-u-repeat` item hidden by its own markup (`hidden`, inline `display: none`): the repeat alone shows and hides its items | remove the item from the samples; the host sets the item count |
 | U-NET-001 | error | any remote resource (fonts, stylesheets, images) except scripts from allowed origins | no remote resources; local files |
 | U-NET-002 | error | a local file or Claude Design blob that is missing | add the file, or map the blob in blobs.json |
 | W-FONT-001 | warning | a weight or italic without a real face in another active locale's font (warning) | add the face or avoid the weight |

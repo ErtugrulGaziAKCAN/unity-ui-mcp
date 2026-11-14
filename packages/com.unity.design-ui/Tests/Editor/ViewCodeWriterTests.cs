@@ -345,6 +345,24 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Write_AVisibilitySetterOnAnItemRoot_Throws_TheRepeatAloneShowsAndHidesItsItems()
+        {
+            var ir = ItemVisibility();
+            ir.Root.Children[0].Children[0].ItemVisibility = true; // the row: the root of each item
+            var e = Assert.Throws<IrFormatException>(() => ViewCodeWriter.Write(Build(ir), Ns, "TestScreenView"));
+            StringAssert.Contains("'root > rows > row'", e.Message);
+            StringAssert.Contains("remove the item from the samples; the host sets the item count", e.Message);
+
+            // a shadowed row: its shadow host is the item's root and would own the visibility
+            ir = ItemVisibility();
+            var row = ir.Root.Children[0].Children[0];
+            row.ItemVisibility = true;
+            row.Shadow = new IrShadow { Kind = "shadow9", File = ShadowFile, Sha256 = "x", Width = 8, Height = 8, Slice = new float[] { 2, 2, 2, 2 }, Offset = new BoxRect() };
+            e = Assert.Throws<IrFormatException>(() => ViewCodeWriter.Write(Build(ir), Ns, "TestScreenView"));
+            StringAssert.Contains("remove the item from the samples; the host sets the item count", e.Message);
+        }
+
+        [Test]
         public void Write_ARepeatAndAValueOfOneSetterName_Throw()
         {
             var ir = Repeats();

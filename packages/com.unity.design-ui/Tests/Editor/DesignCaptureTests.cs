@@ -495,13 +495,8 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("#16c2d5", Hex(Pixel(Png(req), (int)at.center.x, (int)at.center.y)), "the pointer is on that copy");
         }
 
-        /// <summary>
-        /// A label and a shadowed mark that the design's written-out items hide by markup in some items (sample data, compiled
-        /// shown): the capture hides them as the item view's Set&lt;Id&gt;Visible does, on the element that owns the visibility
-        /// (the mark's shadow host), and an item that shows the label centres its text as the design's CSS does.
-        /// </summary>
-        [UnityTest]
-        public IEnumerator Run_ElementsTheItemsHideByMarkup_AreHiddenThroughTheItemViewsVisibilitySetter_AndShownOnesKeepTheirCss()
+        /// <summary>Rows whose items hide a label and a shadowed mark by markup in some items (sample data, compiled shown).</summary>
+        string ItemVisibilityExport()
         {
             var flag = Words("flag", "Aç", ("display", "flex"), ("flex-direction", "row"), ("align-items", "center"), ("justify-content", "center"),
                 ("width", "100px"), ("height", "30px"), ("flex-shrink", "0"), ("background-color", "#123c47"));
@@ -511,7 +506,18 @@ namespace DesignUi.Editor.Tests
             var row = Node("row", "container", ("display", "flex"), ("flex-direction", "row"), ("height", "40px"), ("flex-shrink", "0")).Add(flag, mark);
             var rows = Node("rows", "container", ("display", "flex"), ("flex-direction", "column"), ("flex-shrink", "0")).Add(row);
             rows.Repeat = new IrRepeat { Name = "rows", Mode = "inline", Count = 3 };
-            var export = Export(Small(BlackRoot(rows)), "{ \"rows\": [ { \"$hidden\": { \"flag\": true, \"mark\": true } }, { \"$hidden\": { \"flag\": true } }, {} ] }");
+            return Export(Small(BlackRoot(rows)), "{ \"rows\": [ { \"$hidden\": { \"flag\": true, \"mark\": true } }, { \"$hidden\": { \"flag\": true } }, {} ] }");
+        }
+
+        /// <summary>
+        /// A label and a shadowed mark that the design's written-out items hide by markup in some items (sample data, compiled
+        /// shown): the capture hides them as the item view's Set&lt;Id&gt;Visible does, on the element that owns the visibility
+        /// (the mark's shadow host), and an item that shows the label centres its text as the design's CSS does.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Run_ElementsTheItemsHideByMarkup_AreHiddenThroughTheItemViewsVisibilitySetter_AndShownOnesKeepTheirCss()
+        {
+            var export = ItemVisibilityExport();
             var profile = Profile(new Vector2Int(320, 180), 0.5f);
             var screen = Compile(export, profile);
             var manifest = GeneratedManifest.Load(screen + "/" + ScreenCompiler.ManifestFileName);
@@ -534,6 +540,30 @@ namespace DesignUi.Editor.Tests
             };
             yield return DesignCapture.Run(req, profile);
         }
+
+        /// <summary>The capture of <see cref="ItemVisibilityExport"/> after its compiled manifest's visibility map was changed: it fails loudly.</summary>
+        void AssertStaleVisibilityFails(Action<GeneratedManifest> change)
+        {
+            var export = ItemVisibilityExport();
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var path = screen + "/" + ScreenCompiler.ManifestFileName;
+            var manifest = GeneratedManifest.Load(path);
+            change(manifest);
+            manifest.Save(path);
+            var run = DesignCapture.Run(Request(export, screen, "default@320x180", 320, 180), profile);
+            var e = Assert.Throws<InvalidOperationException>(() => { while (run.MoveNext()) { } });
+            StringAssert.Contains("'flag'", e.Message);
+            StringAssert.Contains("import the screen again from a current export", e.Message);
+        }
+
+        [Test]
+        public void Run_SampleDataHidingAnElementTheManifestGivesNoVisibilityOwner_Fails() =>
+            AssertStaleVisibilityFails(m => m.visibility.Remove("flag"));
+
+        [Test]
+        public void Run_SampleDataHidingAnElementWhoseVisibilityOwnerTheItemDoesNotHave_Fails() =>
+            AssertStaleVisibilityFails(m => m.visibility["flag"] = "flag__shadowhost");
 
         [Test]
         public void ReadMatrix_ReadsTheRepeatItemsAJobAppliesTo()

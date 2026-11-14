@@ -360,6 +360,8 @@ sync and the status window's Text section name the chosen faces and count the ot
    display and everything derived from it, such as text alignment and its children's layout), its IR node carries
    `itemVisibility: true`, and every item whose markup hides it, the first included, records `$hidden: { <id>: true }`.
    An element hidden in every item keeps `display: none` as style; one hidden by a class or state keeps that layer.
+   An item root is never sample-hidden: the repeat alone shows and hides its items from the count the host gives it,
+   so a written-out item whose own root its markup hides is refused (lint U-MRK-013 and the exporter).
 
 Output per screen:
 
@@ -460,6 +462,8 @@ public sealed partial class ClubOverviewView
   The item is compiled shown; hiding writes an inline `display: none` through `DesignView.SetVisible` on the element
   that owns its visibility (itself, or its shadow host), showing removes it so the style layers decide again. The
   element needs a `data-u-id` (lint U-MRK-003); the manifest lists each such element with that owner (`visibility`).
+  An item root never gets one (the repeat owns its display; the compiler refuses it). The capture fails, asking for a
+  new import, when the sample data hides an element the manifest gives no owner or whose owner the item lacks.
 - The project writes a presenter that calls the view with real game data. The generator never writes or edits
   presenters.
 - Removing a `data-u-id` the presenter uses causes a C# compile error, so breakage is explicit.

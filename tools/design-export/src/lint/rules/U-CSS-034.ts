@@ -30,7 +30,8 @@ export const rule: Rule = {
         const before = kids.slice(0, n);
         if (before.some((i) => !hides(i))) break; // an always-visible earlier sibling: every later child keeps its gap
         for (const i of before.filter((k) => shown.has(k))) {
-          c.add(s.elements[i].path, `${L.name(i)} is hidden by markup in some written-out items and shown in others before ${L.name(kids[n])} in the gap container ${L.name(e.index)}; the gap after it cannot follow the item`);
+          const t = shown.get(i)!; // reported once, on the template: every written-out copy shares it
+          c.add(s.elements[t].path, `${L.name(t)} is hidden by markup in some written-out items and shown in others before ${L.name(kids[n])} in the gap container ${L.name(e.index)}; the gap after it cannot follow the item`);
         }
         for (const i of before) for (const x of L.layerCands(i, "display")) {
           if (!x.dims.some(ownStateDim)) continue;

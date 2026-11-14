@@ -1482,8 +1482,10 @@ namespace DesignUi.Editor
                     if (_screen.Manifest.visibility == null || !_screen.Manifest.visibility.TryGetValue(kv.Key, out var owner))
                         throw new InvalidOperationException("the sample data hides '" + kv.Key + "' in a repeat item, but the compiled screen has no visibility setter for it; " +
                                                             "import the screen again from a current export");
-                    var target = Find(itemRoots, owner);
-                    if (target != null) DesignUi.DesignView.SetVisible(target, !kv.Value);
+                    var target = Find(itemRoots, owner)
+                                 ?? throw new InvalidOperationException("the sample data hides '" + kv.Key + "' in a repeat item, but the item has no '" + owner +
+                                                                        "', the element its visibility setter writes; import the screen again from a current export");
+                    DesignUi.DesignView.SetVisible(target, !kv.Value);
                 }
             }
 

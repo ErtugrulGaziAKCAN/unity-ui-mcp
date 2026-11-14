@@ -92,10 +92,10 @@ export interface IrNode {
    */
   field?: { password: boolean; multiline: boolean; placeholderColor: string | null };
   /**
-   * Elements of a repeat item only, true when present: the design's written-out items hide this element by their own
-   * markup (the hidden attribute, an inline display: none) in some items and show it in others. That hiding is sample
-   * data: `style` is the element shown, the item view gets a `Set<Id>Visible(bool)` setter, and each sample item that
-   * hides it records `$hidden` in fixtures/sample-data.json.
+   * Elements inside a repeat item only (never its root), true when present: the design's written-out items hide this
+   * element by their own markup (the hidden attribute, an inline display: none) in some items and show it in others.
+   * That hiding is sample data: `style` is the element shown, the item view gets a `Set<Id>Visible(bool)` setter, and
+   * each sample item that hides it records `$hidden` in fixtures/sample-data.json.
    */
   itemVisibility?: true;
   bind: string | null; action: string | null;
