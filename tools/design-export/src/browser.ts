@@ -3,9 +3,11 @@ import { chromium, type Browser, type LaunchOptions } from "playwright";
 /**
  * Flags of every Chromium the pipeline starts. One raster tile covers the whole page: Chromium blurs per tile, and tile
  * edges move a large box-shadow by up to 25/255 depending on where the element sits, so goldens and baked shadows
- * would disagree on a quarter of positions.
+ * would disagree on a quarter of positions. Text is unhinted, with fractional glyph advances as on macOS and in UI
+ * Toolkit: headless Chromium on Linux hints fully by default and, at a device scale of 1 or less, rounds every glyph
+ * advance to a whole pixel, so text widths and line breaks would differ from Unity's (macOS ignores the flag).
  */
-export const CHROMIUM_ARGS: readonly string[] = ["--default-tile-width=4096", "--default-tile-height=4096"];
+export const CHROMIUM_ARGS: readonly string[] = ["--default-tile-width=4096", "--default-tile-height=4096", "--font-render-hinting=none"];
 
 /**
  * Network fence flags (design pages are untrusted: their scripts run during lint and export). WebRTC sends no UDP
