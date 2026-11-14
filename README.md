@@ -89,7 +89,7 @@ use the command runner with projects whose `design-ui.config.json` you trust.
 
 | Tool | Does | This version |
 |---|---|---|
-| `design_ui_rules` | Design contract: the kit's `RULES.md` plus the same rules, allowed CSS, text styles and fonts as compact JSON; `section` returns one part (also resource `design-ui://rules`) | live |
+| `design_ui_rules` | Design contract: the kit's `RULES.md` with a section index; `section` returns one part, `json` the same rules, allowed CSS, text styles and fonts as compact JSON (also resource `design-ui://rules`) | live |
 | `design_ui_list` | Screens under `designRoot` with their state, and the Unity bridge state | live |
 | `design_ui_lint` | Lints a design folder, `.html`, `.dc.html` or `.zip` in Chromium with the kit fonts | live |
 | `design_ui_status` | Server capabilities, or one screen's hashes, last import and verdict | live |

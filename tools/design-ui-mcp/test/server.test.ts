@@ -139,15 +139,21 @@ describe("design_ui_rules", () => {
   const parts = (r: { content: unknown }) => (r.content as { type: string; text: string }[]).map((c) => c.text);
   const headings = (md: string) => md.split("\n").filter((l) => l.startsWith("## "));
 
-  it("returns the kit's RULES.md once plus one compact JSON: rules with severity and fix, allowed CSS, text styles, fonts", async () => {
+  it("returns the kit's RULES.md once with its section index; section json is the compact JSON: rules with severity and fix, allowed CSS, text styles, fonts", async () => {
     const p = tempProject();
     p.writeConfig({ kitDir: REPO_KIT });
-    const r = await call(await serverFor(p.dir), "design_ui_rules");
+    const client = await serverFor(p.dir);
+    const r = await call(client, "design_ui_rules");
     expect(r.isError).toBeFalsy();
-    const [md, json] = parts(r);
+    expect(parts(r)).toHaveLength(1);
+    const [md] = parts(r);
     expect(md).toContain(fs.readFileSync(path.join(REPO_KIT, "RULES.md"), "utf8").trim());
+    expect(md).toMatch(/^Sections \(design_ui_rules \{ section \} returns one\): .*text-styles.*lint-rules.*; json is the same contract/m);
     const hs = headings(md);
     expect(new Set(hs).size).toBe(hs.length); // no section twice
+    expect(r.data.rules).toBeUndefined(); // the data comes with section json only
+    const js = await call(client, "design_ui_rules", { section: "json" });
+    const json = parts(js)[0];
     const data = JSON.parse(json);
     expect(Object.keys(data.rules)).toEqual(RULES.map((x) => x.id));
     for (const [id, [severity, fix]] of Object.entries(data.rules) as [string, [string, string]][]) {
@@ -165,18 +171,20 @@ describe("design_ui_rules", () => {
     expect(r.data.timings.total).toBeGreaterThanOrEqual(0);
   });
 
-  it("stays well under the old 60 KB answer", async () => {
+  it("stays within the 50 KB budget, its data included", async () => {
     const p = tempProject();
     p.writeConfig({ kitDir: REPO_KIT });
     const r = await call(await serverFor(p.dir), "design_ui_rules");
-    const size = parts(r).join("\n").length;
+    const size = Buffer.byteLength(parts(r).join("\n") + JSON.stringify(r.data), "utf8");
     expect(size).toBeLessThan(50_000);
   });
 
   it("a kit without RULES.md gets one generated from its own files, never the repository's text styles", async () => {
     const p = tempProject(); // the lint test kit: no RULES.md, the previous text-style table (caption 12/15)
-    const r = await call(await serverFor(p.dir), "design_ui_rules");
-    const [md, json] = parts(r);
+    const client = await serverFor(p.dir);
+    const r = await call(client, "design_ui_rules");
+    const [md] = parts(r);
+    const json = parts(await call(client, "design_ui_rules", { section: "json" }))[0];
     expect(r.data.rulesSource).toBe("generated");
     expect(md).toContain("| caption | `.text-caption` | 12 | 15 | 400 |");
     expect(md).not.toContain("| caption | `.text-caption` | 12 | 16 | 400 |");

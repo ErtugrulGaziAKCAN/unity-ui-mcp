@@ -638,7 +638,7 @@ Codex); streamable HTTP is added in M4. It is started per Unity project:
 
 | Tool | Does |
 |---|---|
-| `design_ui_rules` | Returns the kit's `RULES.md` (rendered from the kit's own files when the kit has none) and the same contract as one compact JSON (every rule with severity and fix, the allowed CSS in brief, text styles, fonts), so any AI producing HTML can follow the contract; an optional `section` returns one RULES.md section or only the JSON (the Markdown is also exposed as an MCP resource) |
+| `design_ui_rules` | Returns the kit's `RULES.md` (rendered from the kit's own files when the kit has none) with an index of its sections, so any AI producing HTML can follow the contract; an optional `section` returns one RULES.md section, or `json`: the same contract as one compact JSON (every rule with severity and fix, the allowed CSS in brief, text styles, fonts) (the Markdown is also exposed as an MCP resource) |
 | `design_ui_list` | Lists screens under `designRoot` with status: new, design changed since import, imported, verified, failed; also reports the Unity connection (bridge found or not, project path) |
 | `design_ui_lint` | Lints one design folder or ZIP; returns findings with rule id, element path and fix |
 | `design_ui_import` | Exports the design (IR, goldens) and compiles it into the Unity project through the Unity runner |
