@@ -377,7 +377,8 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(_doc.rootVisualElement.ClassListContains(LocaleFontController.RtlClass));
 
             _region.RootRebuilt -= raised.Add;
-            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("re-created its root.*RootRebuilt"));
+            // the warning tells the host what to do: recreate its view on the new root in a RootRebuilt handler
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("re-created its root.*recreate the view on the new root in a RootRebuilt handler"));
             _doc.enabled = false;
             _doc.enabled = true;
             yield return Settle();

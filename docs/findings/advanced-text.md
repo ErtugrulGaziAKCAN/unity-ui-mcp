@@ -20,7 +20,11 @@ font asset made directly from the TTF.
    on the old root — a generated view, a `LocaleFontController`, style sheets added in code — keeps writing into a tree
    nobody shows. A host screen whose text all disappeared when the setting was switched on during Play matches this:
    its view still drove the old tree. `DesignUiPanelRegion` binds the new root (its locale controller
-   follows) and raises `RootRebuilt` so the host builds its view again; without a listener it warns once.
+   follows) and raises `RootRebuilt`; without a listener it warns once. **A host recreates its view on the new root in
+   that handler** and binds its data and events again, for example
+   `region.RootRebuilt += root => { view = new PlannerView(root); presenter.Bind(view); };`. The package does not
+   rebuild a host's view itself: only the host knows its data and handlers. In a player the setting never changes while
+   the game runs, so this happens only when it is switched in the Editor during Play.
 
 ## Measurements (setting switched on before the panel exists)
 

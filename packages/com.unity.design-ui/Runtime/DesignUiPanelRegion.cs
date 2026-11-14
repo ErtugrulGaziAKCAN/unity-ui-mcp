@@ -137,7 +137,8 @@ namespace DesignUi
 
         /// <summary>
         /// The document replaced the root the region had bound (the argument is the new root). Views built on the old root
-        /// write into a detached tree: build them again on the new one. Logged once as a warning when nobody listens.
+        /// write into a detached tree: the host recreates its view on the new root here (<c>new &lt;Screen&gt;View(root)</c>,
+        /// then binds its data and events again). Logged once as a warning when nobody listens.
         /// </summary>
         public event Action<VisualElement> RootRebuilt;
 
@@ -305,7 +306,9 @@ namespace DesignUi
             if (m_WarnedRebuilt) return;
             m_WarnedRebuilt = true;
             Debug.LogWarning("DesignUiPanelRegion '" + name + "': the UIDocument re-created its root (its PanelSettings or tree changed, for example when Enable Advanced " +
-                             "Text was switched while the game runs). A view built on the old root no longer shows: handle RootRebuilt and build the view again.", this);
+                             "Text is switched in the Editor during Play; a player never changes it while running). A view built on the old root no longer shows: " +
+                             "recreate the view on the new root in a RootRebuilt handler (region.RootRebuilt += root => view = new <Screen>View(root), then bind its " +
+                             "data and events again).", this);
         }
 
         void Bind(VisualElement root)
