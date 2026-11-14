@@ -1,0 +1,75 @@
+# Changelog
+
+All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org); the
+Unity package (`com.unity.design-ui`) and the Node tools share the version number.
+
+## 0.1.0 - 2026-11-14
+
+The first release: a Claude Design screen becomes a working Unity UI Toolkit screen, verified against the design.
+
+### Design kit and contract
+
+- `design-kit/`: tokens, fourteen text styles on whole device pixels at every viewport, a generated base stylesheet,
+  nine components (button, toggle, text field, dropdown, tabs, card, list row, scroll area, dialog) with guidelines,
+  and fifteen fidelity fixtures.
+- `RULES.md`, generated from the kit and the lint's own data: markup attributes, text styles, fonts, tokens, allowed
+  CSS, every lint rule with its fix, the Claude Design artboard rules and an example screen.
+- `design-export kit build` regenerates the kit's generated files (`--check` reports stale ones);
+  `design-export kit claude` writes the kit as a Claude Design System folder.
+
+### Lint and export (`tools/design-export`)
+
+- Lint in a pinned headless Chromium with the kit fonts only: a whitelist of CSS shared with the Unity compiler
+  (`css-support.json`), markup and localization rules, glyph coverage from the kit fonts' own tables, and rules for
+  what UI Toolkit cannot reproduce (paint order, group opacity, borders off the device grid, inline text flow, layout
+  animations, …). Every finding names the rule, the element and the fix.
+- Claude Design artboards (`.dc.html` with their uploads), plain HTML folders and ZIP files as input.
+- Export to a versioned, deterministic IR with specified styles per layer (states, `is-*` classes, pseudo-states,
+  breakpoints and their combinations), golden captures at 2560×1440, 1920×1080 and 1280×720, baked box shadows and
+  gradients, sample data for bound values and repeat items, and animation samples. Jobs whose elements the design hides
+  are captured in the state, class or sample item that shows them; jobs no context shows are reported.
+- `design-export compare`: boxes, text lines and baselines, colours, whole-capture and per-element SSIM, shadow bands
+  and text ink against calibrated thresholds; an offline HTML report and `verdict.json` with the verdicts `pass`,
+  `fail` and `incomplete`.
+
+### Unity package (`com.unity.design-ui`, Unity 6000.3 or later)
+
+- Compiler: IR to UXML (screen root `dui:DesignScreen`), USS, item templates per repeat, shared tokens and font
+  variables, images and vector assets, incremental writes in one asset-editing batch, and a guard against overwriting
+  generated files that were edited by hand.
+- Generated view per screen: typed element properties, value and image setters that skip unchanged values without
+  allocating, `<Action>Requested` events, `SetState`, `SetSelected`, `SetClass`, `SetEnabled`, repeats as virtualized
+  `ListView`s or pooled inline items with nested item views, and per-item visibility setters.
+- Fonts from the project's TMP setup: UI Toolkit font twins with each text style's CSS line box, kerning prepared at
+  import, only the faces in use, a pluggable project font resolver (`DesignUiFontResolver`) or a per-locale mapping in
+  the profile, and kit sync of the font files and font tokens.
+- Localization: a String Table writer that never overwrites a different translation and saves only what it touched,
+  `LocalizedString` bindings with asynchronous loads and English fallback, Smart String or indexed arguments, locale
+  classes and fonts per locale, compiled right-to-left alignment and text-size rules, and advanced text for
+  right-to-left and complex scripts.
+- Animation player: CSS transitions and keyframe animations of transforms, opacity, colours and border radii with
+  exact CSS timing, every trigger (screen open, state, class, pseudo-state), reversing, negative delays, play state and
+  a reduced-motion switch, without per-frame allocations.
+- `DesignUiPanelRegion` hosts a design screen inside an existing uGUI shell: rect, sort order, pointer and focus
+  queries, Escape, locale controller and a `RootRebuilt` event.
+- Verifier: an EditMode capture test that renders every capture job and animation sample on a project copy, one mount
+  per viewport, with real pointer and focus events.
+- Editor bridge (loopback, token) for import and kit sync in the open Editor, the `Window > Design UI > Status` window,
+  menu items and batchmode entry points.
+
+### MCP server and skill
+
+- `tools/design-ui-mcp`: a standalone stdio MCP server with `design_ui_rules`, `design_ui_list`, `design_ui_lint`,
+  `design_ui_import`, `design_ui_verify`, `design_ui_status` and `design_ui_kit_sync`; per-step timings, progress
+  notifications during long Unity steps, and evidence kept when a verification gives no verdict.
+- The `/unity-ui-mcp` skill (Claude Code, Codex, Cursor): checks the setup, fetches Claude Design canvases, drives lint,
+  import and verify, and publishes the kit as a Design System on request.
+- `scripts/setup.sh`: builds the server, adds the Unity package and `design-ui.config.json`, registers the server with
+  Claude Code, Codex or Cursor (or prints the Claude Desktop snippet) and links the skill; dry run first, idempotent.
+- `INSTALL.md` lets an AI client install everything from one sentence.
+
+### Verification
+
+- The fidelity suite passes 2340 of 2340 captures at the three viewports (1140 static captures and 1200 animation
+  samples).
+- GitHub Actions runs the Node test suites and type checks on every push and pull request.
