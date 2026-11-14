@@ -186,6 +186,9 @@ namespace DesignUi.Editor
                 resolver = hooks?.Fonts ?? FontMap.ResolverFor(profile);
                 fonts = FontMap.Plan(profile, resolver);
                 fonts.LineBoxes = ScaledLineBoxes(kitBoxes, profile.textSizes);
+                // twins for the faces the kit's text styles and this screen use, not every face of a family
+                fonts.Faces = FontMap.KitFaces(stylesPath);
+                FontMap.AddScreenFaces(fonts.Faces, ir.Root);
                 var fontErrors = fonts.Errors.Concat(FontMap.ScreenErrors(fonts, compiled)).ToList();
                 if (fontErrors.Count > 0) return new CompileResult { Ok = false, Errors = fontErrors };
                 compiled.Root.Classes.Add(FontMap.LocaleClass(fonts.ReferenceLocale));

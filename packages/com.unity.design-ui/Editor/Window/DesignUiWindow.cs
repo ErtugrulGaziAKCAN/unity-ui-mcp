@@ -45,7 +45,7 @@ namespace DesignUi.Editor
         static string s_Version;
         Label m_Status, m_Project, m_Last, m_LastOperation, m_Package;
         Toggle m_Enable;
-        Label m_ConfigPath, m_DesignRoot, m_LastReport, m_ProfileNote, m_OpResult, m_TextResolver, m_TextKit, m_TextTwins, m_TextFontSet, m_ServerPath, m_CopyResult;
+        Label m_ConfigPath, m_DesignRoot, m_LastReport, m_ProfileNote, m_OpResult, m_TextResolver, m_TextKit, m_TextTwins, m_TextFaces, m_TextFontSet, m_ServerPath, m_CopyResult;
         Button m_OpenConfig, m_OpenDesignRoot, m_OpenReport, m_CreateProfile;
         ObjectField m_ProfileField;
 
@@ -119,6 +119,7 @@ namespace DesignUi.Editor
             text.Add(m_TextResolver = Wrapped("text-resolver"));
             text.Add(m_TextKit = Wrapped("text-kit"));
             text.Add(m_TextTwins = Wrapped("text-twins"));
+            text.Add(m_TextFaces = Wrapped("text-faces"));
             text.Add(m_TextFontSet = Wrapped("text-font-set"));
             text.Add(Row(Btn("text-check", "Check", RefreshText)));
 
@@ -369,6 +370,7 @@ namespace DesignUi.Editor
             m_TextResolver.text = "Font resolver: " + s.Resolver;
             m_TextKit.text = "Kit fonts: " + s.Kit;
             m_TextTwins.text = "Font twins: " + s.Twins;
+            m_TextFaces.text = "Font faces: " + s.Faces;
             m_TextFontSet.text = "DesignFonts.asset: " + s.FontSet;
         }
 

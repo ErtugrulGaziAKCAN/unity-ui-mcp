@@ -170,6 +170,10 @@ namespace DesignUi.Editor
             public readonly Dictionary<(TMP_FontAsset, string), FontAsset> Twins = new Dictionary<(TMP_FontAsset, string), FontAsset>();
             /// <summary>Render-mode substitutions of this pass, one per TMP asset.</summary>
             public readonly List<string> Notes = new List<string>();
+            /// <summary>The weight-table faces (weight, italic) that get twins; null: every face.</summary>
+            public ISet<(int weight, bool italic)> Faces;
+
+            public bool Wants(int weight, bool italic) => Faces == null || Faces.Contains((weight, italic));
             readonly Dictionary<string, TMP_FontAsset> _paths = new Dictionary<string, TMP_FontAsset>(StringComparer.OrdinalIgnoreCase);
 
             public TwinRun(IEnumerable<TMP_FontAsset> globals)
@@ -235,9 +239,10 @@ namespace DesignUi.Editor
                 var t = GetOrCreateTwin(f, folder, run, lineBox);
                 if (t != twin && !fallbacks.Contains(t)) fallbacks.Add(t);
             }
+            // the weight table's faces (index i is weight i × 100), those the run wants: the others get no twin
             var weights = tmp.fontWeightTable ?? new TMP_FontWeightPair[0];
-            var regular = weights.Select(w => w.regularTypeface != null ? GetOrCreateTwin(w.regularTypeface, folder, run, lineBox) : null).ToArray();
-            var italic = weights.Select(w => w.italicTypeface != null ? GetOrCreateTwin(w.italicTypeface, folder, run, lineBox) : null).ToArray();
+            var regular = weights.Select((w, i) => w.regularTypeface != null && run.Wants(i * 100, false) ? GetOrCreateTwin(w.regularTypeface, folder, run, lineBox) : null).ToArray();
+            var italic = weights.Select((w, i) => w.italicTypeface != null && run.Wants(i * 100, true) ? GetOrCreateTwin(w.italicTypeface, folder, run, lineBox) : null).ToArray();
 
             if (Mirror(twin, fallbacks, regular, italic, face) || built)
             {

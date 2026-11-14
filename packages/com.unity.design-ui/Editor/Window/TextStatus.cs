@@ -29,6 +29,8 @@ namespace DesignUi.Editor
         public string FontSet = "";
         /// <summary>Which font resolver kit sync and the compile use (<see cref="FontMap.ResolverDescription"/>).</summary>
         public string Resolver = "";
+        /// <summary>The faces that get twins (the kit's text styles'; an import adds a design's own) and how many do not.</summary>
+        public string Faces = "";
 
         const string RunKitSync = " Run Kit Sync.";
 
@@ -37,7 +39,7 @@ namespace DesignUi.Editor
             var s = new TextStatus();
             if (profile == null)
             {
-                s.Kit = s.Twins = s.FontSet = s.Resolver = "no DesignUiProfile (create one above)";
+                s.Kit = s.Twins = s.FontSet = s.Resolver = s.Faces = "no DesignUiProfile (create one above)";
                 return s;
             }
             var folder = (profile.outputFolder ?? "").Replace('\\', '/').TrimEnd('/');
@@ -61,14 +63,19 @@ namespace DesignUi.Editor
                 s.Kit = s.Twins = problems[0];
                 return s;
             }
-            var boxes = s.CheckKit(profile, plan, kitDir);
+            var boxes = s.CheckKit(profile, plan, kitDir, out var stylesPath);
+            plan.Faces = FontMap.KitFaces(stylesPath);
+            var chosen = FontMap.ChosenFaces(plan);
+            var skipped = FontMap.SkippedFaces(plan);
+            s.Faces = string.Join(", ", chosen) + (skipped > 0 ? " (" + skipped + " more face" + (skipped == 1 ? "" : "s") + " in the weight tables get no twin: no text style uses them)" : "");
             s.CheckTwins(plan, boxes);
             return s;
         }
 
         /// <summary>Compares the kit with what a kit sync would write; returns the kit's line boxes for the twin check.</summary>
-        IReadOnlyList<FontTwinGenerator.LineBox> CheckKit(DesignUiProfile profile, FontMap.FontsPlan plan, string kitDir)
+        IReadOnlyList<FontTwinGenerator.LineBox> CheckKit(DesignUiProfile profile, FontMap.FontsPlan plan, string kitDir, out string stylesPath)
         {
+            stylesPath = null;
             var boxes = (IReadOnlyList<FontTwinGenerator.LineBox>)new FontTwinGenerator.LineBox[0];
             if (string.IsNullOrEmpty(kitDir))
             {
@@ -87,6 +94,7 @@ namespace DesignUi.Editor
             var fontsCss = Rel("fontsCss", "fonts/fonts.css");
             var tokensCss = Path.Combine(kitDir, Rel("tokensCss", "tokens.css"));
             var styles = Path.Combine(kitDir, Rel("textStyles", "text-styles.json"));
+            stylesPath = styles;
             try { if (File.Exists(styles)) boxes = KitTextStyles.LineBoxesOf(styles); }
             catch (Exception e) when (e is IOException || e is JsonException) { }
 
@@ -145,7 +153,7 @@ namespace DesignUi.Editor
             var missing = new List<string>();
             var outdated = new List<string>();
             int count = 0;
-            foreach (var tmp in Faces(plan))
+            foreach (var tmp in TwinFonts(plan, plan.Faces))
                 foreach (var box in new FontTwinGenerator.LineBox[] { null }.Concat(boxes))
                 {
                     string path;
@@ -170,8 +178,8 @@ namespace DesignUi.Editor
                   }.Where(x => x != null)) + "." + RunKitSync;
         }
 
-        /// <summary>The fonts of every locale's chain with their own fallbacks and weight faces, without duplicates.</summary>
-        static List<TMP_FontAsset> Faces(FontMap.FontsPlan plan)
+        /// <summary>The fonts of every locale's chain with their own fallbacks and the weight faces that get twins, without duplicates.</summary>
+        static List<TMP_FontAsset> TwinFonts(FontMap.FontsPlan plan, ISet<(int weight, bool italic)> wanted)
         {
             var all = new List<TMP_FontAsset>();
             var queue = new Queue<TMP_FontAsset>(plan.Locales.Where(plan.Chains.ContainsKey).SelectMany(l => plan.Chains[l]));
@@ -181,10 +189,11 @@ namespace DesignUi.Editor
                 if (f == null || all.Contains(f)) continue;
                 all.Add(f);
                 foreach (var g in f.fallbackFontAssetTable ?? new List<TMP_FontAsset>()) queue.Enqueue(g);
-                foreach (var w in f.fontWeightTable ?? new TMP_FontWeightPair[0])
+                var table = f.fontWeightTable ?? new TMP_FontWeightPair[0];
+                for (int i = 0; i < table.Length; i++)
                 {
-                    queue.Enqueue(w.regularTypeface);
-                    queue.Enqueue(w.italicTypeface);
+                    if (wanted == null || wanted.Contains((i * 100, false))) queue.Enqueue(table[i].regularTypeface);
+                    if (wanted == null || wanted.Contains((i * 100, true))) queue.Enqueue(table[i].italicTypeface);
                 }
             }
             return all;

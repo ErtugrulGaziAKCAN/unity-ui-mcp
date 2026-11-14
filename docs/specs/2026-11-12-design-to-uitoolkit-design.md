@@ -326,6 +326,11 @@ do it differently: UI Toolkit's standard text generator widens every advance by 
 the reference locale's font, whose pixels are compared, kit sync fails a text style whose weight has no real face,
 and lint fails such a weight in a design (U-FONT-001, the backstop); for other locales lint warns (W-FONT-001). The
 fix is adding the real face to the TMP weight table; the twin generator mirrors it into the twin's `fontWeightTable`.
+It mirrors only the faces in use: regular (400) and bold (700), which UI Toolkit's normal and bold font styles pick,
+every weight or style a kit text style names, and at import the faces the screen's texts use (font-weight and
+font-style in any layer, bold and italic tags of rich text). Other faces of a family get no twin and no glyphs
+(18 faces of a family, plain and per line box, made each import take minutes). Kit sync and the status window's
+Text section name the chosen faces and count the others.
 
 ## 7. Exporter and IR
 

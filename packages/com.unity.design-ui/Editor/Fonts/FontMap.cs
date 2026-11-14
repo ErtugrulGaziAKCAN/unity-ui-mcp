@@ -125,6 +125,12 @@ namespace DesignUi.Editor
             public readonly List<TMP_FontAsset> Globals = new List<TMP_FontAsset>();
             /// <summary>The line boxes of the kit's text-style table: each locale's font gets a twin variant per box.</summary>
             public IReadOnlyList<FontTwinGenerator.LineBox> LineBoxes = new FontTwinGenerator.LineBox[0];
+            /// <summary>
+            /// The faces (weight, italic) of the fonts' weight tables that get twins (<see cref="KitFaces"/>, plus a screen's
+            /// own, <see cref="AddScreenFaces"/>); null: every face. A face no text style and no design uses gets no twin, so
+            /// its glyphs are never added either (18 faces of a family cost minutes per import).
+            /// </summary>
+            public SortedSet<(int weight, bool italic)> Faces;
             /// <summary>Every family of the resolved locales: USS variable slug to family name.</summary>
             public readonly SortedDictionary<string, string> Families = new SortedDictionary<string, string>(StringComparer.Ordinal);
             public readonly List<string> Errors = new List<string>();
@@ -347,12 +353,114 @@ namespace DesignUi.Editor
         }
 
         /// <summary>
+        /// The faces a kit's text styles use: regular (400) and bold (700), which UI Toolkit's normal and bold font styles
+        /// pick from a weight table, and every weight a style names (italic when it names <c>"fontStyle": "italic"</c>).
+        /// Without a readable table: 400 and 700.
+        /// </summary>
+        internal static SortedSet<(int weight, bool italic)> KitFaces(string textStylesPath)
+        {
+            var faces = new SortedSet<(int, bool)> { (400, false), (700, false) };
+            if (string.IsNullOrEmpty(textStylesPath) || !System.IO.File.Exists(textStylesPath)) return faces;
+            try
+            {
+                var table = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(textStylesPath));
+                foreach (var p in table.Properties())
+                {
+                    if (!(p.Value is Newtonsoft.Json.Linq.JObject style)) continue;
+                    var w = style["weight"];
+                    int weight = w != null && (w.Type == Newtonsoft.Json.Linq.JTokenType.Integer || w.Type == Newtonsoft.Json.Linq.JTokenType.Float) ? (int)Math.Round((double)w) : 400;
+                    bool italic = string.Equals((string)style["fontStyle"], "italic", StringComparison.OrdinalIgnoreCase);
+                    if (weight >= 100 && weight <= 900) faces.Add((weight / 100 * 100, italic));
+                }
+            }
+            catch (Exception e) when (e is System.IO.IOException || e is Newtonsoft.Json.JsonException || e is InvalidCastException || e is FormatException) { }
+            return faces;
+        }
+
+        /// <summary>
+        /// Adds the faces a screen's texts use (font-weight and font-style in any style layer; bold and italic tags of a rich
+        /// text), so a design that uses a face the text styles do not name still gets its twin.
+        /// </summary>
+        internal static void AddScreenFaces(SortedSet<(int weight, bool italic)> faces, IrNode root)
+        {
+            void Visit(IrNode n)
+            {
+                if (n == null) return;
+                foreach (var layer in n.Style.Values)
+                {
+                    if (layer == null) continue;
+                    bool hasWeight = layer.TryGetValue("font-weight", out var w), hasStyle = layer.TryGetValue("font-style", out var st);
+                    if (!hasWeight && !hasStyle) continue;
+                    int weight = 400;
+                    if (hasWeight && w != null)
+                    {
+                        if (w == "bold" || w == "bolder") weight = 700;
+                        else if (int.TryParse(w, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var x) && x >= 100 && x <= 900) weight = x / 100 * 100;
+                    }
+                    else if (n.Style.TryGetValue("base", out var b) && b != null && b.TryGetValue("font-weight", out var bw) && bw == "700") weight = 700;
+                    bool italic = hasStyle && (st == "italic" || st == "oblique");
+                    faces.Add((weight, italic));
+                }
+                var rich = n.Text != null && n.Text.Rich ? (n.Text.Tr ?? "") + (n.Text.En ?? "") : "";
+                if (rich.IndexOf("<b>", StringComparison.OrdinalIgnoreCase) >= 0 || rich.IndexOf("<strong>", StringComparison.OrdinalIgnoreCase) >= 0) faces.Add((700, false));
+                if (rich.IndexOf("<i>", StringComparison.OrdinalIgnoreCase) >= 0 || rich.IndexOf("<em>", StringComparison.OrdinalIgnoreCase) >= 0) { faces.Add((400, true)); faces.Add((700, true)); }
+                foreach (var c in n.Children ?? new IrNode[0]) Visit(c);
+            }
+            Visit(root);
+        }
+
+        /// <summary>The weight-table faces of the locales' fonts that get twins (<see cref="FontsPlan.Faces"/>), as "family weight[ italic] (TMP asset)".</summary>
+        internal static List<string> ChosenFaces(FontsPlan plan)
+        {
+            var out_ = new List<string>();
+            var seen = new HashSet<TMP_FontAsset>();
+            foreach (var locale in plan.Locales)
+            {
+                if (!plan.Chains.TryGetValue(locale, out var chain)) continue;
+                foreach (var f in chain)
+                {
+                    if (f == null || !seen.Add(f)) continue;
+                    var family = f.faceInfo.familyName;
+                    if (plan.Faces == null || plan.Faces.Contains((400, false))) out_.Add(family + " 400 (" + f.name + ")");
+                    var table = f.fontWeightTable ?? new TMP_FontWeightPair[0];
+                    for (int i = 1; i < table.Length && i <= 9; i++)
+                    {
+                        if (table[i].regularTypeface != null && table[i].regularTypeface != f && (plan.Faces == null || plan.Faces.Contains((i * 100, false))))
+                            out_.Add(family + " " + i * 100 + " (" + table[i].regularTypeface.name + ")");
+                        if (table[i].italicTypeface != null && (plan.Faces == null || plan.Faces.Contains((i * 100, true))))
+                            out_.Add(family + " " + i * 100 + " italic (" + table[i].italicTypeface.name + ")");
+                    }
+                }
+            }
+            return out_;
+        }
+
+        /// <summary>How many faces the locales' weight tables have that get no twin.</summary>
+        internal static int SkippedFaces(FontsPlan plan)
+        {
+            if (plan.Faces == null) return 0;
+            int n = 0;
+            var seen = new HashSet<TMP_FontAsset>();
+            foreach (var f in plan.Locales.Where(plan.Chains.ContainsKey).SelectMany(l => plan.Chains[l]))
+            {
+                if (f == null || !seen.Add(f)) continue;
+                var table = f.fontWeightTable ?? new TMP_FontWeightPair[0];
+                for (int i = 1; i < table.Length && i <= 9; i++)
+                {
+                    if (table[i].regularTypeface != null && table[i].regularTypeface != f && !plan.Faces.Contains((i * 100, false))) n++;
+                    if (table[i].italicTypeface != null && !plan.Faces.Contains((i * 100, true))) n++;
+                }
+            }
+            return n;
+        }
+
+        /// <summary>
         /// Creates or updates the twin of every resolved locale's font and its line-box variants, with their own fallbacks,
-        /// the plan's global fallbacks and their weight faces. Twins keep their GUIDs, so <c>DesignFonts.uss</c> never needs a re-import for them.
+        /// the plan's global fallbacks and the weight faces of <see cref="FontsPlan.Faces"/>. Twins keep their GUIDs, so <c>DesignFonts.uss</c> never needs a re-import for them.
         /// </summary>
         internal static FontTwinGenerator.TwinRun EnsureTwins(FontsPlan plan)
         {
-            var run = new FontTwinGenerator.TwinRun(plan.Globals);
+            var run = new FontTwinGenerator.TwinRun(plan.Globals) { Faces = plan.Faces };
             foreach (var locale in plan.Locales)
                 if (plan.Fonts.TryGetValue(locale, out var font))
                 {
