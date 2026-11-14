@@ -352,6 +352,51 @@ describe("design_ui_import", () => {
     expect(p.runnerCalls()).toHaveLength(1);
   });
 
+  it("calls Unity again for an unchanged export when the package (the compiler) changed", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const pkg = path.join(p.dir, "Packages", "com.unity.design-ui");
+    fs.mkdirSync(path.join(pkg, "Editor"), { recursive: true });
+    fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "com.unity.design-ui", version: "0.1.0" }));
+    fs.writeFileSync(path.join(pkg, "Editor", "Compiler.cs"), "// v1\n");
+    const pipeline = stubPipeline();
+    const client = await serverFor(p.dir, pipeline);
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    const rec = JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8"));
+    expect(rec.compiler).toMatch(/^sha256:[0-9a-f]{64}$/);
+    fs.writeFileSync(path.join(pkg, "Editor", "Compiler.cs"), "// v2: a new element type\n");
+    const again = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(again.isError).toBeFalsy();
+    expect(again.data).toMatchObject({ exported: false, unityCalled: true });
+    expect(pipeline.exports).toHaveLength(1);
+    expect(p.runnerCalls()).toHaveLength(2);
+    const third = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(third.data).toMatchObject({ unityCalled: false });
+    expect(p.runnerCalls()).toHaveLength(2);
+  });
+
+  it("calls Unity again for an unchanged export when the profile or the kit changed", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.addScreen("clean-screen", "clean-screen");
+    const profile = path.join(p.dir, "Assets", "DesignUi", "DesignUiProfile.asset");
+    fs.mkdirSync(path.dirname(profile), { recursive: true });
+    fs.writeFileSync(profile, "referenceLocale: tr\n");
+    const pipeline = stubPipeline();
+    const client = await serverFor(p.dir, pipeline);
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    fs.writeFileSync(profile, "referenceLocale: tr\nlocales: [en]\n");
+    const again = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(again.data).toMatchObject({ unityCalled: true });
+    expect(p.runnerCalls()).toHaveLength(2);
+    // an import recorded before the record named its kit, profile or package is imported again once
+    const file = path.join(p.designRoot, "clean-screen", ".design-ui", "last-import.json");
+    const rec = JSON.parse(fs.readFileSync(file, "utf8"));
+    fs.writeFileSync(file, JSON.stringify({ ...rec, kitSha: "0".repeat(64) }));
+    const third = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(third.data).toMatchObject({ unityCalled: true });
+    expect(p.runnerCalls()).toHaveLength(3);
+  });
+
   it("fails with the exit code and log tail of a failing runner", async () => {
     const p = tempProject({ prefer: "command", exit: 3 });
     const dir = p.addScreen("clean-screen", "clean-screen");

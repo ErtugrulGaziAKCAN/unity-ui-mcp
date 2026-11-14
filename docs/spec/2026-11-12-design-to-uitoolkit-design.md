@@ -667,7 +667,8 @@ option); these are checked by the project for now.
   is rewritten only when its text changes, so a style-only revision causes no script compilation or domain reload.
 - Imports run in one asset-editing batch over the changed paths only, with no project-wide refresh or save.
 - The MCP server keeps one warm Chromium and the parsed kit for its lifetime, skips export when the design and kit
-  hashes are unchanged, and skips the Unity call when the IR hash is unchanged.
+  hashes are unchanged, and skips the Unity call when the IR, kit and profile hashes and the installed design-ui
+  package (its locked git commit, registry version, or the hash of a local package's files) are unchanged.
 - Every tool result and report carries per-step timings. Budgets: lint and export of one screen at three viewports
   ≤ 15 s with a warm browser; an import through the Editor bridge without a view-class change ≤ 5 s.
 

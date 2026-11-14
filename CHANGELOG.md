@@ -12,6 +12,9 @@ Unity package (`com.unity.design-ui`) and the Node tools share the version numbe
   dropped the twins' glyphs or failed converting the text mesh. `TextAssetRegistry` registers them again (locale
   controller, scene loads, capture, Editor reloads and Play changes). Twins leave out the fallback and weight entries
   that formed cycles ("Circular reference detected"), which had cost script fonts their Latin fallback.
+- `design_ui_import` no longer skips Unity for an unchanged export after the design-ui package, the profile or the kit
+  changed: `last-import.json` records the package stamp (`git:<commit>`, `registry:<version>` or the hash of a local
+  package's files) and the profile's hash, and the skip compares them with the IR and kit hashes.
 
 ## 0.1.0 - 2026-11-14
 

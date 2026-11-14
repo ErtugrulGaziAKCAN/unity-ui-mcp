@@ -4,6 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { requireConfig, withProgress, type ServerContext } from "../context.js";
 import { designPath, findEntry, folderScreens, mixedScreens, resolveScreen, sha256, sourceSha } from "../design.js";
+import { packageStamp } from "../package-stamp.js";
 import { MISSING } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { CompileWaitTimeout, runUnity, UnityRunnerError, unityIssues, withIssues } from "../runner.js";
@@ -20,7 +21,7 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
     description:
       "Exports one design page under designRoot (lint, browser capture, IR, goldens) and compiles it into the Unity project " +
       "through the Unity runner (the open Editor's bridge, or the configured command). Skips the export when the design and " +
-      "kit are unchanged and the Unity call when the IR is unchanged. A page path imports exactly that page (its screen id is its " +
+      "kit are unchanged and the Unity call when the IR, the kit, the profile and the installed design-ui package are unchanged. A page path imports exactly that page (its screen id is its " +
       "data-u-screen); a folder imports its only page. Records <screen folder>/.design-ui/last-import.json. " +
       "Generated Unity files are never edited by hand; an import refuses to overwrite hand edits unless discardManualEdits is true.",
     inputSchema: {
@@ -50,6 +51,10 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
 
       const kit = t.sync("kit", () => ctx.runtime.kit(cfg.kitDir));
       const src = t.sync("hash", () => sourceSha(dir));
+      // what else decides the compiled screen: the package's compiler and the profile (an unchanged export may still compile
+      // differently after a package update; the Unity call is skipped only when these are unchanged too)
+      const compiler = t.sync("hash", () => packageStamp(cfg.projectDir));
+      const profileSha = t.sync("hash", () => fileSha(path.join(cfg.projectDir, cfg.profileAsset)));
       const last = readLastImport(dir);
       const exportDir = exportDirOf(dir);
       const irFile = path.join(exportDir, "screen.ir.json");
@@ -85,9 +90,9 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       const verifyArg = page ?? screen;
 
       const discard = discardManualEdits === true;
-      if (last && last.irSha === irSha && !discard) {
-        if (exported || last.sourceSha !== src || last.kitSha !== kit.sha || last.entry !== entryName || last.screen !== screen) {
-          writeLastImport(dir, { ...last, screen, entry: entryName, sourceSha: src, kitSha: kit.sha });
+      if (last && last.irSha === irSha && last.kitSha === kit.sha && (last.compiler ?? null) === compiler && (last.profileSha ?? null) === profileSha && !discard) {
+        if (exported || last.sourceSha !== src || last.entry !== entryName || last.screen !== screen) {
+          writeLastImport(dir, { ...last, screen, entry: entryName, sourceSha: src });
         }
         return toolResult(`${named} is unchanged since the last import (${last.importedAt}); Unity was not called.${hiddenLine}`, {
           screen, entry: entryName, exported, unityCalled: false, via: last.via, irSha, sourceSha: src, exportDir, hidden, timings: t.done(),
@@ -159,7 +164,8 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       if (run.via === "editor") { steps.import = run.timings.request; if (run.timings.compileWait !== undefined) steps.compile = run.timings.compileWait; }
       else steps.import = run.timings.total;
       writeLastImport(dir, {
-        screen, entry: entryName, sourceSha: src, kitSha: kit.sha, irSha, importedAt: new Date().toISOString(), via: run.via, discardManualEdits: discard, timings: steps,
+        screen, entry: entryName, sourceSha: src, kitSha: kit.sha, irSha, ...(compiler ? { compiler } : {}), ...(profileSha ? { profileSha } : {}),
+        importedAt: new Date().toISOString(), via: run.via, discardManualEdits: discard, timings: steps,
       });
       const a = run.answer;
       const what = a
@@ -173,6 +179,11 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       });
     });
   });
+}
+
+/** The SHA-256 of a file's bytes, or null when it cannot be read. */
+function fileSha(file: string): string | null {
+  try { return sha256(fs.readFileSync(file)); } catch { return null; }
 }
 
 /** The screen id an exported IR names (the page's data-u-screen), else null. */

@@ -14,6 +14,10 @@ export interface ImportRecord {
   sourceSha: string;
   kitSha: string;
   irSha: string;
+  /** The design-ui package the screen was compiled with (`packageStamp`); absent when the project's package could not be read. */
+  compiler?: string;
+  /** SHA-256 of the DesignUiProfile asset file at the import; absent when it could not be read. */
+  profileSha?: string;
   importedAt: string;
   via: RunnerRoute;
   discardManualEdits: boolean;
