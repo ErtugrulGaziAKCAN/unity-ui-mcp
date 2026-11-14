@@ -13,7 +13,7 @@ import { createServer, createUnconfiguredServer, TOOL_NAMES, VERSION } from "../
 import { screenStatus } from "../src/status.js";
 import { keepFailedRun } from "../src/tools/verify.js";
 import { fileURLToPath } from "node:url";
-import { call, connect, manualClock, startStubBridge, STUB_RUNNER, tempDir, tempProject, writeZip, type StubBridge } from "./helpers.js";
+import { call, connect, manualClock, startStubBridge, STUB_RUNNER, tempDir, tempProject, writeZip, type StubBridge, FIXTURES } from "./helpers.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fast = { pollIntervalMs: 10, settleMs: 20, compileTimeoutMs: 5000 };
@@ -54,12 +54,12 @@ async function serverFor(dir: string, pipeline?: Pipeline): Promise<Client> {
 }
 
 describe("server surface", () => {
-  it("lists exactly the 7 tools and the rules resource", async () => {
+  it("lists exactly the 8 tools and the rules resource", async () => {
     const p = tempProject();
     const client = await serverFor(p.dir);
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(tools).toEqual([...TOOL_NAMES].sort());
-    expect(tools).toEqual(["design_ui_import", "design_ui_kit_sync", "design_ui_lint", "design_ui_list", "design_ui_rules", "design_ui_status", "design_ui_verify"]);
+    expect(tools).toEqual(["design_ui_clean", "design_ui_import", "design_ui_kit_sync", "design_ui_lint", "design_ui_list", "design_ui_rules", "design_ui_status", "design_ui_verify"]);
     const resources = (await client.listResources()).resources.map((r) => r.uri);
     expect(resources).toEqual(["design-ui://rules"]);
     const res = await client.readResource({ uri: "design-ui://rules" });
@@ -958,6 +958,20 @@ describe("a canvas folder with several artboards", () => {
 });
 
 describe("design_ui_kit_sync", () => {
+  it("never writes into the unity-ui-mcp clone's own design-kit: it says how to move the kit, and status warns", async () => {
+    const p = tempProject({ prefer: "editor" });
+    const cloneKit = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../design-kit");
+    p.writeConfig({ kitDir: cloneKit });
+    bridge = await startStubBridge(p.dir);
+    const client = await serverFor(p.dir);
+    const r = await call(client, "design_ui_kit_sync");
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain(`kitDir is the unity-ui-mcp clone's own design-kit (${cloneKit})`);
+    expect(r.text).toContain(path.join(p.designRoot, "design-kit"));
+    expect(bridge.requests.some((q) => q.path === "/kit-sync")).toBe(false);
+    expect((await call(client, "design_ui_status")).text).toContain("warning: kitDir is the unity-ui-mcp clone's own design-kit");
+  });
+
   it("passes the Unity answer through (code 2: not available yet)", async () => {
     const p = tempProject({ prefer: "editor" });
     bridge = await startStubBridge(p.dir);
@@ -1288,11 +1302,14 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(html).toContain("default@64x48");
     expect(html).toContain("PASS");
     expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "compare", "verdict.json"), "utf8"))).toMatchObject({ pass: true });
-    // published: captures in place, no staging left, the report links the published captures
-    expect(fs.readdirSync(path.join(dir, ".design-ui", "unity")).sort()).toEqual(["boxes.json", "capture-done.json", "default@64x48.png", "hover@64x48.png"]);
+    // published: the report keeps no pictures of passing captures, and the run's captures and difference images are gone
+    expect(fs.existsSync(path.join(dir, ".design-ui", "unity"))).toBe(false);
+    expect(fs.readdirSync(path.join(dir, ".design-ui", "compare"))).toEqual(["verdict.json"]);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "report"))).toBe(false);
     expect(fs.existsSync(path.join(dir, ".design-ui", "unity.next"))).toBe(false);
     expect(fs.existsSync(path.join(dir, ".design-ui", "compare.next"))).toBe(false);
-    expect(html).toContain('src=".design-ui/unity/default%4064x48.png"');
+    expect(html).not.toContain(".design-ui/unity");
+    expect(html).toContain("Passed: its pictures are not kept");
     expect(screenStatus(readConfig(p.dir), "clean-screen")).toMatchObject({ state: "verified", verdict: "pass" });
     // the report and the bookkeeping do not change the design's source hash
     expect(screenStatus(readConfig(p.dir), "clean-screen").sourceSha).toBe(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8")).sourceSha);
@@ -1318,10 +1335,9 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(none.isError).toBe(true);
     expect(none.data.verdict).toBeNull();
     expect(none.text).toMatch(/wrote no boxes\.json; no verdict\. The previous report and verdict are unchanged/);
-    // the earlier report, its captures and verdict stay exactly as they were
+    // the earlier report and verdict stay exactly as they were
     expect(fs.readFileSync(path.join(dir, "report.html")).equals(report)).toBe(true);
     expect(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json")).equals(lastVerify)).toBe(true);
-    expect(fs.existsSync(path.join(dir, ".design-ui", "unity", "default@64x48.png"))).toBe(true);
     expect(fs.existsSync(path.join(dir, ".design-ui", "unity.next"))).toBe(false);
     expect(screenStatus(readConfig(p.dir), "clean-screen").verdict).toBe("fail");
 
@@ -1335,14 +1351,48 @@ describe("design_ui_verify with the installed comparison", () => {
   });
 });
 
+describe("design_ui_verify keeps what its report shows and nothing else", () => {
+  it("a failing capture keeps its thumbnails next to the report; the run's captures and difference images go", async () => {
+    const p = tempProject({ prefer: "command" });
+    // Unity draws the default capture in another colour: the capture fails
+    p.writeConfig({
+      unityRunner: {
+        prefer: "command",
+        command: {
+          import: CONFIRMING_IMPORT,
+          capture: ["sh", "-c", `mkdir -p "$1" && cp "$0"/goldens/*.png "$0"/goldens/boxes.json "$1"/ && cp "$2" "$1"/default@64x48.png && echo '{"runId":"t","jobs":2,"captured":2,"notCaptured":0}' > "$1"/capture-done.json`,
+            "{exportDir}", "{outDir}", path.join(FIXTURES, "red-64x48.png")],
+          kitSync: ["sh", "-c", "exit 0"],
+        },
+      },
+    });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const client = await serverFor(p.dir, goldenPipeline());
+    expect((await call(client, "design_ui_import", { design: "clean-screen" })).isError).toBeFalsy();
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(r.data.verdict).toBe("fail");
+    const pics = fs.readdirSync(path.join(dir, ".design-ui", "report")).sort();
+    expect(pics).toEqual(expect.arrayContaining(["0-design.png", "0-unity.png"]));
+    // a whole-capture issue has no place: no crop (crops are tested with the exporter's report)
+    const html = fs.readFileSync(path.join(dir, "report.html"), "utf8");
+    // every picture the report shows exists, and none of them is a Unity capture of the run
+    const srcs = [...html.matchAll(/src="([^"]+)"/g)].map((m) => decodeURIComponent(m[1]));
+    expect(srcs.length).toBeGreaterThan(0);
+    for (const s of srcs) expect(fs.existsSync(path.join(dir, s)), s).toBe(true);
+    expect(srcs.every((s) => s.startsWith(".design-ui/report/"))).toBe(true);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "unity"))).toBe(false);
+    expect(fs.readdirSync(path.join(dir, ".design-ui", "compare"))).toEqual(["verdict.json"]);
+  });
+});
+
 describe("without design-ui.config.json", () => {
   let client: Client;
   beforeAll(async () => {
     client = await connect(createUnconfiguredServer(tempDir(), "design-ui.config.json not found", { runtime }));
   });
 
-  it("still lists the 7 tools and serves the rules", async () => {
-    expect((await client.listTools()).tools).toHaveLength(7);
+  it("still lists the 8 tools and serves the rules", async () => {
+    expect((await client.listTools()).tools).toHaveLength(8);
     const r = await call(client, "design_ui_rules");
     expect(r.isError).toBeFalsy();
     expect(r.text).toContain("U-CSS-001");

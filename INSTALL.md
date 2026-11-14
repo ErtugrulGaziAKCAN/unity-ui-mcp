@@ -83,8 +83,10 @@ before continuing.
 
 Tell the user two things with the dry run:
 
-- `design-ui.config.json` contains paths of this machine (the clone's `design-kit` and server, and the design folder).
-  Whether to commit it to their project's repository is their decision; you never commit or push it.
+- `design-ui.config.json` contains paths of this machine (the clone's server and capture script, and the design
+  folder). Setup also copies the clone's `design-kit` into `<designRoot>/design-kit`, the project's own kit (kit sync
+  writes the project's fonts into it, never into the clone). Whether to commit them to their project's repository is
+  their decision; you never commit or push them.
 - The config's `unityRunner.command` templates run as programs on this machine when import, verify or kit sync use
   the command route. Only use Unity projects whose `design-ui.config.json` they trust.
 
@@ -93,15 +95,18 @@ The config setup writes:
 ```json
 {
   "designRoot": "<design folder>",
-  "kitDir": "<clone folder>/design-kit",
+  "kitDir": "<design folder>/design-kit",
   "profileAsset": "Assets/DesignUi/DesignUiProfile.asset",
   "mcpServer": "<clone folder>/tools/design-ui-mcp/dist/server.js",
-  "unityRunner": { "prefer": "editor", "captureVia": "command", "command": { "import": [], "capture": [], "kitSync": [] } }
+  "unityRunner": { "prefer": "editor", "captureVia": "command",
+                   "command": { "import": [], "capture": ["<clone folder>/scripts/capture-on-copy.sh", "{projectDir}"], "kitSync": [] } }
 }
 ```
 
 An existing `design-ui.config.json` is kept as it is; when it has no `mcpServer`, setup prints the line to add (the
-Design UI window's client snippets need it).
+Design UI window's client snippets need it), and when its `kitDir` is the clone's `design-kit`, setup prints how to copy
+the kit into the project and what to set (kit sync refuses to write into the clone). Setup never adds `"testables"` to
+the project's manifest: only the temporary copy a capture runs on lists the package's tests.
 
 ## 5. Run it
 
@@ -137,18 +142,18 @@ Then tell the user what is left on the Unity side. These are their steps in the 
    per-locale font mapping fills the profile's **Locale Fonts**, or (better, one source of truth) writes a small
    `DesignUiFontResolver` subclass in one of its Editor assemblies that asks its own font system, creates an asset of
    it and sets it as the profile's **Font Resolver**.
-4. **The kit:** kit sync writes the project's fonts and font tokens into `kitDir`, which setup set to this clone's
-   `design-kit`. To keep the clone clean (and `git pull` working), the user can copy `design-kit` to a folder of their
-   own (for example next to the designs) and point `kitDir` in `design-ui.config.json` at it first. Then run a kit sync:
-   ask for `design_ui_kit_sync` in the new chat, or `Window > Design UI > Kit Sync`.
+4. **The kit:** kit sync writes the project's fonts and font tokens into `kitDir`, the project's own copy of the kit
+   in `<designRoot>/design-kit` (the clone stays clean, so `git pull` keeps working). Run a kit sync: ask for
+   `design_ui_kit_sync` in the new chat, or `Window > Design UI > Kit Sync`.
 5. **Right-to-left or complex-script locales** (Arabic and others) need **Project Settings > UI Toolkit > Enable
    Advanced Text**, switched on before Play, and ICU data on every PanelSettings a player uses
    (`docs/findings/advanced-text.md`). Without it those locales render left to right and unshaped, and the package says so.
 6. **Localized screens** need Unity Localization 1.5 or later; the profile's localization settings name each screen's
    String Table collection. Creating a collection needs Addressables settings and a project without unsaved changes.
-7. **Verification** renders on a copy of the project, never in the open Editor. It needs a capture command in
-   `unityRunner.command.capture` (see "Verification captures" in `docs/guide/usage.md`); until then lint and import
-   work and `design_ui_verify` explains what is missing.
+7. **Verification** renders on a temporary copy of the project, never in the open Editor: setup's capture command
+   (`scripts/capture-on-copy.sh`) copies the project, captures there with the Unity Hub install of the project's version
+   (or `UNITY_BIN`) and removes the copy (see "Verification captures" in `docs/guide/usage.md`). Disk use stays bounded
+   by itself (`cacheBudgetMB`, `design_ui_clean`); nobody deletes the tools' files by hand.
 8. **Start a new chat** of the MCP client in the client folder (Claude Code: a new session there; Cursor, Codex or
    Claude Desktop: restart after adding the snippet). The server is named `design-ui`. Typing `/unity-ui-mcp` (or
    describing the job, in English or Turkish) starts the skill's guided flow; `design_ui_list` should report
@@ -165,6 +170,7 @@ Then tell the user what is left on the Unity side. These are their steps in the 
 | `design_ui_import` | live when its Unity route works: export (lint, IR, goldens, assets, sample data), then the compile in the open Editor (its bridge must answer) or through `unityRunner.command.import` |
 | `design_ui_verify` | live when `unityRunner.command.capture` is configured: Unity capture of every static job and animation sample on a project copy, comparison and report |
 | `design_ui_kit_sync` | live when its Unity route works, like import: copies the project's fonts into the kit, writes the font tokens and checks the text styles |
+| `design_ui_clean` | live: reports (`dryRun`) or runs the cleanup of the screens' bookkeeping that import and verify also run by themselves |
 
 A tool whose route is not set up returns an error with the reason. Do not work around it (for example by writing UXML
 or USS by hand). Tell the user.

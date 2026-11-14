@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { CaptureVerdict, ElementIssue, ScreenVerdict, Thresholds } from "./compare.js";
+import type { ReportPictures } from "./pictures.js";
 
 const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const num = (n: number | null | undefined, d: number) => (n === null || n === undefined || Number.isNaN(n) ? "—" : n.toFixed(d));
@@ -70,7 +71,7 @@ function maskBoxes(c: CaptureVerdict): string {
   return c.masked.map((r) => `<div class="maskbox" style="${pct(r, c.size)}"></div>`).join("");
 }
 
-function captureSection(c: CaptureVerdict, i: number, img: { golden: string; unity: string; diff: string | null }): string {
+function captureSection(c: CaptureVerdict, i: number, img: { golden: string; unity: string; diff: string | null } | null, crops: { detail: string; design: string; unity: string; diff: string | null }[] = []): string {
   const badge = c.pass ? '<span class="badge pass">PASS</span>' : '<span class="badge fail">FAIL</span>';
   const issues = c.issues.length
     ? `<table class="issues"><thead><tr><th>Element</th><th>Check</th><th>Detail</th></tr></thead><tbody>${c.issues.map((x) =>
@@ -89,21 +90,26 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     `<input type="radio" name="${name}" id="${name}-o" value="overlay"><label for="${name}-o">Overlay</label>`,
     `<input type="radio" name="${name}" id="${name}-d" value="diff"><label for="${name}-d">Difference</label>`,
   ].join("");
-  const none = c.pixelsOff === 0 ? "No pixel outside the masked regions differs by more than 3." : img.diff ? "" : "No difference image was written for this run.";
-  const diffView = `<div class="stack"><img class="under" src="${esc(img.golden)}" alt="Design" loading="lazy">${maskBoxes(c)}` +
+  const none = c.pixelsOff === 0 ? "No pixel outside the masked regions differs by more than 3." : img?.diff ? "" : "No difference image was written for this run.";
+  const diffView = img ? `<div class="stack"><img class="under" src="${esc(img.golden)}" alt="Design" loading="lazy">${maskBoxes(c)}` +
     `${img.diff ? `<img class="over heat" src="${esc(img.diff)}" alt="Difference" loading="lazy">` : ""}${outlines(c.issues, c.size)}</div>
-       <p class="legend"><span class="sw hot"></span>pixels off by more than 3 (yellow to red with the difference) <span class="sw mask"></span>copied from the design before SSIM (text boxes, external) <span class="sw box"></span>elements with an issue${none ? ` · ${esc(none)}` : ""}</p>`;
+       <p class="legend"><span class="sw hot"></span>pixels off by more than 3 (yellow to red with the difference) <span class="sw mask"></span>copied from the design before SSIM (text boxes, external) <span class="sw box"></span>elements with an issue${none ? ` · ${esc(none)}` : ""}</p>` : "";
+  const pictures = img ? `<div class="views">${views}
+      <div class="view view-side"><figure><figcaption>Design</figcaption><img src="${esc(img.golden)}" alt="Design capture" loading="lazy"></figure><figure><figcaption>Unity</figcaption><img src="${esc(img.unity)}" alt="Unity capture" loading="lazy"></figure></div>
+      <div class="view view-overlay"><div class="stack"><img class="under" src="${esc(img.golden)}" alt="Design" loading="lazy"><img class="over" src="${esc(img.unity)}" alt="Unity" loading="lazy" style="opacity:0.5"></div>
+        <label class="slider">Design <input type="range" min="0" max="100" value="50" data-overlay> Unity</label></div>
+      <div class="view view-diff">${diffView}</div>
+    </div>` : '<p class="muted">Passed: its pictures are not kept (the report keeps pictures of failing captures only; the design capture stays in the export).</p>';
+  const cropRows = crops.length ? `<div class="crops">${crops.map((k) => `<figure class="crop"><figcaption>${esc(k.detail)}</figcaption>` +
+    `<div class="cropset"><span class="lbl">Design</span><img src="${esc(k.design)}" alt="Design" loading="lazy"><span class="lbl">Unity</span><img src="${esc(k.unity)}" alt="Unity" loading="lazy">` +
+    `${k.diff ? `<span class="lbl">Difference</span><img src="${esc(k.diff)}" alt="Difference" loading="lazy">` : ""}</div></figure>`).join("")}</div>` : "";
   return `
 <details class="capture" id="${anchor(i)}" data-pass="${c.pass}" data-name="${esc(c.capture)}"${c.pass ? "" : " open"}>
   <summary>${badge}<span class="cname">${esc(c.capture)}</span><span class="cmeta">SSIM ${num(c.ssim, 5)} · ${c.issues.length} issue${c.issues.length === 1 ? "" : "s"}</span></summary>
   <div class="cbody">
     <p class="setup">${applied(c)}</p>
-    <div class="views">${views}
-      <div class="view view-side"><figure><figcaption>Design</figcaption><img src="${esc(img.golden)}" alt="Design capture" loading="lazy"></figure><figure><figcaption>Unity</figcaption><img src="${esc(img.unity)}" alt="Unity capture" loading="lazy"></figure></div>
-      <div class="view view-overlay"><div class="stack"><img class="under" src="${esc(img.golden)}" alt="Design" loading="lazy"><img class="over" src="${esc(img.unity)}" alt="Unity" loading="lazy" style="opacity:0.5"></div>
-        <label class="slider">Design <input type="range" min="0" max="100" value="50" data-overlay> Unity</label></div>
-      <div class="view view-diff">${diffView}</div>
-    </div>
+    ${pictures}
+    ${cropRows}
     <dl class="measures">
       <div><dt>Whole SSIM</dt><dd>${num(c.ssim, 5)}</dd></div>
       <div><dt>Worst element SSIM</dt><dd>${c.worstElement ? `${num(c.worstElement.ssim, 5)} <code>${esc(c.worstElement.id)}</code>` : "—"}</dd></div>
@@ -183,6 +189,8 @@ tr.st-fail td,tr.st-missing td{color:var(--fail)}tr.st-hidden td,tr.st-removed t
 .frame.fail{border-color:var(--fail)}.frame.notrun{border-color:var(--warn)}
 .frame .t{font-size:12px;display:flex;justify-content:space-between;margin-bottom:4px}
 .frame img{margin-top:4px}.frame .lbl{font-size:11px;color:var(--muted)}
+.crops{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin:12px 0}.crop{margin:0}.crop figcaption{font-size:12px;color:var(--muted);margin-bottom:4px}
+.cropset{display:grid;gap:4px}.cropset .lbl{font-size:11px;color:var(--muted)}.cropset img{image-rendering:pixelated}
 .idx td:nth-child(2){word-break:break-all}
 .hidden{display:none!important}
 `;
@@ -202,11 +210,16 @@ const SCRIPT = `
 })();
 `;
 
-/** Writes the HTML report for a screen verdict. Image paths are relative to `outFile`'s folder. */
-export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: string, outFile: string): void {
+/**
+ * Writes the HTML report for a screen verdict. Image paths are relative to `outFile`'s folder. With `pictures`
+ * (writeReportPictures), the report shows the pictures kept of failing captures (thumbnails and issue crops) and none of
+ * passing ones, so the Unity captures and difference images can be deleted; without, it links every capture.
+ */
+export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: string, outFile: string, pictures?: ReportPictures): void {
   const dir = path.dirname(path.resolve(outFile));
   const golden = (n: string) => rel(dir, path.join(path.resolve(exportDir), "goldens", `${n}.png`));
   const unity = (n: string) => rel(dir, path.join(path.resolve(unityDir), `${n}.png`));
+  const kept = (n: string) => pictures?.get(n);
   const passed = v.captures.filter((c) => c.pass).length, failed = v.captures.length - passed;
   const hidden = v.hidden ?? [];
   const verdict = v.pass ? '<span class="badge pass verdict">PASS</span>'
@@ -237,9 +250,14 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
     const i = index.get(f.capture), c = i === undefined ? undefined : v.captures[i];
     const cls = c ? (c.pass ? "" : " fail") : " notrun";
     const state = c ? (c.pass ? '<span class="badge pass">PASS</span>' : '<span class="badge fail">FAIL</span>') : '<span class="badge notrun">NOT RUN</span>';
+    const k = kept(f.capture);
+    const frames = !pictures
+      ? `<span class="lbl">Design</span><img src="${esc(golden(f.capture))}" alt="Design at ${esc(f.time)} ms" loading="lazy">` +
+        (c ? `<span class="lbl">Unity</span><img src="${esc(unity(f.capture))}" alt="Unity at ${esc(f.time)} ms" loading="lazy">` : "")
+      : k ? `<span class="lbl">Design</span><img src="${esc(rel(dir, k.design))}" alt="Design at ${esc(f.time)} ms" loading="lazy">` +
+        `<span class="lbl">Unity</span><img src="${esc(rel(dir, k.unity))}" alt="Unity at ${esc(f.time)} ms" loading="lazy">` : "";
     return `<a class="frame${cls}" data-name="${esc(f.capture)}" data-pass="${!!c?.pass}" href="${i === undefined ? "#not-run" : `#${anchor(i)}`}"><div class="t"><span>${esc(f.time)} ms</span>${state}</div>` +
-      `<span class="lbl">Design</span><img src="${esc(golden(f.capture))}" alt="Design at ${esc(f.time)} ms" loading="lazy">` +
-      (c ? `<span class="lbl">Unity</span><img src="${esc(unity(f.capture))}" alt="Unity at ${esc(f.time)} ms" loading="lazy">` : "") + `</a>`;
+      frames + `</a>`;
   }).join("")}</div></section>`).join("");
 
   const html = `<!doctype html>
@@ -249,7 +267,9 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
 <header><h1>Fidelity report: ${esc(v.screen)}</h1>${verdict}<span class="muted">${esc(new Date().toISOString().replace("T", " ").slice(0, 19))} UTC</span></header>
 <p class="muted">Unity captures compared with the design's goldens, capture by capture (states, pseudo-states, viewports, animation samples). The screen passes only when every capture runs and passes; a job the design hides in every context has no golden, so a screen with one is incomplete.</p>
 ${v.warnings.length ? `<div class="warning" role="alert"><strong>Checks skipped for this screen</strong><ul>${v.warnings.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
-<p class="muted">Effective tolerance: boxes ±${v.thresholds.boxPx} px. Element SSIM and every colour sample use the Unity image offset by up to 1 px where that matches better, so a move or size change within the box allowance cannot fail them; a 2-px displacement, another shape, a missing shadow or a wrong colour still does. Images are linked, not embedded: keep this report next to the design captures (${esc(path.relative(dir, path.join(path.resolve(exportDir), "goldens")) || ".")}), the Unity captures (${esc(path.relative(dir, path.resolve(unityDir)) || ".")}) and the difference images.</p>
+<p class="muted">Effective tolerance: boxes ±${v.thresholds.boxPx} px. Element SSIM and every colour sample use the Unity image offset by up to 1 px where that matches better, so a move or size change within the box allowance cannot fail them; a 2-px displacement, another shape, a missing shadow or a wrong colour still does. ${pictures
+    ? "The report keeps pictures of its failing captures only (thumbnails of the design, Unity and the difference, and a crop of each issue); the Unity captures and difference images of this run were deleted after it was written."
+    : `Images are linked, not embedded: keep this report next to the design captures (${esc(path.relative(dir, path.join(path.resolve(exportDir), "goldens")) || ".")}), the Unity captures (${esc(path.relative(dir, path.resolve(unityDir)) || ".")}) and the difference images.`}</p>
 <div class="cards">
   <div class="card"><div class="v">${v.captures.length + v.notRun.length + hidden.length}</div><div class="k">captures in the design</div></div>
   <div class="card"><div class="v" style="color:var(--pass)">${passed}</div><div class="k">pass</div></div>
@@ -272,7 +292,7 @@ ${v.warnings.length ? `<div class="warning" role="alert"><strong>Checks skipped 
 </div>
 <section><h2>Notes</h2><ul>
   <li>Goldens: ${v.platform ? `Chromium ${esc(v.platform.chromium)} on ${esc(v.platform.platform)}` : "platform not recorded"}; compare with captures of the same platform (goldens are platform-specific).</li>
-  <li>Before the whole-capture SSIM, the boxes of text elements and external regions (inflated by 2 px) are copied from the design. An element that carries text is measured with only its lines copied, plus samples of its background, border and corners; its text is checked by line count, baselines, ink colour and ink amount (line widths are not compared).</li>
+  <li>Before the whole-capture SSIM, the boxes of text elements and external regions (inflated by 2 px) are copied from the design. An element that carries text is measured with only its lines copied, plus samples of its background, border and corners; its text is checked by line count, baselines, ink colour and ink amount, and where each line's first and last glyphs sit (from the ink, not the line rects).</li>
   ${linesNot.length ? `<li>Lines not compared (text not in DOM text): ${linesNot.map((x) => `<code>${esc(x)}</code>`).join(", ")}</li>` : ""}
   ${covered ? `<li>Text lines not judged (covered by an opaque later element): ${covered}, listed with their capture</li>` : ""}
   ${v.removed.length ? `<li>Removed by the compiler (no Unity box by design): ${v.removed.map((x) => `<code>${esc(x)}</code>`).join(", ")}</li>` : ""}
@@ -284,9 +304,12 @@ ${v.notRun.length ? `<section id="not-run"><h2>Not run</h2><table><tbody>${v.not
 ${hidden.length ? `<section id="hidden"><h2>Hidden in the design</h2><p class="muted">Jobs whose elements no state, class context or written-out repeat item shows: the design has no golden for them, so they are not compared and the screen is incomplete.</p><table><tbody>${hidden.map((n) => `<tr data-name="${esc(n)}" data-pass="false"><th scope="row"><span class="badge notrun">HIDDEN</span> ${esc(n)}</th><td>${esc(v.hiddenReasons?.[n] ?? "")}</td></tr>`).join("")}</tbody></table></section>` : ""}
 ${v.extra.length ? `<section><h2>Extra Unity captures</h2><p class="muted">Captures in the Unity folder without a design golden (not compared, not failures): ${v.extra.map((n) => `<code>${esc(n)}</code>`).join(", ")}</p></section>` : ""}
 ${v.animations.length ? `<section><h2>Animations</h2><p class="muted">Each animation's samples in time order: design frame above, Unity frame below.</p>${strips}</section>` : ""}
-<section><h2>Capture details</h2>${v.captures.map((c, i) => captureSection(c, i, {
-    golden: golden(c.capture), unity: unity(c.capture), diff: c.diff ? rel(dir, path.resolve(c.diff)) : null,
-  })).join("")}</section>
+<section><h2>Capture details</h2>${v.captures.map((c, i) => {
+    if (!pictures) return captureSection(c, i, { golden: golden(c.capture), unity: unity(c.capture), diff: c.diff ? rel(dir, path.resolve(c.diff)) : null });
+    const k = kept(c.capture);
+    return captureSection(c, i, k ? { golden: rel(dir, k.design), unity: rel(dir, k.unity), diff: k.diff ? rel(dir, k.diff) : null } : null,
+      (k?.crops ?? []).map((x) => ({ detail: x.detail, design: rel(dir, x.design), unity: rel(dir, x.unity), diff: x.diff ? rel(dir, x.diff) : null })));
+  }).join("")}</section>
 </main><script>${SCRIPT}</script></body></html>
 `;
   fs.mkdirSync(dir, { recursive: true });

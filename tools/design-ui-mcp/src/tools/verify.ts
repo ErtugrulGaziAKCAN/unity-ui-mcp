@@ -5,7 +5,9 @@ import { z } from "zod";
 import { requireConfig, withProgress, type ServerContext } from "../context.js";
 import { designPath, exportedPage, resolveScreen, sha256, sourceSha } from "../design.js";
 import { MISSING, unityStep } from "../pipeline.js";
+import { FAILED_RUNS_KEPT as KEPT, markBusy } from "../cache.js";
 import { guarded, Timings, toolResult } from "../result.js";
+import { afterRun, whileBusy } from "./clean.js";
 import { runUnity, UnityRunnerError } from "../runner.js";
 import { exportDirOf, importedEntry, readLastImport, reportPathOf, unityDirOf, writeLastVerify } from "../status.js";
 import { SCREEN_ARG } from "./status.js";
@@ -25,120 +27,131 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
     return guarded(t, async () => {
       const cfg = requireConfig(ctx);
       const ref = resolveScreen(screenArg, cfg.designRoot);
-      const { dir } = ref;
-      let screen = ref.screen;
-      const compareScreen = ctx.pipeline.compareScreen;
-      if (!compareScreen) {
-        return toolResult(`design_ui_verify is not available yet: ${MISSING.compare}. No capture ran and no verdict exists for ${screen}.`, {
-          screen, available: false, missing: ["capture", "compare"], verdict: null, timings: t.done(),
-        }, true);
-      }
-      if (!ctx.pipeline.unityCapture) {
-        return toolResult(`design_ui_verify is not available yet: ${MISSING.capture}. No capture ran and no verdict exists for ${screen}.`, {
-          screen, available: false, missing: ["capture"], verdict: null, timings: t.done(),
-        }, true);
-      }
-      const route = unityStep(cfg, "capture");
-      if (!route.ready) {
-        return toolResult(`design_ui_verify cannot capture: ${route.how}. No capture ran and no verdict exists for ${screen}.`, {
-          screen, available: false, missing: ["capture"], verdict: null, timings: t.done(),
-        }, true);
-      }
-      const imp = readLastImport(dir);
-      const page = ref.entry ? designPath(ref.entry, cfg.designRoot) : null;
-      if (!imp) {
-        return toolResult(`${page ?? screen} has not been imported yet: run design_ui_import { design: "${page ?? screen}" } first.`, { screen, verdict: null, timings: t.done() }, true);
-      }
-      // the folder keeps one import: a page verifies only when it is that import (another page's goldens are not its own)
-      const entry = importedEntry(dir, imp);
-      if (ref.entry && entry !== path.relative(dir, ref.entry)) {
-        return toolResult(`${page} is not the last import of its screen folder (${entry ?? "a page this version cannot name"}, ${imp.importedAt}): ` +
-          `run design_ui_import { design: "${page}" } first, then verify it. No capture ran.`, { screen, entry: path.relative(dir, ref.entry), verdict: null, timings: t.done() }, true);
-      }
-      screen = imp.screen;
-      if (imp.sourceSha !== t.sync("hash", () => sourceSha(dir))) {
-        return toolResult(`The design of ${screen} changed since the last import (${imp.importedAt}): run design_ui_import first.`, { screen, verdict: null, timings: t.done() }, true);
-      }
+      return afterRun(cfg, await whileBusy(ref.dir, "verify", async () => {
+        const { dir } = ref;
+        let screen = ref.screen;
+        const compareScreen = ctx.pipeline.compareScreen;
+        if (!compareScreen) {
+          return toolResult(`design_ui_verify is not available yet: ${MISSING.compare}. No capture ran and no verdict exists for ${screen}.`, {
+            screen, available: false, missing: ["capture", "compare"], verdict: null, timings: t.done(),
+          }, true);
+        }
+        if (!ctx.pipeline.unityCapture) {
+          return toolResult(`design_ui_verify is not available yet: ${MISSING.capture}. No capture ran and no verdict exists for ${screen}.`, {
+            screen, available: false, missing: ["capture"], verdict: null, timings: t.done(),
+          }, true);
+        }
+        const route = unityStep(cfg, "capture");
+        if (!route.ready) {
+          return toolResult(`design_ui_verify cannot capture: ${route.how}. No capture ran and no verdict exists for ${screen}.`, {
+            screen, available: false, missing: ["capture"], verdict: null, timings: t.done(),
+          }, true);
+        }
+        const imp = readLastImport(dir);
+        const page = ref.entry ? designPath(ref.entry, cfg.designRoot) : null;
+        if (!imp) {
+          return toolResult(`${page ?? screen} has not been imported yet: run design_ui_import { design: "${page ?? screen}" } first.`, { screen, verdict: null, timings: t.done() }, true);
+        }
+        // the folder keeps one import: a page verifies only when it is that import (another page's goldens are not its own)
+        const entry = importedEntry(dir, imp);
+        if (ref.entry && entry !== path.relative(dir, ref.entry)) {
+          return toolResult(`${page} is not the last import of its screen folder (${entry ?? "a page this version cannot name"}, ${imp.importedAt}): ` +
+            `run design_ui_import { design: "${page}" } first, then verify it. No capture ran.`, { screen, entry: path.relative(dir, ref.entry), verdict: null, timings: t.done() }, true);
+        }
+        screen = imp.screen;
+        if (imp.sourceSha !== t.sync("hash", () => sourceSha(dir))) {
+          return toolResult(`The design of ${screen} changed since the last import (${imp.importedAt}): run design_ui_import first.`, { screen, verdict: null, timings: t.done() }, true);
+        }
 
-      const exportDir = exportDirOf(dir), unityDir = unityDirOf(dir), reportPath = reportPathOf(dir);
-      // the export must be the recorded import's: a later import exports before Unity runs, and when its Unity step does not
-      // finish the folder's export holds that other page while the record still names this one
-      const exported = fs.existsSync(path.join(exportDir, "screen.ir.json")) ? fs.readFileSync(path.join(exportDir, "screen.ir.json")) : null;
-      if (!exported || sha256(exported) !== imp.irSha) {
-        const held = exported ? exportedPage(exported) : null;
-        const again = entry ? designPath(path.join(dir, entry), cfg.designRoot) : screen;
-        return toolResult(`${page ?? screen} cannot be verified: the export holds ${held ? designPath(path.join(dir, held), cfg.designRoot) : exported ? "another export" : "nothing"}; ` +
-          `import ${again} again first (its import of ${imp.importedAt} is recorded, but the export changed since). No capture ran.`,
-        { screen, entry, verdict: null, timings: t.done() }, true);
-      }
-      // the capture goes to a fresh staging folder: captures left from an earlier run are never compared, and the
-      // previous report, its captures and last-verify.json stay as they are until there is a new verdict
-      const staging = `${unityDir}.next`;
-      const dropStaging = () => fs.rmSync(staging, { recursive: true, force: true });
-      dropStaging();
-      // a run without a verdict keeps what it captured and its log next to the result (failed-<run>), for diagnosis
-      const keep = (reason: string, info: { code?: number; via?: string; log?: string }) =>
-        keepFailedRun(path.dirname(unityDir), staging, { screen, entry, reason, code: info.code ?? null, via: info.via ?? null, log: info.log ?? "", timings: t.done() });
-      const kept = (where: string) => ` Partial captures and logs kept in ${where}.`;
-      let run;
-      try {
-        run = await t.async("capture", () => runUnity(cfg, "capture", { exportDir, outDir: staging }, withProgress(ctx, extra)));
-      } catch (e) {
-        if (!(e instanceof UnityRunnerError)) { dropStaging(); throw e; }
-        const evidence = keep(e.message, { log: e.log });
-        return toolResult(`Verify of ${screen} not run: ${e.message}. No verdict.${kept(evidence)}`, { screen, verdict: null, evidence, timings: t.done() }, true);
-      }
-      if (run.code !== 0) {
-        const evidence = keep(`Unity capture failed (exit ${run.code}, via ${run.via})`, run);
-        return toolResult(`Unity capture of ${screen} failed (exit ${run.code}, via ${run.via}); no verdict.${kept(evidence)} Log tail:\n${run.logTail}`, {
-          screen, verdict: null, code: run.code, logTail: run.logTail, evidence, timings: t.done(),
-        }, true);
-      }
-      // only a capture that wrote its done marker last counts; anything else is an unfinished run
-      if (!fs.existsSync(path.join(staging, "capture-done.json"))) {
-        const evidence = keep("Unity capture did not finish (no capture-done.json)", run);
-        return toolResult(`Unity capture of ${screen} (via ${run.via}) did not finish (no capture-done.json); no verdict. ` +
-          `The previous report and verdict are unchanged.${kept(evidence)}`, { screen, verdict: null, logTail: run.logTail, evidence, timings: t.done() }, true);
-      }
-      const steps: Record<string, number> = { ...(imp.timings ?? {}), capture: t.steps.capture };
-      const v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir }));
-      if (v.compared === 0) {
-        const unfinished = !fs.existsSync(path.join(staging, "capture-done.json"));
-        const none = !unfinished && !fs.existsSync(path.join(staging, "boxes.json"));
-        v.discard?.();
-        const what = unfinished ? "did not finish (no capture-done.json)" : none ? "wrote no boxes.json" : "produced none of the design's captures";
-        const evidence = keep(`Unity capture ${what}`, run);
-        return toolResult(`Unity capture of ${screen} (via ${run.via}) ${what}; no verdict. ` +
-          `The previous report and verdict are unchanged.${kept(evidence)}`, { screen, verdict: null, notRun: v.notRun, logTail: run.logTail, evidence, timings: t.done() }, true);
-      }
-      // a job the design shows in no context, or one that did not run, was not compared: incomplete, never a pass
-      const hidden = v.hidden ?? [];
-      const verdict = v.status ?? (v.pass && v.notRun.length === 0 && hidden.length === 0 ? "pass" : "fail");
-      // the report and last-verify.json are written together, only now that the verdict is decided
-      if (v.publish) v.publish(); else dropStaging();
-      writeLastVerify(dir, {
-        screen, ...(entry ? { entry } : {}), sourceSha: imp.sourceSha, irSha: imp.irSha, verdict, reportPath, verifiedAt: new Date().toISOString(),
-        topIssues: v.topIssues, notRun: v.notRun, hidden,
-      });
-      const lines = [
-        `${verdict.toUpperCase()}: ${screen} (report: ${reportPath})`,
-        ...v.topIssues.slice(0, 10).map((i) => `- ${i}`),
-        ...(v.notRun.length ? [`Not run: ${v.notRun.join(", ")}`] : []),
-        ...(hidden.length ? [`Hidden in the design (no golden, not compared; show them in a state, class or repeat item, or remove their layers): ${hidden.join(", ")}`] : []),
-        ...(v.extra?.length ? [`Extra Unity captures (not compared): ${v.extra.join(", ")}`] : []),
-        ...(v.warnings ?? []).map((w) => `Warning: ${w}`),
-        ...(v.notSampled ? [`Backgrounds not sampled (every point covered or on text): ${v.notSampled}`] : []),
-      ];
-      return toolResult(lines.join("\n"), {
-        screen, entry, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun, hidden,
-        extra: v.extra ?? [], warnings: v.warnings ?? [], notSampled: v.notSampled ?? 0, steps: v.timings ?? steps, timings: t.done(),
-      }, verdict !== "pass");
+        const exportDir = exportDirOf(dir), unityDir = unityDirOf(dir), reportPath = reportPathOf(dir);
+        // the export must be the recorded import's: a later import exports before Unity runs, and when its Unity step does not
+        // finish the folder's export holds that other page while the record still names this one
+        // an export the cleanup removed (over the cache budget) is exported again from the imported page; it must give the
+        // recorded IR, else the import is out of date
+        const irFile = path.join(exportDir, "screen.ir.json");
+        let reexported = false;
+        if (!fs.existsSync(irFile) && entry && ctx.pipeline.exportScreen) {
+          const kit = t.sync("kit", () => ctx.runtime.kit(cfg.kitDir));
+          const out = await t.async("export", () => ctx.pipeline.exportScreen!(path.join(dir, entry), kit.kit, exportDir, () => ctx.runtime.browser()));
+          reexported = out.ok;
+        }
+        const exported = fs.existsSync(irFile) ? fs.readFileSync(irFile) : null;
+        if (!exported || sha256(exported) !== imp.irSha) {
+          const held = exported ? exportedPage(exported) : null;
+          const again = entry ? designPath(path.join(dir, entry), cfg.designRoot) : screen;
+          return toolResult(`${page ?? screen} cannot be verified: the export ${reexported ? "made again (the cleanup had removed it) " : ""}holds ${held ? designPath(path.join(dir, held), cfg.designRoot) : exported ? "another export" : "nothing"}; ` +
+            `import ${again} again first (its import of ${imp.importedAt} is recorded, but the export changed since). No capture ran.`,
+          { screen, entry, verdict: null, timings: t.done() }, true);
+        }
+        // the capture goes to a fresh staging folder: captures left from an earlier run are never compared, and the
+        // previous report, its captures and last-verify.json stay as they are until there is a new verdict
+        const staging = `${unityDir}.next`;
+        const dropStaging = () => fs.rmSync(staging, { recursive: true, force: true });
+        dropStaging();
+        // a run without a verdict keeps what it captured and its log next to the result (failed-<run>), for diagnosis
+        const keep = (reason: string, info: { code?: number; via?: string; log?: string }) =>
+          keepFailedRun(path.dirname(unityDir), staging, { screen, entry, reason, code: info.code ?? null, via: info.via ?? null, log: info.log ?? "", timings: t.done() });
+        const kept = (where: string) => ` Partial captures and logs kept in ${where}.`;
+        let run;
+        try {
+          run = await t.async("capture", () => runUnity(cfg, "capture", { exportDir, outDir: staging }, withProgress(ctx, extra)));
+        } catch (e) {
+          if (!(e instanceof UnityRunnerError)) { dropStaging(); throw e; }
+          const evidence = keep(e.message, { log: e.log });
+          return toolResult(`Verify of ${screen} not run: ${e.message}. No verdict.${kept(evidence)}`, { screen, verdict: null, evidence, timings: t.done() }, true);
+        }
+        if (run.code !== 0) {
+          const evidence = keep(`Unity capture failed (exit ${run.code}, via ${run.via})`, run);
+          return toolResult(`Unity capture of ${screen} failed (exit ${run.code}, via ${run.via}); no verdict.${kept(evidence)} Log tail:\n${run.logTail}`, {
+            screen, verdict: null, code: run.code, logTail: run.logTail, evidence, timings: t.done(),
+          }, true);
+        }
+        // only a capture that wrote its done marker last counts; anything else is an unfinished run
+        if (!fs.existsSync(path.join(staging, "capture-done.json"))) {
+          const evidence = keep("Unity capture did not finish (no capture-done.json)", run);
+          return toolResult(`Unity capture of ${screen} (via ${run.via}) did not finish (no capture-done.json); no verdict. ` +
+            `The previous report and verdict are unchanged.${kept(evidence)}`, { screen, verdict: null, logTail: run.logTail, evidence, timings: t.done() }, true);
+        }
+        const steps: Record<string, number> = { ...(imp.timings ?? {}), capture: t.steps.capture };
+        const v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir }));
+        if (v.compared === 0) {
+          const unfinished = !fs.existsSync(path.join(staging, "capture-done.json"));
+          const none = !unfinished && !fs.existsSync(path.join(staging, "boxes.json"));
+          v.discard?.();
+          const what = unfinished ? "did not finish (no capture-done.json)" : none ? "wrote no boxes.json" : "produced none of the design's captures";
+          const evidence = keep(`Unity capture ${what}`, run);
+          return toolResult(`Unity capture of ${screen} (via ${run.via}) ${what}; no verdict. ` +
+            `The previous report and verdict are unchanged.${kept(evidence)}`, { screen, verdict: null, notRun: v.notRun, logTail: run.logTail, evidence, timings: t.done() }, true);
+        }
+        // a job the design shows in no context, or one that did not run, was not compared: incomplete, never a pass
+        const hidden = v.hidden ?? [];
+        const verdict = v.status ?? (v.pass && v.notRun.length === 0 && hidden.length === 0 ? "pass" : "fail");
+        // the report and last-verify.json are written together, only now that the verdict is decided
+        if (v.publish) v.publish(); else dropStaging();
+        writeLastVerify(dir, {
+          screen, ...(entry ? { entry } : {}), sourceSha: imp.sourceSha, irSha: imp.irSha, verdict, reportPath, verifiedAt: new Date().toISOString(),
+          topIssues: v.topIssues, notRun: v.notRun, hidden,
+        });
+        const lines = [
+          `${verdict.toUpperCase()}: ${screen} (report: ${reportPath})`,
+          ...v.topIssues.slice(0, 10).map((i) => `- ${i}`),
+          ...(v.notRun.length ? [`Not run: ${v.notRun.join(", ")}`] : []),
+          ...(hidden.length ? [`Hidden in the design (no golden, not compared; show them in a state, class or repeat item, or remove their layers): ${hidden.join(", ")}`] : []),
+          ...(v.extra?.length ? [`Extra Unity captures (not compared): ${v.extra.join(", ")}`] : []),
+          ...(v.warnings ?? []).map((w) => `Warning: ${w}`),
+          ...(v.notSampled ? [`Backgrounds not sampled (every point covered or on text): ${v.notSampled}`] : []),
+        ];
+        return toolResult(lines.join("\n"), {
+          screen, entry, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun, hidden,
+          extra: v.extra ?? [], warnings: v.warnings ?? [], notSampled: v.notSampled ?? 0, steps: v.timings ?? steps, timings: t.done(),
+        }, verdict !== "pass");
+      }));
     });
   });
 }
 
 /** How many failed-<run> folders a screen keeps (the newest); older ones are deleted when a new one is kept. */
-export const FAILED_RUNS_KEPT = 3;
+export const FAILED_RUNS_KEPT = KEPT;
 
 /**
  * Moves a capture that gave no verdict (`staging`, whatever it holds: PNGs, boxes, the meta file Unity keeps up to date)

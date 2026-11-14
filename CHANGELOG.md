@@ -5,13 +5,33 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ## Unreleased
 
+### Added
+
+- Disk use stays bounded by itself. After a verify writes its report the run's Unity captures and difference images
+  are deleted (the report keeps thumbnails and issue crops of its failing captures, in `<screen>/.design-ui/report/`);
+  after every import and verify each screen keeps only its records, its latest export, its report's pictures and its
+  newest three failed runs, and over `cacheBudgetMB` (design-ui.config.json, default 2048) the exports of the screens
+  least recently imported or verified go first (the next import or verify exports them again). Never touched: records,
+  design files, a screen whose import or verify is running. New tool `design_ui_clean { screen?, dryRun? }` reports or
+  runs the cleanup; `design_ui_status` shows the bookkeeping per screen and in total. The skill tells AI clients that
+  cleanup is automatic and never to delete these files by hand.
+- `scripts/capture-on-copy.sh`: the verification capture on a temporary copy of the project (an APFS clone on macOS),
+  removed afterwards, success or failure. Setup writes it into a new config.
+
+### Changed
+
+- Setup copies the design kit into the project (`<designRoot>/design-kit`) and points `kitDir` there; kit sync never
+  writes into the clone's tracked `design-kit` (it refuses, and status warns, for a config of an earlier setup, with the
+  copy to make).
+- Nothing adds `"testables"` to a project's manifest: only the temporary copy a capture runs on lists the package's
+  tests (they switch project settings and are no business of a game's Test Runner).
+
 ### Fixed
 
 - The comparison sees horizontal text errors: each text line's first and last glyphs (and the width between them) are
   held to the box limit, ±1 px, from Unity's ink column profile near each end matched to the design's (spacing, kerning
   or alignment inside a box of the right size had kept the same ink colour, amount, line count and baseline and passed).
   Reported per line ("text ink extent") in the verdict and the report.
-
 - Font twins take a fraction of the disk they did (2.9 GB in an 11-locale project; 3.5 GB → 25 MB in the same setup
   rebuilt in the sample project): a line-box variant keeps no glyphs or atlas on disk and shares its twin's when loaded
   (`FontTwinLink`; the compiled font set links them when a screen loads); a twin's atlas pages are sized to its glyphs

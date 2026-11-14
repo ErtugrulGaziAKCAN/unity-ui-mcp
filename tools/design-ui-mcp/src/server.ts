@@ -4,6 +4,7 @@ import type { ServerContext } from "./context.js";
 import { INSTALLED_PIPELINE, type Pipeline } from "./pipeline.js";
 import type { RunnerOptions } from "./runner.js";
 import { Runtime } from "./runtime.js";
+import { registerClean } from "./tools/clean.js";
 import { registerImport } from "./tools/import.js";
 import { registerKitSync } from "./tools/kitSync.js";
 import { registerLint } from "./tools/lint.js";
@@ -17,6 +18,7 @@ export { VERSION };
 export const SERVER_NAME = "design-ui";
 export const TOOL_NAMES = [
   "design_ui_rules", "design_ui_list", "design_ui_lint", "design_ui_import", "design_ui_verify", "design_ui_status", "design_ui_kit_sync",
+  "design_ui_clean",
 ] as const;
 
 export interface ServerDeps {
@@ -44,7 +46,10 @@ export function instructions(ctx: ServerContext): string {
     "4. design_ui_import { design }: export the design and compile it into the open Unity Editor. In a canvas folder with several",
     "   artboards, pass the artboard's path (<folder>/<artboard>.dc.html) to lint, import, verify and status.",
     "5. design_ui_verify { screen }: capture in Unity, compare with the design; report the verdict, report path and top issues.",
-    "design_ui_status shows this version's capabilities; design_ui_kit_sync refreshes the kit fonts from Unity.",
+    "design_ui_status shows this version's capabilities and the disk its bookkeeping takes; design_ui_kit_sync refreshes the kit fonts from Unity.",
+    "Cleanup is automatic: import and verify remove the derived files they no longer need and keep the bookkeeping under cacheBudgetMB,",
+    "and kit sync and import remove unused font twins. When the user asks about disk use, call design_ui_status, then design_ui_clean",
+    "(dryRun first). Never delete <screen>/.design-ui, generated Unity files or font twins by hand.",
     "Rules: never edit generated Unity files; never claim a pass that design_ui_verify did not return.",
     "",
     `Live in this version: ${live.join(", ")}.`,
@@ -66,6 +71,7 @@ function build(ctx: ServerContext): McpServer {
   registerVerify(server, ctx);
   registerStatus(server, ctx);
   registerKitSync(server, ctx);
+  registerClean(server, ctx);
   return server;
 }
 
@@ -76,7 +82,7 @@ const contextOf = (projectDir: string, cfg: DesignUiConfig | null, configError: 
   runnerOptions: deps.runnerOptions ?? {},
 });
 
-/** The design-ui MCP server for one Unity project: 7 tools and the design-ui://rules resource. */
+/** The design-ui MCP server for one Unity project: 8 tools and the design-ui://rules resource. */
 export function createServer(cfg: DesignUiConfig, deps: ServerDeps = {}): McpServer {
   return build(contextOf(cfg.projectDir, cfg, null, deps));
 }

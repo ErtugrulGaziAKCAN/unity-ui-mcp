@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Browser } from "playwright";
 import type { BridgeStatus } from "./bridge.js";
 import type { DesignUiConfig, UnityStep } from "./config.js";
-import { readThresholds, runCompare, runExport, summarizeIssues, writeReport, writeVerdict, type Finding, type KitConfig } from "./exporter.js";
+import { readThresholds, runCompare, runExport, summarizeIssues, writeReport, writeReportPictures, writeVerdict, type Finding, type KitConfig, type ReportPictures } from "./exporter.js";
 
 export interface ExportOutcome {
   /** false when lint found errors: nothing but the lint report was written. */
@@ -41,8 +41,9 @@ export interface CompareOutcome {
   /** Painted backgrounds left without any colour sample, over all captures. */
   notSampled?: number;
   /**
-   * Makes this run the screen's result: moves the Unity captures (to `opts.unityDir`) and the difference images into
-   * place and writes the report and verdict.json. Called only once a verdict exists, right before last-verify.json.
+   * Makes this run the screen's result: writes the report (with the pictures it keeps of failing captures) and
+   * verdict.json, then deletes this run's Unity captures and difference images and the previous run's. Called only once a
+   * verdict exists, right before last-verify.json.
    */
   publish?: () => void;
   /** Drops this run's derived files; the previous report, captures and verdict stay as they were. */
@@ -81,27 +82,42 @@ export const INSTALLED_PIPELINE: Pipeline = {
     return { ok: r.ok, findings: r.findings, timings: { ...r.timings, total: r.totalMs }, skipped: r.skipped, hidden: r.hidden };
   },
   compareScreen: async (exportDir, unityDir, reportFile, opts = {}) => {
-    // derived files live in the screen's bookkeeping folder, next to the Unity captures (a dot folder: not design
-    // source); this run's go to staging folders until publish(), so a run without a verdict changes nothing
+    // derived files live in the screen's bookkeeping folder (a dot folder: not design source); this run's go to staging
+    // folders until publish(), so a run without a verdict changes nothing. The report keeps pictures of its failing
+    // captures (report/); the Unity captures and difference images go once it is written.
     const finalUnity = opts.unityDir ?? unityDir;
-    const work = path.join(path.dirname(finalUnity), "compare"), next = `${work}.next`;
+    const book = path.dirname(finalUnity);
+    const work = path.join(book, "compare"), next = `${work}.next`;
+    const pics = path.join(book, "report"), picsNext = `${pics}.next`;
     const rm = (p: string) => fs.rmSync(p, { recursive: true, force: true });
     rm(next);
+    rm(picsNext);
     const v = await runCompare(exportDir, unityDir, readThresholds(), { diffDir: path.join(next, "diff"), timings: opts.timings });
+    const staged = await writeReportPictures(v, exportDir, unityDir, picsNext);
     const verdictFile = path.join(work, "verdict.json");
     return {
       pass: v.pass, status: v.status, hidden: v.hidden, topIssues: summarizeIssues(v, 20, { notRun: false }), notRun: v.notRun, compared: v.captures.length,
       extra: v.extra, verdictFile, timings: v.timings, warnings: v.warnings,
       notSampled: v.captures.reduce((a, c) => a + c.notSampled.length, 0),
       publish: () => {
-        if (path.resolve(finalUnity) !== path.resolve(unityDir)) { rm(finalUnity); fs.renameSync(unityDir, finalUnity); }
+        rm(pics);
+        if (fs.existsSync(picsNext)) fs.renameSync(picsNext, pics);
+        const at = (f: string) => path.join(pics, path.relative(picsNext, f));
+        const kept: ReportPictures = new Map([...staged].map(([k, p]) => [k, {
+          design: at(p.design), unity: at(p.unity), diff: p.diff ? at(p.diff) : null,
+          crops: p.crops.map((c) => ({ ...c, design: at(c.design), unity: at(c.unity), diff: c.diff ? at(c.diff) : null })),
+        }]));
+        for (const c of v.captures) c.diff = null;
         rm(work);
-        if (fs.existsSync(next)) fs.renameSync(next, work);
-        for (const c of v.captures) if (c.diff) c.diff = path.join(work, path.relative(next, c.diff));
+        fs.mkdirSync(work, { recursive: true });
         writeVerdict(v, verdictFile);
-        writeReport(v, exportDir, finalUnity, reportFile);
+        writeReport(v, exportDir, finalUnity, reportFile, kept);
+        // what the report no longer needs: this run's captures and difference images, and the previous run's captures
+        rm(next);
+        rm(unityDir);
+        rm(finalUnity);
       },
-      discard: () => rm(next),
+      discard: () => { rm(next); rm(picsNext); },
     };
   },
   unityCapture: true,

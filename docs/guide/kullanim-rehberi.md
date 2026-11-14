@@ -29,8 +29,8 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
    Settings'teki varsayılan fonttur. Dile göre font eşlemesi olan bir proje profildeki **Locale Fonts** listesini
    doldurur ya da bir Editor assembly'sinde kendi font sistemine soran küçük bir `DesignUiFontResolver` alt sınıfı yazıp
    onun asset'ini profilin **Font Resolver** alanına koyar (tek doğru kaynak).
-4. **Kit.** `design-kit` klasörünü klondan kendine ait bir yere kopyala (örneğin tasarımların yanına) ve
-   `design-ui.config.json` içindeki `kitDir`'i oraya çevir; klon temiz kalır. Sonra **kit senkronu** yap (AI'dan
+4. **Kit.** Kurulum `design-kit` klasörünü klondan projenin kendi kiti olan `<designRoot>/design-kit` klasörüne
+   kopyalar ve `kitDir`'i oraya çevirir (kit senkronu klona hiç yazmaz). Sonra **kit senkronu** yap (AI'dan
    `design_ui_kit_sync` iste ya da `Window > Design UI > Kit Sync`): projenin font dosyaları kit'e kopyalanır,
    `--font-*` token'larına fontların gerçek aile adları yazılır, yazı stilleri fontların gerçek yüzlerine göre denetlenir.
 5. **Kit'i Claude Design'a yayınla.** `/unity-ui-mcp`'den kit'i yayınlamasını iste ya da klonda
@@ -42,8 +42,8 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
 7. **Localization** (isteğe bağlı): Unity Localization 1.5 veya üstü. Profilin localization ayarlarında her ekranın
    String Table koleksiyonunu (ya da varsayılan bir adlandırma kalıbını) ve tablolarının argüman biçimini (`{name}` Smart
    String ya da `{0}` sıralı) belirt.
-8. **Doğrulama görüntüleri:** bir yakalama komutu kur (aşağıda). Kurulana kadar lint ve aktarma çalışır, doğrulama da
-   neyin eksik olduğunu söyler.
+8. **Doğrulama görüntüleri:** kurulumun yazdığı yakalama komutu projenin geçici bir kopyasında çizer (aşağıda); projenin
+   sürümündeki Unity Hub kurulumunu ya da `UNITY_BIN`'i kullanır.
 
 ## Claude Design'da tasarlamak
 
@@ -205,39 +205,43 @@ ekranın oynatıcısı yoktur): geçişler sona atlar, animasyonlar duran karele
 ## Doğrulama görüntüleri
 
 `design_ui_verify` açık editörünü hiçbir zaman kullanmaz. `design-ui.config.json` içindeki
-`unityRunner.command.capture` komutunu çalıştırır. Bu komut projenin bir **kopyasında** çizmelidir (Unity aynı projeyi
-iki kez açamaz); kopyada derlenmiş ekran bulunmalı ve `Packages/manifest.json` paketin testlerini listelemelidir
-(`"testables": ["com.ertugrulgaziakcan.design-ui"]`). Komut, EditMode testi
-`DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv`'i batchmode'da çalıştırır; sunucu dışa aktarım ve çıktı
-klasörlerini ortam değişkenleriyle verir (`DESIGN_UI_EXPORT_DIR`, `DESIGN_UI_OUT_DIR`; `{exportDir}` ve `{outDir}`
-yer tutucuları olarak da). Kendine uyarlayacağın bir örnek:
+`unityRunner.command.capture` komutunu çalıştırır; bu komut projenin bir **kopyasında** çizer (Unity aynı projeyi iki kez
+açamaz). Deponun `scripts/capture-on-copy.sh` betiği bunu yapar ve `scripts/setup.sh` onu yeni bir ayar dosyasına yazar:
 
 ```json
 "unityRunner": {
   "prefer": "editor",
   "captureVia": "command",
   "timeoutSec": 3600,
-  "command": { "import": [], "kitSync": [], "capture": ["/path/to/capture-on-copy.sh", "{projectDir}"] }
+  "command": { "import": [], "kitSync": [], "capture": ["<klon>/scripts/capture-on-copy.sh", "{projectDir}"] }
 }
 ```
 
-```sh
-#!/bin/sh
-# capture-on-copy.sh <projectDir>: projenin kopyasını tazele, sonra yakalamayı orada yap.
-set -e
-COPY="$HOME/UnityCopies/$(basename "$1")-capture"
-mkdir -p "$COPY"
-rsync -a --delete --exclude Temp --exclude Logs --exclude UserSettings "$1/" "$COPY/"
-exec "/Applications/Unity/Hub/Editor/<version>/Unity.app/Contents/MacOS/Unity" -batchmode -projectPath "$COPY" \
-  -runTests -testPlatform EditMode -testFilter "DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv" \
-  -testResults "$COPY/capture-results.xml" -logFile -
-```
+Betik projeyi geçici bir klasöre kopyalar (macOS'ta APFS klonu: `Library` bedavaya gelir; başka sistemlerde rsync),
+paketin testlerini (`"testables"`) yalnız **kopyanın** `Packages/manifest.json` dosyasına yazar, EditMode testi
+`DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv`'i orada batchmode'da çalıştırır ve Unity bitince, yakalama
+başarılı da olsa başarısız da olsa kopyayı siler. Senin projenin manifest'i paketin testlerini hiçbir zaman listelemez
+(listeleseydi, proje ayarlarını değiştiren paket testleri senin Test Runner'ına girerdi) ve projene hiçbir sahne, varlık
+ya da yardımcı dosya eklenmez. Sunucu dışa aktarım ve çıktı klasörlerini ortam değişkenleriyle verir
+(`DESIGN_UI_EXPORT_DIR`, `DESIGN_UI_OUT_DIR`; `{exportDir}` ve `{outDir}` yer tutucuları olarak da); Unity, Unity Hub'daki
+proje sürümüdür ya da `UNITY_BIN`. Kendi betiğin de aynı biçimde çalışır, yeter ki ardını temizlesin.
 
 Yakalama, çıktı klasörüne her iş için bir PNG, `boxes.json`, `boxes.meta.json` ve en son `capture-done.json` yazar;
 sunucu ardından karşılaştırır ve raporu yazar. Başarısız olan, zaman aşımına uğrayan ya da bitmeyen bir çalışma, yarım
-kalan görüntülerini, meta dosyasını ve Unity günlüğünü `<designRoot>/<ekran-id>/.design-ui/failed-<run>/` altında tutar.
-Her kopya kendi `Library` klasörünü taşır (çoğu zaman birkaç GB): diske dikkat et. Komut senin yetkilerinle bir program
-olarak çalışır; yalnız güvendiğin ayar dosyalarını kullan.
+kalan görüntülerini, meta dosyasını ve Unity günlüğünü `<designRoot>/<ekran-id>/.design-ui/failed-<run>/` altında tutar
+(en yeni üçünü). Komut senin yetkilerinle bir program olarak çalışır; yalnız güvendiğin ayar dosyalarını kullan.
+
+## Disk kullanımı
+
+Sunucu kendi dosyalarını kendisi küçük tutar: bir doğrulama raporunu yazdıktan sonra o çalışmanın Unity görüntülerini ve
+fark görüntülerini siler (rapor, başarısız yakalamaların küçük görsellerini ve sorun kırpıntılarını tutar); her içe
+aktarma ve doğrulamadan sonra her ekranın kayıtlarını (`<designRoot>/<ekran-id>/.design-ui/`: kayıtlar, son dışa aktarım,
+son raporun görselleri, en yeni üç başarısız çalışma) `design-ui.config.json` içindeki `cacheBudgetMB` sınırında tutar
+(varsayılan 2048): aşılırsa en uzun süredir içe aktarılmamış ya da doğrulanmamış ekranların dışa aktarımları önce gider,
+sonraki içe aktarma ya da doğrulama onları yeniden üretir. Kit eşitleme ve her içe aktarma, hiçbir metin stilinin, derlenmiş
+ekranın ya da dil fontunun kullanmadığı font ikizlerini siler. `design_ui_status` kayıtların boyutunu ekran ekran ve toplam
+olarak gösterir; `design_ui_clean` (`dryRun` ile yalnız rapor) temizliği hemen çalıştırır. Bu klasörleri, üretilmiş
+dosyaları ya da font ikizlerini elle silme.
 
 ## AI istemcisi olmadan
 

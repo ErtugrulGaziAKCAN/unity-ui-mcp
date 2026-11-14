@@ -12,6 +12,7 @@ import { captureContext, indexIr } from "../src/compare/context.js";
 import { flatAt, nearCurve, ringPoints, type RingPoint } from "../src/compare/samples.js";
 import { decodePngAsync, encodePng } from "../src/compare/png.js";
 import { writeReport, writeVerdict } from "../src/compare/report.js";
+import { writeReportPictures } from "../src/compare/pictures.js";
 import { blockSsimMap, maskRects, regionSsim, ssimMasked, unionRect } from "../src/compare/ssim.js";
 import { runCli } from "../src/commands.js";
 
@@ -1203,6 +1204,37 @@ describe("compareScreen", () => {
 });
 
 describe("writeReport and writeVerdict", () => {
+  it("with kept pictures shows thumbnails and an issue crop of each failing capture only, and works without the captures", async () => {
+    const f = screenFixture((name, s) => {
+      if (name === "busy@320x192") s.boxes.elements.panel.x += 3;
+      return s;
+    });
+    const out = tmp(), report = path.join(out, "report.html"), pics = path.join(out, ".pics");
+    const v = await compareScreen(f.exportDir, f.unityDir, T, { diffDir: path.join(out, "diff") });
+    const kept = await writeReportPictures(v, f.exportDir, f.unityDir, pics);
+    expect([...kept.keys()]).toEqual(["busy@320x192"]);
+    const busy = kept.get("busy@320x192")!;
+    expect(busy.crops.map((c) => c.detail)).toEqual([expect.stringMatching(/^panel: .*Δx \+3\.00/)]);
+    writeReport(v, f.exportDir, f.unityDir, report, kept);
+    // the captures and difference images go: every picture the report shows is one it kept
+    fs.rmSync(f.unityDir, { recursive: true });
+    fs.rmSync(path.join(out, "diff"), { recursive: true, force: true });
+    const html = fs.readFileSync(report, "utf8");
+    const srcs = Array.from(html.matchAll(/src="([^"]+)"/g)).map((m) => decodeURIComponent(m[1]));
+    const files = [busy.design, busy.unity, busy.diff, ...busy.crops.flatMap((c) => [c.design, c.unity, c.diff])].filter((x): x is string => !!x).map((x) => path.relative(out, x));
+    expect(new Set(srcs)).toEqual(new Set(files));
+    for (const s of srcs) {
+      expect(s.startsWith(".pics/"), s).toBe(true);
+      expect(fs.existsSync(path.resolve(out, s)), s).toBe(true);
+    }
+    expect(html).toMatch(/Passed: its pictures are not kept/);
+    expect(html).not.toMatch(/Images are linked, not embedded/);
+    // the crop is the issue's place with a margin, at full resolution
+    const crop = await decodePngAsync(fs.readFileSync(busy.crops[0].unity));
+    expect(crop.w).toBeLessThanOrEqual(640);
+    expect(crop.w).toBeGreaterThan(96);
+  });
+
   it("writes one self-contained HTML naming every capture, FAIL for failing ones, with relative image paths", async () => {
     const f = screenFixture((name, s) => {
       if (name === "busy@320x192") s.boxes.elements.panel.x += 3;

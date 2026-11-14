@@ -108,8 +108,8 @@ chat is visible only in chats started after it.
 
 1. **Sync the kit from Unity.** Ask the AI for a kit sync (`design_ui_kit_sync`). The fonts always come from the Unity
    project: kit sync copies the font files your TMP setup renders each locale with into the kit, writes the `--font-*`
-   tokens from their real family names, and checks the text styles. Kit sync writes into `kitDir`; keep a copy of
-   `design-kit` per project (see [INSTALL.md](INSTALL.md#6-confirm-then-hand-over)) so the clone stays clean.
+   tokens from their real family names, and checks the text styles. Kit sync writes into `kitDir`, the project's own
+   copy of the kit that setup makes in `<designRoot>/design-kit`; it never writes into the clone.
 2. **Publish the kit to Claude Design.** `npx design-export kit claude <kitDir> <outDir>` (in the clone) writes the
    kit as a Claude Design System folder (`<outDir>/project/`: README with the rules, tokens, fonts, a card per
    component). Ask `/unity-ui-mcp` to publish it, or publish that folder yourself; every canvas then attaches it.
@@ -241,23 +241,28 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
 ```json
 {
   "designRoot": "Designs",
-  "kitDir": "<clone>/design-kit",
+  "kitDir": "Designs/design-kit",
   "profileAsset": "Assets/DesignUi/DesignUiProfile.asset",
   "mcpServer": "<clone>/tools/design-ui-mcp/dist/server.js",
+  "cacheBudgetMB": 2048,
   "unityRunner": { "prefer": "editor", "captureVia": "command", "timeoutSec": 1800,
-                   "command": { "import": [], "capture": [], "kitSync": [] } }
+                   "command": { "import": [], "capture": ["<clone>/scripts/capture-on-copy.sh", "{projectDir}"], "kitSync": [] } }
 }
 ```
 
 - `designRoot`: one folder per screen (its `.html` or `.dc.html` pages, assets and `blobs.json`); the server keeps its
   bookkeeping in `<folder>/.design-ui/` and writes `<folder>/report.html`.
-- `kitDir`: the design kit; `profileAsset`: the `DesignUiProfile`; `mcpServer`: the server path the Design UI window
-  puts into its client snippets.
+- `kitDir`: the project's design kit (setup copies the clone's `design-kit` there; kit sync writes the project's fonts
+  into it, and refuses to write into a clone's own kit); `profileAsset`: the `DesignUiProfile`; `mcpServer`: the server
+  path the Design UI window puts into its client snippets.
+- `cacheBudgetMB` (default 2048): the most the screens' bookkeeping may take; cleanup is automatic (see the
+  [usage guide](docs/guide/usage.md#disk-use)), and `design_ui_clean` runs it on request.
 - `unityRunner.prefer: "editor"` runs import and kit sync in the open Editor's bridge and fails if it does not answer
   (no silent fallback); `"command"` runs the argv templates instead.
 - `unityRunner.captureVia` must be `"command"`: verification never runs in your open Editor. `command.capture` runs the
   EditMode test `DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv` in batchmode **on a copy of the project**
-  (Unity cannot open a project twice); see the [usage guide](docs/guide/usage.md#verification-captures).
+  (Unity cannot open a project twice): `scripts/capture-on-copy.sh` makes a temporary copy, lists the package's tests in
+  the copy's manifest only, and removes the copy afterwards; see the [usage guide](docs/guide/usage.md#verification-captures).
 - Templates take `{projectDir}` `{profile}` `{exportDir}` `{outDir}` `{kitDir}`, also passed as `DESIGN_UI_*`
   environment variables. They run as programs with your rights: only use a config you trust.
 - `timeoutSec` limits one Unity step; while it runs, the server sends MCP progress notifications every 10 s.
@@ -281,7 +286,8 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
 | Text drawn with the advanced generator is empty | A font asset unloaded and loaded again is lost to TextCore's registry; the locale controller and scene loads repair the twins (`TextAssetRegistry`). Host code drawing twins outside a locale controller calls `TextAssetRegistry.Repair(font)`. |
 | "Exit Play mode first" from an import or kit sync | Stop Play: what an import adds to the font twins in Play would be taken back when Play stops. |
 | Empty localized labels, "Uxml object has an invalid child element" | A screen was imported before the package defined an element it uses. The package imports generated screens again after a package update (asset by asset); a screen still broken is fixed by importing its folder again. |
-| Low disk during verification | Each project copy a capture command uses carries its own `Library` (often several GB); remove copies you no longer need. |
+| Disk use | `design_ui_status` shows the screens' bookkeeping; cleanup runs after every import and verify, within `cacheBudgetMB`, and `design_ui_clean` runs it now. A capture command of your own must remove its project copy afterwards, as `scripts/capture-on-copy.sh` does. |
+| "kitDir is the unity-ui-mcp clone's own design-kit" | A config from an earlier setup: copy `design-kit` into `<designRoot>/design-kit` (without `fixtures/`) and point `kitDir` there. |
 | `could not start Chromium` | `npx playwright install chromium` in the clone. |
 
 ## Development

@@ -37,6 +37,12 @@ describe("skills/unity-ui-mcp/SKILL.md", () => {
     for (const name of TOOL_NAMES) expect(used.has(name), `${name} missing from the body`).toBe(true);
   });
 
+  it("tells clients that cleanup is automatic, which tool answers disk questions, and never to delete by hand", () => {
+    expect(text).toMatch(/Disk use takes care of itself/);
+    expect(text).toMatch(/design_ui_clean \{ dryRun: true \}/);
+    expect(text).toMatch(/Never delete `<screen>\/\.design-ui\/`, generated Unity\s+files or font twins by hand/);
+  });
+
   it("covers the workflow rules", () => {
     expect(text).toMatch(/blobs\.json/);
     expect(text).toMatch(/project\/canvas\.json/);

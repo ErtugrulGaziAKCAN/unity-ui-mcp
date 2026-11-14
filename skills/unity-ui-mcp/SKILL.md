@@ -79,6 +79,14 @@ For each screen the user names:
    `design_ui_kit_sync` refreshes the kit fonts and settings from Unity; run it when the user asks for it or when
    lint reports kit-related findings.
 
+Disk use takes care of itself: every import and verify removes the derived files it no longer needs (the Unity captures
+and difference images of a finished verify; the report keeps crops of what failed) and keeps the screens' bookkeeping
+under `cacheBudgetMB` (the exports of the screens used least recently go first and are exported again when needed);
+kit sync and import remove font twins nothing uses. When the user asks how much disk the tools take, call
+`design_ui_status` (bookkeeping per screen and in total), then `design_ui_clean { dryRun: true }` to show what a cleanup
+would remove, and `design_ui_clean` only when they want it now. Never delete `<screen>/.design-ui/`, generated Unity
+files or font twins by hand.
+
 ## 6. Rules
 
 - Never edit generated files (the exported IR, goldens, UXML, USS, anything under `<screen>/.design-ui/` or in the

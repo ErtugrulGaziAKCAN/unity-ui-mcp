@@ -7,8 +7,9 @@
 # Idempotent: a second run changes nothing. --dry-run prints every change without making it.
 # It also links the /unity-ui-mcp skill (scripts/install-skill.sh) and edits the chosen clients' MCP config.
 # In the Unity project it only adds the com.ertugrulgaziakcan.design-ui entry to Packages/manifest.json (when absent;
-# an entry under the package's id before 0.1.0 is replaced by it) and writes design-ui.config.json (when absent). It
-# never commits or pushes anything. Bash only (macOS, Linux; on Windows use WSL or Git Bash, or the manual steps in
+# an entry under the package's id before 0.1.0 is replaced by it; it never adds "testables"), and writes
+# design-ui.config.json with a copy of the design kit in <designRoot>/design-kit (both when absent). It never commits or
+# pushes anything. Bash only (macOS, Linux; on Windows use WSL or Git Bash, or the manual steps in
 # INSTALL.md).
 set -euo pipefail
 
@@ -278,25 +279,54 @@ if [ "$PACKAGE" = git ] && [ "${DESIGN_UI_SETUP_OFFLINE:-0}" != 1 ] && ! git -C 
 fi
 
 # 4. design-ui.config.json --------------------------------------------------------------------------------------------
+# The design kit is the project's own copy, in <designRoot>/design-kit: kit sync writes the project's fonts and tokens
+# into it, never into this clone (whose design-kit is tracked, so a sync would make `git pull` fail and put a project's
+# fonts into a public checkout). Verification captures run scripts/capture-on-copy.sh: a temporary copy of the project,
+# removed afterwards, the only place that lists the package's tests.
 echo "[4/7] design-ui.config.json"
 CONFIG="$PROJECT/design-ui.config.json"
+CAPTURE="$REPO/scripts/capture-on-copy.sh"
+case "$DESIGN_ROOT" in /*) DESIGN_ABS="$DESIGN_ROOT" ;; *) DESIGN_ABS="$PROJECT/$DESIGN_ROOT" ;; esac
+KIT_ABS="$DESIGN_ABS/design-kit"
+KIT_REL="${DESIGN_ROOT%/}/design-kit"
 if [ -f "$CONFIG" ]; then
   info "kept existing $CONFIG"
   # mcpServer: the server path the Design UI window (Window > Design UI > Status) puts into its client snippets
   HAS_SERVER="$("$NODE" -e 'try { const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(typeof c.mcpServer === "string" ? "1" : "0") } catch { process.stdout.write("1") }' "$CONFIG")"
   [ "$HAS_SERVER" = 1 ] || info "$CONFIG has no \"mcpServer\" (the Design UI window's client snippets need it): add \"mcpServer\": $("$NODE" -p 'JSON.stringify(process.argv[1])' "$SERVER_JS")"
+  # a config of an earlier setup points kitDir at this clone's kit: say how to move it (setup never edits an existing config)
+  CFG_KIT="$("$NODE" -e 'try { const p = require("path"), c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const d = p.dirname(process.argv[1]); process.stdout.write(typeof c.kitDir === "string" ? p.resolve(d, c.kitDir) : "") } catch {}' "$CONFIG")"
+  CFG_DESIGN="$("$NODE" -e 'try { const p = require("path"), c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(typeof c.designRoot === "string" ? p.resolve(p.dirname(process.argv[1]), c.designRoot) : "") } catch {}' "$CONFIG")"
+  if [ -n "$CFG_KIT" ] && [ "$CFG_KIT" = "$REPO/design-kit" ]; then
+    MOVE_TO="${CFG_DESIGN:-$DESIGN_ABS}/design-kit"
+    info "warning: kitDir is this clone's design-kit ($REPO/design-kit): kit sync would write the project's fonts into the clone. Copy it into the project and point kitDir there:"
+    info "  $(quoted mkdir -p "$(dirname "$MOVE_TO")") && $(quoted cp -R "$REPO/design-kit" "$MOVE_TO") && $(quoted rm -rf "$MOVE_TO/fixtures")"
+    info "  then set \"kitDir\": $("$NODE" -p 'JSON.stringify(process.argv[1])' "$MOVE_TO") in $CONFIG"
+  fi
 else
-  change "write $CONFIG (designRoot $DESIGN_ROOT, kitDir $REPO/design-kit, mcpServer $SERVER_JS, Unity runner: editor bridge)"
+  if [ -e "$KIT_ABS" ]; then
+    info "kept existing design kit $KIT_ABS"
+  else
+    change "copy the design kit $REPO/design-kit into $KIT_ABS (the project's own kit: kit sync writes into it)"
+    if [ "$DRY" != 1 ]; then
+      mkdir -p "$(dirname "$KIT_ABS")"
+      KIT_TMP="$(mktemp -d "$(dirname "$KIT_ABS")/.design-kit.XXXXXX")"
+      (cd "$REPO/design-kit" && tar cf - --exclude ./fixtures .) | (cd "$KIT_TMP" && tar xf -)
+      mv "$KIT_TMP" "$KIT_ABS"
+    fi
+  fi
+  case "$DESIGN_ROOT" in /*) KIT_VALUE="$KIT_ABS" ;; *) KIT_VALUE="$KIT_REL" ;; esac
+  change "write $CONFIG (designRoot $DESIGN_ROOT, kitDir $KIT_VALUE, mcpServer $SERVER_JS, Unity runner: editor bridge, captures on a temporary project copy)"
   if [ "$DRY" != 1 ]; then
-    "$NODE" - "$CONFIG" "$DESIGN_ROOT" "$REPO/design-kit" "$SERVER_JS" <<'NODE'
+    "$NODE" - "$CONFIG" "$DESIGN_ROOT" "$KIT_VALUE" "$SERVER_JS" "$CAPTURE" <<'NODE'
 const fs = require("fs");
-const [file, designRoot, kitDir, mcpServer] = process.argv.slice(2);
+const [file, designRoot, kitDir, mcpServer, capture] = process.argv.slice(2);
 const cfg = {
   designRoot,
   kitDir,
   profileAsset: "Assets/DesignUi/DesignUiProfile.asset",
   mcpServer,
-  unityRunner: { prefer: "editor", captureVia: "command", command: { import: [], capture: [], kitSync: [] } },
+  unityRunner: { prefer: "editor", captureVia: "command", command: { import: [], capture: [capture, "{projectDir}"], kitSync: [] } },
 };
 fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n", { flag: "wx" });
 NODE

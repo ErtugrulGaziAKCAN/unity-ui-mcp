@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { requireConfig, withProgress, type ServerContext } from "../context.js";
+import { cloneKitMessage, isCloneKit } from "../kit-location.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { runUnity, UnityRunnerError, withIssues } from "../runner.js";
 
@@ -14,6 +15,9 @@ export function registerKitSync(server: McpServer, ctx: ServerContext): void {
     const t = new Timings();
     return guarded(t, async () => {
       const cfg = requireConfig(ctx);
+      if (isCloneKit(cfg.kitDir)) {
+        return toolResult(`Kit sync not run: ${cloneKitMessage(cfg.kitDir, cfg.designRoot, cfg.configPath)}.`, { kitDir: cfg.kitDir, timings: t.done() }, true);
+      }
       let run;
       try {
         run = await t.async("unity", () => runUnity(cfg, "kitSync", {}, withProgress(ctx, extra)));

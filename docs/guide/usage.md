@@ -29,8 +29,8 @@ fix; a difference after import is reported, never smoothed over.
    font for every locale. A project with a per-locale mapping fills the profile's **Locale Fonts**, or writes a
    `DesignUiFontResolver` subclass in an Editor assembly that asks its own font system, and sets that asset as the
    profile's **Font Resolver** (one source of truth).
-4. **The kit.** Copy `design-kit` from the clone to a folder of your own (for example next to your designs) and point
-   `kitDir` in `design-ui.config.json` at it, so the clone stays clean. Then run a **kit sync** (ask the AI for
+4. **The kit.** Setup copies `design-kit` from the clone into `<designRoot>/design-kit`, the project's own kit, and points
+   `kitDir` at it (kit sync never writes into the clone). Then run a **kit sync** (ask the AI for
    `design_ui_kit_sync`, or `Window > Design UI > Kit Sync`): the project's font files go into the kit, the `--font-*`
    tokens get the fonts' real family names, and the text styles are checked against the fonts' real faces.
 5. **Publish the kit to Claude Design.** Ask `/unity-ui-mcp` to publish the kit, or run
@@ -42,8 +42,8 @@ fix; a difference after import is reported, never smoothed over.
 7. **Localization** (optional): Unity Localization 1.5 or later. In the profile's localization settings, name each
    screen's String Table collection (or a default pattern) and the argument format your tables use (`{name}` Smart
    Strings, or `{0}` indexed).
-8. **Verification captures**: set up a capture command (below). Until then, lint and import work and verify says
-   what is missing.
+8. **Verification captures**: setup's capture command renders on a temporary copy of the project (below); it needs the
+   Unity Hub install of the project's version, or `UNITY_BIN`.
 
 ## Designing in Claude Design
 
@@ -205,39 +205,42 @@ has no player): transitions jump to their end and animations show their still fr
 ## Verification captures
 
 `design_ui_verify` never renders in your open Editor. It runs `unityRunner.command.capture` from
-`design-ui.config.json`, which must render on a **copy** of the project (Unity cannot open the same project twice) that
-has the compiled screen and lists the package's tests in its `Packages/manifest.json`
-(`"testables": ["com.ertugrulgaziakcan.design-ui"]`). The command runs the EditMode test
-`DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv` in batchmode; the server passes the export and output folders
-in the environment (`DESIGN_UI_EXPORT_DIR`, `DESIGN_UI_OUT_DIR`, also as the `{exportDir}` and `{outDir}`
-placeholders). An example to adapt, with a script of your own:
+`design-ui.config.json`, which renders on a **copy** of the project (Unity cannot open the same project twice). The
+repository's `scripts/capture-on-copy.sh` does it, and `scripts/setup.sh` puts it into a new config:
 
 ```json
 "unityRunner": {
   "prefer": "editor",
   "captureVia": "command",
   "timeoutSec": 3600,
-  "command": { "import": [], "kitSync": [], "capture": ["/path/to/capture-on-copy.sh", "{projectDir}"] }
+  "command": { "import": [], "kitSync": [], "capture": ["<clone>/scripts/capture-on-copy.sh", "{projectDir}"] }
 }
 ```
 
-```sh
-#!/bin/sh
-# capture-on-copy.sh <projectDir>: refresh a copy of the project, then capture there.
-set -e
-COPY="$HOME/UnityCopies/$(basename "$1")-capture"
-mkdir -p "$COPY"
-rsync -a --delete --exclude Temp --exclude Logs --exclude UserSettings "$1/" "$COPY/"
-exec "/Applications/Unity/Hub/Editor/<version>/Unity.app/Contents/MacOS/Unity" -batchmode -projectPath "$COPY" \
-  -runTests -testPlatform EditMode -testFilter "DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv" \
-  -testResults "$COPY/capture-results.xml" -logFile -
-```
+It copies the project into a temporary folder (an APFS clone on macOS, so the `Library` comes along at no cost; rsync
+elsewhere), lists the package's tests (`"testables"`) in the **copy's** `Packages/manifest.json` only, runs the EditMode
+test `DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv` there in batchmode, and removes the copy when Unity exits,
+whether the capture succeeded or failed. Your project's manifest never lists the package's tests (that would put the
+package's own test suite, which switches project settings, into your Test Runner), and no scene, asset or helper file is
+ever added to your project. The server passes the export and output folders in the environment (`DESIGN_UI_EXPORT_DIR`,
+`DESIGN_UI_OUT_DIR`, also as the `{exportDir}` and `{outDir}` placeholders); the Unity binary is the Unity Hub install of
+the project's version, or `UNITY_BIN`. A script of your own works the same way, as long as it cleans up after itself.
 
 The capture writes a PNG per job, `boxes.json`, `boxes.meta.json` and, last, `capture-done.json` into the output folder;
 the server then compares and writes the report. A run that fails, times out or does not finish keeps its partial
-captures, the meta file and the Unity log in `<designRoot>/<screen-id>/.design-ui/failed-<run>/`. Each copy carries its
-own `Library` (often several GB): mind the disk. The command runs as a program with your rights; use only configs you
-trust.
+captures, the meta file and the Unity log in `<designRoot>/<screen-id>/.design-ui/failed-<run>/` (the newest three). The
+command runs as a program with your rights; use only configs you trust.
+
+## Disk use
+
+The server keeps its own files small, by itself: after a verify writes its report it deletes the run's Unity captures
+and difference images (the report keeps thumbnails and crops of the captures that failed), and after every import and
+verify it keeps each screen's bookkeeping (`<designRoot>/<screen-id>/.design-ui/`: records, the latest export, the latest
+report's pictures, the newest three failed runs) within `cacheBudgetMB` of `design-ui.config.json` (default 2048): over
+it, the exports of the screens least recently imported or verified go first, and the next import or verify exports them
+again. Kit sync and every import remove font twins no text style, compiled screen or locale font uses.
+`design_ui_status` shows the bookkeeping per screen and in total, and `design_ui_clean` (`dryRun` to only report) runs the
+cleanup now. Do not delete these folders, generated files or font twins by hand.
 
 ## Without an AI client
 

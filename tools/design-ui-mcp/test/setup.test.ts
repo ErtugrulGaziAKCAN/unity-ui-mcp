@@ -95,8 +95,10 @@ describe("scripts/setup.sh", () => {
     expect(r.out).toContain("would write");
     expect(r.out).toContain("would register MCP server design-ui");
     expect(r.out).toContain(`claude CLI: ${e.claudeStub}`);
+    expect(r.out).toContain(`would copy the design kit ${path.join(REPO, "design-kit")} into ${path.join(e.project, "Designs", "design-kit")}`);
     expect(read(path.join(e.project, "Packages", "manifest.json"))).toBe(MANIFEST);
     expect(fs.existsSync(path.join(e.project, "design-ui.config.json"))).toBe(false);
+    expect(fs.existsSync(path.join(e.project, "Designs"))).toBe(false);
     expect(lines(path.join(e.logs, "claude.log")).filter((l) => l.includes("mcp add"))).toEqual([]);
   });
 
@@ -110,7 +112,18 @@ describe("scripts/setup.sh", () => {
     expect(added[0]).toMatch(/^ {4}"com\.ertugrulgaziakcan\.design-ui": "https:\/\/github\.com\/.+\.git\?path=\/packages\/com\.ertugrulgaziakcan\.design-ui#.+",$/);
     expect(manifest.replace(added[0] + "\n", "")).toBe(MANIFEST);
     const cfg = JSON.parse(read(path.join(e.project, "design-ui.config.json")));
-    expect(cfg).toMatchObject({ designRoot: "Designs", kitDir: path.join(REPO, "design-kit"), mcpServer: SERVER_JS, unityRunner: { prefer: "editor" } });
+    // the kit is the project's own copy (kit sync writes fonts into it, never into this clone); verification captures on
+    // a temporary copy of the project (scripts/capture-on-copy.sh)
+    expect(cfg).toMatchObject({
+      designRoot: "Designs", kitDir: "Designs/design-kit", mcpServer: SERVER_JS,
+      unityRunner: { prefer: "editor", captureVia: "command", command: { capture: [path.join(REPO, "scripts", "capture-on-copy.sh"), "{projectDir}"] } },
+    });
+    const kit = path.join(e.project, "Designs", "design-kit");
+    expect(read(path.join(kit, "kit.config.json"))).toBe(read(path.join(REPO, "design-kit", "kit.config.json")));
+    expect(fs.existsSync(path.join(kit, "RULES.md"))).toBe(true);
+    expect(fs.existsSync(path.join(kit, "fixtures")), "the repository's fidelity fixtures stay in the clone").toBe(false);
+    // the project's manifest never lists the package's tests
+    expect(JSON.parse(manifest).testables).toBeUndefined();
     const adds = lines(path.join(e.logs, "claude.log")).filter((l) => l.includes("mcp add"));
     expect(adds).toHaveLength(1);
     expect(adds[0].startsWith(`${e.clientDir} :: `)).toBe(true);
@@ -180,6 +193,16 @@ describe("scripts/setup.sh", () => {
     expect(fs.existsSync(path.join(e.env.HOME!, ".codex"))).toBe(false);
     expect(fs.existsSync(path.join(e.env.HOME!, ".cursor"))).toBe(false);
     expect(fs.existsSync(path.join(e.clientDir, ".cursor"))).toBe(false);
+  });
+
+  it("an existing config whose kitDir is this clone's design-kit gets a message to move it; kit sync would write into the clone", () => {
+    const e = setupEnv();
+    fs.writeFileSync(path.join(e.project, "design-ui.config.json"), JSON.stringify({ designRoot: "Designs", kitDir: path.join(REPO, "design-kit"), profileAsset: "Assets/P.asset", mcpServer: SERVER_JS }) + "\n");
+    const r = e.run("--client", "none");
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(`kitDir is this clone's design-kit (${path.join(REPO, "design-kit")})`);
+    expect(r.out).toMatch(/cp -R .*design-kit.* .*Designs\/design-kit/);
+    expect(fs.existsSync(path.join(e.project, "Designs", "design-kit")), "setup changes no existing config and copies nothing for it").toBe(false);
   });
 
   it("keeps an existing package entry and an existing config", () => {

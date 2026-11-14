@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { DEFAULT_CACHE_BUDGET_MB } from "./cache.js";
 
 export const CONFIG_FILE = "design-ui.config.json";
 
@@ -25,6 +26,11 @@ export interface DesignUiConfig {
     /** Limit for one Unity step (seconds). */
     timeoutSec: number;
   };
+  /**
+   * Budget of the screens' bookkeeping under designRoot (MB): over it, the exports of the screens least recently imported
+   * or verified are removed, oldest first (cache.ts). Default DEFAULT_CACHE_BUDGET_MB.
+   */
+  cacheBudgetMB: number;
   /** Absolute path of the config file. */
   configPath: string;
 }
@@ -80,9 +86,13 @@ export function readConfig(projectDir: string): DesignUiConfig {
   const timeoutSec = ur.timeoutSec ?? 1800;
   if (typeof timeoutSec !== "number" || !(timeoutSec > 0)) fail(file, `has an invalid "unityRunner.timeoutSec": expected a positive number`);
 
+  const cacheBudgetMB = o.cacheBudgetMB ?? DEFAULT_CACHE_BUDGET_MB;
+  if (typeof cacheBudgetMB !== "number" || !(cacheBudgetMB > 0)) fail(file, `has an invalid "cacheBudgetMB": expected a positive number of megabytes`);
+
   return {
     projectDir: dir, designRoot, kitDir, profileAsset,
     unityRunner: { prefer: route("prefer", "editor"), captureVia: route("captureVia", "command"), command, timeoutSec },
+    cacheBudgetMB,
     configPath: file,
   };
 }

@@ -6,6 +6,9 @@ import { probeBridge, type BridgeStatus } from "../bridge.js";
 import type { ServerContext } from "../context.js";
 import { requireConfig } from "../context.js";
 import { designPath, findEntry, resolveScreen } from "../design.js";
+import { mb, screenCache, screenCaches } from "../cache.js";
+import { cloneKitMessage, isCloneKit } from "../kit-location.js";
+import { chromiumSandbox } from "../exporter.js";
 import { OLD_PACKAGE_NAME, oldPackageId, PACKAGE_NAME } from "../package-stamp.js";
 import { MISSING, unityStep } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
@@ -64,8 +67,9 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
   server.registerTool("design_ui_status", {
     title: "Status",
     description:
-      "Without a screen: what this server version supports, its configuration and the Unity bridge. With a screen: its " +
-      "hashes, last import, last verdict and report.",
+      "Without a screen: what this server version supports, its configuration, the Unity bridge and the disk the screens' " +
+      "bookkeeping takes (per screen and in total, against cacheBudgetMB). With a screen: its hashes, last import, last verdict, " +
+      "report and bookkeeping size.",
     inputSchema: { screen: z.string().min(1).optional().describe(SCREEN_ARG) },
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async ({ screen }) => {
@@ -85,8 +89,10 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
         const id = ref.screen;
         const label = ref.entry ? designPath(ref.entry, cfg.designRoot) : id;
         const other = ref.entry && lastImport && imported !== entry;
+        const cache = screenCache(cfg.designRoot, path.basename(dir));
         const data = {
           screen: id, folder: dir, entry, ...s, lastImport, lastVerify, exportDir: exportDirOf(dir),
+          cache: { bytes: cache.bytes, exportBytes: cache.exportBytes, busy: cache.busy },
           manualEdits: null, pendingTranslations: null,
           note: "manual edits and pending translations are reported by the Unity package's import pipeline (not available in this version)",
           timings: t.done(),
@@ -97,6 +103,7 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
             ? `not the folder's last import (${imported ?? "another page"}, ${lastImport!.importedAt})`
             : s.lastImportSha && lastImport ? `last import ${lastImport.importedAt} via ${lastImport.via}` : "never imported"),
           s.verdict ? `last verdict: ${s.verdict} (${s.reportPath ?? "report missing"})` : "no verdict",
+          `bookkeeping: ${mb(cache.bytes)} (export ${mb(cache.exportBytes)})${cache.busy ? ", an import or verify is running" : ""}`,
         ];
         return toolResult(lines.join("\n"), data);
       }
@@ -118,19 +125,31 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
           `dependency key and git URL path), or replace "${OLD_PACKAGE_NAME}" with "${PACKAGE_NAME}" in the manifest and the URL's ` +
           `path=/packages/${PACKAGE_NAME} by hand`,
       };
+      const caches = cfg ? t.sync("cache", () => screenCaches(cfg.designRoot)) : [];
+      const cacheTotal = caches.reduce((a, c) => a + c.bytes, 0);
+      const cache = cfg ? {
+        total: cacheTotal, budget: Math.round(cfg.cacheBudgetMB * 1024 * 1024),
+        screens: [...caches].sort((a, b) => b.bytes - a.bytes).map((c) => ({ folder: c.folder, bytes: c.bytes, exportBytes: c.exportBytes, lastUsed: new Date(c.lastUsed).toISOString(), busy: c.busy })),
+      } : null;
+      const sandbox = chromiumSandbox();
       const lines = [
         `design-ui MCP server ${VERSION} for ${ctx.projectDir}`,
         cfg ? `config: ${cfg.configPath} (designRoot ${cfg.designRoot}, Unity runner ${cfg.unityRunner.prefer})` : `config problem: ${ctx.configError}`,
+        ...(cfg && isCloneKit(cfg.kitDir) ? [`warning: ${cloneKitMessage(cfg.kitDir, cfg.designRoot, cfg.configPath)}`] : []),
         ...(oldId ? [`old package id: ${OLD_PACKAGE_NAME} in ${old.join(", ")}; ${oldId.fix}`] : []),
         ...(unity ? [`Unity bridge: ${unity.bridge} — ${unity.detail}`] : []),
-        `browser: ${ctx.runtime.browserWarm ? "warm" : "not started (starts on the first lint)"}`,
+        `browser: ${ctx.runtime.browserWarm ? "warm" : "not started (starts on the first lint)"}` +
+          (sandbox ? `, ${sandbox.enabled ? "with Chromium's sandbox" : `without Chromium's sandbox (${sandbox.reason})`}` : ""),
+        ...(cache ? [`bookkeeping: ${mb(cache.total)} of the ${mb(cache.budget)} budget in ${caches.length} screen folder${caches.length === 1 ? "" : "s"}` +
+          (caches.length ? ` (largest: ${cache.screens.slice(0, 5).map((c) => `${c.folder} ${mb(c.bytes)}`).join(", ")})` : "") +
+          "; cleanup runs after every import and verify, design_ui_clean reports or runs it now"] : []),
         "tools:",
         ...Object.entries(tools).map(([name, a]) => `- ${name}: ${a.note}`),
       ];
       return toolResult(lines.join("\n"), {
         server: "design-ui", version: VERSION, project: ctx.projectDir, config, package: { id: PACKAGE_NAME, oldId }, tools,
         pipeline: { export: !!ctx.pipeline.exportScreen, compare: !!ctx.pipeline.compareScreen, capture: !!ctx.pipeline.unityCapture },
-        unity, browser: { warm: ctx.runtime.browserWarm, launches: ctx.runtime.browserLaunches }, timings: t.done(),
+        unity, browser: { warm: ctx.runtime.browserWarm, launches: ctx.runtime.browserLaunches, sandbox }, cache, timings: t.done(),
       });
     });
   });

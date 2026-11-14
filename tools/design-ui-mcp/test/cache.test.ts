@@ -1,0 +1,115 @@
+import fs from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { applyClean, FAILED_RUNS_KEPT, isBusy, markBusy, planClean } from "../src/cache.js";
+import { readConfig } from "../src/config.js";
+import { tempDir } from "./helpers.js";
+
+const KB = 1024;
+
+/** A designRoot with screen folders whose bookkeeping holds fake runs: export, captures, difference images, failed runs. */
+function designRoot(): { root: string; screen(folder: string, o?: { importedAt?: string; verifiedAt?: string; exportKB?: number; failed?: number }): string } {
+  const root = tempDir("design-ui-cache-");
+  return {
+    root,
+    screen(folder, o = {}) {
+      const dir = path.join(root, folder), book = path.join(dir, ".design-ui");
+      fs.mkdirSync(path.join(book, "export", "goldens"), { recursive: true });
+      fs.writeFileSync(path.join(dir, "index.html"), `<div data-u-screen="${folder}">x</div>`);
+      fs.writeFileSync(path.join(book, "export", "screen.ir.json"), "{}");
+      fs.writeFileSync(path.join(book, "export", "goldens", "default.png"), Buffer.alloc((o.exportKB ?? 100) * KB));
+      fs.writeFileSync(path.join(book, "last-import.json"), JSON.stringify({ screen: folder, importedAt: o.importedAt ?? "2026-11-10T10:00:00.000Z" }));
+      if (o.verifiedAt) fs.writeFileSync(path.join(book, "last-verify.json"), JSON.stringify({ screen: folder, verifiedAt: o.verifiedAt }));
+      fs.writeFileSync(path.join(book, "lint-report.json"), "{}");
+      fs.mkdirSync(path.join(book, "unity"));
+      fs.writeFileSync(path.join(book, "unity", "default.png"), Buffer.alloc(50 * KB));
+      fs.mkdirSync(path.join(book, "compare", "diff"), { recursive: true });
+      fs.writeFileSync(path.join(book, "compare", "diff", "default.png"), Buffer.alloc(20 * KB));
+      fs.writeFileSync(path.join(book, "compare", "verdict.json"), "{}");
+      fs.mkdirSync(path.join(book, "report"));
+      fs.writeFileSync(path.join(book, "report", "default-1-design.png"), Buffer.alloc(2 * KB));
+      for (let k = 0; k < (o.failed ?? 0); k++) {
+        const f = path.join(book, `failed-2026-11-0${k + 1}T00-00-00-000Z`);
+        fs.mkdirSync(f);
+        fs.writeFileSync(path.join(f, "unity.log"), "log");
+      }
+      return dir;
+    },
+  };
+}
+
+const left = (dir: string) => fs.readdirSync(path.join(dir, ".design-ui")).sort();
+
+describe("bookkeeping cleanup", () => {
+  it("keeps a screen's records, export, report pictures and verdict, and removes a finished verify's captures and difference images", () => {
+    const d = designRoot();
+    const dir = d.screen("inbox", { failed: FAILED_RUNS_KEPT + 2 });
+    const plan = planClean(d.root, 2048);
+    expect(plan.removals.map((r) => path.relative(dir, r.path)).sort()).toEqual([
+      ".design-ui/compare/diff", ".design-ui/failed-2026-11-01T00-00-00-000Z", ".design-ui/failed-2026-11-02T00-00-00-000Z", ".design-ui/unity",
+    ]);
+    expect(plan.after).toBeLessThan(plan.before);
+    applyClean(plan);
+    expect(left(dir)).toEqual(["compare", "export", "failed-2026-11-03T00-00-00-000Z", "failed-2026-11-04T00-00-00-000Z", "failed-2026-11-05T00-00-00-000Z",
+      "last-import.json", "lint-report.json", "report"]);
+    expect(fs.readdirSync(path.join(dir, ".design-ui", "compare"))).toEqual(["verdict.json"]);
+    expect(fs.existsSync(path.join(dir, "index.html"))).toBe(true);
+    // nothing left to remove
+    expect(planClean(d.root, 2048).removals).toEqual([]);
+  });
+
+  it("over the budget, removes the exports of the screens least recently imported or verified, oldest first, never a busy one", () => {
+    const d = designRoot();
+    const old = d.screen("old", { importedAt: "2026-11-01T00:00:00.000Z", exportKB: 400 });
+    const mid = d.screen("mid", { importedAt: "2026-11-02T00:00:00.000Z", verifiedAt: "2026-11-09T00:00:00.000Z", exportKB: 400 });
+    const busy = d.screen("busy", { importedAt: "2026-10-01T00:00:00.000Z", exportKB: 400 });
+    const fresh = d.screen("fresh", { importedAt: "2026-11-05T00:00:00.000Z", exportKB: 400 });
+    const done = markBusy(busy, "verify");
+    try {
+      expect(isBusy(busy)).toBe(true);
+      // 4 × ~400 KB of exports, budget 1 MB: the two oldest that are not busy go (old, then fresh: mid was verified later)
+      const plan = planClean(d.root, 1);
+      const exports = plan.removals.filter((r) => r.path.endsWith(`${path.sep}export`)).map((r) => r.screen);
+      expect(exports).toEqual(["old", "fresh"]);
+      expect(plan.removals.some((r) => r.screen === "busy")).toBe(false);
+      expect(plan.after).toBeLessThanOrEqual(plan.budget);
+      applyClean(plan);
+      expect(fs.existsSync(path.join(old, ".design-ui", "export"))).toBe(false);
+      expect(fs.existsSync(path.join(old, ".design-ui", "last-import.json"))).toBe(true);
+      expect(fs.existsSync(path.join(mid, ".design-ui", "export"))).toBe(true);
+      expect(fs.existsSync(path.join(busy, ".design-ui", "unity")), "a busy screen keeps what its run writes").toBe(true);
+      expect(fs.existsSync(path.join(fresh, ".design-ui", "export"))).toBe(false);
+    } finally { done(); }
+    expect(isBusy(busy)).toBe(false);
+  });
+
+  it("asked for one screen, lists only its removals; its export goes only when the whole designRoot is over budget", () => {
+    const d = designRoot();
+    d.screen("a", { importedAt: "2026-11-01T00:00:00.000Z", exportKB: 600 });
+    d.screen("b", { importedAt: "2026-11-02T00:00:00.000Z", exportKB: 600 });
+    expect(planClean(d.root, 2048, "b").removals.map((r) => path.basename(r.path)).sort()).toEqual(["diff", "unity"]);
+    // over 1 MB the oldest (a) goes first, which brings the total under budget: b keeps its export
+    expect(planClean(d.root, 1, "b").removals.map((r) => path.basename(r.path)).sort()).toEqual(["diff", "unity"]);
+    expect(planClean(d.root, 1, "a").removals.map((r) => path.basename(r.path)).sort()).toEqual(["diff", "export", "unity"]);
+  });
+
+  it("treats a run marker of a process that is gone as left over", () => {
+    const d = designRoot();
+    const dir = d.screen("crashed");
+    fs.writeFileSync(path.join(dir, ".design-ui", "busy.json"), JSON.stringify({ what: "verify", pid: 2 ** 22 + 12345, since: new Date().toISOString() }));
+    expect(isBusy(dir)).toBe(false);
+    expect(planClean(d.root, 2048).removals.some((r) => r.path.endsWith(`${path.sep}unity`))).toBe(true);
+  });
+
+  it("reads cacheBudgetMB from design-ui.config.json, 2048 by default, and refuses a value that is not a positive number", () => {
+    const dir = tempDir();
+    const write = (extra: Record<string, unknown>) =>
+      fs.writeFileSync(path.join(dir, "design-ui.config.json"), JSON.stringify({ designRoot: "D", kitDir: "K", profileAsset: "Assets/P.asset", ...extra }));
+    write({});
+    expect(readConfig(dir).cacheBudgetMB).toBe(2048);
+    write({ cacheBudgetMB: 64 });
+    expect(readConfig(dir).cacheBudgetMB).toBe(64);
+    write({ cacheBudgetMB: 0 });
+    expect(() => readConfig(dir)).toThrow(/cacheBudgetMB/);
+  });
+});
