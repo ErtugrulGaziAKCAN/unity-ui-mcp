@@ -3,11 +3,12 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { requireConfig, type ServerContext } from "../context.js";
-import { resolveScreen, sourceSha } from "../design.js";
+import { designPath, resolveScreen, sourceSha } from "../design.js";
 import { MISSING, unityStep } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { runUnity, UnityRunnerError } from "../runner.js";
-import { exportDirOf, readLastImport, reportPathOf, unityDirOf, writeLastVerify } from "../status.js";
+import { exportDirOf, importedEntry, readLastImport, reportPathOf, unityDirOf, writeLastVerify } from "../status.js";
+import { SCREEN_ARG } from "./status.js";
 
 export function registerVerify(server: McpServer, ctx: ServerContext): void {
   server.registerTool("design_ui_verify", {
@@ -15,14 +16,17 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
     description:
       "Captures an imported screen in Unity (isolated batch run by default, never the open Editor's Play mode), compares it " +
       "with the design's goldens and returns the verdict, the report path (<screen>/report.html) and the top issues. A " +
-      "capture that cannot run gives no verdict; only this tool's verdict counts as a pass.",
-    inputSchema: { screen: z.string().min(1).describe("Screen id (folder name under designRoot) or the screen folder's path.") },
+      "capture that cannot run gives no verdict; only this tool's verdict counts as a pass. A page path verifies that page " +
+      "only when it is the screen folder's last import.",
+    inputSchema: { screen: z.string().min(1).describe(SCREEN_ARG) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async ({ screen: screenArg }) => {
     const t = new Timings();
     return guarded(t, async () => {
       const cfg = requireConfig(ctx);
-      const { screen, dir } = resolveScreen(screenArg, cfg.designRoot);
+      const ref = resolveScreen(screenArg, cfg.designRoot);
+      const { dir } = ref;
+      let screen = ref.screen;
       const compareScreen = ctx.pipeline.compareScreen;
       if (!compareScreen) {
         return toolResult(`design_ui_verify is not available yet: ${MISSING.compare}. No capture ran and no verdict exists for ${screen}.`, {
@@ -41,9 +45,17 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         }, true);
       }
       const imp = readLastImport(dir);
+      const page = ref.entry ? designPath(ref.entry, cfg.designRoot) : null;
       if (!imp) {
-        return toolResult(`${screen} has not been imported yet: run design_ui_import { design: "${screen}" } first.`, { screen, verdict: null, timings: t.done() }, true);
+        return toolResult(`${page ?? screen} has not been imported yet: run design_ui_import { design: "${page ?? screen}" } first.`, { screen, verdict: null, timings: t.done() }, true);
       }
+      // the folder keeps one import: a page verifies only when it is that import (another page's goldens are not its own)
+      const entry = importedEntry(dir, imp);
+      if (ref.entry && entry !== path.relative(dir, ref.entry)) {
+        return toolResult(`${page} is not the page ${screen} last imported (${entry ?? "a page this version cannot name"}, ${imp.importedAt}): ` +
+          `run design_ui_import { design: "${page}" } first, then verify it. No capture ran.`, { screen, entry: path.relative(dir, ref.entry), verdict: null, timings: t.done() }, true);
+      }
+      screen = imp.screen;
       if (imp.sourceSha !== t.sync("hash", () => sourceSha(dir))) {
         return toolResult(`The design of ${screen} changed since the last import (${imp.importedAt}): run design_ui_import first.`, { screen, verdict: null, timings: t.done() }, true);
       }
@@ -88,7 +100,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       // the report and last-verify.json are written together, only now that the verdict is decided
       if (v.publish) v.publish(); else dropStaging();
       writeLastVerify(dir, {
-        screen, sourceSha: imp.sourceSha, irSha: imp.irSha, verdict, reportPath, verifiedAt: new Date().toISOString(),
+        screen, ...(entry ? { entry } : {}), sourceSha: imp.sourceSha, irSha: imp.irSha, verdict, reportPath, verifiedAt: new Date().toISOString(),
         topIssues: v.topIssues, notRun: v.notRun,
       });
       const lines = [
@@ -100,7 +112,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         ...(v.notSampled ? [`Backgrounds not sampled (every point covered or on text): ${v.notSampled}`] : []),
       ];
       return toolResult(lines.join("\n"), {
-        screen, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun,
+        screen, entry, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun,
         extra: v.extra ?? [], warnings: v.warnings ?? [], notSampled: v.notSampled ?? 0, steps: v.timings ?? steps, timings: t.done(),
       }, verdict !== "pass");
     });

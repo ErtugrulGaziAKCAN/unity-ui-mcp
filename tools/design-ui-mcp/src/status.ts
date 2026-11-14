@@ -7,7 +7,10 @@ export type ScreenState = "new" | "design-changed" | "imported" | "verified" | "
 
 /** `<designRoot>/<screen>/.design-ui/last-import.json`, written after a successful import. */
 export interface ImportRecord {
+  /** The IR's screen id (the page's data-u-screen) for a page import; the folder name for a folder import. */
   screen: string;
+  /** The page that was imported, relative to the screen folder (absent in records of older versions). */
+  entry?: string;
   sourceSha: string;
   kitSha: string;
   irSha: string;
@@ -21,6 +24,8 @@ export interface ImportRecord {
 /** `<designRoot>/<screen>/.design-ui/last-verify.json`, written after a completed comparison. */
 export interface VerifyRecord {
   screen: string;
+  /** The imported page this verdict is for, relative to the screen folder. */
+  entry?: string;
   sourceSha: string;
   irSha: string;
   verdict: "pass" | "fail";
@@ -52,6 +57,16 @@ export const readLastVerify = (screenDir: string) => readJson<VerifyRecord>(veri
 export const writeLastImport = (screenDir: string, r: ImportRecord) => writeJson(importFile(screenDir), r);
 export const writeLastVerify = (screenDir: string, r: VerifyRecord) => writeJson(verifyFile(screenDir), r);
 
+/**
+ * The page a screen folder's last import exported, relative to the folder: the record's entry, or for a record of an
+ * older version (which imported only the folder's own page) the page the folder resolves to; null when unknown.
+ */
+export function importedEntry(dir: string, imp: ImportRecord | null): string | null {
+  if (!imp) return null;
+  if (imp.entry) return imp.entry;
+  try { return path.relative(dir, findEntry(dir)); } catch { return null; }
+}
+
 export interface ScreenStatus {
   state: ScreenState;
   sourceSha: string;
@@ -61,10 +76,15 @@ export interface ScreenStatus {
   reportPath: string | null;
 }
 
-function statusOf(dir: string): ScreenStatus {
+/**
+ * Status of a screen folder, or of one of its pages (`entry`, relative to the folder): the folder keeps one import, so a
+ * page that is not the folder's last import has no import and no verdict of its own (state new).
+ */
+export function statusOf(dir: string, entry: string | null = null): ScreenStatus {
   const cur = sourceSha(dir);
-  const imp = readLastImport(dir);
-  const ver = readLastVerify(dir);
+  let imp = readLastImport(dir);
+  if (entry !== null && imp && importedEntry(dir, imp) !== entry) imp = null;
+  const ver = imp ? readLastVerify(dir) : null;
   // a verdict counts only for the import it verified
   const current = !!imp && !!ver && ver.irSha === imp.irSha && ver.sourceSha === imp.sourceSha;
   let state: ScreenState;
@@ -79,18 +99,22 @@ function statusOf(dir: string): ScreenStatus {
   };
 }
 
-/** Status of one screen folder under designRoot (by id or path). */
+/** Status of one screen folder under designRoot (by id or path), or of the page a path names in it. */
 export function screenStatus(cfg: DesignUiConfig, screenId: string): ScreenStatus {
-  return statusOf(resolveScreen(screenId, cfg.designRoot).dir);
+  const ref = resolveScreen(screenId, cfg.designRoot);
+  return statusOf(ref.dir, ref.entry ? path.relative(ref.dir, ref.entry) : null);
 }
 
 export interface ScreenSummary extends ScreenStatus { screen: string; entry: string | null; problem?: string }
 
+/** Screen folders with their state; the page is the folder's last import, else the page the folder resolves to. */
 export function listScreens(cfg: DesignUiConfig): ScreenSummary[] {
   return screenFolders(cfg.designRoot).map((screen) => {
     const dir = path.join(cfg.designRoot, screen);
-    let entry: string | null = null, problem: string | undefined;
-    try { entry = path.relative(dir, findEntry(dir)); } catch (e) { problem = (e as Error).message; }
+    let entry: string | null = importedEntry(dir, readLastImport(dir)), problem: string | undefined;
+    if (entry === null) {
+      try { entry = path.relative(dir, findEntry(dir, cfg.designRoot)); } catch (e) { problem = (e as Error).message; }
+    }
     return { screen, entry, ...statusOf(dir), ...(problem ? { problem } : {}) };
   });
 }

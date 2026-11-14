@@ -80,7 +80,9 @@ found. The server reads `<UnityProjectDir>/design-ui.config.json`:
 ```
 
 `designRoot` holds one folder per screen (its `.html` or Claude Design `.dc.html` page and assets); the server keeps
-its bookkeeping in `<screen>/.design-ui/`. `unityRunner.prefer: "editor"` sends import and kit sync to the open
+its bookkeeping in `<screen>/.design-ui/`. A canvas folder with several artboards works too: pass the artboard's path
+(`<folder>/<artboard>.dc.html`) to lint, import, verify and status. The import takes exactly that page, its screen id
+is the page's `data-u-screen`, and the folder keeps one import (verify checks the artboard that was imported last). `unityRunner.prefer: "editor"` sends import and kit sync to the open
 Editor's bridge and fails if it does not answer (no silent fallback); `"command"` runs the argv templates instead
 (placeholders `{projectDir}` `{profile}` `{exportDir}` `{outDir}` `{kitDir}`, also passed as `DESIGN_UI_*`
 environment variables; relative paths start from the Unity project folder). Captures for verification use the

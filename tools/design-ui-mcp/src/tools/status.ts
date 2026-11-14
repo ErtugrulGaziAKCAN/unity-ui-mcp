@@ -5,11 +5,15 @@ import { z } from "zod";
 import { probeBridge, type BridgeStatus } from "../bridge.js";
 import type { ServerContext } from "../context.js";
 import { requireConfig } from "../context.js";
-import { findEntry, resolveScreen } from "../design.js";
+import { designPath, findEntry, resolveScreen } from "../design.js";
 import { MISSING, unityStep } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
-import { exportDirOf, readLastImport, readLastVerify, screenStatus } from "../status.js";
+import { exportDirOf, importedEntry, readLastImport, readLastVerify, statusOf } from "../status.js";
 import { VERSION } from "../version.js";
+
+/** The screen argument of status and verify. */
+export const SCREEN_ARG = "Screen id (folder name under designRoot), the screen folder's path, or the path of one of its .html / .dc.html " +
+  "pages (a canvas folder with several artboards: the artboard that was imported). Relative paths are resolved under designRoot.";
 
 /** `needsEditor`: live only while the open Unity Editor's bridge answers (`available` is the last probe's answer). */
 export interface ToolAvailability { available: boolean; note: string; needsEditor?: boolean }
@@ -61,18 +65,25 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
     description:
       "Without a screen: what this server version supports, its configuration and the Unity bridge. With a screen: its " +
       "hashes, last import, last verdict and report.",
-    inputSchema: { screen: z.string().min(1).optional().describe("Screen id (folder name under designRoot) or the screen folder's path.") },
+    inputSchema: { screen: z.string().min(1).optional().describe(SCREEN_ARG) },
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async ({ screen }) => {
     const t = new Timings();
     return guarded(t, async () => {
       if (screen !== undefined) {
         const cfg = requireConfig(ctx);
-        const { screen: id, dir } = resolveScreen(screen, cfg.designRoot);
-        const s = t.sync("hash", () => screenStatus(cfg, dir));
-        let entry: string | null = null;
-        try { entry = path.relative(dir, findEntry(dir)); } catch { /* reported by list */ }
+        const ref = resolveScreen(screen, cfg.designRoot);
+        const { dir } = ref;
         const lastImport = readLastImport(dir), lastVerify = readLastVerify(dir);
+        const imported = importedEntry(dir, lastImport);
+        // the page asked about, else the folder's last import, else the page the folder resolves to
+        let entry: string | null = ref.entry ? path.relative(dir, ref.entry) : imported;
+        if (entry === null) { try { entry = path.relative(dir, findEntry(dir, cfg.designRoot)); } catch { /* reported by list */ } }
+        const s = t.sync("hash", () => statusOf(dir, ref.entry ? entry : null));
+        // the screen id: the IR's (data-u-screen) once this page is imported, else the folder's
+        const id = lastImport && imported === entry ? lastImport.screen : ref.screen;
+        const label = ref.entry ? designPath(ref.entry, cfg.designRoot) : id;
+        const other = ref.entry && lastImport && imported !== entry;
         const data = {
           screen: id, folder: dir, entry, ...s, lastImport, lastVerify, exportDir: exportDirOf(dir),
           manualEdits: null, pendingTranslations: null,
@@ -80,8 +91,9 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
           timings: t.done(),
         };
         const lines = [
-          `${id}: ${s.state}`,
-          `source sha ${s.sourceSha.slice(0, 12)}${lastImport ? `, last import ${lastImport.importedAt} via ${lastImport.via}` : ", never imported"}`,
+          `${label}: ${s.state}${ref.entry && lastImport && !other ? ` (screen ${id})` : ""}`,
+          `source sha ${s.sourceSha.slice(0, 12)}${s.lastImportSha && lastImport ? `, last import ${lastImport.importedAt} via ${lastImport.via}` : ", never imported"}` +
+            (other ? ` (the folder's last import is ${imported ?? "another page"}, ${lastImport!.importedAt})` : ""),
           s.verdict ? `last verdict: ${s.verdict} (${s.reportPath ?? "report missing"})` : "no verdict",
         ];
         return toolResult(lines.join("\n"), data);

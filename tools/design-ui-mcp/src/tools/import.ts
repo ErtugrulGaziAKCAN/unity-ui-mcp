@@ -3,23 +3,28 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { requireConfig, type ServerContext } from "../context.js";
-import { findEntry, resolveScreen, sha256, sourceSha } from "../design.js";
+import { designPath, findEntry, resolveScreen, sha256, sourceSha } from "../design.js";
 import { MISSING } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { CompileWaitTimeout, runUnity, UnityRunnerError } from "../runner.js";
 import { bookkeepingDir, exportDirOf, readLastImport, unityDirOf, writeLastImport } from "../status.js";
-import { designArg, formatFindings } from "./lint.js";
+import { formatFindings } from "./lint.js";
+
+const importArg = z.string().min(1).describe(
+  "A screen folder under designRoot (its id or path) with one design page, or the path of one .html / .dc.html page in a " +
+  "screen folder (a Claude Design canvas folder with several artboards: the artboard's path). Relative paths are resolved under designRoot.");
 
 export function registerImport(server: McpServer, ctx: ServerContext): void {
   server.registerTool("design_ui_import", {
     title: "Import a design into Unity",
     description:
-      "Exports one screen folder under designRoot (lint, browser capture, IR, goldens) and compiles it into the Unity project " +
+      "Exports one design page under designRoot (lint, browser capture, IR, goldens) and compiles it into the Unity project " +
       "through the Unity runner (the open Editor's bridge, or the configured command). Skips the export when the design and " +
-      "kit are unchanged and the Unity call when the IR is unchanged. Records <screen>/.design-ui/last-import.json. " +
+      "kit are unchanged and the Unity call when the IR is unchanged. A page path imports exactly that page (its screen id is its " +
+      "data-u-screen); a folder imports its only page. Records <screen folder>/.design-ui/last-import.json. " +
       "Generated Unity files are never edited by hand; an import refuses to overwrite hand edits unless discardManualEdits is true.",
     inputSchema: {
-      design: designArg,
+      design: importArg,
       discardManualEdits: z.boolean().optional().describe("Overwrite generated Unity files that were edited by hand (default false)."),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -27,8 +32,14 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
     const t = new Timings();
     return guarded(t, async () => {
       const cfg = requireConfig(ctx);
-      const { screen, dir } = resolveScreen(design, cfg.designRoot);
-      const entry = findEntry(dir);
+      const ref = resolveScreen(design, cfg.designRoot);
+      const { dir } = ref;
+      // exactly the page a path names; a folder argument takes the folder's only page
+      const entry = ref.entry ?? findEntry(dir, cfg.designRoot);
+      const entryName = path.relative(dir, entry);
+      const page = ref.entry ? designPath(entry, cfg.designRoot) : null;
+      // the screen id: the folder's for a folder import; for a page, its data-u-screen (from the IR once it is exported)
+      let screen = page ?? ref.screen;
       const exportScreen = ctx.pipeline.exportScreen;
       if (!exportScreen) {
         return toolResult(
@@ -56,13 +67,19 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       }
       const exported = !out.skipped;
       if (!fs.existsSync(irFile)) throw new Error(`the export of ${screen} wrote no screen.ir.json in ${exportDir}`);
-      const irSha = sha256(fs.readFileSync(irFile));
+      const irBytes = fs.readFileSync(irFile);
+      const irSha = sha256(irBytes);
+      if (page) screen = irScreen(irBytes) ?? ref.screen;
+      const named = page ? `${screen} (${page})` : screen;
+      const verifyArg = page ?? screen;
 
       const discard = discardManualEdits === true;
       if (last && last.irSha === irSha && !discard) {
-        if (exported || last.sourceSha !== src || last.kitSha !== kit.sha) writeLastImport(dir, { ...last, sourceSha: src, kitSha: kit.sha });
-        return toolResult(`${screen} is unchanged since the last import (${last.importedAt}); Unity was not called.`, {
-          screen, exported, unityCalled: false, via: last.via, irSha, sourceSha: src, exportDir, timings: t.done(),
+        if (exported || last.sourceSha !== src || last.kitSha !== kit.sha || last.entry !== entryName || last.screen !== screen) {
+          writeLastImport(dir, { ...last, screen, entry: entryName, sourceSha: src, kitSha: kit.sha });
+        }
+        return toolResult(`${named} is unchanged since the last import (${last.importedAt}); Unity was not called.`, {
+          screen, entry: entryName, exported, unityCalled: false, via: last.via, irSha, sourceSha: src, exportDir, timings: t.done(),
         });
       }
 
@@ -78,15 +95,15 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         if (!(e instanceof UnityRunnerError)) throw e;
         if (e instanceof CompileWaitTimeout) {
           // the files were written; only the compile's outcome is missing, so nothing is recorded
-          return toolResult(`Imported the files of ${screen} into Unity, but ${e.message}. The import is not recorded; import again once Unity has compiled.`,
+          return toolResult(`Imported the files of ${named} into Unity, but ${e.message}. The import is not recorded; import again once Unity has compiled.`,
             { screen, exported, unityCalled: true, via: "editor", unity: e.answer, exportDir, timings: t.done() }, true);
         }
-        return toolResult(`Import of ${screen} not run: ${e.message}`, { screen, exported, unityCalled: false, exportDir, timings: t.done() }, true);
+        return toolResult(`Import of ${named} not run: ${e.message}`, { screen, exported, unityCalled: false, exportDir, timings: t.done() }, true);
       }
       if (run.code !== 0) {
         const head = run.code === 2
-          ? `Unity cannot import ${screen} yet (code 2, via ${run.via}): ${run.logTail}`
-          : `Unity import of ${screen} failed (exit ${run.code}, via ${run.via}). Log tail:\n${run.logTail}`;
+          ? `Unity cannot import ${named} yet (code 2, via ${run.via}): ${run.logTail}`
+          : `Unity import of ${named} failed (exit ${run.code}, via ${run.via}). Log tail:\n${run.logTail}`;
         return toolResult(head, {
           screen, exported, unityCalled: true, via: run.via, code: run.code, logTail: run.logTail, exportDir, unityTimings: run.timings, timings: t.done(),
         }, true);
@@ -96,9 +113,9 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         ...(run.answer ? { unity: run.answer } : {}), ...(run.compile ? { compile: run.compile } : {}),
         ...(run.scriptsFailed !== undefined ? { scriptsFailed: run.scriptsFailed } : {}),
       };
-      const base = { screen, exported, unityCalled: true, via: run.via, code: 0, irSha, sourceSha: src, exportDir, logTail: run.logTail, ...unity };
+      const base = { screen, entry: entryName, exported, unityCalled: true, via: run.via, code: 0, irSha, sourceSha: src, exportDir, logTail: run.logTail, ...unity };
       if (run.via === "command" && !confirmsImport(doneFile, irSha)) {
-        return toolResult(`Unity import of ${screen} (via command) exited 0 but did not confirm this export: ${fs.existsSync(doneFile) ? "import-done.json names another IR or a failed import" : "no import-done.json"} ` +
+        return toolResult(`Unity import of ${named} (via command) exited 0 but did not confirm this export: ${fs.existsSync(doneFile) ? "import-done.json names another IR or a failed import" : "no import-done.json"} ` +
           "(the import command must run DesignUiOpsTests.ImportFromEnv or DesignUiBatch.Import, which write it). Nothing was recorded. Log tail:\n" + run.logTail,
         { ...base, unityTimings: run.timings, timings: t.done() }, true);
       }
@@ -113,7 +130,7 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
             ? "Unity did not start compiling the changed scripts (Auto Refresh is off, or the Editor waits for focus). Bring Unity to the front so it compiles, then import again."
             : "the result of Unity's script compile for this import is unknown (the Editor restarted, or another import superseded this one) and the bridge cannot confirm that the scripts compile. Check the Unity Console, then import again.";
         return toolResult([
-          `Imported the files of ${screen} into Unity via ${run.via}, but ${why}`,
+          `Imported the files of ${named} into Unity via ${run.via}, but ${why}`,
           ...errors.map((e) => `- ${e}`),
           ...(state === "failed"
             ? ["Errors in files this tool generated come from the design or the generator: change the design (or report the generator bug). " +
@@ -126,7 +143,7 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       if (run.via === "editor") { steps.import = run.timings.request; if (run.timings.compileWait !== undefined) steps.compile = run.timings.compileWait; }
       else steps.import = run.timings.total;
       writeLastImport(dir, {
-        screen, sourceSha: src, kitSha: kit.sha, irSha, importedAt: new Date().toISOString(), via: run.via, discardManualEdits: discard, timings: steps,
+        screen, entry: entryName, sourceSha: src, kitSha: kit.sha, irSha, importedAt: new Date().toISOString(), via: run.via, discardManualEdits: discard, timings: steps,
       });
       const a = run.answer;
       const what = a
@@ -135,11 +152,19 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
             ? `, scripts compiled${run.compile?.state === "reloaded" ? ` and reloaded (${Math.round((run.timings.compileWait ?? 0) / 100) / 10} s)` : " (Unity did not report this import's compile result, but the project's scripts compile)"}`
             : ", no script change")
         : "";
-      return toolResult(`Imported ${screen} into Unity via ${run.via}${what}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${screen}" }.`, {
+      return toolResult(`Imported ${named} into Unity via ${run.via}${what}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${verifyArg}" }.`, {
         ...base, unityTimings: run.timings, timings: t.done(),
       });
     });
   });
+}
+
+/** The screen id an exported IR names (the page's data-u-screen), else null. */
+function irScreen(ir: Buffer): string | null {
+  try {
+    const s = JSON.parse(ir.toString("utf8"))?.screen;
+    return typeof s === "string" && s.length > 0 ? s : null;
+  } catch { return null; }
 }
 
 /** Whether the command route's import-done.json confirms a successful import of this IR. */

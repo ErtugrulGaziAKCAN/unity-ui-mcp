@@ -28,7 +28,9 @@ function stubPipeline(): Pipeline & { exports: string[] } {
   return {
     exports,
     exportScreen: async (entry, _kit, outDir) => {
-      const ir = JSON.stringify({ irVersion: 1, source: fs.readFileSync(entry, "utf8").length });
+      const html = fs.readFileSync(entry, "utf8");
+      // the real IR names its screen with the page's data-u-screen
+      const ir = JSON.stringify({ irVersion: 1, screen: /data-u-screen="([^"]+)"/.exec(html)?.[1], source: html.length });
       const file = path.join(outDir, "screen.ir.json");
       // like the real exporter: unchanged input keeps the previous export
       if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === ir) return { ok: true, findings: [], skipped: true };
@@ -627,6 +629,141 @@ describe("design_ui_import", () => {
     expect(elsewhere.isError).toBe(true);
     expect(elsewhere.text).toMatch(/designRoot/);
   });
+});
+
+describe("a canvas folder with several artboards", () => {
+  const plain = fs.readFileSync(path.join(here, "fixtures", "designs", "clean-screen", "screen.html"), "utf8");
+  /** The clean screen as a Claude Design artboard (its style in <helmet>, its body in <x-dc>), screen id "calendar". */
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><x-dc><helmet>${/<style>[\s\S]*<\/style>/.exec(plain)![0]}</helmet>` +
+    `${/<body>([\s\S]*)<\/body>/.exec(plain)![1].replace('data-u-screen="clean.screen"', 'data-u-screen="calendar"')}</x-dc></body></html>`;
+  /** `<designRoot>/canvas/` with two artboards of the screen "calendar" (the folder name is not the screen id) and canvas.json. */
+  function canvas(p: ReturnType<typeof tempProject>): string {
+    const dir = path.join(p.designRoot, "canvas");
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, "calendar-month.dc.html"), html);
+    fs.writeFileSync(path.join(dir, "calendar-empty-day.dc.html"), html.replace("Başlık", "Boş gün"));
+    fs.writeFileSync(path.join(dir, "canvas.json"), "{}");
+    return dir;
+  }
+  const comparing = () => {
+    const pipeline = { ...stubPipeline(), unityCapture: true };
+    pipeline.compareScreen = async (_e, _u, reportFile) => {
+      fs.writeFileSync(reportFile, "<p>report</p>");
+      return { pass: true, topIssues: [], notRun: [], compared: 1 };
+    };
+    return pipeline;
+  };
+
+  it("import takes exactly the artboard it is given; the screen id is its data-u-screen, bookkeeping stays in the folder", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = canvas(p);
+    const pipeline = stubPipeline();
+    const client = await serverFor(p.dir, pipeline);
+    const r = await call(client, "design_ui_import", { design: "canvas/calendar-empty-day.dc.html" });
+    expect(r.isError, r.text).toBeFalsy();
+    expect(pipeline.exports).toEqual([path.join(dir, "calendar-empty-day.dc.html")]);
+    const exportDir = path.join(dir, ".design-ui", "export");
+    expect(p.runnerCalls()).toEqual([`import|${p.dir}|Assets/DesignUi/DesignUiProfile.asset|${exportDir}| env=${exportDir}`]);
+    expect(r.data).toMatchObject({ screen: "calendar", entry: "calendar-empty-day.dc.html", exportDir });
+    expect(r.text).toMatch(/^Imported calendar \(canvas\/calendar-empty-day\.dc\.html\) into Unity/);
+    expect(r.text).toContain('design_ui_verify { screen: "canvas/calendar-empty-day.dc.html" }');
+    const rec = JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8"));
+    expect(rec).toMatchObject({ screen: "calendar", entry: "calendar-empty-day.dc.html", via: "command" });
+
+    // an absolute path to the other artboard imports that one, into the same bookkeeping folder
+    const other = await call(client, "design_ui_import", { design: path.join(dir, "calendar-month.dc.html") });
+    expect(other.isError, other.text).toBeFalsy();
+    expect(pipeline.exports).toEqual([path.join(dir, "calendar-empty-day.dc.html"), path.join(dir, "calendar-month.dc.html")]);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8"))).toMatchObject({ screen: "calendar", entry: "calendar-month.dc.html" });
+    expect(p.runnerCalls()).toHaveLength(2);
+    // the same artboard again is unchanged
+    expect((await call(client, "design_ui_import", { design: "canvas/calendar-month.dc.html" })).data).toMatchObject({ exported: false, unityCalled: false, screen: "calendar" });
+  });
+
+  it("import of the folder keeps today's behaviour, and its error lists the candidate files", async () => {
+    const p = tempProject({ prefer: "command" });
+    canvas(p);
+    const pipeline = stubPipeline();
+    const r = await call(await serverFor(p.dir, pipeline), "design_ui_import", { design: "canvas" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/several designs in .*canvas: pass the path of the one to use: canvas\/calendar-empty-day\.dc\.html, canvas\/calendar-month\.dc\.html/);
+    expect(pipeline.exports).toEqual([]);
+    expect(p.runnerCalls()).toEqual([]);
+    const notPage = await call(await serverFor(p.dir, pipeline), "design_ui_import", { design: "canvas/canvas.json" });
+    expect(notPage.isError).toBe(true);
+    expect(notPage.text).toMatch(/not a design page/);
+  });
+
+  it("verify checks the artboard it is given: only the folder's last import, or the folder itself", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = canvas(p);
+    const client = await serverFor(p.dir, comparing());
+    await call(client, "design_ui_import", { design: "canvas/calendar-empty-day.dc.html" });
+    const wrong = await call(client, "design_ui_verify", { screen: "canvas/calendar-month.dc.html" });
+    expect(wrong.isError).toBe(true);
+    expect(wrong.text).toMatch(/canvas\/calendar-month\.dc\.html is not the page canvas last imported \(calendar-empty-day\.dc\.html/);
+    expect(wrong.text).toContain('design_ui_import { design: "canvas/calendar-month.dc.html" }');
+    expect(wrong.data.verdict).toBeNull();
+    expect(p.runnerCalls().map((c) => c.split("|")[0])).toEqual(["import"]);
+
+    const r = await call(client, "design_ui_verify", { screen: "canvas/calendar-empty-day.dc.html" });
+    expect(r.isError, r.text).toBeFalsy();
+    expect(r.data).toMatchObject({ screen: "calendar", entry: "calendar-empty-day.dc.html", verdict: "pass" });
+    expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"), "utf8"))).toMatchObject({ screen: "calendar", entry: "calendar-empty-day.dc.html", verdict: "pass" });
+    // the folder verifies its last import, as before
+    expect((await call(client, "design_ui_verify", { screen: "canvas" })).data).toMatchObject({ verdict: "pass", entry: "calendar-empty-day.dc.html" });
+  });
+
+  it("status and list report the artboard: a page that is not the folder's last import is new", async () => {
+    const p = tempProject({ prefer: "command" });
+    canvas(p);
+    const client = await serverFor(p.dir, comparing());
+    const before = await call(client, "design_ui_list");
+    expect(before.data.screens).toEqual([expect.objectContaining({ screen: "canvas", state: "new", entry: null, problem: expect.stringContaining("canvas/calendar-month.dc.html") })]);
+
+    await call(client, "design_ui_import", { design: "canvas/calendar-empty-day.dc.html" });
+    await call(client, "design_ui_verify", { screen: "canvas/calendar-empty-day.dc.html" });
+    const imported = await call(client, "design_ui_status", { screen: "canvas/calendar-empty-day.dc.html" });
+    expect(imported.isError, imported.text).toBeFalsy();
+    expect(imported.data).toMatchObject({ screen: "calendar", entry: "calendar-empty-day.dc.html", state: "verified", verdict: "pass" });
+    const other = await call(client, "design_ui_status", { screen: "canvas/calendar-month.dc.html" });
+    expect(other.data).toMatchObject({ screen: "canvas", entry: "calendar-month.dc.html", state: "new", verdict: null, lastImportSha: null });
+    expect(other.text).toMatch(/^canvas\/calendar-month\.dc\.html: new/);
+    expect(other.text).toContain("the folder's last import is calendar-empty-day.dc.html");
+    const folder = await call(client, "design_ui_status", { screen: "canvas" });
+    expect(folder.data).toMatchObject({ screen: "calendar", entry: "calendar-empty-day.dc.html", state: "verified" });
+    expect(screenStatus(readConfig(p.dir), "canvas/calendar-month.dc.html").state).toBe("new");
+    const after = await call(client, "design_ui_list");
+    expect(after.data.screens).toEqual([expect.objectContaining({ screen: "canvas", state: "verified", entry: "calendar-empty-day.dc.html" })]);
+    expect(after.data.screens[0].problem).toBeUndefined();
+  });
+
+  it("lint takes the artboard it is given; the folder's error lists the candidates", async () => {
+    const p = tempProject();
+    canvas(p);
+    const client = await serverFor(p.dir);
+    const one = await call(client, "design_ui_lint", { design: "canvas/calendar-month.dc.html" });
+    expect(one.isError, one.text).toBeFalsy();
+    expect(one.data.entry).toBe(path.join("canvas", "calendar-month.dc.html"));
+    const folder = await call(client, "design_ui_lint", { design: "canvas" });
+    expect(folder.isError).toBe(true);
+    expect(folder.text).toMatch(/pass the path of the one to use: canvas\/calendar-empty-day\.dc\.html, canvas\/calendar-month\.dc\.html/);
+  }, 60_000);
+
+  it("runs the real export of the artboard it is given: the IR's screen is that page's data-u-screen", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = path.join(p.designRoot, "canvas");
+    const src = path.resolve(here, "../../design-export/test/fixtures/export/inbox-mini");
+    fs.cpSync(src, dir, { recursive: true });
+    const page = fs.readFileSync(path.join(dir, "inbox-mini.html"), "utf8");
+    fs.renameSync(path.join(dir, "inbox-mini.html"), path.join(dir, "inbox-a.html"));
+    fs.writeFileSync(path.join(dir, "inbox-b.html"), page.replace('data-u-screen="inbox-mini"', 'data-u-screen="inbox-b"'));
+    const r = await call(await serverFor(p.dir), "design_ui_import", { design: "canvas/inbox-b.html" });
+    expect(r.isError, r.text).toBeFalsy();
+    const ir = JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "export", "screen.ir.json"), "utf8"));
+    expect(ir.screen).toBe("inbox-b");
+    expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8"))).toMatchObject({ screen: "inbox-b", entry: "inbox-b.html" });
+  }, 120_000);
 });
 
 describe("design_ui_kit_sync", () => {

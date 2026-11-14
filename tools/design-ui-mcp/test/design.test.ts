@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { findEntry, openDesignInput, sourceSha } from "../src/design.js";
+import { findEntry, openDesignInput, resolveScreen, sourceSha } from "../src/design.js";
 import { extractZip } from "../src/zip.js";
 import { FIXTURES, tempDir, writeZip } from "./helpers.js";
 
@@ -26,6 +26,34 @@ describe("findEntry", () => {
   });
   it("explains an empty folder", () => {
     expect(() => findEntry(tempDir())).toThrow(/no \.html/);
+  });
+  it("lists the candidates as paths under designRoot, ready to pass", () => {
+    const root = tempDir();
+    const d = path.join(root, "canvas");
+    fs.mkdirSync(d);
+    for (const n of ["month.dc.html", "empty-day.dc.html"]) fs.writeFileSync(path.join(d, n), html);
+    expect(() => findEntry(d, root)).toThrow(/several designs in .*canvas: pass the path of the one to use: canvas\/empty-day\.dc\.html, canvas\/month\.dc\.html$/);
+  });
+});
+
+describe("resolveScreen", () => {
+  it("keeps the page a path names, in its screen folder; a folder names no page", () => {
+    const root = tempDir();
+    const d = path.join(root, "canvas");
+    fs.mkdirSync(d);
+    for (const n of ["month.dc.html", "empty-day.dc.html"]) fs.writeFileSync(path.join(d, n), html);
+    expect(resolveScreen("canvas/empty-day.dc.html", root)).toEqual({ screen: "canvas", dir: d, entry: path.join(d, "empty-day.dc.html") });
+    expect(resolveScreen(path.join(d, "month.dc.html"), root)).toEqual({ screen: "canvas", dir: d, entry: path.join(d, "month.dc.html") });
+    expect(resolveScreen("canvas", root)).toEqual({ screen: "canvas", dir: d, entry: null });
+  });
+  it("refuses a file that is not a design page", () => {
+    const root = tempDir();
+    const d = path.join(root, "canvas");
+    fs.mkdirSync(d);
+    fs.writeFileSync(path.join(d, "canvas.json"), "{}");
+    fs.writeFileSync(path.join(d, "report.html"), "<p>report</p>");
+    expect(() => resolveScreen("canvas/canvas.json", root)).toThrow(/not a design page/);
+    expect(() => resolveScreen("canvas/report.html", root)).toThrow(/not a design page/);
   });
 });
 

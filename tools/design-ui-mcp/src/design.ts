@@ -10,22 +10,35 @@ export const REPORT_FILE = "report.html";
 
 export const sha256 = (data: Buffer | string) => crypto.createHash("sha256").update(data).digest("hex");
 
-/**
- * The design page of a screen folder: its only .html file (report.html excluded); with several, index.html, else
- * the only .dc.html (a Claude Design artboard). Otherwise the caller must name the file.
- */
-export function findEntry(dir: string): string {
-  const names = fs.readdirSync(dir, { withFileTypes: true })
+/** The design pages of a folder: its .html files (report.html excluded), sorted by name. */
+export function designPages(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true })
     .filter((d) => d.isFile() && /\.html$/i.test(d.name) && d.name.toLowerCase() !== REPORT_FILE)
     .map((d) => d.name)
     .sort();
+}
+
+/**
+ * The design page of a screen folder: its only .html file (report.html excluded); with several, index.html, else
+ * the only .dc.html (a Claude Design artboard). Otherwise the caller must name the file: the error lists the candidates,
+ * as paths under `designRoot` when it is given (ready to pass as the design).
+ */
+export function findEntry(dir: string, designRoot?: string): string {
+  const names = designPages(dir);
   if (names.length === 0) throw new Error(`no .html design in ${dir}`);
   if (names.length === 1) return path.join(dir, names[0]);
   const index = names.find((n) => n.toLowerCase() === "index.html");
   if (index) return path.join(dir, index);
   const dc = names.filter((n) => /\.dc\.html$/i.test(n));
   if (dc.length === 1) return path.join(dir, dc[0]);
-  throw new Error(`several designs in ${dir} (${names.join(", ")}): pass the path of the one to use`);
+  const shown = names.map((n) => (designRoot ? designPath(path.join(dir, n), designRoot) : n));
+  throw new Error(`several designs in ${dir}: pass the path of the one to use: ${shown.join(", ")}`);
+}
+
+/** A path under designRoot as a design argument (forward slashes); an absolute path when it is outside. */
+export function designPath(p: string, designRoot: string): string {
+  const rel = path.relative(designRoot, p);
+  return rel.startsWith("..") || path.isAbsolute(rel) ? p : rel.split(path.sep).join("/");
 }
 
 /** Hash of every source file of a screen folder (path + content); bookkeeping, dotfiles and the report excluded. */
@@ -61,7 +74,7 @@ export async function openDesignInput(design: string, designRoot: string): Promi
   const p = resolveInput(design, designRoot);
   if (!fs.existsSync(p)) throw new Error(`design not found: ${design} (looked for ${p})`);
   const st = fs.statSync(p);
-  if (st.isDirectory()) return { entry: findEntry(p), zip: null, cleanup: () => {} };
+  if (st.isDirectory()) return { entry: findEntry(p, designRoot), zip: null, cleanup: () => {} };
   if (/\.zip$/i.test(p)) {
     const x = await extractZip(p);
     try {
@@ -79,18 +92,25 @@ export async function openDesignInput(design: string, designRoot: string): Promi
   throw new Error(`unsupported design input ${p}: expected a folder, an .html or .dc.html file, or a .zip`);
 }
 
+/** A screen folder under designRoot, and the page a path named in it (null when the argument was the folder or its id). */
+export interface ScreenRef { screen: string; dir: string; entry: string | null }
+
 /**
- * The screen folder for import, verify and status: a screen id, or a folder (or a file inside it) directly under
- * designRoot. Its name is the screen id.
+ * The screen folder for import, verify and status: a screen id, or a folder (or a design page inside it) directly under
+ * designRoot. Its name is the folder's id; a page path is kept as `entry`, so the caller uses exactly that page.
  */
-export function resolveScreen(design: string, designRoot: string): { screen: string; dir: string } {
+export function resolveScreen(design: string, designRoot: string): ScreenRef {
   const p = resolveInput(design, designRoot);
   if (!fs.existsSync(p)) throw new Error(`screen not found: ${design} (looked for ${p})`);
-  const dir = fs.statSync(p).isDirectory() ? p : path.dirname(p);
+  const isDir = fs.statSync(p).isDirectory();
+  const dir = isDir ? p : path.dirname(p);
   if (!sameProject(path.dirname(dir), designRoot)) {
     throw new Error(`${dir} is not a screen folder under designRoot (${designRoot}): put the design in ${path.join(designRoot, "<screen-id>")}${path.sep} first`);
   }
-  return { screen: path.basename(dir), dir };
+  if (!isDir && (!/\.html$/i.test(p) || path.basename(p).toLowerCase() === REPORT_FILE)) {
+    throw new Error(`${design} is not a design page: pass the screen folder or one of its .html / .dc.html pages`);
+  }
+  return { screen: path.basename(dir), dir, entry: isDir ? null : p };
 }
 
 /** Screen folders under designRoot: subfolders (not dot folders) that contain a design page. */
@@ -99,6 +119,6 @@ export function screenFolders(designRoot: string): string[] {
   return fs.readdirSync(designRoot, { withFileTypes: true })
     .filter((d) => d.isDirectory() && !d.name.startsWith("."))
     .map((d) => d.name)
-    .filter((n) => fs.readdirSync(path.join(designRoot, n)).some((f) => /\.html$/i.test(f) && f.toLowerCase() !== REPORT_FILE))
+    .filter((n) => designPages(path.join(designRoot, n)).length > 0)
     .sort();
 }
