@@ -64,10 +64,10 @@ namespace DesignUi.Editor
                 return s;
             }
             var boxes = s.CheckKit(profile, plan, kitDir, out var stylesPath);
-            plan.Faces = FontMap.KitFaces(stylesPath);
+            plan.Faces = FontMap.ProfileFaces(profile, stylesPath);
             var chosen = FontMap.ChosenFaces(plan);
             var skipped = FontMap.SkippedFaces(plan);
-            s.Faces = string.Join(", ", chosen) + (skipped > 0 ? " (" + skipped + " more face" + (skipped == 1 ? "" : "s") + " in the weight tables get no twin: no text style uses them)" : "");
+            s.Faces = string.Join(", ", chosen) + (skipped > 0 ? " (" + skipped + " more face" + (skipped == 1 ? "" : "s") + " in the weight tables get no twin: no text style or compiled screen uses them)" : "");
             s.CheckTwins(plan, boxes);
             return s;
         }

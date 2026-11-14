@@ -132,6 +132,8 @@ namespace DesignUi.Editor
             FontMap.FontsPlan fonts;
             IFontResolver resolver;
             string screenDir, folderName;
+            List<FontMap.NeededFace> screenFaces;
+            var faceNotes = new List<string>();
             IDesignStringTables tables = null;
             StringTableRequest tableRequest = null;
             try
@@ -186,10 +188,13 @@ namespace DesignUi.Editor
                 resolver = hooks?.Fonts ?? FontMap.ResolverFor(profile);
                 fonts = FontMap.Plan(profile, resolver);
                 fonts.LineBoxes = ScaledLineBoxes(kitBoxes, profile.textSizes);
-                // twins for the faces the kit's text styles and this screen use, not every face of a family
-                fonts.Faces = FontMap.KitFaces(stylesPath);
-                FontMap.AddScreenFaces(fonts.Faces, ir.Root);
+                // twins for the faces the kit's text styles, the other compiled screens and this screen use, not every face of a
+                // family; a face this screen needs that the reference locale's font has not is an error (never synthesized)
+                fonts.Faces = FontMap.ProfileFaces(profile, stylesPath, screenDir);
+                screenFaces = FontMap.ScreenFaces(compiled);
+                foreach (var f in screenFaces) fonts.Faces.Add(f.Face);
                 var fontErrors = fonts.Errors.Concat(FontMap.ScreenErrors(fonts, compiled)).ToList();
+                if (fontErrors.Count == 0) FontMap.FaceProblems(fonts, screenFaces, fontErrors, faceNotes);
                 if (fontErrors.Count > 0) return new CompileResult { Ok = false, Errors = fontErrors };
                 compiled.Root.Classes.Add(FontMap.LocaleClass(fonts.ReferenceLocale));
 
@@ -261,6 +266,7 @@ namespace DesignUi.Editor
 
             // ---- the screen's String Table entries (asset-specific saves of the touched tables) -----------------------
             var notes = new List<string>(compiled.Notes);
+            notes.AddRange(faceNotes);
             if (FontMap.FallbackNote(resolver) is string fellBack) notes.Add(fellBack);
             LocalizationReport localization = null;
             IReadOnlyDictionary<string, IReadOnlyList<string>> localeStrings = null;
@@ -320,6 +326,7 @@ namespace DesignUi.Editor
                 generatorVersion = GeneratorVersion,
                 files = files,
                 removedElements = compiled.RemovedElements.ToArray(),
+                faces = screenFaces.Select(f => f.Face).Distinct().OrderBy(f => f).Select(FontMap.FaceName).ToArray(),
                 root = compiled.Root.Name,
                 view = viewFile,
                 clickable = compiled.AllElements().Where(e => e.Clickable).Select(e => e.Name).ToArray(),

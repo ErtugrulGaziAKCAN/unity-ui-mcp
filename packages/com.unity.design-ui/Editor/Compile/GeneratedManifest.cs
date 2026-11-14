@@ -69,6 +69,11 @@ namespace DesignUi.Editor
         /// screen has none.
         /// </summary>
         public Dictionary<string, Dictionary<string, AccessibilityText>> accessibility;
+        /// <summary>
+        /// The font faces the screen's texts render with (<c>400</c>, <c>700 italic</c>, …): every screen's are kept as twins
+        /// (<see cref="FontMap.ProfileFaces"/>). Null in the shared manifest and in one written before faces were recorded.
+        /// </summary>
+        public string[] faces;
         /// <summary>Shared manifest only: the union of all screens' tokens (USS variable name to value).</summary>
         public Dictionary<string, string> tokens;
         /// <summary>Shared manifest only: screen folder name to the screen id compiled into it.</summary>

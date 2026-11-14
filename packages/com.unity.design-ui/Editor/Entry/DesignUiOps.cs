@@ -81,7 +81,7 @@ namespace DesignUi.Editor
             if (r.Files.Count > 0) log.Append("files: ").Append(string.Join(", ", r.Files)).Append('\n');
             if (r.Faces.Count > 0)
                 log.Append("font faces with twins: ").Append(string.Join(", ", r.Faces))
-                   .Append(r.SkippedFaces > 0 ? " (" + r.SkippedFaces + " more face" + (r.SkippedFaces == 1 ? "" : "s") + " in the weight tables: no text style uses them)" : "").Append('\n');
+                   .Append(r.SkippedFaces > 0 ? " (" + r.SkippedFaces + " more face" + (r.SkippedFaces == 1 ? "" : "s") + " in the weight tables: no text style or compiled screen uses them)" : "").Append('\n');
             if (r.Twins.Count > 0) log.Append("font twins: ").Append(string.Join(", ", r.Twins)).Append('\n');
             return new OpResult(r.Ok ? 0 : 1, log.ToString().TrimEnd('\n'), null, r.Warnings.ToList(), r.Errors.ToList());
         }

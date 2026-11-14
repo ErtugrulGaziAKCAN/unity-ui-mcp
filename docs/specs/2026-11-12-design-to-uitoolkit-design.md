@@ -327,10 +327,15 @@ the reference locale's font, whose pixels are compared, kit sync fails a text st
 and lint fails such a weight in a design (U-FONT-001, the backstop); for other locales lint warns (W-FONT-001). The
 fix is adding the real face to the TMP weight table; the twin generator mirrors it into the twin's `fontWeightTable`.
 It mirrors only the faces in use: regular (400) and bold (700), which UI Toolkit's normal and bold font styles pick,
-every weight or style a kit text style names, and at import the faces the screen's texts use (font-weight and
-font-style in any layer, bold and italic tags of rich text). Other faces of a family get no twin and no glyphs
-(18 faces of a family, plain and per line box, made each import take minutes). Kit sync and the status window's
-Text section name the chosen faces and count the others.
+every weight or style a kit text style names, and the faces every compiled screen of the profile renders with. A
+screen's faces are those UI Toolkit picks: each text's `-unity-font-style` in each layer, with the layer's weight and
+style merged over its basis as the compiler writes them (a weight-only layer over italic text is bold italic),
+combined with the bold and italic tags of its rich text (`<b>` inside italic text is bold italic); its generated
+manifest records them (`faces`). Importing one screen, or a kit sync, keeps every face another compiled screen
+records. A face a screen needs that the reference locale's font has not is a compile error that names the element,
+its layer and the face (UI Toolkit would synthesize it); for another locale it is a compile note. Other faces of a
+family get no twin and no glyphs (18 faces of a family, plain and per line box, made each import take minutes). Kit
+sync and the status window's Text section name the chosen faces and count the others.
 
 ## 7. Exporter and IR
 

@@ -135,7 +135,7 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.AreEqual(new[] { "Many 400 (Many 400)", "Many 700 (Many 700)" }, sync.Faces.ToArray(), "kit sync reports the faces that got twins");
             Assert.AreEqual(16, sync.SkippedFaces, "and how many of the family's faces did not");
             var status = TextStatus.Check(profile, kit);
-            Assert.AreEqual("Many 400 (Many 400), Many 700 (Many 700) (16 more faces in the weight tables get no twin: no text style uses them)", status.Faces,
+            Assert.AreEqual("Many 400 (Many 400), Many 700 (Many 700) (16 more faces in the weight tables get no twin: no text style or compiled screen uses them)", status.Faces,
                 "the status window's Text section names the chosen faces");
             Assert.IsTrue(status.TwinsCurrent, status.Twins);
             var twin = AssetDatabase.LoadAssetAtPath<FontAsset>(Twins + "/Many 400 UITK.asset");
@@ -171,6 +171,109 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(File.Exists(Twins + "/Many 400 Italic UITK.asset"), "the design's italic text gets its face");
             Assert.IsFalse(File.Exists(Twins + "/Many 300 UITK.asset"));
             Assert.IsFalse(File.Exists(Twins + "/Many 700 Italic UITK.asset"), "bold italic is not used");
+        }
+
+        // ---- the faces of every compiled screen, chosen as UI Toolkit picks them --------------------------------------
+
+        string Kit()
+        {
+            var kit = TempDir("design-ui-kit-");
+            File.WriteAllText(kit + "/kit.config.json", KitConfig);
+            File.WriteAllText(kit + "/" + KitTextStyles.FileName, KitStyles());
+            return kit;
+        }
+
+        CompileResult Compile(IrScreen ir, DesignUiProfile profile)
+        {
+            var export = TempDir("design-ui-export-");
+            File.WriteAllText(Path.Combine(export, ScreenCompiler.IrFileName), JsonConvert.SerializeObject(ir, Formatting.Indented));
+            File.WriteAllText(Path.Combine(export, KitTextStyles.FileName), KitStyles());
+            return ScreenCompiler.Compile(export, profile, false, NoView());
+        }
+
+        static IrNode Words(string id, string text, string family, params (string k, string v)[] more)
+        {
+            var n = Text(id, text, new[] { ("font-family", family), ("font-size", "24px"), ("font-weight", "400"), ("font-style", "normal"), ("width", "800px") }
+                .Concat(more).ToArray());
+            n.Text.Style = "body";
+            return n;
+        }
+
+        /// <summary>The plain twin of the primary: its weight table's face at weight index <paramref name="index"/>.</summary>
+        static FontAsset TwinFace(int index, bool italic)
+        {
+            var twin = AssetDatabase.LoadAssetAtPath<FontAsset>(Twins + "/Many 400 UITK.asset");
+            Assert.IsNotNull(twin, "the primary's twin");
+            return italic ? twin.fontWeightTable[index].italicTypeface : twin.fontWeightTable[index].regularTypeface;
+        }
+
+        [Test]
+        public void TwoScreensAndAKitSync_KeepEveryFaceACompiledScreenNeeds()
+        {
+            FontFixture.RequireInter();
+            var kit = Kit();
+            var profile = Profile(ManyFaceFamily(), kit);
+            Assert.IsTrue(KitSync.Run(profile, kit, new ProfileLocaleFontResolver(profile, null)).Ok);
+            var a = Compile(Screen(Root(Words("quote", "Alıntı", "Many", ("font-style", "italic"))), "twin.a"), profile);
+            Assert.IsTrue(a.Ok, string.Join("\n", a.Errors));
+            Assert.IsNotNull(TwinFace(4, true), "screen A's italic text gets its face");
+
+            var b = Compile(Screen(Root(Words("plain", "Düz", "Many")), "twin.b"), profile);
+            Assert.IsTrue(b.Ok, string.Join("\n", b.Errors));
+            Assert.IsNotNull(TwinFace(4, true), "importing screen B keeps the italic face screen A renders with");
+            var sync = KitSync.Run(profile, kit, new ProfileLocaleFontResolver(profile, null));
+            Assert.IsTrue(sync.Ok, string.Join("\n", sync.Errors));
+            Assert.IsNotNull(TwinFace(4, true), "so does a kit sync");
+            CollectionAssert.Contains(sync.Faces.ToArray(), "Many 400 italic (Many 400 Italic)");
+            Assert.IsTrue(TextStatus.Check(profile, kit).TwinsCurrent, "the status window expects the same faces");
+            Assert.IsNull(TwinFace(7, true), "no screen uses bold italic");
+        }
+
+        [Test]
+        public void AWeightOnlyLayerOverItalicText_NeedsTheBoldItalicFace()
+        {
+            FontFixture.RequireInter();
+            var kit = Kit();
+            var profile = Profile(ManyFaceFamily(), kit);
+            Assert.IsTrue(KitSync.Run(profile, kit, new ProfileLocaleFontResolver(profile, null)).Ok);
+            // USS merges the layer's weight with the base's italic: -unity-font-style bold-and-italic on hover
+            var quote = Words("quote", "Alıntı", "Many", ("font-style", "italic")).With("hover", ("font-weight", "700"));
+            var r = Compile(Screen(Root(quote), "twin.layer"), profile);
+            Assert.IsTrue(r.Ok, string.Join("\n", r.Errors));
+            Assert.IsNotNull(TwinFace(7, true), "hover renders bold italic");
+            Assert.IsNotNull(TwinFace(4, true), "base renders italic");
+        }
+
+        [Test]
+        public void BoldTagsInsideItalicText_NeedTheBoldItalicFace()
+        {
+            FontFixture.RequireInter();
+            var kit = Kit();
+            var profile = Profile(ManyFaceFamily(), kit);
+            Assert.IsTrue(KitSync.Run(profile, kit, new ProfileLocaleFontResolver(profile, null)).Ok);
+            var quote = Words("quote", "Bir <b>iki</b> üç", "Many", ("font-style", "italic"));
+            quote.Text.Rich = true;
+            quote.Text.En = "One <b>two</b> three";
+            var r = Compile(Screen(Root(quote), "twin.rich"), profile);
+            Assert.IsTrue(r.Ok, string.Join("\n", r.Errors));
+            Assert.IsNotNull(TwinFace(7, true), "<b> inside italic text renders bold italic");
+        }
+
+        [Test]
+        public void AFaceTheReferenceFontHasNot_IsACompileError_NamingTheElementAndTheFace()
+        {
+            FontFixture.RequireInter();
+            // the shared fixture: Inter 400 with its 700 face and no italic faces
+            var kit = Kit();
+            var profile = Profile(FontFixture.Regular, kit);
+            Assert.IsTrue(KitSync.Run(profile, kit, new ProfileLocaleFontResolver(profile, null)).Ok);
+            var bold = Compile(Screen(Root(Words("title", "Başlık", FontFixture.SharedFamily, ("font-weight", "700"))), "twin.bold"), profile);
+            Assert.IsTrue(bold.Ok, "the font has its bold face: " + string.Join("\n", bold.Errors));
+            var r = Compile(Screen(Root(Words("quote", "Alıntı", FontFixture.SharedFamily).With("hover", ("font-style", "italic"))), "twin.missing"), profile);
+            Assert.IsFalse(r.Ok, "an italic text with a font that has no italic face does not compile");
+            var error = string.Join("\n", r.Errors);
+            StringAssert.Contains("'quote' (hover)", error, "names the element and the layer");
+            StringAssert.Contains("400 italic", error, "names the face");
         }
     }
 }

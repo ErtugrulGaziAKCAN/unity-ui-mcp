@@ -24,7 +24,7 @@ namespace DesignUi.Editor
         public IReadOnlyList<string> Twins = new string[0];
         /// <summary>The faces that got twins: each locale font's own and the weight-table faces the kit's text styles use ("family weight (TMP asset)").</summary>
         public IReadOnlyList<string> Faces = new string[0];
-        /// <summary>Weight-table faces of the locale fonts that get no twin (no text style uses them).</summary>
+        /// <summary>Weight-table faces of the locale fonts that get no twin (no text style or compiled screen uses them).</summary>
         public int SkippedFaces;
         public IReadOnlyList<string> Warnings = new string[0];
         /// <summary>Why the sync stopped; nothing is written into the kit and no twin is touched when there are errors.</summary>
@@ -123,8 +123,8 @@ namespace DesignUi.Editor
             var readability = errors.Count == 0 ? ReadabilityWarning(kitDir + "/" + textStyles, scales) : null;
             if (readability != null) warnings.Add(readability);
             if (errors.Count == 0) plan.LineBoxes = KitTextStyles.LineBoxesOf(kitDir + "/" + textStyles);
-            // twins only for the faces the text styles use (an import adds a design's own)
-            plan.Faces = FontMap.KitFaces(kitDir + "/" + textStyles);
+            // twins only for the faces the text styles and the compiled screens use (an import adds a new design's own)
+            plan.Faces = FontMap.ProfileFaces(profile, kitDir + "/" + textStyles);
             var copies = errors.Count == 0 ? FontFiles(faces, errors) : null;
             KitFontTokens.Result tokens = null;
             byte[] tokensBytes = null;

@@ -201,8 +201,8 @@ namespace DesignUi.Editor
             if (Has("font-family"))
                 result.Add(new UssDeclaration("-unity-font-definition", "var(--font-" + FamilySlug(css["font-family"]) + ")"));
 
-            if (Has("font-weight") || Has("font-style"))
-                result.Add(new UssDeclaration("-unity-font-style", FontStyle(Merged("font-weight"), Merged("font-style"))));
+            var fontStyle = FontStyleOf(css, baseCss);
+            if (fontStyle != null) result.Add(new UssDeclaration("-unity-font-style", fontStyle));
 
             if (Has("white-space") || Has("white-space-collapse") || Has("text-wrap-mode"))
                 result.Add(new UssDeclaration("white-space", WhiteSpace(Merged("white-space"), Merged("white-space-collapse"), Merged("text-wrap-mode"), Has("white-space"))));
@@ -226,6 +226,19 @@ namespace DesignUi.Editor
             value = value.Trim();
             support.ValidateValue(spec, value);
             return spec.MapValues.TryGetValue(value, out var m) ? m : value;
+        }
+
+        /// <summary>
+        /// The <c>-unity-font-style</c> a layer writes (<c>normal</c>, <c>bold</c>, <c>italic</c> or <c>bold-and-italic</c>): its
+        /// font-weight and font-style over its basis (<paramref name="baseCss"/>; the layer itself for base), as
+        /// <see cref="Map(IReadOnlyDictionary{string,string},IReadOnlyDictionary{string,string},bool,bool)"/> writes it; null
+        /// when the layer sets neither. The font faces a screen needs come from here too.
+        /// </summary>
+        internal static string FontStyleOf(IReadOnlyDictionary<string, string> css, IReadOnlyDictionary<string, string> baseCss)
+        {
+            if (css == null || !css.ContainsKey("font-weight") && !css.ContainsKey("font-style")) return null;
+            string Merged(string prop) => css.TryGetValue(prop, out var v) ? v?.Trim() : baseCss != null && baseCss.TryGetValue(prop, out var b) ? b?.Trim() : null;
+            return FontStyle(Merged("font-weight"), Merged("font-style"));
         }
 
         static string FontStyle(string weight, string style)

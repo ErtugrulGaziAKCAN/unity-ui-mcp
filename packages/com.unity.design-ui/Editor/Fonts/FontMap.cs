@@ -126,9 +126,10 @@ namespace DesignUi.Editor
             /// <summary>The line boxes of the kit's text-style table: each locale's font gets a twin variant per box.</summary>
             public IReadOnlyList<FontTwinGenerator.LineBox> LineBoxes = new FontTwinGenerator.LineBox[0];
             /// <summary>
-            /// The faces (weight, italic) of the fonts' weight tables that get twins (<see cref="KitFaces"/>, plus a screen's
-            /// own, <see cref="AddScreenFaces"/>); null: every face. A face no text style and no design uses gets no twin, so
-            /// its glyphs are never added either (18 faces of a family cost minutes per import).
+            /// The faces (weight, italic) of the fonts' weight tables that get twins (<see cref="ProfileFaces"/>: the kit's text
+            /// styles and every compiled screen's, plus the screen being compiled, <see cref="ScreenFaces"/>); null: every face.
+            /// A face no text style and no screen uses gets no twin, so its glyphs are never added either (18 faces of a family
+            /// cost minutes per import).
             /// </summary>
             public SortedSet<(int weight, bool italic)> Faces;
             /// <summary>Every family of the resolved locales: USS variable slug to family name.</summary>
@@ -377,36 +378,166 @@ namespace DesignUi.Editor
             return faces;
         }
 
-        /// <summary>
-        /// Adds the faces a screen's texts use (font-weight and font-style in any style layer; bold and italic tags of a rich
-        /// text), so a design that uses a face the text styles do not name still gets its twin.
-        /// </summary>
-        internal static void AddScreenFaces(SortedSet<(int weight, bool italic)> faces, IrNode root)
+        /// <summary>The faces UI Toolkit picks with <c>-unity-font-style</c>: 400 and 700 (normal and bold), upright and italic.</summary>
+        internal static readonly (int weight, bool italic)[] StyleFaces = { (400, false), (400, true), (700, false), (700, true) };
+
+        /// <summary>A face a compiled screen's text renders with: the element and the layer (or rich text) that need it.</summary>
+        internal readonly struct NeededFace
         {
-            void Visit(IrNode n)
+            public readonly int Weight;
+            public readonly bool Italic;
+            public readonly string Element;
+            public readonly string Layer;
+
+            public NeededFace(int weight, bool italic, string element, string layer)
             {
-                if (n == null) return;
-                foreach (var layer in n.Style.Values)
-                {
-                    if (layer == null) continue;
-                    bool hasWeight = layer.TryGetValue("font-weight", out var w), hasStyle = layer.TryGetValue("font-style", out var st);
-                    if (!hasWeight && !hasStyle) continue;
-                    int weight = 400;
-                    if (hasWeight && w != null)
-                    {
-                        if (w == "bold" || w == "bolder") weight = 700;
-                        else if (int.TryParse(w, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var x) && x >= 100 && x <= 900) weight = x / 100 * 100;
-                    }
-                    else if (n.Style.TryGetValue("base", out var b) && b != null && b.TryGetValue("font-weight", out var bw) && bw == "700") weight = 700;
-                    bool italic = hasStyle && (st == "italic" || st == "oblique");
-                    faces.Add((weight, italic));
-                }
-                var rich = n.Text != null && n.Text.Rich ? (n.Text.Tr ?? "") + (n.Text.En ?? "") : "";
-                if (rich.IndexOf("<b>", StringComparison.OrdinalIgnoreCase) >= 0 || rich.IndexOf("<strong>", StringComparison.OrdinalIgnoreCase) >= 0) faces.Add((700, false));
-                if (rich.IndexOf("<i>", StringComparison.OrdinalIgnoreCase) >= 0 || rich.IndexOf("<em>", StringComparison.OrdinalIgnoreCase) >= 0) { faces.Add((400, true)); faces.Add((700, true)); }
-                foreach (var c in n.Children ?? new IrNode[0]) Visit(c);
+                Weight = weight;
+                Italic = italic;
+                Element = element;
+                Layer = layer;
             }
-            Visit(root);
+
+            public (int weight, bool italic) Face => (Weight, Italic);
+        }
+
+        /// <summary>A face as the generated manifest records it: <c>400</c>, <c>700 italic</c>.</summary>
+        internal static string FaceName((int weight, bool italic) f) => f.weight + (f.italic ? " italic" : "");
+
+        static bool TryParseFace(string text, out (int weight, bool italic) face)
+        {
+            face = default;
+            var parts = (text ?? "").Split(' ');
+            if (parts.Length < 1 || parts.Length > 2 || !int.TryParse(parts[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var w)) return false;
+            if (parts.Length == 2 && parts[1] != "italic") return false;
+            face = (w, parts.Length == 2);
+            return true;
+        }
+
+        /// <summary>
+        /// Every face the texts of a compiled screen render with, as UI Toolkit picks it: each text element's
+        /// <c>-unity-font-style</c> in each of its layers (base and layer merged as <see cref="StyleMapper.FontStyleOf"/> writes
+        /// it, so a weight-only layer over italic text needs bold italic), combined with the bold and italic tags of its rich
+        /// text (<c>&lt;b&gt;</c> inside italic text is bold italic).
+        /// </summary>
+        internal static List<NeededFace> ScreenFaces(CompiledScreen screen)
+        {
+            var result = new List<NeededFace>();
+            var seen = new HashSet<IrNode>();
+            var empty = new Dictionary<string, string>();
+            foreach (var e in screen.AllElements())
+            {
+                var n = e.Source;
+                if (n?.Style == null || !seen.Add(n) || !RendersText(n)) continue;
+                var runs = RichRuns(n);
+                foreach (var kv in n.Style.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                {
+                    bool isBase = kv.Key == "base";
+                    var css = kv.Value ?? empty;
+                    var style = isBase ? StyleMapper.FontStyleOf(css, css) ?? "normal" : StyleMapper.FontStyleOf(css, Lowering.Basis(n, kv.Key));
+                    if (style == null) continue;
+                    bool bold = style.StartsWith("bold", StringComparison.Ordinal), italic = style.EndsWith("italic", StringComparison.Ordinal);
+                    foreach (var (b, i) in runs)
+                        result.Add(new NeededFace(bold || b ? 700 : 400, italic || i, n.Id, kv.Key + (b || i ? ", rich text" : "")));
+                }
+            }
+            return result;
+        }
+
+        static bool RendersText(IrNode n) => n.Text != null || n.Kind == "text" || n.Kind == "input" || n.Kind == "dropdown";
+
+        static readonly Regex RichTag = new Regex(@"<(/?)([A-Za-z]+)(?:=[^<>]*)?>", RegexOptions.CultureInvariant);
+
+        /// <summary>The bold and italic tags each run of a rich text is inside (<c>&lt;b&gt;</c>, <c>&lt;i&gt;</c>, nested); one upright run without tags.</summary>
+        static HashSet<(bool bold, bool italic)> RichRuns(IrNode n)
+        {
+            var runs = new HashSet<(bool, bool)>();
+            if (n.Text != null && n.Text.Rich)
+                foreach (var text in new[] { n.Text.Tr, n.Text.En })
+                {
+                    if (string.IsNullOrEmpty(text)) continue;
+                    int bold = 0, italic = 0, at = 0;
+                    void Run(int end)
+                    {
+                        for (int k = at; k < end; k++)
+                            if (!char.IsWhiteSpace(text[k])) { runs.Add((bold > 0, italic > 0)); return; }
+                    }
+                    foreach (Match m in RichTag.Matches(text))
+                    {
+                        Run(m.Index);
+                        at = m.Index + m.Length;
+                        int step = m.Groups[1].Value.Length > 0 ? -1 : 1;
+                        switch (m.Groups[2].Value.ToLowerInvariant())
+                        {
+                            case "b": case "strong": bold = Math.Max(0, bold + step); break;
+                            case "i": case "em": italic = Math.Max(0, italic + step); break;
+                        }
+                    }
+                    Run(text.Length);
+                }
+            if (runs.Count == 0) runs.Add((false, false));
+            return runs;
+        }
+
+        /// <summary>Whether a TMP font has a face UI Toolkit picks for it: itself for 400, else its weight table's entry.</summary>
+        internal static bool HasFace(TMP_FontAsset font, (int weight, bool italic) face)
+        {
+            if (face.weight == 400 && !face.italic) return true;
+            var table = font.fontWeightTable;
+            int i = face.weight / 100;
+            if (table == null || i < 0 || i >= table.Length) return false;
+            return face.italic ? table[i].italicTypeface != null : table[i].regularTypeface != null;
+        }
+
+        /// <summary>
+        /// The faces a screen needs that a locale's font has not: an error for the reference locale (the design's font; UI
+        /// Toolkit would synthesize the face), a note for another locale (its font renders that face synthesized).
+        /// </summary>
+        internal static void FaceProblems(FontsPlan plan, IReadOnlyList<NeededFace> needed, List<string> errors, List<string> notes)
+        {
+            foreach (var locale in plan.Locales)
+            {
+                if (!plan.Fonts.TryGetValue(locale, out var font) || font.Primary == null) continue;
+                var family = font.Primary.faceInfo.familyName;
+                foreach (var group in needed.GroupBy(f => f.Face).OrderBy(g => g.Key))
+                {
+                    if (HasFace(font.Primary, group.Key)) continue;
+                    var first = group.First();
+                    var others = group.Select(f => f.Element).Distinct().Count() - 1;
+                    var where = "'" + first.Element + "' (" + first.Layer + ")" + (others > 0 ? " and " + others + " more element" + (others == 1 ? "" : "s") : "");
+                    if (locale == plan.ReferenceLocale)
+                        errors.Add(where + " renders " + family + " " + FaceName(group.Key) + ", but the reference locale's font '" + font.Primary.name +
+                                   "' has no " + FaceName(group.Key) + " face in its weight table, so UI Toolkit would synthesize it; add that face to the TMP font " +
+                                   "asset's weight table, or use a weight and style the font has");
+                    else
+                        notes.Add("locale '" + locale + "': font '" + font.Primary.name + "' has no " + FaceName(group.Key) + " face, so " + where +
+                                  " renders with a synthesized one in that locale");
+                }
+            }
+        }
+
+        /// <summary>
+        /// The faces that get twins: the kit's text styles' (<see cref="KitFaces"/>) and every compiled screen's of the
+        /// profile (the <c>faces</c> its manifest records; one written before faces were recorded, or unreadable, counts every
+        /// face UI Toolkit picks), except the screen in <paramref name="exceptFolder"/> (being compiled again). So importing
+        /// one screen, or a kit sync, never takes a face away another screen renders with.
+        /// </summary>
+        internal static SortedSet<(int weight, bool italic)> ProfileFaces(DesignUiProfile profile, string textStylesPath, string exceptFolder = null)
+        {
+            var faces = KitFaces(textStylesPath);
+            var outFolder = profile?.outputFolder?.Replace('\\', '/').TrimEnd('/');
+            if (string.IsNullOrEmpty(outFolder) || !System.IO.Directory.Exists(outFolder)) return faces;
+            var except = exceptFolder?.Replace('\\', '/').TrimEnd('/');
+            foreach (var dir in System.IO.Directory.GetDirectories(outFolder).Select(d => d.Replace('\\', '/')).OrderBy(d => d, StringComparer.Ordinal))
+            {
+                if (except != null && string.Equals(dir, except, StringComparison.OrdinalIgnoreCase)) continue;
+                GeneratedManifest m;
+                try { m = GeneratedManifest.Load(GeneratedManifest.Combine(dir, ScreenCompiler.ManifestFileName)); }
+                catch (System.IO.InvalidDataException) { m = new GeneratedManifest { faces = null }; }
+                if (m == null) continue;
+                if (m.faces == null) { foreach (var f in StyleFaces) faces.Add(f); continue; }
+                foreach (var name in m.faces) if (TryParseFace(name, out var f)) faces.Add(f);
+            }
+            return faces;
         }
 
         /// <summary>The weight-table faces of the locales' fonts that get twins (<see cref="FontsPlan.Faces"/>), as "family weight[ italic] (TMP asset)".</summary>
