@@ -252,8 +252,9 @@ the design PanelSettings once to the game: the panel then renders into a screen-
 to the texture (cost: 29.5 MB of textures and one full-screen pass, 0.14 ms at 2560×1440 on an M4 Pro). It is drawn
 where UI Toolkit would draw the panel: over Screen Space - Overlay canvases of a lower or the same sort order, under
 those of a higher one, among other panels by sort order, as pointer input goes
-([docs/findings/composite-order.md](docs/findings/composite-order.md)). Measured in
-EditMode and a batchmode Play check on the Built-in render pipeline; URP and player builds are not verified yet. The
+([docs/findings/composite-order.md](docs/findings/composite-order.md); the order was measured in the Editor on the
+Built-in pipeline and URP 17.3). Colours were measured in EditMode and a batchmode Play check on the Built-in render
+pipeline; player builds are not verified yet. The
 profile's `colorPath` is Gamma Composite by default; Linear Panel makes verify capture an ordinary on-screen panel
 instead, and its answer warns. Verify, the Design UI window and a `DesignUiPanelRegion` at runtime warn when no
 composite renders the panel. A Gamma project needs neither. Details: [docs/findings/colour-space.md](docs/findings/colour-space.md).

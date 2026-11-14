@@ -96,8 +96,6 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   sharpness; the limits and the kit's readability warning stay (`docs/findings/text-ink.md` section 9).
 - The fidelity suite (21 fixtures, 9 components, 4722 captures at six viewports) passes every capture at 2560×1440 and
   1920×1080 and all but one at 1280×720; 3840×2160 and the scaled viewports fail as before (89, 356 and 770 of 787).
-- The fidelity suite (19 fixtures, 9 components) passes 2355 of 2355 captures at the three viewports (1155 static
-  captures and 1200 animation samples).
 
 ### Fixed
 
@@ -105,9 +103,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   frame over everything: over Screen Space - Overlay canvases of a lower or the same sort order, under those of a higher
   one, and among other runtime panels by sort order (the same sort order: the panel made later on top), so drawing and
   pointer input agree (a menu canvas with a higher sort order showed under a composited screen while taking its clicks).
-  It wraps the overlay pass's hooks (`docs/findings/composite-order.md`: measured in a GUI Editor, 13 of 13 sample
-  points identical to the same panel drawn on screen without the composite); about 0.02 ms more CPU per frame. Where
-  this Unity version lacks a member it needs, it draws at the end of the frame as before and says so once.
+  It wraps the overlay pass's hooks (`docs/findings/composite-order.md`: measured in a GUI Editor on the Built-in
+  pipeline and URP 17.3, 13 of 13 sample points identical to the same panel drawn on screen without the composite);
+  about 0.004 ms more CPU per frame, no managed allocation per frame. A texture the overlay pass did not draw in a frame (no pass, another display, hooks
+  replaced by other code, a Unity version without the members it needs: said once) is still drawn at the end of the
+  frame, over everything, as before; each composite decides that per texture.
 - `DesignUiPanelRegion` no longer warns that no composite renders its panel when a `DesignUiGammaComposite` on the same
   GameObject attaches after the region: the check runs on the region's first frame after it attaches, once every
   component enabled with it has run, and warns once per region (the check ran inside the region's OnEnable, before such

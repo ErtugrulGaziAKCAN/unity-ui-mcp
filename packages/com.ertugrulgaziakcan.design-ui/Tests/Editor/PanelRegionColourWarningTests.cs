@@ -69,6 +69,7 @@ namespace DesignUi.Editor.Tests
             var settings = Settings("Colour Warning Panel 1");
             var other = Settings("Colour Warning Panel 2");
             var own = Settings("Colour Warning Panel 3");
+            var second = Settings("Colour Warning Panel 4");
             string result = null;
             try
             {
@@ -92,17 +93,24 @@ namespace DesignUi.Editor.Tests
             alone.SetActive(true);
             yield return Frames(3);
             var aloneTwice = warnings.Count - withComposite.Count;
+            // another region without a composite warns too (no process-wide latch)
+            var alsoAlone = Screen("another without composite", second, composite: false, compositeFirst: false);
+            alsoAlone.SetActive(true);
+            yield return Frames(3);
+            var both = warnings.Count - withComposite.Count;
 
             Application.logMessageReceived -= Collect;
             DesignLocaleSources.Default = locales;
             yield return new ExitPlayMode();
-            foreach (var s in new[] { settings, other, own }) Object.DestroyImmediate(s);
+            foreach (var s in new[] { settings, other, own, second }) Object.DestroyImmediate(s);
 
             Assert.AreEqual("opened", result);
             Assert.IsEmpty(withComposite, "a composite on the screen's GameObject, attached after or before the region: no warning");
             Assert.AreEqual(1, aloneOnce, "a region whose panel no composite renders warns");
             Assert.AreEqual(1, aloneTwice, "once per region, however often its screen opens");
-            StringAssert.Contains("'no composite'", warnings.Last());
+            Assert.AreEqual(2, both, "a second region without a composite warns as well");
+            StringAssert.Contains("'no composite'", warnings[warnings.Count - 2]);
+            StringAssert.Contains("'another without composite'", warnings.Last());
         }
     }
 }

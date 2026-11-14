@@ -4,7 +4,7 @@
 |---|---|
 | Date | 2026-11-15 |
 | Question | `DesignUiGammaComposite` drew its panel texture at the end of the frame, over everything: a Screen Space - Overlay canvas with a higher sort order (a settings menu) showed under the composited panel while its buttons still took the clicks. Where does Unity draw a runtime panel among overlay canvases and other panels, and can the composite draw exactly there? |
-| Unity | 6000.3.6f1, Metal, Linear colour space, Built-in render pipeline; a GUI Editor's Game view at 2560×1440 (the overlay pass does not run in batchmode) |
+| Unity | 6000.3.6f1, Metal, Linear colour space, the Built-in render pipeline and URP 17.3; a GUI Editor's Game view at 2560×1440 (the overlay pass does not run in batchmode) |
 
 ## How Unity orders them
 
@@ -31,11 +31,17 @@ A panel that renders into a texture (the composite's) is still in the sorted lis
 `DesignUiOverlayOrder` wraps the three hooks while a composite is attached. When UI Toolkit's walk would pass a composited
 panel, it lets UI Toolkit draw everything before it (its own walk up to the panel's sort order, then the panels of that
 sort order made before it, one by one with UI Toolkit's own step), draws the panel's texture with the composite pass (a
-full-screen quad into the bound target, the same shader as before) and moves the walk past it. The rest is UI Toolkit's
-again. A frame in which no overlay pass reached the wrappers (no overlay pass, or the hooks were replaced by other code)
-falls back to the end-of-frame composite. The members it needs are internal (the sorted list, the walk's position, the
-walk, one panel's draw and the three hooks); when one is missing (another Unity version) the composite draws at the end
-of the frame as before and logs that once. Another wrapper put around the hooks later is left alone (wrapping it again
+full-screen quad into the bound target, the same shader as before) and leaves the panel to UI Toolkit's walk, which passes
+over a panel that renders into a texture. The rest is UI Toolkit's again. It follows the walk's position itself (each step
+is decided by the sorted list alone) and writes it only when it drew panels of a composited panel's sort order made
+before it. The members it needs are internal (the sorted list, the walk, one panel's draw, the walk's position, the three
+hooks); they are bound once to typed delegates, so a frame allocates no managed memory
+(`GammaCompositeTests.OverlayPass_WithACompositedPanel_AllocatesNoManagedMemory`). When one is missing (another Unity
+version) the composite draws at the end of the frame as before and logs that once.
+
+Each composite stamps every texture the pass drew with the frame; at the end of the frame it draws, over everything as
+before, every texture the pass did not draw (no overlay pass in that frame, a panel on another display, hooks replaced by
+other code). An unknown never hides the screen. Another wrapper put around the hooks later is left alone (wrapping it again
 would make the hooks call themselves) and the composite keeps drawing inside it.
 
 ## Measured
@@ -61,23 +67,35 @@ texture): canvases of sort order 5, 10 and 15 and on-screen panels of sort order
 region's copy), with the composite attached before and after the region made its copy, after a resize and inside
 another code's wrapper of the hooks.
 
+## URP
+
+The same probe in a copy of the sample switched to URP 17.3 (a Universal Renderer asset made in the copy, the copy removed
+afterwards): the same hook sequence per frame (`Begin(0) Before(0,5) Before(0,10) Before(0,10) Before(0,15) End(0)`, the
+back buffer bound, no current camera), and **13 of 13 sample points identical** with the composite on and off. With the
+ordered draw switched off (the end-of-frame composite of earlier versions) the composited panel covered canvas 15 and panel
+12 there too: the defect reproduces on URP and the ordered draw removes it.
+
+In the first Play session of a fresh project copy, on both pipelines, the on-screen panels showed in Unity's cyan
+placeholder for shaders still compiling (asynchronous shader compilation in the Editor) in the first capture; a second
+session of the same copy gave the results above. Not a composite effect: the composited panel itself was right in both.
+
 ## Cost
 
-CPU time of the overlay hooks per frame (240 frames, the scene above):
+CPU time of the overlay hooks per frame (240 frames, the scene above, Built-in pipeline, second session):
 
 | Route | Per frame |
 |---|---|
-| Before: UI Toolkit's hooks 0.0147 ms, then the end-of-frame composite (one `Graphics.Blit`) 0.0059 ms | 0.021 ms |
-| Now: the hooks with the composite drawing inside them | 0.041 ms |
+| Before: UI Toolkit's hooks 0.0173 ms, then the end-of-frame composite (one `Graphics.Blit`) 0.0016 ms | 0.019 ms |
+| Now: the hooks with the composite drawing inside them | 0.023 ms |
 
-About 0.02 ms more on the CPU (the walk reads UI Toolkit's internals by reflection). The GPU work is the same full-screen
-pass with the same shader, now inside the overlay pass instead of after it; textures are unchanged.
+About 0.004 ms more on the CPU and no managed allocation (an earlier version that read UI Toolkit's internals by
+reflection on every call took 0.041 ms and allocated every frame). The GPU work is the same full-screen pass with the same
+shader, now inside the overlay pass instead of after it; textures are unchanged.
 
 ## Not covered
 
-- URP and HDRP: their overlay UI pass calls the same native canvas rendering (and so the same hooks); not measured here
-  (the sample project uses the Built-in pipeline). A pipeline whose frame has no overlay pass gets the end-of-frame
-  composite.
+- HDRP, URP camera stacks and HDR output: not measured. A frame whose overlay pass does not draw a composited panel gets
+  that panel at the end of the frame (over everything, as before), never a missing screen.
 - Canvas sorting layers: the hook receives only the canvas's sort order, as UI Toolkit does; the composite follows UI
   Toolkit there too.
 - A player build: the same code path; managed code stripping keeps the members UI Toolkit itself uses. If stripping

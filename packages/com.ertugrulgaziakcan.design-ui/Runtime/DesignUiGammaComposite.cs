@@ -21,8 +21,8 @@ namespace DesignUi
     /// The texture is drawn where UI Toolkit would draw the panel on screen (<see cref="DesignUiOverlayOrder"/>): over the
     /// Screen Space - Overlay canvases of a lower or the same sort order and under those of a higher one, and among other
     /// runtime panels by sort order (the same sort order: in the order the panels were made), the order pointer input
-    /// follows. Where this Unity version does not allow that, or no overlay pass ran in a frame, it is drawn at the end of
-    /// the frame, over everything (said once in the console).
+    /// follows. A texture the overlay pass did not draw in a frame (no overlay pass, another display, a Unity version that
+    /// does not allow it: said once in the console) is drawn at the end of the frame, over everything.
     /// </para>
     /// <para>
     /// Add it once per PanelSettings asset (for example next to the UIDocument). While it is enabled it owns the asset's
@@ -57,6 +57,8 @@ namespace DesignUi
             public bool OldForceGamma, OldClearColor;
             public Color OldClearValue;
             public Vector2Int Screen;
+            /// <summary>The frame in which the overlay pass drew this texture at its panel's place (-1: none yet).</summary>
+            public int DrawnFrame = -1;
 
             public Vector2 ScreenToTexture(Vector2 screen)
             {
@@ -93,6 +95,7 @@ namespace DesignUi
         {
             s_Attached.Clear();
             s_Copies.Clear();
+            s_WarnedUnordered = false;
         }
 
         /// <summary>
@@ -164,9 +167,9 @@ namespace DesignUi
             while (true)
             {
                 yield return end;
-                // drawn in this frame's overlay pass at the panel's place: nothing left to do
-                if (m_Ordered && DesignUiOverlayOrder.LastPassFrame == Time.frameCount) continue;
-                Composite(null);
+                // what this frame's overlay pass drew at its panel's place is done; anything else (no overlay pass, a panel on
+                // another display, hooks replaced by other code, a Unity version without them) is drawn now, over everything
+                CompositeUndrawn(null);
             }
         }
 
@@ -328,13 +331,25 @@ namespace DesignUi
         /// Draws the panel texture over <paramref name="destination"/> (null: the screen): sRGB-encoded premultiplied
         /// colours decoded to linear light, blended "over" what is there.
         /// </summary>
-        public void Composite(RenderTexture destination)
+        public void Composite(RenderTexture destination) => Composite(destination, false);
+
+        /// <summary>
+        /// The end-of-frame composite: draws over <paramref name="destination"/> (null: the screen) the textures the overlay
+        /// pass did not draw at their panels' place in this frame. Nothing when it drew them all.
+        /// </summary>
+        internal void CompositeUndrawn(RenderTexture destination) => Composite(destination, true);
+
+        void Composite(RenderTexture destination, bool undrawnOnly)
         {
             PruneDestroyed();
-            if (m_Driven.Count == 0 || !EnsureMaterial()) return;
+            int frame = Time.frameCount, todo = 0;
+            foreach (var d in m_Driven) if (d.Target != null && d.Settings != null && !(undrawnOnly && d.DrawnFrame == frame)) todo++;
+            if (todo == 0 || !EnsureMaterial()) return;
             // in the panels' sort order, as UI Toolkit draws them on screen (the asset before a copy of the same order)
             s_Order.Clear();
-            for (int i = 0; i < m_Driven.Count; i++) if (m_Driven[i].Target != null && m_Driven[i].Settings != null) s_Order.Add((m_Driven[i].Settings.sortingOrder, i));
+            for (int i = 0; i < m_Driven.Count; i++)
+                if (m_Driven[i].Target != null && m_Driven[i].Settings != null && !(undrawnOnly && m_Driven[i].DrawnFrame == frame))
+                    s_Order.Add((m_Driven[i].Settings.sortingOrder, i));
             s_Order.Sort((a, b) => a.order != b.order ? a.order.CompareTo(b.order) : a.index.CompareTo(b.index));
             foreach (var (_, i) in s_Order) Graphics.Blit(m_Driven[i].Target, destination, m_Material);
         }
@@ -357,7 +372,9 @@ namespace DesignUi
         /// </summary>
         internal bool DrawInPass(PanelSettings settings)
         {
-            var target = TargetOf(settings);
+            Driven driven = null;
+            foreach (var d in m_Driven) if (ReferenceEquals(d.Settings, settings)) driven = d;
+            var target = driven?.Target;
             if (target == null || !EnsureMaterial()) return false;
             m_Material.mainTexture = target;
             if (!m_Material.SetPass(0)) return false;
@@ -370,6 +387,7 @@ namespace DesignUi
             GL.TexCoord2(1, 0); GL.Vertex3(1, 0, 0);
             GL.End();
             GL.PopMatrix();
+            driven.DrawnFrame = Time.frameCount;
             return true;
         }
 

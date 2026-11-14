@@ -6,6 +6,8 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.TestTools;
+using UnityEngine.TestTools.Constraints;
+using Is = UnityEngine.TestTools.Constraints.Is;
 using UnityEngine.UIElements;
 using Debug = UnityEngine.Debug;
 using Object = UnityEngine.Object;
@@ -517,6 +519,8 @@ namespace DesignUi.Editor.Tests
                 (15, new RectInt(250, 250, 100, 100), Color.blue),
                 (5, new RectInt(50, 50, 100, 100), Color.red),
                 (10, new RectInt(250, 50, 100, 100), Color.green));
+            // the end of the frame: the pass drew the panel, so nothing is drawn again over the canvas of sort order 15
+            composite.CompositeUndrawn(screen);
             var px = Bytes(screen);
             var failures = new List<string>();
             void Expect(string expected, int x, int y, string what)
@@ -596,6 +600,82 @@ namespace DesignUi.Editor.Tests
             composite.Detach();
             Assert.IsFalse(DesignUiOverlayOrder.Installed, "the last composite gives the overlay hooks back");
             region.Detach();
+        }
+
+        /// <summary>A composite on its own GameObject with its own PanelSettings (sort order, display) and one box.</summary>
+        (DesignUiGammaComposite composite, PanelSettings settings) CompositedBox(string name, float order, RectInt r, Color c, int display = 0)
+        {
+            int w = UnityEngine.Screen.width, h = UnityEngine.Screen.height;
+            var settings = DesignPanel();
+            settings.name = name;
+            settings.sortingOrder = order;
+            settings.targetDisplay = display;
+            var go = new GameObject("GammaCompositeTests " + name);
+            _objects.Add(go);
+            var composite = go.AddComponent<DesignUiGammaComposite>();
+            composite.Attach(settings, new Vector2Int(w, h), new Vector2Int(w, h));
+            var doc = go.AddComponent<UIDocument>();
+            doc.panelSettings = settings;
+            Box(doc.rootVisualElement, r.x, r.y, r.width, r.height, c);
+            return (composite, settings);
+        }
+
+        [UnityTest]
+        public IEnumerator TwoComposites_DrawAtTheirOwnSortOrders_AndAPanelThePassDidNotDraw_IsCompositedAtTheEndOfTheFrame()
+        {
+            int w = UnityEngine.Screen.width, h = UnityEngine.Screen.height;
+            var (low, _) = CompositedBox("composited 6", 6, new RectInt(50, 50, 100, 100), Color.red);
+            var (high, _) = CompositedBox("composited 12", 12, new RectInt(250, 50, 100, 100), Color.blue);
+            // on display 2: no overlay pass of display 0 draws it
+            var (elsewhere, elsewhereSettings) = CompositedBox("composited on display 2", 8, new RectInt(50, 250, 100, 100), Color.magenta, display: 1);
+            yield return Frames(4);
+            var screen = Screen(w, h, Color.black);
+            OverlayPass(screen, (10, new RectInt(100, 0, 200, 400), Color.green));
+            var px = Bytes(screen);
+            AssertNear("#00ff00", At(px, w, h, 120, 100), 1, "the canvas of sort order 10 over the composite of sort order 6");
+            AssertNear("#ff0000", At(px, w, h, 60, 100), 1, "that composite where the canvas leaves it");
+            AssertNear("#0000ff", At(px, w, h, 270, 100), 1, "the composite of sort order 12 over the canvas");
+            AssertNear("#000000", At(px, w, h, 60, 300), 0, "the panel on display 2: not drawn by display 0's pass");
+
+            // the end of the frame: each composite draws only what the pass did not draw
+            low.CompositeUndrawn(screen);
+            high.CompositeUndrawn(screen);
+            elsewhere.CompositeUndrawn(screen);
+            px = Bytes(screen);
+            AssertNear("#00ff00", At(px, w, h, 120, 100), 1, "drawn in the pass: not drawn again over the canvas");
+            AssertNear("#ff00ff", At(px, w, h, 60, 300), 1, "not drawn in the pass: composited at the end of the frame");
+            Assert.AreEqual(1, elsewhereSettings.targetDisplay);
+            low.Detach();
+            high.Detach();
+            elsewhere.Detach();
+        }
+
+        [UnityTest]
+        public IEnumerator OverlayPass_WithACompositedPanel_AllocatesNoManagedMemory()
+        {
+            int w = UnityEngine.Screen.width, h = UnityEngine.Screen.height;
+            var (composite, _) = CompositedBox("composited 10", 10, new RectInt(50, 50, 100, 100), Color.red);
+            yield return Frames(4);
+            var screen = Screen(w, h, Color.black);
+            var begin = (System.Action<int>)CanvasHook("externBeginRenderOverlays");
+            var before = (System.Action<int, int>)CanvasHook("externRenderOverlaysBefore");
+            var end = (System.Action<int>)CanvasHook("externEndRenderOverlays");
+            void Pass()
+            {
+                var active = RenderTexture.active;
+                RenderTexture.active = screen;
+                begin(0);
+                before(0, 5);
+                before(0, 15);
+                end(0);
+                composite.CompositeUndrawn(screen);
+                RenderTexture.active = active;
+            }
+            Pass(); // first use binds and JITs
+            DesignUiOverlayOrder.Install(); // what each composite's Update calls every frame
+            Assert.That(() => { Pass(); DesignUiOverlayOrder.Install(); }, Is.Not.AllocatingGCMemory());
+            AssertNear("#ff0000", At(Bytes(screen), w, h, 60, 60), 1, "the pass drew the panel");
+            composite.Detach();
         }
 
         /// <summary>The cost of one composite at 2560×1440 (logged; the findings quote it).</summary>

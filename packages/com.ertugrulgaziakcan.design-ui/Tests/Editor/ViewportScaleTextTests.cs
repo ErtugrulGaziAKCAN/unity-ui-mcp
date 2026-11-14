@@ -289,12 +289,6 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
-        /// Measured, pinned (docs/findings/viewport-classes.md): UI Toolkit 6000.3 lays every padding, margin and border width
-        /// out as whole device pixels (halves up), an explicit height as it is. At a scaled viewport a stack of padded, spaced or
-        /// bordered elements therefore drifts from Chromium, which lays the fractions out. A Unity version that changes this
-        /// fails here, and the scaled class can be measured again.
-        /// </summary>
-        /// <summary>
         /// Which lengths UI Toolkit puts on whole device pixels before layout at an exact viewport's scale (0.75, 1920×1080),
         /// where a length that is not a multiple of 4 px is a fraction of a device pixel (10 px is 7.5). Each chain nests ten
         /// elements, each moved 10 px from its parent by one property: CSS puts the last one 75 device px from the first
@@ -363,6 +357,12 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(0, moved["width (explicit, shrinking 20 px a level)"], 0.01, "the chain without moves stays put");
         }
 
+        /// <summary>
+        /// Measured, pinned (docs/findings/viewport-classes.md): UI Toolkit 6000.3 lays every padding, margin and border width
+        /// out as whole device pixels (halves up), an explicit height as it is. At a scaled viewport a stack of padded, spaced or
+        /// bordered elements therefore drifts from Chromium, which lays the fractions out. A Unity version that changes this
+        /// fails here, and the scaled class can be measured again.
+        /// </summary>
         [UnityTest]
         public IEnumerator BoxModelLengths_AreWholeDevicePixelsAtAScaledViewport_ExplicitHeightsAreNot()
         {
