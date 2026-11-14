@@ -27,8 +27,8 @@ const KIND_LABEL: Record<string, string> = {
 function thresholdRows(t: Thresholds): string {
   const lo = t.textInkRatio * (1 - t.textInkCoverage), hi = 1 + t.textInkCoverage;
   const rows: [string, string, string][] = [
-    ["boxPx", `±${t.boxPx} px`, "every element's border box (x, y, width, height); only the design's elements, anything else Unity shows is an issue"],
-    ["baselinePx", `±${t.baselinePx} px`, "same line count; every line's baseline (inputs and selects: lines not compared)"],
+    ["boxPx", `±${t.boxPx} px`, "every element's border box (x, y, width, height), plus 0.001 px for Unity's float32 layout; only the design's elements, anything else Unity shows is an issue"],
+    ["baselinePx", `±${t.baselinePx} px`, "same line count; every line's baseline, plus 0.001 px for Unity's float32 layout (inputs and selects: lines not compared)"],
     ["deltaE2000", `≤ ${t.deltaE2000}`, "colour samples of painted backgrounds; edge, border and corner samples of elements that carry text; mean colour of each baked shadow's band (each sample against the closest Unity colour within 1 px)"],
     ["ssimNonText", `≥ ${t.ssimNonText}`, "SSIM of the whole capture, text element boxes and external regions copied from the design"],
     ["ssimElement", `≥ ${t.ssimElement}`, "SSIM per visible element of at least 16×16 px over its box joined with its baked shadow (an element that carries text: only its lines copied); when it fails, each block may use the Unity image offset by up to 1 px"],

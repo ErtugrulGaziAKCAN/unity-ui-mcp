@@ -168,6 +168,19 @@ describe("compareCapture", () => {
     expect(compareCapture(g, u1, [], T)).toMatchObject({ pass: true, issues: [] });
   });
 
+  it("compares boxes and baselines with a float epsilon of 1e-3 px, never a wider tolerance", () => {
+    // a frame at a half CSS pixel at scale 0.75 (366 → 274.5 device px) that UI Toolkit snaps: 1 px off, plus float32 noise
+    const line = (y: number) => ({ x: 50, y, w: 82, h: 16, baseline: y + 12 });
+    const g = scene(), u = scene();
+    u.boxes.elements.panel.x += 1.000008;
+    g.boxes.elements.label.lines = [line(50)];
+    u.boxes.elements.label.lines = [{ ...line(50), baseline: 62 + 1.0004 }];
+    expect(compareCapture(g, u, [], T)).toMatchObject({ pass: true, issues: [] });
+    const far = scene(); far.boxes.elements.panel.x += 1.002;
+    far.boxes.elements.label.lines = [{ ...line(50), baseline: 62 - 1.0011 }];
+    expect(compareCapture(g, far, [], T).issues.map((i) => `${i.id}:${i.kind}`).sort()).toEqual(["label:baseline", "panel:box"]);
+  });
+
   it("skips an element hidden on both sides and reports one hidden only in Unity as a visibility issue, never a box delta", () => {
     const g = scene(), u = scene();
     g.boxes.elements.panel = el(0, 0, 0, 0, { visible: false });

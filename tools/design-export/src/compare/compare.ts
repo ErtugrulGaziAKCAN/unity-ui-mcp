@@ -5,7 +5,8 @@
  * - every golden element: present in Unity (unless the compiler removed it as a wrapper that carries no text and
  *   paints nothing), the same visibility (hidden on both sides: nothing else is compared; hidden on one side: a
  *   visibility issue, never a box delta), border box within ±`boxPx`, text with the same line count and every line's
- *   baseline within ±`baselinePx` (inputs and selects report no lines: not compared); every element Unity shows that
+ *   baseline within ±`baselinePx` (both compared with a float tolerance of `GEOMETRY_EPS`, 0.001 px: Unity's float32
+ *   layout; inputs and selects report no lines: not compared); every element Unity shows that
  *   the design does not have is an `extra` issue;
  * - copy-mask SSIM (ssim.ts): whole capture ≥ `ssimNonText`; per visible element ≥ 16×16 px ≥ `ssimElement` over its
  *   golden box joined with its active baked-shadow rect. Non-text elements use the pinned copy-mask (text element boxes
@@ -327,6 +328,13 @@ export interface CompareOptions {
 }
 
 const EPS = 1e-6;
+/**
+ * Float tolerance of the box and baseline limits (device px): Unity reports its layout in float32, so a box UI Toolkit
+ * snaps by exactly the limit (a frame at a half CSS pixel at scale 0.75: 366 → 274.5 device px, drawn at 275) arrives as
+ * 1.000008 px. One thousandth of a pixel absorbs that rounding (float32 resolution at 4096 px is 0.0005) and widens
+ * nothing a renderer can draw.
+ */
+export const GEOMETRY_EPS = 1e-3;
 const MIN_ELEMENT = 16;
 /** Painted elements thinner than this (device px) are lines: sampled on their centre line, one pixel at a time. */
 const THIN_PX = 8;
@@ -472,7 +480,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     row.box = d;
     const m = Math.max(...d.map(Math.abs));
     if (!maxBox || m > maxBox.px) maxBox = { id, px: m };
-    if (m > t.boxPx + EPS) issue(id, "box", `box Δx ${fmt(d[0])} Δy ${fmt(d[1])} Δw ${fmt(d[2])} Δh ${fmt(d[3])} px (limit ±${t.boxPx})`, ge);
+    if (m > t.boxPx + GEOMETRY_EPS) issue(id, "box", `box Δx ${fmt(d[0])} Δy ${fmt(d[1])} Δw ${fmt(d[2])} Δh ${fmt(d[3])} px (limit ±${t.boxPx})`, ge);
     if (ge.text) {
       if (!ge.lines.length) { row.lines = "not compared"; linesNotCompared.push(id); }
       else {
@@ -482,7 +490,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         } else {
           let worst = -1, wd = 0;
           ge.lines.forEach((l, i) => { const dd = ue.lines[i].baseline - l.baseline; if (Math.abs(dd) > Math.abs(wd)) { wd = dd; worst = i; } });
-          if (worst >= 0 && Math.abs(wd) > t.baselinePx + EPS) {
+          if (worst >= 0 && Math.abs(wd) > t.baselinePx + GEOMETRY_EPS) {
             issue(id, "baseline", `line ${worst + 1} of ${ge.lines.length}: baseline Δ ${fmt(wd)} px (limit ±${t.baselinePx})`, ge.lines[worst]);
           }
         }

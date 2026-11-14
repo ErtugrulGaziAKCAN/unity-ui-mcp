@@ -16,6 +16,8 @@ Unity package (`com.unity.design-ui`) and the Node tools share the version numbe
   broken after the package update: generated manifests record the package stamp, each screen folder's import is recorded
   with the stamp in the Library, and after a script reload the screens recorded under another package are imported
   again, asset by asset (also after an import logged "Uxml object has an invalid child element").
+- Box and baseline limits are compared with a float tolerance of 0.001 px (Unity's float32 layout): a frame at a half
+  CSS pixel at scale 0.75 that UI Toolkit snaps measured 1.000008 px against the ±1 px limit.
 - `design_ui_import` no longer skips Unity for an unchanged export after the design-ui package, the profile or the kit
   changed: `last-import.json` records the package stamp (`git:<commit>`, `registry:<version>` or the hash of a local
   package's files) and the profile's hash, and the skip compares them with the IR and kit hashes.
