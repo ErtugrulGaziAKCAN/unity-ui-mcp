@@ -191,12 +191,27 @@ function inject(html: string, kit: KitConfig): string {
   return close >= 0 ? out.slice(0, close) + STATIC_STYLE + out.slice(close) : out + STATIC_STYLE;
 }
 
-function within(root: string, rel: string): string | null {
+/**
+ * The file `rel` names inside `root`, or null when it lies outside: by its path, or, for a file that exists, by where its
+ * symbolic links lead (a link in a design or kit folder must not serve a file outside it).
+ */
+export function within(root: string, rel: string): string | null {
   let decoded: string;
   try { decoded = decodeURIComponent(rel); } catch { return null; }
   const p = path.resolve(root, "." + path.posix.normalize("/" + decoded));
-  return p === root || p.startsWith(root + path.sep) ? p : null;
+  if (p !== root && !p.startsWith(root + path.sep)) return null;
+  if (!fs.existsSync(p)) return p;
+  try {
+    const real = fs.realpathSync(p), realRoot = fs.realpathSync(root);
+    return real === realRoot || real.startsWith(realRoot + path.sep) ? p : null;
+  } catch { return null; }
 }
+
+/** Removes the page's WebRTC and WebTransport: no peer connection or QUIC session can leave the network fence. */
+const NO_PEER_NETWORK = `for (const k of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCIceCandidate", "RTCSessionDescription", "WebTransport"]) {
+  try { delete globalThis[k]; } catch {}
+  try { Object.defineProperty(globalThis, k, { value: undefined, configurable: false, writable: false }); } catch {}
+}`;
 
 export async function openDesign(
   htmlPath: string,
@@ -273,6 +288,12 @@ export async function openDesign(
       return route.abort();
     });
 
+    // WebSockets do not pass context.route: every one is closed before it connects, and recorded
+    await context.routeWebSocket(/.*/, (ws) => {
+      blocked.push({ url: ws.url(), type: "websocket" });
+      void ws.close({ code: 1008, reason: "blocked: design pages have no network" }).catch(() => {});
+    });
+    await context.addInitScript({ content: NO_PEER_NETWORK });
     // tsx (esbuild keepNames) wraps functions passed to page.evaluate in __name(); give every page a no-op one
     await context.addInitScript({ content: "globalThis.__name = globalThis.__name || ((f) => f);" });
     const page = await context.newPage();

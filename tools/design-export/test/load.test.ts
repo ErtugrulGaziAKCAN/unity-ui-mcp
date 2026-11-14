@@ -7,6 +7,8 @@ import { chromium, type Browser } from "playwright";
 import { readKit, type KitConfig } from "../src/kit.js";
 import { logicalViewport } from "../src/viewport.js";
 import { openDesign, unwrapDcHtml, usedFamilies, declaredFontFaces } from "../src/load.js";
+import { chromiumSandbox, launchChromium } from "../src/browser.js";
+import os from "node:os";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fx = (n: string) => path.join(here, "fixtures", "load", n);
@@ -187,6 +189,42 @@ describe("openDesign", () => {
     } finally { fs.rmSync(dir, { recursive: true }); }
   });
 
+  it("serves no file that a symbolic link leads outside the design folder", async () => {
+    const dir = tmpDir();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "design-outside-"));
+    try {
+      fs.writeFileSync(path.join(outside, "secret.png"), "not for the page");
+      fs.symlinkSync(path.join(outside, "secret.png"), path.join(dir, "link.png"));
+      fs.writeFileSync(path.join(dir, "inside.png"), "a picture");
+      fs.symlinkSync(path.join(dir, "inside.png"), path.join(dir, "alias.png"));
+      fs.writeFileSync(path.join(dir, "a.html"), '<html><body><img src="link.png"><img src="alias.png"><p>x</p></body></html>');
+      const d = await openDesign(path.join(dir, "a.html"), kit, [2560, 1440], shared);
+      expect(d.missing).toEqual(["/link.png"]);
+      expect(await d.page.evaluate(async () => (await fetch("link.png")).status)).toBe(404);
+      expect(await d.page.evaluate(async () => (await fetch("alias.png")).status)).toBe(200);
+      await d.close();
+    } finally { fs.rmSync(dir, { recursive: true }); fs.rmSync(outside, { recursive: true }); }
+  });
+
+  it("gives design scripts no WebSocket or WebRTC way out", async () => {
+    let upgrades = 0;
+    server.on("upgrade", (_q, socket) => { upgrades++; socket.destroy(); });
+    const dir = tmpDir();
+    try {
+      const ws = origin.replace("http:", "ws:");
+      fs.writeFileSync(path.join(dir, "a.html"), `<html><body><p>x</p><script>
+        window.__ws = new Promise((done) => { const s = new WebSocket("${ws}/chat"); s.onopen = () => done("open"); s.onclose = () => done("closed"); s.onerror = () => done("error"); });
+        window.__rtc = typeof RTCPeerConnection + "/" + typeof webkitRTCPeerConnection + "/" + typeof WebTransport;
+      </script></body></html>`);
+      const d = await openDesign(path.join(dir, "a.html"), kit, [2560, 1440], shared);
+      expect(await d.page.evaluate(() => (window as any).__ws)).not.toBe("open");
+      expect(await d.page.evaluate(() => (window as any).__rtc)).toBe("undefined/undefined/undefined");
+      expect(d.blocked).toContainEqual({ url: `${ws}/chat`, type: "websocket" });
+      expect(upgrades).toBe(0);
+      await d.close();
+    } finally { fs.rmSync(dir, { recursive: true }); }
+  });
+
   it("does not leak contexts or browsers on failure", async () => {
     const dir = tmpDir();
     try {
@@ -284,5 +322,17 @@ describe("openDesign", () => {
       expect(launched).toBeDefined();
       expect(launched!.isConnected()).toBe(false);
     } finally { spy.mockRestore(); }
+  });
+});
+
+describe("launchChromium", () => {
+  it("starts Chromium with its sandbox where the platform has one, and says so where it has not", async () => {
+    const b = await launchChromium();
+    try {
+      const state = chromiumSandbox();
+      expect(state).not.toBeNull();
+      if (process.platform === "darwin" || process.platform === "win32") expect(state).toEqual({ enabled: true, reason: null });
+      else if (!state!.enabled) expect(state!.reason).toMatch(/\S/);
+    } finally { await b.close(); }
   });
 });
