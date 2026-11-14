@@ -112,6 +112,9 @@ namespace DesignUi.Editor.Tests
             new object[] { "slide 0 1000 200 1 normal backwards running steps(4, jump-start)", new double[] { 0, 100, 200.001, 300, 450, 1199 }, new[] { "-60", "-60", "-30", "-30", "0", "60" } },
             new object[] { "slide 0 1000 0 1 reverse both running steps(4, jump-start)", new double[] { 0, 1, 100, 999, 1000, 1100 }, new[] { "60", "60", "60", "-30", "-60", "-60" } },
             new object[] { "slide 0 1000 0 2 alternate both running steps(4, jump-end)", new double[] { 0, 500, 999, 1000, 1001, 1500, 1999, 2000, 2100 }, new[] { "-60", "0", "30", "60", "30", "0", "-60", "-60", "-60" } },
+            // a negative delay: the animation starts 200 ms into its timeline (Chromium: currentTime 0 shows -44.5006px)
+            new object[] { "slide 0 800 -200 1 normal both running ease-in-out", new double[] { 0, 100, 200, 300, 400, 600, 700 }, new[] { "-44.5006", "-24.8675", "0", "24.8675", "44.5006", "60", "60" } },
+            new object[] { "slide 0 800 -200 1 normal none running ease-in-out", new double[] { 0, 599, 600 }, new[] { "-44.5006", "59.9996", null } },
         };
 
         [TestCaseSource(nameof(Configs))]
@@ -153,11 +156,25 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void Keyframes_Paused_HoldTheirStartFrame()
+        public void Delays_MayBeNegative_DurationsMayNot()
         {
-            var spec = DesignAnimationData.ParseAnimations("slide 0 800 0 1 normal both paused linear")[0];
-            Assert.IsTrue(DesignAnimationData.Progress(spec, 500, false, out var x, out _));
-            Assert.AreEqual(0, x);
+            Assert.AreEqual(-200, DesignAnimationData.ParseAnimations("slide 0 800 -200 1 normal both running linear")[0].Delay);
+            Assert.Throws<System.FormatException>(() => DesignAnimationData.ParseAnimations("slide 0 -800 0 1 normal both running linear"));
+            var t = DesignAnimationData.ParseTransition(DesignAnimProperty.Opacity, "0.5|400 -100 linear");
+            Assert.AreEqual(-100, t.Delay);
+            Assert.IsTrue(t.Animates, "400 ms − 100 ms: a positive combined duration");
+            Assert.IsFalse(DesignAnimationData.ParseTransition(DesignAnimProperty.Opacity, "0.5|100 -200 linear").Animates, "CSS starts no transition of combined duration −100 ms");
+        }
+
+        [Test]
+        public void Progress_ReadsTheLocalTimeItIsGiven_ThePlayerHoldsAPausedOne()
+        {
+            // a paused animation's local time does not advance; Progress itself is the same for both play states
+            var paused = DesignAnimationData.ParseAnimations("slide 0 800 -200 1 normal both paused linear")[0];
+            Assert.IsTrue(DesignAnimationData.Progress(paused, 0, false, out var x, out _));
+            Assert.AreEqual(0.25, x, 1e-12, "held at local time 0, 200 ms into its timeline");
+            Assert.IsTrue(DesignAnimationData.Progress(paused, 400, false, out x, out _));
+            Assert.AreEqual(0.75, x, 1e-12);
         }
 
         // ---- values -------------------------------------------------------------------------------------------------------

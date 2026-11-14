@@ -16,17 +16,19 @@ namespace DesignUi
     /// <see cref="CustomStyleResolvedEvent"/> during that style pass, before the frame is drawn.
     /// </para>
     /// <list type="bullet">
-    /// <item>Transitions: when the winning rule's value of a transitioned property changes, the player writes the value the
-    /// element showed (its current animated value, or the previous rule's value) as an inline style at once, animates it
-    /// to the new rule's value with the new rule's duration, delay and timing function, and removes the inline style at
-    /// the end, handing the property back to the USS rule. No transition on an element's first style or while it is not
-    /// displayed (CSS: no before-change style).</item>
+    /// <item>Transitions (CSS Transitions §3): when the winning rule's value of a transitioned property changes, the player
+    /// writes the value the element showed (its current animated value, or the previous rule's value) as an inline style
+    /// at once, animates it to the new rule's value with the new rule's duration, delay (a negative one starts inside the
+    /// transition) and timing function, and removes the inline style at the end, handing the property back to the USS
+    /// rule. No transition on an element's first style or while it is not displayed (CSS: no before-change style).</item>
     /// <item>Keyframe animations: the winning <c>--dui-a</c> list starts when the element first gets a box (shown), and when
-    /// the list changes: an animation whose name stays keeps running (with the new timing), new names start, removed
-    /// ones stop and hand their properties back. An animation a trigger layer starts (a class, state or pseudo-state the
-    /// element already has in its first style, e.g. a panel that starts <c>is-open</c>) shows its end frame there instead
-    /// of playing, as the design's static frame does; toggling the trigger off and on plays it. Iterations, direction, fill modes, delay, play state and per-keyframe
-    /// easing follow Web Animations; a fill holds the value while the animation stays in the list.</item>
+    /// the list changes: an animation whose name stays keeps running (with the new timing and play state: pausing holds
+    /// the frame, resuming continues from it), new names start, removed ones stop and hand their properties back (a layer
+    /// with <c>animation: none</c> stops them; they start over when it stops holding). An animation a trigger layer starts
+    /// (a class, state or pseudo-state the element already has in its first style, e.g. a panel that starts
+    /// <c>is-open</c>) shows its end frame there instead of playing, as the design's static frame does; toggling the
+    /// trigger off and on plays it. Iterations, direction, fill modes, delay (negative: started inside the timeline), play
+    /// state and per-keyframe easing follow Web Animations; a fill holds the value while the animation stays in the list.</item>
     /// <item>Writes: transform, opacity and colour properties as inline styles, which UI Toolkit applies without a style or
     /// layout pass; a layout property (lint warning W-CSS-001) also lays out. A later animation of the same property
     /// overrides an earlier one, keyframe animations override transitions. Nothing is allocated per frame in steady state.</item>
@@ -199,10 +201,16 @@ namespace DesignUi
         {
             public DesignAnimationData.Animation Spec;
             public DesignAnimationData.KeyframeSet Set;
+            /// <summary>Clock time of local time 0 while the animation runs.</summary>
             public double Start;
+            /// <summary>The local time a paused animation holds (0 when it starts paused).</summary>
+            public double Held;
             public bool Frozen;
             /// <summary>The element's own value per property of the set (implicit 0 % and 100 % frames).</summary>
             public DesignAnimValue[] Underlying;
+
+            /// <summary>The animation's local (current) time at clock time <paramref name="now"/>.</summary>
+            public double Local(double now) => Spec.Paused ? Held : now - Start;
         }
 
         sealed class Animated
@@ -340,7 +348,14 @@ namespace DesignUi
                             if (a.Runs[r] != null && a.Runs[r].Spec.Name == spec.Name) { keep = a.Runs[r]; a.Runs[r] = null; break; }
                     if (keep != null)
                     {
-                        keep.Spec = spec; // the same animation goes on with the timing now in effect
+                        // the same animation goes on with the timing now in effect; a change of play state keeps its current
+                        // time (Web Animations: pausing holds it, resuming continues from it)
+                        if (keep.Spec.Paused != spec.Paused)
+                        {
+                            if (spec.Paused) keep.Held = now - keep.Start;
+                            else keep.Start = now - keep.Held;
+                        }
+                        keep.Spec = spec;
                         keep.Set = Keyframes(el, spec.Keyframes);
                         a.Scratch.Add(keep);
                         continue;
@@ -348,7 +363,7 @@ namespace DesignUi
                     var set = Keyframes(el, spec.Keyframes);
                     // a trigger layer the element starts in (its first style) shows its animations' end, as its static design does
                     bool ended = m_ReducedMotion || (spec.Layer && !a.Initialized);
-                    var run = new Run { Spec = spec, Set = set, Start = now, Frozen = ended, Underlying = new DesignAnimValue[set.Properties.Length] };
+                    var run = new Run { Spec = spec, Set = set, Start = now, Held = 0, Frozen = ended, Underlying = new DesignAnimValue[set.Properties.Length] };
                     for (int q = 0; q < set.Properties.Length; q++) run.Underlying[q] = Underlying(a, set.Properties[q].Property);
                     a.Scratch.Add(run);
                 }
@@ -429,7 +444,7 @@ namespace DesignUi
             for (int r = 0; r < a.Runs.Count; r++)
             {
                 var run = a.Runs[r];
-                double local = now - run.Start;
+                double local = run.Local(now);
                 if (!run.Frozen && !run.Spec.Paused)
                 {
                     double end = run.Spec.Delay + run.Spec.Duration * run.Spec.Iterations;

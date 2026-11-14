@@ -133,9 +133,16 @@ namespace DesignUi.Editor
                 Require(a.Restart, "a transition always restarts");
                 Require(a.Keyframes.Count == 0, "a transition has no keyframes");
             }
+            else if (a.Name == null)
+            {
+                // a layer's animation: none: it stops the element's animations while it holds
+                Require(a.Phase == "enter", "a keyframe animation runs on enter");
+                Require(a.Trigger != LayerKey.ShowTrigger, "animation: none is recorded for a layer, not for show");
+                Require(a.Keyframes.Count == 0, "a keyframe animation without a name (animation: none) has no keyframes");
+            }
             else
             {
-                Require(!string.IsNullOrEmpty(a.Name), "a keyframe animation has a name");
+                Require(a.Name.Length > 0, "a keyframe animation has a name");
                 Require(a.Phase == "enter", "a keyframe animation runs on enter");
                 Require(a.Keyframes.Count > 0, "a keyframe animation has keyframes");
                 foreach (var k in a.Keyframes)

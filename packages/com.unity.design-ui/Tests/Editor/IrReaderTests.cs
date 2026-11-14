@@ -245,7 +245,8 @@ namespace DesignUi.Editor.Tests
             finally { File.Delete(path); }
         }
 
-        [TestCase("\"name\":\"spin\"", "\"name\":null", "has a name")]
+        [TestCase("\"name\":\"spin\"", "\"name\":null", "without a name (animation: none) has no keyframes")]
+        [TestCase("\"name\":\"spin\"", "\"name\":\"\"", "has a name")]
         [TestCase("\"phase\":\"enter\"", "\"phase\":\"leave\"", "runs on enter")]
         [TestCase("\"offset\":1,", "\"offset\":1.5,", "outside 0..1")]
         public void Read_KeyframesBreakingItsKindsRules_Throws(string from, string to, string message)
@@ -253,6 +254,28 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(Spin.Contains(from));
             var path = WriteTemp(WithAnims(Spin.Replace(from, to)));
             try { StringAssert.Contains(message, Assert.Throws<IrFormatException>(() => IrReader.Read(path)).Message); }
+            finally { File.Delete(path); }
+        }
+
+        const string Stop = "{\"kind\":\"keyframes\",\"trigger\":\"class:is-still\",\"phase\":\"enter\",\"name\":null,\"properties\":[\"rotate\"]," +
+                            "\"duration\":0,\"delay\":0,\"timing\":\"ease\",\"iterations\":1,\"direction\":\"normal\",\"fillMode\":\"none\"," +
+                            "\"playState\":\"running\",\"restart\":true,\"keyframes\":[]}";
+
+        [Test]
+        public void Read_ALayersAnimationNone_IsAKeyframesEntryWithoutANameOrKeyframes()
+        {
+            var path = WriteTemp(WithAnims(Spin.Replace("anc(card):hover", "show").Replace("\"restart\":false", "\"restart\":true"), Stop));
+            try
+            {
+                var stop = IrReader.Read(path).Root.Anims[1];
+                Assert.AreEqual(IrAnim.KeyframesKind, stop.Kind);
+                Assert.IsNull(stop.Name);
+                Assert.AreEqual("class:is-still", stop.Trigger);
+                Assert.IsEmpty(stop.Keyframes);
+            }
+            finally { File.Delete(path); }
+            path = WriteTemp(WithAnims(Stop.Replace("class:is-still", "show")));
+            try { StringAssert.Contains("for a layer, not for show", Assert.Throws<IrFormatException>(() => IrReader.Read(path)).Message); }
             finally { File.Delete(path); }
         }
 

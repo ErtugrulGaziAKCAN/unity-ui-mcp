@@ -304,6 +304,25 @@ describe("buildIr: animations", () => {
       .toEqual([["enter", ["opacity"], 400, "ease"]]);
     expect(spin.style["state:loading"]).toEqual({ opacity: "0.5" });
   });
+
+  it("keeps negative delays (the animation starts inside its timeline) and drops a transition whose combined duration is not positive", () => {
+    const neg = byId(r.ir.root, "neg");
+    expect(neg.anims.filter((a) => a.kind === "keyframes").map((a) => [a.name, a.duration, a.delay])).toEqual([["spin", 1000, -250]]);
+    expect(neg.anims.filter((a) => a.kind === "transition").map((a) => [a.phase, a.duration, a.delay])).toEqual([["enter", 200, -50], ["leave", 200, -50]]);
+    // CSS: a transition whose duration plus delay is 0 or less never starts
+    expect(byId(r.ir.root, "gone").anims).toEqual([]);
+  });
+
+  it("records a layer's animation: none as a keyframes entry without a name, so base's animations stop there", () => {
+    const pulse = byId(r.ir.root, "pulse");
+    expect(validateIr(r.ir)).toEqual([]);
+    const stop = pulse.anims.filter((a) => a.trigger === "class:is-still");
+    expect(stop).toEqual([{
+      kind: "keyframes", trigger: "class:is-still", phase: "enter", name: null, properties: ["rotate"], duration: 0, delay: 0,
+      timing: "ease", iterations: 1, direction: "normal", fillMode: "none", playState: "running", restart: true, keyframes: [],
+    }]);
+    expect(pulse.anims.filter((a) => a.trigger === "show").map((a) => a.name)).toEqual(["spin"]);
+  });
 });
 
 describe("buildIr: layers, text runs and lossless values", () => {

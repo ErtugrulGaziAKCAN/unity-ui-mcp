@@ -17,12 +17,14 @@ namespace DesignUi.Editor
     /// base transition (the <c>leave</c> transitions, as CSS uses the after-change style). Base declares <c>--dui-t</c>,
     /// the list of P.</item>
     /// <item>Keyframe animations: base (<c>show</c>) and every layer that triggers animations get <c>--dui-a</c>, the
-    /// animation list in effect while that layer wins; base declares every keyframe set as <c>--dui-k-&lt;n&gt;</c>.</item>
+    /// animation list in effect while that layer wins (empty in a layer with <c>animation: none</c>, an IR keyframes entry
+    /// without a name); base declares every keyframe set as <c>--dui-k-&lt;n&gt;</c>.</item>
     /// </list>
-    /// An animated node gets the marker class <see cref="DesignAnimationData.MarkerClass"/>. A tinted icon's colour animates
-    /// its tint too. Keyframe shorthands (<c>border-color</c>, <c>margin</c>, <c>padding</c>, <c>inset</c>,
-    /// <c>border-width</c>, <c>border-radius</c>) are written as longhands; <c>currentcolor</c> is the node's colour.
-    /// A transitioned property the player cannot animate changes at once; <see cref="Notes"/> says so.
+    /// Delays are written as recorded, negative ones too (the animation starts inside its timeline). An animated node gets
+    /// the marker class <see cref="DesignAnimationData.MarkerClass"/>. A tinted icon's colour animates its tint too.
+    /// Keyframe shorthands (<c>border-color</c>, <c>margin</c>, <c>padding</c>, <c>inset</c>, <c>border-width</c>,
+    /// <c>border-radius</c>) are written as longhands; <c>currentcolor</c> is the node's colour. A transitioned property
+    /// the player cannot animate changes at once; <see cref="Notes"/> says so.
     /// </summary>
     public sealed class AnimationEmitter
     {
@@ -63,6 +65,9 @@ namespace DesignUi.Editor
         static string Canonical(string trigger) => trigger == LayerKey.ShowTrigger ? Base : LayerKey.Parse(trigger).Text;
 
         static string Ms(float v) => ScreenBuilder.Number(Math.Max(0f, v));
+
+        /// <summary>A delay in ms as recorded: CSS starts an animation or transition with a negative delay that far into it.</summary>
+        static string Delay(float v) => ScreenBuilder.Number(v);
 
         static string Timing(IrAnim a, string node)
         {
@@ -111,9 +116,10 @@ namespace DesignUi.Editor
 
         static UssDeclaration Decl(DesignAnimProperty p, string value, IrAnim transition, string node)
         {
-            var t = transition == null || (transition.Duration <= 0 && transition.Delay <= 0)
+            // CSS Transitions: no transition without a positive combined duration (duration + delay)
+            var t = transition == null || Math.Max(0f, transition.Duration) + transition.Delay <= 0
                 ? ""
-                : Ms(transition.Duration) + " " + Ms(transition.Delay) + " " + Timing(transition, node);
+                : Ms(transition.Duration) + " " + Delay(transition.Delay) + " " + Timing(transition, node);
             return new UssDeclaration(DesignAnimationData.TransitionPrefix + DesignAnimationData.CustomName(p), Quote((value ?? "") + "|" + t));
         }
 
@@ -177,10 +183,20 @@ namespace DesignUi.Editor
         {
             var sets = new List<string>();
             var byLayer = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-            var shown = new HashSet<string>(anims.Where(a => a.Trigger == LayerKey.ShowTrigger).Select(a => a.Name), StringComparer.Ordinal);
+            // nothing to play: a layer's animation: none alone stops nothing
+            if (!anims.Any(a => a.Name != null)) return;
+            var shown = new HashSet<string>(anims.Where(a => a.Trigger == LayerKey.ShowTrigger && a.Name != null).Select(a => a.Name), StringComparer.Ordinal);
             foreach (var a in anims)
             {
-                if (string.IsNullOrEmpty(a.Name) || a.Name.IndexOfAny(new[] { ' ', ';', '"', '\\' }) >= 0)
+                if (a.Name == null)
+                {
+                    // animation: none in the trigger layer: its list is empty, so the element's animations stop while it wins
+                    var stop = Canonical(a.Trigger);
+                    if (stop == Base) throw new IrFormatException("node '" + node.Id + "': the base layer cannot stop its own animations (animation: none is recorded per layer)");
+                    if (!byLayer.ContainsKey(stop)) byLayer[stop] = new List<string>();
+                    continue;
+                }
+                if (a.Name.Length == 0 || a.Name.IndexOfAny(new[] { ' ', ';', '"', '\\' }) >= 0)
                     throw new IrFormatException("node '" + node.Id + "': keyframe animation name '" + a.Name + "' cannot be written as animation data");
                 var frames = new StringBuilder();
                 foreach (var k in (a.Keyframes ?? new List<IrKeyframe>()).OrderBy(k => k.Offset))
@@ -208,7 +224,7 @@ namespace DesignUi.Editor
                 if (index < 0) { index = sets.Count; sets.Add(text); }
                 var key = Canonical(a.Trigger);
                 // an animation the layer starts (base does not run it): '+', so a first style already in the layer shows its end
-                var entry = (key != Base && !shown.Contains(a.Name) ? "+" : "") + a.Name + " " + index.ToString(CultureInfo.InvariantCulture) + " " + Ms(a.Duration) + " " + Ms(a.Delay) + " " +
+                var entry = (key != Base && !shown.Contains(a.Name) ? "+" : "") + a.Name + " " + index.ToString(CultureInfo.InvariantCulture) + " " + Ms(a.Duration) + " " + Delay(a.Delay) + " " +
                             (float.IsPositiveInfinity(a.Iterations) ? "infinite" : ScreenBuilder.Number(Math.Max(0f, a.Iterations))) + " " +
                             Keyword(a.Direction, "normal", "normal", "reverse", "alternate", "alternate-reverse") + " " +
                             Keyword(a.FillMode, "none", "none", "forwards", "backwards", "both") + " " +
@@ -216,7 +232,6 @@ namespace DesignUi.Editor
                 if (!byLayer.TryGetValue(key, out var list)) byLayer[key] = list = new List<string>();
                 list.Add(entry);
             }
-            if (anims.Count == 0) return;
             // base declares the list too (empty: none), so nothing is inherited from a parent's rules
             if (!byLayer.ContainsKey(Base)) byLayer[Base] = new List<string>();
             foreach (var kv in byLayer) Layer(kv.Key).Add(new UssDeclaration(DesignAnimationData.AnimationListProperty, Quote(string.Join(";", kv.Value))));

@@ -14,10 +14,13 @@ namespace DesignUi
     /// <item><c>--dui-t: "background-color scale"</c>: the properties the element transitions.</item>
     /// <item><c>--dui-t-&lt;property&gt;: "&lt;value&gt;|&lt;duration ms&gt; &lt;delay ms&gt; &lt;timing function&gt;"</c>, in
     /// every rule that sets the property: the rule's value and the transition in effect when that rule wins (empty after
-    /// the bar: none). An empty value means the element's own computed value.</item>
+    /// the bar: none; a negative delay starts the transition that far into it). An empty value means the element's own
+    /// computed value.</item>
     /// <item><c>--dui-a: "&lt;anim&gt;;&lt;anim&gt;"</c>, in every rule that sets animation properties: the animation list, each
     /// <c>&lt;name&gt; &lt;keyframes&gt; &lt;duration ms&gt; &lt;delay ms&gt; &lt;iterations|infinite&gt; &lt;direction&gt; &lt;fill&gt;
-    /// &lt;running|paused&gt; &lt;timing function&gt;</c> (empty: none). A name written <c>+name</c> in a trigger layer's list
+    /// &lt;running|paused&gt; &lt;timing function&gt;</c> (empty: none, also in a layer that stops the element's animations
+    /// with <c>animation: none</c>; a negative delay starts the animation that far into its timeline). A name written
+    /// <c>+name</c> in a trigger layer's list
     /// is an animation that layer starts (not one of base's): when the element's first style already has that layer (the
     /// artboard starts in it), it shows its end frame instead of playing.</item>
     /// <item><c>--dui-k-&lt;n&gt;: "&lt;offset&gt;|&lt;easing&gt;|&lt;property&gt;=&lt;value&gt;&amp;…;…"</c>: keyframe set n, one
@@ -65,7 +68,7 @@ namespace DesignUi
             /// <summary>False: the element's own computed value (the rule's value was not known at compile time).</summary>
             public bool HasValue;
             public DesignAnimValue Value;
-            /// <summary>False: no transition (the value changes at once).</summary>
+            /// <summary>False: no transition (the value changes at once): CSS starts one only when duration + delay is above 0.</summary>
             public bool Animates;
             public double Duration, Delay;
             public DesignTimingFunction Timing;
@@ -155,9 +158,9 @@ namespace DesignUi
             if (t.Length > 0)
             {
                 var parts = t.Split(new[] { ' ' }, 3, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length != 3 || !Ms(parts[0], out e.Duration) || !Ms(parts[1], out e.Delay) || !DesignTimingFunction.TryParse(parts[2], out e.Timing))
+                if (parts.Length != 3 || !Ms(parts[0], out e.Duration) || !Delay(parts[1], out e.Delay) || !DesignTimingFunction.TryParse(parts[2], out e.Timing))
                     throw Bad(TransitionPrefix + CustomName(p), text, "the transition is not '<duration ms> <delay ms> <timing function>'");
-                e.Animates = e.Duration > 0 || e.Delay > 0;
+                e.Animates = e.Duration + e.Delay > 0; // CSS Transitions: the combined duration
             }
             cache[text] = e;
             return e;
@@ -177,7 +180,7 @@ namespace DesignUi
                 var a = new Animation { Name = f.Length > 0 ? f[0] : "" };
                 if (a.Name.StartsWith("+", StringComparison.Ordinal)) { a.Layer = true; a.Name = a.Name.Substring(1); }
                 if (f.Length != 9 || !int.TryParse(f[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out a.Keyframes) || a.Keyframes < 0 ||
-                    !Ms(f[2], out a.Duration) || !Ms(f[3], out a.Delay) || !Iterations(f[4], out a.Iterations) ||
+                    !Ms(f[2], out a.Duration) || !Delay(f[3], out a.Delay) || !Iterations(f[4], out a.Iterations) ||
                     !TryDirection(f[5], out a.Direction) || !TryFill(f[6], out a.Fill) || (f[7] != "running" && f[7] != "paused") ||
                     !DesignTimingFunction.TryParse(f[8], out a.Timing))
                     throw Bad(AnimationListProperty, text, "'" + item + "' is not '<name> <keyframes> <duration ms> <delay ms> <iterations> <direction> <fill> <play state> <timing function>'");
@@ -241,8 +244,11 @@ namespace DesignUi
             return set;
         }
 
-        static bool Ms(string s, out double ms) =>
-            double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out ms) && !double.IsNaN(ms) && !double.IsInfinity(ms) && ms >= 0;
+        static bool Ms(string s, out double ms) => Delay(s, out ms) && ms >= 0;
+
+        /// <summary>A delay in ms: any finite number (CSS: a negative delay starts the animation or transition inside its timeline).</summary>
+        static bool Delay(string s, out double ms) =>
+            double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out ms) && !double.IsNaN(ms) && !double.IsInfinity(ms);
 
         static bool Iterations(string s, out double n)
         {
@@ -277,10 +283,11 @@ namespace DesignUi
         // ---- CSS animation timing (Web Animations Level 1, 4.4–4.9) -----------------------------------------------------
 
         /// <summary>
-        /// The directed iteration progress of an animation <paramref name="local"/> ms after it started (its delay included),
-        /// and the before flag its keyframe easings use; false when the animation has no effect then (before or after its
-        /// active interval without the matching fill). <paramref name="frozen"/>: the frame a static design capture shows
-        /// (one iteration, no duration, fill both), which reduced motion holds.
+        /// The directed iteration progress of an animation at local time <paramref name="local"/> ms (its current time: from
+        /// its start, its delay included; a negative delay is already behind it at 0), and the before flag its keyframe
+        /// easings use; false when the animation has no effect then (before or after its active interval without the
+        /// matching fill). A paused animation's local time does not advance: the player holds it. <paramref name="frozen"/>:
+        /// the frame a static design capture shows (one iteration, no duration, fill both), which reduced motion holds.
         /// </summary>
         public static bool Progress(Animation a, double local, bool frozen, out double directed, out bool before)
         {
@@ -290,7 +297,6 @@ namespace DesignUi
             double delay = frozen ? 0 : a.Delay;
             double iterations = frozen ? 1 : a.Iterations;
             var fill = frozen ? Fill.Both : a.Fill;
-            if (a.Paused && !frozen) local = 0;
             double active = duration <= 0 || iterations <= 0 ? 0 : duration * iterations;
             int phase; // 0 before, 1 active, 2 after
             if (local < delay) phase = 0;

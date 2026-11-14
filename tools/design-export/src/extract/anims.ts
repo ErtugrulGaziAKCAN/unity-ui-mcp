@@ -54,7 +54,8 @@ function transitionAnims(ex: StyleExtractor, i: number, at: string, changed: str
   const per = transitionsAt(ex, i, at, changed);
   const groups = new Map<string, { t: { duration: number; delay: number; timing: string }; props: string[] }>();
   for (const [p, t] of per) {
-    if (t.duration <= 0 && t.delay <= 0) continue;
+    // CSS Transitions: a transition starts only when its combined duration (duration + delay) is above 0
+    if (t.duration + t.delay <= 0) continue;
     const k = `${t.duration}\u0000${t.delay}\u0000${t.timing}`;
     if (!groups.has(k)) groups.set(k, { t, props: [] });
     groups.get(k)!.props.push(p);
@@ -110,7 +111,9 @@ function framesOf(s: DomSnapshot, i: number, name: string, refs: Set<string>): I
  * base). Transitions: per non-base layer, `enter` with the transition in effect in that layer and `leave` with the
  * base's (CSS uses the destination style's). Keyframes: base animations start on show; a layer that declares
  * animation-* starts its animations (`restart`) when it changes animation-name, else it modifies the running ones
- * (play state, timing) without restarting them.
+ * (play state, timing) without restarting them. A layer whose animation-name is `none` while the element animates
+ * elsewhere is a keyframes entry without a name and without keyframes (`animation: none`): the element's animations
+ * stop while that layer holds; its properties are those of the element's other keyframe animations.
  */
 export function animsOf(ex: StyleExtractor, i: number, raw: Layers, layers: Layers, refs: Set<string>): IrAnim[] {
   const s = ex.s;
@@ -121,6 +124,7 @@ export function animsOf(ex: StyleExtractor, i: number, raw: Layers, layers: Laye
     out.push(...transitionAnims(ex, i, layer, changed, triggerOf(layer), "enter"), ...transitionAnims(ex, i, "base", changed, triggerOf(layer), "leave"));
   }
   const baseNames = list(ex.effective(i, [], "animation-name")?.entry.value, "none").join(",");
+  const stops: string[] = [];
   for (const layer of ["base", ...Array.from(raw.keys()).filter((n) => n !== "base").sort()]) {
     const own = raw.get(layer);
     if (!own || (layer !== "base" && !ANIMATION.some((p) => own.has(p)))) continue;
@@ -129,6 +133,7 @@ export function animsOf(ex: StyleExtractor, i: number, raw: Layers, layers: Laye
     const timings = v("animation-timing-function", "ease"), counts = v("animation-iteration-count", "1");
     const dirs = v("animation-direction", "normal"), fills = v("animation-fill-mode", "none"), plays = v("animation-play-state", "running");
     const restart = layer === "base" || anames.join(",") !== baseNames;
+    if (layer !== "base" && anames.every((n) => n === "none")) { stops.push(triggerOf(layer)); continue; }
     anames.forEach((name, j) => {
       if (name === "none") return;
       const frames = framesOf(s, i, name, refs);
@@ -148,8 +153,22 @@ export function animsOf(ex: StyleExtractor, i: number, raw: Layers, layers: Laye
       });
     });
   }
+  // animation: none in a layer: recorded only when the element has animations it stops
+  const animated = Array.from(new Set(out.filter((a) => a.kind === "keyframes").flatMap((a) => a.properties))).sort();
+  if (animated.length) for (const trigger of stops) out.push(stopAnim(trigger, animated));
   return out;
 }
+
+/** A layer's `animation: none` (IR: a keyframes entry without a name or keyframes) for the given animated properties. */
+export function stopAnim(trigger: string, properties: string[]): IrAnim {
+  return {
+    kind: "keyframes", trigger, phase: "enter", name: null, properties, duration: 0, delay: 0, timing: "ease", iterations: 1,
+    direction: "normal", fillMode: "none", playState: "running", restart: true, keyframes: [],
+  };
+}
+
+/** Whether an IR animation is a layer's `animation: none` (it stops the element's animations, plays nothing). */
+export const isStop = (a: IrAnim) => a.kind === "keyframes" && a.name === null;
 
 /** An ancestor's animations of an inherited property, re-triggered by the layer the descendant sees. */
 export function inheritedAnims(anims: IrAnim[], prop: string, fromKey: string, key: string): IrAnim[] {
@@ -157,6 +176,7 @@ export function inheritedAnims(anims: IrAnim[], prop: string, fromKey: string, k
   for (const a of anims) {
     if (a.trigger !== triggerOf(fromKey) || !a.properties.includes(prop)) continue;
     if (a.kind === "transition") { if (fromKey !== "base") out.push({ ...a, trigger: triggerOf(key), properties: [prop] }); continue; }
+    if (isStop(a)) { out.push({ ...a, trigger: triggerOf(key), properties: [prop] }); continue; }
     const keyframes = a.keyframes.filter((k) => prop in k.values).map((k) => ({ ...k, values: { [prop]: k.values[prop] } }));
     if (keyframes.length) out.push({ ...a, trigger: triggerOf(key), properties: [prop], keyframes });
   }

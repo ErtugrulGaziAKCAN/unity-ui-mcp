@@ -247,7 +247,10 @@ function shownState(t: Tree, ir: IrScreen, id: string): string {
   return "default";
 }
 
-/** Animations the matrix does not sample: keyframe modifiers of a running animation (no own timeline), paused or iteration-less animations. */
+/**
+ * Animations the matrix does not sample: keyframe modifiers of a running animation (no own timeline), a layer's
+ * `animation: none` (nothing plays; the layer's static capture shows it), paused or iteration-less animations.
+ */
 export function unsampledAnims(ir: IrScreen): UnsampledAnim[] {
   const out: UnsampledAnim[] = [];
   const t = treeOf(ir);
@@ -255,6 +258,7 @@ export function unsampledAnims(ir: IrScreen): UnsampledAnim[] {
   return out;
 }
 function unsampledReason(a: IrAnim): string | null {
+  if (a.kind === "keyframes" && a.name === null) return "animation: none in its layer: it stops the element's animations, nothing plays";
   if (a.kind === "keyframes" && !a.restart) return "modifies a running animation (play state or timing) without its own timeline";
   if (a.playState === "paused") return "paused: it never advances";
   if (a.iterations === 0) return "zero iterations";

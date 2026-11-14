@@ -162,6 +162,8 @@ describe("buildMatrix", () => {
       node("spinner", { style: { base: { display: "none" }, "state:loading": { display: "flex" } },
         anims: [anim({ kind: "keyframes", trigger: "show", name: "spin", iterations: "infinite", duration: 1000 })] }),
       node("k", { anims: [anim({ kind: "keyframes", trigger: "show", name: "pulse", duration: 1000 }), anim({ kind: "keyframes", trigger: "hover", name: "pulse", restart: false, playState: "paused" })] }),
+      node("still", { style: layers("class:is-still"), anims: [anim({ kind: "keyframes", trigger: "show", name: "pulse", duration: 1000 }),
+        anim({ kind: "keyframes", trigger: "class:is-still", name: null, duration: 0, keyframes: [] })] }),
     ] }), { states: ["default", "loading"], viewports: [[2560, 1440]] });
     const jobs = buildMatrix(ir).filter((j) => j.anim);
     const at = (n: string) => jobs.find((j) => captureName(j) === n)!;
@@ -186,7 +188,10 @@ describe("buildMatrix", () => {
     expect(at("loading@2560x1440.anim.spinner.0").anim!.from).toEqual({ state: "default", apply: [] });
     // a show animation of a visible element is sampled from load
     expect(at("default@2560x1440.anim.k.4").anim!.from).toBeNull();
-    expect(unsampledAnims(ir)).toEqual([{ elementId: "k", index: 1, reason: expect.stringMatching(/running animation/) }]);
+    expect(unsampledAnims(ir)).toEqual([{ elementId: "k", index: 1, reason: expect.stringMatching(/running animation/) },
+      { elementId: "still", index: 1, reason: expect.stringMatching(/animation: none/) }]);
+    // a layer's animation: none has nothing to sample: its static capture shows the element without the animation
+    expect(jobs.some((j) => j.anim!.sampled.some((r) => r.elementId === "still" && r.index === 1))).toBe(false);
   });
 
   it("refuses unknown states, elements and breakpoints", () => {

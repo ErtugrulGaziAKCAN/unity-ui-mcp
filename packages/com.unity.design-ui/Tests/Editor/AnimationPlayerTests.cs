@@ -466,5 +466,153 @@ namespace DesignUi.Editor.Tests
             m.At(10200);
             Assert.AreEqual(-44.5006f, dot.resolvedStyle.translate.x, 2e-3, "inserted again: the show animation starts over");
         }
+
+        // ---- negative delays, play state, animation: none, reversing (CSS values measured in Chromium) ----------------------
+
+        /// <summary>
+        /// One element per case: keyframes with a negative delay, a transition with a negative delay, a transition that
+        /// reverses, a layer that pauses a running animation, an animation paused from its start, a layer with
+        /// animation: none.
+        /// </summary>
+        internal static IrScreen TimingIr()
+        {
+            var negDot = Box("neg-dot", "#16c2d5");
+            negDot.Anims.Add(Keyframes("show", "slide", 800, -200, "ease-in-out", 1, "normal", "both",
+                (0, null, new[] { ("translate", "-60px") }), (1, null, new[] { ("translate", "60px") })));
+            var negT = Box("neg-t", "#000000").With("class:is-on", ("background-color", "#c86428"));
+            negT.Anims.AddRange(BothWays("class:is-on", 400, -100, "linear", "background-color"));
+            var never = Box("never", "#000000").With("class:is-on", ("background-color", "#c86428"));
+            never.Anims.AddRange(BothWays("class:is-on", 100, -200, "linear", "background-color"));
+            var rev = Box("rev", "#123c47").With("class:is-on", ("rotate", "8deg"));
+            rev.Anims.AddRange(BothWays("class:is-on", 400, 0, "ease", "rotate"));
+            var pause = Box("pause", "#16c2d5").With("class:is-paused", ("background-color", "#16c2d5"));
+            pause.Anims.Add(Keyframes("show", "spin", 1000, 0, "linear", 1, "normal", "both",
+                (0, null, new[] { ("rotate", "0deg") }), (1, null, new[] { ("rotate", "360deg") })));
+            var held = Keyframes("class:is-paused", "spin", 1000, 0, "linear", 1, "normal", "both",
+                (0, null, new[] { ("rotate", "0deg") }), (1, null, new[] { ("rotate", "360deg") }));
+            held.PlayState = "paused";
+            held.Restart = false;
+            pause.Anims.Add(held);
+            var paused0 = Box("paused0", "#16c2d5");
+            var p0 = Keyframes("show", "slide", 800, -200, "linear", 1, "normal", "both",
+                (0, null, new[] { ("translate", "-60px") }), (1, null, new[] { ("translate", "60px") }));
+            p0.PlayState = "paused";
+            paused0.Anims.Add(p0);
+            var still = Box("still", "#16c2d5").With("class:is-still", ("background-color", "#16c2d5"));
+            still.Anims.Add(Keyframes("show", "spin", 1000, 0, "linear", float.PositiveInfinity, "normal", "none",
+                (0, null, new[] { ("rotate", "0deg") }), (1, null, new[] { ("rotate", "360deg") })));
+            still.Anims.Add(new IrAnim
+            {
+                Kind = IrAnim.KeyframesKind, Trigger = "class:is-still", Phase = "enter", Name = null, Properties = new[] { "rotate" }, Duration = 0, Delay = 0,
+                Timing = "ease", Iterations = 1, Direction = "normal", FillMode = "none", PlayState = "running", Restart = true,
+            });
+            var ir = Screen(Root(negDot, negT, never, rev, pause, paused0, still), "anim.timing");
+            ir.States = new[] { "default" };
+            return ir;
+        }
+
+        IEnumerator MountIr(Mounted m, IrScreen ir, string folder)
+        {
+            var result = Compile(ir);
+            Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+            var root = Panel();
+            yield return Frames(2);
+            var tree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/" + folder + "/" + folder + ".uxml").Instantiate();
+            m.Clock = new DesignManualClock();
+            root.Add(tree);
+            m.Screen = tree.Q<DesignScreen>("root");
+            m.Player = m.Screen.Animations;
+            m.Player.Clock = m.Clock;
+            yield return Frames(4);
+        }
+
+        static Color Rgb(float r, float g, float b) => new Color(r / 255f, g / 255f, b / 255f);
+
+        [Test]
+        public void Compiler_WritesNegativeDelays_AndALayersAnimationNone()
+        {
+            var screen = ScreenBuilder.Build(TimingIr(), RelativeAsset, null, null);
+            string Rule(string selectorEnd) => screen.Rules.Where(r => r.Selector.EndsWith(selectorEnd, StringComparison.Ordinal))
+                .Select(r => string.Join("; ", r.Declarations.Select(d => d.Property + ": " + d.Value))).FirstOrDefault() ?? "(no rule " + selectorEnd + ")";
+            string Cls(string id) => "." + screen.Find(id).Classes[0];
+            StringAssert.Contains("--dui-a: \"slide 0 800 -200 1 normal both running ease-in-out\"", Rule(Cls("neg-dot")));
+            StringAssert.Contains("--dui-t-background-color: \"#000000|400 -100 linear\"", Rule(Cls("neg-t")));
+            StringAssert.Contains("--dui-t-background-color: \"#000000|\"", Rule(Cls("never")), "100 ms − 200 ms: no transition in CSS");
+            StringAssert.Contains("--dui-a: \"\"", Rule(Cls("still") + ".is-still"), "animation: none in the layer");
+            StringAssert.Contains("--dui-a: \"spin 0 1000 0 infinite normal none running linear\"", Rule(Cls("still")));
+        }
+        [UnityTest]
+        public IEnumerator NegativeDelays_StartInsideTheTimeline_AsChromiumDoes()
+        {
+            var m = new Mounted();
+            yield return MountIr(m, TimingIr(), "AnimTiming");
+            var dot = m["neg-dot"];
+            m.At(0);
+            Assert.AreEqual(-44.5006f, dot.resolvedStyle.translate.x, 2e-3, "200 ms into its timeline at once");
+            m.At(100);
+            Assert.AreEqual(-24.8675f, dot.resolvedStyle.translate.x, 2e-3);
+            m.At(600);
+            Assert.AreEqual(60f, dot.resolvedStyle.translate.x, 2e-3, "it ends 600 ms after it started");
+
+            // a transition delayed by −100 ms of 400: 25 % at the change
+            var t = m["neg-t"];
+            m.At(1000);
+            DesignView.SetClass(t, "is-on", true, null);
+            yield return Frames(1);
+            m.At(1000);
+            AssertColor(Rgb(50, 25, 10), t.resolvedStyle.backgroundColor, "Chromium rgb(50, 25, 10)");
+            m.At(1100);
+            AssertColor(Rgb(100, 50, 20), t.resolvedStyle.backgroundColor, "Chromium rgb(100, 50, 20)");
+
+            // 100 ms − 200 ms: never starts
+            var never = m["never"];
+            DesignView.SetClass(never, "is-on", true, null);
+            yield return Frames(1);
+            Assert.IsFalse(m.Player.IsTransitioning(never, DesignAnimProperty.BackgroundColor));
+            AssertColor(Hex("#c86428"), never.resolvedStyle.backgroundColor, "the new value at once");
+        }
+        [UnityTest]
+        public IEnumerator PlayState_PausingHoldsTheFrame_ResumingContinuesFromIt()
+        {
+            var m = new Mounted();
+            yield return MountIr(m, TimingIr(), "AnimTiming");
+            var pause = m["pause"];
+            m.At(250);
+            Assert.AreEqual(90f, pause.resolvedStyle.rotate.angle.ToDegrees(), 1e-3);
+            DesignView.SetClass(pause, "is-paused", true, null);
+            yield return Frames(1);
+            m.At(600);
+            Assert.AreEqual(90f, pause.resolvedStyle.rotate.angle.ToDegrees(), 1e-3, "paused at 250 ms: the frame holds");
+            Assert.IsTrue(m.Player.IsPlaying(pause, "spin", out var frozen) && !frozen, "still the same animation");
+            DesignView.SetClass(pause, "is-paused", false, null);
+            yield return Frames(1);
+            m.At(850);
+            Assert.AreEqual(180f, pause.resolvedStyle.rotate.angle.ToDegrees(), 1e-3, "resumed at 600 ms from 250 ms of its time");
+
+            // paused from its start, 200 ms into its timeline (delay −200 ms): local time 0 holds
+            var paused0 = m["paused0"];
+            Assert.AreEqual(-30f, paused0.resolvedStyle.translate.x, 1e-3);
+            m.At(5000);
+            Assert.AreEqual(-30f, paused0.resolvedStyle.translate.x, 1e-3);
+        }
+
+        [UnityTest]
+        public IEnumerator ALayersAnimationNone_StopsTheAnimations_AndTheyStartOverWhenItEnds()
+        {
+            var m = new Mounted();
+            yield return MountIr(m, TimingIr(), "AnimTiming");
+            var still = m["still"];
+            m.At(250);
+            Assert.AreEqual(90f, still.resolvedStyle.rotate.angle.ToDegrees(), 1e-3);
+            DesignView.SetClass(still, "is-still", true, null);
+            yield return Frames(1);
+            Assert.IsFalse(m.Player.IsPlaying(still, "spin", out _), "animation: none stops it");
+            Assert.AreEqual(StyleKeyword.Null, still.style.rotate.keyword, "and hands rotate back");
+            m.At(400);
+            DesignView.SetClass(still, "is-still", false, null);
+            yield return Frames(1);
+            m.At(650);
+            Assert.AreEqual(90f, still.resolvedStyle.rotate.angle.ToDegrees(), 1e-3, "it starts over when the layer stops holding (at 400 ms)");
+        }
     }
 }
