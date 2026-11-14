@@ -222,14 +222,17 @@ namespace DesignUi
     }
 
     /// <summary>
-    /// A text with Smart String arguments (<c>{name}</c> in the design text): the view keeps the text the element shows when
-    /// it is created as the template and writes the text with the arguments filled in (an argument not set yet is empty)
-    /// whenever one changes, through <see cref="DesignView.SetText"/>.
+    /// A text with Smart String arguments (<c>{name}</c> in the design text). A localized text (the element has an
+    /// <see cref="IDesignLocalizedText"/> binding from the compiled UXML) gets each argument as a Smart String variable and a
+    /// format argument of its String Table entry; the binding writes the text. A static text (localization off in the
+    /// profile) keeps the text the element shows when the view is created as the template and writes it with the arguments
+    /// filled in (an argument not set yet is empty) whenever one changes, through <see cref="DesignView.SetText"/>.
     /// </summary>
     public sealed class DesignTextArgs
     {
         readonly VisualElement m_Element;
         readonly DesignViewContext m_Context;
+        readonly IDesignLocalizedText m_Localized;
         readonly string m_Template;
         readonly string[] m_Names;
         readonly string[] m_Values;
@@ -240,13 +243,18 @@ namespace DesignUi
         {
             m_Element = element ?? throw new ArgumentNullException(nameof(element));
             m_Context = context;
-            m_Template = DesignView.GetText(element) ?? "";
             m_Names = names ?? new string[0];
             m_Values = new string[m_Names.Length];
+            m_Localized = DesignLocalizedTexts.Of(element);
+            if (m_Localized != null) m_Localized.DeclareArguments(m_Names);
+            m_Template = m_Localized != null ? null : DesignView.GetText(element) ?? "";
         }
 
-        /// <summary>The template the arguments are filled into (the design text).</summary>
+        /// <summary>The template the arguments are filled into (the design text), or null for a localized text.</summary>
         public string Template => m_Template;
+
+        /// <summary>Whether the text is a String Table entry (its binding fills the arguments in).</summary>
+        public bool IsLocalized => m_Localized != null;
 
         /// <summary>Sets argument <paramref name="index"/>; an unchanged value writes nothing.</summary>
         public void Set(int index, string value)
@@ -254,7 +262,8 @@ namespace DesignUi
             if (value == null) value = "";
             if (m_Values[index] != null && string.Equals(m_Values[index], value, StringComparison.Ordinal)) return;
             m_Values[index] = value;
-            DesignView.SetText(m_Element, Format(), m_Context);
+            if (m_Localized != null) m_Localized.SetArgument(index, value);
+            else DesignView.SetText(m_Element, Format(), m_Context);
         }
 
         string Format()
