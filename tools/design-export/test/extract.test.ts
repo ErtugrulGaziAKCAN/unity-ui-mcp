@@ -531,6 +531,20 @@ describe("buildIr: layers, text runs and lossless values", () => {
     expect(byId(r.ir.root, "panel").classes).toContain("is-collapsed");
   });
 
+  it("a property only layers set takes the tag's or the inherited default in base, never the value a class the markup shows gives", async () => {
+    const r = await build(fx("class-inherited.html"));
+    // the first card is is-selected in the markup; nobody sets colour, weight or style in base
+    const title = byId(r.ir.root, "title");
+    expect(title.style.base).toMatchObject({ color: "#000000", "font-weight": "400", "font-style": "normal" });
+    expect(title.style["anc(card):class:is-selected"]).toMatchObject({ color: "#16c2d5", "font-weight": "700", "font-style": "italic" });
+    // a tag's browser default (<b> is bold) still holds in base
+    expect(byId(r.ir.root, "strong").style.base["font-weight"]).toBe("700");
+    // a position only a class layer sets
+    const chip = byId(r.ir.root, "chip");
+    expect(chip.style.base.position).toBe("static");
+    expect(chip.style["anc(card):class:is-selected"]).toMatchObject({ position: "absolute", top: "4px" });
+  });
+
   it("an ancestor's transition of an inherited colour is copied to the text", async () => {
     const stl = byId((await build(fx("review-style.html"))).ir.root, "stl");
     expect(stl.style["state:dark"]).toEqual({ color: "#16c2d5" });

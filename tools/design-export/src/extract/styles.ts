@@ -246,6 +246,12 @@ export function uaDisplay(e: { ns: string; tag: string }): string {
   return t === "li" ? "list-item" : UA_BLOCK.has(t) ? "block" : UA_INLINE_BLOCK.has(t) ? "inline-block" : "inline";
 }
 
+/** Browser defaults of inherited text properties by tag (user-agent rules the snapshot does not record: font-*). */
+const UA_TEXT: Record<string, Record<string, string>> = {
+  "font-weight": Object.fromEntries(["b", "strong", "th", "h1", "h2", "h3", "h4", "h5", "h6"].map((t) => [t, "700"])),
+  "font-style": Object.fromEntries(["i", "em", "cite", "var", "dfn", "address"].map((t) => [t, "italic"])),
+};
+
 export interface InheritCopy { prop: string; from: number; fromKey: string; key: string }
 
 /**
@@ -707,16 +713,47 @@ export class StyleExtractor {
     // CSS initial values that render differently from USS's (findings O-6)
     const c = e.computed;
     const anyLayer = (p: string, test: (v: string) => boolean) => Array.from(out.values()).some((m) => m.has(p) && test(m.get(p)!.value));
-    if (!base.has("position") && Array.from(out.values()).some((m) => INSETS.some((k) => m.has(k)))) base.set("position", { value: c.position || "static", refs: [] });
+    // a property only layers set takes the browser default in base, never the computed value (a layer may have set it)
+    const layered = (p: string) => Array.from(out).some(([k, m]) => k !== "base" && m.has(p));
+    if (!base.has("position") && Array.from(out.values()).some((m) => INSETS.some((k) => m.has(k)))) {
+      base.set("position", { value: layered("position") ? e.ua.position?.value ?? "static" : c.position || "static", refs: [] });
+    }
     if (!base.has("flex-direction") && anyLayer("display", (v) => /flex/.test(v))) base.set("flex-direction", { value: "row", refs: [] });
     if (!base.has("align-content") && anyLayer("flex-wrap", (v) => v !== "nowrap")) base.set("align-content", { value: "stretch", refs: [] });
     const sized = ["width", "height"].some((k) => base.has(k) && base.get(k)!.value !== "auto");
     const extras = SIDES.some((sd) => (px(c[`padding-${sd}`]) ?? 0) !== 0 || (px(c[`border-${sd}-width`]) ?? 0) !== 0);
-    if (!base.has("box-sizing") && c["box-sizing"] === "content-box" && sized && extras) base.set("box-sizing", { value: "content-box", refs: [] });
+    const boxSizing = layered("box-sizing") ? e.ua["box-sizing"]?.value ?? "content-box" : c["box-sizing"];
+    if (!base.has("box-sizing") && boxSizing === "content-box" && sized && extras) base.set("box-sizing", { value: "content-box", refs: [] });
 
     for (const [name, layer] of out) if (name !== "base" && layer.size === 0) out.delete(name);
     this.doneCache.set(i, out);
     return out;
+  }
+
+  /**
+   * The base value of an inherited property no base rule of the element or its ancestors declares: the computed value
+   * when no layer of them sets it; else (a class or state the markup shows right now may have set the computed value)
+   * the value from above the outermost element whose layers set it, then the browser defaults of the tags below it
+   * (`<b>` bold, `<i>` italic, a control's colour), else the CSS initial value. Null when there is none.
+   */
+  private unlayeredInherited(i: number, p: string): string | null {
+    const { s } = this;
+    const path: number[] = [];
+    let top = -1;
+    for (let a = i; a >= 0; a = this.parent(a)) {
+      path.push(a);
+      if ((this.byProp(a).get(p) ?? []).some((c) => c.dims.length > 0)) top = path.length;
+    }
+    const norm = (v: string | undefined) => (v === undefined ? null : p === "color" ? normalizeColor(v) : v);
+    if (top < 0) return norm(s.elements[i].computed[p]);
+    const above = path[top] ?? -1; // the parent of the outermost layered element
+    let v = above >= 0 ? norm(s.elements[above].computed[p]) : INITIAL[p] ?? null;
+    for (let k = top - 1; k >= 0; k--) {
+      const e = s.elements[path[k]];
+      const tag = e.ns === "html" ? UA_TEXT[p]?.[e.tag.toLowerCase()] : undefined;
+      v = norm(tag ?? e.ua[p]?.value) ?? v;
+    }
+    return v;
   }
 
   /**
@@ -747,7 +784,8 @@ export class StyleExtractor {
       const relative = (v: string) => (p === "font-size" && /(%|em)$|^(larger|smaller)$/.test(v)) || (p === "font-weight" && /^(bolder|lighter)$/.test(v));
       let baseVal: Entry | null = baseFrom >= 0 ? this.layers(baseFrom).get("base")!.get(p)! : null;
       const computed = e.computed[p];
-      if ((!baseVal || relative(baseVal.value)) && ALWAYS.has(p) && computed) baseVal = { value: p === "color" ? normalizeColor(computed) : computed, refs: [] };
+      if (!baseVal && ALWAYS.has(p)) { const v = this.unlayeredInherited(i, p); if (v) baseVal = { value: v, refs: [] }; }
+      else if (baseVal && relative(baseVal.value) && ALWAYS.has(p) && computed) baseVal = { value: p === "color" ? normalizeColor(computed) : computed, refs: [] };
       if (baseVal && relative(baseVal.value)) baseVal = null;
       if (baseVal) { base.set(p, baseVal); if (baseFrom >= 0) copies.push({ prop: p, from: baseFrom, fromKey: "base", key: "base" }); }
       // the value where a set of layers holds: this node's own declaration, else the nearest ancestor's
