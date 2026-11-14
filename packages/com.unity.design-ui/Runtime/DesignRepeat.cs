@@ -19,7 +19,9 @@ namespace DesignUi
     /// An inline repeat (spec 10): pooled items inside the repeat container. The first item is the one the screen's UXML
     /// holds; more are cloned from the item template when a count first needs them and stay in the pool: a smaller count
     /// hides the rest (<c>display: none</c>), a larger one shows them again. The first shown item keeps the
-    /// <c>__first</c> class the design's gap needs. Allocates only when the pool grows.
+    /// <c>__first</c> class the design's gap needs. An item shown again is a new item for the screen's animation player
+    /// (<see cref="DesignUiAnimationPlayer.Snap"/>): its show animations play, nothing transitions from the item it showed
+    /// before; a hidden item stops animating. Allocates only when the pool grows.
     /// </summary>
     public sealed class DesignInlineRepeat<TItem> where TItem : class, IDesignRepeatItem
     {
@@ -69,7 +71,14 @@ namespace DesignUi
         {
             if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
             while (m_Items.Count < count) Grow();
-            for (int i = 0; i < m_Items.Count; i++) Show(m_Roots[i], i < count);
+            DesignUiAnimationPlayer player = null;
+            bool looked = false;
+            for (int i = 0; i < m_Items.Count; i++)
+            {
+                if (!Show(m_Roots[i], i < count)) continue;
+                if (!looked) { player = DesignUiAnimationPlayer.For(m_Container); looked = true; }
+                if (player != null) for (int k = 0; k < m_Roots[i].Length; k++) player.Snap(m_Roots[i][k]);
+            }
             Count = count;
             for (int i = 0; i < count; i++)
             {
@@ -105,17 +114,20 @@ namespace DesignUi
             if (player != null) for (int k = 0; k < roots.Length; k++) player.WatchTree(roots[k]);
         }
 
-        static void Show(VisualElement[] roots, bool show)
+        /// <summary>Shows or hides an item; returns whether that changed it.</summary>
+        static bool Show(VisualElement[] roots, bool show)
         {
+            bool changed = false;
             for (int k = 0; k < roots.Length; k++)
             {
                 var style = roots[k].style;
                 if (show)
                 {
-                    if (style.display.keyword != StyleKeyword.Null) style.display = StyleKeyword.Null;
+                    if (style.display.keyword != StyleKeyword.Null) { style.display = StyleKeyword.Null; changed = true; }
                 }
-                else if (style.display.keyword != StyleKeyword.Undefined || style.display.value != DisplayStyle.None) style.display = DisplayStyle.None;
+                else if (style.display.keyword != StyleKeyword.Undefined || style.display.value != DisplayStyle.None) { style.display = DisplayStyle.None; changed = true; }
             }
+            return changed;
         }
     }
 
@@ -123,7 +135,9 @@ namespace DesignUi
     /// A list repeat (spec 10): a virtualized ListView whose slots hold the item template. The ListView makes as many
     /// slots as fit and rebinds them while scrolling; each slot has one item view for its life. With fixed-height slots
     /// (items of one px height) the compiler sets <c>fixed-item-height</c>; otherwise the ListView measures each item
-    /// (dynamic height) and the view keeps the <c>__first</c> class on the first item for the design's gap.
+    /// (dynamic height) and the view keeps the <c>__first</c> class on the first item for the design's gap. A slot bound to
+    /// another index shows a new item for the screen's animation player (<see cref="DesignUiAnimationPlayer.Snap"/>):
+    /// nothing transitions from the item it showed before, show animations play.
     /// </summary>
     public sealed class DesignListRepeat<TItem> where TItem : class, IDesignRepeatItem
     {
@@ -132,6 +146,8 @@ namespace DesignUi
             public TItem Item;
             public VisualElement[] Roots;
             public bool[] First;
+            /// <summary>The index the slot was bound to last (-1: never bound).</summary>
+            public int Index = -1;
         }
 
         readonly ListView m_List;
@@ -190,6 +206,12 @@ namespace DesignUi
         void BindItem(VisualElement element, int index)
         {
             if (!(element.userData is Slot slot)) return;
+            if (slot.Index != index)
+            {
+                // another item in this slot: no transition from the previous item's values (before the bind sets its classes)
+                DesignUiAnimationPlayer.For(m_List)?.Snap(element);
+                slot.Index = index;
+            }
             for (int k = 0; k < slot.Roots.Length; k++)
                 if (slot.First[k]) slot.Roots[k].EnableInClassList(DesignView.FirstItemClass, index == 0);
             slot.Item.BeginBind(index);

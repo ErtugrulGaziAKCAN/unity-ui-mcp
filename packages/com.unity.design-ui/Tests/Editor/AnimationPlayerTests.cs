@@ -672,5 +672,119 @@ namespace DesignUi.Editor.Tests
             m.At(650);
             Assert.AreEqual(90f, still.resolvedStyle.rotate.angle.ToDegrees(), 1e-3, "it starts over when the layer stops holding (at 400 ms)");
         }
+
+        // ---- repeat items that show another item ---------------------------------------------------------------------------
+
+        sealed class TestItem : IDesignRepeatItem
+        {
+            public readonly VisualElement[] Roots;
+            public int Index = -1;
+            public TestItem(VisualElement[] roots) { Roots = roots; }
+            public void BeginBind(int index) { Index = index; }
+        }
+
+        /// <summary>An inline repeat of chips (a class transition and a show animation) and a list repeat of rows (a class transition).</summary>
+        internal static IrScreen RepeatIr()
+        {
+            var chip = Node("chip", "container", ("width", "60px"), ("height", "20px"), ("flex-shrink", "0"), ("background-color", "#123c47"))
+                .With("class:is-on", ("background-color", "#f2b544"));
+            chip.Anims.AddRange(BothWays("class:is-on", 400, 0, "linear", "background-color"));
+            chip.Anims.Add(Keyframes("show", "pop", 400, 0, "linear", 1, "normal", "both",
+                (0, null, new[] { ("scale", "0.5") }), (1, null, new[] { ("scale", "1") })));
+            var chips = Node("chips", "container", ("display", "flex"), ("flex-direction", "row"), ("height", "20px"), ("flex-shrink", "0")).Add(chip);
+            chips.Repeat = new IrRepeat { Name = "chip", Mode = "inline", Count = 3 };
+            var row = Node("row", "container", ("height", "40px"), ("flex-shrink", "0"), ("background-color", "#123c47"))
+                .With("class:is-on", ("background-color", "#f2b544"));
+            row.Anims.AddRange(BothWays("class:is-on", 400, 0, "linear", "background-color"));
+            var rows = Node("rows", "list", ("display", "flex"), ("flex-direction", "column"), ("overflow-y", "auto"), ("height", "200px"), ("flex-shrink", "0")).Add(row);
+            rows.Repeat = new IrRepeat { Name = "row", Mode = "list", Count = 4 };
+            var ir = Screen(Root(chips, rows), "anim.repeat");
+            ir.States = new[] { "default" };
+            return ir;
+        }
+
+        [UnityTest]
+        public IEnumerator Snap_EndsWhatRuns_AndTheNextStyleIsAFirstStyle()
+        {
+            var m = new Mounted();
+            yield return Mount(m);
+            var chip = m["chip"];
+            DesignView.SetClass(chip, "is-on", true, null);
+            yield return Frames(1);
+            m.At(200);
+            Assert.IsTrue(m.Player.IsTransitioning(chip, DesignAnimProperty.Rotate));
+            m.Player.Snap(chip);
+            Assert.IsFalse(m.Player.IsTransitioning(chip, DesignAnimProperty.Rotate), "snapped: nothing runs");
+            Assert.AreEqual(StyleKeyword.Null, chip.style.rotate.keyword, "and the USS rule shows");
+            DesignView.SetClass(chip, "is-on", false, null); // the next item's classes, as a bind sets them
+            yield return Frames(1);
+            Assert.IsFalse(m.Player.IsTransitioning(chip, DesignAnimProperty.Rotate), "no transition from the previous item's value");
+            Assert.AreEqual(0f, chip.resolvedStyle.rotate.angle.ToDegrees(), 1e-3);
+
+            var dot = m["dot"];
+            m.At(5000);
+            m.Player.Snap(dot);
+            yield return Frames(1);
+            m.At(5200);
+            Assert.AreEqual(-44.5006f, dot.resolvedStyle.translate.x, 2e-3, "its show animation starts again");
+        }
+
+        [UnityTest]
+        public IEnumerator InlineRepeat_AnItemShownAgain_PlaysItsShowAnimation_WithoutTransitionsFromTheOldItem()
+        {
+            var m = new Mounted();
+            yield return MountIr(m, RepeatIr(), "AnimRepeat");
+            var template = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/AnimRepeat/ChipItem.uxml");
+            Assert.IsNotNull(template);
+            var repeat = new DesignInlineRepeat<TestItem>(m.Screen.Q("chips"), new[] { "chip" }, template, r => new TestItem(r));
+            repeat.SetItems(3, (it, i) => DesignView.SetClass(it.Roots[0], "is-on", i == 0, null));
+            yield return Frames(2);
+            m.At(1000);
+            var second = repeat[1].Roots[0];
+            Assert.AreEqual(1f, second.resolvedStyle.scale.value.x, 1e-3, "the clone's show animation ended");
+            AssertColor(Hex("#123c47"), second.resolvedStyle.backgroundColor, "the clone's own colour");
+            repeat.SetItems(1, null);
+            yield return Frames(1);
+            Assert.AreEqual(0, m.Player.ActiveCount, "hidden items run nothing");
+            m.At(2000);
+            repeat.SetItems(3, (it, i) => DesignView.SetClass(it.Roots[0], "is-on", i == 1, null));
+            yield return Frames(1);
+            Assert.IsFalse(m.Player.IsTransitioning(second, DesignAnimProperty.BackgroundColor), "the item shown again is a new item: no transition");
+            AssertColor(Hex("#f2b544"), second.resolvedStyle.backgroundColor, "the new item's colour at once");
+            m.At(2200);
+            Assert.AreEqual(0.75f, second.resolvedStyle.scale.value.x, 1e-3, "its show animation plays again from 2000 ms");
+            // an item that stays shown is the same item: its class change transitions
+            var first = repeat[0].Roots[0];
+            Assert.IsTrue(m.Player.IsTransitioning(first, DesignAnimProperty.BackgroundColor), "item 0 changed its class: a transition");
+        }
+
+        [UnityTest]
+        public IEnumerator ListRepeat_ASlotBoundToAnotherItem_DoesNotTransitionFromThePreviousItem()
+        {
+            var m = new Mounted();
+            yield return MountIr(m, RepeatIr(), "AnimRepeat");
+            var template = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/AnimRepeat/RowItem.uxml");
+            Assert.IsNotNull(template);
+            var list = m.Screen.Q<ListView>("rows");
+            var repeat = new DesignListRepeat<TestItem>(list, template, r => new TestItem(r));
+            repeat.SetItems(100, (it, i) => DesignView.SetClass(it.Roots[0], "is-on", i < 10, null));
+            yield return Frames(4);
+            m.At(1000);
+            Assert.IsTrue(repeat.Made.Count > 0 && repeat.Made.All(x => x.Index < 10), "the first slots show items 0..9");
+            // scrolling: the ListView binds its slots to other indices (its scroll range grows as it lays them out)
+            for (int i = 0; i < 30 && !repeat.Made.Any(x => x.Index >= 20); i++)
+            {
+                list.ScrollToItem(60);
+                yield return null;
+            }
+            yield return Frames(2);
+            var moved = repeat.Made.Where(x => x.Index >= 10).ToList();
+            Assert.IsNotEmpty(moved, "scrolling bound the slots to other items (list " + list.layout + ", slots at " + string.Join(", ", repeat.Made.Select(x => x.Index)) + ")");
+            foreach (var x in moved)
+            {
+                Assert.IsFalse(m.Player.IsTransitioning(x.Roots[0], DesignAnimProperty.BackgroundColor), "slot of item " + x.Index + ": no transition from the item it showed");
+                AssertColor(Hex("#123c47"), x.Roots[0].resolvedStyle.backgroundColor, "slot of item " + x.Index);
+            }
+        }
     }
 }

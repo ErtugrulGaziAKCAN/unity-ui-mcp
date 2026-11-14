@@ -21,8 +21,8 @@ namespace DesignUi
     /// at once, animates it to the new rule's value with the new rule's duration, delay (a negative one starts inside the
     /// transition) and timing function, and removes the inline style at the end, handing the property back to the USS
     /// rule. A transition interrupted by a change back to its start value runs back in the share of its duration it had
-    /// covered (the reversing shortening factor). No transition on an element's first style or while it is not displayed
-    /// (CSS: no before-change style).</item>
+    /// covered (the reversing shortening factor). No transition on an element's first style, while it is not displayed
+    /// (CSS: no before-change style) or for a repeat item that shows another item (<see cref="Snap"/>).</item>
     /// <item>Keyframe animations: the winning <c>--dui-a</c> list starts when the element first gets a box (shown), and when
     /// the list changes: an animation whose name stays keeps running (with the new timing and play state: pausing holds
     /// the frame, resuming continues from it), new names start, removed ones stop and hand their properties back (a layer
@@ -41,7 +41,8 @@ namespace DesignUi
     /// </list>
     /// A compiled screen root (<see cref="DesignScreen"/> with <c>animated</c>) attaches its player by itself; a generated
     /// view or a host finds it with <see cref="For"/>. Elements cloned into the screen later (repeat items) are found when
-    /// the screen is attached again, or at once through <see cref="Watch"/>, which the repeat helpers call.
+    /// the screen is attached again, or at once through <see cref="Watch"/>, which the repeat helpers call; they call
+    /// <see cref="Snap"/> when a list slot shows another item or a pooled item is shown or hidden.
     /// </summary>
     public sealed class DesignUiAnimationPlayer
     {
@@ -172,6 +173,45 @@ namespace DesignUi
             if (m_Active.Count == 0) m_Tick.Pause();
         }
 
+        /// <summary>
+        /// A repeat item under <paramref name="subtree"/> now shows another item (a list slot bound to another index, a pooled
+        /// item shown or hidden): its transitions and keyframe animations end at once and hand every property back to the
+        /// USS rules, and its next style (requested now, so the item's new classes arrive in the same style pass) is a first
+        /// style, as for a new element: no transition from the previous item's values, show animations start again, and an
+        /// animation of a trigger layer it starts in shows its end.
+        /// </summary>
+        public void Snap(VisualElement subtree)
+        {
+            if (subtree == null) return;
+            if (SnapTree(subtree))
+            {
+                // a class change restyles the subtree in the next style pass (with the bind's own class changes)
+                subtree.AddToClassList(SnapClass);
+                subtree.RemoveFromClassList(SnapClass);
+            }
+        }
+
+        /// <summary>A class no rule names, added and removed to restyle a snapped subtree.</summary>
+        const string SnapClass = "dui-anim-snap";
+
+        bool SnapTree(VisualElement e)
+        {
+            bool any = false;
+            if (m_Elements.TryGetValue(e, out var a))
+            {
+                any = true;
+                for (int i = 0; i < a.Running.Length; i++) a.Running[i] = false;
+                a.Runs.Clear();
+                a.AnimText = null;
+                for (int p = 0; p < a.Held.Length; p++)
+                    if (a.Held[p]) { DesignAnimProperties.Clear(e, (DesignAnimProperty)p); a.Held[p] = false; }
+                if (a.InActive) { a.InActive = false; m_Active.Remove(a); }
+                a.Snapped = true;
+            }
+            for (int i = 0; i < e.hierarchy.childCount; i++) any |= SnapTree(e.hierarchy[i]);
+            return any;
+        }
+
         /// <summary>Test and verifier access: whether the element's keyframe animation named <paramref name="name"/> is in effect, and frozen.</summary>
         public bool IsPlaying(VisualElement element, string name, out bool frozen)
         {
@@ -219,7 +259,8 @@ namespace DesignUi
         sealed class Animated
         {
             public readonly VisualElement Element;
-            public bool Initialized, WasDisplayed, InActive;
+            /// <summary><see cref="Snapped"/>: the next style is a first style (<see cref="Snap"/>).</summary>
+            public bool Initialized, WasDisplayed, InActive, Snapped;
             // transitions, one slot per transitioned property; a running one has its own start, duration, delay and timing
             public string ListText;
             public DesignAnimProperty[] Props = new DesignAnimProperty[0];
@@ -299,7 +340,9 @@ namespace DesignUi
             var el = a.Element;
             double now = Now;
             bool displayed = Displayed(el);
-            bool fresh = !a.Initialized || !a.WasDisplayed || !displayed;
+            // a first style: a new element, one that gets a box again, or a repeat item that shows another item
+            bool first = !a.Initialized || !a.WasDisplayed || a.Snapped;
+            bool fresh = first || !displayed;
             var style = el.customStyle;
 
             // transitions
@@ -367,9 +410,9 @@ namespace DesignUi
                 a.Runs.Clear();
                 a.AnimText = null;
             }
-            else if (!a.Initialized || !a.WasDisplayed || (!ReferenceEquals(animText, a.AnimText) && animText != a.AnimText))
+            else if (first || (!ReferenceEquals(animText, a.AnimText) && animText != a.AnimText))
             {
-                bool restartAll = !a.Initialized || !a.WasDisplayed;
+                bool restartAll = first;
                 var specs = DesignAnimationData.ParseAnimations(animText);
                 a.Scratch.Clear();
                 for (int k = 0; k < specs.Length; k++)
@@ -395,7 +438,7 @@ namespace DesignUi
                     }
                     var set = Keyframes(el, spec.Keyframes);
                     // a trigger layer the element starts in (its first style) shows its animations' end, as its static design does
-                    bool ended = m_ReducedMotion || (spec.Layer && !a.Initialized);
+                    bool ended = m_ReducedMotion || (spec.Layer && (!a.Initialized || a.Snapped));
                     var run = new Run { Spec = spec, Set = set, Start = now, Held = 0, Frozen = ended, Underlying = new DesignAnimValue[set.Properties.Length] };
                     for (int q = 0; q < set.Properties.Length; q++) run.Underlying[q] = Underlying(a, set.Properties[q].Property);
                     a.Scratch.Add(run);
@@ -408,6 +451,7 @@ namespace DesignUi
 
             a.Initialized = true;
             a.WasDisplayed = displayed;
+            a.Snapped = false;
             bool active = Apply(a, now);
             if (active && !a.InActive)
             {
