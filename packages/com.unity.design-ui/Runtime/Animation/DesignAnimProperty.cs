@@ -6,26 +6,23 @@ using UnityEngine.UIElements;
 
 namespace DesignUi
 {
-    /// <summary>The CSS properties the animation player animates (<see cref="DesignAnimProperties"/>).</summary>
+    /// <summary>
+    /// The CSS properties the animation player animates (<see cref="DesignAnimProperties"/>): colours, opacity, transforms
+    /// and border radii, which UI Toolkit applies without a layout pass and whose own value the player reads from the
+    /// computed style. Layout properties never animate (lint U-CSS-013, U-CSS-042: translate or scale instead).
+    /// </summary>
     public enum DesignAnimProperty : byte
     {
         Color, BackgroundColor, BorderTopColor, BorderRightColor, BorderBottomColor, BorderLeftColor, TintColor,
         Opacity, Translate, Rotate, Scale,
         BorderTopLeftRadius, BorderTopRightRadius, BorderBottomRightRadius, BorderBottomLeftRadius,
-        // layout properties (W-CSS-001): every write is followed by a layout pass
-        Width, Height, MinWidth, MinHeight, MaxWidth, MaxHeight,
-        MarginTop, MarginRight, MarginBottom, MarginLeft,
-        PaddingTop, PaddingRight, PaddingBottom, PaddingLeft,
-        Top, Right, Bottom, Left,
-        BorderTopWidth, BorderRightWidth, BorderBottomWidth, BorderLeftWidth,
-        FlexBasis, FlexGrow, FlexShrink,
     }
 
     /// <summary>
     /// One animated value. Colours: <see cref="X"/>..<see cref="W"/> = r, g, b, a (sRGB, as USS colours); numbers (opacity,
-    /// flex factors, rotate in degrees, border widths in px): <see cref="X"/>; translate and scale: x and y; lengths:
-    /// <see cref="X"/> with <see cref="UnitX"/>. <see cref="Keyword"/>: a value that does not interpolate (<c>auto</c>,
-    /// <c>none</c> on a length), which CSS swaps at the middle of a keyframe segment.
+    /// rotate in degrees): <see cref="X"/>; translate and scale: x and y; lengths (radii): <see cref="X"/> with
+    /// <see cref="UnitX"/>. <see cref="Keyword"/>: a value that does not interpolate, which CSS swaps at the middle of a
+    /// keyframe segment.
     /// </summary>
     public struct DesignAnimValue
     {
@@ -40,23 +37,18 @@ namespace DesignUi
     /// What the animation player knows about each property: its CSS name, how a CSS value parses, how two values
     /// interpolate (CSS: colours premultiplied in sRGB, transforms and lengths per component, a non-interpolable pair
     /// swaps at the middle), how the player writes it (an inline style, removed to hand the property back to the USS
-    /// rule) and how the element's own value is read (<see cref="VisualElement.resolvedStyle"/>). Writing allocates nothing.
+    /// rule) and how the element's own value is read (<see cref="VisualElement.resolvedStyle"/>, which for these
+    /// properties is the computed style, never layout output). Writing allocates nothing.
     /// </summary>
     public static class DesignAnimProperties
     {
-        enum Kind : byte { Color, Number, Translate, Rotate, Scale, Length, Pixels }
+        enum Kind : byte { Color, Number, Translate, Rotate, Scale, Length }
 
         static readonly string[] s_Names =
         {
             "color", "background-color", "border-top-color", "border-right-color", "border-bottom-color", "border-left-color", "-unity-background-image-tint-color",
             "opacity", "translate", "rotate", "scale",
             "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius",
-            "width", "height", "min-width", "min-height", "max-width", "max-height",
-            "margin-top", "margin-right", "margin-bottom", "margin-left",
-            "padding-top", "padding-right", "padding-bottom", "padding-left",
-            "top", "right", "bottom", "left",
-            "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
-            "flex-basis", "flex-grow", "flex-shrink",
         };
 
         static readonly Kind[] s_Kinds =
@@ -64,12 +56,6 @@ namespace DesignUi
             Kind.Color, Kind.Color, Kind.Color, Kind.Color, Kind.Color, Kind.Color, Kind.Color,
             Kind.Number, Kind.Translate, Kind.Rotate, Kind.Scale,
             Kind.Length, Kind.Length, Kind.Length, Kind.Length,
-            Kind.Length, Kind.Length, Kind.Length, Kind.Length, Kind.Length, Kind.Length,
-            Kind.Length, Kind.Length, Kind.Length, Kind.Length,
-            Kind.Length, Kind.Length, Kind.Length, Kind.Length,
-            Kind.Length, Kind.Length, Kind.Length, Kind.Length,
-            Kind.Pixels, Kind.Pixels, Kind.Pixels, Kind.Pixels,
-            Kind.Length, Kind.Number, Kind.Number,
         };
 
         static readonly Dictionary<string, DesignAnimProperty> s_ByName = BuildIndex();
@@ -82,7 +68,7 @@ namespace DesignUi
         }
 
         /// <summary>Number of properties (the size of a per-property array).</summary>
-        public const int Count = (int)DesignAnimProperty.FlexShrink + 1;
+        public const int Count = (int)DesignAnimProperty.BorderBottomLeftRadius + 1;
 
         /// <summary>Every property's CSS name, in <see cref="DesignAnimProperty"/> order.</summary>
         public static IReadOnlyList<string> Names => s_Names;
@@ -90,9 +76,6 @@ namespace DesignUi
         public static string Name(DesignAnimProperty p) => s_Names[(int)p];
 
         public static bool TryGet(string cssName, out DesignAnimProperty p) => s_ByName.TryGetValue(cssName ?? "", out p);
-
-        /// <summary>Layout properties: animating them runs a layout pass per frame (lint warning W-CSS-001).</summary>
-        public static bool IsLayout(DesignAnimProperty p) => p >= DesignAnimProperty.Width;
 
         // ---- parsing -------------------------------------------------------------------------------------------------
 
@@ -111,10 +94,6 @@ namespace DesignUi
                 case Kind.Number:
                     if (!TryNumber(v, out var n)) return false;
                     value.X = n;
-                    return true;
-                case Kind.Pixels:
-                    if (!TryLength(v, out var px, out var pu) || pu != LengthUnit.Pixel) return false;
-                    value.X = px;
                     return true;
                 case Kind.Rotate:
                     if (v == "none") return true;
@@ -136,7 +115,6 @@ namespace DesignUi
                     return TryLength(parts[1], out value.Y, out value.UnitY);
                 }
                 default:
-                    if (v == "auto" || v == "none") { value.Keyword = true; return true; }
                     return TryLength(v, out value.X, out value.UnitX);
             }
         }
@@ -302,38 +280,12 @@ namespace DesignUi
                 case DesignAnimProperty.BorderTopRightRadius: s.borderTopRightRadius = Len(v); break;
                 case DesignAnimProperty.BorderBottomRightRadius: s.borderBottomRightRadius = Len(v); break;
                 case DesignAnimProperty.BorderBottomLeftRadius: s.borderBottomLeftRadius = Len(v); break;
-                case DesignAnimProperty.Width: s.width = Len(v); break;
-                case DesignAnimProperty.Height: s.height = Len(v); break;
-                case DesignAnimProperty.MinWidth: s.minWidth = Len(v); break;
-                case DesignAnimProperty.MinHeight: s.minHeight = Len(v); break;
-                case DesignAnimProperty.MaxWidth: s.maxWidth = Len(v); break;
-                case DesignAnimProperty.MaxHeight: s.maxHeight = Len(v); break;
-                case DesignAnimProperty.MarginTop: s.marginTop = Len(v); break;
-                case DesignAnimProperty.MarginRight: s.marginRight = Len(v); break;
-                case DesignAnimProperty.MarginBottom: s.marginBottom = Len(v); break;
-                case DesignAnimProperty.MarginLeft: s.marginLeft = Len(v); break;
-                case DesignAnimProperty.PaddingTop: s.paddingTop = Len(v); break;
-                case DesignAnimProperty.PaddingRight: s.paddingRight = Len(v); break;
-                case DesignAnimProperty.PaddingBottom: s.paddingBottom = Len(v); break;
-                case DesignAnimProperty.PaddingLeft: s.paddingLeft = Len(v); break;
-                case DesignAnimProperty.Top: s.top = Len(v); break;
-                case DesignAnimProperty.Right: s.right = Len(v); break;
-                case DesignAnimProperty.Bottom: s.bottom = Len(v); break;
-                case DesignAnimProperty.Left: s.left = Len(v); break;
-                case DesignAnimProperty.BorderTopWidth: s.borderTopWidth = v.X; break;
-                case DesignAnimProperty.BorderRightWidth: s.borderRightWidth = v.X; break;
-                case DesignAnimProperty.BorderBottomWidth: s.borderBottomWidth = v.X; break;
-                case DesignAnimProperty.BorderLeftWidth: s.borderLeftWidth = v.X; break;
-                case DesignAnimProperty.FlexBasis: s.flexBasis = Len(v); break;
-                case DesignAnimProperty.FlexGrow: s.flexGrow = v.X; break;
-                case DesignAnimProperty.FlexShrink: s.flexShrink = v.X; break;
             }
         }
 
         static StyleColor Col(in DesignAnimValue v) => new StyleColor(new Color(v.X, v.Y, v.Z, v.W));
 
-        static StyleLength Len(in DesignAnimValue v) =>
-            v.Keyword ? new StyleLength(StyleKeyword.Auto) : new StyleLength(new Length(v.X, v.UnitX));
+        static StyleLength Len(in DesignAnimValue v) => new StyleLength(new Length(v.X, v.UnitX));
 
         /// <summary>Removes the player's inline style: the USS rule's value applies again (at once, without a style pass).</summary>
         public static void Clear(VisualElement e, DesignAnimProperty p)
@@ -356,35 +308,10 @@ namespace DesignUi
                 case DesignAnimProperty.BorderTopRightRadius: s.borderTopRightRadius = StyleKeyword.Null; break;
                 case DesignAnimProperty.BorderBottomRightRadius: s.borderBottomRightRadius = StyleKeyword.Null; break;
                 case DesignAnimProperty.BorderBottomLeftRadius: s.borderBottomLeftRadius = StyleKeyword.Null; break;
-                case DesignAnimProperty.Width: s.width = StyleKeyword.Null; break;
-                case DesignAnimProperty.Height: s.height = StyleKeyword.Null; break;
-                case DesignAnimProperty.MinWidth: s.minWidth = StyleKeyword.Null; break;
-                case DesignAnimProperty.MinHeight: s.minHeight = StyleKeyword.Null; break;
-                case DesignAnimProperty.MaxWidth: s.maxWidth = StyleKeyword.Null; break;
-                case DesignAnimProperty.MaxHeight: s.maxHeight = StyleKeyword.Null; break;
-                case DesignAnimProperty.MarginTop: s.marginTop = StyleKeyword.Null; break;
-                case DesignAnimProperty.MarginRight: s.marginRight = StyleKeyword.Null; break;
-                case DesignAnimProperty.MarginBottom: s.marginBottom = StyleKeyword.Null; break;
-                case DesignAnimProperty.MarginLeft: s.marginLeft = StyleKeyword.Null; break;
-                case DesignAnimProperty.PaddingTop: s.paddingTop = StyleKeyword.Null; break;
-                case DesignAnimProperty.PaddingRight: s.paddingRight = StyleKeyword.Null; break;
-                case DesignAnimProperty.PaddingBottom: s.paddingBottom = StyleKeyword.Null; break;
-                case DesignAnimProperty.PaddingLeft: s.paddingLeft = StyleKeyword.Null; break;
-                case DesignAnimProperty.Top: s.top = StyleKeyword.Null; break;
-                case DesignAnimProperty.Right: s.right = StyleKeyword.Null; break;
-                case DesignAnimProperty.Bottom: s.bottom = StyleKeyword.Null; break;
-                case DesignAnimProperty.Left: s.left = StyleKeyword.Null; break;
-                case DesignAnimProperty.BorderTopWidth: s.borderTopWidth = StyleKeyword.Null; break;
-                case DesignAnimProperty.BorderRightWidth: s.borderRightWidth = StyleKeyword.Null; break;
-                case DesignAnimProperty.BorderBottomWidth: s.borderBottomWidth = StyleKeyword.Null; break;
-                case DesignAnimProperty.BorderLeftWidth: s.borderLeftWidth = StyleKeyword.Null; break;
-                case DesignAnimProperty.FlexBasis: s.flexBasis = StyleKeyword.Null; break;
-                case DesignAnimProperty.FlexGrow: s.flexGrow = StyleKeyword.Null; break;
-                case DesignAnimProperty.FlexShrink: s.flexShrink = StyleKeyword.Null; break;
             }
         }
 
-        /// <summary>The element's current value of the property (its resolved style), in px for lengths.</summary>
+        /// <summary>The element's current value of the property: its computed style (radii as the rule writes them, in px).</summary>
         public static DesignAnimValue Read(VisualElement e, DesignAnimProperty p)
         {
             var s = e.resolvedStyle;
@@ -406,37 +333,11 @@ namespace DesignUi
                 case DesignAnimProperty.BorderTopRightRadius: v.X = s.borderTopRightRadius; return v;
                 case DesignAnimProperty.BorderBottomRightRadius: v.X = s.borderBottomRightRadius; return v;
                 case DesignAnimProperty.BorderBottomLeftRadius: v.X = s.borderBottomLeftRadius; return v;
-                case DesignAnimProperty.Width: v.X = s.width; return v;
-                case DesignAnimProperty.Height: v.X = s.height; return v;
-                case DesignAnimProperty.MinWidth: return Of(s.minWidth);
-                case DesignAnimProperty.MinHeight: return Of(s.minHeight);
-                case DesignAnimProperty.MaxWidth: return Of(s.maxWidth);
-                case DesignAnimProperty.MaxHeight: return Of(s.maxHeight);
-                case DesignAnimProperty.MarginTop: v.X = s.marginTop; return v;
-                case DesignAnimProperty.MarginRight: v.X = s.marginRight; return v;
-                case DesignAnimProperty.MarginBottom: v.X = s.marginBottom; return v;
-                case DesignAnimProperty.MarginLeft: v.X = s.marginLeft; return v;
-                case DesignAnimProperty.PaddingTop: v.X = s.paddingTop; return v;
-                case DesignAnimProperty.PaddingRight: v.X = s.paddingRight; return v;
-                case DesignAnimProperty.PaddingBottom: v.X = s.paddingBottom; return v;
-                case DesignAnimProperty.PaddingLeft: v.X = s.paddingLeft; return v;
-                case DesignAnimProperty.Top: v.X = s.top; return v;
-                case DesignAnimProperty.Right: v.X = s.right; return v;
-                case DesignAnimProperty.Bottom: v.X = s.bottom; return v;
-                case DesignAnimProperty.Left: v.X = s.left; return v;
-                case DesignAnimProperty.BorderTopWidth: v.X = s.borderTopWidth; return v;
-                case DesignAnimProperty.BorderRightWidth: v.X = s.borderRightWidth; return v;
-                case DesignAnimProperty.BorderBottomWidth: v.X = s.borderBottomWidth; return v;
-                case DesignAnimProperty.BorderLeftWidth: v.X = s.borderLeftWidth; return v;
-                case DesignAnimProperty.FlexBasis: return Of(s.flexBasis);
-                case DesignAnimProperty.FlexGrow: v.X = s.flexGrow; return v;
-                case DesignAnimProperty.FlexShrink: v.X = s.flexShrink; return v;
             }
             return v;
         }
 
         static DesignAnimValue Of(Color c) => new DesignAnimValue { X = c.r, Y = c.g, Z = c.b, W = c.a };
 
-        static DesignAnimValue Of(StyleFloat f) => f.keyword != StyleKeyword.Undefined ? new DesignAnimValue { Keyword = true } : new DesignAnimValue { X = f.value };
     }
 }

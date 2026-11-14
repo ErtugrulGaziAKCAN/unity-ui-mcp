@@ -29,9 +29,10 @@ namespace DesignUi
     /// <c>is-open</c>) shows its end frame there instead of playing, as the design's static frame does; toggling the
     /// trigger off and on plays it. Iterations, direction, fill modes, delay (negative: started inside the timeline), play
     /// state and per-keyframe easing follow Web Animations; a fill holds the value while the animation stays in the list.</item>
-    /// <item>Writes: transform, opacity and colour properties as inline styles, which UI Toolkit applies without a style or
-    /// layout pass; a layout property (lint warning W-CSS-001) also lays out. A later animation of the same property
-    /// overrides an earlier one, keyframe animations override transitions. Nothing is allocated per frame in steady state.</item>
+    /// <item>Writes: transform, opacity, colour and border radius properties as inline styles, which UI Toolkit applies
+    /// without a layout pass (layout properties never animate: lint U-CSS-013, U-CSS-042). A later animation of the same
+    /// property overrides an earlier one (lint U-CSS-043 keeps keyframes and transitions on different properties).
+    /// Nothing is allocated per frame in steady state.</item>
     /// <item><see cref="ReducedMotion"/> (a game's accessibility setting): transitions jump to their value and every keyframe
     /// animation that starts shows the frame a static design capture shows (the end of one iteration, held); turning it
     /// on also ends what runs. Animations frozen this way stay frozen until they start again.</item>

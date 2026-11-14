@@ -22,9 +22,10 @@ namespace DesignUi.Editor
     /// </list>
     /// Delays are written as recorded, negative ones too (the animation starts inside its timeline). An animated node gets
     /// the marker class <see cref="DesignAnimationData.MarkerClass"/>. A tinted icon's colour animates its tint too.
-    /// Keyframe shorthands (<c>border-color</c>, <c>margin</c>, <c>padding</c>, <c>inset</c>, <c>border-width</c>,
-    /// <c>border-radius</c>) are written as longhands; <c>currentcolor</c> is the node's colour. A transitioned property
-    /// the player cannot animate changes at once; <see cref="Notes"/> says so.
+    /// Keyframe shorthands (<c>border-color</c>, <c>border-radius</c>) are written as longhands; <c>currentcolor</c> is the
+    /// node's colour. Keyframes of a property the player cannot animate (a layout property among them) are U-CSS-013; a
+    /// transitioned property the player cannot animate changes at once (lint U-CSS-042 rejects it); <see cref="Notes"/>
+    /// says so.
     /// </summary>
     public sealed class AnimationEmitter
     {
@@ -88,7 +89,7 @@ namespace DesignUi.Editor
             {
                 if (!DesignAnimProperties.TryGet(name, out var p))
                 {
-                    Notes.Add("'" + node.Id + "': " + name + " changes without a transition (the animation player animates transform, opacity, colours and box lengths)");
+                    Notes.Add("'" + node.Id + "': " + name + " changes without a transition (the animation player animates transforms, opacity, colours and border radii; lint U-CSS-042)");
                     continue;
                 }
                 props.Add((name, p));
@@ -149,10 +150,6 @@ namespace DesignUi.Editor
         static readonly Dictionary<string, string[]> Boxes = new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             { "border-color", new[] { "border-top-color", "border-right-color", "border-bottom-color", "border-left-color" } },
-            { "margin", new[] { "margin-top", "margin-right", "margin-bottom", "margin-left" } },
-            { "padding", new[] { "padding-top", "padding-right", "padding-bottom", "padding-left" } },
-            { "inset", new[] { "top", "right", "bottom", "left" } },
-            { "border-width", new[] { "border-top-width", "border-right-width", "border-bottom-width", "border-left-width" } },
             { "border-radius", new[] { "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius" } },
         };
 
@@ -174,7 +171,7 @@ namespace DesignUi.Editor
             }
             if (!DesignAnimProperties.TryGet(name, out var p))
                 throw new UnsupportedStyleException(name, value, "U-CSS-013",
-                    "Keyframes animate only transform, translate, rotate, scale, opacity, colours and box lengths (node '" + node.Id + "').");
+                    "Keyframes animate only transform, translate, rotate, scale, opacity, colours and border radii; for a change of size or position animate translate or scale instead (node '" + node.Id + "').");
             yield return (name, p, value);
             if (tinted && p == DesignAnimProperty.Color) yield return (name, DesignAnimProperty.TintColor, value);
         }

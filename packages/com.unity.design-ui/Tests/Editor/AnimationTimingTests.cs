@@ -202,11 +202,25 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(180f, r.X, 1e-4);
             Assert.IsTrue(DesignAnimProperties.TryParse(DesignAnimProperty.Scale, "1.05", out var s));
             Assert.AreEqual((1.05f, 1.05f), (s.X, s.Y));
-            Assert.IsTrue(DesignAnimProperties.TryParse(DesignAnimProperty.Width, "auto", out var w));
-            Assert.IsTrue(w.Keyword);
-            Assert.IsFalse(DesignAnimProperties.Interpolable(DesignAnimProperty.Width, w, new DesignAnimValue { X = 10 }), "auto does not interpolate");
-            Assert.IsFalse(DesignAnimProperties.TryParse(DesignAnimProperty.Width, "10em", out _));
+            Assert.IsTrue(DesignAnimProperties.TryParse(DesignAnimProperty.BorderTopLeftRadius, "8px", out var radius));
+            Assert.AreEqual(8f, radius.X);
+            Assert.IsFalse(DesignAnimProperties.TryParse(DesignAnimProperty.BorderTopLeftRadius, "1em", out _));
             Assert.IsFalse(DesignAnimProperties.TryParse(DesignAnimProperty.Color, "hsl(0, 0%, 0%)", out _), "the IR resolves hsl()");
+        }
+
+        [TestCase("width")]
+        [TestCase("height")]
+        [TestCase("margin-top")]
+        [TestCase("padding-left")]
+        [TestCase("top")]
+        [TestCase("border-top-width")]
+        [TestCase("flex-grow")]
+        [TestCase("font-size")]
+        public void LayoutProperties_AreNotAnimated(string css)
+        {
+            // the player writes no property that lays the screen out (lint U-CSS-013, U-CSS-042: translate or scale instead)
+            Assert.IsFalse(DesignAnimProperties.TryGet(css, out _), css);
+            Assert.That(DesignAnimProperties.Names, Has.No.Member(css));
         }
     }
 }

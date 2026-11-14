@@ -541,6 +541,26 @@ namespace DesignUi.Editor.Tests
             StringAssert.Contains("--dui-a: \"\"", Rule(Cls("still") + ".is-still"), "animation: none in the layer");
             StringAssert.Contains("--dui-a: \"spin 0 1000 0 infinite normal none running linear\"", Rule(Cls("still")));
         }
+
+        [Test]
+        public void Compiler_RejectsLayoutKeyframes_AndNotesLayoutTransitions()
+        {
+            var grow = AnimatedIr();
+            grow.Root.Children.First(c => c.Id == "dot").Anims.Add(Keyframes("show", "grow", 400, 0, "linear", 1, "normal", "both",
+                (0, null, new[] { ("width", "10px") }), (1, null, new[] { ("width", "100px") })));
+            var e = Assert.Throws<UnsupportedStyleException>(() => ScreenBuilder.Build(grow, RelativeAsset, null, null));
+            Assert.AreEqual("U-CSS-013", e.RuleId);
+            StringAssert.Contains("translate or scale", e.Message);
+
+            var wide = AnimatedIr();
+            var hover = wide.Root.Children.First(c => c.Id == "hover");
+            hover.Style["hover"]["width"] = "120px";
+            hover.Anims.Add(Transition("hover", "enter", 200, 0, "linear", "width"));
+            var screen = ScreenBuilder.Build(wide, RelativeAsset, null, null);
+            Assert.IsTrue(screen.Notes.Any(n => n.Contains("width changes without a transition")), string.Join("\n", screen.Notes));
+            Assert.IsFalse(screen.Rules.Any(r => r.Declarations.Any(d => d.Property.StartsWith("--dui-t-width", StringComparison.Ordinal))));
+        }
+
         [UnityTest]
         public IEnumerator NegativeDelays_StartInsideTheTimeline_AsChromiumDoes()
         {
