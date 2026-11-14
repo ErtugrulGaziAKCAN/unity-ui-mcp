@@ -277,7 +277,8 @@ namespace DesignUi.Editor
             }
             run.OnPath.Remove(key);
 
-            if (Mirror(twin, fallbacks, regular, italic, face) || built)
+            // kerning pairs keep no lookup flags (DesignText.ClearPairFlags: TextCore leaves values there that drop letter-spacing)
+            if (DesignUi.DesignText.ClearPairFlags(twin) > 0 | Mirror(twin, fallbacks, regular, italic, face) || built)
             {
                 EditorUtility.SetDirty(twin);
                 AssetDatabase.SaveAssetIfDirty(twin);

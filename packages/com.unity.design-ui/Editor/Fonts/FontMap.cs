@@ -282,7 +282,7 @@ namespace DesignUi.Editor
                     foreach (var c in DesignUi.DesignText.Prepare(twin, text)) if (missing.ToString().IndexOf(c) < 0) missing.Append(c);
             }
             foreach (var t in all)
-                if (t.characterTable.Count != before[t])
+                if (DesignUi.DesignText.ClearPairFlags(t) > 0 | t.characterTable.Count != before[t])
                 {
                     FontTwinGenerator.StoreSubAssets(t); // a new atlas page belongs in the twin's file too
                     UnityEditor.EditorUtility.SetDirty(t);

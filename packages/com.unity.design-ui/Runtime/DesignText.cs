@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+using UnityEngine.TextCore.LowLevel;
+using FontFeatureTable = UnityEngine.TextCore.Text.FontFeatureTable;
 using UnityEngine.UIElements;
 using FontAsset = UnityEngine.TextCore.Text.FontAsset;
 
@@ -137,7 +140,41 @@ namespace DesignUi
             if (toAdd.Count == 0) return new uint[0];
             if (font.atlasPopulationMode == UnityEngine.TextCore.Text.AtlasPopulationMode.Static) return toAdd.ToArray();
             font.TryAddCharacters(toAdd.ToArray(), out var notAdded, true);
+            ClearPairFlags(font); // the new pairs, and any that runtime text added since (TextCore adds those in its own queue)
             return notAdded ?? new uint[0];
+        }
+
+        const BindingFlags Internal = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+        static readonly PropertyInfo s_PairList = typeof(FontFeatureTable).GetProperty("glyphPairAdjustmentRecords", Internal);
+        static readonly FieldInfo s_PairLookup = typeof(FontFeatureTable).GetField("m_GlyphPairAdjustmentRecordLookup", Internal);
+
+        static List<GlyphPairAdjustmentRecord> PairRecords(FontAsset font) =>
+            font != null && font.fontFeatureTable != null ? s_PairList?.GetValue(font.fontFeatureTable) as List<GlyphPairAdjustmentRecord> : null;
+
+        /// <summary>
+        /// Clears the lookup flags of a font's kerning pairs from record <paramref name="from"/> on; returns how many it
+        /// changed. TextCore copies pair records from the font engine with flags it does not set (measured on 6000.3: values
+        /// that change from run to run, such as 480 or 1137016832), and a record whose flags carry
+        /// <c>IgnoreSpacingAdjustments</c> makes the standard generator drop the letter-spacing of both characters of the pair:
+        /// a word with -0.72 px spacing and two such pairs was 1.44 px wider than in Chromium, which spaces every character.
+        /// OpenType kerning has no such per-pair switch, so no pair of a twin keeps one.
+        /// </summary>
+        internal static int ClearPairFlags(FontAsset font, int from = 0)
+        {
+            var records = PairRecords(font);
+            if (records == null) return 0;
+            var lookup = s_PairLookup?.GetValue(font.fontFeatureTable) as Dictionary<uint, GlyphPairAdjustmentRecord>;
+            int changed = 0;
+            for (int i = Math.Max(0, from); i < records.Count; i++)
+            {
+                var r = records[i];
+                if (r.featureLookupFlags == FontFeatureLookupFlags.None) continue;
+                r.featureLookupFlags = FontFeatureLookupFlags.None;
+                records[i] = r;
+                if (lookup != null) lookup[(r.secondAdjustmentRecord.glyphIndex << 16) | r.firstAdjustmentRecord.glyphIndex] = r;
+                changed++;
+            }
+            return changed;
         }
     }
 }

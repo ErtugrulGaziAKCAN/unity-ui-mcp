@@ -23,6 +23,10 @@ Unity package (`com.unity.design-ui`) and the Node tools share the version numbe
   font size (measured with both generators), so the compiler writes `px × 100 / font-size` and gives a text the spacing
   after its last character as right padding (the standard generator draws none there, Chromium does). New fidelity
   fixture `letter-spacing.html` (tracked caps labels, tight headings, wrapped tracked text). docs/findings/letter-spacing.md.
+- Letter-spaced words keep their spacing around kerned pairs: TextCore stored kerning pairs with lookup flags it never
+  sets, and a stray `IgnoreSpacingAdjustments` bit dropped the spacing of both characters ("Transfer dönemi" at −0.72 px:
+  277 px instead of 276; Chromium 275.2). Twins keep no pair flags (cleared after every glyph batch, at twin generation and
+  at import); pairs are complete across glyph batches.
 - Box and baseline limits are compared with a float tolerance of 0.001 px (Unity's float32 layout): a frame at a half
   CSS pixel at scale 0.75 that UI Toolkit snaps measured 1.000008 px against the ±1 px limit.
 - A text line partly covered by a later element (an open popup and its baked shadow over a card title) is judged on its

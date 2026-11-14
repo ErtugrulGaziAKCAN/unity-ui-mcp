@@ -42,6 +42,20 @@ Fixture `design-kit/fixtures/fidelity/letter-spacing.html`: tracked caps labels 
 and right in fixed boxes), wide tracking on body text, tight headings (−0.02 em at 24, 36, 48 and 64 px) with a box after
 each, and wrapped text with positive and negative spacing.
 
+## Kerning pairs that dropped the spacing
+
+"Transfer dönemi" (Inter Bold, 36 px, −0.72 px) laid out 1.44 px wider in Unity than in Chromium at every viewport,
+although its kerning pairs were all in the twin, with the same pairs whether its glyphs came in one batch or in several
+(import pre-adds, runtime text). The standard generator gives the letter-spacing of both characters of a pair to nothing
+when the pair's record carries `FontFeatureLookupFlags.IgnoreSpacingAdjustments`, and TextCore copies pair records from
+the font engine with lookup flags it never sets: values that change from run to run (480, 1137016832, 1104150528, 112, …
+in one twin, `None` in another made the same way). "Tr" carried the bit, so T and r lost their −0.72 px each. OpenType
+kerning has no such per-pair switch and Chromium spaces every character, so the twins keep no flags: `DesignText` clears
+them after every glyph batch (import pre-adds and bound text), twin generation and the import's pre-add clear them in
+existing twins. Measured (`KerningBatchTests`, glyphs in five batches): 277 px before, 276 px after, Chromium 275.158 px
+without the last spacing (286 px plain against 285.234). Pairs that TextCore adds in its own queue for text no `DesignText`
+call prepared keep their flags until the next batch of that twin.
+
 ## Limits
 
 - The advanced generator cuts the spacing to 1/64 device px per character: up to 0.016 device px less per character (0.3 px
