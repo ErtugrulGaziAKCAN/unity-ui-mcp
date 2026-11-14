@@ -83,14 +83,27 @@ For each screen the user names:
 
 - Never edit generated files (the exported IR, goldens, UXML, USS, anything under `<screen>/.design-ui/` or in the
   Unity project that the tools produced). Fix the design and run the tools again.
-- Never invent presenters, bindings, game data or behavior. This version produces visuals only.
+- Never invent presenters, bindings, game data or behavior. The import generates the screen and its view class
+  (`<Screen>View.g.cs`: setters, `<Action>Requested` events, states, repeats); the presenter that feeds it game data is
+  the project's own code, written only when the user asks for it, from the project's real services.
 - Never claim a pass that `design_ui_verify` did not return. If a check did not run, say so.
 - Do not change anything in the user's Unity project except through the tools, and never commit or push for the user.
 
 ## 7. Publishing the kit to Claude Design
 
 When the user asks to publish the design kit to Claude Design (so designs start with the kit's fonts, tokens and
-rules), say that the kit export comes with the kit release as `design-export kit claude`, which writes the kit as a
-Claude Design System folder. Check whether it exists by running `design-export kit --help` (or `npx tsx tools/design-export/src/cli.ts kit --help`
-in the clone); if the command is unknown or fails, say it is not available
-yet and stop. Do not assemble the design system by hand.
+rules):
+
+1. If the kit's fonts were never synced from Unity, say so and offer `design_ui_kit_sync` first: the published fonts
+   must be the project's.
+2. In the repository clone, run `npx design-export kit claude <kitDir> <outDir>` (`--title "<name>"` for the design
+   system's name, `--force` to replace an earlier `<outDir>/project`). It writes the kit as a Claude Design System
+   folder: `<outDir>/project/` with `README.md` (the rules), `tokens.json`, the fonts, a card per component, a cover and
+   `design-system.json`. If the command is unknown or fails, report its output and stop; do not assemble the design
+   system by hand.
+3. With the user's clear yes, publish that folder as a Design System with the client's Artifact tool, or update the
+   design system whose link the user gave. If the client has no Artifact tool, give the user the folder path to upload.
+   Publish nothing else.
+4. Tell the user to attach the design system to every canvas. A canvas keeps the copy of the design system it was
+   made with: after a kit change, check that the canvas uses the new copy (lint shows a stale one, for example as a
+   font family the kit no longer has).
