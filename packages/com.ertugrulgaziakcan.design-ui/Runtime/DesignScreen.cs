@@ -14,9 +14,22 @@ namespace DesignUi
     [UxmlElement]
     public partial class DesignScreen : VisualElement
     {
-        /// <summary>The compiled font set of the screen (written by the compiler), or null.</summary>
+        DesignFontSet m_Fonts;
+
+        /// <summary>
+        /// The compiled font set of the screen (written by the compiler), or null. Setting it links its line-box variants to
+        /// their twins (<see cref="DesignFontSet.LinkTwins"/>), before the screen's text is laid out.
+        /// </summary>
         [UxmlAttribute("fonts")]
-        public DesignFontSet Fonts { get; set; }
+        public DesignFontSet Fonts
+        {
+            get => m_Fonts;
+            set
+            {
+                m_Fonts = value;
+                if (value != null) value.LinkTwins();
+            }
+        }
 
         /// <summary>Whether the screen has transitions or keyframe animations (written by the compiler).</summary>
         [UxmlAttribute("animated")]

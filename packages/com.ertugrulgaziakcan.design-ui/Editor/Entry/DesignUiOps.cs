@@ -61,6 +61,13 @@ namespace DesignUi.Editor
         /// </summary>
         internal const string PlayModeError = "Exit Play mode first: an import or kit sync in Play mode would lose what it adds to the font twins (Play's changes to them are taken back when Play stops).";
 
+        /// <summary>The refusal while Play's twin guard is still on outside Play (a Play entry that was given up; it ends on the next editor update).</summary>
+        internal const string GuardError = "Font twins are still kept out of saves by the Play guard (Play mode was requested and has not ended); " +
+                                           "run the import or kit sync again in a moment, once the Editor is back in Edit mode.";
+
+        /// <summary>The refusal of an import or kit sync now, or null when it may run.</summary>
+        static string PlayRefusal() => InPlayMode() ? PlayModeError : TwinPlayGuard.Active ? GuardError : null;
+
         /// <summary>
         /// Font sync into the kit folder (<c>KitSync.Run</c>) with the profile's resolver (<see cref="FontMap.ResolverFor"/>:
         /// its font resolver asset, else its per-locale fonts over TMP Settings). <paramref name="profilePath"/> is the profile's asset path (Assets/…); a relative
@@ -69,7 +76,7 @@ namespace DesignUi.Editor
         /// </summary>
         public static OpResult KitSync(string profilePath, string kitDir)
         {
-            if (InPlayMode()) return Failed(PlayModeError);
+            if (PlayRefusal() is string refusal) return Failed(refusal);
             var profile = string.IsNullOrEmpty(profilePath) ? null : AssetDatabase.LoadAssetAtPath<DesignUiProfile>(profilePath);
             if (profile == null) return Failed("No DesignUiProfile at '" + profilePath + "'.");
             KitSyncResult r;
@@ -93,6 +100,9 @@ namespace DesignUi.Editor
                 log.Append("font faces with twins: ").Append(string.Join(", ", r.Faces))
                    .Append(r.SkippedFaces > 0 ? " (" + r.SkippedFaces + " more face" + (r.SkippedFaces == 1 ? "" : "s") + " in the weight tables: no text style or compiled screen uses them)" : "").Append('\n');
             if (r.Twins.Count > 0) log.Append("font twins: ").Append(string.Join(", ", r.Twins)).Append('\n');
+            if (r.RemovedTwins.Count > 0)
+                log.Append("removed ").Append(r.RemovedTwins.Count).Append(" font twin").Append(r.RemovedTwins.Count == 1 ? "" : "s")
+                   .Append(" no text style, compiled screen or locale font uses: ").Append(string.Join(", ", r.RemovedTwins)).Append('\n');
             return new OpResult(r.Ok ? 0 : 1, log.ToString().TrimEnd('\n'), null, r.Warnings.ToList(), r.Errors.ToList());
         }
 
@@ -111,7 +121,7 @@ namespace DesignUi.Editor
         /// </summary>
         public static OpResult Import(string profilePath, string exportDir, bool discardManualEdits)
         {
-            if (InPlayMode()) return Failed(PlayModeError);
+            if (PlayRefusal() is string refusal) return Failed(refusal);
             var profile = string.IsNullOrEmpty(profilePath) ? null : AssetDatabase.LoadAssetAtPath<DesignUiProfile>(profilePath);
             if (profile == null) return Failed("No DesignUiProfile at '" + profilePath + "'.");
             if (string.IsNullOrEmpty(exportDir)) return Failed("No export folder.");

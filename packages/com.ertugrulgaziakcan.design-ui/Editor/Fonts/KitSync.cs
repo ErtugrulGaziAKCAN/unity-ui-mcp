@@ -26,6 +26,8 @@ namespace DesignUi.Editor
         public IReadOnlyList<string> Faces = new string[0];
         /// <summary>Weight-table faces of the locale fonts that get no twin (no text style or compiled screen uses them).</summary>
         public int SkippedFaces;
+        /// <summary>Twin files deleted because no text style, compiled screen or locale font uses them any more.</summary>
+        public IReadOnlyList<string> RemovedTwins = new string[0];
         public IReadOnlyList<string> Warnings = new string[0];
         /// <summary>Why the sync stopped; nothing is written into the kit and no twin is touched when there are errors.</summary>
         public IReadOnlyList<string> Errors = new string[0];
@@ -122,7 +124,8 @@ namespace DesignUi.Editor
             errors.AddRange(ValidateTextStyles(kitDir + "/" + textStyles, plan.Fonts[plan.ReferenceLocale].Primary, scales));
             var readability = errors.Count == 0 ? ReadabilityWarning(kitDir + "/" + textStyles, scales) : null;
             if (readability != null) warnings.Add(readability);
-            if (errors.Count == 0) plan.LineBoxes = KitTextStyles.LineBoxesOf(kitDir + "/" + textStyles);
+            // every line box of the table and of its text-size steps: the twins an import makes (and keeps)
+            if (errors.Count == 0) plan.LineBoxes = ScreenCompiler.ScaledLineBoxes(KitTextStyles.LineBoxesOf(kitDir + "/" + textStyles), profile.textSizes);
             // twins only for the faces the text styles and the compiled screens use (an import adds a new design's own)
             plan.Faces = FontMap.ProfileFaces(profile, kitDir + "/" + textStyles);
             var copies = errors.Count == 0 ? FontFiles(faces, errors) : null;
@@ -145,6 +148,9 @@ namespace DesignUi.Editor
             catch (FontSetupException e) { return Failed(new[] { e.Message }, warnings, notes, kitDir); }
             warnings.AddRange(twins.Notes);
             var twinPaths = twins.Twins.Values.Select(AssetDatabase.GetAssetPath).Distinct().OrderBy(p => p, StringComparer.Ordinal).ToList();
+            // twins of faces, line boxes and fonts nothing uses any more leave the folder
+            var pruned = TwinPrune.Run(profile, plan, twins, kitDir);
+            if (pruned.Skipped != null) warnings.Add(pruned.Skipped);
 
             // ---- kit outputs ---------------------------------------------------------------------------------------------
             var fontsDir = Path.GetDirectoryName(fontsCss)?.Replace('\\', '/') ?? "";
@@ -193,7 +199,7 @@ namespace DesignUi.Editor
             return new KitSyncResult
             {
                 Files = outputs.Keys.ToList(), Written = written, Twins = twinPaths, Warnings = warnings, Notes = notes, KitDir = kitDir,
-                Faces = FontMap.ChosenFaces(plan), SkippedFaces = FontMap.SkippedFaces(plan),
+                Faces = FontMap.ChosenFaces(plan), SkippedFaces = FontMap.SkippedFaces(plan), RemovedTwins = pruned.Deleted,
             };
         }
 

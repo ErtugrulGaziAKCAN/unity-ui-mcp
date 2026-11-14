@@ -131,17 +131,118 @@ namespace DesignUi
             return missing;
         }
 
-        /// <summary>Adds the characters one font lacks (with font features); returns those it does not have.</summary>
+        /// <summary>
+        /// Adds the characters one font lacks (with font features); returns those it does not have. A line-box variant linked
+        /// to its twin (<see cref="FontTwinLink"/>) gets them through the twin: they go to the twin's shared atlas, and every
+        /// variant linked to it is linked again.
+        /// </summary>
         static uint[] AddTo(FontAsset font, uint[] codes)
         {
+            var source = FontTwinLink.SourceOf(font);
+            if (source != null)
+            {
+                int before = source.characterTable.Count;
+                var lacking = AddTo(source, codes);
+                if (source.characterTable.Count != before) FontTwinLink.Refresh();
+                FontTwinLink.Link(font, source);
+                return lacking;
+            }
             var table = font.characterLookupTable;
             var toAdd = new List<uint>();
             foreach (var c in codes) if (!table.ContainsKey(c)) toAdd.Add(c);
             if (toAdd.Count == 0) return new uint[0];
             if (font.atlasPopulationMode == UnityEngine.TextCore.Text.AtlasPopulationMode.Static) return toAdd.ToArray();
+            int glyphs = font.glyphTable.Count;
             font.TryAddCharacters(toAdd.ToArray(), out var notAdded, true);
-            ClearPairFlags(font); // the new pairs, and any that runtime text added since (TextCore adds those in its own queue)
+            // the pairs and mark records of every two of its glyphs, the new glyphs second too; then the new pairs, and any that
+            // runtime text added since (TextCore adds those in its own queue), lose their lookup flags
+            if (font.glyphTable.Count != glyphs) CompleteFeatures(font);
+            ClearPairFlags(font);
             return notAdded ?? new uint[0];
+        }
+
+        static readonly FieldInfo s_NewlyAdded = typeof(FontAsset).GetField("m_GlyphIndexListNewlyAdded", Internal);
+        static readonly MethodInfo s_UpdatePairs = typeof(FontAsset).GetMethod("UpdateGlyphAdjustmentRecords", Internal, null, Type.EmptyTypes, null);
+        static readonly MethodInfo s_UpdateMarks = typeof(FontAsset).GetMethod("UpdateDiacriticalMarkAdjustmentRecords", Internal, null, Type.EmptyTypes, null);
+        static readonly FieldInfo s_MarkToBase = typeof(FontFeatureTable).GetField("m_MarkToBaseAdjustmentRecords", Internal);
+        static readonly FieldInfo s_MarkToMark = typeof(FontFeatureTable).GetField("m_MarkToMarkAdjustmentRecords", Internal);
+
+        /// <summary>Removes the records of a mark list (TextCore's internal record types) whose two glyphs are not both held.</summary>
+        static int RemoveRecords(System.Collections.IList list, string first, string second, HashSet<uint> have)
+        {
+            if (list == null || list.Count == 0) return 0;
+            var type = list.GetType().IsGenericType ? list.GetType().GetGenericArguments()[0] : null;
+            var a = type?.GetProperty(first, Internal);
+            var b = type?.GetProperty(second, Internal);
+            if (a == null || b == null) return 0;
+            int removed = 0;
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var r = list[i];
+                if (have.Contains(Convert.ToUInt32(a.GetValue(r))) && have.Contains(Convert.ToUInt32(b.GetValue(r)))) continue;
+                list.RemoveAt(i);
+                removed++;
+            }
+            return removed;
+        }
+
+        /// <summary>Whether this Unity version's FontAsset lets <see cref="CompleteFeatures"/> query its font engine records.</summary>
+        internal static bool CanCompleteFeatures => s_NewlyAdded != null && s_UpdatePairs != null && s_UpdateMarks != null && s_PairList != null;
+
+        /// <summary>
+        /// Null when this Unity version's TextCore has every member <see cref="ClearPairFlags"/> and <see cref="CompleteFeatures"/>
+        /// use, else what is missing (TextCore has no API for them: they are found by reflection, and a renamed one would turn
+        /// them off silently). The locale controller reports it as an issue.
+        /// </summary>
+        public static string FeatureMembersMissing => s_FeatureCheck();
+
+        internal static Func<string> s_FeatureCheck = MissingFeatureMembers;
+
+        static string MissingFeatureMembers()
+        {
+            var missing = new List<string>();
+            if (s_PairList == null) missing.Add("FontFeatureTable.glyphPairAdjustmentRecords");
+            if (s_PairLookup == null) missing.Add("FontFeatureTable.m_GlyphPairAdjustmentRecordLookup");
+            if (s_NewlyAdded == null) missing.Add("FontAsset.m_GlyphIndexListNewlyAdded");
+            if (s_UpdatePairs == null) missing.Add("FontAsset.UpdateGlyphAdjustmentRecords()");
+            if (s_UpdateMarks == null) missing.Add("FontAsset.UpdateDiacriticalMarkAdjustmentRecords()");
+            return missing.Count == 0 ? null : string.Join(", ", missing) + " (Unity " + UnityEngine.Application.unityVersion + ")";
+        }
+
+        /// <summary>
+        /// Gives a dynamic font every kerning pair and mark record of two of its own glyphs, and no record with a glyph it does
+        /// not hold; returns how many records it removed. TextCore stores a new glyph's pairs with the new glyph first only,
+        /// against every glyph of the font file (measured on 6000.3: 'T' alone brings 1004 pairs, 'T' never second; Inter holds
+        /// about 280 per glyph), so a pair whose second glyph came later exists only in the first glyph's list of every glyph.
+        /// Asking the font engine for the records of all its glyphs and keeping those of two of them keeps the pairs complete
+        /// in any order the glyphs were added, and a twin's file small (docs/findings/font-twin-footprint.md).
+        /// </summary>
+        internal static int CompleteFeatures(FontAsset font)
+        {
+            if (font == null || font.fontFeatureTable == null || !CanCompleteFeatures || font.atlasPopulationMode == UnityEngine.TextCore.Text.AtlasPopulationMode.Static)
+                return 0;
+            var newly = s_NewlyAdded.GetValue(font) as List<uint>;
+            if (newly == null) return 0;
+            var have = new HashSet<uint>();
+            foreach (var g in font.glyphTable) have.Add(g.index);
+            newly.Clear();
+            newly.AddRange(have);
+            try
+            {
+                s_UpdatePairs.Invoke(font, null);
+                s_UpdateMarks.Invoke(font, null);
+            }
+            catch (TargetInvocationException) { }
+            finally { newly.Clear(); }
+            int removed = 0;
+            var table = font.fontFeatureTable;
+            if (s_PairList.GetValue(table) is List<GlyphPairAdjustmentRecord> pairs)
+                removed += pairs.RemoveAll(r => !have.Contains(r.firstAdjustmentRecord.glyphIndex) || !have.Contains(r.secondAdjustmentRecord.glyphIndex));
+            removed += RemoveRecords(s_MarkToBase?.GetValue(table) as System.Collections.IList, "baseGlyphID", "markGlyphID", have);
+            removed += RemoveRecords(s_MarkToMark?.GetValue(table) as System.Collections.IList, "baseMarkGlyphID", "combiningMarkGlyphID", have);
+            // the lookups follow the lists
+            font.ReadFontAssetDefinition();
+            return removed;
         }
 
         const BindingFlags Internal = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;

@@ -62,8 +62,9 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(tmp.faceInfo.lineHeight, twin.faceInfo.lineHeight, 1e-4f, "face metrics equal TMP's");
             Assert.AreEqual(7, twin.atlasPadding);
             Assert.AreEqual(GlyphRenderMode.SDFAA, twin.atlasRenderMode);
-            Assert.AreEqual(1024, twin.atlasWidth);
-            Assert.AreEqual(1024, twin.atlasHeight);
+            // pages sized to the glyphs it will hold (TwinAtlas), never larger than the TMP asset's 1024 px atlas
+            Assert.AreEqual(TwinAtlas.InitialPage(tmp), new Vector2Int(twin.atlasWidth, twin.atlasHeight));
+            Assert.LessOrEqual(twin.atlasWidth, 1024);
             Assert.IsTrue(twin.isMultiAtlasTexturesEnabled);
             Assert.AreSame(AssetDatabase.LoadAssetAtPath<Font>(FontFixture.RegularTtf), twin.sourceFontFile);
 

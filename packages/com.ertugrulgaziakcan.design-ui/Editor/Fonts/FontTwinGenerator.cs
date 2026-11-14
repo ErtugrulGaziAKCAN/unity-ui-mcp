@@ -170,6 +170,11 @@ namespace DesignUi.Editor
             public readonly HashSet<TMP_FontAsset> GlobalChain = new HashSet<TMP_FontAsset>();
             /// <summary>The twins of this pass by TMP asset and line-box key ("" for the plain twin).</summary>
             public readonly Dictionary<(TMP_FontAsset, string), FontAsset> Twins = new Dictionary<(TMP_FontAsset, string), FontAsset>();
+            /// <summary>Each line-box variant of this pass with the plain twin it shares its glyphs with (<see cref="DesignUi.FontTwinLink"/>).</summary>
+            public readonly Dictionary<FontAsset, FontAsset> Sources = new Dictionary<FontAsset, FontAsset>();
+            /// <summary>The plain twins of this pass with their TMP font assets.</summary>
+            public IEnumerable<(FontAsset twin, TMP_FontAsset tmp)> Plains =>
+                Twins.Where(kv => kv.Key.Item2 == "" && kv.Value != null).Select(kv => (kv.Value, kv.Key.Item1));
             /// <summary>Render-mode substitutions and left-out fallback or weight entries of this pass, each once.</summary>
             public readonly List<string> Notes = new List<string>();
             /// <summary>The twins being made right now (the recursion's path): a table entry that leads back to one closes a cycle.</summary>
@@ -211,8 +216,10 @@ namespace DesignUi.Editor
             if (tmp == null) throw new ArgumentNullException(nameof(tmp));
             var key = (tmp, lineBox?.Key ?? "");
             if (run.Twins.TryGetValue(key, out var known)) return known;
-            // a variant's face comes from the plain twin's (the font engine's metrics at the sampling size)
-            var face = lineBox != null ? lineBox.Face(GetOrCreateTwin(tmp, folder, run).faceInfo) : (FaceInfo?)null;
+            // a variant's face comes from the plain twin's (the font engine's metrics at the sampling size); it shares that
+            // twin's glyphs and atlas (FontTwinLink) and keeps none of its own on disk
+            var plain = lineBox != null ? GetOrCreateTwin(tmp, folder, run) : null;
+            var face = lineBox != null ? lineBox.Face(plain.faceInfo) : (FaceInfo?)null;
             var path = TwinPath(tmp, folder, lineBox);
             run.Claim(path, tmp);
             var font = TmpSourceFont.GetSourceFont(tmp);
@@ -223,18 +230,24 @@ namespace DesignUi.Editor
             var twin = AssetDatabase.LoadAssetAtPath<FontAsset>(path);
             if (twin == null && File.Exists(path))
                 throw new FontSetupException("'" + path + "' is in the way of the UI Toolkit twin of TMP font asset '" + tmp.name + "': it is not a font asset. Move or delete it.");
+            // a linked variant gets its own (empty) pages and tables back before its settings are compared or saved
+            if (twin != null && lineBox != null) TwinLinks.Unlink(twin);
+            var page = plain != null ? new Vector2Int(plain.atlasWidth, plain.atlasHeight) : TwinAtlas.InitialPage(tmp);
             bool built = false;
             if (twin == null)
             {
-                twin = Create(tmp, font, mode, path);
+                twin = Create(tmp, font, mode, path, page);
                 built = true;
             }
-            else if (!SameSettings(twin, font, tmp, mode))
+            else if (lineBox == null ? !SameSettings(twin, font, tmp, mode) : !SameVariantSettings(twin, font, tmp, mode) || !TwinLinks.IsEmpty(twin))
             {
-                Rebuild(twin, tmp, font, mode, path);
-                Debug.Log("Design UI: rebuilt the UI Toolkit font twin '" + path + "' in place (the source font or atlas settings of '" + tmp.name + "' changed)", twin);
+                bool migrated = lineBox != null && SameVariantSettings(twin, font, tmp, mode);
+                Rebuild(twin, tmp, font, mode, path, page);
+                Debug.Log("Design UI: rebuilt the UI Toolkit font twin '" + path + "' in place (" +
+                          (migrated ? "a line-box variant keeps no glyphs of its own: it shares those of '" + plain.name + "'" : "the source font or atlas settings of '" + tmp.name + "' changed") + ")", twin);
                 built = true;
             }
+            if (plain != null) run.Sources[twin] = plain;
             if (built && mode != tmp.atlasRenderMode) Debug.LogWarning(BitmapNote(tmp), twin);
             run.Twins[key] = twin; // before the recursion: fallback lists may form cycles
             run.OnPath.Add(key);
@@ -281,7 +294,7 @@ namespace DesignUi.Editor
             if (DesignUi.DesignText.ClearPairFlags(twin) > 0 | Mirror(twin, fallbacks, regular, italic, face) || built)
             {
                 EditorUtility.SetDirty(twin);
-                AssetDatabase.SaveAssetIfDirty(twin);
+                using (TwinLinks.Saving()) AssetDatabase.SaveAssetIfDirty(twin);
             }
             return twin;
         }
@@ -336,18 +349,18 @@ namespace DesignUi.Editor
             if (p != null && p.objectReferenceValue != value) p.objectReferenceValue = value;
         }
 
-        /// <summary>A new dynamic TextCore font asset, in memory.</summary>
-        static FontAsset Build(TMP_FontAsset tmp, Font font, GlyphRenderMode mode)
+        /// <summary>A new dynamic TextCore font asset with atlas pages of <paramref name="page"/>, in memory.</summary>
+        internal static FontAsset Build(TMP_FontAsset tmp, Font font, GlyphRenderMode mode, Vector2Int page)
         {
-            var asset = FontAsset.CreateFontAsset(font, SamplingSize(tmp), tmp.atlasPadding, mode, tmp.atlasWidth, tmp.atlasHeight, TextCorePopulation.Dynamic, true);
+            var asset = FontAsset.CreateFontAsset(font, SamplingSize(tmp), tmp.atlasPadding, mode, page.x, page.y, TextCorePopulation.Dynamic, true);
             if (asset == null) throw new FontSetupException(NoFace(tmp, font));
             return asset;
         }
 
         /// <summary>The twin as a new asset, with its first atlas texture and its material stored inside it.</summary>
-        static FontAsset Create(TMP_FontAsset tmp, Font font, GlyphRenderMode mode, string path)
+        static FontAsset Create(TMP_FontAsset tmp, Font font, GlyphRenderMode mode, string path, Vector2Int page)
         {
-            var twin = Build(tmp, font, mode);
+            var twin = Build(tmp, font, mode, page);
             twin.name = Path.GetFileNameWithoutExtension(path);
             EnsureFolder(Path.GetDirectoryName(path)?.Replace('\\', '/'));
             AssetDatabase.CreateAsset(twin, path);
@@ -366,9 +379,9 @@ namespace DesignUi.Editor
         /// Rebuilds an outdated twin in place: the existing asset object (and so its GUID and every reference to it) stays,
         /// its old atlas textures and material are removed, and the state of a freshly built font asset is copied in.
         /// </summary>
-        static void Rebuild(FontAsset twin, TMP_FontAsset tmp, Font font, GlyphRenderMode mode, string path)
+        internal static void Rebuild(FontAsset twin, TMP_FontAsset tmp, Font font, GlyphRenderMode mode, string path, Vector2Int page)
         {
-            var fresh = Build(tmp, font, mode);
+            var fresh = Build(tmp, font, mode, page);
             // the old sub-assets leave the file; they are not destroyed: text generation may still hold a queued atlas texture
             foreach (var sub in AssetDatabase.LoadAllAssetsAtPath(path).Where(o => o != null && o != twin).ToList())
                 AssetDatabase.RemoveObjectFromAsset(sub);
@@ -406,7 +419,7 @@ namespace DesignUi.Editor
         static string NoFace(TMP_FontAsset tmp, Font font) =>
             "cannot load the font face of '" + AssetDatabase.GetAssetPath(font) + "' for the UI Toolkit twin of '" + tmp.name + "'; check that its importer includes the font data.";
 
-        static int SamplingSize(TMP_FontAsset tmp) => Mathf.RoundToInt(tmp.faceInfo.pointSize);
+        internal static int SamplingSize(TMP_FontAsset tmp) => Mathf.RoundToInt(tmp.faceInfo.pointSize);
 
         static void CheckSettings(TMP_FontAsset tmp)
         {
@@ -415,14 +428,23 @@ namespace DesignUi.Editor
                                              tmp.atlasHeight + "); regenerate it with the Font Asset Creator.");
         }
 
+        /// <summary>
+        /// Whether a plain twin is made as <paramref name="tmp"/> asks: its source font, sampling size, padding and render mode,
+        /// dynamic with multi-atlas, and atlas pages no larger than the TMP asset's (<see cref="TwinAtlas"/> sizes them to the
+        /// glyphs the twin holds).
+        /// </summary>
         static bool SameSettings(FontAsset twin, Font font, TMP_FontAsset tmp, GlyphRenderMode mode) =>
+            SameVariantSettings(twin, font, tmp, mode) &&
+            twin.atlasWidth > 0 && twin.atlasWidth <= tmp.atlasWidth &&
+            twin.atlasHeight > 0 && twin.atlasHeight <= tmp.atlasHeight;
+
+        /// <summary>A line-box variant's settings: the plain twin's but its atlas pages (it renders from the plain twin's).</summary>
+        static bool SameVariantSettings(FontAsset twin, Font font, TMP_FontAsset tmp, GlyphRenderMode mode) =>
             twin.sourceFontFile == font &&
             twin.atlasPopulationMode == TextCorePopulation.Dynamic &&
             Mathf.RoundToInt(twin.faceInfo.pointSize) == SamplingSize(tmp) &&
             twin.atlasPadding == tmp.atlasPadding &&
             twin.atlasRenderMode == mode &&
-            twin.atlasWidth == tmp.atlasWidth &&
-            twin.atlasHeight == tmp.atlasHeight &&
             twin.isMultiAtlasTexturesEnabled;
 
         static string CheckFolder(string folder)

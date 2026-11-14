@@ -387,9 +387,18 @@ namespace DesignUi
             UsesAdvancedText = use;
             if (use && !TextAssetRegistry.Supported)
                 m_LocaleIssues.Add("font assets unloaded and loaded again may render nothing with the advanced generator on this Unity version: " + TextAssetRegistry.Lookup);
+            // the other TextCore members the package reaches by reflection: a renamed one turns a fix off, never silently
+            var features = DesignText.FeatureMembersMissing;
+            if (features != null)
+                m_LocaleIssues.Add("kerning pairs keep TextCore's stray lookup flags (letter-spaced text may lose its spacing around kerned pairs) and font twins " +
+                                   "keep the font features of glyphs they do not hold, on this Unity version: no " + features);
+            if (m_Fonts != null && (m_Fonts.links?.Length ?? 0) > 0 && !FontTwinLink.Supported)
+                m_LocaleIssues.Add("line-box variants render with glyphs of their own (rasterized on first use, the first layout unkerned) on this Unity version: " + FontTwinLink.Lookup);
             // the advanced generator finds a font by its instance ID: twins unloaded and loaded again must be registered again
             // (TextAssetRegistry); a screen may request the generator in its own styles too, so this runs for every locale
             if (panel != null && m_Fonts != null && Locale != null) TextAssetRegistry.Repair(m_Fonts.FontsFor(Locale));
+            // line-box variants share their twins' glyphs (FontTwinLink); a twin that gained glyphs since is linked again
+            if (m_Fonts != null) m_Fonts.LinkTwins();
             m_Root.style.unityTextGenerator = use ? new StyleEnum<TextGeneratorType>(TextGeneratorType.Advanced) : new StyleEnum<TextGeneratorType>(StyleKeyword.Null);
             // right to left only where the advanced generator lays it out: the standard one reverses the whole string
             m_Root.languageDirection = IsRightToLeft && on ? LanguageDirection.RTL : LanguageDirection.Inherit;

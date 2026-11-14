@@ -7,6 +7,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- Font twins take a fraction of the disk they did (2.9 GB in an 11-locale project; 3.5 GB → 25 MB in the same setup
+  rebuilt in the sample project): a line-box variant keeps no glyphs or atlas on disk and shares its twin's when loaded
+  (`FontTwinLink`; the compiled font set links them when a screen loads); a twin's atlas pages are sized to its glyphs
+  (1024 px or more, never larger than the TMP asset's); it keeps the kerning pairs and mark records of its own glyphs only;
+  and kit sync and every import remove the twins of faces, line boxes and fonts nothing uses any more, one asset at a
+  time, and report them. Existing twins are rebuilt once. docs/findings/font-twin-footprint.md.
+
 - Font twins render with the advanced text generator again after they were unloaded and loaded (a later Editor
   session, a scene change in a player): TextCore kept the unloaded asset's entry in its font registry, so the generator
   dropped the twins' glyphs or failed converting the text mesh. `TextAssetRegistry` registers them again (locale

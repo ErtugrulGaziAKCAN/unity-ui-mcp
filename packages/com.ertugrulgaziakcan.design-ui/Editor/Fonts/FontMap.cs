@@ -261,33 +261,27 @@ namespace DesignUi.Editor
 
         /// <summary>
         /// Adds every character of <paramref name="strings"/> (the screen's texts in every locale) to each resolved locale's
-        /// primary twins, plain and line-box variants, with their kerning pairs (<see cref="DesignUi.DesignText.Prepare"/>, which
-        /// also covers the weight faces and, for missing characters, the fallbacks), and saves the twins that gained characters.
-        /// Without it the first layout of a text whose glyphs are new to a dynamic twin is unkerned (docs/findings/text-ink.md).
-        /// Returns the characters no font of a locale's chain has. <paramref name="onlyLocale"/> limits it to one resolved
-        /// locale (a locale's own translations).
+        /// primary plain twin with their kerning pairs (<see cref="DesignUi.DesignText.Prepare"/>, which also covers the weight
+        /// faces and, for missing characters, the fallbacks), brings the twins that gained characters to their smallest form and
+        /// saves them (<see cref="TwinAtlas.Maintain"/>), and links the line-box variants to them again: a variant shares its
+        /// plain twin's glyphs (<see cref="DesignUi.FontTwinLink"/>). Without it the first layout of a text whose glyphs are new
+        /// to a dynamic twin is unkerned (docs/findings/text-ink.md). Returns the characters no font of a locale's chain has.
+        /// <paramref name="onlyLocale"/> limits it to one resolved locale (a locale's own translations).
         /// </summary>
         internal static string PrepareTwins(FontsPlan plan, FontTwinGenerator.TwinRun run, IEnumerable<string> strings, string onlyLocale = null)
         {
             var text = string.Concat((strings ?? Enumerable.Empty<string>()).Where(s => !string.IsNullOrEmpty(s)));
             if (text.Length == 0) return "";
-            var all = run.Twins.Values.Where(t => t != null).Distinct().ToList();
-            var before = all.ToDictionary(t => t, t => t.characterTable.Count);
+            var plains = run.Plains.Select(p => p.twin).Distinct().ToList();
+            var before = plains.ToDictionary(t => t, t => t.characterTable.Count);
             var missing = new System.Text.StringBuilder();
             foreach (var locale in plan.Locales)
             {
                 if (onlyLocale != null && locale != onlyLocale) continue;
-                if (!plan.Fonts.TryGetValue(locale, out var font)) continue;
-                foreach (var twin in run.Twins.Where(kv => kv.Key.Item1 == font.Primary && kv.Value != null).Select(kv => kv.Value))
-                    foreach (var c in DesignUi.DesignText.Prepare(twin, text)) if (missing.ToString().IndexOf(c) < 0) missing.Append(c);
+                if (!plan.Fonts.TryGetValue(locale, out var font) || !run.Twins.TryGetValue((font.Primary, ""), out var twin) || twin == null) continue;
+                foreach (var c in DesignUi.DesignText.Prepare(twin, text)) if (missing.ToString().IndexOf(c) < 0) missing.Append(c);
             }
-            foreach (var t in all)
-                if (DesignUi.DesignText.ClearPairFlags(t) > 0 | t.characterTable.Count != before[t])
-                {
-                    FontTwinGenerator.StoreSubAssets(t); // a new atlas page belongs in the twin's file too
-                    UnityEditor.EditorUtility.SetDirty(t);
-                    UnityEditor.AssetDatabase.SaveAssetIfDirty(t);
-                }
+            TwinAtlas.Maintain(run, plains.Where(t => t.characterTable.Count != before[t]));
             return missing.ToString();
         }
 
@@ -330,6 +324,10 @@ namespace DesignUi.Editor
                 fonts = new[] { "" }.Concat(plan.LineBoxes.Select(b => b.Key))
                     .Select(k => run.Twins.TryGetValue((plan.Fonts[l].Primary, k), out var t) ? t : null).Where(t => t != null).ToArray(),
             }).ToArray();
+            // every line-box variant of the run (fallbacks' and weight faces' too) with the twin whose glyphs it shares, in path order
+            var links = run.Sources.Where(kv => kv.Key != null && kv.Value != null)
+                .OrderBy(kv => AssetDatabase.GetAssetPath(kv.Key), StringComparer.Ordinal)
+                .Select(kv => new DesignUi.DesignFontSet.TwinLink { variant = kv.Key, source = kv.Value }).ToArray();
             var steps = (textSizes ?? new DesignUi.DesignTextSize[0]).Where(t => t != null).Select(t => t.Clone()).ToArray();
             var set = AssetDatabase.LoadAssetAtPath<DesignUi.DesignFontSet>(path);
             if (set == null && System.IO.File.Exists(path))
@@ -337,13 +335,16 @@ namespace DesignUi.Editor
             if (set != null && set.referenceLocale == plan.ReferenceLocale && (set.locales ?? new DesignUi.DesignFontSet.LocaleFonts[0]).Length == wanted.Length &&
                 set.locales.Zip(wanted, (a, b) => a != null && a.locale == b.locale && (a.fonts ?? new UnityEngine.TextCore.Text.FontAsset[0]).SequenceEqual(b.fonts)).All(x => x) &&
                 (set.textSizes ?? new DesignUi.DesignTextSize[0]).Length == steps.Length &&
-                set.textSizes.Zip(steps, (a, b) => a != null && a.key == b.key && a.scale == b.scale).All(x => x))
+                set.textSizes.Zip(steps, (a, b) => a != null && a.key == b.key && a.scale == b.scale).All(x => x) &&
+                (set.links ?? new DesignUi.DesignFontSet.TwinLink[0]).Length == links.Length &&
+                set.links.Zip(links, (a, b) => a != null && a.variant == b.variant && a.source == b.source).All(x => x))
                 return null;
             bool created = set == null;
             if (created) set = UnityEngine.ScriptableObject.CreateInstance<DesignUi.DesignFontSet>();
             set.referenceLocale = plan.ReferenceLocale;
             set.locales = wanted;
             set.textSizes = steps;
+            set.links = links;
             if (created) AssetDatabase.CreateAsset(set, path);
             else
             {
@@ -598,6 +599,8 @@ namespace DesignUi.Editor
                     FontTwinGenerator.GetOrCreateTwin(font.Primary, plan.TwinFolder, run);
                     foreach (var box in plan.LineBoxes) FontTwinGenerator.GetOrCreateTwin(font.Primary, plan.TwinFolder, run, box);
                 }
+            // plain twins at their smallest (atlas pages sized to their glyphs, their own glyphs' font features), variants linked
+            TwinAtlas.Maintain(run);
             return run;
         }
     }

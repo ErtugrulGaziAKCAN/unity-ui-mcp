@@ -27,10 +27,20 @@ namespace DesignUi.Editor.Tests
 
         readonly List<Object> _objects = new List<Object>();
         IDisposable _advanced;
+        Func<bool> _playing;
+
+        /// <summary>Play is simulated: the guard's watch for a given-up Play entry sees Play running until the test says otherwise.</summary>
+        [SetUp]
+        public void SimulatePlay()
+        {
+            _playing = TwinPlayGuard.Playing;
+            TwinPlayGuard.Playing = () => true;
+        }
 
         [TearDown]
         public void Cleanup()
         {
+            TwinPlayGuard.Playing = _playing;
             if (TwinPlayGuard.Active) TwinPlayGuard.End();
             foreach (var o in _objects) if (o != null) Object.DestroyImmediate(o);
             _objects.Clear();
@@ -229,6 +239,52 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(TwinPlayGuard.IsTwin("Assets/UI/Fonts/Inter UI UITK r125s16p5.asset"));
             Assert.IsFalse(TwinPlayGuard.IsTwin("Assets/UI/Fonts/Inter UI SDF.asset"));
             Assert.IsFalse(TwinPlayGuard.IsTwin("Packages/x/Inter UI UITK.asset"));
+        }
+
+        /// <summary>
+        /// A Play entry given up after ExitingEditMode (compile errors, a cancelled dialog) sends no EnteredEditMode: the guard
+        /// ends at the next editor update outside Play, and the twins' saves work again (an import's pre-add is saved).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AGivenUpPlayEntry_EndsTheGuard_AndSavesWorkAgain()
+        {
+            var twin = SavedTwin("Guard Abort", 1024, out var path);
+            TwinPlayGuard.OnPlayModeChanged(PlayModeStateChange.ExitingEditMode);
+            Assert.IsTrue(TwinPlayGuard.Active);
+            yield return null;
+            Assert.IsTrue(TwinPlayGuard.Active, "still entering Play");
+            TwinPlayGuard.Playing = () => false; // the entry was given up
+            yield return null;
+            yield return null;
+            Assert.IsFalse(TwinPlayGuard.Active, "ended without EnteredEditMode");
+            int before = CharactersInFile(path);
+            DesignText.Prepare(twin, "Ödül"); // an import's pre-add in Edit mode
+            FontTwinGenerator.StoreSubAssets(twin);
+            EditorUtility.SetDirty(twin);
+            AssetDatabase.SaveAssetIfDirty(twin);
+            Assert.Greater(CharactersInFile(path), before, "saved");
+        }
+
+        /// <summary>While the guard is still on outside Play, an import or kit sync refuses with the reason.</summary>
+        [Test]
+        public void ImportAndKitSync_RefuseWhileTheGuardIsOn()
+        {
+            var was = DesignUiOps.InPlayMode;
+            DesignUiOps.InPlayMode = () => false;
+            TwinPlayGuard.Begin();
+            try
+            {
+                foreach (var r in new[] { DesignUiOps.Import("Assets/Any.asset", "/tmp/none", false), DesignUiOps.KitSync("Assets/Any.asset", "/tmp/none") })
+                {
+                    Assert.AreNotEqual(0, r.Code);
+                    StringAssert.StartsWith("Font twins are still kept out of saves by the Play guard", r.Errors.Single());
+                }
+            }
+            finally
+            {
+                DesignUiOps.InPlayMode = was;
+                TwinPlayGuard.End();
+            }
         }
 
         /// <summary>An import, a compile or a kit sync in Play would add glyphs the guard then takes back: they refuse to run.</summary>

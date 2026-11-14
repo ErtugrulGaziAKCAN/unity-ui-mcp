@@ -303,6 +303,12 @@ namespace DesignUi.Editor
                 var setFolder = FontSetFolder(outFolder);
                 if (setFolder != null) EnsureAssetFolder(setFolder);
                 fontSet = FontMap.WriteFontSet(fonts, twins, outFolder, profile.textSizes);
+                // twins of faces, line boxes and fonts nothing uses any more leave the twin folder
+                var pruned = TwinPrune.Run(profile, fonts, twins);
+                if (pruned.Skipped != null) notes.Add(pruned.Skipped);
+                if (pruned.Deleted.Count > 0)
+                    notes.Add("removed " + pruned.Deleted.Count + " font twin" + (pruned.Deleted.Count == 1 ? "" : "s") +
+                              " no text style, compiled screen or locale font uses: " + string.Join(", ", pruned.Deleted));
             }
             catch (FontSetupException e) { return new CompileResult { Ok = false, Errors = new[] { e.Message }, Localization = localization }; } // the tables stay written
 

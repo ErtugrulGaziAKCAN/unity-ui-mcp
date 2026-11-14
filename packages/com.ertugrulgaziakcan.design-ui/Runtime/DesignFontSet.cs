@@ -10,6 +10,9 @@ namespace DesignUi
     /// The font twins of the design screens per locale (written by the compiler next to <c>DesignFonts.uss</c> as
     /// <c>DesignFonts.asset</c>): each locale's primary twin and its line-box variants. <see cref="DesignText"/> prepares a
     /// bound text in these fonts before it is assigned, without waiting for the element's styles to resolve.
+    /// <para>It also lists every line-box variant of those fonts (their fallbacks' and weight faces' included) with the twin
+    /// it shares its glyphs with (<see cref="FontTwinLink"/>) and links them when it is loaded: a compiled screen's UXML
+    /// references its font set, so its fonts are linked before any of its text is laid out.</para>
     /// </summary>
     public sealed class DesignFontSet : ScriptableObject
     {
@@ -26,6 +29,36 @@ namespace DesignUi
 
         public string referenceLocale;
         public LocaleFonts[] locales = new LocaleFonts[0];
+
+        /// <summary>A line-box variant and the twin whose glyphs it shares.</summary>
+        [Serializable]
+        public sealed class TwinLink
+        {
+            public FontAsset variant;
+            public FontAsset source;
+        }
+
+        /// <summary>Every line-box variant of the set's fonts with the twin it shares its glyphs with (written by the compiler).</summary>
+        public TwinLink[] links = new TwinLink[0];
+
+        void OnEnable()
+        {
+            try { LinkTwins(); }
+            catch (Exception e) { Debug.LogException(e, this); } // a font set that cannot link still loads; its variants add their own glyphs
+        }
+
+        /// <summary>
+        /// Links every variant of <see cref="links"/> to its twin (<see cref="FontTwinLink.Link(FontAsset, FontAsset)"/>); a
+        /// variant already linked to a twin that gained nothing since costs a few comparisons. Returns how many it linked.
+        /// </summary>
+        public int LinkTwins()
+        {
+            int n = 0;
+            var all = links ?? new TwinLink[0];
+            for (int i = 0; i < all.Length; i++)
+                if (all[i] != null && FontTwinLink.Link(all[i].variant, all[i].source)) n++;
+            return n;
+        }
 
         /// <summary>
         /// The text-size steps the compiled screens have rules for (the profile's, when the set was written); empty when the

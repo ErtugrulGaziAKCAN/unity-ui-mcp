@@ -236,7 +236,7 @@ namespace DesignUi.Editor
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { return false; }
         }
 
-        /// <summary>What the twin generator rebuilds a twin for: another source font or other atlas settings.</summary>
+        /// <summary>What the twin generator rebuilds a twin for: another source font or other atlas settings (a variant's pages are its twin's).</summary>
         static bool SameSettings(FontAsset twin, TMP_FontAsset tmp)
         {
             Font font;
@@ -247,8 +247,9 @@ namespace DesignUi.Editor
                    Mathf.RoundToInt(twin.faceInfo.pointSize) == Mathf.RoundToInt(tmp.faceInfo.pointSize) &&
                    twin.atlasPadding == tmp.atlasPadding &&
                    twin.atlasRenderMode == FontTwinGenerator.TwinRenderMode(tmp) &&
-                   twin.atlasWidth == tmp.atlasWidth &&
-                   twin.atlasHeight == tmp.atlasHeight &&
+                   // pages sized to the twin's glyphs (TwinAtlas), never larger than the TMP asset's atlas
+                   twin.atlasWidth > 0 && twin.atlasWidth <= tmp.atlasWidth &&
+                   twin.atlasHeight > 0 && twin.atlasHeight <= tmp.atlasHeight &&
                    twin.isMultiAtlasTexturesEnabled;
         }
     }

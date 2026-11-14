@@ -39,9 +39,11 @@ namespace DesignUi.Editor
         static TwinPlayGuard()
         {
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
-            // a guard left on in Edit mode (the Editor stopped during Play) gives its twins back once the Editor is ready
+            // a guard left on in Edit mode (the Editor stopped during Play) gives its twins back once the Editor is ready; in
+            // Play (a domain reload while entering it) the watch for a given-up Play entry resumes
             if (Active && !EditorApplication.isPlayingOrWillChangePlaymode)
                 EditorApplication.delayCall += () => { if (Active && !EditorApplication.isPlayingOrWillChangePlaymode) End(); };
+            else if (Active) EditorApplication.update += WatchAbortedPlay;
         }
 
         /// <summary>Whether Play's changes to the twins are being kept out of their files.</summary>
@@ -59,6 +61,22 @@ namespace DesignUi.Editor
             // ExitingEditMode: before Play's domain reload and before any of Play's text; EnteredPlayMode: entered another way
             if (change == PlayModeStateChange.ExitingEditMode || change == PlayModeStateChange.EnteredPlayMode && !Active) Begin();
             else if (change == PlayModeStateChange.EnteredEditMode) End();
+        }
+
+        /// <summary>Whether the Editor is in or entering Play mode; tests replace it.</summary>
+        internal static Func<bool> Playing = () => EditorApplication.isPlayingOrWillChangePlaymode;
+
+        /// <summary>
+        /// Ends a guard whose Play entry was given up (compile errors, a script or a dialog that cancelled it after
+        /// ExitingEditMode): Unity sends no EnteredEditMode then, and the guard would keep every twin out of every save in Edit
+        /// mode, an import's pre-added characters included. Runs on every editor update while the guard is on.
+        /// </summary>
+        internal static void WatchAbortedPlay()
+        {
+            if (!Active) { EditorApplication.update -= WatchAbortedPlay; return; }
+            if (Playing()) return;
+            EditorApplication.update -= WatchAbortedPlay;
+            End();
         }
 
         /// <summary>The twins loaded now, by path.</summary>
@@ -91,6 +109,8 @@ namespace DesignUi.Editor
             SessionState.SetString(StateKey, JsonConvert.SerializeObject(state));
             Active = true;
             s_SaveNoted = false;
+            EditorApplication.update -= WatchAbortedPlay;
+            EditorApplication.update += WatchAbortedPlay;
         }
 
         /// <summary>
@@ -105,6 +125,12 @@ namespace DesignUi.Editor
             Active = false;
             SessionState.EraseString(StateKey);
             var restored = new List<string>();
+            // a line-box variant renders its plain twin's glyphs from that twin's pages (FontTwinLink): it first gets its own
+            // state back, so a reload from its file never touches the shared pages, and it is linked again at the end
+            foreach (var kv in LoadedTwins())
+                if (IsVariant(kv.Key))
+                    try { TwinLinks.Unlink(kv.Value); }
+                    catch (FontSetupException e) { Debug.LogError("Design UI: " + e.Message, kv.Value); }
             foreach (var kv in LoadedTwins().OrderBy(kv => kv.Key, StringComparer.Ordinal))
             {
                 bool changed = !state.TryGetValue(kv.Key, out var before) || before != Fingerprint(kv.Value) || Dirty(kv.Value);
@@ -116,9 +142,15 @@ namespace DesignUi.Editor
                 Debug.LogError("Design UI: the font twin '" + kv.Key + "' could not be reloaded from its file after Play (" + error + "). What Play added to it is still in memory " +
                                "and would be written by its next save: reimport it (Assets > Reimport) before saving.", kv.Value);
             }
+            TwinLinks.LinkLoaded();
             if (restored.Count > 0) TextAssetRegistry.RepairLoaded();
             return restored;
         }
+
+        static readonly Regex VariantFile = new Regex(Regex.Escape(FontTwinGenerator.Suffix) + @" r\d+s\d+(p\d+)?\.asset$", RegexOptions.CultureInvariant);
+
+        /// <summary>Whether <paramref name="path"/> is a line-box variant's file.</summary>
+        internal static bool IsVariant(string path) => path != null && VariantFile.IsMatch(path);
 
         static readonly HashSet<string> Kept = new HashSet<string>(StringComparer.Ordinal)
         {

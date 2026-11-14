@@ -317,19 +317,24 @@ family `fonts.css` does not declare.
 
 **Font twins.** UI Toolkit text needs TextCore `FontAsset`; `TMP_FontAsset` derives from `TMP_Asset` and cannot be
 referenced from USS. The twin generator creates one UI Toolkit FontAsset per resolved TMP font asset from the same
-source file, matching sampling point size, padding, atlas size and render mode, and reproducing the fallback order
-and weight table. Twins are always **dynamic**, because the advanced text generator (needed for Arabic shaping and
+source file, matching sampling point size, padding and render mode, and reproducing the fallback order
+and weight table. Its atlas pages are sized to the glyphs it holds (the smallest power-of-two page of at least 1024 px,
+never larger than the TMP asset's atlas), and it keeps the kerning pairs and mark records of its own glyphs only. Twins are always **dynamic**, because the advanced text generator (needed for Arabic shaping and
 bidirectional text) does not accept static font assets. Twins regenerate when TMP Settings or the per-locale mapping
 change. The project keeps one font configuration: its TMP setup. Each twin has one variant per text-style size whose face
 carries that style's CSS line box (`faceInfo.lineHeight = r × pointSize`, r 1.25 or 4/3, §5.3 text styles) with the
 ascent line where Chromium lays out the baseline: `floor((L − round(a·s) − round(d·s)) / 2) + round(a·s)` CSS px below
-the line top, the font's ascent and descent rounded at the font size (docs/findings/text-baselines.md).
+the line top, the font's ascent and descent rounded at the font size (docs/findings/text-baselines.md). A variant's file
+holds only that face and its settings: the loaded variant shares its twin's glyphs, font features, atlas pages and
+material (`FontTwinLink`; the compiled font set links them when a screen loads), so a face has one atlas whatever the
+number of text styles. Kit sync and every import delete the twins of faces, line boxes and fonts that no profile sharing
+the twin folder uses any more (docs/findings/font-twin-footprint.md).
 
 **Kerning.** A dynamic twin adds a glyph the moment text first needs it, but that glyph's kerning pairs only in its
 update queue, after the text was laid out, and UI Toolkit keeps that unkerned first layout (up to 46 px wider on a
 33-character line, standard text generator). Import therefore adds every character of the screen's strings, with their
-font features (kerning pairs, mark positioning, ligatures), to each locale's twins (the plain twin and its line-box
-variants, its weight faces and fallbacks) before anything is laid out. Text that import cannot know (bound values,
+font features (kerning pairs, mark positioning, ligatures), to each locale's twins (the plain twin, which its line-box
+variants share, its weight faces and fallbacks) before anything is laid out. Text that import cannot know (bound values,
 Smart String arguments, repeat items) is assigned with `DesignText.SetText`, or its characters are added first with
 `DesignText.Prepare`; every generated text write goes through them. The twins keep their dynamic glyph data in player
 builds, so a build starts with the imported characters and pairs. The advanced text generator kerns on its own but was

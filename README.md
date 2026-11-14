@@ -159,7 +159,11 @@ view.SetEnabled(view.Save, false);                             // the design's :
 - Fonts: each locale renders with the project's own TMP font (as a UI Toolkit twin), right-to-left locales get the
   `rtl` alignment rules, and the profile's text-size steps compile to `.text-size-<key>` rules. Twins keep the
   characters the import pre-adds; what text adds to them in Play mode is taken back when Play stops, so twins do not
-  change in version control after a Play session.
+  change in version control after a Play session. Twins stay small: one atlas per face, sized to its glyphs, with the
+  kerning of its own glyphs only; a text style's line-box variant keeps no glyphs on disk and shares its twin's when
+  loaded; kit sync and every import remove twins no text style, compiled screen or locale font uses. An Inter family with
+  Noto Sans, Arabic, Japanese and Chinese for 11 locales takes 25 MB (48 files) instead of 3.5 GB
+  ([docs/findings/font-twin-footprint.md](docs/findings/font-twin-footprint.md)).
 - Transitions and `@keyframes` play through the package's animation player (CSS timing, every trigger, a
   reduced-motion switch).
 
