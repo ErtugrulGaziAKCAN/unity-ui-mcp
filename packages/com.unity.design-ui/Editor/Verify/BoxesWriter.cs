@@ -49,6 +49,13 @@ namespace DesignUi.Editor
         public static JObject Measure(string captureName, VisualElement root, Vector2Int viewport, double scale, IrScreen ir)
         {
             if (root == null) throw new ArgumentNullException(nameof(root));
+            return Measure(captureName, id => Find(root, id), viewport, scale, ir);
+        }
+
+        /// <summary>The same with the element of each IR id given by <paramref name="find"/> (a capture that keeps its screen mounted caches them).</summary>
+        internal static JObject Measure(string captureName, Func<string, VisualElement> find, Vector2Int viewport, double scale, IrScreen ir)
+        {
+            if (find == null) throw new ArgumentNullException(nameof(find));
             if (ir?.Root == null) throw new ArgumentNullException(nameof(ir));
             var nodes = new List<IrNode>();
             void Walk(IrNode n) { nodes.Add(n); foreach (var c in n.Children ?? new IrNode[0]) Walk(c); }
@@ -57,7 +64,7 @@ namespace DesignUi.Editor
             var elements = new SortedDictionary<string, JObject>(StringComparer.Ordinal);
             foreach (var n in nodes)
             {
-                var e = Find(root, n.Id);
+                var e = find(n.Id);
                 if (e != null) elements[n.Id] = Box(e, n.Text != null, scale);
             }
             var els = new JObject();

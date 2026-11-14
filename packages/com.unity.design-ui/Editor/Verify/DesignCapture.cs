@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
@@ -54,6 +55,10 @@ namespace DesignUi.Editor
     /// and the capture's entry in <c>&lt;OutDir&gt;/boxes.json</c> (<see cref="BoxesWriter"/>).</item>
     /// </list>
     /// Frames: 20 editor updates after mounting, 5 after each change and pointer event, 2 after each animation sample.
+    /// <para><see cref="CaptureAll"/> mounts a viewport's screen once and moves it from job to job, as the golden capture moves
+    /// its page (classes and states off and on, the pointer and focus moved, a press released off the element so no click
+    /// happens, disabled and checked back to the markup's values, scroll offsets back to the mount's); a job's capture is the
+    /// one <see cref="Run"/> makes on a freshly mounted screen. PNGs are encoded off the main thread.</para>
     /// </summary>
     public static class DesignCapture
     {
@@ -119,12 +124,12 @@ namespace DesignUi.Editor
         /// opening); for each job the clock steps to its time, the player writes its values and the frame is captured.
         /// <paramref name="done"/> counts the jobs written, so a caller can list the rest as not captured when it throws.
         /// </summary>
-        internal static IEnumerator RunSeries(CaptureRequest req, IReadOnlyList<CaptureJob> jobs, DesignUiProfile profile, SeriesProgress done)
+        internal static IEnumerator RunSeries(CaptureRequest req, IReadOnlyList<CaptureJob> jobs, DesignUiProfile profile, SeriesProgress done, Screen screen = null)
         {
             if (jobs == null || jobs.Count == 0 || jobs.Any(j => j.Anim == null)) throw new ArgumentException("an animation series needs animation jobs", nameof(jobs));
             var first = jobs[0];
             var from = first.Anim.From;
-            var session = new Session(req, profile);
+            var session = new Session(req, profile, screen);
             try
             {
                 foreach (var f in session.Open(from?.State ?? first.State, from != null)) yield return f;
@@ -151,6 +156,64 @@ namespace DesignUi.Editor
             {
                 session.Dispose();
             }
+        }
+
+        /// <summary>Jobs of one capture run between flushes of boxes.json and the meta file (a stopped run keeps what it captured).</summary>
+        const int FlushEveryJobs = 25;
+        const double FlushEverySeconds = 10;
+
+        /// <summary>The screen <see cref="CaptureAll"/> keeps mounted for consecutive static jobs at one viewport.</summary>
+        sealed class SharedSession
+        {
+            public Session Session;
+
+            public void Drop()
+            {
+                Session?.Dispose();
+                Session = null;
+            }
+        }
+
+        /// <summary>
+        /// One static job on the run's mounted screen (mounted first, or again at another viewport or after a job that
+        /// stopped): the screen moves from the previous job's setup to this one's; the PNG is encoded off the main thread.
+        /// A job whose frozen frames the screen can only show as inline styles (no animation player) leaves the screen
+        /// changed, so the next job mounts it again.
+        /// </summary>
+        static IEnumerator RunShared(SharedSession shared, CaptureRequest req, DesignUiProfile profile, Screen screen, List<(string, Task)> pngs)
+        {
+            screen = screen ?? Prepare(req, profile); // the run could not read it: this job fails with the reason
+            CheckRequest(req, screen);
+            if (shared.Session != null && shared.Session.Viewport != req.Viewport) shared.Drop();
+            if (shared.Session == null)
+            {
+                var opened = new Session(req, profile, screen) { Shared = true };
+                shared.Session = opened; // before mounting: a failure while mounting still destroys the panel
+                foreach (var f in opened.Open(DefaultState, true)) yield return f;
+            }
+            var session = shared.Session;
+            session.Begin(req);
+            foreach (var f in session.RestoreScroll()) yield return f;
+            foreach (var f in session.GoTo(req.State, Applied(req))) yield return f;
+            bool dirty = false;
+            if (req.Frozen != null && req.Frozen.Count > 0)
+            {
+                if (session.Player == null)
+                {
+                    FrozenFrames.ApplyAll(session.DocRoot, session.Screen.Ir, req.Frozen);
+                    req.Notes.Add("keyframe animations shown at their frozen end frame, as in the golden (the compiled screen has no animation player): " + string.Join(", ", req.Frozen));
+                    for (int i = 0; i < ChangeFrames; i++) yield return null;
+                    dirty = true;
+                }
+                else
+                {
+                    var missing = req.Frozen.Where(f => !session.Plays(f.ElementId, f.Name)).ToList();
+                    if (missing.Count > 0) req.Notes.Add("the golden shows these keyframe animations at their end frame, the player does not play them: " + string.Join(", ", missing));
+                }
+            }
+            pngs.Add((req.CaptureName, session.Write(req.CaptureName, true)));
+            req.Inspect?.Invoke(session.Root);
+            if (dirty) shared.Drop();
         }
 
         /// <summary>How many jobs of a series <see cref="RunSeries"/> wrote.</summary>
@@ -181,12 +244,33 @@ namespace DesignUi.Editor
             var manifest = Path.Combine(screenFolder, ScreenCompiler.ManifestFileName);
             if (!File.Exists(manifest)) throw new InvalidOperationException("'" + screenFolder + "' is not a compiled screen (no " + ScreenCompiler.ManifestFileName + ")");
             File.Copy(manifest, Path.Combine(outDir, ScreenCompiler.ManifestFileName), true);
-            var boxes = new JObject(); // written once, before the done marker
+            var boxes = new JObject(); // written with the meta file now and then (a stopped run keeps what it captured), and before the done marker
+            // the export and the compiled screen are read once for every job (when that fails, every job fails with the reason)
+            Screen screen = null;
+            try { screen = LoadScreen(exportDir, screenFolder, profile); }
+            catch (Exception e) when (!(e is ArgumentNullException)) { UnityEngine.Debug.LogWarning("Design UI capture: " + e.Message); }
+            var shared = new SharedSession();
+            var pngs = new List<(string name, Task task)>();
+            var flushed = Stopwatch.StartNew();
+            int sinceFlush = 0;
+            void Flush(bool force)
+            {
+                if (!force && sinceFlush < FlushEveryJobs && flushed.Elapsed.TotalSeconds < FlushEverySeconds) return;
+                BoxesWriter.WriteAll(Path.Combine(outDir, BoxesWriter.FileName), boxes);
+                WriteMeta(outDir, exportDir, screenFolder, result, run, "running", total.Elapsed.TotalMilliseconds);
+                sinceFlush = 0;
+                flushed.Restart();
+            }
+            try
+            {
             for (int j = 0; j < jobs.Count; j++)
             {
                 var job = jobs[j];
+                sinceFlush++;
+                Flush(false);
                 if (job.Animation)
                 {
+                    shared.Drop(); // a series mounts its own screen
                     // one series: the consecutive samples of one change, times ascending
                     var series = new List<CaptureJob> { job };
                     var key = job.Anim.SeriesKey(job);
@@ -199,7 +283,7 @@ namespace DesignUi.Editor
                     };
                     var progress = new SeriesProgress();
                     var swatch = Stopwatch.StartNew();
-                    var srun = RunSeries(sreq, series, profile, progress);
+                    var srun = RunSeries(sreq, series, profile, progress, screen);
                     string sfailure = null, sskipped = null;
                     try
                     {
@@ -247,7 +331,7 @@ namespace DesignUi.Editor
                     Frozen = job.Frozen, OutDir = outDir, CaptureName = job.Name, Boxes = boxes,
                 };
                 var watch = Stopwatch.StartNew();
-                var capture = Run(req, profile);
+                var capture = RunShared(shared, req, profile, screen, pngs);
                 string failure = null, skipped = null;
                 try
                 {
@@ -263,8 +347,10 @@ namespace DesignUi.Editor
                 }
                 finally
                 {
-                    (capture as IDisposable)?.Dispose(); // an abandoned run still destroys its panel
+                    (capture as IDisposable)?.Dispose();
                 }
+                // a job that stopped midway may have left the screen anywhere: the next job mounts it again
+                if (failure != null || skipped != null) shared.Drop();
                 run.Times[job.Name] = Math.Round(watch.Elapsed.TotalMilliseconds, 1);
                 if (failure != null)
                 {
@@ -281,6 +367,24 @@ namespace DesignUi.Editor
                 {
                     result.Captured.Add(job.Name);
                     if (req.Notes.Count > 0) run.Notes[job.Name] = new JArray(req.Notes);
+                }
+            }
+            }
+            finally
+            {
+                shared.Drop(); // an abandoned run still destroys its panel
+            }
+            // every PNG is on disk before the boxes and the done marker say the run went through
+            foreach (var (name, task) in pngs)
+            {
+                try { task.Wait(); }
+                catch (AggregateException e)
+                {
+                    var why = e.InnerException?.Message ?? e.Message;
+                    result.Captured.Remove(name);
+                    result.Errors.Add(name + ": writing the PNG failed: " + why);
+                    NotCaptured(result, outDir, name, "error: writing the PNG failed: " + why);
+                    boxes.Remove(name);
                 }
             }
             BoxesWriter.WriteAll(Path.Combine(outDir, BoxesWriter.FileName), boxes);
@@ -332,6 +436,19 @@ namespace DesignUi.Editor
             }
         }
 
+        /// <summary>
+        /// How long a capture run of <paramref name="jobs"/> jobs may take, for the test that runs it (its own NUnit timeout):
+        /// 120 s for opening and the first mounts, plus 2 s per job, about seven times the 0.3 s a warm job may take.
+        /// </summary>
+        public static int TestTimeoutMs(int jobs) => (int)Math.Min(int.MaxValue, 120_000L + 2_000L * Math.Max(0, jobs));
+
+        /// <summary>The number of jobs in an export's <c>goldens/matrix.json</c> (0 when it has none or cannot be read).</summary>
+        public static int JobCount(string exportDir)
+        {
+            try { return CaptureJob.ReadMatrix(Path.Combine(exportDir, MatrixPath)).Count; }
+            catch (IrFormatException) { return 0; }
+        }
+
         /// <summary>The profile asset at <paramref name="assetPath"/>, or the project's only DesignUiProfile when it is empty.</summary>
         public static DesignUiProfile LoadProfile(string assetPath)
         {
@@ -355,7 +472,7 @@ namespace DesignUi.Editor
 
         // ---- request -------------------------------------------------------------------------------------------
 
-        sealed class Screen
+        internal sealed class Screen
         {
             public IrScreen Ir;
             public IrFixtures Fixtures;
@@ -371,13 +488,31 @@ namespace DesignUi.Editor
         {
             if (req == null) throw new ArgumentNullException(nameof(req));
             if (profile == null) throw new ArgumentNullException(nameof(profile));
+            if (string.IsNullOrEmpty(req.ExportDir)) throw new ArgumentException("capture '" + req.CaptureName + "' has no export folder");
+            var screen = LoadScreen(req.ExportDir, req.ScreenFolder, profile);
+            CheckRequest(req, screen);
+            return screen;
+        }
+
+        /// <summary>What a capture needs of its request: a file name, a viewport, an output folder and a state the screen declares.</summary>
+        static void CheckRequest(CaptureRequest req, Screen screen)
+        {
+            if (req == null) throw new ArgumentNullException(nameof(req));
             if (!CaptureJob.ValidName(req.CaptureName)) throw new ArgumentException("capture name '" + req.CaptureName + "' is not a file name");
             if (req.Viewport.x < 1 || req.Viewport.y < 1) throw new ArgumentException("capture '" + req.CaptureName + "' has no viewport");
             if (string.IsNullOrEmpty(req.OutDir)) throw new ArgumentException("capture '" + req.CaptureName + "' has no output folder");
-            if (string.IsNullOrEmpty(req.ExportDir)) throw new ArgumentException("capture '" + req.CaptureName + "' has no export folder");
-            var folder = ScreenCompiler.ProjectPath((req.ScreenFolder ?? "").Replace('\\', '/').TrimEnd('/'))
-                         ?? throw new InvalidOperationException("the compiled screen folder '" + req.ScreenFolder + "' is not inside the project");
-            var ir = IrReader.Read(Path.Combine(req.ExportDir, ScreenCompiler.IrFileName));
+            if (req.State != DefaultState && !(screen.Ir.States ?? new string[0]).Contains(req.State))
+                throw new InvalidOperationException("capture '" + req.CaptureName + "' asks for state '" + req.State + "', which the screen does not declare");
+        }
+
+        /// <summary>The export's IR and sample data and the compiled screen (UXML, manifest, fonts), read once per capture run.</summary>
+        static Screen LoadScreen(string exportDir, string screenFolder, DesignUiProfile profile)
+        {
+            if (profile == null) throw new ArgumentNullException(nameof(profile));
+            if (string.IsNullOrEmpty(exportDir)) throw new ArgumentException("no export folder", nameof(exportDir));
+            var folder = ScreenCompiler.ProjectPath((screenFolder ?? "").Replace('\\', '/').TrimEnd('/'))
+                         ?? throw new InvalidOperationException("the compiled screen folder '" + screenFolder + "' is not inside the project");
+            var ir = IrReader.Read(Path.Combine(exportDir, ScreenCompiler.IrFileName));
             var reference = ir.ReferenceViewport;
             if (reference == null || reference.Length != 2 || reference[0] != profile.referenceResolution.x || reference[1] != profile.referenceResolution.y ||
                 Math.Abs(ir.ScreenMatch - profile.screenMatch) > 1e-6f)
@@ -386,15 +521,13 @@ namespace DesignUi.Editor
                                                     profile.referenceResolution.x + "×" + profile.referenceResolution.y + " and " +
                                                     profile.screenMatch.ToString(System.Globalization.CultureInfo.InvariantCulture) +
                                                     "; the capture would not be comparable with the goldens");
-            if (req.State != DefaultState && !(ir.States ?? new string[0]).Contains(req.State))
-                throw new InvalidOperationException("capture '" + req.CaptureName + "' asks for state '" + req.State + "', which the screen does not declare");
             var manifest = GeneratedManifest.Load(folder + "/" + ScreenCompiler.ManifestFileName)
                            ?? throw new InvalidOperationException("'" + folder + "' is not a compiled screen (no " + ScreenCompiler.ManifestFileName + ")");
             if (manifest.screen != ir.Screen)
                 throw new InvalidOperationException("'" + folder + "' holds screen '" + manifest.screen + "', not the export's '" + ir.Screen + "'");
             var uxml = folder + "/" + Path.GetFileName(folder) + ".uxml";
             var tree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(uxml) ?? throw new InvalidOperationException("no compiled UXML at '" + uxml + "'");
-            var fixtures = Path.Combine(req.ExportDir, FixturesPath);
+            var fixtures = Path.Combine(exportDir, FixturesPath);
             return new Screen
             {
                 Ir = ir, Manifest = manifest, Tree = tree, Folder = folder,
@@ -466,6 +599,31 @@ namespace DesignUi.Editor
                 root.style.bottom = 0;
             }
 
+            /// <summary>
+            /// The RenderTexture as a PNG, its bytes unchanged (no colour conversion), encoded on a worker thread
+            /// (<see cref="ImageConversion.EncodeArrayToPNG"/> is thread-safe) and written to <paramref name="path"/>.
+            /// </summary>
+            public Task WritePngAsync(string path)
+            {
+                var tex = new Texture2D(Target.width, Target.height, TextureFormat.RGBA32, false, true) { hideFlags = HideFlags.DontSave };
+                var active = RenderTexture.active;
+                byte[] raw;
+                uint w = (uint)Target.width, h = (uint)Target.height;
+                try
+                {
+                    RenderTexture.active = Target;
+                    tex.ReadPixels(new Rect(0, 0, Target.width, Target.height), 0, 0, false);
+                    tex.Apply(false);
+                    raw = tex.GetRawTextureData();
+                }
+                finally
+                {
+                    RenderTexture.active = active;
+                    Object.DestroyImmediate(tex);
+                }
+                return Task.Run(() => File.WriteAllBytes(path, ImageConversion.EncodeArrayToPNG(raw, GraphicsFormat.R8G8B8A8_UNorm, w, h)));
+            }
+
             /// <summary>The RenderTexture's bytes as a PNG, unchanged (no colour conversion).</summary>
             public byte[] ReadPng()
             {
@@ -514,8 +672,17 @@ namespace DesignUi.Editor
         /// </summary>
         sealed class Session : IDisposable
         {
-            readonly CaptureRequest m_Req;
+            CaptureRequest m_Req;
             readonly DesignUiProfile m_Profile;
+            /// <summary>Kept mounted from job to job (<see cref="CaptureAll"/>): a press is released off the element (no click).</summary>
+            public bool Shared;
+            public Vector2Int Viewport => m_Req.Viewport;
+            /// <summary>disabled/checked of an element before the session first changed it, by <c>id|state</c>.</summary>
+            readonly Dictionary<string, bool> m_Originals = new Dictionary<string, bool>(StringComparer.Ordinal);
+            /// <summary>Scroll offsets right after mounting.</summary>
+            readonly List<(ScrollView view, Vector2 offset)> m_Scroll = new List<(ScrollView, Vector2)>();
+            /// <summary>Design ids to their elements (they stay the same while the screen is mounted).</summary>
+            readonly Dictionary<string, VisualElement> m_Named = new Dictionary<string, VisualElement>(StringComparer.Ordinal);
             public readonly Screen Screen;
             public readonly Mount Mount = new Mount();
             public readonly DesignManualClock Clock = new DesignManualClock();
@@ -530,11 +697,44 @@ namespace DesignUi.Editor
             Vector2? m_PointerAt;
             bool m_Pressed;
 
-            public Session(CaptureRequest req, DesignUiProfile profile)
+            public Session(CaptureRequest req, DesignUiProfile profile, Screen screen = null)
             {
                 m_Req = req;
                 m_Profile = profile;
-                Screen = Prepare(req, profile);
+                if (screen == null) Screen = Prepare(req, profile);
+                else
+                {
+                    CheckRequest(req, screen);
+                    Screen = screen;
+                }
+            }
+
+            /// <summary>The next job on the mounted screen: its output, notes and boxes.</summary>
+            public void Begin(CaptureRequest req)
+            {
+                if (req.Viewport != m_Req.Viewport) throw new InvalidOperationException("the mounted screen renders " + m_Req.Viewport + ", not " + req.Viewport);
+                m_Req = req;
+            }
+
+            /// <summary>Scroll offsets back to the mount's (a focus may have scrolled a view).</summary>
+            public IEnumerable<object> RestoreScroll()
+            {
+                bool moved = false;
+                foreach (var (view, offset) in m_Scroll)
+                    if (view.scrollOffset != offset)
+                    {
+                        view.scrollOffset = offset;
+                        moved = true;
+                    }
+                if (moved) for (int i = 0; i < ChangeFrames; i++) yield return null;
+            }
+
+            VisualElement Named(string id)
+            {
+                if (m_Named.TryGetValue(id, out var e)) return e;
+                e = BoxesWriter.Find(DocRoot, id);
+                m_Named[id] = e;
+                return e;
             }
 
             /// <summary>Mounts the screen with its sample data, in <paramref name="state"/>, with the player's reduced motion as given.</summary>
@@ -566,12 +766,13 @@ namespace DesignUi.Editor
                 Player?.Rescan(); // list slots made by the ListView's first layout
                 Panel = Mount.Panel;
                 m_Scale = PanelScale(Panel, m_Req.Viewport);
+                DocRoot.Query<ScrollView>().ForEach(v => m_Scroll.Add((v, v.scrollOffset)));
             }
 
             static string Label(CaptureApply a) => a.Kind + " " + (a.Absent ? "!" : "") + a.Name + " " + a.ElementId;
 
             VisualElement Element(CaptureApply a) =>
-                BoxesWriter.Find(DocRoot, a.ElementId) ?? throw new InvalidOperationException("the capture applies " + a + ", but the screen has no element '" + a.ElementId + "'");
+                Named(a.ElementId) ?? throw new InvalidOperationException("the capture applies " + a + ", but the screen has no element '" + a.ElementId + "'");
 
             static bool IsPointer(CaptureApply a) => a.Kind == CaptureApply.PseudoKind && (a.Name == "hover" || a.Name == "active");
             static bool IsFocus(CaptureApply a) => a.Kind == CaptureApply.PseudoKind && a.Name == "focus";
@@ -616,7 +817,16 @@ namespace DesignUi.Editor
                 bool press = pointer.Count == 1 && pointer[0].Name == "active";
                 if (m_Pressed && (pointerTarget != m_PointerTarget || !press))
                 {
-                    SendPointer(Panel, EventType.MouseUp, m_PointerAt.Value);
+                    if (Shared)
+                    {
+                        // released off the screen: no click (a toggle would change its value), the pointer comes back below
+                        var away = new Vector2(-10000f, -10000f);
+                        SendPointer(Panel, EventType.MouseMove, away);
+                        SendPointer(Panel, EventType.MouseUp, away);
+                        m_PointerAt = Mount.PointerAt = null;
+                        m_PointerTarget = null;
+                    }
+                    else SendPointer(Panel, EventType.MouseUp, m_PointerAt.Value);
                     m_Pressed = Mount.Pressed = false;
                     for (int i = 0; i < ChangeFrames; i++) yield return null;
                 }
@@ -680,10 +890,14 @@ namespace DesignUi.Editor
             void Set(CaptureApply a, bool on)
             {
                 var el = Element(a);
+                // off again: what the screen had before the session changed it (its markup's and sample data's), not the opposite of on
+                var key = a.ElementId + "|" + a.Kind + "|" + a.Name;
                 if (a.Kind == CaptureApply.ClassKind)
                 {
-                    // an absent item takes a markup class off; leaving it puts the class back
-                    bool present = a.Absent ? !on : on;
+                    // an absent item takes a markup class off; leaving it puts the class back; a class the element has (an
+                    // item's sample class) stays when the item that added it again is left
+                    if (!m_Originals.ContainsKey(key)) m_Originals[key] = el.ClassListContains(a.Name);
+                    bool present = a.Absent ? !on && m_Originals[key] : on || m_Originals[key];
                     el.EnableInClassList(a.Name, present);
                     m_Filler.MirrorClass(DocRoot, a.ElementId, a.Name, present);
                     return;
@@ -691,11 +905,13 @@ namespace DesignUi.Editor
                 switch (a.Name)
                 {
                     case "disabled":
-                        el.SetEnabled(!on);
+                        if (!m_Originals.ContainsKey(key)) m_Originals[key] = !el.enabledSelf;
+                        el.SetEnabled(!(on || m_Originals[key]));
                         break;
                     case "checked":
                         if (!(el is INotifyValueChanged<bool> toggle)) throw new NotCapturableException("checked applies to '" + a.ElementId + "', which is not a toggle in Unity");
-                        toggle.value = on;
+                        if (!m_Originals.ContainsKey(key)) m_Originals[key] = toggle.value;
+                        toggle.value = on || m_Originals[key];
                         break;
                     default:
                         throw new NotCapturableException("unknown pseudo-state '" + a.Name + "'");
@@ -744,7 +960,26 @@ namespace DesignUi.Editor
             {
                 Directory.CreateDirectory(m_Req.OutDir);
                 File.WriteAllBytes(Path.Combine(m_Req.OutDir, name + ".png"), Mount.ReadPng());
-                var boxes = BoxesWriter.Measure(name, DocRoot, m_Req.Viewport, m_Scale, Screen.Ir);
+                WriteBoxes(name);
+            }
+
+            /// <summary>Writes the capture's boxes entry now and its PNG on a worker thread (the task ends once the PNG is on disk).</summary>
+            public Task Write(string name, bool encodeOffThread)
+            {
+                if (!encodeOffThread)
+                {
+                    Write(name);
+                    return Task.CompletedTask;
+                }
+                Directory.CreateDirectory(m_Req.OutDir);
+                var png = Mount.WritePngAsync(Path.Combine(m_Req.OutDir, name + ".png"));
+                WriteBoxes(name);
+                return png;
+            }
+
+            void WriteBoxes(string name)
+            {
+                var boxes = BoxesWriter.Measure(name, Named, m_Req.Viewport, m_Scale, Screen.Ir);
                 if (m_Req.Boxes != null) m_Req.Boxes[name] = boxes;
                 else BoxesWriter.Merge(Path.Combine(m_Req.OutDir, BoxesWriter.FileName), boxes);
             }

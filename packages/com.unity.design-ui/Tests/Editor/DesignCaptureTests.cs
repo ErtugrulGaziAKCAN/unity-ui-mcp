@@ -45,7 +45,7 @@ namespace DesignUi.Editor.Tests
         /// <c>DESIGN_UI_RUN_ID</c> (optional) is the run id the done markers carry, so a runner accepts only this run's.
         /// </summary>
         [UnityTest]
-        [Timeout(1700000)] // a whole fidelity suite (statics and every animation sample) takes minutes; the clone tool stops Unity at 1800 s
+        [Timeout(1700000)] // only until the test sets its own from the job count (SetTestTimeout); the clone tool stops Unity at 1800 s
         public IEnumerator CaptureFromEnv()
         {
             var export = Env("DESIGN_UI_EXPORT", "DESIGN_UI_EXPORT_DIR");
@@ -55,6 +55,14 @@ namespace DesignUi.Editor.Tests
             Assert.IsNotNull(outDir, "DESIGN_UI_OUT names the folder the captures are written to");
             var profile = DesignCapture.LoadProfile(Env("DESIGN_UI_PROFILE"));
             var exports = DesignUiBatch.PathList(export);
+            // the test's own limit follows the job count (a large screen captures hundreds of jobs)
+            var jobs = exports.Sum(e => DesignCapture.JobCount(e));
+            var timeout = DesignCapture.TestTimeoutMs(jobs);
+            var set = SetTestTimeout(timeout);
+            var line = "Design UI capture: " + jobs + " jobs; test timeout " + timeout / 1000 + " s (120 s + 2 s per job)" +
+                       (set ? "" : "; the test runner did not take it, its Timeout attribute applies");
+            Debug.Log(line);
+            TestContext.WriteLine(line);
             if (exports.Count > 1)
             {
                 Assert.IsNull(Env("DESIGN_UI_SCREEN"), "DESIGN_UI_SCREEN names one compiled screen; with several exports each uses its default");
@@ -69,6 +77,41 @@ namespace DesignUi.Editor.Tests
             Debug.Log("Design UI capture: " + result.Captured.Count + " captured, " + result.NotCaptured.Count + " not captured into " + outDir +
                       string.Concat(result.NotCaptured.Select(n => "\n  not captured " + n.Capture + ": " + n.Reason)));
             Assert.IsEmpty(result.Errors, string.Join("\n", result.Errors));
+        }
+
+        /// <summary>
+        /// Sets the running test's timeout (the Unity Test Framework checks it every frame of a UnityTest); false when this
+        /// framework version has no such setting. The framework keeps it on its internal execution context.
+        /// </summary>
+        internal static bool SetTestTimeout(int ms)
+        {
+            var type = typeof(UnityTestAttribute).Assembly.GetType("UnityEngine.TestRunner.NUnitExtensions.Runner.UnityTestExecutionContext");
+            var context = type?.GetProperty("CurrentContext", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)?.GetValue(null);
+            var timeout = context?.GetType().GetProperty("TestCaseTimeout");
+            if (timeout == null || !timeout.CanWrite) return false;
+            timeout.SetValue(context, ms);
+            return (int)timeout.GetValue(context) == ms;
+        }
+
+        [Test]
+        public void TestTimeout_FollowsTheJobCount()
+        {
+            Assert.AreEqual(120_000, DesignCapture.TestTimeoutMs(0));
+            Assert.AreEqual(120_000 + 486 * 2_000, DesignCapture.TestTimeoutMs(486), "a screen of 486 jobs gets 18 minutes");
+            var dir = TempDir();
+            Directory.CreateDirectory(Path.Combine(dir, "goldens"));
+            File.WriteAllText(Path.Combine(dir, DesignCapture.MatrixPath), "{ \"captures\": [ { \"name\": \"default@320x180\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [] }, " +
+                                                                             "{ \"name\": \"default@160x90\", \"state\": \"default\", \"viewport\": [160, 90], \"apply\": [] } ] }");
+            Assert.AreEqual(2, DesignCapture.JobCount(dir));
+            Assert.AreEqual(0, DesignCapture.JobCount(TempDir()), "no matrix");
+        }
+
+        [UnityTest]
+        public IEnumerator SetTestTimeout_ChangesTheRunningTestsLimit()
+        {
+            Assert.IsTrue(SetTestTimeout(600_000), "the Unity Test Framework takes a test's own timeout");
+            yield return null;
+            Assert.IsTrue(SetTestTimeout(180_000));
         }
 
         // ---- fixtures ----------------------------------------------------------------------------------------
@@ -448,6 +491,105 @@ namespace DesignUi.Editor.Tests
             yield return DesignCapture.Run(req, localizing);
             Assert.AreEqual("4 olay", countText, "the design's reference (tr) text with the sample value");
             CollectionAssert.AreEqual(new[] { "+2 daha", "+5 daha" }, moreTexts, "each item's own value");
+        }
+
+        /// <summary>
+        /// A capture run keeps a viewport's screen mounted from job to job (hover, press, focus, disabled, checked, classes,
+        /// states in between); every job's PNG and boxes are those of a freshly mounted screen (<see cref="DesignCapture.Run"/>).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator CaptureAll_MovesOneMountedScreenFromJobToJob_WithEveryCaptureAsAFreshMountsCapture()
+        {
+            var go = Node("go", "button", ("width", "60px"), ("height", "30px"), ("flex-shrink", "0"), ("background-color", "#123c47"))
+                .With("hover", ("background-color", "#16c2d5")).With("active", ("background-color", "#ff8800")).With("focus", ("background-color", "#00ff00"))
+                .With("disabled", ("background-color", "#444444"));
+            go.Initial = new IrInitial();
+            var off = Node("off", "button", ("width", "60px"), ("height", "30px"), ("flex-shrink", "0"), ("background-color", "#123c47")).With("disabled", ("background-color", "#444444"));
+            off.Initial = new IrInitial { Disabled = true };
+            var tick = Node("tick", "toggle", ("width", "20px"), ("height", "20px"), ("flex-shrink", "0"), ("background-color", "#123c47")).With("checked", ("background-color", "#16c2d5"));
+            tick.Initial = new IrInitial();
+            var panel = Box("panel", "#0f2a33").With("class:is-open", ("background-color", "#216372")).With("state:loading", ("background-color", "#ff00ff"));
+            // a class the screen already shows (markup, or an item's sample class): a job that applies it again leaves it on
+            var tag = Box("tag", "#0f2a33").With("class:is-on", ("background-color", "#3ccf7a"));
+            tag.Classes = new[] { "is-on" };
+            var ir = Small(BlackRoot(go, off, tick, panel, tag));
+            string J(string name, string state, params string[] apply) =>
+                "{ \"name\": \"" + name + "\", \"state\": \"" + state + "\", \"viewport\": [320, 180], \"apply\": [" + string.Join(", ", apply) + "] }";
+            string P(string pseudo, string id) => "{ \"kind\": \"pseudo\", \"pseudo\": \"" + pseudo + "\", \"elementId\": \"" + id + "\" }";
+            string C(string cls, string id) => "{ \"kind\": \"class\", \"name\": \"" + cls + "\", \"elementId\": \"" + id + "\" }";
+            var jobs = new[]
+            {
+                J("default@320x180", "default"), J("default@320x180.hover.go", "default", P("hover", "go")), J("default@320x180.active.go", "default", P("active", "go")),
+                J("default@320x180.checked.tick", "default", P("checked", "tick")), J("default@320x180.active.tick", "default", P("active", "tick")),
+                J("default@320x180.hover.tick", "default", P("hover", "tick")), J("default@320x180.focus.go", "default", P("focus", "go")),
+                J("default@320x180.disabled.go", "default", P("disabled", "go")), J("default@320x180.hover.off", "default", P("hover", "off")),
+                J("default@320x180.is-open.panel", "default", C("is-open", "panel")), J("default@320x180.is-on.tag", "default", C("is-on", "tag")),
+                J("loading@320x180", "loading"),
+                J("default@320x180.again", "default"),
+            };
+            var export = Export(ir, null, "{ \"captures\": [" + string.Join(", ", jobs) + "] }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+
+            var outAll = TempDir();
+            var result = new CaptureResult();
+            yield return DesignCapture.CaptureAll(export, screen, profile, outAll, result);
+            Assert.IsEmpty(result.Errors, string.Join("\n", result.Errors));
+            Assert.AreEqual(jobs.Length, result.Captured.Count, string.Join("\n", result.NotCaptured.Select(n => n.Capture + ": " + n.Reason)));
+            var all = JObject.Parse(File.ReadAllText(Path.Combine(outAll, BoxesWriter.FileName)));
+            foreach (var job in CaptureJob.ReadMatrix(Path.Combine(export, DesignCapture.MatrixPath)))
+            {
+                var one = new CaptureRequest
+                {
+                    ExportDir = export, ScreenFolder = screen, CaptureName = job.Name, Viewport = job.Viewport, OutDir = TempDir(), State = job.State, Apply = job.Apply,
+                };
+                yield return DesignCapture.Run(one, profile);
+                var fresh = Png(one).GetPixels32();
+                var shared = new Texture2D(2, 2);
+                _objects.Add(shared);
+                Assert.IsTrue(shared.LoadImage(File.ReadAllBytes(Path.Combine(outAll, job.Name + ".png"))));
+                var pixels = shared.GetPixels32();
+                Assert.AreEqual(fresh.Length, pixels.Length, job.Name);
+                int differing = 0;
+                for (int i = 0; i < fresh.Length; i++) if (!fresh[i].Equals(pixels[i])) differing++;
+                Assert.AreEqual(0, differing, job.Name + ": the mounted screen's capture is a fresh mount's, pixel for pixel");
+                Assert.IsTrue(JToken.DeepEquals(Boxes(one), all[job.Name]), job.Name + ": the same boxes");
+            }
+            // "again" (nothing applied) after the press on the toggle: had the release clicked it, it would show checked
+        }
+
+        [UnityTest]
+        public IEnumerator CaptureAll_KeepsBoxesAndTheMetaFileUpToDate_SoARunStoppedMidwayLeavesItsCaptures()
+        {
+            // every other job opens the panel, so each job takes editor frames (the run yields between jobs)
+            var export = Export(Small(BlackRoot(Box("panel", "#0f2a33").With("class:is-open", ("background-color", "#216372")))), null,
+                "{ \"captures\": [" + string.Join(", ", Enumerable.Range(0, 40).Select(i =>
+                    "{ \"name\": \"default@320x180.n" + i + "\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [" +
+                    (i % 2 == 1 ? "{ \"kind\": \"class\", \"name\": \"is-open\", \"elementId\": \"panel\" }" : "") + "] }")) + "] }");
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outDir = TempDir();
+            var run = DesignCapture.CaptureAll(export, screen, profile, outDir, new CaptureResult());
+            JObject meta = null;
+            try
+            {
+                // the run is stopped (disposed) once the meta file lists the first 24 captures (written every 25 jobs), as a killed Unity would stop it
+                while (run.MoveNext())
+                {
+                    yield return run.Current;
+                    var path = Path.Combine(outDir, DesignCapture.MetaFileName);
+                    meta = File.Exists(path) ? JObject.Parse(File.ReadAllText(path)) : null;
+                    if (meta != null && ((JArray)meta["captured"]).Count >= 24) break;
+                }
+            }
+            finally { (run as IDisposable)?.Dispose(); }
+            Assert.IsNotNull(meta);
+            Assert.AreEqual("running", (string)meta["status"]);
+            Assert.AreEqual(24, ((JArray)meta["captured"]).Count);
+            Assert.IsFalse(File.Exists(Path.Combine(outDir, DesignCapture.DoneFileName)), "a stopped run has no done marker");
+            var boxes = JObject.Parse(File.ReadAllText(Path.Combine(outDir, BoxesWriter.FileName)));
+            Assert.AreEqual(24, boxes.Count, "the captures so far are in boxes.json");
+            Assert.IsTrue(File.Exists(Path.Combine(outDir, "default@320x180.n0.png")));
         }
 
         [UnityTest]
