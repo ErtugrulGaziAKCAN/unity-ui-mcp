@@ -12,10 +12,12 @@ p{margin:0}
 @keyframes slide{from{translate:-10px 0}to{translate:10px 0}}
 .late{display:none;flex-shrink:0;font-weight:700;font-size:24px;line-height:32px}
 .state-on .late{display:flex}
+.tracked{letter-spacing:1.2px}
 .mover{width:20px;height:20px;flex-shrink:0;background-color:#f2b544;animation:slide 500ms ease 0ms 1 normal both}
 </style></head><body><div class="screen" data-u-screen="rules">
 <div class="row" data-u-id="row"><p class="chip" data-u-id="a" data-l10n="r.a" data-en="Squad">Kadro</p><p class="chip" data-u-id="b" data-l10n="r.b" data-en="Tactics">Taktik</p><p class="fixed" data-u-id="c" data-l10n="r.c" data-en="Fixed">Sabit</p><div class="boxed" data-u-id="d"></div></div>
 <div class="row" data-u-id="radios"><input type="radio" class="dot" name="pick" data-u-id="r1" checked><input type="radio" class="dot" name="pick" data-u-id="r2"></div>
 <div class="mover" data-u-id="mover"></div>
+<div class="row" data-u-id="tracked-row"><p class="chip tracked" data-u-id="e" data-l10n="r.e" data-en="TODAY">BUGÜN</p></div>
 <div class="row" data-u-id="late-row"><p class="late" data-u-state="on" data-u-id="late" data-l10n="r.late" data-en="Shown late">Sonradan görünen yazı</p></div>
 </div></body></html>

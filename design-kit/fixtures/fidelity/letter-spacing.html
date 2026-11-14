@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.letter-spacing</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 16px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 16px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
+.text-subtitle-bold { font-size: 32px; line-height: 40px; font-weight: 700; }
+.text-title { font-size: 36px; line-height: 48px; font-weight: 400; }
+.text-title-bold { font-size: 36px; line-height: 48px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 60px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 60px; font-weight: 700; }
+.text-display { font-size: 64px; line-height: 80px; font-weight: 400; }
+.text-display-bold { font-size: 64px; line-height: 80px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 32px; background-color: var(--color-surface-900); }
+.row { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 24px; }
+.chip { flex-shrink: 0; margin-right: 24px; padding-left: 12px; padding-right: 12px; white-space: nowrap; background-color: var(--color-surface-800); }
+.after { flex-shrink: 0; width: 24px; height: 16px; background-color: var(--color-accent); }
+.boxed { flex-shrink: 0; width: 480px; margin-right: 24px; white-space: nowrap; background-color: var(--color-surface-800); }
+.center { text-align: center; }
+.right { text-align: right; }
+.wrap { flex-shrink: 0; width: 400px; margin-right: 24px; background-color: var(--color-surface-800); }
+.caps { letter-spacing: 1.2px; }
+.caps-label { letter-spacing: 1.6px; }
+.wide { letter-spacing: 4px; }
+.tight-body { letter-spacing: -0.48px; }
+.tight-title { letter-spacing: -0.72px; }
+.tight-headline { letter-spacing: -0.96px; }
+.tight-display { letter-spacing: -1.28px; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.letter-spacing">
+  <!-- tracked caps labels: text-sized with a box after them, then in fixed boxes left, centred and right aligned -->
+  <div class="row">
+    <p class="chip text-caption-bold caps" data-u-id="caps-caption" data-l10n="fidelity.letter-spacing.caps-caption" data-en="TODAY">BUGÜN</p>
+    <div class="after" data-u-id="after-caption"></div>
+  </div>
+  <div class="row">
+    <p class="chip text-label-bold caps-label" data-u-id="caps-label" data-l10n="fidelity.letter-spacing.caps-label" data-en="SECTION TITLE">BÖLÜM BAŞLIĞI</p>
+    <div class="after" data-u-id="after-label"></div>
+  </div>
+  <div class="row">
+    <p class="boxed text-label-bold caps-label" data-u-id="caps-left" data-l10n="fidelity.letter-spacing.caps-left" data-en="UPCOMING MATCHES">YAKLAŞAN MAÇLAR</p>
+    <p class="boxed text-label-bold caps-label center" data-u-id="caps-center" data-l10n="fidelity.letter-spacing.caps-center" data-en="UPCOMING MATCHES">YAKLAŞAN MAÇLAR</p>
+    <p class="boxed text-label-bold caps-label right" data-u-id="caps-right" data-l10n="fidelity.letter-spacing.caps-right" data-en="UPCOMING MATCHES">YAKLAŞAN MAÇLAR</p>
+  </div>
+  <div class="row">
+    <p class="chip text-body wide" data-u-id="wide-body" data-l10n="fidelity.letter-spacing.wide-body" data-en="Wide tracking">Geniş aralık</p>
+    <div class="after" data-u-id="after-wide"></div>
+  </div>
+  <!-- tight headings: negative tracking at every large style -->
+  <div class="row">
+    <p class="chip text-body tight-body" data-u-id="tight-body" data-l10n="fidelity.letter-spacing.tight-body" data-en="Season calendar">Sezon takvimi</p>
+    <div class="after" data-u-id="after-body"></div>
+  </div>
+  <div class="row">
+    <p class="chip text-title-bold tight-title" data-u-id="tight-title" data-l10n="fidelity.letter-spacing.tight-title" data-en="Season review">Sezon özeti</p>
+    <div class="after" data-u-id="after-title"></div>
+  </div>
+  <div class="row">
+    <p class="chip text-headline-bold tight-headline" data-u-id="tight-headline" data-l10n="fidelity.letter-spacing.tight-headline" data-en="Championship">Şampiyonluk</p>
+    <div class="after" data-u-id="after-headline"></div>
+  </div>
+  <div class="row">
+    <p class="chip text-display-bold tight-display" data-u-id="tight-display" data-l10n="fidelity.letter-spacing.tight-display" data-en="Derby day">Derbi günü</p>
+    <div class="after" data-u-id="after-display"></div>
+  </div>
+  <!-- tracked text that wraps: the same line breaks -->
+  <div class="row">
+    <p class="wrap text-label caps-label" data-u-id="wrap-label" data-l10n="fidelity.letter-spacing.wrap-label" data-en="The board meets after the derby to discuss the budget.">Yönetim kurulu bütçeyi konuşmak için derbiden sonra toplanıyor.</p>
+    <p class="wrap text-body tight-body" data-u-id="wrap-body" data-l10n="fidelity.letter-spacing.wrap-body" data-en="Ticket prices stay the same for the rest of the season.">Bilet fiyatları sezonun geri kalanında aynı kalıyor.</p>
+  </div>
+</div>
+</body>
+</html>

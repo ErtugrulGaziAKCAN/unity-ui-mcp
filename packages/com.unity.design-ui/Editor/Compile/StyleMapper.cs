@@ -143,6 +143,7 @@ namespace DesignUi.Editor
                     case "font-weight": case "font-style":
                     case "text-align": case "white-space": case "white-space-collapse": case "text-wrap-mode":
                     case "overflow": case "overflow-x": case "overflow-y": case "font-family":
+                    case "letter-spacing":
                         break; // composed below
                     case "aspect-ratio":
                         result.Add(new UssDeclaration(key, AspectRatio(value)));
@@ -198,6 +199,8 @@ namespace DesignUi.Editor
                 }
             }
 
+            LetterSpacing(result, support, Merged, Has, isText, isLayer);
+
             if (Has("font-family"))
                 result.Add(new UssDeclaration("-unity-font-definition", "var(--font-" + FamilySlug(css["font-family"]) + ")"));
 
@@ -219,6 +222,59 @@ namespace DesignUi.Editor
                 .ThenBy(d => d.Property, StringComparer.Ordinal)
                 .ToList();
         }
+
+        /// <summary>
+        /// CSS letter-spacing is px added after every character; UI Toolkit's USS letter-spacing is hundredths of an em of the
+        /// element's font size (Unity 6000.3, both generators; measured in LetterSpacingTests and docs/findings/letter-spacing.md),
+        /// so the USS value is <c>px × 100 / font-size</c>, written wherever the layer changes the spacing or the font size. The
+        /// standard generator leaves out the spacing after a line's last character, which Chromium adds: a text element gets it
+        /// as extra right padding (its box, line breaks and centred or right-aligned text then match). Without a font size (a
+        /// container; the exporter gives every text node its own) a spacing other than none is left to the text elements, which
+        /// carry it with their own size.
+        /// </summary>
+        static void LetterSpacing(List<UssDeclaration> result, CssSupport support, Func<string, string> merged, Func<string, bool> has, bool isText, bool isLayer)
+        {
+            var raw = merged("letter-spacing");
+            if (raw == null) return;
+            double spacing = SpacingPx(Normalize(support, "letter-spacing", raw), "letter-spacing");
+            var size = merged("font-size");
+            if (has("letter-spacing") && spacing == 0 && size == null) result.Add(new UssDeclaration("letter-spacing", "0px")); // none is none at any size
+            else if ((has("letter-spacing") || has("font-size")) && size != null)
+            {
+                double fontPx = SpacingPx(size, "font-size");
+                if (!(fontPx > 0)) throw new UnsupportedStyleException("font-size", size, null, "letter-spacing needs a font size above 0 px.");
+                result.RemoveAll(d => d.Property == "letter-spacing");
+                result.Add(new UssDeclaration("letter-spacing", Num(spacing * 100 / fontPx) + "px"));
+            }
+            if (!isText) return;
+            bool layerPadding = has("padding-right") || has("padding");
+            if (!has("letter-spacing") && !layerPadding) return; // the padding written before still holds
+            var paddingRaw = merged("padding-right") ?? (merged("padding") is string all ? PaddingRight(all) : null);
+            if (spacing == 0 && (layerPadding || !isLayer)) return; // the layer's own padding, nothing to add
+            if (paddingRaw != null && paddingRaw.Trim().EndsWith("%", StringComparison.Ordinal))
+                throw new UnsupportedStyleException("padding-right", paddingRaw, "U-CSS-023",
+                    "A text with letter-spacing needs its right padding in px: UI Toolkit draws no spacing after the last character, and the compiler adds it to that padding.");
+            double padding = paddingRaw == null ? 0 : SpacingPx(paddingRaw, "padding-right");
+            result.RemoveAll(d => d.Property == "padding-right");
+            result.Add(new UssDeclaration("padding-right", Num(padding + spacing) + "px"));
+        }
+
+        static string PaddingRight(string padding)
+        {
+            var p = padding.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            return p.Length == 0 ? null : p.Length == 1 ? p[0] : p[1];
+        }
+
+        static double SpacingPx(string value, string what)
+        {
+            var v = value.Trim();
+            if (v == "0") return 0;
+            if (v.EndsWith("px", StringComparison.Ordinal) &&
+                double.TryParse(v.Substring(0, v.Length - 2), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var px)) return px;
+            throw new UnsupportedStyleException(what, value, "U-CSS-023", "Write " + what + " in px.");
+        }
+
+        static string Num(double v) => Math.Round(v, 4).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
 
         static string Normalize(CssSupport support, string key, string value)
         {

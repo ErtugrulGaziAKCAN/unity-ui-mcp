@@ -19,6 +19,10 @@ Unity package (`com.unity.design-ui`) and the Node tools share the version numbe
   broken after the package update: generated manifests record the package stamp, each screen folder's import is recorded
   with the stamp in the Library, and after a script reload the screens recorded under another package are imported
   again, asset by asset (also after an import logged "Uxml object has an invalid child element").
+- CSS `letter-spacing` keeps its size in Unity: UI Toolkit applies USS letter-spacing in hundredths of an em of the
+  font size (measured with both generators), so the compiler writes `px × 100 / font-size` and gives a text the spacing
+  after its last character as right padding (the standard generator draws none there, Chromium does). New fidelity
+  fixture `letter-spacing.html` (tracked caps labels, tight headings, wrapped tracked text). docs/findings/letter-spacing.md.
 - Box and baseline limits are compared with a float tolerance of 0.001 px (Unity's float32 layout): a frame at a half
   CSS pixel at scale 0.75 that UI Toolkit snaps measured 1.000008 px against the ±1 px limit.
 - A text line partly covered by a later element (an open popup and its baked shadow over a card title) is judged on its

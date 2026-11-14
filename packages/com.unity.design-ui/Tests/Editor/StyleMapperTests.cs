@@ -270,6 +270,52 @@ namespace DesignUi.Editor.Tests
             Assert.Throws<UnsupportedStyleException>(() => Map(("overflow", "hidden"), ("overflow-x", "hidden")));
         }
 
+        // ---- letter-spacing ----------------------------------------------------------------------------------
+
+        static IReadOnlyList<UssDeclaration> Layer(Dictionary<string, string> layer, Dictionary<string, string> basis, bool isText = true) =>
+            StyleMapper.Map(layer, basis, isText, false);
+
+        /// <summary>
+        /// UI Toolkit applies USS letter-spacing in hundredths of an em of the element's font size (measured: LetterSpacingTests),
+        /// CSS in px: 1.6px on 16px text is 10 in USS. The standard generator leaves out the spacing after the last character,
+        /// which Chromium adds: a text element gets it as extra right padding, so its box, line breaks and alignment match.
+        /// </summary>
+        [Test]
+        public void LetterSpacing_IsHundredthsOfAnEm_AndTheLastCharactersSpacingIsRightPadding()
+        {
+            var text = Map(("letter-spacing", "1.6px"), ("font-size", "16px"));
+            Assert.AreEqual("10px", Get(text, "letter-spacing"));
+            Assert.AreEqual("1.6px", Get(text, "padding-right"));
+            var tight = Map(("letter-spacing", "-0.48px"), ("font-size", "24px"), ("padding-right", "8px"));
+            Assert.AreEqual("-2px", Get(tight, "letter-spacing"));
+            Assert.AreEqual("7.52px", Get(tight, "padding-right"));
+            var none = Map(("letter-spacing", "normal"), ("font-size", "24px"), ("padding-right", "8px"));
+            Assert.AreEqual("0px", Get(none, "letter-spacing"));
+            Assert.AreEqual("8px", Get(none, "padding-right"));
+        }
+
+        [Test]
+        public void LetterSpacing_FollowsALayersFontSize_AndPaddingAndUndoesTheCompensation()
+        {
+            var basis = D(("letter-spacing", "2px"), ("font-size", "16px"), ("padding-right", "4px"));
+            Assert.AreEqual("6.25px", Get(Layer(D(("font-size", "32px")), basis), "letter-spacing"), "a layer that changes the font size keeps 2 px");
+            Assert.IsNull(Get(Layer(D(("font-size", "32px")), basis), "padding-right"));
+            Assert.AreEqual("12px", Get(Layer(D(("padding-right", "10px")), basis), "padding-right"), "the layer's padding plus the spacing");
+            var off = Layer(D(("letter-spacing", "normal")), basis);
+            Assert.AreEqual("0px", Get(off, "letter-spacing"));
+            Assert.AreEqual("4px", Get(off, "padding-right"), "no spacing, no compensation");
+        }
+
+        [Test]
+        public void LetterSpacing_OnAContainer_HasNoPadding_AndWithoutAFontSizeIsLeftToItsTexts()
+        {
+            var container = StyleMapper.Map(D(("letter-spacing", "1px"), ("font-size", "20px")), D(("letter-spacing", "1px"), ("font-size", "20px")), false, true);
+            Assert.AreEqual("5px", Get(container, "letter-spacing"));
+            Assert.IsNull(Get(container, "padding-right"));
+            var bare = StyleMapper.Map(D(("letter-spacing", "1px")), D(("letter-spacing", "1px")), false, true);
+            Assert.IsNull(Get(bare, "letter-spacing"), "its text elements carry the spacing with their own font size");
+        }
+
         // ---- values ----------------------------------------------------------------------------------------
 
         [TestCase("display", "grid")]

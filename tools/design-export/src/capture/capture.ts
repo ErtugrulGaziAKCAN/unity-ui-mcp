@@ -214,8 +214,13 @@ function pageTextCeil(arg: { items: number[]; ir: number[]; scale: number }): nu
     const outer = px(cs.width) + (cs.boxSizing === "border-box" ? 0 : padding + bl + br);
     // sized by its text: the content box is the text's width (LayoutUnit precision); stretched, fixed and wrapped boxes are not
     if (Math.abs(outer - padding - bl - br - text) > 1 / 32) continue;
-    const content = Math.ceil(text * arg.scale - 1e-4) / arg.scale;
-    const unity = content + padding + gridBorder(bl) + gridBorder(br);
+    // letter-spacing: Chromium adds it after the last character too, UI Toolkit's standard generator does not (the compiler
+    // gives a text element that spacing as right padding instead), so Unity measures the text without it and adds it back
+    const track = cs.letterSpacing === "normal" ? 0 : px(cs.letterSpacing);
+    const content = Math.ceil((text - track) * arg.scale - 1e-4) / arg.scale + track;
+    // the compensation makes the padding fractional; Yoga then snaps the box's edges to whole device pixels
+    const box = content + padding + gridBorder(bl) + gridBorder(br);
+    const unity = track ? Math.round(box * arg.scale) / arg.scale : box;
     if (unity - outer < 1e-4) continue;
     // the border-box width Unity lays out; with content-box sizing the content takes what the borders do not
     want.push([el, cs.boxSizing === "border-box" ? unity : unity - padding - bl - br]);
