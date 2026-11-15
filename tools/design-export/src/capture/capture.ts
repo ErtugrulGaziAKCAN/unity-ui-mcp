@@ -455,10 +455,18 @@ export class CaptureSession {
   private dom: DomEl[] = [];
   private nodes = new Map<string, IrNode>();
   private items: [string, number, boolean][] = [];
-  /** The written-out repeat items' copies of the IR elements inside repeats: [`<id><itemSuffix>`, DOM index] (boxes `items`). */
-  private itemCopies: [string, number][] = [];
+  /**
+   * The written-out repeat items' copies of the IR elements inside repeats: [`<id><itemSuffix>`, DOM index, whether the IR
+   * element carries text] (boxes `items`: their boxes and, for text, their lines, as the IR elements').
+   */
+  private itemCopies: [string, number, boolean][] = [];
   private irIndices: number[] = [];
-  /** DOM indices of the IR text nodes and text buttons, whose text-sized width the golden rounds as UI Toolkit does. */
+  /** DOM indices of the IR elements and their copies in later repeat items: a text's own lines leave out text inside these. */
+  private nestIndices: number[] = [];
+  /**
+   * DOM indices of the IR text nodes and text buttons and of their copies in later repeat items, whose text-sized width the
+   * golden rounds as UI Toolkit does (Unity's copies are the item template's, with the same text fit).
+   */
   private textItems: number[] = [];
   /** Radio names taken off for the session ([element index, name]), put back on close. */
   private radioNames: [number, string][] = [];
@@ -545,10 +553,13 @@ export class CaptureSession {
       if (n.text !== null && (n.kind === "text" || n.kind === "button")) this.textItems.push(elements[id]);
     }
     this.external.sort();
-    for (const id of this.nodes.keys()) for (const item of this.itemPaths(id)) {
+    for (const [id, n] of this.nodes) for (const item of this.itemPaths(id)) {
       const i = this.at(id, item);
-      if (i >= 0) this.itemCopies.push([id + itemSuffix(item), i]);
+      if (i < 0) continue;
+      this.itemCopies.push([id + itemSuffix(item), i, n.text !== null]);
+      if (n.text !== null && (n.kind === "text" || n.kind === "button")) this.textItems.push(i);
     }
+    this.nestIndices = [...this.irIndices, ...this.itemCopies.map(([, i]) => i)];
     this.radioNames = await d.page.evaluate(pageRadiosApart);
 
     await this.send("Animation.enable");
@@ -802,7 +813,7 @@ export class CaptureSession {
     }
     // text widths are measured once a face the job shows for the first time has loaded (else the fallback's width)
     await this.d.page.evaluate(pageSettle);
-    await this.d.page.evaluate(pageTextCeil, { items: this.textItems, ir: this.irIndices, scale: this.scale, tolerance: TEXT_CEIL_TOLERANCE });
+    await this.d.page.evaluate(pageTextCeil, { items: this.textItems, ir: this.nestIndices, scale: this.scale, tolerance: TEXT_CEIL_TOLERANCE });
     await this.d.page.evaluate(pageSettle);
     if (!job.anim) {
       const idOf = new Map(Object.entries(this.elements).map(([id, i]) => [i, id] as const));
@@ -814,13 +825,12 @@ export class CaptureSession {
     const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
     if (w !== job.viewport[0] || h !== job.viewport[1]) throw new Error(`${name}: the capture is ${w}x${h}, not ${vpName(job.viewport)}`);
     const els = await this.d.page.evaluate(pageBoxes, { items: this.items, ir: this.irIndices, scale: this.scale });
-    const copies = this.itemCopies.length
-      ? await this.d.page.evaluate(pageBoxes, { items: this.itemCopies.map(([k, i]) => [k, i, false] as [string, number, boolean]), ir: this.irIndices, scale: this.scale })
-      : [];
+    // a copy's own text leaves out the text of the copies nested in it, as an IR element's leaves out nested IR elements'
+    const copies = this.itemCopies.length ? await this.d.page.evaluate(pageBoxes, { items: this.itemCopies, ir: this.nestIndices, scale: this.scale }) : [];
     fs.mkdirSync(goldensDir, { recursive: true });
     fs.writeFileSync(path.join(goldensDir, `${name}.png`), png);
     const boxes: CaptureBoxes = { capture: name, viewport: [job.viewport[0], job.viewport[1]], scale: this.scale, elements: Object.fromEntries(els), external: [...this.external] };
-    if (copies.length) boxes.items = Object.fromEntries(copies.map(([k, b]) => [k, { x: b.x, y: b.y, w: b.w, h: b.h, visible: b.visible }]));
+    if (copies.length) boxes.items = Object.fromEntries(copies.map(([k, b]) => [k, { x: b.x, y: b.y, w: b.w, h: b.h, visible: b.visible, text: b.text, lines: b.lines }]));
     return boxes;
   }
 

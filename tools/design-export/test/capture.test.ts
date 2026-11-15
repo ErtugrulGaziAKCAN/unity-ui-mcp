@@ -623,13 +623,27 @@ describe("captures", () => {
     // days a pitch apart, a hidden "more" not visible, the shown one visible
     const boxes = r.boxes["default@1280x720.hover.plain"];
     expect(validateBoxes(boxes)).toEqual([]);
-    expect(Object.keys(boxes.items ?? {}).sort()).toEqual(["day#1", "day#2", "more#1", "more#2", "option#1"]);
+    expect(Object.keys(boxes.items ?? {}).sort()).toEqual(["date#1", "date#2", "day#1", "day#2", "more#1", "more#2", "option#1"]);
     const day = boxes.elements.day, items = boxes.items!;
     const pitch = items["day#1"].x - day.x;
     expect(pitch).toBeGreaterThan(0);
-    expect(items["day#2"]).toMatchObject({ x: day.x + 2 * pitch, y: day.y, w: day.w, h: day.h, visible: true });
+    expect(items["day#2"]).toMatchObject({ x: day.x + 2 * pitch, y: day.y, w: day.w, h: day.h, visible: true, text: false, lines: [] });
     expect(items["more#1"].visible).toBe(false);
     expect(items["more#2"].visible).toBe(true);
+    // a copy of a text records its own lines as the IR element does (ruling R133), and its text-sized width is rounded up
+    // to whole device pixels as UI Toolkit lays it out (the item template's text fit), as the IR element's is
+    const date = boxes.elements.date;
+    for (const [k, n] of [["date#1", 1], ["date#2", 2]] as const) {
+      const c = items[k];
+      expect(c, k).toMatchObject({ text: true, visible: true });
+      expect(c.lines, k).toHaveLength(1);
+      expect(c.lines[0].baseline - c.y, k).toBeCloseTo(date.lines[0].baseline - date.y, 6);
+      expect(c.lines[0].x, k).toBeCloseTo(date.lines[0].x + n * pitch, 6);
+      expect(c.w, k).toBe(Math.round(c.w));
+      expect(c.w, k).toBeGreaterThanOrEqual(c.lines[0].w);
+      expect(c.w - c.lines[0].w, k).toBeLessThan(1);
+    }
+    expect(date.w).toBe(Math.round(date.w));
     expect(itemSuffix([0, 2])).toBe("#2");
     expect(itemSuffix([1, 0])).toBe("#0#1");
     expect(itemSuffix([3, 1])).toBe("#1#3");

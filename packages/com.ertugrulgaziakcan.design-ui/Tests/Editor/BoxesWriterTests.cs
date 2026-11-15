@@ -192,9 +192,11 @@ namespace DesignUi.Editor.Tests
         [UnityTest]
         public IEnumerator Measure_WritesTheRepeatItemsCopies_ByTheirNames()
         {
+            var twin = FontTwinGenerator.GetOrCreateTwin(FontFixture.Regular, FontFixture.TwinFolder);
             var root = new VisualElement { name = "root" };
             root.style.width = 400;
             root.style.height = 300;
+            root.style.unityFontDefinition = FontDefinition.FromSDFFont(twin);
             var list = new VisualElement { name = "list" };
             root.Add(list);
             VisualElement Row(string suffix, bool shown)
@@ -202,10 +204,16 @@ namespace DesignUi.Editor.Tests
                 var row = new VisualElement { name = "row" + suffix };
                 row.style.height = 20;
                 row.style.marginTop = 4;
+                row.style.flexDirection = FlexDirection.Row;
                 if (!shown) row.style.visibility = Visibility.Hidden;
-                var cell = new VisualElement { name = "cell" + (suffix == "" ? "" : "#0" + suffix) };
+                var inner = suffix == "" ? "" : "#0" + suffix;
+                var cell = new VisualElement { name = "cell" + inner };
                 cell.style.height = 10;
+                cell.style.width = 30;
                 row.Add(cell);
+                var label = new Label("Row " + suffix.TrimStart('#')) { name = "label" + inner };
+                label.style.fontSize = 12;
+                row.Add(label);
                 list.Add(row);
                 return row;
             }
@@ -221,19 +229,30 @@ namespace DesignUi.Editor.Tests
             rows.Repeat = new IrRepeat { Name = "rows", Mode = "inline", Count = 3 };
             var cells = Node("row", "container");
             cells.Repeat = new IrRepeat { Name = "cells", Mode = "inline", Count = 1 };
-            var ir = TestIr.Screen(Root(rows.Add(cells.Add(Node("cell", "container"))), Node("loose", "container")));
+            var ir = TestIr.Screen(Root(rows.Add(cells.Add(Node("cell", "container"), TextNode("label", "text", "Row"))), Node("loose", "container")));
             const double scale = 0.5;
             var capture = BoxesWriter.Measure("default@200x150", id => BoxesWriter.Find(root, id), new Vector2Int(200, 150), scale, ir, root);
             var items = (JObject)capture["items"];
             Assert.IsNotNull(items);
-            CollectionAssert.AreEqual(new[] { "cell#0#1", "cell#0#2", "row#1", "row#2" }, items.Properties().Select(p => p.Name));
+            CollectionAssert.AreEqual(new[] { "cell#0#1", "cell#0#2", "label#0#1", "label#0#2", "row#1", "row#2" }, items.Properties().Select(p => p.Name));
             var r1 = list[1].worldBound;
             Assert.AreEqual(r1.y * scale, (double)items["row#1"]["y"], 1e-4);
             Assert.AreEqual(r1.height * scale, (double)items["row#1"]["h"], 1e-4);
             Assert.IsTrue((bool)items["row#1"]["visible"]);
             Assert.IsFalse((bool)items["row#2"]["visible"], "visibility hidden");
             Assert.AreEqual((list[0].worldBound.y + 24) * scale, (double)items["row#1"]["y"], 1e-4, "a pitch below the first row");
-            CollectionAssert.AreEquivalent(new[] { "x", "y", "w", "h", "visible" }, ((JObject)items["row#1"]).Properties().Select(p => p.Name));
+            CollectionAssert.AreEquivalent(new[] { "x", "y", "w", "h", "visible", "text", "lines" }, ((JObject)items["row#1"]).Properties().Select(p => p.Name));
+            Assert.IsFalse((bool)items["row#1"]["text"]);
+            Assert.IsEmpty((JArray)items["cell#0#1"]["lines"]);
+            // a copy of a text has its own lines, measured as the IR element's (ruling R133): a pitch below the first row's
+            var first = (JArray)capture["elements"]["label"]["lines"];
+            var copy = (JArray)items["label#0#1"]["lines"];
+            Assert.IsTrue((bool)items["label#0#1"]["text"]);
+            Assert.AreEqual(1, first.Count);
+            Assert.AreEqual(1, copy.Count);
+            Assert.AreEqual((double)first[0]["baseline"] + 24 * scale, (double)copy[0]["baseline"], 1e-4);
+            Assert.AreEqual((double)first[0]["x"], (double)copy[0]["x"], 1e-4);
+            Assert.Greater((double)copy[0]["w"], 0);
             Assert.IsNull(BoxesWriter.Measure("default@200x150", root, new Vector2Int(200, 150), scale, ir)["items"], "no items root: no items");
             var plain = TestIr.Screen(Root(Node("list", "container").Add(Node("row", "container"))));
             Assert.IsNull(BoxesWriter.Measure("c", id => BoxesWriter.Find(root, id), new Vector2Int(200, 150), scale, plain, root)["items"], "no repeat in the IR: no items");

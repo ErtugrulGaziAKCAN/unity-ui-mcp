@@ -1160,7 +1160,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
         const at = (k: number) => whole ? { x: Math.round(rows[k].x), y: Math.round(rows[k].y), w: Math.round(rows[k].x + rows[k].w) - Math.round(rows[k].x), h: Math.round(rows[k].y + rows[k].h) - Math.round(rows[k].y) } : rows[k];
         const b: CaptureBoxes = { capture: "c", viewport: [128, 80], scale: s0, external: [], elements: { root: el(0, 0, 128, 80), table: el(16 * s0, 16 * s0, 210 * s0, 90 * s0),
           list: el(16 * s0, 16 * s0, 210 * s0, 90 * s0), row: el(at(0).x, at(0).y, at(0).w, at(0).h) } };
-        if (items) b.items = { "row#1": { ...at(1), visible: true }, "row#2": { ...at(2), visible: true } };
+        if (items) b.items = { "row#1": { ...at(1), visible: true, text: false, lines: [] }, "row#2": { ...at(2), visible: true, text: false, lines: [] } };
         return b;
       };
       const ctx: CaptureContext = { borders: { row: [0, 0, bw, 0] }, backgrounds: new Set(["table", "row"]), painters: new Set(["table", "row"]), order: ["root", "table", "list", "row"],
@@ -1175,6 +1175,90 @@ describe("compareCapture: edge, colour and ink checks", () => {
       const wrong = run(true, [92, 64, 104]);
       expect(wrong.elements.find((e) => e.id === "table")!.ssimFractionalEdgeMasked).toBeGreaterThanOrEqual(0.99);
       expect(issuesOf(wrong, "table")).toEqual([expect.objectContaining({ kind: "ssim", detail: expect.stringMatching(/masked as well, but the centre of row#2 bottom border differs by ΔE2000/) })]);
+    });
+
+    it("R133: a repeat's later items' text is masked as the IR elements' and gets their text checks", () => {
+      // the R124 table at 1366×768 with a text in each row (10.67 device px): the renderers' glyphs differ (the design's stems
+      // anti-aliased at a fractional x, Unity's whole pixels 0.3 px left), as the suite's 12.8 px rows do; the first row's
+      // text is the IR element `name`, the later rows' its copies `name#1`, `name#2`
+      const s0 = 0.533464, fillC: Rgb = [18, 60, 71], line: Rgb = [36, 90, 104], bgC: Rgb = [11, 31, 38], ink: Rgb = [240, 240, 240], bw = 4 * s0;
+      const rows = [0, 1, 2].map((k) => ({ x: 16 * s0, y: (16 + 30 * k) * s0, w: 210 * s0, h: 30 * s0 }));
+      const whole = (r: R): R => ({ x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.x + r.w) - Math.round(r.x), h: Math.round(r.y + r.h) - Math.round(r.y) });
+      const lineOf = (k: number, unity: boolean) => {
+        const q = unity ? whole(rows[k]) : rows[k];
+        return { x: Math.floor(q.x) + 4 + (unity ? 0 : 0.3), y: Math.floor(q.y) + 3, w: 38, h: 8, baseline: Math.floor(q.y) + 9 };
+      };
+      const draw = (unity: boolean, text: Rgb[] = [ink, ink, ink]) => {
+        const png = canvas(128, 80, bgC);
+        rows.forEach((r, k) => {
+          const q = unity ? whole(r) : r;
+          const b = unity ? 2 : bw;
+          (unity ? fill : paint)(png, q, fillC);
+          const div = { x: q.x, y: q.y + q.h - b, w: q.w, h: b };
+          (unity ? fill : paint)(png, unity ? { ...div, y: Math.round(div.y) } : div, line);
+          const l = lineOf(k, unity);
+          for (let x = 0; x < 5; x++) (unity ? fill : paint)(png, { x: l.x + 8 * x, y: l.y, w: 2, h: l.h }, text[k]);
+        });
+        return png;
+      };
+      const boxes = (unity: boolean): CaptureBoxes => {
+        const at = (k: number) => (unity ? whole(rows[k]) : rows[k]);
+        const text = (k: number) => { const l = lineOf(k, unity); return { x: l.x, y: l.y - 1, w: 40, h: 10, visible: true, text: true, lines: [l] }; };
+        return { capture: "c", viewport: [128, 80], scale: s0, external: [], elements: { root: el(0, 0, 128, 80), table: el(16 * s0, 16 * s0, 210 * s0, 90 * s0),
+          list: el(16 * s0, 16 * s0, 210 * s0, 90 * s0), row: el(at(0).x, at(0).y, at(0).w, at(0).h), name: el(text(0).x, text(0).y, 40, 10, { text: true, lines: text(0).lines }) },
+          items: { "row#1": { ...at(1), visible: true, text: false, lines: [] }, "row#2": { ...at(2), visible: true, text: false, lines: [] }, "name#1": text(1), "name#2": text(2) } };
+      };
+      const ctx: CaptureContext = { borders: { row: [0, 0, bw, 0] }, backgrounds: new Set(["table", "row"]), painters: new Set(["table", "row"]), order: ["root", "table", "list", "row", "name"],
+        root: "root", parent: new Map([["table", "root"], ["list", "table"], ["row", "list"], ["name", "row"]]), repeats: new Set(["list"]), viewportClass: "scaled", fontPx: { name: 20 * s0 } };
+      const run = (text?: Rgb[]) => compareCapture({ png: draw(false), boxes: boxes(false) }, { png: draw(true, text), boxes: boxes(true) }, [], scaledT, ctx);
+      const v = run();
+      // the dividers confined to the band of straight edges, the later rows' text masked from the table's evidence and
+      // checked on its own: the copies have rows of their own with their lines and ink (on this small canvas the dividers
+      // are most of the capture, whose SSIM a screen dilutes)
+      const own = (x: CaptureVerdict) => x.issues.filter((i) => i.id !== WHOLE);
+      expect(own(v)).toEqual([]);
+      const table = v.elements.find((e) => e.id === "table")!;
+      expect(Math.max(table.ssim!, table.ssimShifted ?? 0)).toBeLessThan(0.99);
+      expect(table.ssimLimit).not.toBeNull();
+      for (const k of ["name", "name#1", "name#2"]) {
+        const row = v.elements.find((e) => e.id === k)!;
+        expect(row, k).toMatchObject({ status: "ok", lines: "1/1" });
+        expect(row.ink, k).toBeLessThan(1);
+        expect(row.inkRatio, k).toBeGreaterThan(0.9);
+      }
+      // a later row's text in another colour fails its ink check; nothing else does
+      const wrong = run([ink, ink, [240, 120, 90]]);
+      expect(own(wrong)).toEqual([expect.objectContaining({ id: "name#2", kind: "ink", detail: expect.stringMatching(/^line 1 of 1: text colour ΔE2000 [\d.]+, design #\w+, Unity #\w+ \(limit 5\.89 at 10\.67 px\)/) })]);
+      // a copy whose text Unity does not draw, or draws on two lines, fails as the IR element's would
+      const twoLines = boxes(true);
+      twoLines.items!["name#1"].lines = [lineOf(1, true), { ...lineOf(1, true), y: lineOf(1, true).y + 8, baseline: lineOf(1, true).baseline + 8 }];
+      expect(own(compareCapture({ png: draw(false), boxes: boxes(false) }, { png: draw(true), boxes: twoLines }, [], scaledT, ctx)))
+        .toEqual([expect.objectContaining({ id: "name#1", kind: "lines", detail: "1 line in the design, 2 in Unity" })]);
+      const noCopy = boxes(true);
+      delete noCopy.items!["name#2"];
+      expect(compareCapture({ png: draw(false), boxes: boxes(false) }, { png: draw(true), boxes: noCopy }, [], scaledT, ctx).issues.map((i) => `${i.id} ${i.kind}`))
+        .toContain("name#2 missing");
+    });
+
+    it("R133: the evidence names every condition that does not hold, not only the first", () => {
+      // the R129 avatar in an animation sample that moves it: a dent outside the band and a ring 1.5 device px thinner
+      const ringC: Rgb = [240, 240, 240], fillC: Rgb = [20, 24, 28], bgC: Rgb = [0, 0, 0], outer = 240, W = 272, x0 = 16.4;
+      const boxes: CaptureBoxes = { capture: "c", viewport: [W, W], scale: 1.5, external: [], elements: { root: el(0, 0, W, W), avatar: el(x0, x0, outer, outer) } };
+      const ctx: CaptureContext = { borders: { avatar: [6, 6, 6, 6] }, radii: { avatar: [120, 120, 120, 120] }, backgrounds: new Set(["avatar"]), painters: new Set(["avatar"]),
+        order: ["root", "avatar"], root: "root", viewportClass: "exact", anim: true, moving: new Set(["avatar"]) };
+      const coarse = (ring: number) => {
+        const img = avatar(160, x0 + 0.4, x0 + 0.4, outer - 0.8, ring, ringC, fillC, bgC, W, W), ref = avatar(160, x0 + 0.4, x0 + 0.4, outer - 0.8, ring, ringC, fillC, bgC, W, W);
+        for (let p = 0; p < W * W; p++) {
+          const o = p * 4, near = (c: Rgb) => Math.hypot(ref.data[o] - c[0], ref.data[o + 1] - c[1], ref.data[o + 2] - c[2]);
+          img.data.set([bgC, ringC, fillC].reduce((a, k) => (near(k) < near(a) ? k : a)), o);
+        }
+        return img;
+      };
+      const both = coarse(4.5);
+      fill(both, { x: 110, y: 110, w: 3, h: 3 }, [200, 80, 40]);
+      const v = compareCapture({ png: avatar(160, x0, x0, outer, 6, ringC, fillC, bgC, W, W), boxes }, { png: both, boxes }, [], exactT, ctx);
+      expect(issuesOf(v, "avatar")).toEqual([expect.objectContaining({ kind: "ssim",
+        detail: expect.stringMatching(/masked, but an SSIM block outside the band, .* \(below 0\.99: not confined to it\), and .*avatar \w+ (border|corner) is drawn 4\.\d+ device px wide, the design's 6\.\d+ \(limit ±0\.5\)/) })]);
     });
 
     it("R125: a raster picture resampled at a scaled viewport meets ssimResampledPicture and its colour limit, nowhere else", () => {

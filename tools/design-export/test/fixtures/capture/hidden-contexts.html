@@ -22,6 +22,7 @@ p{margin:0}
 .ghost:hover{background-color:#16c2d5}
 .days{display:flex;flex-direction:row;flex-shrink:0;margin-bottom:8px}
 .day{display:flex;flex-direction:column;width:120px;height:80px;flex-shrink:0;margin-right:8px;background-color:#0f2a33}
+.date{margin:0;align-self:flex-start;flex-shrink:0;font-size:20px;line-height:24px}
 .more{display:flex;width:100px;height:24px;flex-shrink:0;padding:0;border:0;appearance:none;background-color:#123c47}
 .more:hover{background-color:#16c2d5}
 </style></head><body><div class="screen" data-u-screen="hidden.contexts">
@@ -31,5 +32,5 @@ p{margin:0}
 <div class="drawer" data-u-id="drawer"><button class="b" data-u-id="drawer-btn" data-u-action="note"></button></div>
 <div class="busy" data-u-state="busy"><button class="b" data-u-id="retry" data-u-action="retry"></button></div>
 <button class="ghost" data-u-id="ghost" data-u-action="ghost"></button>
-<div class="days" data-u-id="days"><div class="day" data-u-repeat="days" data-u-id="day"><button class="more" data-u-id="more" data-u-action="more" style="display:none"></button></div><div class="day" data-u-id="day"><button class="more" data-u-id="more" data-u-action="more" style="display:none"></button></div><div class="day" data-u-id="day"><button class="more" data-u-id="more" data-u-action="more"></button></div></div>
+<div class="days" data-u-id="days"><div class="day" data-u-repeat="days" data-u-id="day"><p class="date" data-u-id="date" data-u-bind="date">Pazartesi</p><button class="more" data-u-id="more" data-u-action="more" style="display:none"></button></div><div class="day" data-u-id="day"><p class="date" data-u-id="date" data-u-bind="date">Salı</p><button class="more" data-u-id="more" data-u-action="more" style="display:none"></button></div><div class="day" data-u-id="day"><p class="date" data-u-id="date" data-u-bind="date">Çarşamba</p><button class="more" data-u-id="more" data-u-action="more"></button></div></div>
 </div></body></html>

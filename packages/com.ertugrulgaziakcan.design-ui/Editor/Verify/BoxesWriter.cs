@@ -90,17 +90,18 @@ namespace DesignUi.Editor
         }
 
         /// <summary>
-        /// The boxes (and visibility, as for elements) of the IR elements' copies in later written-out repeat items below
-        /// <paramref name="root"/>: every element named an id the IR has inside a repeat plus the sample filler's item suffix
-        /// (<c>row#3</c>, <c>day#0#1</c>; <see cref="CaptureApply.ItemSuffix"/>), keyed by that name, as the golden's
-        /// <c>items</c>. The comparison places the edge bands of a repeat's later items with them.
+        /// The IR elements' copies in later written-out repeat items below <paramref name="root"/>: every element named an id
+        /// the IR has inside a repeat plus the sample filler's item suffix (<c>row#3</c>, <c>day#0#1</c>;
+        /// <see cref="CaptureApply.ItemSuffix"/>), keyed by that name, as the golden's <c>items</c>: box, visibility,
+        /// <c>text</c> and <c>lines</c> as for the IR elements (a copy of an element that carries text has its own lines). The
+        /// comparison places the edge bands of a repeat's later items with the boxes and checks the copies' text as the IR's.
         /// </summary>
         internal static JObject ItemBoxes(VisualElement root, IrScreen ir, double scale)
         {
-            var inRepeat = new HashSet<string>(StringComparer.Ordinal);
+            var inRepeat = new Dictionary<string, IrNode>(StringComparer.Ordinal);
             void Walk(IrNode n, bool inside)
             {
-                if (inside) inRepeat.Add(n.Id);
+                if (inside) inRepeat[n.Id] = n;
                 foreach (var c in n.Children ?? new IrNode[0]) Walk(c, inside || n.Repeat != null);
             }
             Walk(ir.Root, false);
@@ -114,11 +115,8 @@ namespace DesignUi.Editor
             {
                 var name = e.name;
                 int hash = string.IsNullOrEmpty(name) ? -1 : name.IndexOf('#');
-                if (hash > 0 && IsItemSuffix(name, hash) && inRepeat.Contains(name.Substring(0, hash)))
-                {
-                    var b = Box(e, false, scale);
-                    found[name] = new JObject { ["h"] = b["h"], ["visible"] = b["visible"], ["w"] = b["w"], ["x"] = b["x"], ["y"] = b["y"] };
-                }
+                if (hash > 0 && IsItemSuffix(name, hash) && inRepeat.TryGetValue(name.Substring(0, hash), out var node))
+                    found[name] = Box(e, node.Text != null, scale);
                 for (int i = 0; i < e.hierarchy.childCount; i++) Scan(e.hierarchy[i]);
             }
         }

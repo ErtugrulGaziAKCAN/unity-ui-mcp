@@ -40,6 +40,9 @@
  *   and a line whose text has a blurred text-shadow may draw up to `textInkShadowHigh` of the design's ink (its glow counts);
  * - shadow band: the mean colour of each active outer shadow's band (shadow rect minus element box), ΔE2000 ≤
  *   `deltaE2000`, so a faint missing shadow fails although SSIM dilutes it.
+ * The copies of an element in a repeat's later written-out items (boxes `items`) that carry text get the same treatment as
+ * the element's text (ruling R133): present and visible as in the design, the same line count, baselines and ink checks,
+ * named by the copy (`row#3`), and their text masked like it; their boxes are not compared.
  * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows. The
  * pixel row or column of a painted edge the design draws off the device grid (Chromium snaps boxes to whole CSS px, UI
  * Toolkit to whole device px) is copied from the design too, unless it would be the whole of a thin element; the box
@@ -589,6 +592,7 @@ const inside = (r: Rect, x: number, y: number, pad = 0) => x >= r.x - pad && x <
 const grow = (r: Rect, d: number): Rect => ({ x: r.x - d, y: r.y - d, w: r.w + 2 * d, h: r.h + 2 * d });
 
 type Box = CaptureBoxes["elements"][string];
+type ItemCopy = NonNullable<CaptureBoxes["items"]>[string];
 interface Side { png: Rgba; boxes: CaptureBoxes }
 
 /** The image with every pixel premultiplied by its alpha (a translucent pixel as its colour over black). */
@@ -765,6 +769,21 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   const rowOf = new Map<string, ElementRow>();
   let maxBox: { id: string; px: number } | null = null;
   const compared: string[] = [];
+  type TextBox = { lines: readonly (Rect & { baseline: number })[] };
+  /** A text's line count and baselines (an IR element's, or its copy's in a later repeat item, `key` naming it). */
+  const lineCheck = (key: string, ge: TextBox & Rect, ue: TextBox, row: ElementRow) => {
+    if (!ge.lines.length) { row.lines = "not compared"; linesNotCompared.push(key); return; }
+    row.lines = `${ge.lines.length}/${ue.lines.length}`;
+    if (ue.lines.length !== ge.lines.length) {
+      issue(key, "lines", `${ge.lines.length} line${ge.lines.length === 1 ? "" : "s"} in the design, ${ue.lines.length} in Unity`, ge);
+      return;
+    }
+    let worst = -1, wd = 0;
+    ge.lines.forEach((l, i) => { const dd = ue.lines[i].baseline - l.baseline; if (Math.abs(dd) > Math.abs(wd)) { wd = dd; worst = i; } });
+    if (worst >= 0 && Math.abs(wd) > t.baselinePx + GEOMETRY_EPS) {
+      issue(key, "baseline", `line ${worst + 1} of ${ge.lines.length}: baseline Δ ${fmt(wd)} px (limit ±${t.baselinePx})`, ge.lines[worst]);
+    }
+  };
 
   for (const id of ids) {
     const ge = g.elements[id], ue = u.elements[id];
@@ -793,21 +812,32 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const m = Math.max(...d.map(Math.abs));
     if (!maxBox || m > maxBox.px) maxBox = { id, px: m };
     if (m > t.boxPx + GEOMETRY_EPS) issue(id, "box", `box Δx ${fmt(d[0])} Δy ${fmt(d[1])} Δw ${fmt(d[2])} Δh ${fmt(d[3])} px (limit ±${t.boxPx})`, ge);
-    if (ge.text) {
-      if (!ge.lines.length) { row.lines = "not compared"; linesNotCompared.push(id); }
-      else {
-        row.lines = `${ge.lines.length}/${ue.lines.length}`;
-        if (ue.lines.length !== ge.lines.length) {
-          issue(id, "lines", `${ge.lines.length} line${ge.lines.length === 1 ? "" : "s"} in the design, ${ue.lines.length} in Unity`, ge);
-        } else {
-          let worst = -1, wd = 0;
-          ge.lines.forEach((l, i) => { const dd = ue.lines[i].baseline - l.baseline; if (Math.abs(dd) > Math.abs(wd)) { wd = dd; worst = i; } });
-          if (worst >= 0 && Math.abs(wd) > t.baselinePx + GEOMETRY_EPS) {
-            issue(id, "baseline", `line ${worst + 1} of ${ge.lines.length}: baseline Δ ${fmt(wd)} px (limit ±${t.baselinePx})`, ge.lines[worst]);
-          }
-        }
-      }
+    if (ge.text) lineCheck(id, ge, ue, row);
+  }
+
+  // ---- the text of the IR elements' copies in later written-out repeat items (boxes `items`; ruling R133): the same text
+  // checks as the IR element's (present, visible as in the design, line count, baselines, and below its ink), named by
+  // the copy (`row#3`); their boxes are not compared (the edge bands use them)
+  const textCopies: { key: string; id: string; g: ItemCopy; u: ItemCopy }[] = [];
+  for (const [key, gc] of Object.entries(g.items ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (!gc.text) continue;
+    const id = key.slice(0, key.indexOf("#")), uc = u.items?.[key];
+    const row = newRow(key);
+    rows.push(row);
+    rowOf.set(key, row);
+    if (!uc) {
+      if (gc.visible) { row.status = "missing"; issue(key, "missing", `a copy in a later repeat item that carries text in the design, but not in the Unity capture`, gc); }
+      else row.status = "hidden";
+      continue;
     }
+    if (!gc.visible && !uc.visible) { row.status = "hidden"; continue; }
+    if (gc.visible !== uc.visible) {
+      row.status = "fail";
+      issue(key, "visibility", gc.visible ? "visible in the design, hidden in Unity" : "hidden in the design, visible in Unity", gc.visible ? gc : uc);
+      continue;
+    }
+    lineCheck(key, gc, uc, row);
+    textCopies.push({ key, id, g: gc, u: uc });
   }
 
   // ---- what Unity shows that the design does not have
@@ -832,6 +862,14 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       textLines.push(...(e.lines.length ? e.lines : [e]));
       const o = u.elements[id];
       if (o && shown(id)) { textBoxes.push(o); textLines.push(...(o.lines.length ? o.lines : [o])); }
+    }
+    // the text of the copies in later repeat items, as the IR elements' (ruling R133): its own checks judge it
+    for (const [key, e] of Object.entries(g.items ?? {})) {
+      if (!e.text || !e.visible) continue;
+      textBoxes.push(e);
+      textLines.push(...(e.lines.length ? e.lines : [e]));
+      const o = u.items?.[key];
+      if (o?.visible) { textBoxes.push(o); textLines.push(...(o.lines.length ? o.lines : [o])); }
     }
     const externalBoxes = g.external.flatMap((id) => [g.elements[id], u.external.includes(id) ? u.elements[id] : undefined]).filter((e): e is Box => !!e);
     const mask = maskRects(w, h, [...textBoxes, ...externalBoxes], 2);
@@ -1071,13 +1109,68 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
       }
       const ev = { minBlock: blocks.min, maxDe: px.de, ring: ring ? (ring as { de: number }).de : null, width: width ? (width as { d: number }).d : null };
-      const why = blocks.min < t.ssimElement - EPS ? `an SSIM block outside the band, the 8 px block at (${blocks.minAt[0]}, ${blocks.minAt[1]}), is ${blocks.min.toFixed(5)} (below ${t.ssimElement}: not confined to it)`
-        : px.de > t.deltaE2000 + EPS ? `outside the band, (${px.x}, ${px.y}) differs by ΔE2000 ${px.de.toFixed(2)} (a 3×3 mean; limit ${t.deltaE2000}: not confined to it)`
-        : none ? none
-        : ring && ring.de > t.deltaE2000Ring + EPS ? `the centre of ${ring.where} differs by ΔE2000 ${ring.de.toFixed(2)} (design ${hex(ring.a)}, Unity ${hex(ring.b)}; limit ${t.deltaE2000Ring}): the border in that band is not the design's`
-        : width && width.d > RING_WIDTH_PX + EPS ? `${width.where} is drawn ${width.unity.toFixed(2)} device px wide, the design's ${width.design.toFixed(2)} (limit ±${RING_WIDTH_PX}): the border in that band is not the design's`
-        : "";
+      // every condition that does not hold, not only the first (a failing capture shows all its causes; ruling R133)
+      const r = ring as { de: number; where: string; a: number[]; b: number[] } | null, wd = width as { d: number; where: string; design: number; unity: number } | null;
+      const why = [
+        blocks.min < t.ssimElement - EPS ? `an SSIM block outside the band, the 8 px block at (${blocks.minAt[0]}, ${blocks.minAt[1]}), is ${blocks.min.toFixed(5)} (below ${t.ssimElement}: not confined to it)` : "",
+        px.de > t.deltaE2000 + EPS ? `outside the band, (${px.x}, ${px.y}) differs by ΔE2000 ${px.de.toFixed(2)} (a 3×3 mean; limit ${t.deltaE2000}: not confined to it)` : "",
+        none,
+        r && r.de > t.deltaE2000Ring + EPS ? `the centre of ${r.where} differs by ΔE2000 ${r.de.toFixed(2)} (design ${hex(r.a)}, Unity ${hex(r.b)}; limit ${t.deltaE2000Ring}): the border in that band is not the design's` : "",
+        wd && wd.d > RING_WIDTH_PX + EPS ? `${wd.where} is drawn ${wd.unity.toFixed(2)} device px wide, the design's ${wd.design.toFixed(2)} (limit ±${RING_WIDTH_PX}): the border in that band is not the design's` : "",
+      ].filter((x) => x).join(", and ");
       return { ok: !why, why, ...ev };
+    };
+
+    /**
+     * A text's ink per line (an IR element's, or its copy's in a later repeat item, `key` naming it; ruling R133): colour
+     * and extent now, the amount after every line of the capture is measured. `id`: the IR element (its font size, its
+     * text shadow and what is painted over it).
+     */
+    const inkCheck = (id: string, key: string, ge: TextBox, ue: TextBox, row: ElementRow) => {
+      // the font size in device px: the IR's, else the line box over the kit's largest ratio (4/3), never more than the real size
+      const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
+      let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number } | null = null, maxDe = 0;
+      let wX: { i: number; dl: number; dr: number; dw: number; worst: number } | null = null;
+      const hidden = hiddenBy(id);
+      let covered = 0;
+      ge.lines.forEach((gl, i) => {
+        const win = grow(unionRect(gl, ue.lines[i]), 1);
+        if (hidden && everyPixel(win, w, h, hidden)) { covered++; linesCovered.push(`${key}: line ${i + 1} of ${ge.lines.length}`); return; }
+        const a = inkIn(gp, win, hidden ?? undefined);
+        if (!a) return;
+        const b = inkIn(up, win, hidden ?? undefined);
+        // the ink's horizontal extent: spacing, kerning or alignment moves it inside a box of the right size (geometry:
+        // the box limit, whatever the text size)
+        if (b) {
+          // where Unity's first and last glyphs sit against the design's: the ink profile near each end (an em, or half
+          // the line) matched to the design's, so stroke thickness and anti-aliasing (renderer differences) do not count
+          const em = Math.max(1, Math.min(gl.h, (a.right - a.left) / 2));
+          const dl = endShift(a, b, a.left, a.left + em, b.left - a.left), dr = endShift(a, b, a.right - em, a.right, b.right - a.right);
+          const dw = dr - dl, worst = Math.max(Math.abs(dl), Math.abs(dr), Math.abs(dw));
+          if (!wX || worst > wX.worst) wX = { i, dl, dr, dw, worst };
+        }
+        inkLines.push({ id: key, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow: !!ctx.textShadows?.has(id) });
+        if (b) {
+          const de = deltaE2000(a.ink, b.ink), limit = inkColourLimit(t, px, i);
+          maxDe = Math.max(maxDe, de);
+          if (!wDe || de - limit > wDe.de - wDe.limit) wDe = { de, i, a: a.ink, b: b.ink, limit };
+        }
+      });
+      if (covered) row.lines = `${row.lines}, ${covered} not judged (covered)`;
+      if (wX) {
+        const x = wX as { i: number; dl: number; dr: number; dw: number; worst: number };
+        row.inkExtent = r6(x.worst);
+        if (x.worst > t.boxPx + GEOMETRY_EPS) {
+          issue(key, "inkExtent", `line ${x.i + 1} of ${ge.lines.length}: text ink left Δ ${fmt(x.dl)} px, right Δ ${fmt(x.dr)} px, width Δ ${fmt(x.dw)} px (limit ±${t.boxPx} px)`, ge.lines[x.i]);
+        }
+      }
+      if (wDe) {
+        const x = wDe as { de: number; i: number; a: number[]; b: number[]; limit: number };
+        row.ink = r6(maxDe);
+        if (x.de > x.limit + EPS) {
+          issue(key, "ink", `line ${x.i + 1} of ${ge.lines.length}: text colour ΔE2000 ${x.de.toFixed(2)}, design ${hex(x.a)}, Unity ${hex(x.b)} (limit ${x.limit} at ${Number(px.toFixed(2))} px${x.i >= 1 && px < t.textInkLaterBelowPx ? ", a later line" : ""})`, ge.lines[x.i]);
+        }
+      }
     };
 
     /** Elements below ssimElement, judged after every other check (a measured lower limit needs those to pass). */
@@ -1294,52 +1387,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       }
 
       // text ink per line: colour now; the amount after all lines of the capture are measured
-      if (carriesText && ue.lines.length === ge.lines.length) {
-        // the font size in device px: the IR's, else the line box over the kit's largest ratio (4/3), never more than the real size
-        const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
-        let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number } | null = null, maxDe = 0;
-        let wX: { i: number; dl: number; dr: number; dw: number; worst: number } | null = null;
-        const hidden = hiddenBy(id);
-        let covered = 0;
-        ge.lines.forEach((gl, i) => {
-          const win = grow(unionRect(gl, ue.lines[i]), 1);
-          if (hidden && everyPixel(win, w, h, hidden)) { covered++; linesCovered.push(`${id}: line ${i + 1} of ${ge.lines.length}`); return; }
-          const a = inkIn(gp, win, hidden ?? undefined);
-          if (!a) return;
-          const b = inkIn(up, win, hidden ?? undefined);
-          // the ink's horizontal extent: spacing, kerning or alignment moves it inside a box of the right size (geometry:
-          // the box limit, whatever the text size)
-          if (b) {
-            // where Unity's first and last glyphs sit against the design's: the ink profile near each end (an em, or half
-            // the line) matched to the design's, so stroke thickness and anti-aliasing (renderer differences) do not count
-            const em = Math.max(1, Math.min(gl.h, (a.right - a.left) / 2));
-            const dl = endShift(a, b, a.left, a.left + em, b.left - a.left), dr = endShift(a, b, a.right - em, a.right, b.right - a.right);
-            const dw = dr - dl, worst = Math.max(Math.abs(dl), Math.abs(dr), Math.abs(dw));
-            if (!wX || worst > wX.worst) wX = { i, dl, dr, dw, worst };
-          }
-          inkLines.push({ id, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow: !!ctx.textShadows?.has(id) });
-          if (b) {
-            const de = deltaE2000(a.ink, b.ink), limit = inkColourLimit(t, px, i);
-            maxDe = Math.max(maxDe, de);
-            if (!wDe || de - limit > wDe.de - wDe.limit) wDe = { de, i, a: a.ink, b: b.ink, limit };
-          }
-        });
-        if (covered) row.lines = `${row.lines}, ${covered} not judged (covered)`;
-        if (wX) {
-          const x = wX as { i: number; dl: number; dr: number; dw: number; worst: number };
-          row.inkExtent = r6(x.worst);
-          if (x.worst > t.boxPx + GEOMETRY_EPS) {
-            issue(id, "inkExtent", `line ${x.i + 1} of ${ge.lines.length}: text ink left Δ ${fmt(x.dl)} px, right Δ ${fmt(x.dr)} px, width Δ ${fmt(x.dw)} px (limit ±${t.boxPx} px)`, ge.lines[x.i]);
-          }
-        }
-        if (wDe) {
-          const x = wDe as { de: number; i: number; a: number[]; b: number[]; limit: number };
-          row.ink = r6(maxDe);
-          if (x.de > x.limit + EPS) {
-            issue(id, "ink", `line ${x.i + 1} of ${ge.lines.length}: text colour ΔE2000 ${x.de.toFixed(2)}, design ${hex(x.a)}, Unity ${hex(x.b)} (limit ${x.limit} at ${Number(px.toFixed(2))} px${x.i >= 1 && px < t.textInkLaterBelowPx ? ", a later line" : ""})`, ge.lines[x.i]);
-          }
-        }
-      }
+      if (carriesText && ue.lines.length === ge.lines.length) inkCheck(id, id, ge, ue, row);
 
       // shadow band
       if (shadow) {
@@ -1351,6 +1399,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
       }
     }
+
+    // the copies' text in later repeat items: the same ink checks as the IR element's (ruling R133)
+    for (const c of textCopies) if (c.g.lines.length && c.u.lines.length === c.g.lines.length) inkCheck(c.id, c.key, c.g, c.u, rowOf.get(c.key)!);
 
     // text ink amount: with smoothing-off designs Unity draws 0.92-1.08 of the design's ink for correct text
     // (docs/findings/text-ink.md; with macOS font smoothing on it was 0.69-1.03, more for light text). A line's ratio

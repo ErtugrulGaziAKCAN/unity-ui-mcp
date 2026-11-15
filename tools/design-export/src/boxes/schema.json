@@ -24,34 +24,40 @@
           "text": { "type": "boolean", "description": "The IR element carries text (IrNode.text is not null)." },
           "rotation": { "type": "number", "description": "Design side only, optional: the element's rotation on the screen in degrees, its own rotate and transform plus its ancestors', in (-180, 180]; absent when it is 0. Unity captures do not write it." },
           "lines": {
-            "description": "Text lines of the element's own text (text inside nested IR elements is excluded), top to bottom: one per baseline (text fragments whose baselines are within 0.5 device px form one line, whatever the line height). The lines are the laid-out lines, also those clipped by overflow. A line's rect is the union of its text fragments' boxes (font ascent + descent, not the line-height box); its width is the laid-out width (for text-overflow: ellipsis, the whole text's width). Empty for elements without a box and for form controls whose text is not in DOM text (input, select, textarea): compare their lines as not compared.",
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["x", "y", "w", "h", "baseline"],
-              "properties": {
-                "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" },
-                "baseline": { "type": "number", "description": "Line top plus the rendered ascent of the line's font at its size (findings R7)." }
-              }
-            }
+            "$ref": "#/$defs/lines",
+            "description": "Text lines of the element's own text (text inside nested IR elements is excluded), top to bottom: one per baseline (text fragments whose baselines are within 0.5 device px form one line, whatever the line height). The lines are the laid-out lines, also those clipped by overflow. A line's rect is the union of its text fragments' boxes (font ascent + descent, not the line-height box); its width is the laid-out width (for text-overflow: ellipsis, the whole text's width). Empty for elements without a box and for form controls whose text is not in DOM text (input, select, textarea): compare their lines as not compared."
           }
         }
       }
     },
     "external": { "description": "Ids of data-u-external elements, sorted; their regions are masked in comparisons.", "type": "array", "items": { "type": "string" } },
     "items": {
-      "description": "Optional: the border boxes and visibility (as for elements) of the IR elements' copies in later written-out repeat items, keyed by the IR id plus a suffix: `#k` per repeat, innermost first, for each repeat whose item is a later one (k > 0) or that sits inside a later item of an outer repeat (`row#3`, `day#0#1`). Only the comparison's edge bands of a repeat's later items use them.",
+      "description": "Optional: the IR elements' copies in later written-out repeat items, keyed by the IR id plus a suffix: `#k` per repeat, innermost first, for each repeat whose item is a later one (k > 0) or that sits inside a later item of an outer repeat (`row#3`, `day#0#1`). Border box, visibility, `text` and `lines` as for elements (`text`: the IR element carries text; `lines`: the copy's own text lines, leaving out text inside nested elements and their copies). The comparison places the edge bands of a repeat's later items with the boxes and masks and checks the copies' text lines as the IR elements' text.",
       "type": "object",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["x", "y", "w", "h", "visible"],
-        "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" }, "visible": { "type": "boolean" } }
+        "required": ["x", "y", "w", "h", "visible", "text", "lines"],
+        "properties": {
+          "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" }, "visible": { "type": "boolean" }, "text": { "type": "boolean" },
+          "lines": { "$ref": "#/$defs/lines" }
+        }
       }
     }
   },
   "$defs": {
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["x", "y", "w", "h", "baseline"],
+        "properties": {
+          "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" },
+          "baseline": { "type": "number", "description": "Line top plus the rendered ascent of the line's font at its size (findings R7)." }
+        }
+      }
+    },
     "size": { "type": "array", "prefixItems": [{ "type": "integer", "minimum": 1 }, { "type": "integer", "minimum": 1 }], "items": false, "minItems": 2 }
   }
 }
