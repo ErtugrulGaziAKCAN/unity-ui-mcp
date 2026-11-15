@@ -449,6 +449,12 @@ namespace DesignUi.Editor.Tests
             for (int i = 0; i < 10; i++) { label.MarkDirtyRepaint(); yield return null; }
             Assert.AreEqual(requests, label.Fit.ChangeRequests, "ten repaints of the same empty text ask for no measure");
             Assert.IsTrue(float.IsNaN(label.Fit.Width), "an empty text keeps UI Toolkit's own width");
+            // its font changed while the text stays empty: one request, then none
+            label.style.unityFontDefinition = BodyBold("Kept Tabs Bold");
+            yield return Frames(4);
+            Assert.AreEqual(requests + 1, label.Fit.ChangeRequests, "the new font asks for one measure");
+            for (int i = 0; i < 10; i++) { label.MarkDirtyRepaint(); yield return null; }
+            Assert.AreEqual(requests + 1, label.Fit.ChangeRequests, "and ten repaints after it ask for none");
             label.text = "Kaydet";
             yield return Frames(6);
             Assert.AreEqual(DesignTextFit.Snap(label.Fit.TextWidth(), 1), label.Fit.Width, 1e-3, "a text after it is measured");
