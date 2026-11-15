@@ -275,16 +275,20 @@ export const HAIRLINE_INK_BAND: readonly [number, number] = [0.5, 2];
  * How far an ellipsized line's ellipsis may differ from the design's at any viewport (ruling R147; at a scaled viewport also
  * the condition of the one-grapheme allowance of ruling R146): the shape, as the L1 difference of the column profiles over the
  * design's ellipsis mass, each scaled to the design's mass (ellipsisCut), and the ink amount, Unity's over the design's.
- * Measured on the fidelity suite's two ellipsized lines at all six viewports with the dots drawn right: shape 0.07–0.34,
- * amount 1.07–1.30 (Unity's dots are a little heavier); a letter where the dots are 0.65–1.30 and 3.5–4.1, the wrong glyph
- * a twin without U+2026 drew (a curve) 0.89–1.67. Limits: shape 0.45, amount 0.8–1.6.
+ * Measured on the crops of the fidelity suite's ellipsized text-spacing line at all six viewports (r147-* in the compare
+ * fixtures; 12 to 36 device px), the ellipsis matched on its own columns: the dots drawn right 0.06–0.34 (0.06–0.32 at the
+ * exact viewports, 0.22–0.34 at the scaled ones), amount 1.08–1.31 (Unity's dots are a little heavier); a letter where the
+ * dots are 0.65–1.30 and 3.5–4.1; the wrong glyph a twin without U+2026 drew (a curve) 0.95–1.67, amount 1.54–3.16.
+ * Limits: shape 0.45, amount 0.8–1.6. Below 16 device px correct dots exceed them (a pilot screen's titles at 10 to 15 px:
+ * shape up to 1.08, rows up to 0.78; docs/findings/viewport-classes.md, "Ellipsized titles of a pilot screen").
  */
 export const ELLIPSIS_SHAPE = 0.45;
 /**
  * The most the ellipsis's row profile may differ from the design's, each side's rows counted from its line's baseline and
  * matched within ±1 device px, over the design's ellipsis mass (fix round 3, N9: the column profile alone passed dots at
- * another height). Measured on the same crops: the dots 0.04–0.09 at the exact viewports, 0.07–0.29 at the scaled ones (one
- * band for both); the curve 0.41–0.96; dots 2 device px off 1.0, 4 px or more 2.0 (1 px off is within the match). Limit 0.4.
+ * another height); the rows compared are whole pixel rows also when the baselines differ by a fraction. Measured on the same
+ * crops: the dots 0.04–0.09 at the exact viewports, 0.07–0.29 at the scaled ones (one band for both); the curve 0.50–0.95;
+ * dots 2 device px off 1.0, 4 px or more 2.0 (1 px off is within the match). Limit 0.4.
  */
 export const ELLIPSIS_ROWS = 0.4;
 export const ELLIPSIS_AMOUNT: readonly [number, number] = [0.8, 1.6];

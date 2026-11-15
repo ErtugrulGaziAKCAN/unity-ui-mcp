@@ -13,6 +13,9 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   and `last-verify.json` name the folder; the report says the captures were kept. They count toward `cacheBudgetMB`
   (over the budget they go before any export), the next verify that gives a verdict replaces or removes them, and
   `design_ui_clean` always removes them. Default off: a verify still deletes its captures.
+- Fidelity fixtures `shadowed-text` (card titles under a dialog's `0 24px 64px` shadow that run on past their clipping
+  boxes) and `clipped-text` (a scroll area's entries below its bottom, across the frame's edge onto an external host
+  shell, one title cut by the edge, in a list Unity virtualizes). Both join the suite.
 - `design-export kit upgrade <kitDir> [--from <cloneKit>] [--dry-run]`: brings a project's own kit to the clone's kit
   version (setup keeps an existing kit, so a pilot merged one by hand). It takes the clone's base stylesheet, RULES.md,
   components, text styles and configuration keys, and keeps the project's fonts folder (fonts CSS and JSON included), its
@@ -292,6 +295,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
+- Task 37's fidelity run (4740 captures with the two new fixtures, 14 min 24 s): **every capture passes** at all six
+  viewports (exact 3160, scaled 1580). A pilot screen's verify, its captures kept and compared again with this version:
+  2560×1440 and 3840×2160 pass every capture (they failed 22 each on the shadowed title and the clipped rows); at
+  1920×1080, 1600×900, 1366×768 and 1280×720 the ellipsis glyph check below 16 device px fails correct dots, and the
+  residuals are named in `docs/findings/text-ink.md` section 11.
 - The ellipsis point at the scaled viewports (task 36, ruling R146): a pilot's ellipsized titles at 1600×900 and
   1366×768 kept one grapheme more or fewer in Unity than in the design (the line's ink end +2.5 to +10.6 device px), where
   UI Toolkit decides its cut under the root scale; at every exact viewport its own elision cuts where Chromium does. The
@@ -338,6 +346,26 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- Comparison, text ink under a shadow: a line's ink is measured against its background where it is. Against the window's
+  median, a background a later element's box shadow (or a gradient) darkens from one end of the line to the other counted
+  as faint ink in every column, and the ink extent ran on to the card's edge on one side only (a pilot screen's card title
+  under a month picker "ended 4.48 / 10.17 device px early" at 2560×1440 / 3840×2160). Where the background varies by a
+  level or more across the window, a plane fitted to it is the background at each pixel; a flat background keeps its
+  median (`docs/findings/text-ink.md` section 11).
+- Comparison, clipped text: a line is judged on what both renders show inside the overflow clips around it (its ancestors'
+  and its own, by axis, at the padding box, rounded inwards to whole device pixels). Rows a scroll area clips were judged
+  on what lay there (the host shell in the design, the capture's magenta backdrop in Unity: ΔE2000 41.72); an ellipsized
+  title's line rect, as wide as its whole text, took a neighbouring cell's cyan bar into its ink (ΔE2000 2.98); a label
+  cut by a scroll area's edge between two pixels drew one row more in Chromium (0.73× the ink). A line the clips hide
+  entirely is not judged (`linesClipped` in the verdict, named in the report), and a later repeat item's copy the
+  design's clip hides entirely is not missing when Unity did not make it (a list in a scroll area makes only the items
+  its viewport shows).
+- Comparison, the ellipsis glyph check (rulings R146, R147): its rows were compared at fractional positions when the two
+  baselines differ by a fraction (every ellipsized title of a pilot screen failed with rows 1.00 though its dots lay on
+  the same pixel rows), and the dots were matched with the prefix's last glyph in the window, which pulled them out of
+  line when Unity kept a narrow grapheme more (shape 1.04). The rows are whole ones now and the ellipsis is matched on its
+  own columns; raised dots and a wrong glyph still fail. Below 16 device px correct dots still exceed R147's limits, where
+  they overlap the wrong glyph's measures (`docs/findings/viewport-classes.md`, "Ellipsized titles of a pilot screen").
 - Export: an export made by an extractor whose goldens lack the ellipsis cut record (boxes `ellipsis`, rulings R146 and
   R147) was reused, because the extraction revision stayed at 2 when the record was added; a project exported before
   then had its ellipsized lines judged without the glyph check and without the scaled-class allowance. The extraction

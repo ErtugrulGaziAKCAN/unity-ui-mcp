@@ -345,6 +345,74 @@ of it or more) is judged by the angle between the two inks' directions from the 
 (the suite's highest 0.26°, plus 0.4), and its ink amount against the text colour within 0.5 to 2 times the design's (the
 suite's 0.86 to 1.01). On such a line a lightness-only error within that band is not caught. Measurements and the exact rule: docs/findings/viewport-classes.md, "Hairline lines".
 
+## 11. The ink window: what lies in it besides the line's own text (Task 37)
+
+A pilot screen (a calendar in a URP, Linear-colour-space game with the gamma composite) failed text checks that the suite's
+text of the same sizes passes. Its captures were kept (`design_ui_verify { keepCaptures: true }`) and compared again
+offline. Each failure came from pixels in a line's window that are not the line's text.
+
+**A later element's shadow (rule since Task 37: the background where it is).** With a month picker open, a card title
+below the picker's `0 24px 64px` shadow "ended 4.48 device px early" at 2560×1440 and 10.17 at 3840×2160, though its
+glyphs ended at the same column in both captures. The window holds the card under the shadow, 43 luma levels at its top
+row and 47 at its bottom one in the design; against the window's median (45) the bottom rows lay more than 2 levels off
+and counted as ink, 0.13 of a pixel in every card column, so the design's ink extent ran on to the card's edge (778.11
+against 771.67 without the picker); Unity's shadow is a level weaker there and its extent ended at the text. `inkIn` now
+fits a plane to the background where it varies across the window by a level or more (least squares on the pixels within
+2 levels of it, refitted four times; kept only when it explains as many pixels as the median does) and measures each
+pixel against it: 771.67 on both sides. A flat background keeps its median, so nothing else moves. Tests: a synthetic
+card under a shadow passes and the same line one glyph shorter fails (compare.test.ts); the suite's `shadowed-text`
+fixture (titles under a dialog's shadow that run on past their clipping boxes) failed 4 of its 6 viewports with the
+earlier measure and passes all six.
+
+**Overflow clips (rule since Task 37: what both renders show).** A line's window is its line rects grown by a pixel,
+and nothing bounded it by what clips the text:
+
+- rows of the day panel's scroll area below its bottom (y 1362–1392 at 2560×1440, the scroll area ending at 1292) lay
+  across the frame's edge, where the design shows the host shell's placeholder (`#123c47`) and Unity the capture's
+  backdrop (`#ff00ff`): ink ΔE2000 41.72 and 2.0–3.5× the ink, on every viewport;
+- an ellipsized title's line rect runs on to the whole text's width (157 px for a 66 px box at 1920×1080) into a
+  neighbouring cell, whose cyan bar entered the title's most inked tenth: ink ΔE2000 2.98 against the limit 2 there,
+  0.00 for the title's own glyphs;
+- a section label crossed the scroll area's bottom at y 807.5 (1600×900): Chromium drew the row the edge crosses, UI Toolkit
+  did not, 0.73× (and 0.69× at 1366×768) the ink.
+
+The context now lists, per text, the elements whose overflow clips it (its ancestors and itself, by axis, at their padding
+boxes), and the window is the line's rects within those clips on both sides, rounded inwards to whole device pixels; a
+line they hide entirely is not judged (`linesClipped` in the verdict, named in the report), and a later repeat item's copy
+the design's clip hides entirely is not missing when Unity did not make it (a list in a scroll area makes only the items
+its viewport shows). Tests: compare.test.ts (a copy below a scroll area across an external region, a line cut by the clip
+on whole rows, an ellipsized title's neighbour, a virtualized list); the suite's `clipped-text` fixture failed all six
+viewports before and passes all six.
+
+**The game's render path and font twins are not the cause.** The capture renders the panel into its own target whatever
+the project's pipeline. The game's twins are the kit's (the same Inter 18pt files, byte for byte; sampling point size 72,
+padding 7, SDFAA, 1024 atlases). On the pilot screen's captures, with the windows above, the ink colour of every text
+line of the exact viewports' default, picker, related-file and untimed states (1688 lines):
+
+| Device px | Lines | Ink colour ΔE2000 median / p90 / max | Its limit |
+|---|---|---|---|
+| 10 (1280×720) | 252 | 0.25 / 1.15 / 3.84 | 4.5 |
+| 12 (1280×720) | 158 | 0.00 / 0.79 / 3.38 | 4.5 |
+| 15 (1920×1080) | 256 | 0.00 / 0.00 / 2.84 | 2 |
+| 18 (1920×1080, 1280×720) | 167 | 0.00 / 0.00 / 0.76 | 2 |
+| 20 to 54 (2560×1440, 3840×2160) | 855 | 0.00 / 0.00 / 0.84 | 2 |
+
+So the URP game draws small text as the Built-in sample does; the one line over its limit is below. A URP copy of the
+sample was not run: the game's own captures settle it.
+
+**What stays failing, with its cause:**
+
+- *Half a device pixel* (section 9): at 1920×1080 the cards sit at x 304.5 (406 CSS px × 0.75); UI Toolkit puts a text's box
+  on whole device pixels. A status chip that the open month picker covers but for its first four glyphs (39 px)
+  measures ΔE2000 2.84 there (18 captures): too few stems to average the half-pixel shift out (the whole chip, uncovered,
+  passes). The same cause at 1920×1080 `.is-untimed`: two section labels laid edge to edge at x 1387.5 and 1474.5, the
+  window's one-pixel margin reaching the next label's first stem in Chromium only (ink extent −4.35 px, 1 capture).
+- *A fragment beside a menu*: a status chip the type menu covers but for its last 6 device px, 0.79× the ink against 0.80
+  (1280×720, 14 captures).
+- *Scaled small text above the measured key* (ruling R126): "20" at 12.5 device px (1600×900), ΔE2000 6.13 against 5.89;
+  raising the key to this line's 6.13 + 0.4 would pass 6.5, where R126 keeps it failing (5 captures).
+- *The ellipsis glyph below 16 device px*: docs/findings/viewport-classes.md, "Ellipsized titles of a pilot screen".
+
 ## Reproduction
 
 ```

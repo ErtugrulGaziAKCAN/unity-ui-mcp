@@ -1101,7 +1101,7 @@ cut).
   most 0.45, ink amount 0.8–1.6 of the design's) and whose ellipsis lies within the advance of the design's first
   dropped grapheme (one more) or last kept grapheme (one fewer) plus boxPx passes its ink extent; its baseline and ink
   colour keep their limits, and its ink amount is taken over the prefix both draw plus the ellipsis. Measured on the
-  suite's lines with the dots drawn right: shape 0.07–0.34, amount 1.07–1.30 (Unity's dots are a little heavier); a letter
+  suite's lines with the dots drawn right: shape 0.06–0.34, amount 1.08–1.31 (Unity's dots are a little heavier); a letter
   where the dots are: 0.65–1.30 and 3.5–4.1. Tests (compare.test.ts): one grapheme more or fewer passes at a scaled
   viewport and fails at an exact one; two graphemes, a wrong text (other glyphs, half the ink) and a missing ellipsis
   fail; a line the design does not cut gets no allowance.
@@ -1113,9 +1113,10 @@ cut).
 - **R147, the glyph at every viewport**: a wrong ellipsis glyph is a visible defect at any size, so the glyph check of
   R146 (shape error at most 0.45, ink amount 0.8–1.6) applies at the exact viewports too; a line that fails it is an `ink`
   issue ("does not end in the design's ellipsis"). Measured on crops of the text-spacing capture (`r147-*` in the
-  compare fixtures): the dots 0.07–0.32 and 1.08–1.26 at the exact viewports, 0.22–0.34 and 1.18–1.31 at the scaled
-  ones, so one band serves both classes; the curve 0.95–1.67 at the exact viewports and 1.20–1.38 at the scaled ones.
-  Tests: the dots pass at all six viewports, the curve fails at all six.
+  compare fixtures, the ellipsis matched on its own columns since Task 37): the dots 0.06–0.32 and 1.08–1.26 at the exact
+  viewports, 0.22–0.34 and 1.18–1.31 at the scaled ones (0.06–0.34 in all), so one band serves both classes; the curve
+  0.95–1.67 at the exact viewports and 1.20–1.50 at the scaled ones. Tests: the dots pass at all six viewports, the
+  curve fails at all six.
 - **Fix round 3**:
   - *The record's scale* (N7) is exactly 1 unless an ancestor transforms; it was the drawn width over the rounded
     `offsetWidth`, which put a fractional box near the threshold one grapheme off (a 96.4 px box: 3 "W" recorded where
@@ -1136,3 +1137,43 @@ cut).
   last grapheme advance plus boxPx, so it never admits a second grapheme wider than about a device pixel, and the glyph's
   window reaches a pixel before Unity's ellipsis and sees such ink.
 
+
+## Ellipsized titles of a pilot screen (Task 37)
+
+A pilot screen's calendar cards (a 20/24 regular title after a bold time, ellipsized in a 48 px card; a status chip),
+verified at the six viewports with the captures kept (`design_ui_verify { keepCaptures: true }`) and compared again offline.
+
+- **The goldens had no ellipsis record.** The screen's export came from an extractor before rulings R146 and R147 and was
+  reused (the extraction revision had stayed at 2): no line had a record, so neither the glyph check nor the allowance ran.
+  The extraction revision is 3 and the tool hash covers the boxes schema; the next import exported it again.
+- **Rows at fractional baselines.** With the records, every ellipsized title failed the glyph check at every viewport
+  (`rows` 1.00): Chromium's baseline 785.797 against Unity's 786 moved Unity's rows by 0.203, and the rows were then
+  compared at fractional positions that hold no design ink. The dots lay on the same pixel rows (rows 783 to 786 on both
+  sides). The rows compared are the whole ones around both now: 0.07 for that title.
+- **The ellipsis matched with the prefix's last glyph.** Where Unity keeps a narrow grapheme more (a space, 3.4 device px
+  at 1600×900), the alignment window reached 4 px into the prefix, whose last glyph Unity draws at the same place: the
+  dots were placed 0.7 px off (shift 2.57 against their 3.3) and their shape failed (1.04). The ellipsis is matched on
+  its own columns now (0.51 for that title).
+- **R146's allowance takes exactly the one-grapheme cuts.** Over every scaled capture (5218 ellipsized lines), Unity kept
+  one grapheme more in 1287 (a cut shift of +2.65 to +9.76 device px, each within the design's next grapheme's advance
+  plus 1 px), never one fewer and never two (0 outside the bound).
+- **The glyph check below 16 device px.** Correct dots (the twins hold U+2026; pixel dumps show the three dots on both
+  sides, a fraction of a pixel apart and spread over one or two rows) measure, by viewport, with the ellipsis matched on its
+  own columns:
+
+  | Viewport (title size) | Lines | Shape | Rows | Amount | Over a limit |
+  |---|---|---|---|---|---|
+  | 3840×2160 (30 px) | 52 | 0.06–0.10 | 0.12–0.19 | 1.06–1.08 | 0 |
+  | 2560×1440 (20 px) | 52 | 0.07–0.20 | 0.05–0.13 | 1.09–1.13 | 0 |
+  | 1920×1080 (15 px) | 52 | 0.31–0.75 | 0.19–0.46 | 1.10–1.25 | shape or rows |
+  | 1600×900 (12.5 px) | 52 | 0.07–0.85 | 0.08–0.44 | 1.12–1.30 | shape |
+  | 1366×768 (10.67 px) | 52 | 0.14–1.08 | 0.16–0.73 | 1.13–1.55 | shape and rows |
+  | 1280×720 (10 px) | 52 | 0.10–0.62 | 0.56–0.74 | 1.20–1.39 | rows on every line |
+
+  The suite's wrong glyph (the curve, 12 to 36 px) measures shape 0.95–1.67, rows 0.50–0.95, amount 1.54–3.16: below
+  16 device px the bands of the correct dots and of the wrong glyph overlap on every measure, so no limit separates them
+  there, and R147's limits (0.45, 0.4) fail the correct dots. As R147 says, these fail and are reported: on the pilot
+  screen they are most of the failures at 1920, 1600, 1366 and 1280 (2 of 3 ellipsized titles and status chips there),
+  and at the scaled viewports they withhold R146's allowance from 1152 of its 1287 cuts (only lines whose glyph check
+  passes get it). A wrong glyph at those sizes needs another measure (for example three separate ink blobs at the
+  design's dot pitch); that is a decision for a ruling, not a limit change.
