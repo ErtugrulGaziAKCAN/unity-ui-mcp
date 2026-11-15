@@ -849,16 +849,16 @@ namespace DesignUi.Editor.Tests
         // ---- nested borders ---------------------------------------------------------------------------------------------
 
         /// <summary>
-        /// A documented limit, measured: UI Toolkit lays each 4 px border out as 3 device px of the exact scale (0.75) and
-        /// draws it through the root scale, 2.5 device px at 1600×900 and 2.13 at 1366×768, where the golden's are Chromium's
-        /// whole device pixels (3 and 2, as <see cref="DesignTextFit.SnapBorder"/> models them). Inside each nested
-        /// 4 px-bordered level the content starts 0.5 device px earlier than the golden's at 1600×900 and 0.13 later at
-        /// 1366×768: three levels put it 1.5 px off at 1600×900, past the ±1 px box limit (docs/findings/viewport-classes.md).
+        /// UI Toolkit lays each 4 px border out as 3 device px of the exact scale (0.75) and draws it through the root scale:
+        /// 2.5 device px at 1600×900 and 2.13 at 1366×768, the border's width at the actual scale, where the golden lays a
+        /// box's border out too (measured with docs/findings/viewport-classes/nested-borders.html through the fidelity suite:
+        /// the label inside three levels within 0.16 device px of the golden at 1600×900). Three nested levels put the
+        /// content 7.5 and 6.4 device px in, with no rounding added up.
         /// </summary>
         [UnityTest]
-        public IEnumerator NestedBorders_EachLevelMovesTheContentByTheBordersRounding_AtAScaledViewport()
+        public IEnumerator NestedBorders_AreDrawnAtTheirWidthAtTheActualScale_AtAScaledViewport()
         {
-            foreach (var (w, h, perLevel) in new[] { (1600, 900, 0.5), (1366, 768, -0.1339) })
+            foreach (var (w, h) in new[] { (1600, 900), (1366, 768) })
             {
                 var doc = Document(w, h);
                 yield return Frames(2);
@@ -895,10 +895,9 @@ namespace DesignUi.Editor.Tests
                 {
                     var inner = n < 3 ? levels[n] : content;
                     double drawn = inner.worldBound.x * ppp - 400 * actual;
-                    double golden = n * Math.Round(4 * actual, MidpointRounding.AwayFromZero); // Chromium's whole device px per border
-                    report.Add(n + " level(s): Unity " + drawn.ToString("0.###") + ", golden " + golden.ToString("0.###"));
+                    report.Add(n + " level(s): " + drawn.ToString("0.###") + " device px");
                     Assert.AreEqual(n * 3 * screen.RootScale, drawn, 0.02, at + ": " + n + " level(s) of 3 device px at 0.75, drawn through the root scale");
-                    Assert.AreEqual(n * perLevel, golden - drawn, 0.02, at + ": the golden's content starts this much later");
+                    Assert.AreEqual(n * 4 * actual, drawn, 0.02, at + ": the borders' width at the actual scale, as the golden lays them out");
                 }
                 Debug.Log("Nested 4 px borders at " + at + ": " + string.Join("; ", report));
                 Object.DestroyImmediate(doc.gameObject);

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>findings.nested-borders</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 20px; line-height: 24px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 20px; line-height: 28px; font-weight: 400; }
+.text-caption-bold { font-size: 20px; line-height: 28px; font-weight: 700; }
+.text-label { font-size: 20px; line-height: 24px; font-weight: 400; }
+.text-label-bold { font-size: 20px; line-height: 24px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
+.text-subtitle-bold { font-size: 32px; line-height: 40px; font-weight: 700; }
+.text-title { font-size: 36px; line-height: 48px; font-weight: 400; }
+.text-title-bold { font-size: 36px; line-height: 48px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 60px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 60px; font-weight: 700; }
+.text-display { font-size: 64px; line-height: 80px; font-weight: 400; }
+.text-display-bold { font-size: 64px; line-height: 80px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: row; align-items: flex-start; width: 2560px; height: 1440px; position: relative; padding: 64px; background-color: var(--color-surface-900); }
+.frame { display: flex; flex-direction: column; align-items: flex-start; flex-shrink: 0; border: 4px solid var(--color-line); background-color: var(--color-surface-800); }
+.group { display: flex; flex-direction: column; align-items: flex-start; flex-shrink: 0; margin-right: 64px; }
+.label { padding: 8px 12px; white-space: nowrap; }
+
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="findings.nested-borders">
+  <!-- docs/findings/viewport-classes.md, nested borders: one, two and three levels of 4 px borders. At 1600×900 Unity
+       draws each border 2.5 device px (3 at the exact 0.75, drawn ×0.833), and the browser lays these out at 2.5 too:
+       through the fidelity suite the label inside three levels is within 0.16 device px of the golden at 1600×900 and
+       0.28 at 1366×768, and every capture passes -->
+  <div class="group">
+    <div class="frame" data-u-id="one-a"><p class="label text-body" data-u-id="one" data-l10n="findings.nested-borders.one" data-en="One level">Bir kat</p></div>
+  </div>
+  <div class="group">
+    <div class="frame" data-u-id="two-a"><div class="frame" data-u-id="two-b"><p class="label text-body" data-u-id="two" data-l10n="findings.nested-borders.two" data-en="Two levels">İki kat</p></div></div>
+  </div>
+  <div class="group">
+    <div class="frame" data-u-id="three-a"><div class="frame" data-u-id="three-b"><div class="frame" data-u-id="three-c"><p class="label text-body" data-u-id="three" data-l10n="findings.nested-borders.three" data-en="Three levels">Üç kat</p></div></div></div>
+  </div>
+</div>
+</body>
+</html>
