@@ -286,6 +286,55 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
+        /// A geometry report of the layout before a width was written is not that width's layout: a text-sized label in a wide
+        /// row gets a longer text and the fit writes its wider box (more than a device pixel wider), then the label's geometry
+        /// report of the earlier layout arrives, as when the parent's geometry callback wrote first in the same layout pass. The
+        /// width stays (the row has room); before, that report was taken for the row holding the label narrower and the exact
+        /// width came off for good at that scale (the letter-spacing fixture's caps-label at both scaled viewports in some suite
+        /// runs: UI Toolkit's own width, 1.30 device px narrow at 1366×768). A row that has no room still takes it off.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AGeometryReportOfTheLayoutBeforeAWrite_DoesNotTakeTheWidthOff()
+        {
+            // its own font (the row tests measure the table font's kerning against Chromium's)
+            var regular = FontFixture.Kept(FontFixture.RegularTtf, "Kept Fit Regular");
+            var twin = FontTwinGenerator.GetOrCreateTwin(regular, FontFixture.KeptFolder + "/FitTwins", FontTwinGenerator.LineBox.For(24, 32));
+            DesignText.Prepare(twin, "Onayla Kaydet Paylaş");
+            var font = FontDefinition.FromSDFFont(twin);
+            var doc = Document(2560, 1440);
+            yield return Frames(2);
+            var row = new VisualElement();
+            row.style.position = Position.Absolute;
+            row.style.left = 10;
+            row.style.top = 10;
+            row.style.width = 1000;
+            row.style.flexDirection = FlexDirection.Row;
+            doc.rootVisualElement.Add(row);
+            var label = new DesignLabel("Onayla"); // characters the font has (a measure never adds glyphs)
+            label.style.fontSize = 24;
+            label.style.unityFontDefinition = font;
+            row.Add(label);
+            yield return Frames(4);
+            var before = label.layout;
+            Assert.AreEqual(label.Fit.Width, before.width, 1e-3, "laid out at its exact width");
+            label.text = "Onayla Kaydet Paylaş";
+            label.Fit.Update(); // the new width, written before the next layout
+            Assert.Greater(label.Fit.Width, before.width + 2, "the wider box is written");
+            Assert.AreEqual(before.width, label.layout.width, 1e-3, "not laid out yet");
+            using (var report = GeometryChangedEvent.GetPooled(before, label.layout))
+            {
+                report.target = label;
+                label.SendEvent(report);
+            }
+            yield return Frames(6);
+            Assert.IsFalse(float.IsNaN(label.Fit.Width), "the exact width stays");
+            Assert.AreEqual(DesignTextFit.Snap(label.Fit.TextWidth(), 1), label.layout.width, 1e-3, "laid out at it");
+            row.style.width = 60; // no room: the exact width still comes off
+            yield return Frames(6);
+            Assert.IsNaN(label.Fit.Width);
+        }
+
+        /// <summary>
         /// A row of bordered tabs at 1600×900 just too short for the golden's widths: the golden's box of each (Chromium's
         /// border on whole device pixels, 4.8 panel px a side, the text ceiled on the 0.625 grid) is wider than UI Toolkit's own
         /// (borders 4, the text on the 0.75 grid), and the row's width lies between the two sums. The row takes the exact

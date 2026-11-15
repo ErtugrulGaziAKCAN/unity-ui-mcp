@@ -200,8 +200,11 @@ namespace DesignUi
             if (exact)
             {
                 // held narrower than the width this gave it: the row has no room, the text may wrap there (UI Toolkit's own
-                // width: a row inside a column that sizes it to its content does not shrink an explicit flex basis)
-                if (!float.IsNaN(laidOut) && laidOut < Width - grid && laidOut < box - grid)
+                // width: a row inside a column that sizes it to its content does not shrink an explicit flex basis). A layout
+                // at the width this gave it before is not one (a geometry report of the layout before the last write can
+                // follow it: the parent's geometry callback writes in the same layout pass, the element's own report of that
+                // pass comes after; it took the width off for good at that scale)
+                if (!float.IsNaN(laidOut) && !(Mathf.Abs(laidOut - m_Given) < 1e-3f) && laidOut < Width - grid && laidOut < box - grid)
                 {
                     Release();
                     // it comes back only once the row has more room than now or the text needs less: UI Toolkit's own width
@@ -247,6 +250,7 @@ namespace DesignUi
                 m_DesignWraps = wraps;
             }
             Wrapping = false;
+            m_Given = Width;
             Width = box;
             m_Laid = false;
             Writes++;
@@ -290,6 +294,8 @@ namespace DesignUi
 
         WhiteSpace m_NoWrap = WhiteSpace.NoWrap;
         bool m_Laid, m_DesignWraps;
+        /// <summary>The exact width this gave the element before its current one (NaN: none); a layout at it is not a narrowing.</summary>
+        float m_Given = float.NaN;
         /// <summary>After a row took the width off: the parent's content width then and the box it had no room for (NaN: none).</summary>
         float m_ReleasedRoom = float.NaN, m_ReleasedBox = float.NaN;
         /// <summary>The design scale and panel scale of that release.</summary>
