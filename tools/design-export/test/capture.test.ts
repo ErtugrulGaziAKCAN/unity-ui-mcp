@@ -507,6 +507,13 @@ describe("captures", () => {
       expect(tinted).toHaveLength(2);
       expect(tinted.map((l) => l.mixed ?? false)).toEqual([true, false]);
       expect(b.elements.tinted).toMatchObject({ color: [255, 255, 255, 1], opacity: 1 });
+      // what a text paints of its own: nothing, but a text shadow reaches round its box (offset 0 2, blur 4: grown by 6;
+      // fix round 4, N-8)
+      expect(b.elements.tinted.paints).toBe(false);
+      expect(b.elements.tinted.shadow).toBeUndefined();
+      const glow = b.elements.glow;
+      expect(glow.paints).toBe(false);
+      for (const [k, v] of Object.entries({ x: glow.x - 6 * s, y: glow.y - 4 * s, w: glow.w + 12 * s, h: glow.h + 12 * s })) expect(glow.shadow![k as "x"], k).toBeCloseTo(v, 5);
     }
   });
 
@@ -654,6 +661,16 @@ describe("captures", () => {
     expect(date).toMatchObject({ color: [255, 255, 255, 1], opacity: 1 });
     expect(items["date#2"]).toMatchObject({ color: [255, 255, 255, 1], opacity: 1 });
     expect(items["day#1"].color).toBeUndefined();
+    // what each element and copy paints of its own in the capture, in its own state (fix round 4, N-8): a day's fill, not a
+    // date's text; the third item's button paints its fill, and casts its shadow only where the job hovers it there
+    // (0 4px 8px 2px: grown by 2 + 12, moved 4 down, CSS px at scale 0.5)
+    expect(boxes.elements).toMatchObject({ day: { paints: true }, date: { paints: false }, plain: { paints: true } });
+    expect(items).toMatchObject({ "day#1": { paints: true }, "date#1": { paints: false }, "more#2": { paints: true } });
+    expect(items["more#1"].paints).toBeUndefined();
+    for (const b of [boxes.elements.day, items["more#2"]]) expect(b.shadow).toBeUndefined();
+    const hovered = r.boxes["default@1280x720.hover.more~2"].items!["more#2"];
+    expect(hovered.paints).toBe(true);
+    for (const [k, v] of Object.entries({ x: hovered.x - 7, y: hovered.y - 5, w: hovered.w + 14, h: hovered.h + 14 })) expect(hovered.shadow![k as "x"], k).toBeCloseTo(v, 5);
     expect(itemSuffix([0, 2])).toBe("#2");
     expect(itemSuffix([1, 0])).toBe("#0#1");
     expect(itemSuffix([3, 1])).toBe("#1#3");

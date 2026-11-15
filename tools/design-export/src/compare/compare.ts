@@ -1188,10 +1188,33 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return { cs, path };
     };
     /**
-     * What paints after the text `key` of element `id` and may lie over its lines (ruling R141, fix round 3 N-5): every IR
-     * element and every written-out repeat copy later in paint order that paints something, on both sides, and the outer
-     * shadow each casts (`shadows`; a copy's placed by its own box). A later item of a repeat paints after an earlier one;
-     * inside one item the IR's paint order holds. Null when the paint order is unknown.
+     * What one later layer covers, on both sides (fix round 3 N-5, fix round 4 N-8): its box when it paints something, and
+     * the reach of the outer shadows it casts, each placed by that side's own box. `rec` is the golden's record of what it
+     * paints in this capture (boxes `paints`, `shadow`): an IR element's agrees with the IR's facts for the capture (either
+     * counts); a copy's is in its own item's state (a job's hover or class on that item), so it replaces what its IR
+     * element paints in the IR's state. Without a record (an older golden) a copy paints what its IR element paints.
+     */
+    const layerOf = (x: string, rec: Box | ItemCopy | undefined, copy: boolean, sides: (Box | ItemCopy | undefined)[]): Rect[] => {
+      const irFacts = !copy || rec?.paints === undefined;
+      const painted = (irFacts && paints(x)) || rec?.paints === true;
+      // the shadows' rects in the golden with the golden box each was taken on
+      const casts: { r: Rect; on: Rect }[] = [];
+      const sh = ctx.shadows?.[x], ir = g.elements[x];
+      if (irFacts && sh && ir) casts.push({ r: sh, on: ir });
+      if (rec?.shadow) casts.push({ r: rec.shadow, on: rec });
+      const out: Rect[] = [];
+      for (const b of sides) {
+        if (!b || !b.visible) continue;
+        if (painted && b.w > 0 && b.h > 0) out.push(b);
+        for (const { r, on } of casts) out.push({ x: b.x + r.x - on.x, y: b.y + r.y - on.y, w: b.w + r.w - on.w, h: b.h + r.h - on.h });
+      }
+      return out;
+    };
+    /**
+     * What paints after the text `key` of element `id` and may lie over its lines (ruling R141, fix round 3 N-5, fix round 4
+     * N-8): every IR element and every written-out repeat copy later in paint order that paints something or casts a shadow
+     * in the capture (`layerOf`), on both sides. A later item of a repeat paints after an earlier one; inside one item the
+     * IR's paint order holds. Null when the paint order is unknown.
      */
     const laterLayers = (id: string, key: string): Rect[] | null => {
       if (!paintIndex.has(id)) return null;
@@ -1203,18 +1226,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         return paintIndex.get(x)! > at;
       };
       const out: Rect[] = [];
-      const add = (x: string, sides: (Box | undefined)[]) => {
-        const sh = ctx.shadows?.[x], ir = g.elements[x];
-        for (const b of sides) {
-          if (!b || !b.visible) continue;
-          if (b.w > 0 && b.h > 0) out.push(b);
-          if (sh && ir) out.push({ x: b.x + sh.x - ir.x, y: b.y + sh.y - ir.y, w: b.w + sh.w - ir.w, h: b.h + sh.h - ir.h });
-        }
-      };
-      for (const x of order) if (paints(x) && after(x, x)) add(x, [g.elements[x], u.elements[x]]);
+      for (const x of order) if (after(x, x)) out.push(...layerOf(x, g.elements[x], false, [g.elements[x], u.elements[x]]));
       for (const k of new Set([...Object.keys(g.items ?? {}), ...Object.keys(u.items ?? {})])) {
         const x = k.slice(0, k.indexOf("#"));
-        if (k !== key && paints(x) && after(x, k)) add(x, [g.items?.[k], u.items?.[k]]);
+        if (k !== key && after(x, k)) out.push(...layerOf(x, g.items?.[k], true, [g.items?.[k], u.items?.[k]]));
       }
       return out;
     };

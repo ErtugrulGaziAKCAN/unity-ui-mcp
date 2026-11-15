@@ -332,10 +332,12 @@ export function itemSuffix(item: readonly number[]): string {
 }
 
 type LineBox = { x: number; y: number; w: number; h: number; baseline: number; mixed?: boolean };
-type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; rotation?: number; lines: LineBox[]; color?: [number, number, number, number]; opacity?: number };
+type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; rotation?: number; lines: LineBox[]; color?: [number, number, number, number]; opacity?: number;
+  paints?: boolean; shadow?: { x: number; y: number; w: number; h: number } };
 /**
- * Boxes of the IR elements in device px: border box, visibility, text lines with baselines (see the boxes schema for
- * the rules). Ascents are cached per font and per state of the page's font set (faces added or loaded since).
+ * Boxes of the IR elements in device px: border box, visibility, text lines with baselines, and what each paints of its
+ * own with the reach of its outer shadows (see the boxes schema for the rules). Ascents are cached per font and per state
+ * of the page's font set (faces added or loaded since).
  */
 async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]; scale: number }): Promise<[string, ElBox][]> {
   await document.fonts.ready;
@@ -402,6 +404,53 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
     const m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/.exec(v.trim());
     return m ? [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])] : null;
   };
+  /** A computed colour's alpha (1 for a syntax rgba() does not read: it counts as painting). */
+  const alphaOf = (v: string) => rgba(v)?.[3] ?? 1;
+  /** The layers of a computed box-shadow or text-shadow list: offset, blur, spread, inset and the colour's alpha. */
+  const shadowsOf = (v: string) => {
+    const parts: string[] = [];
+    let depth = 0, start = 0;
+    for (let k = 0; k < v.length; k++) {
+      if (v[k] === "(") depth++;
+      else if (v[k] === ")") depth--;
+      else if (v[k] === "," && depth === 0) { parts.push(v.slice(start, k)); start = k + 1; }
+    }
+    parts.push(v.slice(start));
+    return parts.map((p) => p.trim()).filter((p) => p && p !== "none").map((p) => {
+      const colour = /[a-z-]+\([^)]*\)/i.exec(p)?.[0] ?? "";
+      const len = (colour ? p.replace(colour, " ") : p).match(/-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?px/gi)?.map(parseFloat) ?? [];
+      return { x: len[0] ?? 0, y: len[1] ?? 0, blur: Math.max(0, len[2] ?? 0), spread: len[3] ?? 0, inset: /\binset\b/i.test(p), alpha: colour ? alphaOf(colour) : 1 };
+    });
+  };
+  /**
+   * What the element paints of its own now, in its own state (a later item's copy in its item's: fix round 4, N-8): a
+   * background, a visible border side, a box shadow, or picture or vector content; and the rect (CSS px) its outer box
+   * shadows and text shadows can reach (its border box moved by the offset, grown by the spread and 1.5 × the blur, where
+   * a Gaussian of σ = blur / 2 fades out).
+   */
+  const paintOf = (el: Element, b: DOMRect): { paints: boolean; reach: { l: number; t: number; r: number; b: number } | null } => {
+    const cs = getComputedStyle(el);
+    let paints = alphaOf(cs.backgroundColor) > 0 || (cs.backgroundImage !== "none" && cs.backgroundImage !== "");
+    for (const side of ["top", "right", "bottom", "left"]) {
+      const style = cs.getPropertyValue(`border-${side}-style`);
+      if (style !== "none" && style !== "hidden" && parseFloat(cs.getPropertyValue(`border-${side}-width`)) > 0 && alphaOf(cs.getPropertyValue(`border-${side}-color`)) > 0) paints = true;
+    }
+    if (el instanceof HTMLImageElement || el instanceof SVGSVGElement || el instanceof HTMLCanvasElement || el instanceof HTMLVideoElement) paints = true;
+    let reach: { l: number; t: number; r: number; b: number } | null = null;
+    const cast = (s: { x: number; y: number; blur: number }, spread: number) => {
+      const g = spread + Math.ceil(1.5 * s.blur);
+      const r = { l: b.left + s.x - g, t: b.top + s.y - g, r: b.right + s.x + g, b: b.bottom + s.y + g };
+      if (r.r <= r.l || r.b <= r.t) return;
+      reach = reach ? { l: Math.min(reach.l, r.l), t: Math.min(reach.t, r.t), r: Math.max(reach.r, r.r), b: Math.max(reach.b, r.b) } : r;
+    };
+    for (const s of shadowsOf(cs.boxShadow)) {
+      if (s.alpha <= 0) continue;
+      paints = true;
+      if (!s.inset) cast(s, s.spread);
+    }
+    for (const s of shadowsOf(cs.textShadow)) if (s.alpha > 0) cast(s, 0);
+    return { paints, reach };
+  };
   const out: [string, ElBox][] = [];
   for (const [id, i, isText] of arg.items) {
     const el = els[i];
@@ -417,6 +466,9 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
       else if (deg > 180) deg -= 360;
       deg = Math.round(deg * 1e6) / 1e6;
       if (deg !== 0 && !Object.is(deg, -0)) box.rotation = deg;
+      const p = paintOf(el, b);
+      box.paints = p.paints;
+      if (p.reach) box.shadow = { x: dev(p.reach.l), y: dev(p.reach.t), w: dev(p.reach.r - p.reach.l), h: dev(p.reach.b - p.reach.t) };
     }
     if (isText && rendered) {
       // the colour its text is drawn in and the opacity it draws with, as computed now (a later repeat item's copy has its
@@ -851,7 +903,8 @@ export class CaptureSession {
     fs.writeFileSync(path.join(goldensDir, `${name}.png`), png);
     const boxes: CaptureBoxes = { capture: name, viewport: [job.viewport[0], job.viewport[1]], scale: this.scale, elements: Object.fromEntries(els), external: [...this.external] };
     if (copies.length) boxes.items = Object.fromEntries(copies.map(([k, b]) => [k, { x: b.x, y: b.y, w: b.w, h: b.h, visible: b.visible, text: b.text, lines: b.lines,
-      ...(b.color ? { color: b.color } : {}), ...(b.opacity !== undefined ? { opacity: b.opacity } : {}) }]));
+      ...(b.color ? { color: b.color } : {}), ...(b.opacity !== undefined ? { opacity: b.opacity } : {}),
+      ...(b.paints !== undefined ? { paints: b.paints } : {}), ...(b.shadow ? { shadow: b.shadow } : {}) }]));
     return boxes;
   }
 

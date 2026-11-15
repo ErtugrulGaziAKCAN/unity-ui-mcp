@@ -1453,6 +1453,58 @@ describe("compareCapture: edge, colour and ink checks", () => {
           expect(kinds(design, boxes(true), stems(bg, muted, k), ctx), `${k}: the same text`).toEqual([]);
         }
       });
+
+      // fix round 4, N-8: what a later item's copy paints in its own item's state (a job's hover or class on that item), as
+      // the golden records it, not what its IR element paints in the IR's state
+      it("fix round 4, N-8: a later item's copy that paints a 30 % layer only in its own state counts as a later layer", () => {
+        // the re-review's probe C: the list's rows overlap; row #1's veil paints only through a class the job gives row #1,
+        // so its IR element is no painter in the IR's own state
+        const bg = surfaces["surface-700"], c = colours.secondary, veilC: Rgb = [11, 31, 38];
+        const veiled = (k: number, drawn?: number[]) => {
+          const png = stems(bg, c, k, 0, drawn);
+          for (let y = 0; y < 22; y++) for (let x = 0; x < 48; x++) { const o = (y * 48 + x) * 4; for (let j = 0; j < 3; j++) png.data[o + j] = Math.round(0.7 * png.data[o + j] + 0.3 * veilC[j]); }
+          return png;
+        };
+        const boxes = (paints?: boolean): CaptureBoxes => ({ capture: "c", viewport: [48, 40], scale: 0.5, external: [],
+          elements: { root: el(0, 0, 48, 40), list: el(0, 0, 48, 40), row: el(0, 0, 48, 22), t: el(7, 3, 30, 16, { text: true, lines: [line], ...own(c) }), veil: el(0, 40, 48, 0, { visible: false }) },
+          items: { "row#1": el(0, 0, 48, 22), "t#1": el(7, 30, 30, 8, { visible: false }), "veil#1": el(0, 0, 48, 22, paints === undefined ? {} : { paints }) } });
+        const ctx: CaptureContext = { fontPx: { t: 10 }, backgrounds: new Set(), painters: new Set(), order: ["root", "list", "row", "t", "veil"], root: "root",
+          parent: new Map([["list", "root"], ["row", "list"], ["t", "row"], ["veil", "row"]]), repeats: new Set(["list"]), viewportClass: "exact" };
+        expect(kinds(veiled(1), boxes(true), veiled(0.7), ctx), "lighter").toContain("ink");
+        expect(kinds(veiled(1), boxes(true), veiled(1, missing), ctx), "missing glyphs").toContain("inkCoverage");
+        expect(kinds(veiled(1), boxes(true), veiled(1), ctx), "the same text").toEqual([]);
+      });
+
+      it("fix round 4, N-8: a later item's copy whose shadow, cast only in its own state, lies over the line counts as a later layer", () => {
+        // the re-review's probe D: card #1 (a later row) lies below the line; a hover on that row lifts it with a black shadow
+        // over the first row's text, while the IR's own card casts none in the capture
+        const boxes = (c: Rgb): CaptureBoxes => ({ capture: "c", viewport: [48, 40], scale: 0.5, external: [],
+          elements: { root: el(0, 0, 48, 40), list: el(0, 0, 48, 40), row: el(0, 0, 48, 22), t: el(7, 3, 30, 16, { text: true, lines: [line], ...own(c) }), card: el(0, 40, 48, 0, { visible: false }) },
+          items: { "row#1": el(0, 22, 48, 18), "t#1": el(7, 30, 30, 8, { visible: false }), "card#1": el(0, 26, 48, 14, { paints: true, shadow: { x: -12, y: 0, w: 72, h: 52 } }) } });
+        const ctx: CaptureContext = { fontPx: { t: 10 }, backgrounds: new Set(["card"]), painters: new Set(["card"]), order: ["root", "list", "row", "t", "card"], root: "root",
+          parent: new Map([["list", "root"], ["row", "list"], ["t", "row"], ["card", "row"]]), repeats: new Set(["list"]), viewportClass: "exact", shadows: {} };
+        const passed: string[] = [];
+        for (const [sn, bg] of Object.entries(surfaces)) for (const [cn, c] of Object.entries(colours)) for (const shade of [0.15, 0.25, 0.4]) {
+          const design = stems(bg, c, 1, shade);
+          if (!kinds(design, boxes(c), stems(bg, c, 0.7, shade), ctx).length) passed.push(`${sn} ${cn} ${shade}: lighter`);
+          if (!kinds(design, boxes(c), stems(bg, c, 1, shade, missing), ctx).length) passed.push(`${sn} ${cn} ${shade}: missing glyphs`);
+          expect(kinds(design, boxes(c), stems(bg, c, 1, shade), ctx), `${sn} ${cn} ${shade}: the same text`).toEqual([]);
+        }
+        expect(passed).toEqual([]);
+      });
+
+      it("fix round 4, N-8: a later element's text shadow over the line counts as a later layer", () => {
+        // the re-review's variant: a later text-only element (no painter) whose blurred text shadow the golden records
+        const boxes = (c: Rgb): CaptureBoxes => ({ capture: "c", viewport: [48, 40], scale: 0.5, external: [],
+          elements: { root: el(0, 0, 48, 40), t: el(7, 3, 30, 16, { text: true, lines: [line], ...own(c) }),
+            note: el(0, 26, 48, 12, { text: true, lines: [{ x: 2, y: 27, w: 40, h: 10, baseline: 35 }], paints: false, shadow: { x: -10, y: 0, w: 68, h: 52 } }) } });
+        const ctx: CaptureContext = { fontPx: { t: 10, note: 10 }, backgrounds: new Set(), painters: new Set(), order: ["root", "t", "note"], root: "root", viewportClass: "exact" };
+        const bg = surfaces["surface-900"], c = colours.secondary;
+        const design = stems(bg, c, 1, 0.4);
+        expect(kinds(design, boxes(c), stems(bg, c, 0.7, 0.4), ctx), "lighter").toContain("ink");
+        expect(kinds(design, boxes(c), stems(bg, c, 1, 0.4, missing), ctx), "missing glyphs").toContain("inkCoverage");
+        expect(kinds(design, boxes(c), stems(bg, c, 1, 0.4), ctx), "the same text").toEqual([]);
+      });
     });
 
     it("R133: the evidence names every condition that does not hold, not only the first", () => {

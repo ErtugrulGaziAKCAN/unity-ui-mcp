@@ -25,6 +25,8 @@
           "rotation": { "type": "number", "description": "Design side only, optional: the element's rotation on the screen in degrees, its own rotate and transform plus its ancestors', in (-180, 180]; absent when it is 0. Unity captures do not write it." },
           "color": { "$ref": "#/$defs/color" },
           "opacity": { "$ref": "#/$defs/opacity" },
+          "paints": { "$ref": "#/$defs/paints" },
+          "shadow": { "$ref": "#/$defs/shadow" },
           "lines": {
             "$ref": "#/$defs/lines",
             "description": "Text lines of the element's own text (text inside nested IR elements is excluded), top to bottom: one per baseline (text fragments whose baselines are within 0.5 device px form one line, whatever the line height). The lines are the laid-out lines, also those clipped by overflow. A line's rect is the union of its text fragments' boxes (font ascent + descent, not the line-height box); its width is the laid-out width (for text-overflow: ellipsis, the whole text's width). Empty for elements without a box and for form controls whose text is not in DOM text (input, select, textarea): compare their lines as not compared."
@@ -42,7 +44,8 @@
         "required": ["x", "y", "w", "h", "visible", "text", "lines"],
         "properties": {
           "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" }, "visible": { "type": "boolean" }, "text": { "type": "boolean" },
-          "lines": { "$ref": "#/$defs/lines" }, "color": { "$ref": "#/$defs/color" }, "opacity": { "$ref": "#/$defs/opacity" }
+          "lines": { "$ref": "#/$defs/lines" }, "color": { "$ref": "#/$defs/color" }, "opacity": { "$ref": "#/$defs/opacity" },
+          "paints": { "$ref": "#/$defs/paints" }, "shadow": { "$ref": "#/$defs/shadow" }
         }
       }
     }
@@ -55,6 +58,17 @@
     "opacity": {
       "description": "Design side only, optional, with `color`: the opacity the element draws with in the capture, its own times its ancestors' (an animation sample's running value included). Unity captures do not write it.",
       "type": "number", "minimum": 0, "maximum": 1
+    },
+    "paints": {
+      "description": "Design side only, optional, for an element (or copy) that has a box: whether it paints something of its own in the capture, in its own state (a copy in its own item's state, which a job's pseudo-state or class there gives it): a background colour of alpha above 0 or a background image, a border side with a style, a width and a colour of alpha above 0, a box shadow (outer or inset), or picture or vector content (img, svg, canvas, video). Unity captures do not write it.",
+      "type": "boolean"
+    },
+    "shadow": {
+      "description": "Design side only, optional, with `paints`: the rect in device px its outer box shadows and its text shadows can reach in the capture (each its border box moved by its offset and grown by its spread plus 1.5 times its blur radius, rounded up; their union); absent when it casts none. Unity captures do not write it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "w", "h"],
+      "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" } }
     },
     "lines": {
       "type": "array",
