@@ -784,20 +784,28 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(1.2f, _settings.scale, 1e-4, "and its exact scale's factor");
             Object.DestroyImmediate(doc.gameObject);
 
-            // an asset held in Play mode, an Undo snapshot taken while held, the screen gone, a script reload
+            // an asset held in Play mode and given back, then a script reload (the statics forgotten, the session's record
+            // kept): an Undo of a group in which the factor was held, which brings the held 1.2 back, gives the asset its own
+            // factor. Unity's Undo does not apply an asset's recorded property in the test runner, so the test writes the value
+            // such an Undo restores and sends the Undo system's event (AfterUndoRedo with that group) itself.
             var asset = SettingsAsset("Reload");
+            Undo.IncrementCurrentGroup();
+            int heldGroup = Undo.GetCurrentGroup();
             var screen2 = ShowOn(asset, out var doc2);
             yield return Frames(6);
             Assert.AreEqual(1.2f, asset.scale, 1e-4);
-            Undo.IncrementCurrentGroup();
-            Undo.RecordObject(asset, "sorting order");
-            asset.sortingOrder = 9;
             screen2.RemoveFromHierarchy();
             Assert.AreEqual(1f, asset.scale);
-            DesignRootScalePanels.ForgetStatics(); // what a script reload empties
-            Undo.PerformUndo();
-            Assert.AreEqual(1f, asset.scale, "not the snapshot's held factor");
             Object.DestroyImmediate(doc2.gameObject);
+            DesignRootScalePanels.ForgetStatics(); // what a script reload empties
+            asset.scale = 1.2f; // the snapshot's value, taken while held
+            DesignRootScalePanels.AfterUndoRedo(heldGroup);
+            Assert.AreEqual(1f, asset.scale, 1e-6, "the snapshot's own factor, from the session's record");
+            // the same Undo without the session's record (what the mapping above came from) leaves the value as it is
+            DesignRootScalePanels.ForgetReleased();
+            asset.scale = 1.2f;
+            DesignRootScalePanels.AfterUndoRedo(heldGroup);
+            Assert.AreEqual(1.2f, asset.scale, 1e-6, "no record: nothing maps it");
         }
 
         /// <summary>
@@ -839,6 +847,50 @@ namespace DesignUi.Editor.Tests
             yield return Frames(6);
             Assert.AreEqual(1f, DesignRootScalePanels.OwnScale(_settings) ?? float.NaN, 1e-6, "the snapshot's own factor, not its held 1.2");
             screen2.RemoveFromHierarchy();
+            Assert.AreEqual(1f, _settings.scale, 1e-6, "leaving gives the own factor back");
+            Object.DestroyImmediate(doc.gameObject);
+        }
+
+        /// <summary>
+        /// A factor written again over an own it was written over before keeps the earlier groups it was held in: held at
+        /// 1600×900 in Play mode (1.2 over the own 1), the user's 150 % set in the Inspector while held (the Undo record holds
+        /// 1.2 → 1.5), then the game's own 1 (held 1.2 over it again, a later group) and 0.8 (exact: nothing held), unrecorded;
+        /// Ctrl+Z of the user's edit brings 1.2 back, a snapshot taken while 1.2 was held over the own 1, so the own factor is 1
+        /// and leaving gives 1 back (before, the factor written again took the later group, the snapshot's 1.2 became the own
+        /// factor and leaving Play left it on the settings).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AnUndo_OfAnEditWhileHeld_GivesItsOwnFactor_AfterTheFactorWasWrittenAgainLater()
+        {
+            DesignRootScalePanels.Playing = () => true;
+            var doc = Document(1600, 900);
+            _settings.hideFlags = HideFlags.None; // settings the Undo system records
+            yield return Frames(2);
+            var screen = PlainScreen("root");
+            doc.rootVisualElement.Add(screen);
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, _settings.scale, 1e-4, "held at 1600×900 over the own 1");
+            Undo.IncrementCurrentGroup();
+            Undo.RecordObject(_settings, "scale"); // the user's 150 % while held: the Undo record holds 1.2 → 1.5
+            _settings.scale = 1.5f;
+            screen.panel.visualTree.MarkDirtyRepaint();
+            yield return Frames(6);
+            Assert.AreEqual(1.5f, DesignRootScalePanels.OwnScale(_settings) ?? float.NaN, 1e-6);
+            // the game's own factors (not recorded): 1, held at 1.2 again; 0.8 (× 0.625 = 0.5, exact): nothing held
+            foreach (var (own, held) in new[] { (1f, 1.2f), (0.8f, 0.8f) })
+            {
+                Undo.IncrementCurrentGroup();
+                _settings.scale = own;
+                screen.panel.visualTree.MarkDirtyRepaint();
+                yield return Frames(6);
+                Assert.AreEqual(own, DesignRootScalePanels.OwnScale(_settings) ?? float.NaN, 1e-6, "the game's " + own);
+                Assert.AreEqual(held, _settings.scale, 1e-4, "held over the game's " + own);
+            }
+            Undo.PerformUndo(); // the user's edit: 1.2 back, the factor held over the own 1 when it was recorded
+            Assert.AreNotEqual(0.8f, _settings.scale, "the Undo ran");
+            yield return Frames(6);
+            Assert.AreEqual(1f, DesignRootScalePanels.OwnScale(_settings) ?? float.NaN, 1e-6, "the snapshot's own factor, not its held 1.2");
+            screen.RemoveFromHierarchy();
             Assert.AreEqual(1f, _settings.scale, 1e-6, "leaving gives the own factor back");
             Object.DestroyImmediate(doc.gameObject);
         }

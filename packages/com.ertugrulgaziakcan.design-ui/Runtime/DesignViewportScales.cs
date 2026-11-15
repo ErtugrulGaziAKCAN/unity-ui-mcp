@@ -158,11 +158,12 @@ namespace DesignUi
             /// <summary>The factor last written here (NaN: none): the only value that counts as this class's own write.</summary>
             public float Written = float.NaN;
             /// <summary>
-            /// The factors written here since the settings' own last changed, each with the own factor it was written over and the
-            /// Undo group current when it was first written, and the one held when it changed (Editor: an Undo of that change, or
-            /// of a snapshot taken while held, brings one back; a snapshot recorded in an earlier group cannot hold it).
+            /// The factors written here, each with the own factor it was written over and the Undo groups it was held in: from
+            /// the group current when it was first written to the one current when the own factor changed (int.MaxValue while it
+            /// is the own). Editor: an Undo or Redo of a group in that range can bring the factor back as a snapshot taken while
+            /// it was held; one of a group outside it holds a value the game or the user set, whatever it equals.
             /// </summary>
-            public readonly List<(float factor, float own, int group)> History = new List<(float, float, int)>();
+            public readonly List<(float factor, float own, int group, int last)> History = new List<(float, float, int, int)>();
             /// <summary>The scale this class last wrote or saw on the settings (Editor): an Undo that leaves it as it is did not touch them.</summary>
             public float Observed = float.NaN;
             public IReadOnlyList<double> ExactScales;
@@ -173,13 +174,14 @@ namespace DesignUi
 
             /// <summary>
             /// The own factor <paramref name="factor"/> was written over, when an Undo or Redo of <paramref name="group"/> can have
-            /// brought it back: a snapshot recorded in a group before the factor was first written holds a value the game or the
-            /// user set, whatever it equals.
+            /// brought it back: a group in which it was held (from its first write to the own factor's change). A snapshot
+            /// recorded in a group before the factor was first written, or after the own it was written over changed, holds a
+            /// value the game or the user set, whatever it equals. <c>int.MaxValue</c>: a factor written over the own now.
             /// </summary>
             public bool OwnBefore(float factor, int group, out float own)
             {
                 for (int i = History.Count - 1; i >= 0; i--)
-                    if (History[i].factor == factor && History[i].group <= group)
+                    if (History[i].factor == factor && History[i].group <= group && group <= History[i].last)
                     {
                         own = History[i].own;
                         return true;
@@ -308,9 +310,9 @@ namespace DesignUi
             if (float.IsNaN(e.Written) || settings.scale != e.Written)
             {
 #if UNITY_EDITOR
-                // only a real change of the own trims the factors written before it: a new hold keeps what an earlier hold of
+                // only a real change of the own ends the factors written over it: a new hold keeps what an earlier hold of
                 // these settings wrote (an Undo snapshot taken then can still bring it back)
-                if (settings.scale != e.Own || !float.IsNaN(e.Written)) KeepLastWritten(e);
+                if (settings.scale != e.Own || !float.IsNaN(e.Written)) EndPairs(e);
 #endif
                 e.Own = settings.scale;
                 e.Written = float.NaN;
@@ -326,7 +328,7 @@ namespace DesignUi
                 e.Written = factor;
                 e.Suspended = false;
 #if UNITY_EDITOR
-                if (!e.OwnBefore(factor, int.MaxValue, out var known) || known != e.Own) e.History.Add((factor, e.Own, UnityEditor.Undo.GetCurrentGroup()));
+                if (!e.OwnBefore(factor, int.MaxValue, out var known) || known != e.Own) AddPair(e, factor);
 #endif
                 // the panel applies its settings when it updates: every frame in Play mode and in players, in Edit mode only
                 // when something on it changed after its last update (this runs during one: its style or geometry callbacks)
@@ -438,25 +440,29 @@ namespace DesignUi
             public List<float> factors = new List<float>();
             public List<float> owns = new List<float>();
             public List<int> groups = new List<int>();
+            /// <summary>The last group each pair was held in (absent in records written before: held since its first group).</summary>
+            public List<int> lasts = new List<int>();
+        }
+
+        /// <summary>The most pairs an entry keeps (the oldest go first).</summary>
+        const int MaxPairs = 64;
+
+        static void AddPair(Entry e, float factor)
+        {
+            e.History.Add((factor, e.Own, UnityEditor.Undo.GetCurrentGroup(), int.MaxValue));
+            if (e.History.Count > MaxPairs) e.History.RemoveRange(0, e.History.Count - MaxPairs);
         }
 
         /// <summary>
-        /// A held entry keeps, of the factors it wrote, only the one held when its own changed (an Undo of that change brings
-        /// it back): an earlier factor that equals a later own (the game's or the user's) must never be taken for this class's.
+        /// The own factor changed: every factor written over the earlier own was held up to the current Undo group (an Undo of
+        /// that change, or of a snapshot taken while it was held, brings it back and maps to that own). A later snapshot of an
+        /// equal value is the game's or the user's: an earlier factor that equals a later own is never taken for this class's.
         /// </summary>
-        static void KeepLastWritten(Entry e)
+        static void EndPairs(Entry e)
         {
-            float written = e.Written;
-            if (float.IsNaN(written)) { e.History.Clear(); return; }
-            for (int i = e.History.Count - 1; i >= 0; i--)
-                if (e.History[i].factor == written)
-                {
-                    var pair = e.History[i];
-                    e.History.Clear();
-                    e.History.Add(pair);
-                    return;
-                }
-            e.History.Clear();
+            int now = UnityEditor.Undo.GetCurrentGroup();
+            for (int i = 0; i < e.History.Count; i++)
+                if (e.History[i].last == int.MaxValue) e.History[i] = (e.History[i].factor, e.History[i].own, e.History[i].group, Math.Max(e.History[i].group, now));
         }
 
         /// <summary>
@@ -471,11 +477,12 @@ namespace DesignUi
             var r = Load();
             r.records.RemoveAll(x => x.id == id);
             var record = new Record { id = id, observed = e.Observed };
-            foreach (var (factor, own, group) in e.History)
+            foreach (var (factor, own, group, last) in e.History)
             {
                 record.factors.Add(factor);
                 record.owns.Add(own);
                 record.groups.Add(group);
+                record.lasts.Add(last);
             }
             r.records.Add(record);
             UnityEditor.SessionState.SetString(RememberedKey, JsonUtility.ToJson(r));
@@ -511,15 +518,16 @@ namespace DesignUi
                 if (settings == null || Find(s_Entries, settings) != null || Find(s_Released, settings) != null) continue;
                 var e = new Entry { Settings = settings, Own = record.observed, Observed = record.observed };
                 for (int i = 0; i < record.factors.Count && i < record.owns.Count; i++)
-                    e.History.Add((record.factors[i], record.owns[i], i < record.groups.Count ? record.groups[i] : int.MinValue));
+                    e.History.Add((record.factors[i], record.owns[i], i < record.groups.Count ? record.groups[i] : int.MinValue,
+                                   i < record.lasts.Count ? record.lasts[i] : int.MaxValue));
                 s_Released.Add(e);
             }
         }
 
         /// <summary>
         /// Every Editor update: a scale this class did not write and no Undo brought back (the game's code, the Inspector) is the
-        /// settings' own. A held entry keeps only the pair of the factor held when it changed; a given-back settings is
-        /// forgotten. So an Undo or a save later never takes such a value for one of this class's factors.
+        /// settings' own. A held entry ends its pairs at the current Undo group (EndPairs); a given-back settings is forgotten. So
+        /// an Undo of a later group or a save never takes such a value for one of this class's factors.
         /// </summary>
         internal static void Observe()
         {
@@ -539,7 +547,7 @@ namespace DesignUi
             if (float.IsNaN(e.Observed) || scale == e.Observed) return;
             if (released) { Forget(e); return; }
             // a held entry: its screens take the new value as the own on their next evaluation
-            KeepLastWritten(e);
+            EndPairs(e);
             e.Observed = scale;
         }
 
@@ -555,7 +563,7 @@ namespace DesignUi
                 if (released) e = Find(s_Released, settings);
                 if (e == null || value == e.Observed) continue;
                 if (released) Forget(e);
-                else { KeepLastWritten(e); e.Observed = value; }
+                else { EndPairs(e); e.Observed = value; }
             }
             return modifications;
         }
