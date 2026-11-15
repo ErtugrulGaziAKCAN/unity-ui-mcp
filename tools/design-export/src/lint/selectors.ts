@@ -153,6 +153,29 @@ export const touchesRuntime = (sel: ParsedSelector): boolean =>
     argSelectors(s).some(touchesRuntime)));
 
 /**
+ * The runtime conditions a selector requires: `pos` the `is-` and `state-` classes and interaction pseudo-classes it needs,
+ * `neg` those a `:not()` needs absent, each keyed by where it applies (`s:` the subject's compound, `a:` an ancestor's),
+ * e.g. `s:.is-open`, `a::hover`. A `:is()`/`:where()` with one argument adds that argument's; with several (any of
+ * them) it adds none.
+ */
+export function runtimeConditions(sel: ParsedSelector): { pos: Set<string>; neg: Set<string> } {
+  const pos = new Set<string>(), neg = new Set<string>();
+  const tokens = (simples: Simple[], where: string, into: Set<string>, other: Set<string>) => {
+    for (const s of simples) {
+      if (s.kind === "class" && RUNTIME_CLASS.test(s.name)) into.add(`${where}.${s.name}`);
+      else if (s.kind === "pseudo-class" && DYNAMIC_PSEUDO_CLASSES.has(s.name)) into.add(`${where}:${s.name}`);
+      else if (s.kind === "pseudo-class" && s.arg !== undefined) {
+        const args = argSelectors(s);
+        if (s.name === "not") for (const a of args) for (const c of a.compounds) tokens(c.simples, where, other, into);
+        else if ((s.name === "is" || s.name === "where" || s.name === "matches") && args.length === 1) for (const c of args[0].compounds) tokens(c.simples, where, into, other);
+      }
+    }
+  };
+  sel.compounds.forEach((c, k) => tokens(c.simples, k === sel.compounds.length - 1 ? "s:" : "a:", pos, neg));
+  return { pos, neg };
+}
+
+/**
  * A selector for querySelectorAll that matches every element the rule can reach in some interaction or screen state:
  * interaction pseudo-classes, `is-*`/`state-*` classes and pseudo-elements are removed (an emptied compound becomes
  * `*`), `:not()` around any of them is dropped. Over-approximates; never misses an element.

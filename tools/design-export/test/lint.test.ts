@@ -544,6 +544,17 @@ describe("U-FONT-004: the readable-text floor", () => {
         expect(await floor(css), css).toEqual([expect.stringMatching(/scaled ×0\.5 by its transforms, draws 6 device px at 1280×720/)]);
       // two state rules that apply together multiply: hovered and pressed, 24 × 0.8 × 0.8 × 0.5 = 7.68
       expect(await floor(".box:hover{scale:0.8} .box:active{transform:scale(0.8)}")).toEqual([expect.stringMatching(/scaled ×0\.64 by its transforms, draws 7\.68 device px at 1280×720/)]);
+      // drawn open at 1, never at the closed 0.5: an animation that ends visible and keeps its end shows it at its last
+      // keyframe; a closed scale under :not(.is-open) cannot apply while open; a reveal split over two rules of one state
+      for (const css of ["@keyframes pop{to{opacity:1;transform:scale(1)}} .box{opacity:0;transform:scale(0.5)} .box.is-open{animation:pop 300ms ease-out forwards}",
+        ".box{opacity:0} .box.is-open{opacity:1} .box:not(.is-open){transform:scale(0.5)}",
+        ".box{opacity:0;transform:scale(0.5)} .box.is-open{opacity:1} .box.is-open{transform:none}"])
+        expect(await floor(css), css).toEqual([]);
+      // an animation that does not keep its end, or ends at the closed scale, leaves it drawn there
+      expect(await floor("@keyframes pop{to{opacity:1;transform:scale(1)}} .box{opacity:0;transform:scale(0.5)} .box.is-open{opacity:1;animation:pop 300ms ease-out}")).toHaveLength(1);
+      expect(await floor("@keyframes pop{to{opacity:1;transform:scale(0.5)}} .box{opacity:0} .box.is-open{animation:pop 300ms ease-out forwards}")).toHaveLength(1);
+      // drawn at 0.5 while open: a rule of no state that a state rule replaces only while closed
+      expect(await floor(".box{transform:scale(0.5)} .box:not(.is-open){transform:none}")).toEqual([expect.stringMatching(/scaled ×0\.5 by its transforms, draws 6 device px at 1280×720/)]);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 

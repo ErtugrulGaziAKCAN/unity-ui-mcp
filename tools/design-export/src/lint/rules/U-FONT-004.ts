@@ -5,7 +5,7 @@ import { drawnPx, minimumKitTextPx, minimumTextPx, TEXT_FLOOR_PX } from "../../k
 import { px } from "../css-values.js";
 import { breakpointsOf, MediaError, type Breakpoint } from "../resolve/media.js";
 import { splitTransform } from "../resolve/transform.js";
-import { touchesRuntime } from "../selectors.js";
+import { runtimeConditions, touchesRuntime } from "../selectors.js";
 import type { DomSnapshot } from "../snapshot.js";
 import { describeStyle, matchRichStyle, matchTextStyle } from "../text-styles.js";
 import type { Rule } from "../types.js";
@@ -45,41 +45,101 @@ function hides(decls: readonly { name: string; value: string }[]): boolean {
   });
 }
 
+/** The runtime conditions of a rule's selector (runtimeConditions): what must hold, and be absent, for it to apply. */
+type Cond = { pos: Set<string>; neg: Set<string> };
+/** Two rules can apply at once unless one needs a condition the other needs absent (`.is-open` and `:not(.is-open)`). */
+const together = (a: Cond, b: Cond) => ![...a.pos].some((x) => b.neg.has(x)) && ![...a.neg].some((x) => b.pos.has(x));
+/** `b` applies whenever `a` does: it needs no condition `a` does not (the same state, or less of it). */
+const implied = (b: Cond, a: Cond) => [...b.pos].every((x) => a.pos.has(x)) && [...b.neg].every((x) => a.neg.has(x));
+
+/**
+ * What a rule's animation leaves on the element once it ends, when it keeps its end (`animation-fill-mode` forwards or
+ * both): the last keyframe's declarations of each such animation; empty when none does.
+ */
+function animationEnd(s: DomSnapshot, decls: readonly { name: string; value: string }[]): { name: string; value: string }[] {
+  const names = (decls.find((d) => d.name === "animation-name")?.value ?? "").split(",").map((x) => x.trim());
+  const fills = (decls.find((d) => d.name === "animation-fill-mode")?.value ?? "none").split(",").map((x) => x.trim());
+  const out: { name: string; value: string }[] = [];
+  names.forEach((name, k) => {
+    const fill = fills[k % fills.length] ?? "none";
+    if (!name || name === "none" || (fill !== "forwards" && fill !== "both")) return;
+    const frames = s.keyframes.filter((x) => x.name === name).at(-1)?.frames ?? [];
+    for (const f of frames) if (f.key.split(",").some((k2) => ["100%", "to"].includes(k2.trim()))) out.push(...f.decls.map((d) => ({ name: d.name, value: d.value })));
+  });
+  return out;
+}
+
 /**
  * The `scale` and `transform` factors of the states an element is drawn in, per property: now (its computed values) and
  * every rule of a state that reaches it and sets either (a hover, an is-* class, a screen state, a breakpoint), whose
  * value replaces only its own property. Rules can apply together (a hover's `scale` with a press's `transform`), so the smallest drawn scale
  * is the smallest `scale` times the smallest `transform` (each is judged with every other). A rule that hides the element
  * (opacity 0, visibility hidden, display none) draws nothing and does not count, nor does a factor of 0; neither do an
- * animation's or a transition's passing frames (only states are judged).
+ * animation's or a transition's passing frames (only states are judged); an animation that keeps its end (fill forwards or
+ * both) leaves its last keyframe's values while its rule applies. A rule of no state counts when a state rule sets the same
+ * property and its value is not the one shown now (`.box{transform:scale(.5)} .box:not(.is-open){transform:none}`: drawn
+ * at 0.5 when open).
  *
- * An element hidden now is drawn when a rule shows it, or when code does (a dialog, a menu or a toast the design keeps
- * closed): its now values count unless every rule that shows it also sets that property (a pop-in whose closed state is
- * `scale(0)` with opacity 0 is never drawn at its closed scale), and every other rule's values count, since they can
- * apply together with the one that shows it. Null: the element is drawn in no state (nothing to judge).
+ * An element hidden now is drawn when a rule shows it (a value of opacity, visibility or display that is not hidden, or an
+ * animation that ends visible), or when code does (a dialog, a menu or a toast the design keeps closed). Its now values count
+ * unless every rule that shows it comes with a rule of its state (one that applies whenever it does, the same rule too)
+ * that sets that property (a pop-in whose closed state is `scale(0)` with opacity 0 is never drawn at its closed scale), or
+ * unless they come from a state rule that cannot apply together with any rule that shows it (`:not(.is-open)`). Every other
+ * rule's values count when it can apply together with a rule that shows it. Null: the element is drawn in no state.
  */
 function drawnFactors(s: DomSnapshot, i: number): { scale: number[]; transform: number[] } | null {
   const e = s.elements[i];
   const nowScale = scaleValue(e.computed["scale"] ?? "none") ?? 1, nowTransform = transformScale(e.computed["transform"] ?? "none") ?? 1;
   const hiddenNow = hides([{ name: "opacity", value: e.computed["opacity"] ?? "1" }, { name: "visibility", value: e.computed["visibility"] ?? "visible" },
     { name: "display", value: e.computed["display"] ?? "block" }]);
-  const rules: { sc?: number; tr?: number; shows: boolean }[] = [];
+  type Entry = { sc?: number; tr?: number; shows: boolean; cond: Cond };
+  const rules: Entry[] = [], base: { sc?: number; tr?: number }[] = [];
   for (const r of s.rules) {
     const own = r.selectors.filter((x) => !x.pseudoElement && x.elements?.includes(i));
-    // a rule of no state applies now: its values are the computed ones
-    if (!own.length || (!r.media.length && !own.some((x) => touchesRuntime(x.parsed)))) continue;
+    if (!own.length) continue;
     const decls = r.decls.map((d) => ({ name: d.name, value: resolved(s, d.value, i) }));
     if (hides(decls)) continue;
-    const sc = decls.find((d) => d.name === "scale"), tr = decls.find((d) => d.name === "transform");
-    const shows = decls.some((d) => d.name === "opacity" || d.name === "visibility" || d.name === "display");
-    rules.push({ sc: sc ? scaleValue(sc.value) ?? 1 : undefined, tr: tr ? transformScale(tr.value) ?? 1 : undefined, shows });
+    const end = animationEnd(s, decls);
+    const last = (name: string) => [...end].reverse().find((d) => d.name === name);
+    const sc = decls.find((d) => d.name === "scale") ?? last("scale"), tr = decls.find((d) => d.name === "transform") ?? last("transform");
+    const value = { sc: sc ? scaleValue(sc.value) ?? 1 : undefined, tr: tr ? transformScale(tr.value) ?? 1 : undefined };
+    // a rule of no state applies now: its values are the computed ones, unless a state rule replaces them now (below)
+    if (!r.media.length && !own.some((x) => touchesRuntime(x.parsed))) { base.push(value); continue; }
+    const shows = decls.some((d) => d.name === "opacity" || d.name === "visibility" || d.name === "display") ||
+      (end.length > 0 && !hides(end) && end.some((d) => d.name === "opacity" || d.name === "visibility" || d.name === "display"));
+    for (const x of own) rules.push({ ...value, shows, cond: runtimeConditions(x.parsed) });
   }
   const showing = rules.filter((r) => r.shows);
-  // now: drawn when visible now, or (hidden now) unless every rule that shows it sets the property itself
-  const nowCounts = (own: (r: { sc?: number; tr?: number }) => number | undefined) =>
-    !hiddenNow || !showing.length || showing.some((r) => own(r) === undefined);
-  const scale = [...(nowCounts((r) => r.sc) ? [nowScale] : []), ...rules.flatMap((r) => (r.sc === undefined ? [] : [r.sc]))].filter((f) => f > 0);
-  const transform = [...(nowCounts((r) => r.tr) ? [nowTransform] : []), ...rules.flatMap((r) => (r.tr === undefined ? [] : [r.tr]))].filter((f) => f > 0);
+  // whether a condition holds in the render the snapshot shows: markup classes on the element or an ancestor (no pointer)
+  const classes = (j: number) => (s.elements[j].attrs["class"] ?? "").split(/\s+/);
+  const holds = (token: string): boolean => {
+    const self = token.startsWith("s:"), t = token.slice(2);
+    if (!t.startsWith(".")) return false;
+    if (self) return classes(i).includes(t.slice(1));
+    for (let j = e.parent; j >= 0; j = s.elements[j].parent) if (classes(j).includes(t.slice(1))) return true;
+    return false;
+  };
+  const holdsNow = (c: Cond) => [...c.pos].every(holds) && ![...c.neg].some(holds);
+  // a rule's values count when the element is drawn while it applies: always when visible now, else with a rule that shows it
+  const drawnWith = (c: Cond) => !hiddenNow || !showing.length || showing.some((a) => together(a.cond, c));
+  type Pick = (r: { sc?: number; tr?: number }) => number | undefined;
+  const nowCounts = (own: Pick) => {
+    if (!hiddenNow || !showing.length) return true;
+    // the now value from a state rule that applies now: only when that rule can apply with a rule that shows the element
+    const from = rules.filter((r) => own(r) !== undefined && holdsNow(r.cond));
+    if (from.length && !from.some((r) => drawnWith(r.cond))) return false;
+    return showing.some((a) => !rules.some((b) => own(b) !== undefined && implied(b.cond, a.cond)));
+  };
+  const collect = (now: number, own: Pick) => {
+    const stated = rules.filter((r) => own(r) !== undefined);
+    return [
+      ...(nowCounts(own) ? [now] : []),
+      ...stated.filter((r) => drawnWith(r.cond)).map((r) => own(r)!),
+      // a rule of no state whose value a state rule replaces now applies in the states that rule does not
+      ...(stated.length ? base.map(own).filter((v): v is number => v !== undefined && Math.abs(v - now) > 1e-9) : []),
+    ].filter((f) => f > 0);
+  };
+  const scale = collect(nowScale, (r) => r.sc), transform = collect(nowTransform, (r) => r.tr);
   return scale.length && transform.length ? { scale, transform } : null;
 }
 
