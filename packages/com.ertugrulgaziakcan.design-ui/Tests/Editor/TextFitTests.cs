@@ -179,7 +179,7 @@ namespace DesignUi.Editor.Tests
         /// the kit's fonts) ceiled on the device grid as the exporter lays a text-sized box out (pageTextCeil), plus padding,
         /// borders on whole device pixels and gaps. Each DesignButton starts within half a device pixel of it however far
         /// along the row; plain Buttons (UI Toolkit ceils on the grid of the scale it lays out at, with no tolerance) are a
-        /// whole device pixel off at an exact viewport ("Vazgeç" is 86 px in Chromium and 86.0026 in Unity, and takes 87),
+        /// whole device pixel off at an exact viewport ("Vazgeç" is 86 px in Chromium and 86.0100 in Unity, and takes 87),
         /// so the limit tells the two apart.
         /// </summary>
         [UnityTest]
@@ -223,8 +223,9 @@ namespace DesignUi.Editor.Tests
                     worstPlain = Math.Max(worstPlain, Math.Abs(plainX - x));
                     if (Math.Abs(fitX - x) > 0.5 + 1e-3) failures.Add(w + "×" + h + " button " + (i + 1) + ": x " + fitX.ToString("0.###") + " device px, the golden's " + x.ToString("0.###") +
                         " (fit width " + ((DesignButton)fit[i]).Fit.Width + ", Unity's text " + ((DesignButton)fit[i]).Fit.TextWidth() + ", Chromium's " + chromium[i] / actual + ")");
-                    // the golden's box: Chromium's text width ceiled on the device grid (pageTextCeil), padding, borders, the gap
-                    x += Math.Ceiling(chromium[i] - 1e-4) + 2 * 32 * actual + 2 * border + 24 * actual;
+                    // the golden's box: Chromium's text width ceiled on the device grid forgiving the exporter's tolerance
+                    // (pageTextCeil, TEXT_CEIL_TOLERANCE, the same as DesignTextFit.Tolerance), padding, borders, the gap
+                    x += Math.Ceiling(chromium[i] - DesignTextFit.Tolerance) + 2 * 32 * actual + 2 * border + 24 * actual;
                 }
                 report.Add(w + "×" + h + ": largest |x − golden| " + worstFit.ToString("0.###") + " device px with exact widths, " + worstPlain.ToString("0.###") + " without; Unity − Chromium text, device px: " +
                            string.Join(" ", Enumerable.Range(0, Words.Length).Select(i => (((DesignButton)fit[i]).Fit.TextWidth() * actual - chromium[i]).ToString("+0.0000;-0.0000"))));
@@ -284,7 +285,6 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(WhiteSpace.NoWrap, label.resolvedStyle.whiteSpace);
         }
 
-        // ---- text the design wraps -------------------------------------------------------------------------------------
         /// <summary>
         /// A row of bordered tabs at 1600×900 just too short for the golden's widths: the golden's box of each (Chromium's
         /// border on whole device pixels, 4.8 panel px a side, the text ceiled on the 0.625 grid) is wider than UI Toolkit's own
@@ -365,6 +365,7 @@ namespace DesignUi.Editor.Tests
             foreach (var t in fitTabs) Assert.IsFalse(float.IsNaN(((DesignButton)t).Fit.Width), t.text + ": the golden's width when the row has room");
         }
 
+        // ---- text the design wraps -------------------------------------------------------------------------------------
 
         static T Styled<T>(T label, FontDefinition font) where T : Label
         {

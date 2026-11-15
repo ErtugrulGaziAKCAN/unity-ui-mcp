@@ -42,6 +42,17 @@ const anim = (o: Partial<IrAnim>): IrAnim => ({
 const layers = (...keys: string[]) => Object.fromEntries([["base", { display: "flex" }], ...keys.map((k) => [k, { opacity: "0.5" }])]);
 const names = (jobs: CaptureJob[]) => jobs.map(captureName);
 
+describe("the text-width tolerance", () => {
+  it("is the same in the exporter (pageTextCeil) and the runtime (DesignTextFit.Tolerance)", () => {
+    // the golden ceils a text-sized box's text forgiving it, and DesignTextFit ceils Unity's text the same way: two
+    // literals, one value
+    const cs = fs.readFileSync(path.join(here, "../../../packages/com.ertugrulgaziakcan.design-ui/Runtime/DesignTextFit.cs"), "utf8");
+    const m = /public const float Tolerance = ([0-9.]+)f;/.exec(cs);
+    expect(m, "DesignTextFit.Tolerance").not.toBeNull();
+    expect(Number(m![1])).toBe(TEXT_CEIL_TOLERANCE);
+  });
+});
+
 describe("buildMatrix", () => {
   it("states × viewports, plus one job per hover element per viewport", () => {
     const ir = screen(node("root", { children: [node("open-btn", { style: layers("hover") })] }), { states: ["default", "loading"] });
