@@ -282,6 +282,17 @@ describe("compareCapture", () => {
       expect(title(compareCapture(titled(200), titled(202), [], T, { ...own, clips: undefined }))).toEqual(["title:inkExtent"]);
     });
 
+    it("does not miss a copy the clip hides entirely in the design that Unity did not make (a list that makes the items its viewport shows)", () => {
+      const u = clipped(true);
+      delete u.boxes.items!["b#1"];
+      const v = compareCapture(clipped(false), u, [], T, ctx);
+      expect(kinds(v)).toEqual([]);
+      expect(v.elements.find((r) => r.id === "b#1")).toMatchObject({ status: "hidden", lines: "clipped in the design; not in Unity" });
+      // a copy the design shows (here: the scroll area reaching below it) is missing when Unity lacks it
+      const open = clipped(false, 80, 120);
+      expect(kinds(compareCapture(open, { ...u, boxes: { ...u.boxes, elements: { ...u.boxes.elements, scroll: el(20, 20, 280, 100) } } }, [], T, ctx))).toContain("b#1:missing");
+    });
+
     it("compares a line the clip cuts on the rows both renders show, and still fails a wrong line there", () => {
       // Unity's scroll area a pixel taller (within the box limit) shows a fourth row of row b's glyphs
       expect(kinds(compareCapture(clipped(false), clipped(true, 81), [], T, ctx))).toEqual([]);

@@ -868,6 +868,52 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     issue(WHOLE, "size", `Unity boxes are for viewport ${u.viewport.join("×")}, the design's for ${g.viewport.join("×")}`);
   }
 
+  /** The repeat containers around an element, outermost first. */
+  const containersOf = (id: string): string[] => {
+    const out: string[] = [];
+    for (let x = ctx.parent?.get(id); x !== undefined; x = ctx.parent?.get(x)) if (ctx.repeats?.has(x)) out.unshift(x);
+    return out;
+  };
+  /** A key's repeat containers (outermost first) and its item in each (its suffix names them innermost first; ruling R133). */
+  const placeOf = (id: string, key: string): { cs: string[]; path: number[] } => {
+    const cs = containersOf(id), path = cs.map(() => 0);
+    key.slice(id.length).split("#").slice(1).forEach((k, j) => { const level = cs.length - 1 - j; if (level >= 0) path[level] = Number(k); });
+    return { cs, path };
+  };
+  /**
+   * Where the overflow clips around a text (CaptureContext.clips) let it show on one side: the intersection of the clipping
+   * elements' padding boxes on the clipped axes, each element's box from that side's boxes (for a copy in a later repeat
+   * item, the element's copy in the same item when it lies inside the repeat), rounded inwards to whole device pixels. Null
+   * when nothing clips it.
+   */
+  const clipOf = (side: CaptureBoxes, id: string, key: string): Rect | null => {
+    const cl = ctx.clips?.[id];
+    if (!cl?.length) return null;
+    const me = placeOf(id, key);
+    let x0 = -Infinity, y0 = -Infinity, x1 = Infinity, y1 = Infinity;
+    for (const c of cl) {
+      const levels = containersOf(c.id).length, path = me.path.slice(0, levels);
+      const box = path.some((k) => k !== 0) ? side.items?.[`${c.id}#${[...path].reverse().join("#")}`] : side.elements[c.id];
+      if (!box || !box.visible) continue;
+      if (c.x) { x0 = Math.max(x0, box.x + c.inset[3]); x1 = Math.min(x1, box.x + box.w - c.inset[1]); }
+      if (c.y) { y0 = Math.max(y0, box.y + c.inset[0]); y1 = Math.min(y1, box.y + box.h - c.inset[2]); }
+    }
+    // whole pixels only: a clip edge between two device pixels is rounded its own way by each renderer (Chromium drew the
+    // row a scroll area's bottom at y 807.5 crosses, UI Toolkit did not: a pilot screen's half-clipped label at 0.73× the ink)
+    x0 = Math.ceil(x0); y0 = Math.ceil(y0); x1 = Math.floor(x1); y1 = Math.floor(y1);
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  };
+  const intersect = (a: Rect, b: Rect | null): Rect => {
+    if (!b) return a;
+    const x0 = Math.max(a.x, b.x), y0 = Math.max(a.y, b.y), x1 = Math.min(a.x + a.w, b.x + b.w), y1 = Math.min(a.y + a.h, b.y + b.h);
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  };
+  /** Whether the overflow clips around a text hide all of its lines (or its box, without lines) on one side. */
+  const clippedAway = (side: CaptureBoxes, id: string, key: string, b: Rect & { lines: readonly Rect[] }): boolean => {
+    const c = clipOf(side, id, key);
+    return !!c && (b.lines.length ? b.lines : [b]).every((l) => { const r = intersect(l, c); return r.w < 1 || r.h < 1; });
+  };
+
   // ---- element order: paint order when the IR is known, then any other golden ids
   const order = ctx.order ?? [], inOrder = new Set(order);
   const ids = [...order.filter((id) => id in g.elements), ...Object.keys(g.elements).filter((id) => !inOrder.has(id)).sort()];
@@ -931,8 +977,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     rows.push(row);
     rowOf.set(key, row);
     if (!uc) {
-      if (gc.visible) { row.status = "missing"; issue(key, "missing", `a copy in a later repeat item that carries text in the design, but not in the Unity capture`, gc); }
-      else row.status = "hidden";
+      // a copy the overflow clips around it hide entirely in the design is not shown there: Unity may not have made it at all
+      // (a list that makes only the items its viewport shows)
+      if (gc.visible && !clippedAway(g, id, key, gc)) { row.status = "missing"; issue(key, "missing", `a copy in a later repeat item that carries text in the design, but not in the Unity capture`, gc); }
+      else { row.status = "hidden"; if (gc.visible) row.lines = "clipped in the design; not in Unity"; }
       continue;
     }
     if (!gc.visible && !uc.visible) { row.status = "hidden"; continue; }
@@ -1067,12 +1115,6 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const within = (id: string, anc: string) => {
       for (let x: string | undefined = id; x !== undefined; x = ctx.parent?.get(x)) if (x === anc) return true;
       return false;
-    };
-    /** The repeat containers around an element, outermost first. */
-    const containersOf = (id: string): string[] => {
-      const out: string[] = [];
-      for (let x = ctx.parent?.get(id); x !== undefined; x = ctx.parent?.get(x)) if (ctx.repeats?.has(x)) out.unshift(x);
-      return out;
     };
     type ItemBox = Rect & { visible: boolean };
     /**
@@ -1231,12 +1273,6 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return { ok: !why, why, ...ev };
     };
 
-    /** A key's repeat containers (outermost first) and its item in each (its suffix names them innermost first; ruling R133). */
-    const placeOf = (id: string, key: string): { cs: string[]; path: number[] } => {
-      const cs = containersOf(id), path = cs.map(() => 0);
-      key.slice(id.length).split("#").slice(1).forEach((k, j) => { const level = cs.length - 1 - j; if (level >= 0) path[level] = Number(k); });
-      return { cs, path };
-    };
     /**
      * What one later layer covers, on both sides (fix round 3 N-5, fix round 4 N-8): its box when it paints something, and
      * the reach of the outer shadows it casts, each placed by that side's own box. `rec` is the golden's record of what it
@@ -1285,34 +1321,6 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return out;
     };
 
-    /**
-     * Where the overflow clips around a text (CaptureContext.clips) let it show on one side: the intersection of the clipping
-     * elements' padding boxes on the clipped axes, each element's box from that side's boxes (for a copy in a later repeat
-     * item, the element's copy in the same item when it lies inside the repeat), rounded inwards to whole device pixels. Null
-     * when nothing clips it.
-     */
-    const clipOf = (side: CaptureBoxes, id: string, key: string): Rect | null => {
-      const cl = ctx.clips?.[id];
-      if (!cl?.length) return null;
-      const me = placeOf(id, key);
-      let x0 = -Infinity, y0 = -Infinity, x1 = Infinity, y1 = Infinity;
-      for (const c of cl) {
-        const levels = containersOf(c.id).length, path = me.path.slice(0, levels);
-        const box = path.some((k) => k !== 0) ? side.items?.[`${c.id}#${[...path].reverse().join("#")}`] : side.elements[c.id];
-        if (!box || !box.visible) continue;
-        if (c.x) { x0 = Math.max(x0, box.x + c.inset[3]); x1 = Math.min(x1, box.x + box.w - c.inset[1]); }
-        if (c.y) { y0 = Math.max(y0, box.y + c.inset[0]); y1 = Math.min(y1, box.y + box.h - c.inset[2]); }
-      }
-      // whole pixels only: a clip edge between two device pixels is rounded its own way by each renderer (Chromium drew the
-      // row a scroll area's bottom at y 807.5 crosses, UI Toolkit did not: a pilot screen's half-clipped label at 0.73× the ink)
-      x0 = Math.ceil(x0); y0 = Math.ceil(y0); x1 = Math.floor(x1); y1 = Math.floor(y1);
-      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-    };
-    const intersect = (a: Rect, b: Rect | null): Rect => {
-      if (!b) return a;
-      const x0 = Math.max(a.x, b.x), y0 = Math.max(a.y, b.y), x1 = Math.min(a.x + a.w, b.x + b.w), y1 = Math.min(a.y + a.h, b.y + b.h);
-      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-    };
 
     /**
      * A text's ink per line (an IR element's, or its copy's in a later repeat item, `key` naming it; ruling R133): colour
