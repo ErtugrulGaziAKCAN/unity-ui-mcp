@@ -717,31 +717,37 @@ device pixels differently. Such a line is judged by its ink's colour direction f
 Playwright do not colour-judge anti-aliased pixels either):
 
 - **Which text can be one (ruling R141, fix round 3).** Text of at most 12 device px (`HAIRLINE_MAX_PX`; the suite's
-  hairline lines are 10 and 10.67), drawn at opacity 1 (its own times its ancestors', an animation sample's running value
-  included) in the colour the capture recorded for it, all of the line in it, and with nothing painted after it over its
-  line (after it in the compiler's paint order, which both renderers follow: fix round 4).
-  The golden records each text's computed colour and drawn opacity (boxes `color` and `opacity`, design side only), a repeat
-  copy its own (a copy whose class mutes it is judged against its muted colour), and marks a line with a run of another
-  colour or opacity, a rich inline span (line `mixed`; N-6). Painted after it: every IR element and every written-out
-  repeat copy after the text in paint order that paints something, on either side, and the outer shadow each casts (N-5;
-  a copy's placed by its own box). What a copy paints is what the golden recorded for it in its own item's state (boxes
-  `paints` and `shadow`, design side only: a job's hover or class on a later item gives that copy its fill or its lift's
-  shadow), and a later text's text shadow counts too (fix round 4, N-8). A later item of a repeat paints after an earlier
-  one; inside an item the compiler's sibling order holds (lint/paint-order.ts, the rule the compiler and lint share: an
-  absolute scrim written before the caption it covers paints after it, in CSS and in UI Toolkit; fix round 4, N-9). Without
-  a paint order no line is a hairline line. R138's first rule took the colour from the IR's static style and had no size,
-  opacity or cover bound: any text whose design ink sat on that colour's ray nearer the background counted, and the fix
-  round 1 re-review's probes passed at 16 px with Unity wrong: a label sampled mid-fade (design at opacity 0.6, Unity 0.8 or
-  missing glyphs), text under a 30 % veil (Unity at 0.7 or missing glyphs), a muted copy drawn lighter or missing glyphs.
-  They fail now, and so do their 10 px versions (`compare.test.ts`, "R141"). The fix round 2 re-review found three more
-  ways in: a later element's outer shadow (the kit's are black at up to 0.4, which dims a line along nearly its colour's ray
-  from surfaces 900 and 800; R141 took later elements' boxes only), another repeat item's copy over the line (only the same
-  item's copies counted), and a rich span (`<p class="secondary"><span class="muted">…`: on surface-700 the muted run lies
-  1.37° off the secondary ray at 0.72 of its contrast). With Unity at 0.7 or two middle glyphs missing, 40 of 54 kit shadow
-  cases (surfaces 900, 800, 700; primary, secondary, muted text; shadow 0.15, 0.25, 0.4), the copy and the span passed; all
-  fail now (`compare.test.ts`, "fix round 3"). The suite's repeat-items goldens keep the same 180 hairline lines (compared
-  with themselves, before and after). U-FONT-004 keeps kit text at 18 CSS px or more, so only 1600×900, 1366×768 and
-  1280×720 draw text of 12 device px or less: a defect that shows at every viewport is caught at the others.
+  hairline lines are 10 and 10.67), drawn at opacity 1 (its own times its ancestors', an animation sample's running
+  value included) in the colour the capture recorded for it, all of the line in it, and with nothing painted after it
+  over its line (after it in the compiler's paint order, which both renderers follow: fix round 4). The golden records
+  each text's computed colour and drawn opacity (boxes `color` and `opacity`, design side only), a repeat copy its own
+  (a copy whose class mutes it is judged against its muted colour), and marks a line with a run of another colour or
+  opacity, a rich inline span (line `mixed`; N-6). Painted after it: every IR element and every written-out repeat copy
+  after the text in paint order that paints something, on either side, and the outer shadow each casts (N-5; a copy's
+  placed by its own box). What a copy paints is what the golden recorded for it in its own item's state (boxes `paints`
+  and `shadow`, design side only: a job's hover or class on a later item gives that copy its fill or its lift's shadow),
+  and a later text's text shadow counts too (fix round 4, N-8). A later item of a repeat paints after an earlier one;
+  inside an item the compiler's sibling order holds (lint/paint-order.ts, the rule the compiler and lint share: an
+  absolute scrim written before the caption it covers paints after it, in CSS and in UI Toolkit; fix round 4, N-9).
+  Without a paint order no line is a hairline line. R138's first rule took the colour from the IR's static style and had
+  no size, opacity or cover bound: any text whose design ink sat on that colour's ray nearer the background counted, and
+  the fix round 1 re-review's probes passed at 16 px with Unity wrong: a label sampled mid-fade (design at opacity 0.6,
+  Unity 0.8 or missing glyphs), text under a 30 % veil (Unity at 0.7 or missing glyphs), a muted copy drawn lighter or
+  missing glyphs. They fail now, and so do their 10 px versions (`compare.test.ts`, "R141"). The fix round 2 re-review
+  found three more ways in: a later element's outer shadow (the kit's are black at up to 0.4, which dims a line along
+  nearly its colour's ray from surfaces 900 and 800; R141 took later elements' boxes only), another repeat item's copy
+  over the line (only the same item's copies counted), and a rich span (`<p class="secondary"><span class="muted">…`: on
+  surface-700 the muted run lies 1.37° off the secondary ray at 0.72 of its contrast). With Unity at 0.7 or two middle
+  glyphs missing, 40 of 54 kit shadow cases (surfaces 900, 800, 700; primary, secondary, muted text; shadow 0.15, 0.25,
+  0.4), the copy and the span passed; all fail now (`compare.test.ts`, "fix round 3"). The fix round 3 re-review found
+  two more: "later" was judged from what a copy's IR element paints in the IR's own state, so a later row that paints a
+  30 % layer or casts its lift's shadow only through a hover or class the job gives that row was no cover (N-8), and
+  "later" was the IR's DOM order, so an absolute scrim written before the caption it covers, which the compiler moves
+  after the caption and CSS paints after it too, was no cover (N-9). With Unity at 0.7 or two middle glyphs missing the
+  row's layer, 40 of the 54 shadow cases cast only in the row's own state, a later text's blurred text shadow and the
+  scrim passed; all fail now (`compare.test.ts`, "fix round 4"). The suite's 180 hairline lines are the same (fix round
+  4's run). U-FONT-004 keeps kit text at 18 CSS px or more, so only 1600×900, 1366×768 and 1280×720 draw text of 12
+  device px or less: a defect that shows at every viewport is caught at the others.
 - **Fully covered.** A pixel whose luma distance from the line's background is at least 0.85 (`HAIRLINE_FULL`) of the text
   colour's (the recorded one, over that background). A line is a hairline line when its design shows fewer than 3 such
   pixels (`HAIRLINE_PIXELS`, the fewest the ink colour takes its median of), its design ink points the text colour's way
@@ -868,6 +874,20 @@ N-7; `TextFitTests.AMeasureOnALinkedVariantOrItsTwin_KeepsThePairsTheOtherAddedA
 order). Since fix round 3 the fit only adds the missing records (`DesignText.AddFeatures`, as TextCore's own queue adds them,
 against every glyph of the font file); an import still prunes a twin's file.
 
+**Spacing and size changes (fix round 4, N-10).** The fit measured again on a style change only through
+`CustomStyleResolvedEvent`, which UI Toolkit (6000.3) sends only to an element with a custom property: a label under a
+compiled screen's style sheet has one (`--design-text-fit`, a rule on the type), a `DesignLabel` outside one does not.
+Its repaint check compared the text, font, font style and generator, not the font size or the spacings. A letter-spacing
+or word-spacing change, or a font size change under an explicit height, on a label whose width the fit set changes no
+geometry, so the label kept the width measured for the old values until an unrelated callback: its text spilled, or kept
+spacing it no longer had. Red test
+(`TextFitTests.ALabelsSpacingOrSize_ChangedWithoutAnyEventTheFitHears_IsMeasuredAgain`, a label built in code,
+letter-spacing then word-spacing then font size changed, four frames each): on c460e33's fit it kept 252 panel px after
+a letter-spacing of 4, where its text then needs 273. The fit now records the resolved font size, letter-spacing and
+word-spacing with the text and font it last measured, and the repaint compares them too: a repaint of the same style
+compares cached values only, and the measure (already keyed on them) runs only after a change. No
+CustomStyleResolvedEvent reached the label in the test.
+
 **Rebuilt twins' lookup (ruling R139).** The generator rebuilds a twin in place (a line-box variant with glyphs of its own,
 a twin whose source font or atlas settings changed) by copying a fresh asset's serialized fields over it. That replaces the
 character table but not TextCore's lookup built from it, which no save writes: the rebuilt font still looked up the
@@ -890,7 +910,16 @@ Suite: in each of five full runs (three with ruling R134's fit, one with R136's 
 
 ## Suite at six viewports
 
-**Task 35 (2026-11-15, latest).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
+**Task 35 fix round 4 (2026-11-15, latest).** `scripts/fidelity.sh` on the round's final code (the copies' own paint,
+the compiler's paint order, the fit's spacing and size check): **4728 PASS, 0 FAIL**, nothing incomplete; animation
+samples 2400 / 0; 788 / 0 at each of the six viewports (exact 3152 / 0, scaled 1576 / 0). 14 min 26 s (setup 16 s,
+exports 202 s, import 32 s, capture 211 s, comparisons 384 s, cleanup 17 s). The hairline path takes the same 180 lines
+(`row-time#2` 60 at 1280×720 and 60 at 1366×768, `day-number#1` 60 at 1366×768, one line each), colour direction at most
+0.26°. The comparison of c460e33 run on this run's captures (its schema given the new optional fields) gives a verdict
+identical to this round's in every capture, row and issue: neither change alters a result of the suite. The
+letter-spaced caps label has the fit's width at all six viewports (Δw within 0.19 device px).
+
+**Task 35 (2026-11-15).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
 animation samples), the final run on every change of Task 35 (rulings R131 to R141 and its fix rounds 1 to 3), 14 min 9 s
 (setup 15 s, exports 198 s, import 32 s, capture 205 s, comparisons 381 s, cleanup 15 s; the comparisons take about 17 s
 more than round 5's with the 30924 copies' texts checked; fix round 2's run took 15 min 10 s while the pilot's Unity window

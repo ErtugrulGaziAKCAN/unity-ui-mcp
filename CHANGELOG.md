@@ -188,6 +188,14 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   accent colours), and so does a faded, veiled or muted larger text drawn lighter or missing glyphs, a small one under a
   later card's shadow or another item's layer, or in a span of another colour. The 120 `repeat-items` captures this
   concerned pass.
+- What lies over a line is judged as both renderers paint it (fix round 4). The comparison's paint order is the
+  compiler's: each element's children in the order `lint/paint-order.ts` gives them (`unityPaintOrder`, the rule the
+  compiler and lint share), so an absolute scrim written before the caption it covers paints after it there, as in CSS
+  and UI Toolkit (N-9; the colour samples' cover follows the same order). A later repeat copy covers with what it paints in
+  its own item's state, which a job's hover or class on that item can change: the golden records for every element and
+  copy whether it paints something of its own and how far its outer box and text shadows reach (boxes `paints` and
+  `shadow`, design side only), and a later text's text shadow counts too (N-8). A small line under such a layer keeps the
+  usual ink checks: Unity drawing it lighter or missing glyphs fails.
 - An edge-band relaxation that fails names every condition that does not hold (a block, a window, a border's colour
   evidence, its centre, its width), not only the first.
 - The ring width check keeps its limit (more than 0.5 device px fails) and decides reliably from 0.75 device px (ruling
@@ -216,7 +224,10 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
-- Task 35's final fidelity run (4728 captures, 14 min 9 s, after fix round 3): **every capture passes** at all six
+- Task 35's fix round 4 fidelity run (4728 captures, 14 min 26 s): **every capture passes** at all six viewports; the
+  same 180 hairline lines take the colour-direction path (at most 0.26°). The previous comparison run on the same captures
+  gives an identical verdict: the copies' own paint and the compiler's paint order change no result of the suite.
+- Task 35's fidelity run after fix round 3 (4728 captures, 14 min 9 s): **every capture passes** at all six
   viewports; the same 180 hairline lines of `repeat-items` pass through rulings R138 and R141 (colour direction at most 0.26°
   against 0.66°; ink amount 0.86–1.01 against 0.5–2 in fix round 2's run). Fix rounds 1 and 2's runs (14 min 12 s, 15 min
   10 s) passed every capture as well.
@@ -274,6 +285,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   binding, a list rebinding an item, `SetValueWithoutNotify`): a language switched while a screen was open left labels at
   their earlier text's widths (ruling R136). The fit now also measures again when a repaint shows a text, font or style other
   than the one it last measured; a repaint of the same text measures nothing.
+- A text-sized label or button kept the width measured for its earlier letter-spacing, word-spacing or font size when one
+  of them changed and nothing told the fit (fix round 4, N-10): UI Toolkit sends a style change only to an element with a
+  custom property, and under an exact width and height no geometry changes (a label built in code, given a letter-spacing
+  of 4: 252 panel px kept where its text then needs 273). The repaint check compares the resolved font size and spacings
+  too, against the values last measured; a repaint of the same style measures nothing.
 - A text-sized label or button could keep UI Toolkit's own width for good (ruling R134; the letter-spacing fixture's caps
   label in some full runs): the text fit measured only text whose every weight-table face held its characters, and a face
   that never draws the text (the bold face under a normal text, an italic face) never gets them. It now checks only the

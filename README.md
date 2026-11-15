@@ -241,11 +241,12 @@ class) and `Window > Design UI > Status` show each viewport's class.
 Text-sized elements (a button or label whose width is its text's) lay out at the golden's width for their text: the
 golden ceils Chromium's text width to whole device pixels at the viewport's scale, UI Toolkit ceils on the grid of the
 scale it lays out at, with no tolerance; the compiler writes such elements as `DesignButton` / `DesignLabel`, which keep
-the golden's width (a text within 0.012 device px above a whole pixel is that pixel on both sides, measured), so a row of
-them does not drift, and measure it again whenever its text, font or style changes, however the text is written (a binding,
-a language switched while the screen is open). A text the design wraps keeps wrapping where its line has no room. Text the
-advanced generator lays out (a script locale such as Arabic) keeps UI Toolkit's own width: its width against Chromium's is
-not measured.
+the golden's width (a text within 0.012 device px above a whole pixel is that pixel on both sides, measured), so a row
+of them does not drift, and measure it again whenever its text, font or style changes (its font size and spacings
+included), however the text is written (a binding, a language switched while the screen is open) and whether or not UI
+Toolkit sends the element a style event. A text the design wraps keeps wrapping where its line has no room. Text the
+advanced generator lays out (a script locale such as Arabic) keeps UI Toolkit's own width: its width against Chromium's
+is not measured.
 
 ## Fidelity and speed
 
