@@ -35,13 +35,13 @@ textarea { resize: none; }
 .screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 48px; background-color: var(--color-surface-900); }
 .title { margin-bottom: 32px; }
 .row { display: flex; flex-direction: row; align-items: flex-start; margin-bottom: 40px; }
-.bg { flex-shrink: 0; width: 240px; height: 144px; margin-right: 40px; background-color: var(--color-surface-700); background-image: url("assets/tile-40x24.png"); }
+.bg { flex-shrink: 0; width: 240px; height: 144px; margin-right: 40px; background-color: var(--color-surface-700); background-image: url("assets/tile-40x24.png"); background-size: 40px 24px; }
 .odd { width: 228px; height: 136px; }
 .big { width: 360px; height: 216px; }
 .wide { width: 448px; height: 216px; }
-.photo { background-image: url("assets/quadrants-16x9.png"); }
+.photo { background-image: url("assets/quadrants-640x360.png"); }
+.photo-large { background-image: url("assets/quadrants-960x540.png"); }
 .only { background-color: transparent; }
-.size-auto { background-size: auto; }
 .size-cover { background-size: cover; background-repeat: no-repeat; }
 .size-contain { background-size: contain; background-repeat: no-repeat; }
 .size-px { background-size: 400px 224px; }
@@ -63,17 +63,18 @@ textarea { resize: none; }
 <body>
 <div class="screen" data-u-screen="fidelity.background-images">
   <h1 class="title text-title-bold" data-l10n="fidelity.background-images.title" data-en="Background images">Arka plan görselleri</h1>
-  <!-- background-size: the tile at its natural size; the photo covering, contained, at px, % and one length (never below
-       its natural size at 2560, so every viewport draws it at half its size or more; placed on whole pixels) -->
+  <!-- background-size: the tile at its CSS size (40×24 px, a 60×36 px image: as many pixels as 3840×2160 draws, lint
+       W-IMG-001); the photo (640×360 px, 960×540 px where it is drawn larger) covering, contained, at px, % and one length,
+       never drawn larger than its pixels at any declared viewport; placed on whole pixels -->
   <div class="row">
-    <div class="bg big size-auto"></div>
+    <div class="bg big"></div>
     <div class="bg big photo size-cover pos-center"></div>
     <div class="bg wide photo size-contain pos-center"></div>
     <div class="bg big photo size-px pos-center"></div>
-    <div class="bg big photo size-pct"></div>
-    <div class="bg big photo size-w rep-none"></div>
+    <div class="bg big photo photo-large size-pct"></div>
+    <div class="bg big photo photo-large size-w rep-none"></div>
   </div>
-  <!-- background-repeat of the natural tile: both axes, none, one axis, two values -->
+  <!-- background-repeat of the tile: both axes, none, one axis, two values -->
   <div class="row">
     <div class="bg odd rep-both"></div>
     <div class="bg odd rep-none"></div>

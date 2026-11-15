@@ -111,5 +111,9 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-NET-002": { when: "a local file or Claude Design blob that is missing", fix: "add the file, or map the blob in blobs.json" },
   "W-FONT-001": { when: "a weight or italic without a real face in another active locale's font (warning)", fix: "add the face or avoid the weight" },
   "W-FONT-002": { when: "a kit font file that cannot be read (WOFF2, `local()`) (warning)", fix: "TTF/OTF/WOFF via `url()`" },
+  "W-IMG-001": {
+    when: "a raster image drawn larger than its pixels at a declared viewport (the browser and Unity resample it differently) (warning)",
+    fix: "export it for the largest declared viewport (its drawn size × that scale, 1.5 at 3840×2160) and give it its size in CSS",
+  },
   "I-MRK-001": { when: "a `title` attribute: a tooltip, which UI Toolkit shows only in Editor panels (info)", fix: "nothing for an Editor-only hint; show hints players need with a visible element" },
 };

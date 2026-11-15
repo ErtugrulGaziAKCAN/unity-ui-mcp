@@ -104,7 +104,7 @@ describe("fidelity fixtures lint clean", () => {
 describe("the kit base stylesheet", () => {
   it("neutralises every browser default lint reports (U-CSS-026) and sizes every box as border-box, for every allowed element", async () => {
     const dir = tmp();
-    fs.copyFileSync(path.join(KIT_DIR, "fixtures", "fidelity", "assets", "quadrants-16x9.png"), path.join(dir, "pic.png"));
+    fs.copyFileSync(path.join(KIT_DIR, "fixtures", "fidelity", "assets", "quadrants-480x270.png"), path.join(dir, "pic.png"));
     const base = fs.readFileSync(path.join(KIT_DIR, "base.css"), "utf8");
     const t = (k: string, tag = "p") => `<${tag} data-l10n="base.${k}" data-en="${k}">${k}</${tag}>`;
     const inputs = ["text", "search", "password", "number", "email", "tel", "url"].map((type) =>

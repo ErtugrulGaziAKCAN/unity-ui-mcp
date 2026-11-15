@@ -61,6 +61,11 @@ export interface SnapElement {
    * `fixed` = none does, `mixed` = both, `none` = nothing painted.
    */
   svgPaint?: "current" | "fixed" | "mixed" | "none";
+  /**
+   * The image the element draws: an `<img>`'s, else its first url() background image; natural size in image pixels and
+   * whether it is a raster image (not SVG). Undefined without one, or when it did not load.
+   */
+  image?: { src: string; w: number; h: number; raster: boolean };
 }
 
 export interface SnapSelector {
@@ -136,7 +141,7 @@ export const SNAP_COMPUTED = [
   "border-top-color", "border-right-color", "border-bottom-color", "border-left-color",
   "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius",
   "padding-top", "padding-right", "padding-bottom", "padding-left", "margin-top", "margin-right", "margin-bottom", "margin-left",
-  "-webkit-font-smoothing",
+  "-webkit-font-smoothing", "object-fit", "background-size",
 ] as const;
 
 const PSEUDO_PROPS = ["content", "display", "font-family", "font-size", "line-height", "font-weight", "font-style", "color"];
@@ -413,6 +418,30 @@ function elementPaths(els: { tag: string; attrs: Record<string, string>; parent:
   return paths;
 }
 
+/** Runs in the page: the natural size of each element's image (an `<img>`'s, else its first url() background image). */
+async function pageImages(): Promise<[number, { src: string; w: number; h: number; raster: boolean }][]> {
+  const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
+  const vector = (src: string) => /^data:image\/svg/i.test(src) || /\.svg(z)?([?#].*)?$/i.test(src);
+  const jobs: Promise<[number, { src: string; w: number; h: number; raster: boolean }] | null>[] = [];
+  els.forEach((el, i) => {
+    if (el instanceof HTMLImageElement) {
+      const src = el.currentSrc || el.src;
+      const load = el.complete ? Promise.resolve() : new Promise<void>((resolve) => { el.addEventListener("load", () => resolve(), { once: true }); el.addEventListener("error", () => resolve(), { once: true }); });
+      jobs.push(load.then(() => (el.naturalWidth > 0 ? [i, { src, w: el.naturalWidth, h: el.naturalHeight, raster: !vector(src) }] : null)));
+      return;
+    }
+    const m = /url\(\s*(['"]?)(.*?)\1\s*\)/.exec(getComputedStyle(el).backgroundImage);
+    if (!m) return;
+    jobs.push(new Promise((resolve) => {
+      const im = new Image();
+      im.onload = () => resolve(im.naturalWidth > 0 ? [i, { src: m[2], w: im.naturalWidth, h: im.naturalHeight, raster: !vector(m[2]) }] : null);
+      im.onerror = () => resolve(null);
+      im.src = m[2];
+    }));
+  });
+  return (await Promise.all(jobs)).filter((x): x is [number, { src: string; w: number; h: number; raster: boolean }] => x !== null);
+}
+
 async function evaluate<A, R>(page: Page, fn: (a: A) => R, arg: A): Promise<R> {
   return page.evaluate(fn as unknown as (a: unknown) => R, arg as unknown) as Promise<R>;
 }
@@ -614,6 +643,8 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
 
   const fontFaces = await declaredFontFaces(page, kit);
   lap("fonts");
+  const images = new Map(await page.evaluate(pageImages));
+  lap("images");
 
   const elements: SnapElement[] = raw.elements.map((e, i) => ({
     index: i, tag: e.tag, ns: e.ns as SnapElement["ns"], attrs: e.attrs, parent: e.parent, children: children[i], path: paths[i],
@@ -623,6 +654,7 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
     inline: inlinePlans[i] ? finish(inlinePlans[i]!) : null, vars: e.vars, minAuto: e.minAuto,
     shadowRoot: e.shadow ? "open" : cdpEls[i].shadow, ua: ua[i] ?? {},
     ...(raw.svgPaint[i] ? { svgPaint: raw.svgPaint[i] } : {}),
+    ...(images.has(i) ? { image: images.get(i) } : {}),
   }));
   const rules: SnapRule[] = raw.rules.map((r, k) => ({
     index: r.index, sheet: r.sheet, kit: r.kit, selectorText: r.selectorText, media: r.media, conditions: r.conditions,

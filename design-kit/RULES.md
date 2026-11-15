@@ -205,7 +205,7 @@ The fonts come from the Unity project: kit sync copies the font files the projec
 - `linear-gradient()` and `radial-gradient()` are baked into a vector image that fills the element; colour stops at least 1/64 of the gradient line apart (U-CSS-022), sRGB stops only (U-CSS-014). One background image per element (U-CSS-037).
 - `text-shadow`: one shadow, `x y blur colour` (several are U-CSS-023). `border-style`: `solid` or `none` (U-CSS-021). Corner radii are circular, one px value per corner (U-CSS-020; % only on squares, a pill uses half the height).
 - `object-fit`: `fill`, `contain` or `cover`, centred, on images. Icons are inline `<svg>`: paint every shape with `currentColor` to follow the text colour in every state, or every shape with fixed colours (U-CSS-031).
-- A url() background image is drawn with its CSS `background-size`, `background-position` and `background-repeat` (not `space` or `round`). Show raster images (`<img>` or background) at their natural size or larger at 2560×1440, so every viewport draws them at half their size or more, and put a scaled or repeated background image on whole pixels at every viewport (sizes and offsets in multiples of 4 px): Chromium and UI Toolkit resample smaller or off-grid rasters differently.
+- A url() background image is drawn with its CSS `background-size`, `background-position` and `background-repeat` (not `space` or `round`). Export raster images (`<img>` or background) with as many pixels as they are drawn at the largest declared viewport (their CSS size × 1.5 with 3840×2160; W-IMG-001 warns otherwise) and give them that CSS size (an `<img>` width and height, a `background-size`), not their natural size; put a scaled or repeated background image on whole pixels at every viewport (sizes and offsets in multiples of 4 px): Chromium and UI Toolkit resample a picture drawn larger than its pixels, or off the grid, differently.
 - `filter`: only the functions css-support.json enables, each once its fidelity fixture passes in Unity (U-CSS-015; `kit.config.json` `filterFunctions` mirrors the list); currently `invert`. No `backdrop-filter` (U-CSS-007), no `outline` (draw focus with a border).
 
 ## Animation
@@ -435,6 +435,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-NET-002 | error | a local file or Claude Design blob that is missing | add the file, or map the blob in blobs.json |
 | W-FONT-001 | warning | a weight or italic without a real face in another active locale's font (warning) | add the face or avoid the weight |
 | W-FONT-002 | warning | a kit font file that cannot be read (WOFF2, `local()`) (warning) | TTF/OTF/WOFF via `url()` |
+| W-IMG-001 | warning | a raster image drawn larger than its pixels at a declared viewport (the browser and Unity resample it differently) (warning) | export it for the largest declared viewport (its drawn size × that scale, 1.5 at 3840×2160) and give it its size in CSS |
 | I-MRK-001 | info | a `title` attribute: a tooltip, which UI Toolkit shows only in Editor panels (info) | nothing for an Editor-only hint; show hints players need with a visible element |
 
 ## Components
