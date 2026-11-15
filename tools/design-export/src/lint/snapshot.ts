@@ -67,7 +67,16 @@ export interface SnapElement {
    * whether it is a raster image (not SVG). Undefined without one, or when it did not load within the snapshot's wait.
    */
   image?: SnapImage;
+  /**
+   * The element's own text lines, top to bottom (its text nodes and those of its inline descendants, not of a block or
+   * inline-block inside it): each line's content-area extent from the text's client rects (CSS px, transforms applied,
+   * as `box`). Undefined without direct text or when it is not rendered.
+   */
+  lines?: SnapLine[];
 }
+
+/** One line of an element's text: its content-area extent (CSS px, page coordinates). */
+export interface SnapLine { top: number; bottom: number; left: number; right: number }
 
 export interface SnapImage { src: string; w: number; h: number; raster: boolean; layer?: number }
 
@@ -156,6 +165,7 @@ interface RawElement {
   tag: string; ns: string; attrs: Record<string, string>; parent: number; texts: string[]; rendered: boolean; box: Box | null;
   size: Size | null; computed: Record<string, string>; pseudo: Record<string, Record<string, string>>; inline: RawStyle | null;
   vars: Record<string, string>; minAuto: { axis: "row" | "column"; before: Box; after: Box } | null; shadow: boolean;
+  lines?: SnapLine[];
 }
 interface RawPage {
   viewport: { width: number; height: number; scale: number };
@@ -247,6 +257,42 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
   const allVals: Record<string, string>[] = [];
   const rect = (el: Element): Box => { const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; };
   const num = (v: string) => parseFloat(v) || 0;
+  // the element's own text: its text nodes and those of inline descendants (not of a block or inline-block inside it)
+  const ownTexts = (el: Element): Text[] => {
+    const list: Text[] = [];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!/\S/.test((n as Text).data)) continue;
+      let own = true;
+      for (let p = n.parentElement; p && p !== el; p = p.parentElement) {
+        const d = getComputedStyle(p).display;
+        if (d !== "inline" && d !== "contents") { own = false; break; }
+      }
+      if (own) list.push(n as Text);
+    }
+    return list;
+  };
+  const textRange = document.createRange();
+  /** Lines of the element's own text (fragments that overlap vertically are one line). */
+  const textLines = (el: Element): Pick<RawElement, "lines"> => {
+    const nodes = ownTexts(el);
+    if (!nodes.length) return {};
+    const frags: SnapLine[] = [];
+    for (const t of nodes) {
+      textRange.selectNodeContents(t);
+      for (const r of Array.from(textRange.getClientRects())) if (r.height > 0) frags.push({ top: r.top, bottom: r.bottom, left: r.left, right: r.right });
+    }
+    if (!frags.length) return {};
+    frags.sort((a, b) => a.top - b.top || a.left - b.left);
+    const lines: SnapLine[] = [];
+    for (const f of frags) {
+      const l = lines[lines.length - 1];
+      if (l && f.top < l.bottom - 0.5 * Math.min(f.bottom - f.top, l.bottom - l.top)) {
+        l.top = Math.min(l.top, f.top); l.bottom = Math.max(l.bottom, f.bottom); l.left = Math.min(l.left, f.left); l.right = Math.max(l.right, f.right);
+      } else lines.push({ ...f });
+    }
+    return { lines };
+  };
   els.forEach((el, i) => {
     const cs = getComputedStyle(el);
     const computed: Record<string, string> = {};
@@ -293,6 +339,7 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
     out.elements.push({
       tag: el.localName, ns, attrs, parent: parentIdx, texts, rendered, box: rendered ? rect(el) : null, size, computed, pseudo, inline, vars,
       minAuto: null, shadow: !!(el as HTMLElement).shadowRoot,
+      ...(rendered && texts.length ? textLines(el) : {}),
     });
   });
 
@@ -686,6 +733,7 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
     rendered: e.rendered, box: e.box, size: e.size, computed: e.computed, pseudo: e.pseudo,
     inline: inlinePlans[i] ? finish(inlinePlans[i]!) : null, vars: e.vars, minAuto: e.minAuto,
     shadowRoot: e.shadow ? "open" : cdpEls[i].shadow, ua: ua[i] ?? {},
+    ...(e.lines ? { lines: e.lines } : {}),
     ...(raw.svgPaint[i] ? { svgPaint: raw.svgPaint[i] } : {}),
     ...(images.has(i) ? { image: images.get(i) } : {}),
   }));

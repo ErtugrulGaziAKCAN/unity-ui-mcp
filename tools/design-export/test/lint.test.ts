@@ -637,3 +637,55 @@ describe("collectSnapshot", () => {
     } finally { fs.rmSync(dir, { recursive: true }); }
   });
 });
+
+describe("text cut by its box: clipped line boxes (U-CSS-047)", () => {
+  /** The repository's own design kit: caption 20/28 and label 20/24, the six default viewports. */
+  const designKit = readKit(path.join(here, "..", "..", "..", "design-kit"));
+  const page = (body: string, css: string) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lint-clip-"));
+    const p = path.join(dir, "s.html");
+    fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
+      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:20px;line-height:24px;color:#ffffff;background-color:#0b1f26}
+      p{margin:0}${css}</style></head><body><div class="screen" data-u-screen="s">${body}</div></body></html>`);
+    return { p, done: () => fs.rmSync(dir, { recursive: true }) };
+  };
+  const ids = async (body: string, css: string, rule: string, k: KitConfig = designKit) => {
+    const { p, done } = page(body, css);
+    try { return (await lintFile(p, k)).filter((f) => f.ruleId === rule); } finally { done(); }
+  };
+  const text = (cls: string, en = "Today", tr = "Bugün") => `<p class="${cls}" data-l10n="s.${cls}" data-en="${en}">${tr}</p>`;
+
+  it("U-CSS-047: the kit's 20/24 label in a 20 px box with overflow hidden is an error with the fix; a 24 px box, or one without overflow hidden, is not", async () => {
+    const box = `display:flex;flex-direction:row;align-items:center;flex-shrink:0;align-self:flex-start;padding:0 8px;margin-bottom:16px`;
+    const f = await ids(
+      `<div class="short">${text("a")}</div><div class="fits">${text("b")}</div><div class="open">${text("c")}</div>`,
+      `.short{${box};height:20px;overflow:hidden} .fits{${box};height:24px;overflow:hidden} .open{${box};height:20px}`, "U-CSS-047");
+    expect(f.map((x) => x.path)).toEqual(["[data-u-screen=s] > div:0 > p:0"]);
+    expect(f[0].severity).toBe("error");
+    expect(f[0].detail).toMatch(/24 px line box/);
+    expect(f[0].detail).toMatch(/20 px tall/);
+    expect(f[0].detail).toMatch(/div:0/);
+    expect(f[0].fix).toMatch(/make the box at least the line height/i);
+    expect(f[0].fix).toMatch(/24 px/);
+  });
+
+  it("U-CSS-047: an ellipsis text box of a fixed height below its line height is an error; at its line height it is not", async () => {
+    const cut = `flex-shrink:0;align-self:flex-start;width:120px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-bottom:16px`;
+    const f = await ids(`${text("low", "A long name of a player", "Uzun bir oyuncu adı")}${text("ok", "A long name of a player", "Uzun bir oyuncu adı")}`,
+      `.low{${cut};height:20px} .ok{${cut};height:24px}`, "U-CSS-047");
+    expect(f.map((x) => x.path)).toEqual(["[data-u-screen=s] > p:0"]);
+  });
+
+  it("U-CSS-047: a second line half cut by a fixed-height box is an error; a box that ends between lines, a list cut by a tall box and a scroll area are not", async () => {
+    const two = `<p class="two" data-l10n="s.two" data-en="Ticket prices stay the same for the rest of the season">Bilet fiyatları sezonun geri kalanında aynı kalıyor ve değişmiyor</p>`;
+    const rows = Array.from({ length: 80 }, (_, i) => `<div class="row">${text(`r${i}`)}</div>`).join("");
+    const f = await ids(
+      `<div class="half">${two}</div><div class="whole">${two}</div><div class="list">${rows}</div>` +
+      `<div class="scroll" data-u-id="scroll">${Array.from({ length: 30 }, (_, i) => `<div class="row">${text(`s${i}`)}</div>`).join("")}</div>`,
+      `.half,.whole{flex-shrink:0;align-self:flex-start;width:240px;overflow:hidden;margin-bottom:16px} .half{height:36px} .whole{height:24px}
+       .two{flex-shrink:0} .list{display:flex;flex-direction:column;flex-shrink:0;height:400px;overflow:hidden} .row{display:flex;flex-shrink:0;height:30px}
+       .scroll{display:flex;flex-direction:column;flex-shrink:0;height:100px;overflow-y:auto}`, "U-CSS-047");
+    expect(f.map((x) => x.path)).toEqual(["[data-u-screen=s] > div:0 > p:0"]);
+    expect(f[0].detail).toMatch(/36 px tall/);
+  });
+});

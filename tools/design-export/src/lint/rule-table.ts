@@ -80,6 +80,10 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
     when: "a padding, margin or gap that is not a whole number of device pixels at an exact viewport (UI Toolkit lays these out on whole device pixels)",
     fix: "the nearest lengths the finding names (multiples of 4px with the default kit)",
   },
+  "U-CSS-047": {
+    when: "text whose line box a box with `overflow: hidden` (its own or an ancestor's) cuts at its top or bottom edge, the box being shorter than the text's lines: clipped accents and descenders in both renderers",
+    fix: "make the box at least the line height (a whole number of line heights for several lines), or a text style that fits it",
+  },
   "U-DC-001": { when: "`{{…}}` holes in a Claude Design artboard", fix: "static sample text" },
   "U-DC-002": { when: "`<sc-for>`, `<sc-if>`, `<dc-import>`, `x-import`", fix: "write rows out, `data-u-repeat` on the first" },
   "U-DC-003": { when: "UI built by script", fix: "static markup" },
