@@ -29,6 +29,15 @@
     }
   },
   "external": [],
+  "items": {
+    "row#1": {
+      "h": 20,
+      "visible": true,
+      "w": 400,
+      "x": 80,
+      "y": 140
+    }
+  },
   "scale": 1,
   "viewport": [
     2560,

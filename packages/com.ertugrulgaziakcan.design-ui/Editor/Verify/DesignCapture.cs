@@ -1100,7 +1100,7 @@ namespace DesignUi.Editor
 
             void WriteBoxes(string name)
             {
-                var boxes = BoxesWriter.Measure(name, Named, m_Req.Viewport, m_Scale, Screen.Ir);
+                var boxes = BoxesWriter.Measure(name, Named, m_Req.Viewport, m_Scale, Screen.Ir, DocRoot);
                 if (m_Req.Boxes != null) m_Req.Boxes[name] = boxes;
                 else BoxesWriter.Merge(Path.Combine(m_Req.OutDir, BoxesWriter.FileName), boxes);
             }

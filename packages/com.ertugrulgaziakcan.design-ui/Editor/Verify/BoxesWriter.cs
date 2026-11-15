@@ -52,8 +52,12 @@ namespace DesignUi.Editor
             return Measure(captureName, id => Find(root, id), viewport, scale, ir);
         }
 
-        /// <summary>The same with the element of each IR id given by <paramref name="find"/> (a capture that keeps its screen mounted caches them).</summary>
-        internal static JObject Measure(string captureName, Func<string, VisualElement> find, Vector2Int viewport, double scale, IrScreen ir)
+        /// <summary>
+        /// The same with the element of each IR id given by <paramref name="find"/> (a capture that keeps its screen mounted caches
+        /// them) and, with <paramref name="itemsRoot"/>, the boxes of the repeat items' copies below it (<see cref="ItemBoxes"/>).
+        /// </summary>
+        internal static JObject Measure(string captureName, Func<string, VisualElement> find, Vector2Int viewport, double scale, IrScreen ir,
+                                        VisualElement itemsRoot = null)
         {
             if (find == null) throw new ArgumentNullException(nameof(find));
             if (ir?.Root == null) throw new ArgumentNullException(nameof(ir));
@@ -69,7 +73,7 @@ namespace DesignUi.Editor
             }
             var els = new JObject();
             foreach (var kv in elements) els[kv.Key] = kv.Value;
-            return new JObject
+            var result = new JObject
             {
                 ["capture"] = captureName,
                 ["elements"] = els,
@@ -77,6 +81,58 @@ namespace DesignUi.Editor
                 ["scale"] = scale,
                 ["viewport"] = new JArray(viewport.x, viewport.y),
             };
+            if (itemsRoot != null)
+            {
+                var items = ItemBoxes(itemsRoot, ir, scale);
+                if (items.Count > 0) result["items"] = items;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// The boxes (and visibility, as for elements) of the IR elements' copies in later written-out repeat items below
+        /// <paramref name="root"/>: every element named an id the IR has inside a repeat plus the sample filler's item suffix
+        /// (<c>row#3</c>, <c>day#0#1</c>; <see cref="CaptureApply.ItemSuffix"/>), keyed by that name, as the golden's
+        /// <c>items</c>. The comparison places the edge bands of a repeat's later items with them.
+        /// </summary>
+        internal static JObject ItemBoxes(VisualElement root, IrScreen ir, double scale)
+        {
+            var inRepeat = new HashSet<string>(StringComparer.Ordinal);
+            void Walk(IrNode n, bool inside)
+            {
+                if (inside) inRepeat.Add(n.Id);
+                foreach (var c in n.Children ?? new IrNode[0]) Walk(c, inside || n.Repeat != null);
+            }
+            Walk(ir.Root, false);
+            var found = new SortedDictionary<string, JObject>(StringComparer.Ordinal);
+            if (inRepeat.Count > 0) Scan(root);
+            var items = new JObject();
+            foreach (var kv in found) items[kv.Key] = kv.Value;
+            return items;
+
+            void Scan(VisualElement e)
+            {
+                var name = e.name;
+                int hash = string.IsNullOrEmpty(name) ? -1 : name.IndexOf('#');
+                if (hash > 0 && IsItemSuffix(name, hash) && inRepeat.Contains(name.Substring(0, hash)))
+                {
+                    var b = Box(e, false, scale);
+                    found[name] = new JObject { ["h"] = b["h"], ["visible"] = b["visible"], ["w"] = b["w"], ["x"] = b["x"], ["y"] = b["y"] };
+                }
+                for (int i = 0; i < e.hierarchy.childCount; i++) Scan(e.hierarchy[i]);
+            }
+        }
+
+        /// <summary>Whether <paramref name="name"/> from <paramref name="at"/> on is an item suffix: one or more <c>#</c> and digits.</summary>
+        static bool IsItemSuffix(string name, int at)
+        {
+            for (int i = at; i < name.Length; i++)
+            {
+                if (name[i] != '#' || i + 1 >= name.Length || !char.IsDigit(name[i + 1])) return false;
+                i++;
+                while (i + 1 < name.Length && char.IsDigit(name[i + 1])) i++;
+            }
+            return true;
         }
 
         /// <summary>Measures one capture and merges it into <paramref name="boxesJsonPath"/>.</summary>

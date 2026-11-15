@@ -39,7 +39,17 @@
         }
       }
     },
-    "external": { "description": "Ids of data-u-external elements, sorted; their regions are masked in comparisons.", "type": "array", "items": { "type": "string" } }
+    "external": { "description": "Ids of data-u-external elements, sorted; their regions are masked in comparisons.", "type": "array", "items": { "type": "string" } },
+    "items": {
+      "description": "Optional: the border boxes and visibility (as for elements) of the IR elements' copies in later written-out repeat items, keyed by the IR id plus a suffix: `#k` per repeat, innermost first, for each repeat whose item is a later one (k > 0) or that sits inside a later item of an outer repeat (`row#3`, `day#0#1`). Only the comparison's edge bands of a repeat's later items use them.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["x", "y", "w", "h", "visible"],
+        "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" }, "visible": { "type": "boolean" } }
+      }
+    }
   },
   "$defs": {
     "size": { "type": "array", "prefixItems": [{ "type": "integer", "minimum": 1 }, { "type": "integer", "minimum": 1 }], "items": false, "minItems": 2 }

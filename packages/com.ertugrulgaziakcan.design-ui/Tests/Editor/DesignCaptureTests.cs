@@ -307,6 +307,14 @@ namespace DesignUi.Editor.Tests
                 CollectionAssert.AreEquivalent(elementKeys, ((JObject)e.Value).Properties().Select(p => p.Name), e.Name);
                 foreach (var l in (JArray)e.Value["lines"]) CollectionAssert.AreEquivalent(lineKeys, ((JObject)l).Properties().Select(p => p.Name), e.Name);
             }
+            // the sample's repeat items after the first: their copies' boxes
+            var itemKeys = ((JObject)((JObject)contract["items"]).Properties().First().Value).Properties().Select(p => p.Name).ToList();
+            Assert.IsNotEmpty(((JObject)boxes["items"]).Properties());
+            foreach (var e in ((JObject)boxes["items"]).Properties())
+            {
+                StringAssert.Contains("#", e.Name);
+                CollectionAssert.AreEquivalent(itemKeys, ((JObject)e.Value).Properties().Select(p => p.Name), e.Name);
+            }
             CollectionAssert.AreEqual(new[] { 1920, 1080 }, boxes["viewport"].Values<int>());
             Assert.AreEqual(0.75, (double)boxes["scale"], 1e-9);
             var root = (JObject)boxes["elements"]["root"];

@@ -183,6 +183,62 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse((bool)els["ghost-parent"]["text"]);
         }
 
+        /// <summary>
+        /// The repeat items' copies (named by the sample filler: <c>row#2</c>, the first item inside a later outer item
+        /// <c>cell#0#1</c>) are written as <c>items</c>, with their boxes and visibility; elements outside a repeat, names that are
+        /// no item suffix and the IR's own elements are not. Without an items root, or without repeat copies, there is no
+        /// <c>items</c>.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Measure_WritesTheRepeatItemsCopies_ByTheirNames()
+        {
+            var root = new VisualElement { name = "root" };
+            root.style.width = 400;
+            root.style.height = 300;
+            var list = new VisualElement { name = "list" };
+            root.Add(list);
+            VisualElement Row(string suffix, bool shown)
+            {
+                var row = new VisualElement { name = "row" + suffix };
+                row.style.height = 20;
+                row.style.marginTop = 4;
+                if (!shown) row.style.visibility = Visibility.Hidden;
+                var cell = new VisualElement { name = "cell" + (suffix == "" ? "" : "#0" + suffix) };
+                cell.style.height = 10;
+                row.Add(cell);
+                list.Add(row);
+                return row;
+            }
+            Row("", true);
+            Row("#1", true);
+            Row("#2", false);
+            root.Add(new VisualElement { name = "loose#1" });     // not inside a repeat in the IR
+            root.Add(new VisualElement { name = "row#x" });       // not an item suffix
+            Panel(root);
+            for (int i = 0; i < 6; i++) yield return null;
+
+            var rows = Node("list", "container");
+            rows.Repeat = new IrRepeat { Name = "rows", Mode = "inline", Count = 3 };
+            var cells = Node("row", "container");
+            cells.Repeat = new IrRepeat { Name = "cells", Mode = "inline", Count = 1 };
+            var ir = TestIr.Screen(Root(rows.Add(cells.Add(Node("cell", "container"))), Node("loose", "container")));
+            const double scale = 0.5;
+            var capture = BoxesWriter.Measure("default@200x150", id => BoxesWriter.Find(root, id), new Vector2Int(200, 150), scale, ir, root);
+            var items = (JObject)capture["items"];
+            Assert.IsNotNull(items);
+            CollectionAssert.AreEqual(new[] { "cell#0#1", "cell#0#2", "row#1", "row#2" }, items.Properties().Select(p => p.Name));
+            var r1 = list[1].worldBound;
+            Assert.AreEqual(r1.y * scale, (double)items["row#1"]["y"], 1e-4);
+            Assert.AreEqual(r1.height * scale, (double)items["row#1"]["h"], 1e-4);
+            Assert.IsTrue((bool)items["row#1"]["visible"]);
+            Assert.IsFalse((bool)items["row#2"]["visible"], "visibility hidden");
+            Assert.AreEqual((list[0].worldBound.y + 24) * scale, (double)items["row#1"]["y"], 1e-4, "a pitch below the first row");
+            CollectionAssert.AreEquivalent(new[] { "x", "y", "w", "h", "visible" }, ((JObject)items["row#1"]).Properties().Select(p => p.Name));
+            Assert.IsNull(BoxesWriter.Measure("default@200x150", root, new Vector2Int(200, 150), scale, ir)["items"], "no items root: no items");
+            var plain = TestIr.Screen(Root(Node("list", "container").Add(Node("row", "container"))));
+            Assert.IsNull(BoxesWriter.Measure("c", id => BoxesWriter.Find(root, id), new Vector2Int(200, 150), scale, plain, root)["items"], "no repeat in the IR: no items");
+        }
+
         [UnityTest]
         public IEnumerator Measure_FractionalFontSize_UsesTheWholePixelSizeTheStandardGeneratorSetsTheTextAt()
         {

@@ -320,6 +320,17 @@ function pageFinishAll(): void {
   for (const a of document.getAnimations()) { try { a.finish(); } catch { /* infinite */ } }
 }
 
+/**
+ * The name suffix of an IR element's copy in written-out repeat items `item` (outermost first), as the Unity capture
+ * names it (DesignUi.Editor.CaptureApply.ItemSuffix): `#k` per repeat, innermost first, for each repeat whose item is a
+ * later one or that sits inside a later item of an outer repeat (`day#3`, `day#0#1`, `day#3#1`); empty for the IR's own.
+ */
+export function itemSuffix(item: readonly number[]): string {
+  let out = "";
+  for (let k = item.length - 1; k >= 0; k--) if (item[k] > 0 || item.slice(0, k).some((v) => v > 0)) out += `#${item[k]}`;
+  return out;
+}
+
 type LineBox = { x: number; y: number; w: number; h: number; baseline: number };
 type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; rotation?: number; lines: LineBox[] };
 /**
@@ -444,6 +455,8 @@ export class CaptureSession {
   private dom: DomEl[] = [];
   private nodes = new Map<string, IrNode>();
   private items: [string, number, boolean][] = [];
+  /** The written-out repeat items' copies of the IR elements inside repeats: [`<id><itemSuffix>`, DOM index] (boxes `items`). */
+  private itemCopies: [string, number][] = [];
   private irIndices: number[] = [];
   /** DOM indices of the IR text nodes and text buttons, whose text-sized width the golden rounds as UI Toolkit does. */
   private textItems: number[] = [];
@@ -532,6 +545,10 @@ export class CaptureSession {
       if (n.text !== null && (n.kind === "text" || n.kind === "button")) this.textItems.push(elements[id]);
     }
     this.external.sort();
+    for (const id of this.nodes.keys()) for (const item of this.itemPaths(id)) {
+      const i = this.at(id, item);
+      if (i >= 0) this.itemCopies.push([id + itemSuffix(item), i]);
+    }
     this.radioNames = await d.page.evaluate(pageRadiosApart);
 
     await this.send("Animation.enable");
@@ -797,9 +814,14 @@ export class CaptureSession {
     const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
     if (w !== job.viewport[0] || h !== job.viewport[1]) throw new Error(`${name}: the capture is ${w}x${h}, not ${vpName(job.viewport)}`);
     const els = await this.d.page.evaluate(pageBoxes, { items: this.items, ir: this.irIndices, scale: this.scale });
+    const copies = this.itemCopies.length
+      ? await this.d.page.evaluate(pageBoxes, { items: this.itemCopies.map(([k, i]) => [k, i, false] as [string, number, boolean]), ir: this.irIndices, scale: this.scale })
+      : [];
     fs.mkdirSync(goldensDir, { recursive: true });
     fs.writeFileSync(path.join(goldensDir, `${name}.png`), png);
-    return { capture: name, viewport: [job.viewport[0], job.viewport[1]], scale: this.scale, elements: Object.fromEntries(els), external: [...this.external] };
+    const boxes: CaptureBoxes = { capture: name, viewport: [job.viewport[0], job.viewport[1]], scale: this.scale, elements: Object.fromEntries(els), external: [...this.external] };
+    if (copies.length) boxes.items = Object.fromEntries(copies.map(([k, b]) => [k, { x: b.x, y: b.y, w: b.w, h: b.h, visible: b.visible }]));
+    return boxes;
   }
 
   /**

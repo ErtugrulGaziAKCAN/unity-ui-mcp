@@ -14,7 +14,7 @@ import type { IrAnim, IrNode, IrScreen } from "../src/ir/types.js";
 import { validateBoxes } from "../src/boxes/validate.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
 import { breakpointsHold, scaleStep, buildMatrix, captureName, sampleTimes, unsampledAnims, type CaptureJob } from "../src/capture/matrix.js";
-import { CaptureSession, captureMatrix, runCapture, TEXT_CEIL_TOLERANCE, type ElementMap } from "../src/capture/capture.js";
+import { CaptureSession, captureMatrix, itemSuffix, runCapture, TEXT_CEIL_TOLERANCE, type ElementMap } from "../src/capture/capture.js";
 import { logicalViewport } from "../src/viewport.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -619,6 +619,20 @@ describe("captures", () => {
     expect(more.context).toEqual({ state: "default", apply: [], item: [2] });
     expect(more.apply).toEqual([{ kind: "pseudo", pseudo: "hover", elementId: "more", item: [2] }]);
     expect(fs.existsSync(path.join(dir, "default@1280x720.hover.more~2.png"))).toBe(true);
+    // every capture records the boxes of the later written-out items, named as the Unity capture names their copies: the
+    // days a pitch apart, a hidden "more" not visible, the shown one visible
+    const boxes = r.boxes["default@1280x720.hover.plain"];
+    expect(validateBoxes(boxes)).toEqual([]);
+    expect(Object.keys(boxes.items ?? {}).sort()).toEqual(["day#1", "day#2", "more#1", "more#2", "option#1"]);
+    const day = boxes.elements.day, items = boxes.items!;
+    const pitch = items["day#1"].x - day.x;
+    expect(pitch).toBeGreaterThan(0);
+    expect(items["day#2"]).toMatchObject({ x: day.x + 2 * pitch, y: day.y, w: day.w, h: day.h, visible: true });
+    expect(items["more#1"].visible).toBe(false);
+    expect(items["more#2"].visible).toBe(true);
+    expect(itemSuffix([0, 2])).toBe("#2");
+    expect(itemSuffix([1, 0])).toBe("#0#1");
+    expect(itemSuffix([3, 1])).toBe("#1#3");
   }, 60000);
 
   it("a failing viewport stops the others and fails the matrix once every page is closed", async () => {
