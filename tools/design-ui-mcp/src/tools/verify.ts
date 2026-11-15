@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { requireConfig, withProgress, type ServerContext } from "../context.js";
 import { designPath, exportedPage, resolveScreen, sha256, sourceSha } from "../design.js";
-import { classLines } from "../exporter.js";
+import { classLines, toolHash } from "../exporter.js";
 import { MISSING, unityStep } from "../pipeline.js";
 import { bytesOf, FAILED_RUNS_KEPT as KEPT, mb } from "../cache.js";
 import { guarded, Timings, toolResult } from "../result.js";
@@ -121,6 +121,9 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
             `The previous report and verdict are unchanged.${kept(evidence)}`, { screen, verdict: null, logTail: run.logTail, evidence, timings: t.done() }, true);
         }
         const steps: Record<string, number> = { ...(imp.timings ?? {}), capture: t.steps.capture };
+        // an export another version of the exporter made (review finding 7): its goldens may lack records this comparison
+        // reads (the ellipsis cut of rulings R146 and R147 was missing from every export made before revision 3)
+        const staleExport = exportOfOtherTool(exportDir);
         let v;
         try {
           v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir, keepCaptures: keepCaptures === true }));
@@ -156,7 +159,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
           ...(v.notRun.length ? [`Not run: ${v.notRun.join(", ")}`] : []),
           ...(hidden.length ? [`Hidden in the design (no golden, not compared; show them in a state, class or repeat item, or remove their layers): ${hidden.join(", ")}`] : []),
           ...(v.extra?.length ? [`Extra Unity captures (not compared): ${v.extra.join(", ")}`] : []),
-          ...(v.warnings ?? []).map((w) => `Warning: ${w}`),
+          ...[...(v.warnings ?? []), ...(staleExport ? [staleExport] : [])].map((w) => `Warning: ${w}`),
           ...(v.colour?.space === "Linear" && v.colour.path !== "linear-panel"
             ? ["Colour: Linear colour space, captured through the gamma composite: in game this holds for panels rendered through DesignUiGammaComposite"] : []),
           ...(v.notSampled ? [`Backgrounds not sampled (every point covered or on text): ${v.notSampled}`] : []),
@@ -166,12 +169,24 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         ];
         return toolResult(lines.join("\n"), {
           screen, entry, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun, hidden,
-          extra: v.extra ?? [], warnings: v.warnings ?? [], colour: v.colour ?? null, notSampled: v.notSampled ?? 0, byClass: v.byClass ?? {}, keptCaptures: keptRun,
+          extra: v.extra ?? [], warnings: [...(v.warnings ?? []), ...(staleExport ? [staleExport] : [])], colour: v.colour ?? null, notSampled: v.notSampled ?? 0, byClass: v.byClass ?? {}, keptCaptures: keptRun,
           steps: v.timings ?? steps, timings: t.done(),
         }, verdict !== "pass");
       }));
     });
   });
+}
+
+/**
+ * Why a screen's export is not this exporter's (its `export-report.json` names another tool hash: another exporter
+ * version, extraction revision, schema or Chromium), or null when it is, or the report names none.
+ */
+export function exportOfOtherTool(exportDir: string): string | null {
+  let rep: { toolSha?: unknown };
+  try { rep = JSON.parse(fs.readFileSync(path.join(exportDir, "export-report.json"), "utf8")); } catch { return null; }
+  if (typeof rep?.toolSha !== "string" || rep.toolSha === toolHash()) return null;
+  return "the screen's export was made by another version of the exporter, so its goldens may lack what this comparison reads " +
+    "(an older export has no ellipsis records, for example); import the screen again to export it with this version";
 }
 
 /** How many failed-<run> folders a screen keeps (the newest); older ones are deleted when a new one is kept. */

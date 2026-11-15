@@ -1496,6 +1496,21 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"), "utf8")).keptCaptures).toBeUndefined();
   });
 
+  it("warns when the export was made by another version of the exporter (review finding 7)", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.writeConfig(copyCapture());
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const client = await serverFor(p.dir, goldenPipeline());
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    const report = path.join(dir, ".design-ui", "export", "export-report.json");
+    const ok = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(ok.text).not.toMatch(/another version of the exporter/);
+    fs.writeFileSync(report, JSON.stringify({ ...JSON.parse(fs.readFileSync(report, "utf8")), toolSha: "0".repeat(64) }));
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
+    expect(r.text).toMatch(/Warning: the screen's export was made by another version of the exporter/);
+    expect(r.data.warnings.join(" ")).toMatch(/import the screen again/);
+  });
+
   it("fails a screen with a capture Unity did not produce, and gives no verdict when Unity produced nothing", async () => {
     const p = tempProject({ prefer: "command" });
     p.writeConfig(copyCapture(["hover@64x48.png"]));
