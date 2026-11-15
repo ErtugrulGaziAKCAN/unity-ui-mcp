@@ -136,12 +136,28 @@ namespace DesignUi.Editor
             if ((profile.scaledViewports ?? new UnityEngine.Vector2Int[0]).Contains(profile.referenceResolution))
                 errors.Add("the reference resolution " + profile.referenceResolution.x + "×" + profile.referenceResolution.y + " is scale 1, an exact viewport; remove it from the profile's scaled viewports");
 
-            // the kit's viewports the profile lacks: kit sync writes the profile's list, so it would drop them
-            var missing = KitViewports(config).Where(v => !profile.DeclaredViewports().Any(d => d.size == v.size)).ToList();
-            if (missing.Count > 0 && addKitViewports)
+            // the kit's viewports the profile lacks: kit sync writes the profile's list, so it would drop them. An entry kit sync
+            // cannot read would be dropped the same way: refuse. One the profile declares in the other class takes the profile's
+            // class (the profile is the source of the kit's viewports): warn, since the kit then judges that viewport by that class.
+            var unreadable = new List<string>();
+            var kitViewports = KitViewports(config, unreadable);
+            foreach (var u in unreadable)
+                errors.Add(ConfigFileName + " has a viewport kit sync cannot read: " + u + ". Each entry is [width, height] or { \"size\": [width, height], " +
+                           "\"class\": \"exact\" | \"scaled\" } in whole positive pixels; kit sync would drop it (it writes the profile's viewports into the kit). Fix the entry.");
+            foreach (var v in kitViewports)
+            {
+                var declared = profile.DeclaredViewports().Where(d => d.size == v.size).Select(d => (DesignViewportClass?)d.cls).FirstOrDefault();
+                if (declared != null && declared.Value != v.cls)
+                    warnings.Add("viewport " + v.size.x + "×" + v.size.y + " is " + ClassName(v.cls) + " in " + ConfigFileName + " and " + ClassName(declared.Value) +
+                                 " in the DesignUiProfile: kit sync writes the profile's class, " + ClassName(declared.Value) + ", into the kit. If the kit's class " +
+                                 "is the right one, move it to the profile's " + (v.cls == DesignViewportClass.Exact ? "viewports" : "scaled viewports") + " and sync again.");
+            }
+            var missing = kitViewports.Where(v => !profile.DeclaredViewports().Any(d => d.size == v.size)).ToList();
+            if (missing.Count > 0 && addKitViewports && unreadable.Count == 0)
             {
                 var added = DesignUiProfileViewports.Add(profile, missing);
-                notes.Add("added to the DesignUiProfile: " + string.Join(", ", added) + " (the viewports kit.config.json declares; Edit > Undo takes them back)");
+                notes.Add("added to the DesignUiProfile: " + string.Join(", ", added) + " (the viewports kit.config.json declares; the profile asset is saved, " +
+                          "Edit > Undo takes them out of the open profile, then save the project to write that to disk)");
             }
             else if (missing.Count > 0)
                 errors.Add(MissingViewportsPrefix + " " + ConfigFileName + " declares " + string.Join(", ", missing.Select(DesignUiProfileViewports.Describe)) +
@@ -557,22 +573,44 @@ namespace DesignUi.Editor
                 ? (object)new JArray(v.size.x, v.size.y)
                 : new JObject { ["size"] = new JArray(v.size.x, v.size.y), ["class"] = "scaled" }).ToArray());
 
-        /// <summary>The viewports kit.config.json declares, with their class (<c>[w, h]</c> is exact); entries it cannot read are left out.</summary>
-        internal static List<(UnityEngine.Vector2Int size, DesignViewportClass cls)> KitViewports(JObject config)
+        /// <summary>
+        /// The viewports kit.config.json declares, with their class, read as the exporter reads them: <c>[w, h]</c> (exact) or
+        /// <c>{ "size": [w, h], "class": "exact" | "scaled" }</c>, each side a whole positive number (<c>1366.0</c> is 1366). Each
+        /// entry it cannot read is left out of the list and, when <paramref name="unreadable"/> is given, added to it as JSON.
+        /// </summary>
+        internal static List<(UnityEngine.Vector2Int size, DesignViewportClass cls)> KitViewports(JObject config, List<string> unreadable = null)
         {
             var list = new List<(UnityEngine.Vector2Int, DesignViewportClass)>();
             if (!(config?["viewports"] is JArray all)) return list;
-            UnityEngine.Vector2Int? Size(JToken t) => t is JArray a && a.Count == 2 && a[0].Type == JTokenType.Integer && a[1].Type == JTokenType.Integer
-                ? new UnityEngine.Vector2Int(a[0].Value<int>(), a[1].Value<int>()) : (UnityEngine.Vector2Int?)null;
+            int? Side(JToken n)
+            {
+                if (n == null || (n.Type != JTokenType.Integer && n.Type != JTokenType.Float)) return null;
+                var d = n.Value<double>();
+                return d > 0 && d <= int.MaxValue && Math.Floor(d) == d ? (int)d : (int?)null;
+            }
+            UnityEngine.Vector2Int? Size(JToken t) => t is JArray a && a.Count == 2 && Side(a[0]) is int w && Side(a[1]) is int h
+                ? new UnityEngine.Vector2Int(w, h) : (UnityEngine.Vector2Int?)null;
             foreach (var e in all)
             {
-                var size = e is JObject o ? Size(o["size"]) : Size(e);
-                if (size == null) continue;
-                var cls = e is JObject c && (string)c["class"] == "scaled" ? DesignViewportClass.Scaled : DesignViewportClass.Exact;
-                list.Add((size.Value, cls));
+                UnityEngine.Vector2Int? size = null;
+                var cls = DesignViewportClass.Exact;
+                if (e is JObject o)
+                {
+                    var name = o["class"]?.Type == JTokenType.String ? (string)o["class"] : null;
+                    if ((name == "exact" || name == "scaled") && o.Properties().All(p => p.Name == "size" || p.Name == "class"))
+                    {
+                        size = Size(o["size"]);
+                        cls = name == "scaled" ? DesignViewportClass.Scaled : DesignViewportClass.Exact;
+                    }
+                }
+                else size = Size(e);
+                if (size == null) unreadable?.Add(e.ToString(Formatting.None));
+                else list.Add((size.Value, cls));
             }
             return list;
         }
+
+        static string ClassName(DesignViewportClass c) => c == DesignViewportClass.Exact ? "exact" : "scaled";
 
         /// <summary>The panel scale of each exact viewport: where every kit value must be whole device pixels.</summary>
         internal static List<(UnityEngine.Vector2Int viewport, double scale)> ExactScales(DesignUiProfile profile) =>

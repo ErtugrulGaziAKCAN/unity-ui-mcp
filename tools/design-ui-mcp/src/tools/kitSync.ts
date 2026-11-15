@@ -18,8 +18,8 @@ export function registerKitSync(server: McpServer, ctx: ServerContext): void {
       "viewports): call it again with addProfileViewports to add the kit's viewports to the profile, after the user agrees.",
     inputSchema: {
       addProfileViewports: z.boolean().optional().describe(
-        "Add the viewports kit.config.json declares and the DesignUiProfile lacks to the profile (with their class; Undo-able in Unity, " +
-        "the profile asset saved) before syncing, instead of refusing (default false)."),
+        "Add the viewports kit.config.json declares and the DesignUiProfile lacks to the profile (with their class; the profile asset is saved, " +
+        "and Edit > Undo in Unity restores the open profile until the project is saved again) before syncing, instead of refusing (default false)."),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }, // rewrites the kit's font files
   }, async (args, extra) => {

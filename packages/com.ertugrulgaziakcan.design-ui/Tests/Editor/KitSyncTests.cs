@@ -377,6 +377,53 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void Run_AKitViewportWrittenAsWholeFloats_CountsAsDeclared_AndOneUnityCannotRead_IsRefused()
+        {
+            var floats = KitWithViewports("[[2560,1440],[1920,1080],[1280,720],[1366.0,768]]");
+            var profile = Profile();
+            var r = KitSync.Run(profile, floats, Resolver(profile));
+            Assert.IsFalse(r.Ok, "[1366.0, 768] is 1366×768, which the profile lacks");
+            StringAssert.Contains("1366×768 (exact)", Errors(r));
+
+            var bad = KitWithViewports("[[2560,1440],[1920,1080],[1280,720],[1366.5,768]]");
+            var before = File.ReadAllText(bad + "/kit.config.json");
+            r = KitSync.Run(profile, bad, Resolver(profile));
+            Assert.IsFalse(r.Ok);
+            StringAssert.Contains("[1366.5,768]", Errors(r));
+            StringAssert.Contains("cannot read", Errors(r));
+            Assert.AreEqual(before, File.ReadAllText(bad + "/kit.config.json"), "nothing written");
+        }
+
+        [Test]
+        public void Run_AViewportTheKitAndTheProfileDeclareInAnotherClass_TakesTheProfilesClass_WithAWarning()
+        {
+            var kit = KitWithViewports("[[2560,1440],[1920,1080],[1280,720]]");
+            var profile = Profile();
+            profile.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080) };
+            profile.scaledViewports = new[] { new Vector2Int(1280, 720) };
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            var warning = r.Warnings.SingleOrDefault(w => w.Contains("1280×720"));
+            Assert.IsNotNull(warning, "the reclass is reported: " + string.Join(" | ", r.Warnings));
+            StringAssert.Contains("exact in kit.config.json and scaled in the DesignUiProfile", warning);
+            StringAssert.Contains("{\"size\":[1280,720],\"class\":\"scaled\"}", File.ReadAllText(kit + "/kit.config.json").Replace(" ", "").Replace("\n", ""));
+        }
+
+        [Test]
+        public void AddDefaults_RefusesAProfileWhoseReferenceIsNotTheDefaults_AndSaysWhatUndoDoes()
+        {
+            var profile = SavedProfile();
+            profile.referenceResolution = new Vector2Int(1920, 1080);
+            var e = Assert.Throws<InvalidOperationException>(() => DesignUiProfileViewports.AddDefaults(profile));
+            StringAssert.Contains("1920×1080", e.Message);
+            StringAssert.Contains("2560×1440", e.Message);
+            CollectionAssert.AreEqual(Three, profile.viewports, "unchanged");
+            var message = DesignUiProfileViewports.AddedMessage("Assets/P.asset", new[] { "3840×2160 (exact)" });
+            StringAssert.Contains("Edit > Undo", message);
+            StringAssert.Contains("save", message.ToLowerInvariant());
+        }
+
+        [Test]
         public void Run_AScaledViewportIsExemptFromWholeDevicePixels_AnExactOneIsNot()
         {
             // 16/20 is 8.535/10.669 device px at 1366×768 (scale 0.53346 with match 0.5): fine as scaled, an error as exact
