@@ -51,6 +51,8 @@ export interface CaptureContext {
    * `rotation`) is not a multiple of 90°. Empty for static captures.
    */
   rotated?: ReadonlySet<string>;
+  /** An animation sample (Chromium draws a running animation's element from its composited layer, resampled). */
+  anim?: boolean;
 }
 
 /** The screen setup of a capture: state, viewport and what is applied (matrix.json `captures[]`); `anim` for an animation sample. */
@@ -225,5 +227,5 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     }
     if (setup.anim && b && typeof b.rotation === "number" && !axisAligned(b.rotation)) rotated.add(id);
   }
-  return { order: ix.order, root: ix.root, parent: ix.parent, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
+  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
 }

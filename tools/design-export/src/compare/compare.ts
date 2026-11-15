@@ -141,6 +141,13 @@ export interface Thresholds {
    */
   deltaE2000RoundEdge: number;
   /**
+   * The colour limit of a round element's ring when the element carries no text (a radio, an avatar ring): the middle of
+   * each border side of `BORDER_SAMPLE_PX` device px or more, the ring's centre pixel, at every viewport (an element that
+   * carries text samples its ring at `deltaE2000`). Measured over the suite's correct rings plus a margin; a ring of
+   * another colour, also one of the same lightness that keeps the element's SSIM, fails.
+   */
+  deltaE2000Ring: number;
+  /**
    * Measured limits for captures at scaled viewports (fidelity-thresholds.json `scaled`), which replace the file's own
    * values there; never the geometry limits. Absent: scaled viewports use the same thresholds.
    */
@@ -151,7 +158,7 @@ export interface Thresholds {
 export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.json", import.meta.url));
 const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage",
   "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater", "textInkSmallPx", "textInkDeltaEFirstSmall", "textInkMedianToleranceSmall", "textInkShadowHigh",
-  "ssimRotated", "ssimRoundEdge", "deltaE2000RoundEdge"] as const;
+  "ssimRotated", "ssimRoundEdge", "deltaE2000RoundEdge", "deltaE2000Ring"] as const;
 /** No measured policy may accept an element SSIM below this. */
 export const SSIM_FLOOR = 0.97;
 /**
@@ -210,6 +217,7 @@ function checkThresholds(raw: Record<string, unknown>, file: string, scaled = fa
     throw new Error(`${file}: "deltaE2000RoundEdge" must equal deltaE2000 (off): only "scaled" may raise it`);
   if (scaled && !(roundDe >= (raw.deltaE2000 as number)))
     throw new Error(`${file}: "deltaE2000RoundEdge" must be at least deltaE2000`);
+  if (!((raw.deltaE2000Ring as number) >= (raw.deltaE2000 as number))) throw new Error(`${file}: "deltaE2000Ring" must be at least deltaE2000`);
   return {
     ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater" | "textInkBandSmall" | "scaled">),
     textInkBandSmall: [bandSmall[0], bandSmall[1]],
@@ -321,6 +329,8 @@ export interface ElementRow {
   samples: number | null;
   /** Largest ring sample ΔE2000 (text-carrying elements: background inside the border, border, corners). */
   edge: number | null;
+  /** Largest ring colour sample ΔE2000 of a round element without text (the middle of each border side; `deltaE2000Ring`). */
+  ring?: number | null;
   /** Shadow band ΔE2000. */
   band: number | null;
   /** Largest text ink colour ΔE2000 over the lines. */
@@ -827,16 +837,25 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       // both renderers), the evidence ssimRoundEdge needs: its ring lies in the edge band that limit masks, so a missing
       // or wrong-colour ring shows only here (an element that carries text samples its border with its ring below)
       const sides = ctx.borders?.[id];
-      if (roundEdge && !carriesText && ctx.radii?.[id] && paints(id) && sides && sides.some((v) => v > 0)) {
+      if (!carriesText && ctx.radii?.[id] && paints(id) && sides && sides.some((v) => v > 0)) {
+        let worst: { de: number; p: RingPoint; a: number[]; b: number[] } | null = null;
         const full = sides.map((v) => (v >= BORDER_SAMPLE_PX ? v : 0));
         for (const p of full.some((v) => v > 0) ? ringPoints(gPaint, ue, full, ["border"], ctx.radii[id]) : []) {
           if (!usable(p, cover)) continue;
           const r = bestDeltaE(gp, p.gx, p.gy, up, p.ux, p.uy, p.win);
-          const prev = ringEvidence.get(id);
-          if (!prev || r.de > prev.de) ringEvidence.set(id, { de: r.de, p, a: r.a, b: r.b });
+          if (!worst || r.de > worst.de) worst = { de: r.de, p, a: r.a, b: r.b };
         }
-        // a ring with no sample (every side under BORDER_SAMPLE_PX, or every point covered or on text) has no evidence
-        if (!ringEvidence.has(id)) ringEvidence.set(id, { de: NaN, p: null, a: [], b: [] });
+        // the ring's colour at every viewport; where ssimRoundEdge applies, also the evidence for it (none: no evidence)
+        // (not in an animation sample: Chromium draws the moving element from its resampled layer, so a thin border's
+        // centre pixel blends with its edges there; the ring's colour is judged in every state's static capture)
+        if (worst) {
+          row.ring = r6(worst.de);
+          if (!ctx.anim && worst.de > t.deltaE2000Ring + EPS) {
+            issue(id, "color", `ring ${worst.p.where}: ΔE2000 ${worst.de.toFixed(2)}, design ${hex(worst.a)}, Unity ${hex(worst.b)} (limit ${t.deltaE2000Ring}): the ring's colour differs`,
+              { x: worst.p.gx - 1, y: worst.p.gy - 1, w: 3, h: 3 });
+          }
+        }
+        if (roundEdge) ringEvidence.set(id, worst ?? { de: NaN, p: null, a: [], b: [] });
       }
       if (use) {
         row.samples = use.length;

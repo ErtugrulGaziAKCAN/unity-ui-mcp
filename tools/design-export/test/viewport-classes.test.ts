@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildMatrix } from "../src/capture/matrix.js";
-import { readThresholds, thresholdsFor } from "../src/compare/compare.js";
+import { inkColourLimit, readThresholds, thresholdsFor } from "../src/compare/compare.js";
 import { exactViewports, readKit } from "../src/kit.js";
 import { rulesJson } from "../src/kit/rulesJson.js";
 import { kitScales, wholeBorderWidths } from "../src/lint/rules/U-CSS-040.js";
@@ -120,6 +120,19 @@ describe("thresholds per viewport class", () => {
     expect(() => readThresholds(file({ scaled: { nonsense: 1 } }))).toThrow(/unknown threshold key "nonsense"/);
     expect(() => readThresholds(file({ scaled: { ssimRotated: 0.9 } }))).toThrow(/\(scaled\).*"ssimRotated" must lie between/);
     expect(() => readThresholds(file({ scaled: [] }))).toThrow(/"scaled" must be an object/);
+  });
+
+  it("the scaled class holds text under 13 device px to the small-text ink limits, the exact class from 12.01 to the full ones", () => {
+    // measured (docs/findings/viewport-classes.md, "Text ink at fractional sizes"): whole 13 and 14 px at 1280×720 stay
+    // within ΔE2000 2 (1.98, 1.94); the fractional 12.5 px at 1600×900 and 12.8 px at 1366×768 reach 4.29 and 3.80
+    const t = readThresholds();
+    const exact = thresholdsFor(t, "exact"), scaled = thresholdsFor(t, "scaled");
+    for (const px of [12.5, 12.8]) {
+      expect(inkColourLimit(exact, px), `exact ${px}`).toBe(exact.textInkDeltaE);
+      expect(inkColourLimit(scaled, px), `scaled ${px}`).toBe(scaled.textInkDeltaEFirstSmall);
+    }
+    for (const px of [13, 14]) expect(inkColourLimit(scaled, px), `scaled ${px}`).toBe(scaled.textInkDeltaE);
+    expect(inkColourLimit(exact, 12)).toBe(exact.textInkDeltaEFirstSmall);
   });
 
   it("the repository's thresholds are the same at both classes unless a measured scaled limit is recorded", () => {

@@ -22,7 +22,7 @@ const T: Thresholds = {
   textInkFullPx: 14, textInkDeltaESmall: [[12, 5], [9, 10], [0, 14]], textInkMedianTolerance: 0.2, ssimElementSmall: [], ssimPicture: 0.99,
   textInkDeltaELater: [], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
   textInkSmallPx: 0, textInkDeltaEFirstSmall: 3, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.2, textInkShadowHigh: 1.15,
-  ssimRotated: 0.99, ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1,
+  ssimRotated: 0.99, ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, deltaE2000Ring: 1.5,
 };
 /** The measured element SSIM limit of rotated animation samples (fidelity-thresholds.json, docs/findings/animation.md). */
 const ROTATED = 0.975;
@@ -790,7 +790,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(compareCapture(g, u, [], scaled).issues).toEqual([expect.objectContaining({ id: "knob", kind: "ssim" })]);
   });
 
-  it("catches a missing or wrong-colour ring on a round element without text where ssimRoundEdge applies", () => {
+  it("catches a missing or wrong-colour ring on a round element without text, also one of another hue at the same lightness", () => {
     // an 80 px avatar at a scaled viewport: a light disc with a 2 px grey ring, drawn with the same ramp on both sides; the
     // ring lies wholly in the edge band (the outer curve and the border's inner curve, a pixel either side)
     const bg: Rgb = [30, 30, 30], disc: Rgb = [200, 200, 200];
@@ -809,22 +809,35 @@ describe("compareCapture: edge, colour and ink checks", () => {
     const scaled: Thresholds = { ...T, ssimRoundEdge: 0.95, deltaE2000RoundEdge: 5.5 };
     const golden = { png: draw([150, 150, 150]), boxes };
     expect(compareCapture(golden, { png: draw([150, 150, 150]), boxes }, [], scaled, ctx).issues).toEqual([]);
-    // the ring missing, or another colour: masked, the element's SSIM would meet ssimRoundEdge; its border sides, the
-    // evidence that limit needs, differ by more than deltaE2000RoundEdge, so it is held to ssimElement
+    // the ring missing, or another colour: its colour check (deltaE2000Ring, every viewport) fails, and the element's SSIM,
+    // which masked would meet ssimRoundEdge, is held to ssimElement (its other checks fail)
     for (const ring of [null, [96, 120, 168] as Rgb]) {
       const v = compareCapture(golden, { png: draw(ring), boxes }, [], scaled, ctx);
-      expect(v.issues).toEqual([expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/border differs by ΔE2000 .*the ring in that band is not the design's/) })]);
+      expect(v.issues).toEqual([
+        expect.objectContaining({ id: "avatar", kind: "color", detail: expect.stringMatching(/^ring \w+ border: ΔE2000 [\d.]+, .*\(limit 1\.5\): the ring's colour differs/) }),
+        expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/the ring in that band is not the design's/) })]);
+      // the evidence alone (with no ring colour limit) holds it too: the ring in the band is not the design's
+      const evidenceOnly = compareCapture(golden, { png: draw(ring), boxes }, [], { ...scaled, deltaE2000Ring: 99 }, ctx);
+      expect(evidenceOnly.issues).toEqual([expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/border differs by ΔE2000 .*the ring in that band is not the design's/) })]);
     }
-    // (a ring of another hue with the same lightness keeps the element's SSIM at 0.99 or more: no viewport compares an
-    // element without text for its border colour, so neither does this)
+    // a ring of another hue at the same lightness keeps the element's SSIM at 0.99 or more; its colour check fails, at
+    // an exact viewport too
+    const hue = compareCapture(golden, { png: draw([128, 154, 168]), boxes }, [], T, ctx);
+    expect(hue.elements.find((e) => e.id === "avatar")!.ssim).toBeGreaterThanOrEqual(0.99);
+    expect(hue.issues).toEqual([expect.objectContaining({ id: "avatar", kind: "color", detail: expect.stringMatching(/^ring \w+ border: .*the ring's colour differs/) })]);
+    expect(compareCapture(golden, { png: draw([150, 150, 150]), boxes }, [], T, ctx).elements.find((e) => e.id === "avatar")!.ring).toBe(0);
+    // an animation sample is not judged for it (Chromium resamples the moving layer); the value is still recorded
+    const moving = compareCapture(golden, { png: draw([128, 154, 168]), boxes }, [], T, { ...ctx, anim: true });
+    expect(moving.issues).toEqual([]);
+    expect(moving.elements.find((e) => e.id === "avatar")!.ring).toBeGreaterThan(1.5);
     // a ring under 2 device px (1.25 here: 2 px at 1600×900) has no sample to give evidence: a missing one is held to ssimElement
     const thin: CaptureContext = { ...ctx, borders: { avatar: [1.25, 1.25, 1.25, 1.25] } };
     const thinGolden = { png: draw([150, 150, 150], 1.25), boxes };
     expect(compareCapture(thinGolden, { png: draw([150, 150, 150], 1.25), boxes }, [], scaled, thin).issues).toEqual([]);
     expect(compareCapture(thinGolden, { png: draw(null), boxes }, [], scaled, thin).issues).toEqual([
       expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/its ring \(a border under 2 device px, or no usable point on it\) gives no evidence: held to 0\.99/) })]);
-    // at an exact viewport (ssimRoundEdge off) nothing is relaxed and nothing more is sampled
-    expect(compareCapture(golden, { png: draw(null), boxes }, [], T, ctx).issues.map((i) => i.kind)).toEqual(["ssim"]);
+    // at an exact viewport (ssimRoundEdge off) nothing is relaxed: a missing ring fails its colour check and SSIM
+    expect(compareCapture(golden, { png: draw(null), boxes }, [], T, ctx).issues.map((i) => i.kind)).toEqual(["color", "ssim"]);
   });
 
   it("masks for ssimRoundEdge the edge band of the element's own and its descendants' round shapes, not of others", () => {
@@ -1569,7 +1582,7 @@ describe("design-export compare", () => {
       textInkSmallPx: 12, textInkDeltaEFirstSmall: 4.5, textInkBandSmall: [0.8, 1.25], textInkMedianToleranceSmall: 0.25, textInkShadowHigh: 1.15,
       ssimRotated: ROTATED,
       // the scaled class's round edges (docs/findings/viewport-classes.md): off at exact viewports, measured at scaled ones
-      ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5 },
+      ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, deltaE2000Ring: 3.1, scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, textInkSmallPx: 12.99 },
     });
     const bad = path.join(tmp(), "t.json");
     fs.writeFileSync(bad, JSON.stringify({ boxPx: 1 }));
@@ -1601,5 +1614,6 @@ describe("design-export compare", () => {
     expect(small({ scaled: { ssimRoundEdge: 0.96 } })).toThrow(/\(scaled\): "ssimRoundEdge" must lie between 0.97 and 1/);
     expect(small({ scaled: { deltaE2000RoundEdge: 0.5 } })).toThrow(/\(scaled\): "deltaE2000RoundEdge" must be at least deltaE2000/);
     expect(small({ scaled: { ssimRoundEdge: 0.975, deltaE2000RoundEdge: 4 } })()).toMatchObject({ ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, scaled: { ssimRoundEdge: 0.975, deltaE2000RoundEdge: 4 } });
+    expect(small({ deltaE2000Ring: 0.5 })).toThrow(/"deltaE2000Ring" must be at least deltaE2000/);
   });
 });
