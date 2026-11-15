@@ -25,7 +25,7 @@ const T: Thresholds = {
   textInkDeltaELater: [], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
   textInkSmallPx: 0, textInkDeltaEFirstSmall: 3, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.2, textInkShadowHigh: 1.15,
   ssimRotated: 0.99, ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, deltaE2000Ring: 1.5, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
-  ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1,
+  ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1, textInkDirection: 0.66,
 };
 /** The measured element SSIM limit of rotated animation samples (fidelity-thresholds.json, docs/findings/animation.md). */
 const ROTATED = 0.975;
@@ -1240,6 +1240,47 @@ describe("compareCapture: edge, colour and ink checks", () => {
       delete noCopy.items!["name#2"];
       expect(compareCapture({ png: draw(false), boxes: boxes(false) }, { png: draw(true), boxes: noCopy }, [], scaledT, ctx).issues.map((i) => `${i.id} ${i.kind}`))
         .toContain("name#2 missing");
+    });
+
+    it("R138: a hairline line (no fully covered pixel) is judged by its ink's colour direction, not its lightness or amount", () => {
+      // a 10 device px em dash in the secondary text colour on a row's fill (repeat-items row-time#2 at 1280×720): Chromium
+      // splits its 1.2 px stroke over two pixel rows (covering 0.84 and 0.44 of each), UI Toolkit draws most of it in one
+      const bgC: Rgb = [18, 60, 71], secondary: Rgb = [185, 208, 214];
+      const draw = (rows: [number, number][], c: Rgb) => {
+        const png = canvas(32, 16, bgC);
+        for (const [y, cov] of rows) for (let x = 10; x < 20; x++) {
+          const o = (y * 32 + x) * 4;
+          for (let k = 0; k < 3; k++) png.data[o + k] = Math.round(bgC[k] + cov * (c[k] - bgC[k]));
+        }
+        return png;
+      };
+      const design = draw([[6, 0.84], [7, 0.44]], secondary);
+      const line = { x: 9, y: 2, w: 12, h: 10, baseline: 9 };
+      const boxes: CaptureBoxes = { capture: "c", viewport: [32, 16], scale: 0.5, external: [], elements: { root: el(0, 0, 32, 16), t: el(9, 2, 12, 10, { text: true, lines: [line] }) } };
+      const ctx: CaptureContext = { fontPx: { t: 10 }, textColor: { t: { rgb: secondary, alpha: 1 } }, backgrounds: new Set(), painters: new Set(), order: ["root", "t"], root: "root", viewportClass: "exact" };
+      const exactT = thresholdsFor(readThresholds(), "exact");
+      const run = (png: Rgba, c = ctx) => compareCapture({ png: design, boxes }, { png, boxes }, [], exactT, c).issues.filter((i) => i.id === "t");
+      // the correct dash, drawn over other rows: its lightness and amount measure coverage there, so they are not judged
+      const right = draw([[5, 0.01], [6, 1], [7, 0.12]], secondary);
+      expect(run(right)).toEqual([]);
+      const row = compareCapture({ png: design, boxes }, { png: right, boxes }, [], exactT, ctx).elements.find((e) => e.id === "t")!;
+      expect(row.inkDirection).toBeLessThan(exactT.textInkDirection);
+      // without the declared colour (no IR) nothing is recognised: the usual checks, which fail on the coverage
+      expect(run(right, { ...ctx, textColor: undefined }).map((i) => i.kind).sort()).toEqual(["ink", "inkCoverage"]);
+      // a dash of another hue (the accent or the warning colour) fails on its direction
+      for (const hue of [[22, 194, 213], [242, 181, 68]] as Rgb[])
+        expect(run(draw([[5, 0.01], [6, 1], [7, 0.12]], hue)), hue.join()).toEqual([expect.objectContaining({ kind: "ink",
+          detail: expect.stringMatching(/^line 1 of 1: a hairline line \(fewer than 3 fully covered pixels in the design\): its ink's colour direction from the background differs by [\d.]+° .*limit 0\.\d+°/) })]);
+      // the documented limit: a lightness-only error of a hairline line (the declared colour 30 % toward the background,
+      // the same direction from it) is not caught
+      const lighter: Rgb = [135, 164, 171];
+      expect(run(draw([[5, 0.01], [6, 1], [7, 0.12]], lighter))).toEqual([]);
+      // a normal line, with fully covered pixels, keeps the usual checks: the same lightness error fails its ink colour
+      const stems = (c: Rgb) => { const png = canvas(32, 16, bgC); for (let x = 10; x < 20; x += 3) fill(png, { x, y: 3, w: 2, h: 7 }, c); return png; };
+      const normal = compareCapture({ png: stems(secondary), boxes }, { png: stems(lighter), boxes }, [], exactT, ctx);
+      expect(normal.issues.filter((i) => i.id === "t").map((i) => i.kind)).toContain("ink");
+      expect(normal.elements.find((e) => e.id === "t")!.inkDirection ?? null).toBeNull();
+      expect(compareCapture({ png: stems(secondary), boxes }, { png: stems(secondary), boxes }, [], exactT, ctx).issues).toEqual([]);
     });
 
     it("R133: the evidence names every condition that does not hold, not only the first", () => {

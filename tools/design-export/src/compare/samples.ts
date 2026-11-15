@@ -220,12 +220,26 @@ export function nearCurve(b: Rect, border: readonly number[] | undefined, radii:
  * horizontal extent (`left` and `right`: where the weighted ink of the columns reaches half a pixel from each side,
  * sub-pixel, in image px) and its column profile (`columns[i]`: the weighted ink of image column `x0 + i`).
  */
-export interface Ink { bg: Rgb3; ink: Rgb3; coverage: number; left: number; right: number; columns: Float64Array; x0: number }
+export interface Ink {
+  bg: Rgb3; ink: Rgb3; coverage: number; left: number; right: number; columns: Float64Array; x0: number;
+  /** The ink-side pixels' luma distances from the background, largest first (`dists[0]`: the most covered pixel). */
+  dists: Float64Array;
+  /** How many of the most inked pixels the ink colour is the median of (the 10 %, at least 3). */
+  sample: number;
+  /**
+   * The sums over the ink-side pixels of (pixel − background), in sRGB values (0–255) and in linear RGB (0–1): the ink's
+   * colour direction from the background, whatever share of a pixel the glyphs cover (a pixel blends the ink colour and the
+   * background by its coverage, so its difference from the background points the same way at any coverage).
+   */
+  dirSrgb: Rgb3; dirLinear: Rgb3;
+}
 
 /** Half a pixel of ink: where an ink extent starts, counted from each side. */
 const EDGE_INK = 0.5;
 
 const luma = (d: Uint8Array, o: number) => 0.299 * d[o] + 0.587 * d[o + 1] + 0.114 * d[o + 2];
+/** An sRGB channel value (0–255) in linear light (0–1). */
+const toLinear = (v: number) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
 function medianOf(hist: Uint32Array, n: number): number {
   let acc = 0;
   for (let v = 0; v < hist.length; v++) { acc += hist[v]; if (acc * 2 >= n) return v; }
@@ -276,12 +290,18 @@ export function inkIn(img: Rgba, r: Rect, hidden?: (x: number, y: number) => boo
   const inkD = Math.max(1, Math.abs(0.299 * inkC[0] + 0.587 * inkC[1] + 0.114 * inkC[2] - bgL));
   let coverage = 0;
   const cols = new Float64Array(x1 - x0);
-  for (const k of side) {
-    const wgt = Math.min(1, ((lum[k] - bgL) * sign) / inkD);
+  const dists = new Float64Array(side.length);
+  const dirSrgb: Rgb3 = [0, 0, 0], dirLinear: Rgb3 = [0, 0, 0], bgLin = bg.map(toLinear);
+  side.forEach((k, j) => {
+    const dl = (lum[k] - bgL) * sign;
+    dists[j] = dl;
+    const wgt = Math.min(1, dl / inkD);
     coverage += wgt;
     cols[(off[k] / 4) % img.w - x0] += wgt;
-  }
-  return { bg, ink: inkC, coverage, ...extent(cols, x0), columns: cols, x0 };
+    const o = off[k];
+    for (let c = 0; c < 3; c++) { dirSrgb[c] += d[o + c] - bg[c]; dirLinear[c] += toLinear(d[o + c]) - bgLin[c]; }
+  });
+  return { bg, ink: inkC, coverage, ...extent(cols, x0), columns: cols, x0, dists, sample: top.length, dirSrgb, dirLinear };
 }
 
 /** Where the columns' ink reaches `EDGE_INK` from the left and from the right, interpolated inside the column. */

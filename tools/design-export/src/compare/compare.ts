@@ -70,7 +70,7 @@ import { viewportClassOf, type ViewportClass } from "../viewport.js";
 import { deltaE2000, hex } from "./color.js";
 import { captureContext, indexIr, type CaptureContext, type IrIndex } from "./context.js";
 import { decodePngAsync, encodePngAsync } from "./png.js";
-import { bestDeltaE, bestDeltaEKept, borderWidths, endShift, flatAt, inkIn, nearCurve, paintedRect, ringPoints, type RingPoint } from "./samples.js";
+import { bestDeltaE, bestDeltaEKept, borderWidths, endShift, flatAt, inkIn, nearCurve, paintedRect, ringPoints, type Ink, type RingPoint } from "./samples.js";
 import { blockSsimMap, maskRects, regionSsim, regionSsimShifted, regionSsimShiftedBlocks, unionRect, wholeSsim, type Rect } from "./ssim.js";
 
 export type { CaptureContext } from "./context.js";
@@ -193,6 +193,14 @@ export interface Thresholds {
    */
   deltaE2000ResampledPicture: number;
   /**
+   * The colour direction limit of a hairline line (ruling R138; degrees): a text line the design draws with fewer than
+   * HAIRLINE_PIXELS fully covered pixels (an em dash or a "1" whose stroke lies between two device pixels), where the ink's
+   * lightness and amount measure coverage, is judged by the angle between the design's and Unity's ink directions from the
+   * background in sRGB (the renderers blend glyph coverage there, so a pixel's difference from the background points the same
+   * way at any coverage). Measured highest over the suite's hairline lines plus a margin.
+   */
+  textInkDirection: number;
+  /**
    * Measured limits for captures at scaled viewports (fidelity-thresholds.json `scaled`), which replace the file's own
    * values there; never the geometry limits. Absent: scaled viewports use the same thresholds.
    */
@@ -204,7 +212,7 @@ export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.
 const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage",
   "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater", "textInkSmallPx", "textInkDeltaEFirstSmall", "textInkMedianToleranceSmall", "textInkShadowHigh",
   "ssimRotated", "ssimRoundEdge", "deltaE2000RoundEdge", "deltaE2000Ring", "ssimFractionalEdge", "ssimVectorEdge", "deltaE2000FractionalEdge",
-  "ssimResampledPicture", "deltaE2000ResampledPicture"] as const;
+  "ssimResampledPicture", "deltaE2000ResampledPicture", "textInkDirection"] as const;
 /** No measured policy may accept an element SSIM below this. */
 export const SSIM_FLOOR = 0.97;
 /**
@@ -231,6 +239,39 @@ export const RING_WIDTH_PX = 0.5;
 export const RESAMPLED_PICTURE_FLOOR = 0.95;
 /** The highest small-text ink colour limit the scaled block may hold (ruling R126); text measured above it keeps failing. */
 export const SCALED_SMALL_INK_CAP = 6.5;
+/**
+ * Hairline lines (ruling R138). A pixel of a text line is fully covered when its luma distance from the line's background is
+ * at least HAIRLINE_FULL of the declared text colour's (its `color` times its alpha and opacity, over that background). A line
+ * whose design shows fewer than HAIRLINE_PIXELS such pixels (the fewest the ink colour takes its median of), whose ink in the
+ * design points the declared colour's way from the background (within HAIRLINE_SAME_COLOUR degrees: it is that colour at
+ * partial coverage) and whose most covered pixel reaches HAIRLINE_PEAK of it (a stroke, not text under a translucent layer),
+ * is a hairline line: its ink's lightness and amount measure how the stroke falls on the pixel grid, which the renderers
+ * differ in. Measured over the suite (85974 lines): the 180 lines with fewer than 3 pixels at 0.85 are one-glyph texts of one
+ * stroke (an em dash, a "1") at 10 and 10.67 device px, their design at most 2 such pixels; every other line at least 3.
+ */
+export const HAIRLINE_FULL = 0.85;
+export const HAIRLINE_PIXELS = 3;
+export const HAIRLINE_SAME_COLOUR = 2;
+export const HAIRLINE_PEAK = 0.5;
+
+/** The angle in degrees between two colour directions. */
+function angleBetween(p: readonly number[], q: readonly number[]): number {
+  const n = Math.hypot(p[0], p[1], p[2]) * Math.hypot(q[0], q[1], q[2]);
+  return n > 0 ? (Math.acos(Math.max(-1, Math.min(1, (p[0] * q[0] + p[1] * q[1] + p[2] * q[2]) / n))) * 180) / Math.PI : 0;
+}
+
+/**
+ * Whether the design's ink of a line is a hairline (HAIRLINE_FULL): fewer than HAIRLINE_PIXELS fully covered pixels, the
+ * declared colour's direction, a most covered pixel of at least HAIRLINE_PEAK.
+ */
+export function isHairline(design: Ink, declared: { rgb: readonly number[]; alpha: number }): boolean {
+  const lu = (c: readonly number[]) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+  const full = declared.alpha * Math.abs(lu(declared.rgb) - lu(design.bg));
+  if (!(full >= 8) || !design.dists.length || design.dists[0] < HAIRLINE_PEAK * full) return false;
+  let covered = 0;
+  for (const d of design.dists) { if (d < HAIRLINE_FULL * full) break; if (++covered >= HAIRLINE_PIXELS) return false; }
+  return angleBetween(design.dirSrgb, declared.rgb.map((c, k) => c - design.bg[k])) <= HAIRLINE_SAME_COLOUR;
+}
 
 function checkThresholds(raw: Record<string, unknown>, file: string, scaled = false): Thresholds {
   for (const k of THRESHOLD_KEYS) if (typeof raw[k] !== "number" || !Number.isFinite(raw[k])) throw new Error(`${file}: "${k}" must be a number`);
@@ -287,6 +328,8 @@ function checkThresholds(raw: Record<string, unknown>, file: string, scaled = fa
   if (scaled && !(resampled >= RESAMPLED_PICTURE_FLOOR && resampled <= 1)) throw new Error(`${file}: "ssimResampledPicture" must lie between ${RESAMPLED_PICTURE_FLOOR} and 1`);
   if (!scaled && resampledDe !== (raw.deltaE2000 as number)) throw new Error(`${file}: "deltaE2000ResampledPicture" must equal deltaE2000 (off): only "scaled" may raise it`);
   if (scaled && !(resampledDe >= (raw.deltaE2000 as number))) throw new Error(`${file}: "deltaE2000ResampledPicture" must be at least deltaE2000`);
+  // ruling R138: a hairline line's colour direction, in degrees
+  if (!((raw.textInkDirection as number) > 0 && (raw.textInkDirection as number) <= 10)) throw new Error(`${file}: "textInkDirection" must lie above 0 and at most 10 (degrees)`);
   // ruling R126: the scaled class's small-text ink colour limit has a cap
   if (scaled && (raw.textInkDeltaEFirstSmall as number) > SCALED_SMALL_INK_CAP) throw new Error(`${file}: "textInkDeltaEFirstSmall" may not exceed ${SCALED_SMALL_INK_CAP}`);
   return {
@@ -428,6 +471,12 @@ export interface ElementRow {
   ink: number | null;
   /** Unity's text ink amount relative to the design's, for the element's worst line (0: no ink in Unity). */
   inkRatio: number | null;
+  /**
+   * Largest angle (degrees) between the design's and Unity's ink directions over the element's hairline lines (ruling R138:
+   * lines with fewer than HAIRLINE_PIXELS fully covered pixels in the design, whose ink colour and amount are not judged);
+   * absent when it has none.
+   */
+  inkDirection?: number | null;
   /** Largest move of a text line's ink extent over the lines (left edge, right edge or width), device px. */
   inkExtent: number | null;
   /** `<design>/<Unity>` line counts; "not compared" for text without DOM lines. */
@@ -1131,6 +1180,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
       let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number } | null = null, maxDe = 0;
       let wX: { i: number; dl: number; dr: number; dw: number; worst: number } | null = null;
+      let wDir: { dir: number; i: number; a: number[]; b: number[] } | null = null;
+      // the colour the design declares for the text (a copy: without what the capture applies to the IR's own elements)
+      const declared = key === id ? ctx.textColor?.[id] : ctx.itemTextColor?.[id];
       const hidden = hiddenBy(id);
       let covered = 0;
       ge.lines.forEach((gl, i) => {
@@ -1149,6 +1201,12 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           const dw = dr - dl, worst = Math.max(Math.abs(dl), Math.abs(dr), Math.abs(dw));
           if (!wX || worst > wX.worst) wX = { i, dl, dr, dw, worst };
         }
+        // a hairline line (ruling R138): its lightness and amount measure coverage; its ink's colour direction is judged
+        if (b && declared && isHairline(a, declared)) {
+          const dir = angleBetween(a.dirSrgb, b.dirSrgb);
+          if (!wDir || dir > wDir.dir) wDir = { dir, i, a: a.ink, b: b.ink };
+          return;
+        }
         inkLines.push({ id: key, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow: !!ctx.textShadows?.has(id) });
         if (b) {
           const de = deltaE2000(a.ink, b.ink), limit = inkColourLimit(t, px, i);
@@ -1162,6 +1220,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         row.inkExtent = r6(x.worst);
         if (x.worst > t.boxPx + GEOMETRY_EPS) {
           issue(key, "inkExtent", `line ${x.i + 1} of ${ge.lines.length}: text ink left Δ ${fmt(x.dl)} px, right Δ ${fmt(x.dr)} px, width Δ ${fmt(x.dw)} px (limit ±${t.boxPx} px)`, ge.lines[x.i]);
+        }
+      }
+      if (wDir) {
+        const x = wDir as { dir: number; i: number; a: number[]; b: number[] };
+        row.inkDirection = r6(x.dir);
+        if (x.dir > t.textInkDirection + EPS) {
+          issue(key, "ink", `line ${x.i + 1} of ${ge.lines.length}: a hairline line (fewer than ${HAIRLINE_PIXELS} fully covered pixels in the design): its ink's colour direction from the background differs by ${x.dir.toFixed(2)}° (design ${hex(x.a)}, Unity ${hex(x.b)}; limit ${t.textInkDirection}°)`, ge.lines[x.i]);
         }
       }
       if (wDe) {
