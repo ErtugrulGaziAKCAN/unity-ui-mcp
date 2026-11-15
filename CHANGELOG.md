@@ -7,6 +7,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Added
 
+- `design_ui_verify { keepCaptures: true }`: keeps the run's Unity captures (PNGs, `boxes.json`, `boxes.meta.json`, the
+  done marker) in `<screen>/.design-ui/kept-captures/` once the verdict is written, so a failure can be compared again
+  offline (`design-export compare <export> --unity <kept-captures> --report <file>`) without another Unity run. The answer
+  and `last-verify.json` name the folder; the report says the captures were kept. They count toward `cacheBudgetMB`
+  (over the budget they go before any export), the next verify that gives a verdict replaces or removes them, and
+  `design_ui_clean` always removes them. Default off: a verify still deletes its captures.
 - `design-export kit upgrade <kitDir> [--from <cloneKit>] [--dry-run]`: brings a project's own kit to the clone's kit
   version (setup keeps an existing kit, so a pilot merged one by hand). It takes the clone's base stylesheet, RULES.md,
   components, text styles and configuration keys, and keeps the project's fonts folder (fonts CSS and JSON included), its

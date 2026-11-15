@@ -74,7 +74,7 @@ For each screen the user names:
 2. `design_ui_import { design }`. If it answers "not available yet" or fails, report the reason as it is and stop.
    Through the open Editor it answers once the files are imported and, when generated C# changed, once Unity has
    compiled and reloaded the scripts; a compile that fails is an error with the compiler messages (report them).
-3. `design_ui_verify { screen }`. Report the verdict exactly as returned (`pass`, `fail` or `incomplete`), the report path and the top issues. `incomplete` means the design hides a job in every context (listed under hidden): it is not a pass.
+3. `design_ui_verify { screen }`. Report the verdict exactly as returned (`pass`, `fail` or `incomplete`), the report path and the top issues. `incomplete` means the design hides a job in every context (listed under hidden): it is not a pass. Pass `keepCaptures: true` only when the user wants to study a failure offline: the run's Unity captures then stay in `<screen>/.design-ui/kept-captures` until the next verify or `design_ui_clean`.
 4. Use `design_ui_status { screen }` for hashes, last import and last verdict when the user asks what changed.
    `design_ui_kit_sync` refreshes the kit fonts and settings from Unity; run it when the user asks for it or when
    lint reports kit-related findings. When it refuses because the kit declares viewports the profile lacks (a profile

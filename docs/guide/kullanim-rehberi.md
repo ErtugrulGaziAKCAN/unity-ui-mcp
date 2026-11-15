@@ -142,6 +142,11 @@ klasörü göster). Skill araçları ve Unity köprüsünü kontrol eder, kurall
 3. **Doğrula** (`design_ui_verify`). Unity derlenmiş ekranı projenin bir kopyasında her yakalama işi için çizer (her
    çözünürlük, durum, sınıf, etkileşim durumu, liste örneği ve animasyon örneği) ve tasarımla karşılaştırır. Sonuç
    `pass`, `fail` ya da `incomplete` olur; rapor `<designRoot>/<ekran-id>/report.html` dosyasındadır.
+   `keepCaptures: true` ile çalışmanın Unity görüntüleri sonuç yazıldıktan sonra `<ekran-id>/.design-ui/kept-captures/`
+   içinde kalır (yakalama klasörünün tamamı: PNG'ler, `boxes.json`, `boxes.meta.json`); bir hata yeni bir Unity çalışması
+   olmadan yeniden karşılaştırılabilir: `design-export compare <ekran-id>/.design-ui/export --unity
+   <ekran-id>/.design-ui/kept-captures --report <dosya.html>`. `cacheBudgetMB` sınırına sayılırlar; sonraki doğrulama
+   (bir sonuç verdiğinde) ve `design_ui_clean` onları siler.
 
 **Raporu okumak.** Her yakalama tasarımı, Unity'yi, üst üste bindirmeyi ve fark görüntüsünü gösterir; sorunlu
 elemanlar çerçevelenir ve sorun adıyla yazılır: 1 px'ten fazla kayan bir kutu, yanlış bir satır kırılması ya da taban
@@ -331,9 +336,11 @@ kalan görüntülerini, meta dosyasını ve Unity günlüğünü `<designRoot>/<
 Sunucu kendi dosyalarını kendisi küçük tutar: bir doğrulama raporunu yazdıktan sonra o çalışmanın Unity görüntülerini ve
 fark görüntülerini siler (rapor, başarısız yakalamaların küçük görsellerini ve sorun kırpıntılarını tutar); her içe
 aktarma ve doğrulamadan sonra her ekranın kayıtlarını (`<designRoot>/<ekran-id>/.design-ui/`: kayıtlar, son dışa aktarım,
-son raporun görselleri, en yeni üç başarısız çalışma) `design-ui.config.json` içindeki `cacheBudgetMB` sınırında tutar
-(varsayılan 2048): aşılırsa en uzun süredir içe aktarılmamış ya da doğrulanmamış ekranların dışa aktarımları önce gider,
-sonraki içe aktarma ya da doğrulama onları yeniden üretir. Kit eşitleme ve her içe aktarma, hiçbir metin stilinin, derlenmiş
+son raporun görselleri, en yeni üç başarısız çalışma, istek üzerine tutulan doğrulama görüntüleri) `design-ui.config.json`
+içindeki `cacheBudgetMB` sınırında tutar (varsayılan 2048): aşılırsa önce tutulan görüntüler, sonra en uzun süredir içe
+aktarılmamış ya da doğrulanmamış ekranların dışa aktarımları gider, sonraki içe aktarma ya da doğrulama onları yeniden
+üretir. Tutulan görüntüler aksi halde sonraki doğrulamaya ya da `design_ui_clean` çağrısına kadar kalır; `design_ui_clean`
+onları her zaman siler. Kit eşitleme ve her içe aktarma, hiçbir metin stilinin, derlenmiş
 ekranın ya da dil fontunun kullanmadığı font ikizlerini siler. `design_ui_status` kayıtların boyutunu ekran ekran ve toplam
 olarak gösterir; `design_ui_clean` (`dryRun` ile yalnız rapor) temizliği hemen çalıştırır. Bu klasörleri, üretilmiş
 dosyaları ya da font ikizlerini elle silme.

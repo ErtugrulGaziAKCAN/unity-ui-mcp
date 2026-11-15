@@ -154,7 +154,12 @@ In your AI client, type `/unity-ui-mcp`, give it the canvas link and name the ar
    and capture jobs the design hides.
 3. **Verify** (`design_ui_verify`). Unity renders the compiled screen on a copy of the project for every capture job
    (each viewport, state, class, pseudo-state, list sample and animation sample) and compares it with the design. The
-   verdict is `pass`, `fail` or `incomplete`; the report is `<designRoot>/<screen-id>/report.html`.
+   verdict is `pass`, `fail` or `incomplete`; the report is `<designRoot>/<screen-id>/report.html`. With
+   `keepCaptures: true` the run's Unity captures stay in `<screen-id>/.design-ui/kept-captures/` once the verdict is
+   written (the whole capture folder: PNGs, `boxes.json`, `boxes.meta.json`), so a failure can be compared again
+   offline without another Unity run: `design-export compare <screen-id>/.design-ui/export --unity
+   <screen-id>/.design-ui/kept-captures --report <file.html>`. They count toward `cacheBudgetMB`, and the next verify
+   (when it gives a verdict) and `design_ui_clean` remove them.
 
 **Reading the report.** Each capture shows the design, Unity, an overlay and a difference view, with the elements that
 have an issue outlined and the issue named: a box off by more than 1 px, a wrong line break or baseline, a colour, a
@@ -347,9 +352,10 @@ saying how many it skipped; `verdict.json` is compact, one capture per line, and
 pass), a new verify replaces the previous one's report pictures, verdict and
 difference images, and after every import and
 verify it keeps each screen's bookkeeping (`<designRoot>/<screen-id>/.design-ui/`: records, the latest export, the latest
-report's pictures, the newest three failed runs) within `cacheBudgetMB` of `design-ui.config.json` (default 2048): over
-it, the exports of the screens least recently imported or verified go first, and the next import or verify exports them
-again. Kit sync and every import remove font twins no text style, compiled screen or locale font uses.
+report's pictures, the newest three failed runs, the captures a verify kept on request) within `cacheBudgetMB` of
+`design-ui.config.json` (default 2048): over it, kept captures go first, then the exports of the screens least recently
+imported or verified, and the next import or verify exports them again. Kept captures otherwise stay until the next
+verify or `design_ui_clean`, which always removes them. Kit sync and every import remove font twins no text style, compiled screen or locale font uses.
 `design_ui_status` shows the bookkeeping per screen and in total, and `design_ui_clean` (`dryRun` to only report) runs the
 cleanup now. Do not delete these folders, generated files or font twins by hand.
 

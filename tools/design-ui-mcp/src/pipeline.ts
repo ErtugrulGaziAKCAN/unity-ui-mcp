@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Browser } from "playwright";
 import type { BridgeStatus } from "./bridge.js";
+import { KEPT_CAPTURES_DIR } from "./cache.js";
 import type { DesignUiConfig, UnityStep } from "./config.js";
 import { readThresholds, runCompare, runExport, summarizeIssues, writeReport, writeReportPictures, writeVerdict, type ClassSummary, type Finding, type KitConfig, type ReportPictures, type ViewportClass } from "./exporter.js";
 
@@ -46,19 +47,24 @@ export interface CompareOutcome {
   byClass?: Partial<Record<ViewportClass, ClassSummary>>;
   /**
    * Makes this run the screen's result: writes the report (with the pictures it keeps of failing captures) and
-   * verdict.json, then deletes this run's Unity captures and difference images and the previous run's. Called only once a
-   * verdict exists, right before last-verify.json.
+   * verdict.json, then deletes this run's difference images, the previous run's captures and any captures an earlier
+   * verify kept, and this run's Unity captures unless the comparison was asked to keep them (`keepCaptures`: they move to
+   * `keptCaptures`). Called only once a verdict exists, right before last-verify.json.
    */
   publish?: () => void;
+  /** Where publish() keeps this run's Unity captures (`keepCaptures`); null when it deletes them. */
+  keptCaptures?: string | null;
   /** Drops this run's derived files; the previous report, captures and verdict stay as they were. */
   discard?: () => void;
 }
 /**
  * Compares the Unity captures in `unityDir` (a staging folder) with the goldens in `exportDir`; `publish()` writes the
  * HTML report. `timings`: steps measured before the comparison (import, compile, capture), recorded in the report;
- * `unityDir`: where the captures live once published (default: where they are).
+ * `unityDir`: where the captures live once published (default: where they are); `keepCaptures`: publish() keeps the
+ * run's Unity captures (the whole capture folder: PNGs, boxes, meta and done marker) in the bookkeeping's
+ * KEPT_CAPTURES_DIR next to `unityDir`, for an offline comparison, instead of deleting them.
  */
-export type CompareScreen = (exportDir: string, unityDir: string, reportFile: string, opts?: { timings?: Record<string, number>; unityDir?: string }) => Promise<CompareOutcome>;
+export type CompareScreen = (exportDir: string, unityDir: string, reportFile: string, opts?: { timings?: Record<string, number>; unityDir?: string; keepCaptures?: boolean }) => Promise<CompareOutcome>;
 
 /** The pipeline steps that run inside this server. A null step is not installed in this version. */
 export interface Pipeline {
@@ -93,6 +99,7 @@ export const INSTALLED_PIPELINE: Pipeline = {
     const book = path.dirname(finalUnity);
     const work = path.join(book, "compare"), next = `${work}.next`;
     const pics = path.join(book, "report"), picsNext = `${pics}.next`;
+    const keptDir = opts.keepCaptures ? path.join(book, KEPT_CAPTURES_DIR) : null;
     const rm = (p: string) => fs.rmSync(p, { recursive: true, force: true });
     rm(next);
     rm(picsNext);
@@ -102,7 +109,7 @@ export const INSTALLED_PIPELINE: Pipeline = {
     return {
       pass: v.pass, status: v.status, hidden: v.hidden, topIssues: summarizeIssues(v, 20, { notRun: false }), notRun: v.notRun, compared: v.captures.length,
       extra: v.extra, verdictFile, timings: v.timings, warnings: v.warnings, colour: v.colour ?? null,
-      notSampled: v.captures.reduce((a, c) => a + c.notSampled.length, 0), byClass: v.byClass,
+      notSampled: v.captures.reduce((a, c) => a + c.notSampled.length, 0), byClass: v.byClass, keptCaptures: keptDir,
       publish: () => {
         rm(pics);
         if (fs.existsSync(picsNext)) fs.renameSync(picsNext, pics);
@@ -115,9 +122,14 @@ export const INSTALLED_PIPELINE: Pipeline = {
         rm(work);
         fs.mkdirSync(work, { recursive: true });
         writeVerdict(v, verdictFile);
-        writeReport(v, exportDir, finalUnity, reportFile, kept);
-        // what the report no longer needs: this run's captures and difference images, and the previous run's captures
+        writeReport(v, exportDir, finalUnity, reportFile, kept, { keptCaptures: keptDir ?? undefined });
+        // what the report no longer needs: this run's difference images, the previous run's captures and the captures an
+        // earlier verify kept; this run's captures too, unless asked to keep them
         rm(next);
+        rm(path.join(book, KEPT_CAPTURES_DIR));
+        if (keptDir) {
+          try { fs.renameSync(unityDir, keptDir); } catch { fs.cpSync(unityDir, keptDir, { recursive: true }); }
+        }
         rm(unityDir);
         rm(finalUnity);
       },

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { KEPT_CAPTURES_DIR } from "./cache.js";
 import type { DesignUiConfig, RunnerRoute } from "./config.js";
 import { BOOKKEEPING_DIR, REPORT_FILE, findEntry, folderScreenId, resolveScreen, screenFolders, sourceSha } from "./design.js";
 
@@ -40,11 +41,14 @@ export interface VerifyRecord {
   notRun: string[];
   /** Jobs the design shows in no context (not compared). */
   hidden?: string[];
+  /** Where this run's Unity captures were kept on request (verify's keepCaptures); absent when they were deleted. */
+  keptCaptures?: string;
 }
 
 export const bookkeepingDir = (screenDir: string) => path.join(screenDir, BOOKKEEPING_DIR);
 export const exportDirOf = (screenDir: string) => path.join(screenDir, BOOKKEEPING_DIR, "export");
 export const unityDirOf = (screenDir: string) => path.join(screenDir, BOOKKEEPING_DIR, "unity");
+export const keptCapturesDirOf = (screenDir: string) => path.join(screenDir, BOOKKEEPING_DIR, KEPT_CAPTURES_DIR);
 export const reportPathOf = (screenDir: string) => path.join(screenDir, REPORT_FILE);
 const importFile = (screenDir: string) => path.join(screenDir, BOOKKEEPING_DIR, "last-import.json");
 const verifyFile = (screenDir: string) => path.join(screenDir, BOOKKEEPING_DIR, "last-verify.json");

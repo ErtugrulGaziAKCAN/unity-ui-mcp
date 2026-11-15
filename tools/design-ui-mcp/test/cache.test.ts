@@ -109,6 +109,30 @@ describe("bookkeeping cleanup", () => {
     expect(planClean(d.root, 1, "a").removals.map((r) => path.basename(r.path)).sort()).toEqual(["diff", "export", "unity"]);
   });
 
+  it("captures a verify kept on request: the automatic cleanup keeps them within the budget and removes them first over it; design_ui_clean removes them", () => {
+    const d = designRoot();
+    const old = d.screen("old", { importedAt: "2026-11-01T00:00:00.000Z", exportKB: 300 });
+    const fresh = d.screen("fresh", { importedAt: "2026-11-05T00:00:00.000Z", exportKB: 300 });
+    for (const dir of [old, fresh]) {
+      fs.mkdirSync(path.join(dir, ".design-ui", "kept-captures"));
+      fs.writeFileSync(path.join(dir, ".design-ui", "kept-captures", "default@64x48.png"), Buffer.alloc(300 * KB));
+    }
+    const names = (plan: { removals: { path: string; screen: string }[] }) => plan.removals.map((r) => `${r.screen}/${path.basename(r.path)}`).sort();
+    // within the budget, the automatic cleanup keeps them; the budget counts them
+    const auto = planClean(d.root, 2048);
+    expect(names(auto)).toEqual(["fresh/diff", "fresh/unity", "old/diff", "old/unity"]);
+    expect(auto.before).toBeGreaterThan(1200 * KB);
+    // over the budget they go before any export (oldest screen first), and an export only if that is not enough
+    expect(names(planClean(d.root, 0.7))).toEqual(["fresh/diff", "fresh/kept-captures", "fresh/unity", "old/diff", "old/kept-captures", "old/unity"]);
+    expect(names(planClean(d.root, 0.95))).toEqual(["fresh/diff", "fresh/unity", "old/diff", "old/kept-captures", "old/unity"]);
+    // asked for (design_ui_clean), they go whatever the budget
+    expect(names(planClean(d.root, 2048, "fresh", { kept: true }))).toEqual(["fresh/diff", "fresh/kept-captures", "fresh/unity"]);
+    const done = markBusy(old, "verify");
+    try {
+      expect(names(planClean(d.root, 2048, undefined, { kept: true })).filter((n) => n.startsWith("old/"))).toEqual([]);
+    } finally { done(); }
+  });
+
   it("skips a removal whose screen a run started on after the plan was made", () => {
     const d = designRoot();
     const dir = d.screen("late");

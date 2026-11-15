@@ -6,7 +6,7 @@ import { requireConfig, withProgress, type ServerContext } from "../context.js";
 import { designPath, exportedPage, resolveScreen, sha256, sourceSha } from "../design.js";
 import { classLines } from "../exporter.js";
 import { MISSING, unityStep } from "../pipeline.js";
-import { FAILED_RUNS_KEPT as KEPT, markBusy } from "../cache.js";
+import { bytesOf, FAILED_RUNS_KEPT as KEPT, mb } from "../cache.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { afterRun, whileBusy } from "./clean.js";
 import { runUnity, UnityRunnerError } from "../runner.js";
@@ -20,10 +20,17 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       "Captures an imported screen in Unity (isolated batch run by default, never the open Editor's Play mode), compares it " +
       "with the design's goldens and returns the verdict, the report path (<screen>/report.html) and the top issues. A " +
       "capture that cannot run gives no verdict; only this tool's verdict counts as a pass. A page path verifies that page " +
-      "only when it is the screen folder's last import.",
-    inputSchema: { screen: z.string().min(1).describe(SCREEN_ARG) },
+      "only when it is the screen folder's last import. keepCaptures keeps the run's Unity captures in the screen's bookkeeping " +
+      "(<screen>/.design-ui/kept-captures) to compare again offline; the next verify or design_ui_clean removes them.",
+    inputSchema: {
+      screen: z.string().min(1).describe(SCREEN_ARG),
+      keepCaptures: z.boolean().optional().describe(
+        "Keep this run's Unity captures (PNGs, boxes.json, boxes.meta.json) in <screen>/.design-ui/kept-captures once the verdict is " +
+        "written, for an offline comparison (design-export compare <export> --unity <kept-captures> --report <file>), instead of " +
+        "deleting them (default false). They count toward cacheBudgetMB; the next verify and design_ui_clean remove them."),
+    },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, async ({ screen: screenArg }, extra) => {
+  }, async ({ screen: screenArg, keepCaptures }, extra) => {
     const t = new Timings();
     return guarded(t, async () => {
       const cfg = requireConfig(ctx);
@@ -116,7 +123,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         const steps: Record<string, number> = { ...(imp.timings ?? {}), capture: t.steps.capture };
         let v;
         try {
-          v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir }));
+          v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir, keepCaptures: keepCaptures === true }));
         } catch (e) {
           const evidence = keep(`the comparison failed: ${(e as Error).message}`, run); // e.g. an unreadable boxes.json
           return toolResult(`Comparison of ${screen} failed: ${(e as Error).message}; no verdict.${kept(evidence)}`, { screen, verdict: null, evidence, timings: t.done() }, true);
@@ -135,9 +142,12 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         const verdict = v.status ?? (v.pass && v.notRun.length === 0 && hidden.length === 0 ? "pass" : "fail");
         // the report and last-verify.json are written together, only now that the verdict is decided
         if (v.publish) v.publish(); else dropStaging();
+        // the captures kept on request (keepCaptures), for an offline comparison
+        const keptDir = v.publish && v.keptCaptures && fs.existsSync(v.keptCaptures) ? v.keptCaptures : null;
+        const keptRun = keptDir ? { dir: keptDir, bytes: bytesOf(keptDir) } : null;
         writeLastVerify(dir, {
           screen, ...(entry ? { entry } : {}), sourceSha: imp.sourceSha, irSha: imp.irSha, verdict, reportPath, verifiedAt: new Date().toISOString(),
-          topIssues: v.topIssues, notRun: v.notRun, hidden,
+          topIssues: v.topIssues, notRun: v.notRun, hidden, ...(keptRun ? { keptCaptures: keptRun.dir } : {}),
         });
         const lines = [
           `${verdict.toUpperCase()}: ${screen} (report: ${reportPath})`,
@@ -150,10 +160,14 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
           ...(v.colour?.space === "Linear" && v.colour.path !== "linear-panel"
             ? ["Colour: Linear colour space, captured through the gamma composite: in game this holds for panels rendered through DesignUiGammaComposite"] : []),
           ...(v.notSampled ? [`Backgrounds not sampled (every point covered or on text): ${v.notSampled}`] : []),
+          ...(keptRun ? [`Unity captures kept in ${keptRun.dir} (${mb(keptRun.bytes)}; counted by cacheBudgetMB, removed by the next verify or design_ui_clean). ` +
+            `Compare them again offline: design-export compare ${exportDir} --unity ${keptRun.dir} --report <file.html>`] : []),
+          ...(keepCaptures === true && !keptRun ? ["Unity captures were not kept: this comparison step cannot keep them."] : []),
         ];
         return toolResult(lines.join("\n"), {
           screen, entry, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun, hidden,
-          extra: v.extra ?? [], warnings: v.warnings ?? [], colour: v.colour ?? null, notSampled: v.notSampled ?? 0, byClass: v.byClass ?? {}, steps: v.timings ?? steps, timings: t.done(),
+          extra: v.extra ?? [], warnings: v.warnings ?? [], colour: v.colour ?? null, notSampled: v.notSampled ?? 0, byClass: v.byClass ?? {}, keptCaptures: keptRun,
+          steps: v.timings ?? steps, timings: t.done(),
         }, verdict !== "pass");
       }));
     });

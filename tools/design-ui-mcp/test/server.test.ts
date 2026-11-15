@@ -1422,6 +1422,43 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(screenStatus(readConfig(p.dir), "clean-screen").sourceSha).toBe(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8")).sourceSha);
   });
 
+  it("keeps the run's Unity captures on request (keepCaptures): in the bookkeeping, counted by the budget, removed by design_ui_clean and the next verify", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.writeConfig(copyCapture());
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const kept = path.join(dir, ".design-ui", "kept-captures");
+    const client = await serverFor(p.dir, goldenPipeline());
+    expect((await call(client, "design_ui_import", { design: "clean-screen" })).isError).toBeFalsy();
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen", keepCaptures: true });
+    expect(r.text).toMatch(/^PASS: clean-screen/);
+    // the whole capture folder, so the comparison can run again offline (design-export compare <export> --unity <kept>)
+    expect(fs.readdirSync(kept).sort()).toEqual(["boxes.json", "capture-done.json", "default@64x48.png", "hover@64x48.png"]);
+    expect(r.data.keptCaptures).toEqual({ dir: kept, bytes: expect.any(Number) });
+    expect(r.text).toContain(`Unity captures kept in ${kept}`);
+    expect(r.text).toMatch(/design-export compare .*--unity/);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"), "utf8")).keptCaptures).toBe(kept);
+    // the report says where they are, not that they were deleted
+    expect(fs.readFileSync(path.join(dir, "report.html"), "utf8")).toContain("kept on request");
+    // the automatic cleanup after the run left them (within the budget); the budget counts them
+    expect(r.data.cleanup).toBeUndefined();
+    const status = await call(client, "design_ui_clean", { screen: "clean-screen", dryRun: true });
+    expect(status.text).toContain(".design-ui/kept-captures");
+    expect(status.data.before).toBeGreaterThanOrEqual(r.data.keptCaptures.bytes);
+
+    // the next verify removes them (and keeps none of its own unless asked)
+    expect((await call(client, "design_ui_verify", { screen: "clean-screen" })).text).toMatch(/^PASS/);
+    expect(fs.existsSync(kept)).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"), "utf8")).keptCaptures).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir, "report.html"), "utf8")).not.toContain("kept on request");
+
+    // design_ui_clean removes them
+    expect((await call(client, "design_ui_verify", { screen: "clean-screen", keepCaptures: true })).data.keptCaptures.dir).toBe(kept);
+    const clean = await call(client, "design_ui_clean", { screen: "clean-screen" });
+    expect(clean.isError).toBeFalsy();
+    expect(clean.text).toContain(".design-ui/kept-captures");
+    expect(fs.existsSync(kept)).toBe(false);
+  });
+
   it("fails a screen with a capture Unity did not produce, and gives no verdict when Unity produced nothing", async () => {
     const p = tempProject({ prefer: "command" });
     p.writeConfig(copyCapture(["hover@64x48.png"]));

@@ -236,8 +236,9 @@ const SCRIPT = `
  * Writes the HTML report for a screen verdict. Image paths are relative to `outFile`'s folder. With `pictures`
  * (writeReportPictures), the report shows the pictures kept of failing captures (thumbnails and issue crops) and none of
  * passing ones, so the Unity captures and difference images can be deleted; without, it links every capture.
+ * `keptCaptures`: where the run's Unity captures were kept on request (the MCP verify's keepCaptures), said in the report.
  */
-export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: string, outFile: string, pictures?: ReportPictures): void {
+export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: string, outFile: string, pictures?: ReportPictures, opts: { keptCaptures?: string } = {}): void {
   // the crop limit the pictures were made with: the count of distinct crops when some were skipped
   const cropLimit = pictures && [...pictures.values()].some((p) => p.cropsSkipped) ? new Set([...pictures.values()].flatMap((p) => p.crops.map((c) => c.design))).size : 0;
   const dir = path.dirname(path.resolve(outFile));
@@ -292,7 +293,9 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
 <p class="muted">Unity captures compared with the design's goldens, capture by capture (states, pseudo-states, viewports, animation samples). The screen passes only when every capture runs and passes; a job the design hides in every context has no golden, so a screen with one is incomplete.</p>
 ${v.warnings.length ? `<div class="warning" role="alert"><strong>Checks skipped for this screen</strong><ul>${v.warnings.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
 <p class="muted">Effective tolerance: boxes ±${v.thresholds.boxPx} px. Element SSIM and every colour sample use the Unity image offset by up to 1 px where that matches better, so a move or size change within the box allowance cannot fail them; a 2-px displacement, another shape, a missing shadow or a wrong colour still does. ${pictures
-    ? "The report keeps pictures of its failing captures only (thumbnails of the design, Unity and the difference, and a crop of each issue); the Unity captures and difference images of this run were deleted after it was written."
+    ? `The report keeps pictures of its failing captures only (thumbnails of the design, Unity and the difference, and a crop of each issue); ${opts.keptCaptures
+      ? `this run's Unity captures were kept on request in ${esc(path.relative(dir, path.resolve(opts.keptCaptures)) || ".")} (design_ui_clean or the next verify removes them) and its difference images deleted after it was written.`
+      : "the Unity captures and difference images of this run were deleted after it was written."}`
     : `Images are linked, not embedded: keep this report next to the design captures (${esc(path.relative(dir, path.join(path.resolve(exportDir), "goldens")) || ".")}), the Unity captures (${esc(path.relative(dir, path.resolve(unityDir)) || ".")}) and the difference images.`}</p>
 <div class="cards">
   <div class="card"><div class="v">${v.captures.length + v.notRun.length + hidden.length}</div><div class="k">captures in the design</div></div>

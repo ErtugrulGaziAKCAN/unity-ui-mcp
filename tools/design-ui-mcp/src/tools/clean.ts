@@ -50,10 +50,11 @@ export function registerClean(server: McpServer, ctx: ServerContext): void {
     title: "Clean the screens' bookkeeping",
     description:
       "Reports and removes what the server's own cleanup would remove from the screens' bookkeeping (<designRoot>/<screen>/.design-ui/): " +
-      "Unity captures and difference images of finished verifications, staging folders left behind, failed runs beyond the newest 3, " +
-      "and, while the bookkeeping is over cacheBudgetMB, the exports of the screens least recently imported or verified (the next " +
-      "import or verify exports them again). Records, design files and a screen whose import or verify is running are never touched. " +
-      "The cleanup also runs by itself after every import and verify: call this when the user asks about disk use, with dryRun to only report.",
+      "Unity captures and difference images of finished verifications, the captures a verify kept on request (keepCaptures), staging " +
+      "folders left behind, failed runs beyond the newest 3, and, while the bookkeeping is over cacheBudgetMB, the exports of the screens " +
+      "least recently imported or verified (the next import or verify exports them again). Records, design files and a screen whose " +
+      "import or verify is running are never touched. The cleanup also runs by itself after every import and verify (it keeps kept " +
+      "captures unless the bookkeeping is over the budget): call this when the user asks about disk use, with dryRun to only report.",
     inputSchema: {
       screen: z.string().min(1).optional().describe(`Only this screen. ${SCREEN_ARG}`),
       dryRun: z.boolean().optional().describe("Only report what would be removed (default false)."),
@@ -64,7 +65,8 @@ export function registerClean(server: McpServer, ctx: ServerContext): void {
     return guarded(t, async () => {
       const cfg = requireConfig(ctx);
       const folder = screen !== undefined ? path.basename(resolveScreen(screen, cfg.designRoot).dir) : undefined;
-      const plan: CleanPlan = t.sync("plan", () => planClean(cfg.designRoot, cfg.cacheBudgetMB, folder));
+      // asked for: the captures a verify kept on request go too
+      const plan: CleanPlan = t.sync("plan", () => planClean(cfg.designRoot, cfg.cacheBudgetMB, folder, { kept: true }));
       const scope = folder ? `screen ${folder}` : `designRoot ${cfg.designRoot}`;
       const head = `${scope}: ${mb(plan.before)} of bookkeeping (budget ${mb(plan.budget)} for designRoot)`;
       if (dryRun === true || plan.removals.length === 0) {
