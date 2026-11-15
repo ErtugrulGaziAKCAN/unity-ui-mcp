@@ -132,9 +132,9 @@ namespace DesignUi.Editor.Tests
             return doc;
         }
 
-        static FontDefinition BodyBold()
+        static FontDefinition BodyBold(string name = "Kept Table Bold")
         {
-            var bold = FontFixture.Kept(FontFixture.BoldTtf, "Kept Table Bold");
+            var bold = FontFixture.Kept(FontFixture.BoldTtf, name);
             var twin = FontTwinGenerator.GetOrCreateTwin(bold, FontFixture.KeptFolder + "/FitTwins", FontTwinGenerator.LineBox.For(24, 32));
             DesignText.Prepare(twin, string.Concat(Words) + " ");
             return FontDefinition.FromSDFFont(twin);
@@ -286,6 +286,79 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
+        /// Ruling R134: a text whose font lacks its characters when the fit first measures it still lays out at the browser's
+        /// width. The fit checks only the face that draws the text (<see cref="DesignText.DrawingFace"/>: the weight table's
+        /// bold face for a bold text, the font itself for a normal one), so a face of the weight table that never draws it (the
+        /// bold face under a normal text, which nothing ever gives the characters) does not hold it at UI Toolkit's width for
+        /// good; a face that lacks the characters gets them when UI Toolkit lays the text out or draws it, and the fit measures
+        /// once more after that draw, with their kerning pairs: the same width as a bold text whose characters and pairs were
+        /// added before it was laid out (the compiler's and <see cref="DesignText.SetText"/>'s path).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AText_WhoseFaceLacksItsCharactersAtTheFirstMeasure_GetsTheBrowsersWidthAfterTheDraw()
+        {
+            const string text = "BÖLÜM BAŞLIĞI AVATAR";
+            UnityEngine.TextCore.Text.FontAsset Twin(string name)
+            {
+                var regular = FontFixture.Kept(FontFixture.RegularTtf, name);
+                var bold = FontFixture.Kept(FontFixture.BoldTtf, name + " Bold");
+                if (regular.fontWeightTable[7].regularTypeface != bold) FontFixture.SetWeight(regular, 700, bold);
+                return FontTwinGenerator.GetOrCreateTwin(regular, FontFixture.KeptTwinFolder + "/R134");
+            }
+            var twin = Twin("Kept R134");
+            var boldTwin = twin.fontWeightTable[7].regularTypeface;
+            Assert.IsNotNull(boldTwin, "the bold face in the twin's weight table");
+            Assert.AreSame(boldTwin, DesignText.DrawingFace(twin, FontStyle.Bold));
+            Assert.AreSame(twin, DesignText.DrawingFace(twin, FontStyle.Normal));
+            // the normal face holds the text with its kerning pairs, the bold face none of it
+            twin.TryAddCharacters(text, out _, true);
+            DesignText.CompleteFeatures(twin);
+            DesignText.ClearPairFlags(twin);
+            Assert.IsTrue(DesignText.Drawable(twin, FontStyle.Normal, text));
+            Assert.IsFalse(DesignText.Drawable(twin, FontStyle.Bold, text), "the bold face lacks the text");
+
+            var doc = Document(2560, 1440);
+            yield return Frames(2);
+            DesignLabel Add(UnityEngine.TextCore.Text.FontAsset font, FontStyle style, float top)
+            {
+                var l = new DesignLabel(text);
+                l.style.position = Position.Absolute;
+                l.style.left = 100;
+                l.style.top = top;
+                l.style.fontSize = 24;
+                l.style.unityFontDefinition = FontDefinition.FromSDFFont(font);
+                l.style.unityFontStyleAndWeight = style;
+                doc.rootVisualElement.Add(l);
+                return l;
+            }
+            // a normal text: its bold face never draws it, so never gets the characters
+            var normal = Add(twin, FontStyle.Normal, 100);
+            yield return Frames(8);
+            Assert.IsFalse(DesignText.Drawable(twin, FontStyle.Bold, text), "nothing gave the bold face the text");
+            Assert.IsFalse(float.IsNaN(normal.Fit.Width), "a face of the weight table that does not draw the text does not hold it at UI Toolkit's width");
+            Assert.AreEqual(DesignTextFit.Snap(normal.Fit.TextWidth(), 1), normal.Fit.Width, 1e-3);
+            Assert.AreEqual(normal.Fit.Width, normal.layout.width, 1e-3, "laid out at it");
+
+            // a bold text: the face that draws it lacks the characters at the first measure
+            var bold = Add(twin, FontStyle.Bold, 200);
+            yield return Frames(8);
+            Assert.IsTrue(DesignText.Drawable(twin, FontStyle.Bold, text), "UI Toolkit gave the bold face the text when it laid it out or drew it");
+            Assert.IsFalse(float.IsNaN(bold.Fit.Width), "measured once more after the draw");
+            Assert.AreEqual(DesignTextFit.Snap(bold.Fit.TextWidth(), 1), bold.Fit.Width, 1e-3);
+            Assert.AreEqual(bold.Fit.Width, bold.layout.width, 1e-3, "laid out at it");
+
+            // the same bold text on a twin whose faces got the characters and their pairs before it was laid out
+            var prepared = Twin("Kept R134 Prepared");
+            DesignText.Prepare(prepared, text);
+            Assert.IsTrue(DesignText.Drawable(prepared, FontStyle.Bold, text));
+            var reference = Add(prepared, FontStyle.Bold, 300);
+            yield return Frames(8);
+            Assert.IsFalse(float.IsNaN(reference.Fit.Width));
+            Assert.AreEqual(reference.Fit.TextWidth(), bold.Fit.TextWidth(), 1e-3, "the same text width: the pairs of the characters the draw added count");
+            Assert.AreEqual(reference.Fit.Width, bold.Fit.Width, 1e-3);
+        }
+
+        /// <summary>
         /// A row of bordered tabs at 1600×900 just too short for the golden's widths: the golden's box of each (Chromium's
         /// border on whole device pixels, 4.8 panel px a side, the text ceiled on the 0.625 grid) is wider than UI Toolkit's own
         /// (borders 4, the text on the 0.75 grid), and the row's width lies between the two sums. The row takes the exact
@@ -296,7 +369,10 @@ namespace DesignUi.Editor.Tests
         [UnityTest]
         public IEnumerator ATightRowOfBorderedTabs_AtAScaledViewport_KeepsItsWidths()
         {
-            var font = BodyBold();
+            // a twin of its own: the shared one can come from earlier tests with characters UI Toolkit added while laying text
+            // out, whose kerning pairs came later, and UI Toolkit's own widths keep that unkerned layout (the fit measures the
+            // kerned text since ruling R134), so the plain row would not be UI Toolkit's own widths of the prepared text
+            var font = BodyBold("Kept Tabs Bold");
             var doc = Document(1600, 900);
             yield return Frames(2);
             var screen = new DesignScreen { ExactScales = DesignViewportScales.Encode(Exact) };

@@ -80,6 +80,35 @@ namespace DesignUi
             return sb.ToString();
         }
 
+        /// <summary>
+        /// The face UI Toolkit draws <paramref name="font"/>'s text with in <paramref name="style"/> (<c>-unity-font-style</c>, which
+        /// picks the 400 and 700 faces, upright and italic): TextCore takes the weight table's 700 face for bold, its italic face of
+        /// 400 (of 700 for bold italic) for italic, and the font itself for normal text or when that entry is empty (it then
+        /// synthesizes the style from the font). Reads the public weight table only.
+        /// </summary>
+        public static FontAsset DrawingFace(FontAsset font, UnityEngine.FontStyle style)
+        {
+            if (font == null) return null;
+            bool bold = style == UnityEngine.FontStyle.Bold || style == UnityEngine.FontStyle.BoldAndItalic;
+            bool italic = style == UnityEngine.FontStyle.Italic || style == UnityEngine.FontStyle.BoldAndItalic;
+            if (!bold && !italic) return font;
+            var table = font.fontWeightTable;
+            int i = bold ? 7 : 4;
+            if (table == null || table.Length <= i) return font;
+            var face = italic ? table[i].italicTypeface : table[i].regularTypeface;
+            return face != null ? face : font;
+        }
+
+        /// <summary>
+        /// Whether the face that draws <paramref name="font"/>'s text in <paramref name="style"/> (<see cref="DrawingFace"/>)
+        /// already has every character (no allocation): measuring the text adds no glyph to it.
+        /// </summary>
+        internal static bool Drawable(FontAsset font, UnityEngine.FontStyle style, string text)
+        {
+            var face = DrawingFace(font, style);
+            return face != null && Has(face, text);
+        }
+
         /// <summary>Whether the font and every face of its weight table already have every character (no allocation).</summary>
         internal static bool AllPresent(FontAsset font, string text)
         {

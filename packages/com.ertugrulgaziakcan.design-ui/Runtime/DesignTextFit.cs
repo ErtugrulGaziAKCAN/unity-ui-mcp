@@ -45,7 +45,9 @@ namespace DesignUi
     /// borders as the golden lays them out (<see cref="BrowserWidth"/>, which counts letter-spacing as the golden does),
     /// which layout keeps exactly (only each edge is put on the device grid), and <c>white-space: nowrap</c> (<c>pre</c> for a text that keeps its spaces), because a
     /// box as wide as its text must not break it when the grid takes a fraction of a pixel off. It is measured again when
-    /// the text, the element's styles (a state, the locale's fonts, a text size) or its geometry change. A text the design
+    /// the text, the element's styles (a state, the locale's fonts, a text size) or its geometry change, and once more after
+    /// the next draw when the face that draws the text (<see cref="DesignText.DrawingFace"/>) lacked one of its characters
+    /// or had just gained them (ruling R134). A text the design
     /// lets wrap keeps wrapping where its line does not fit. In a row the layout shows that (it holds the element narrower
     /// than its text) and the inline width and white-space come off (UI Toolkit's own layout, which wraps it: a row that a
     /// column sizes to its content does not shrink an explicit flex basis, so the browser's width cannot stay as the basis).
@@ -119,10 +121,8 @@ namespace DesignUi
         {
             var e = m_Element;
             var text = e.text;
+            m_Lacking = null;
             if (!Supported || e.panel == null || string.IsNullOrEmpty(text)) return float.NaN;
-            // only text whose characters the font holds: a measure that adds glyphs to a dynamic font queues its atlas update
-            // outside the panel's repaint (a font deleted before the next repaint breaks TextCore's queue), and a glyph added
-            // now would bring its kerning pairs only later; the element keeps UI Toolkit's width until the text is drawn
             var rs = e.resolvedStyle;
             var font = rs.unityFontDefinition.fontAsset;
             if (font == null || font.atlasTexture == null) return float.NaN;
@@ -130,12 +130,24 @@ namespace DesignUi
             // colour, a moved parent) measure nothing
             float size = rs.fontSize, letter = rs.letterSpacing, word = rs.wordSpacing, ppp = e.scaledPixelsPerPoint;
             var fontStyle = rs.unityFontStyleAndWeight;
-            // (a font that gained characters since may have gained their kerning pairs too)
-            int characters = font.characterTable.Count;
+            // the face that draws the text in its style (the weight table's bold or italic face, else the font): only its glyphs
+            // count (ruling R134; a face of the weight table that never draws this text never gets its characters). A face that
+            // gained characters since may have gained their kerning pairs too
+            var face = DesignText.DrawingFace(font, fontStyle);
+            int characters = face.characterTable.Count;
             if (!float.IsNaN(m_Measured) && string.Equals(text, m_MeasuredText, StringComparison.Ordinal) && ReferenceEquals(font, m_MeasuredFont) && size == m_MeasuredSize &&
                 letter == m_MeasuredLetter && word == m_MeasuredWord && ppp == m_MeasuredPpp && fontStyle == m_MeasuredStyle && characters == m_MeasuredCharacters)
                 return m_Measured;
-            if (!DesignText.AllPresent(font, text)) return float.NaN;
+            // only text whose characters that face holds: a measure that adds glyphs to a dynamic font queues its atlas update
+            // outside the panel's repaint (a font deleted before the next repaint breaks TextCore's queue), and a glyph added
+            // now would bring its kerning pairs only later. UI Toolkit adds them when it lays the text out or draws it, and the
+            // fit measures again after that draw (MeasureAfterDraw)
+            if (!DesignText.Drawable(font, fontStyle, text))
+            {
+                m_Lacking = face;
+                m_LackingCharacters = characters;
+                return float.NaN;
+            }
             Vector2 rounded;
             try { rounded = e.MeasureTextSize(text, 0, VisualElement.MeasureMode.Undefined, 0, VisualElement.MeasureMode.Undefined); }
             catch (MissingReferenceException) { return float.NaN; }
@@ -153,7 +165,50 @@ namespace DesignUi
             m_MeasuredStyle = fontStyle;
             m_MeasuredCharacters = characters;
             Measures++;
+            if (m_AfterLacking)
+            {
+                // the face's glyphs arrived since a measure found it lacking (UI Toolkit added them while laying the text out or
+                // drawing it): their kerning pairs come through TextCore's update queue, so measure once more after the next draw
+                m_AfterLacking = false;
+                m_Confirm = true;
+            }
             return width;
+        }
+
+        /// <summary>The face that lacked a character of the text at the last measure (null: none) and its character count then.</summary>
+        UnityEngine.TextCore.Text.FontAsset m_Lacking, m_RetriedFace;
+        int m_LackingCharacters, m_RetriedCharacters = -1;
+        bool m_AfterLacking, m_Confirm;
+        IVisualElementScheduledItem m_AfterDraw;
+
+        /// <summary>
+        /// Measures once more at the panel's next update, after this frame's draw (ruling R134), when the face that draws the
+        /// text lacked a character of it (UI Toolkit adds it to a dynamic face when it lays the text out or draws it, and a
+        /// line-box variant's re-link, <see cref="FontTwinLink"/>, takes back characters the variant added itself) or when the
+        /// face just gained them (their kerning pairs follow through TextCore's update queue). A face still lacking them is
+        /// measured again only after its glyph set changed: a face that cannot add the character (a static one, or one whose
+        /// file lacks it, the text drawn from a fallback) leaves the element at UI Toolkit's own width without polling.
+        /// </summary>
+        void MeasureAfterDraw()
+        {
+            if (m_AfterDraw != null || m_Element.panel == null) return;
+            if (m_Lacking != null)
+            {
+                if (ReferenceEquals(m_Lacking, m_RetriedFace) && m_LackingCharacters == m_RetriedCharacters) return;
+                m_RetriedFace = m_Lacking;
+                m_RetriedCharacters = m_LackingCharacters;
+                m_AfterLacking = true;
+            }
+            else if (!m_Confirm) return;
+            m_AfterDraw = m_Element.schedule.Execute(() =>
+            {
+                m_AfterDraw = null;
+                // the confirming measure reads the text again whatever the cache holds (the pairs change no glyph count)
+                if (m_Confirm) { m_Confirm = false; m_Measured = float.NaN; }
+                Update();
+            });
+            // a runtime panel in Edit mode updates only when something on it changed
+            m_Element.MarkDirtyRepaint();
         }
 
         float m_Measured = float.NaN, m_MeasuredRounded, m_MeasuredSize, m_MeasuredLetter, m_MeasuredWord, m_MeasuredPpp;
@@ -173,8 +228,11 @@ namespace DesignUi
             if (float.IsNaN(text))
             {
                 Release();
+                if (m_Lacking != null) MeasureAfterDraw();
                 return;
             }
+            m_RetriedFace = null;
+            if (m_Confirm) MeasureAfterDraw();
             var rs = e.resolvedStyle;
             double scale = DesignScaleOf(e);
             float box = BrowserWidth(text, rs, scale, e.scaledPixelsPerPoint);
