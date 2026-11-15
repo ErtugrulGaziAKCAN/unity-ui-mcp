@@ -688,6 +688,22 @@ describe("text cut by its box: clipped line boxes (U-CSS-047) and words wider th
     expect(f.map((x) => x.path)).toEqual(["[data-u-screen=s] > div:0 > p:0"]);
     expect(f[0].detail).toMatch(/36 px tall/);
   });
+  it("U-CSS-047: a box inside a scaled container is judged in the same space as its text: a box of its line height passes", async () => {
+    const box = `display:flex;flex-direction:row;align-items:center;flex-shrink:0;align-self:flex-start;padding:0 8px;height:24px;overflow:hidden`;
+    const f = await ids(`<div class="scaled"><div class="fits">${text("a")}</div></div><div class="scaled"><div class="short">${text("b")}</div></div>`,
+      `.scaled{display:flex;flex-direction:column;flex-shrink:0;align-self:flex-start;margin-bottom:16px;transform:scale(0.9);transform-origin:0 0}
+       .fits{${box}} .short{${box};height:20px}`, "U-CSS-047");
+    expect(f.map((x) => x.path)).toEqual(["[data-u-screen=s] > div:1 > div:0 > p:0"]);
+  });
+
+  it("U-CSS-047: a text offset in a box exactly its line height (a top padding) is cut at the box's edge: an error", async () => {
+    const f = await ids(`<div class="offset">${text("a", "Going", "Gyç")}</div><div class="even">${text("b", "Going", "Gyç")}</div>`,
+      `.offset,.even{display:flex;flex-direction:row;align-items:center;flex-shrink:0;align-self:flex-start;height:24px;overflow:hidden;margin-bottom:16px}
+       .offset{padding-top:4px} .even{padding:0 8px}`, "U-CSS-047");
+    expect(f.map((x) => x.path)).toEqual(["[data-u-screen=s] > div:0 > p:0"]);
+    expect(f[0].detail).toMatch(/2 px at the bottom/);
+  });
+
   it("W-TEXT-001: a word wider than its wrapping box is a warning naming the quotation mark the advanced generator breaks after; a box that fits it and a nowrap text are not", async () => {
     const box = `flex-shrink:0;align-self:flex-start;margin-bottom:16px`;
     const f = await ids(
