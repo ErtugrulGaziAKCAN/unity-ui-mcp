@@ -510,7 +510,9 @@ describe("captures", () => {
           if (Math.max(...png.px(x, y).map((v, k) => Math.abs(v - [0x0b, 0x1f, 0x26][k]))) > 40) right = Math.max(right, x + 1);
         return right;
       };
-      for (const id of ["ellipsis", "cut-kern", "cut-spaced"]) {
+      // fractional boxes just past the threshold of 4 "W" (80 + the ellipsis's 16.38), one with padding: the cut's scale is
+      // exactly 1 without a transform, so the record keeps the 4 Chromium draws (fix round 3, N7)
+      for (const id of ["ellipsis", "cut-kern", "cut-spaced", "sweep-1", "sweep-2", "sweep-3", "sweep-4"]) {
         const cut = b.elements[id].lines[0].ellipsis;
         expect(cut, `${id} at ${vp[0]}`).toBeDefined();
         const right = inkRight(id);
@@ -525,8 +527,10 @@ describe("captures", () => {
       const narrow = b.elements["cut-narrow"].lines[0].ellipsis;
       expect(narrow, "a box narrower than its first letter keeps it").toBeDefined();
       expect(narrow!.at - b.elements["cut-narrow"].x).toBeCloseTo(narrow!.last, 5);
-      // a line that fits, wraps or is clipped without an ellipsis records none
-      for (const id of ["lh7", "clamp", "mixed", "glow"]) for (const l of b.elements[id].lines) expect(l.ellipsis, id).toBeUndefined();
+      for (const id of ["sweep-1", "sweep-2", "sweep-3", "sweep-4"]) expect(b.elements[id].lines[0].ellipsis!.at - b.elements[id].x, `${id}: 4 W`).toBeCloseTo(80 * s, 3);
+      // a line that fits, wraps or is clipped without an ellipsis records none; nor does one with a right-to-left run (its
+      // graphemes do not run left to right) or a stretched face (fix round 3, N8)
+      for (const id of ["lh7", "clamp", "mixed", "glow", "cut-bidi", "cut-stretch"]) for (const l of b.elements[id].lines) expect(l.ellipsis, id).toBeUndefined();
       // regular, bold and a larger span share the first line's baseline
       const mixed = b.elements.mixed.lines;
       expect(mixed).toHaveLength(2);

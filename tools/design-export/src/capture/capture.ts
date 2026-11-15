@@ -457,12 +457,17 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
    * `last` and `next` the in-line advances of the last kept and the first dropped grapheme, `width` the ellipsis's own
    * advance (no letter-spacing). Chromium keeps the longest prefix of whole graphemes whose in-line end plus that width fits
    * the content box, at least the first grapheme (CSS Overflow: the first character of a line is clipped, not ellipsed).
-   * Null when the element does not cut its line: no `text-overflow: ellipsis`, a visible overflow, a line that wraps or fits,
-   * right-to-left text, or text with a nested IR element.
+   * Null (no record, so the strict extent check) when the element does not cut its line (no `text-overflow: ellipsis`, a
+   * visible overflow, a line that wraps or fits) or when the record could be wrong: a right-to-left element, text with a
+   * right-to-left character or a bidi control (its graphemes do not run left to right), graphemes whose x does not grow,
+   * a face stretched by `font-stretch` (the canvas measures the normal one), an element drawn rotated, or text with a
+   * nested IR element.
    */
+  const RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069\u061C]|[\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u;
   const ellipsisOf = (el: Element, texts: Text[]) => {
     const cs = getComputedStyle(el);
     if (cs.textOverflow !== "ellipsis" || cs.overflowX === "visible" || cs.direction !== "ltr" || !texts.length) return null;
+    if (cs.fontStretch !== "100%" || texts.some((n) => RTL.test(n.data)) || rotation(el) !== 0) return null;
     const clusters: { l: number; r: number }[] = [];
     const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
     const range = document.createRange();
@@ -476,8 +481,21 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
       }
     }
     if (clusters.length < 2) return null;
-    const b = el.getBoundingClientRect(), own = (el as HTMLElement).offsetWidth;
-    const k = own > 0 ? b.width / own : 1; // a transform's scale: the rects are drawn, the styles are layout px
+    for (let i = 1; i < clusters.length; i++) if (clusters[i].l < clusters[i - 1].l - 0.5) return null; // not left to right
+    // a transform's scale (the rects are drawn, the styles are layout px): exactly 1 without one; else the drawn width over
+    // the unrounded layout width (offsetWidth is rounded, which moved the cut of a fractional box by a grapheme)
+    const b = el.getBoundingClientRect();
+    let k = 1;
+    for (let x: Element | null = el; x && x !== document.documentElement; x = x.parentElement) {
+      const c = getComputedStyle(x);
+      if ((c.transform && c.transform !== "none") || (c.scale && c.scale !== "none")) {
+        const px = (v: string) => parseFloat(v) || 0;
+        const layout = cs.boxSizing === "border-box" ? px(cs.width)
+          : px(cs.width) + px(cs.paddingLeft) + px(cs.paddingRight) + px(cs.borderLeftWidth) + px(cs.borderRightWidth);
+        if (layout > 0) k = b.width / layout;
+        break;
+      }
+    }
     const right = b.right - (parseFloat(cs.borderRightWidth) + parseFloat(cs.paddingRight)) * k;
     if (clusters[clusters.length - 1].r <= right + 1e-3) return null; // it fits: no ellipsis
     const ctx = document.createElement("canvas").getContext("2d");
