@@ -193,6 +193,32 @@ describe("compareCapture", () => {
     expect(compareCapture(g, g, [], T).elements.find((r) => r.id === "label")?.inkExtent).toBe(0);
   });
 
+  it("measures a line's ink against its background where it is: a later element's shadow over the line is no ink; a shorter text still fails", () => {
+    // a card under a dialog's box shadow: the shadow darkens the card's top rows more than its bottom ones (in the design 43 to
+    // 50 luma levels across the line, in Unity a level less at the bottom); the text ends at x 240, the card at 300. Against
+    // the window's median the design's bottom rows counted as faint ink in every card column, so its ink extent ended near
+    // the card's edge (a pilot screen's card title under a month picker's shadow "ended 4.48 device px early" in Unity)
+    const shadowed = (unity: boolean, textW = 200) => {
+      const png = canvas(400, 120, [13, 37, 45]);
+      for (let y = 30; y < 100; y++) {
+        const t = Math.max(0, Math.min(1, (y - 43) / 28)) * (unity ? 0.75 : 1);
+        fill(png, { x: 20, y, w: 280, h: 1 }, [Math.round(16 + 3 * t), Math.round(52 + 9 * t), Math.round(62 + 10 * t)]);
+      }
+      glyphs(png, { x: 40, y: 48, w: textW, h: 18 }, [240, 240, 240]);
+      return {
+        png,
+        boxes: { capture: "default@400x120", viewport: [400, 120], scale: 1, external: [],
+          elements: { root: el(0, 0, 400, 120), card: el(20, 30, 280, 70), title: el(38, 44, 160, 26, { text: true, lines: [{ x: 38, y: 44, w: 262, h: 26, baseline: 66 }] }) } } as CaptureBoxes,
+      };
+    };
+    const ctx: CaptureContext = { order: ["root", "card", "title"], parent: new Map([["card", "root"], ["title", "card"]]) };
+    expect(compareCapture(shadowed(false), shadowed(true), [], T, ctx).issues).toEqual([]);
+    // the same line one glyph shorter in Unity fails, under the shadow too
+    const short = compareCapture(shadowed(false), shadowed(true, 192), [], T, ctx);
+    expect(short.issues.map((i) => `${i.id}:${i.kind}`)).toEqual(["title:inkExtent"]);
+    expect(short.issues[0].detail).toMatch(/right Δ -8\.\d\d px/);
+  });
+
   describe("an ellipsized line at a scaled viewport (ruling R146: ellipsisGraphemes)", () => {
     // a 160 px title cut with an ellipsis: stand-in glyphs 6 px wide on an 8 px advance from x 40, then three 2×2 dots on a
     // 12 px advance; the design keeps 8 glyphs, so its ellipsis is placed at 40 + 8 × 8 = 104

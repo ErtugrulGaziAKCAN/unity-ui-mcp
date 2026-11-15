@@ -244,12 +244,64 @@ function medianOf(hist: Uint32Array, n: number): number {
   return hist.length - 1;
 }
 
+/** A background whose fitted luma changes less than this across the window counts as flat (its median). */
+const BG_PLANE_MIN = 1;
+/** Pixels within this many luma levels of the background model are background (also the ink threshold). */
+const BG_BAND = 2;
+
+/**
+ * The background's luma at each pixel of a window when it varies across the window: a plane `l = a + b·x + c·y` fitted
+ * by least squares to the pixels within BG_BAND of the model, starting from the window's median and refitted four times
+ * (glyphs and other regions fall out of the band). A box shadow or a gradient under the text changes the background by
+ * a few levels across a line (a dialog's shadow: 43 to 47 luma levels over 25 rows of a card), so pixels of the same
+ * background at one end of the window lay more than BG_BAND from the median and counted as ink: a column of faint
+ * "ink" at the far end of the line moved its ink extent by several pixels in one renderer and not in the other, whose
+ * shadow is a level weaker there. Null (the median stands) when the plane changes by less than BG_PLANE_MIN across the
+ * window, or when it explains fewer pixels than the median does (two flat regions: a card's edge in the window).
+ */
+function backgroundPlane(lum: Float64Array, off: Int32Array, n: number, imgW: number, median: number): ((k: number) => number) | null {
+  const xs = new Float64Array(n), ys = new Float64Array(n);
+  let mx = 0, my = 0, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let k = 0; k < n; k++) {
+    const p = off[k] / 4, x = p % imgW, y = Math.floor(p / imgW);
+    xs[k] = x; ys[k] = y; mx += x; my += y;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  mx /= n; my /= n;
+  let a = median, b = 0, c = 0;
+  const model = (k: number) => a + b * (xs[k] - mx) + c * (ys[k] - my);
+  for (let it = 0; it < 4; it++) {
+    let s = 0, sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0, sl = 0, slx = 0, sly = 0;
+    for (let k = 0; k < n; k++) {
+      if (Math.abs(lum[k] - model(k)) > BG_BAND) continue;
+      const x = xs[k] - mx, y = ys[k] - my, l = lum[k];
+      s++; sx += x; sy += y; sxx += x * x; sxy += x * y; syy += y * y; sl += l; slx += l * x; sly += l * y;
+    }
+    if (s < 3) return null;
+    // the normal equations of the plane, by Cramer's rule
+    const det = s * (sxx * syy - sxy * sxy) - sx * (sx * syy - sxy * sy) + sy * (sx * sxy - sxx * sy);
+    if (Math.abs(det) < 1e-9) return null;
+    const na = (sl * (sxx * syy - sxy * sxy) - sx * (slx * syy - sxy * sly) + sy * (slx * sxy - sxx * sly)) / det;
+    const nb = (s * (slx * syy - sxy * sly) - sl * (sx * syy - sxy * sy) + sy * (sx * sly - slx * sy)) / det;
+    const nc = (s * (sxx * sly - slx * sxy) - sx * (sx * sly - slx * sy) + sl * (sx * sxy - sxx * sy)) / det;
+    a = na; b = nb; c = nc;
+  }
+  if (Math.abs(b) * (x1 - x0) + Math.abs(c) * (y1 - y0) < BG_PLANE_MIN) return null;
+  let byPlane = 0, byMedian = 0;
+  for (let k = 0; k < n; k++) {
+    if (Math.abs(lum[k] - model(k)) <= BG_BAND) byPlane++;
+    if (Math.abs(lum[k] - median) <= BG_BAND) byMedian++;
+  }
+  return byPlane >= byMedian ? model : null;
+}
+
 /**
  * The text ink inside a window (a line rect): the background is the median luma (glyphs cover well under half of a
- * line box) with its median colour; ink pixels lie on the far side of the background. The ink colour is the median of
- * the 10 % ink pixels that differ most (stem centres; robust to a stray pixel, and the same on both renderers, which
- * anti-alias differently). Coverage sums each ink-side pixel's difference relative to the ink's, capped at 1: an area
- * in pixels that grows with weight and size. Null when nothing differs from the background by 8 luma levels.
+ * line box) with its median colour, or a plane fitted to it where it varies across the window (backgroundPlane: a
+ * shadow or gradient under the text); ink pixels lie on the far side of the background at each pixel. The ink colour is
+ * the median of the 10 % ink pixels that differ most (stem centres; robust to a stray pixel, and the same on both
+ * renderers, which anti-alias differently). Coverage sums each ink-side pixel's difference relative to the ink's, capped
+ * at 1: an area in pixels that grows with weight and size. Null when nothing differs from the background by 8 luma levels.
  */
 export function inkIn(img: Rgba, r: Rect, hidden?: (x: number, y: number) => boolean): Ink | null {
   const x0 = Math.max(0, Math.floor(r.x)), x1 = Math.min(img.w, Math.ceil(r.x + r.w));
@@ -268,19 +320,22 @@ export function inkIn(img: Rgba, r: Rect, hidden?: (x: number, y: number) => boo
   const n = i;
   if (!n) return null;
   const bgL = medianOf(lh, n);
+  // each pixel's distance from the background where it is (a shadow or gradient varies it across the window)
+  const plane = backgroundPlane(lum, off, n, img.w, bgL);
+  const dlOf = plane ? (k: number) => lum[k] - plane(k) : (k: number) => lum[k] - bgL;
   // background colour: per-channel medians of the pixels at the background luma
   const ch = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
   let nb = 0, maxD = 0, sign = 1;
   for (let k = 0; k < n; k++) {
-    const dl = lum[k] - bgL;
-    if (Math.abs(dl) <= 2) { const o = off[k]; ch[0][d[o]]++; ch[1][d[o + 1]]++; ch[2][d[o + 2]]++; nb++; }
+    const dl = dlOf(k);
+    if (Math.abs(dl) <= BG_BAND) { const o = off[k]; ch[0][d[o]]++; ch[1][d[o + 1]]++; ch[2][d[o + 2]]++; nb++; }
     if (Math.abs(dl) > maxD) { maxD = Math.abs(dl); sign = dl < 0 ? -1 : 1; }
   }
   if (maxD < 8) return null;
   const bg: Rgb3 = nb ? [medianOf(ch[0], nb), medianOf(ch[1], nb), medianOf(ch[2], nb)] : [bgL, bgL, bgL];
   const side: number[] = [];
-  for (let k = 0; k < n; k++) if ((lum[k] - bgL) * sign > 2) side.push(k);
-  side.sort((a, b) => (lum[b] - lum[a]) * sign);
+  for (let k = 0; k < n; k++) if (dlOf(k) * sign > BG_BAND) side.push(k);
+  side.sort((a, b) => (dlOf(b) - dlOf(a)) * sign);
   const top = side.slice(0, Math.max(3, Math.ceil(side.length * 0.1)));
   const ink = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
   for (const k of top) { const o = off[k]; ink[0][d[o]]++; ink[1][d[o + 1]]++; ink[2][d[o + 2]]++; }
@@ -292,7 +347,7 @@ export function inkIn(img: Rgba, r: Rect, hidden?: (x: number, y: number) => boo
   const dirSrgb: Rgb3 = [0, 0, 0];
   const pixels = { x: new Int32Array(side.length), y: new Int32Array(side.length), w: new Float64Array(side.length) };
   side.forEach((k, j) => {
-    const dl = (lum[k] - bgL) * sign;
+    const dl = dlOf(k) * sign;
     dists[j] = dl;
     const wgt = Math.min(1, dl / inkD);
     coverage += wgt;
