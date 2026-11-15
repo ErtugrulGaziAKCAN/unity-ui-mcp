@@ -508,7 +508,7 @@ describe("U-FONT-004: the readable-text floor", () => {
     expect(f[0].fix).toMatch(/No text may draw below 9 device px at any declared viewport \(the smallest is 1280×720, scale 0\.5\): use a text style of at least 18px, such as label \(18px \/ 22px, 400\)/);
   });
 
-  it("counts the scale a transform keeps the text at, also in a state, not in an animation", async () => {
+  it("counts the scale a transform draws the text at in a state it is drawn in, its font size in a state, not an animation", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "floor-"));
     const page = (css: string) => {
       const file = path.join(dir, `p${Math.random().toString(36).slice(2)}.html`);
@@ -526,6 +526,17 @@ describe("U-FONT-004: the readable-text floor", () => {
       // a hover state that shrinks it counts; an animation passing through a small scale does not
       expect(await floor(".box:hover{scale:0.5}")).toHaveLength(1);
       expect(await floor("@keyframes pop{from{scale:0.2}to{scale:1}} .box{animation:pop 200ms linear}")).toEqual([]);
+      // a pop-in whose hidden state is scale 0 (or 0.5) with opacity 0: never drawn there, so never judged there
+      for (const closed of ["0", "0.5"])
+        expect(await floor(`.box{transform:scale(${closed});opacity:0;transition:transform 200ms,opacity 200ms} .box.is-open{transform:scale(1);opacity:1}`)).toEqual([]);
+      // a visible state at 0.4 is drawn below the floor
+      expect(await floor(".box.is-open{scale:0.4}")).toEqual([expect.stringMatching(/scaled ×0\.4 by its transforms, draws 4\.8 device px at 1280×720, 7\.2 device px at 1920×1080/)]);
+      // a state's transform multiplies with the scale: 24 × 0.75 × 0.9 × 0.5 = 8.1
+      expect(await floor(".box{scale:0.75} .box:active{transform:scale(0.9)}")).toEqual([expect.stringMatching(/scaled ×0\.675 by its transforms, draws 8\.1 device px at 1280×720/)]);
+      // a state's font-size in em, % or rem is judged at the parent's size; one that cannot be resolved is named
+      expect(await floor(".box:hover p{font-size:0.5em}")).toEqual(["font-size: 0.5em (12px) [style:0 .box:hover p] draws 6 device px at 1280×720: below the readable-text floor of 9 device px; the minimum design size here is 18px"]);
+      expect(await floor(".box:hover p{font-size:calc(1em - 2px)}")).toEqual([expect.stringMatching(/font-size: calc\(1em - 2px\) \[style:0 .box:hover p\] cannot be resolved to px here/)]);
+      for (const css of [".box{transform:scale(0)}", ".box{scale:0} .box:hover{scale:0.2}"]) for (const d of await floor(css)) expect(d).not.toMatch(/Infinity|NaN/);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 });
