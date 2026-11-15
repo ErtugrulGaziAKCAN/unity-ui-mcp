@@ -73,7 +73,8 @@ update (an `EditorApplication.update` callback that marks the panel dirty; `dela
 | Ink extent of 30 H at 12 px | 164.533 through the root at 0.625, 262.855 × 0.625 = 164.284 expected; natively 175.51 (UI Toolkit sets the text at the exact scale's whole size and does not set it again at the world scale) |
 | Pointer input at 1600×900 and 1366×768 (and 1920×1080, not scaled) | picks only where the scaled root draws an element; hover, active, a click, a toggle, a wheel over a scroll view, a captured drag (positions in the element's own space are the design's). A text field is focused directly, not by a press (a synthesized press does not pick a runtime TextField in Edit mode at any scale); typing is not tested (keys have no geometry) |
 | Gamma composite and a region's sort-order copy | the copy's panel holds the exact scale, the asset keeps its own factor, the composite's texture is the screen's size, a screen point picks the element the design puts there, `IsPointerOverPanel` agrees |
-| A game's own factor (0.9 at 1600×900) | kept as the base (0.5625 actual, laid out at 0.5), given back when the screen leaves |
+| A game's own factor (0.9 at 1600×900) | kept as the base (0.5625 actual, laid out at 0.75, the next exact scale up), given back when the screen leaves |
+| Width breakpoints (min 2400, max 2400, min 2000) | from the design's size (2560 at 16:9, 2114 at 1280×1024), not the panel's laid-out size (2133 at 1600×900, 1821 at 1366×768, 1707 at 1280×1024) |
 
 **Which exact scale.** Measured on the panels above (text widths and line boxes are within a device pixel from
 either neighbour) and on the fidelity suite: 15 fixtures (the text, round-shape, bordered and picture ones; 257 captures

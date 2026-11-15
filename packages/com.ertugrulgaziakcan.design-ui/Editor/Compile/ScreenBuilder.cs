@@ -1437,7 +1437,7 @@ namespace DesignUi.Editor
                 if (compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf()))).Any(e => e.FitWidth))
                     _rules.Insert(0, new UssRule(nameof(DesignUi.DesignLabel) + ", " + nameof(DesignUi.DesignButton),
                         new List<UssDeclaration> { new UssDeclaration(TextFitProperty, "1") }));
-                // the exact viewports' panel scales: at any other panel scale the screen lays out at the nearest of them and
+                // the exact viewports' panel scales: at any other panel scale the screen lays out at the next of them up and
                 // draws scaled; a custom property on the root makes UI Toolkit tell it (CustomStyleResolvedEvent) when the
                 // panel's scale changes
                 if (compiledRoot.Tag == ScreenTag && _options.ExactScales != null && _options.ExactScales.Count > 0)

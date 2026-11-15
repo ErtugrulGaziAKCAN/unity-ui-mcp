@@ -115,10 +115,11 @@ namespace DesignUi.Editor.Tests
 
         /// <summary>
         /// A screen with odd design lengths: a box at (397, 101) of 403×37 px, a column of ten rows with 4 px padding above and
-        /// below a 20 px child (UI Toolkit lays 4 px out as 3 device px at 0.625 and 2 at 0.5335), a caption, and two width
-        /// breakpoints at 2400 px of design width (<c>wide</c>: at least, <c>narrow</c>: at most), which only the design's size
-        /// tells apart from the panel's laid-out size: the design is 2560 px wide at every 16:9 viewport and 2114 at 1280×1024,
-        /// the panel lays out 2133 px at 1600×900 and 2560 at 1280×1024.
+        /// below a 20 px child (UI Toolkit lays 4 px out as 3 device px at 0.625 and 2 at 0.5335), a caption, and width
+        /// breakpoints that only the design's size tells apart from the panel's laid-out size: <c>wide</c> (at least 2400) and
+        /// <c>narrow</c> (at most 2400) at 1600×900 and 1366×768, <c>mid</c> (at least 2000) at 1366×768 and 1280×1024. The
+        /// design is 2560 px wide at every 16:9 viewport and 2114 at 1280×1024; the panel, laid out at the next exact scale up,
+        /// is 2133 px wide at 1600×900, 1821 at 1366×768 and 1707 at 1280×1024.
         /// </summary>
         string Export(Action<IrNode> edit = null)
         {
@@ -136,8 +137,9 @@ namespace DesignUi.Editor.Tests
             var root = Node("root", "container", ("position", "relative"), ("width", "2560px"), ("height", "1440px"), ("font-family", family)).Add(box, rows, caption);
             edit?.Invoke(root);
             var screen = TestIr.Screen(root, "rootscale.screen");
-            screen.Breakpoints = new[] { new IrBreakpoint { Name = "wide", MinWidth = 2400 }, new IrBreakpoint { Name = "narrow", MaxWidth = 2400 } };
-            if (root.Style.Keys.Any(k => k.StartsWith("state:", StringComparison.Ordinal))) screen.States = new[] { "default", "moved" };
+            screen.Breakpoints = new[] { new IrBreakpoint { Name = "wide", MinWidth = 2400 }, new IrBreakpoint { Name = "narrow", MaxWidth = 2400 }, new IrBreakpoint { Name = "mid", MinWidth = 2000 } };
+            if (root.Style.Keys.Any(k => k.StartsWith("state:", StringComparison.Ordinal)))
+                screen.States = new[] { "default" }.Concat(root.Style.Keys.Where(k => k.StartsWith("state:", StringComparison.Ordinal)).Select(k => k.Substring(6)).Distinct()).ToArray();
             File.WriteAllText(Path.Combine(dir, ScreenCompiler.IrFileName), JsonConvert.SerializeObject(screen, Formatting.Indented));
             File.WriteAllText(Path.Combine(dir, KitTextStyles.FileName), "{ \"caption\": { \"fontSize\": 12, \"lineHeight\": 16, \"weight\": 400 } }");
             return dir;
@@ -234,10 +236,12 @@ namespace DesignUi.Editor.Tests
                 double width = caption.worldBound.width * ppp;
                 if (w == 2560) captionAt1 = width;
                 if (captionAt1 > 0) Assert.AreEqual(captionAt1 * actual, width, 1.0, at + ": the caption keeps its width (the panel's text is whole device px)");
-                // the design's width: 2560 at 16:9, 1280 / 0.6056 = 2114 at 1280×1024 (the panel's laid-out width: 2133 at 1600×900, 2560 at 1280×1024)
+                // the design's width: 2560 at 16:9, 1280 / 0.6056 = 2114 at 1280×1024 (the panel's laid-out width at the exact
+                // scale: 2133 at 1600×900, 1821 at 1366×768, 1280 / 0.75 = 1707 at 1280×1024)
                 double designWidth = w / actual;
                 Assert.AreEqual(designWidth >= 2400, screen.ClassListContains("bp-wide"), at + ": min-width 2400 at the design's width " + designWidth.ToString("0"));
                 Assert.AreEqual(designWidth <= 2400, screen.ClassListContains("bp-narrow"), at + ": max-width 2400 at the design's width " + designWidth.ToString("0"));
+                Assert.AreEqual(designWidth >= 2000, screen.ClassListContains("bp-mid"), at + ": min-width 2000 at the design's width " + designWidth.ToString("0"));
                 report.Add(at + ": panel " + ppp.ToString("0.#####") + ", root " + screen.RootScale.ToString("0.#####") + ", caption " + width.ToString("0.###") + " device px");
             }
             Debug.Log("Root scale across the default viewports:\n" + string.Join("\n", report));
@@ -718,7 +722,8 @@ namespace DesignUi.Editor.Tests
         /// The root scale composes with the design's transform of the root (the root's own player and rules), at 1600×900 (root
         /// 0.8333) and at the exact 1920×1080: an open animation (keyframes scale 0.96 to 1 about the root's centre) draws the
         /// box where the design's scale puts it at the actual scale in every frame, and when it ends the root scale and its
-        /// top-left origin are back; a state's translate (100, 50) moves the root by design pixels at the actual scale.
+        /// top-left origin are back; a state's translate (100, 50) moves the root by design pixels at the actual scale, and a
+        /// state's rotation of 10° about a % origin (25% 75%) with a % translate (5% 10%) turns it as the design does.
         /// </summary>
         [UnityTest]
         public IEnumerator AnAnimatedRoot_ComposesTheDesignsTransformWithTheRootScale_AndTheRootScaleComesBack()
@@ -726,6 +731,7 @@ namespace DesignUi.Editor.Tests
             var tree = CompileScreen(root =>
             {
                 root.With("state:moved", ("translate", "100px 50px"));
+                root.With("state:turned", ("rotate", "10deg"), ("transform-origin", "25% 75%"), ("translate", "5% 10%"));
                 root.Anims.Add(AnimationPlayerTests.Keyframes("show", "enter", 400, 0, "linear", 1, "normal", "none",
                     (0, null, new[] { ("scale", "0.96") }), (1, null, new[] { ("scale", "1") })));
             });
@@ -778,6 +784,24 @@ namespace DesignUi.Editor.Tests
                 screen.RemoveFromClassList(ScreenBuilder.StateClassPrefix + "moved");
                 yield return Frames(4);
                 AreDevice(Scaled(1), box.worldBound, ppp, tolerance, at + " box back");
+
+                // a state that rotates the root 10° about 25% 75% (640, 1080) and translates it by 5% 10% of its own size
+                // (128, 144): each corner p of the box goes to origin + translate + R·(p − origin), clockwise with y down
+                screen.AddToClassList(ScreenBuilder.StateClassPrefix + "turned");
+                yield return Frames(4);
+                double rad = 10 * Math.PI / 180, cos = Math.Cos(rad), sin = Math.Sin(rad);
+                double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+                foreach (var (px, py) in new[] { (397.0, 101.0), (800.0, 101.0), (800.0, 138.0), (397.0, 138.0) })
+                {
+                    double qx = 640 + 128 + (px - 640) * cos - (py - 1080) * sin, qy = 1080 + 144 + (px - 640) * sin + (py - 1080) * cos;
+                    minX = Math.Min(minX, qx); maxX = Math.Max(maxX, qx); minY = Math.Min(minY, qy); maxY = Math.Max(maxY, qy);
+                }
+                var turned = new Rect((float)(minX * actual), (float)(minY * actual), (float)((maxX - minX) * actual), (float)((maxY - minY) * actual));
+                AreDevice(turned, box.worldBound, ppp, tolerance + 0.5, at + " box in the state that rotates the root about a % origin and translates it by %");
+                Assert.AreEqual(10f, screen.resolvedStyle.rotate.angle.ToDegrees(), 1e-3, at + ": the design's rotation");
+                screen.RemoveFromClassList(ScreenBuilder.StateClassPrefix + "turned");
+                yield return Frames(4);
+                AreDevice(Scaled(1), box.worldBound, ppp, tolerance, at + " box back after the rotation");
                 Object.DestroyImmediate(doc.gameObject);
                 yield return null;
             }
