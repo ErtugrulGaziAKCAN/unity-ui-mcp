@@ -153,6 +153,12 @@ namespace DesignUi.Editor
         public IReadOnlyDictionary<string, double> TextStyleSizes;
         /// <summary>Kit text style name to its line-box key (<see cref="KitTextStyles.LoadLineBoxes"/>), or null.</summary>
         public IReadOnlyDictionary<string, string> TextStyleLineBoxes;
+        /// <summary>
+        /// The kit's text styles with size, line height and weight (<see cref="KitTextStyles.LoadTable"/>), or null. With it, a
+        /// text node whose own line height is not its named style's is compiled in the style of its size, weight and line
+        /// height (an export of an older exporter named a style of the same size and weight only).
+        /// </summary>
+        public IReadOnlyDictionary<string, KitTextStyle> TextStyleTable;
         /// <summary>The kit's line boxes (<see cref="KitTextStyles.LineBoxesOf"/>), which the text-size steps scale.</summary>
         public IReadOnlyList<FontTwinGenerator.LineBox> LineBoxes;
         /// <summary>The profile's text-size steps; each gets <c>.text-size-&lt;key&gt;</c> rules.</summary>

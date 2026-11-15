@@ -160,6 +160,7 @@ namespace DesignUi.Editor
                 {
                     TextStyleSizes = textStyles,
                     TextStyleLineBoxes = lineBoxes,
+                    TextStyleTable = stylesPath != null ? KitTextStyles.LoadTable(stylesPath) : null,
                     LineBoxes = kitBoxes,
                     TextSizes = profile.textSizes,
                     RtlAlignment = (profile.localeRules ?? new DesignUi.DesignLocaleRules()).rtlAlignment,

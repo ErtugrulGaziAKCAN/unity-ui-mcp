@@ -4,7 +4,7 @@ import { declaredFontFaces, DESIGN_ORIGIN, KIT_PREFIX, STATIC_CSS, type Declared
 import { cssSupport } from "./allowed-css.js";
 import { declsOf, px, resolveVars, type SnapDecl } from "./css-values.js";
 import { parseSelectorList, pseudoElement, reachSelector, specificity, structural, pseudoClasses, type ParsedSelector } from "./selectors.js";
-import { promotedRuns } from "./text-runs.js";
+import { isKeyed, promotedRuns } from "./text-runs.js";
 import { DYNAMIC_PSEUDO_CLASSES } from "./selectors.js";
 import { matchRichStyle, matchTextStyle, readTextStyles } from "./text-styles.js";
 
@@ -815,10 +815,12 @@ export function annotateTextStyles(s: DomSnapshot, kit: KitConfig): void {
     if (!rendersText(e)) continue;
     const size = px(e.computed["font-size"]), weight = Number(e.computed["font-weight"]);
     if (size === null) { e.textStyle = null; continue; }
-    // a keyed inline run is a text node of its own: it needs a full kit style
-    const m = isInlineLevel(e) && e.ns === "html" && e.texts.length > 0 && !promoted.has(e.index)
-      ? matchRichStyle(styles, size, weight)
-      : matchTextStyle(styles, size, px(e.computed["line-height"]), weight);
+    // a keyed inline run is a text node of its own (promoted, or keyed beside an icon in a box that is not a text): it needs a
+    // full kit style, line height included; only unkeyed rich text inside a paragraph takes the paragraph's line
+    const lh = px(e.computed["line-height"]);
+    const m = isInlineLevel(e) && e.ns === "html" && e.texts.length > 0 && !promoted.has(e.index) && !isKeyed(e)
+      ? matchRichStyle(styles, size, weight, lh)
+      : matchTextStyle(styles, size, lh, weight);
     e.textStyle = m ? m.name : null;
   }
 }

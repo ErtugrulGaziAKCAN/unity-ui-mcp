@@ -658,3 +658,48 @@ describe("buildIr: speed", () => {
     } finally { await d.close(); }
   });
 });
+
+describe("text styles of one size and weight with different line heights", () => {
+  /** The repository's kit: caption 20/28 and label 20/24 (and their bold forms) share size and weight. */
+  const designKit = readKit(path.join(here, "..", "..", "..", "design-kit"));
+  const write = (css: string, body: string) => {
+    const p = path.join(tmp(), "s.html");
+    fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
+      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:20px;line-height:24px;color:#ffffff;background-color:#0b1f26}
+      p{margin:0} .label{font-size:20px;line-height:24px;font-weight:400} .label-bold{font-size:20px;line-height:24px;font-weight:700}
+      .caption{font-size:20px;line-height:28px;font-weight:400} .caption-bold{font-size:20px;line-height:28px;font-weight:700}
+      .odd{font-size:20px;line-height:26px;font-weight:400}${css}</style></head><body><div class="screen" data-u-screen="s">${body}</div></body></html>`);
+    return p;
+  };
+  const icon = `<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3 V13" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+  // keyed inline runs whose parent is hidden by default (shown with the panel's is-open class), the pilot's "+N more"
+  // and month-picker range: their own text node, inline-level in the default render
+  const css = `.panel{display:flex;flex-direction:column;flex-shrink:0} .row{display:none;flex-direction:row;align-items:center;flex-shrink:0}
+    .panel.is-open .row{display:flex} .ic{width:16px;height:16px;flex-shrink:0}`;
+  const body = (cls: string[]) => `<div class="panel" data-u-id="panel">${cls.map((c, i) =>
+    `<div class="row" data-u-id="row-${i}">${icon}<span class="${c}" data-u-id="t-${i}" data-l10n="s.t${i}" data-en="Text ${i}">Metin ${i}</span></div>`).join("")}</div>`;
+
+  it("maps each keyed inline text to the style of its own line height, in the IR", async () => {
+    const p = write(css, body(["label", "label-bold", "caption", "caption-bold"]));
+    const d = await openDesign(p, designKit, [2560, 1440], browser);
+    try {
+      expect((await lint(d, designKit)).filter((f) => f.severity === "error").map((f) => `${f.ruleId} ${f.path}`)).toEqual([]);
+      const s = await collectSnapshot(d.page, d.cdp, designKit);
+      const r = await buildIr(d, s, designKit, tmp(), p);
+      expect(["t-0", "t-1", "t-2", "t-3"].map((id) => [byId(r.ir.root, id).style.base["line-height"], byId(r.ir.root, id).text?.style]))
+        .toEqual([["24px", "label"], ["24px", "label-bold"], ["28px", "caption"], ["28px", "caption-bold"]]);
+    } finally { await d.close(); }
+  });
+
+  it("never names a style of another line height: a keyed inline text whose line height no style has is U-CSS-016 and has no style", async () => {
+    const p = write(css, body(["odd"]));
+    const d = await openDesign(p, designKit, [2560, 1440], browser);
+    try {
+      const f = (await lint(d, designKit)).filter((x) => x.ruleId === "U-CSS-016");
+      expect(f.map((x) => x.path)).toEqual(["[data-u-screen=s] > div[data-u-id=panel] > div[data-u-id=row-0] > span[data-u-id=t-0]"]);
+      expect(f[0].detail).toMatch(/20px \/ 26px \/ 400/);
+      const s = await collectSnapshot(d.page, d.cdp, designKit);
+      expect(s.elements.find((e) => e.attrs["data-u-id"] === "t-0")!.textStyle).toBeNull();
+    } finally { await d.close(); }
+  });
+});

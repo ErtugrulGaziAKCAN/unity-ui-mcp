@@ -171,13 +171,20 @@ export function kitHash(kit: KitConfig): string {
   return sha256(`${JSON.stringify(config)}\n${folderHash(kit.dir)}`);
 }
 
-/** Hash of the tool that makes the export: exporter package version, IR schema and the Chromium build. */
+/**
+ * Raised whenever the extraction writes something else for the same design and kit (an export of an older extractor is then
+ * made again instead of reused). 2: keyed inline texts match their text style on line height too (caption 20/28 and label
+ * 20/24 share size and weight).
+ */
+export const EXTRACT_REVISION = 2;
+
+/** Hash of the tool that makes the export: exporter package version, extraction revision, IR schema and the Chromium build. */
 export function toolHash(): string {
   const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
   const schema = fs.readFileSync(new URL("./ir/schema.json", import.meta.url));
   let chromiumBuild = "unknown";
   try { chromiumBuild = chromium.executablePath(); } catch { /* not installed: the export fails later with a clear error */ }
-  return sha256([pkg.version, sha256(schema), chromiumBuild, CHROMIUM_ARGS.join(" "), process.platform, process.arch].join("\n"));
+  return sha256([pkg.version, `extract ${EXTRACT_REVISION}`, sha256(schema), chromiumBuild, CHROMIUM_ARGS.join(" "), process.platform, process.arch].join("\n"));
 }
 
 // ---- output folder safety ----------------------------------------------------------------------------------------

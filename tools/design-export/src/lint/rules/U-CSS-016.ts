@@ -1,6 +1,6 @@
 import { px } from "../css-values.js";
 import type { SnapElement } from "../snapshot.js";
-import { promotedRuns } from "../text-runs.js";
+import { isKeyed, promotedRuns } from "../text-runs.js";
 import { describeStyle, matchRichStyle, matchTextStyle, nearestTextStyle } from "../text-styles.js";
 import type { Rule } from "../types.js";
 import { at, Collector, inFlow, resolved, sources, targetOf, textElements } from "./util.js";
@@ -17,8 +17,8 @@ export const rule: Rule = {
     const promoted = promotedRuns(s);
     for (const e of textElements(s)) {
       if (e.tag === "option") continue; // drawn by the native popup, not the screen
-      // a keyed inline run is its own text node: a full kit style
-      if (!inFlow(e) || e.parent < 0 || promoted.has(e.index)) { blocks.add(e); continue; }
+      // a keyed inline run is its own text node: a full kit style, line height included
+      if (!inFlow(e) || e.parent < 0 || promoted.has(e.index) || isKeyed(e)) { blocks.add(e); continue; }
       // rich text: the paragraph sets the line; the tag may change size and weight within kit styles
       let k = e.parent;
       while (k >= 0 && inFlow(s.elements[k])) k = s.elements[k].parent;

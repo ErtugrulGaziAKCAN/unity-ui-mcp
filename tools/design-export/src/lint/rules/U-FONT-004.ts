@@ -235,7 +235,7 @@ export const rule: Rule = {
       const size = px(e.computed["font-size"]);
       if (size === null) continue;
       const lh = px(e.computed["line-height"]), w = Number(e.computed["font-weight"]);
-      const style = matchTextStyle(ctx.textStyles, size, lh, w) ?? matchRichStyle(ctx.textStyles, size, w);
+      const style = matchTextStyle(ctx.textStyles, size, lh, w) ?? matchRichStyle(ctx.textStyles, size, w, lh);
       judge(e.index, size, style ? `text style ${style.name} (${size}px)` : `font-size ${size}px`);
     }
     // font sizes in layers the current render does not show (states, breakpoints), on the text they reach or that inherits them

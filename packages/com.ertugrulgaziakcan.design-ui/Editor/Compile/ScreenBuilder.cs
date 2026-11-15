@@ -135,6 +135,50 @@ namespace DesignUi.Editor
             IReadOnlyDictionary<string, double> textStyleSizes, IReadOnlyDictionary<string, string> textStyleLineBoxes) =>
             Build(ir, new ScreenBuildOptions { TextStyleSizes = textStyleSizes, TextStyleLineBoxes = textStyleLineBoxes }, assetPath, fontDefinition);
 
+        /// <summary>
+        /// Gives every text node the kit style of its own size, weight and line height when the style its IR names has another
+        /// line height: an exporter before extraction revision 2 matched a keyed inline text on size and weight only, and with
+        /// caption 20/28 and label 20/24 named caption for a 20/24 text, which Unity then drew with the 28 px line box. A text
+        /// whose line height no style of its size and weight has is an error: never a style of another line height.
+        /// </summary>
+        internal static void ReconcileTextStyles(IrNode node, IReadOnlyDictionary<string, KitTextStyle> table)
+        {
+            if (node == null) return;
+            if (node.Text?.Style != null && table.TryGetValue(node.Text.Style, out var named) && node.Style.TryGetValue("base", out var css) &&
+                css.TryGetValue("line-height", out var rawLine) && CssPx(rawLine, out var line) && !Near(line, named.LineHeight))
+            {
+                double size = css.TryGetValue("font-size", out var rawSize) && CssPx(rawSize, out var fs) ? fs : named.FontSize;
+                double weight = css.TryGetValue("font-weight", out var rawWeight) ? CssWeight(rawWeight, named.Weight) : named.Weight;
+                var match = table.Where(kv => Near(kv.Value.FontSize, size) && Near(kv.Value.LineHeight, line) && kv.Value.Weight == weight)
+                    .Select(kv => kv.Key).OrderBy(k => k, StringComparer.Ordinal).FirstOrDefault();
+                if (match == null)
+                    throw new IrFormatException("text node '" + node.Id + "' names the kit text style '" + node.Text.Style + "' (" + Number(named.FontSize) + "/" + Number(named.LineHeight) +
+                                                " px), but its line height is " + Number(line) + " px and no kit text style has its size " + Number(size) + " px, weight " + Number(weight) +
+                                                " and that line height: give the text a kit text style and export the screen again with the current design-export " +
+                                                "(it matches text styles on their line height too)");
+                node.Text.Style = match;
+            }
+            foreach (var c in node.Children ?? new IrNode[0]) ReconcileTextStyles(c, table);
+
+            bool Near(double a, double b) => Math.Abs(a - b) <= Math.Max(1e-3, Math.Abs(b) * 1e-5);
+        }
+
+        static bool CssPx(string raw, out double px)
+        {
+            px = 0;
+            var v = (raw ?? "").Trim();
+            return v.EndsWith("px", StringComparison.Ordinal) &&
+                   double.TryParse(v.Substring(0, v.Length - 2), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out px);
+        }
+
+        static double CssWeight(string raw, double fallback)
+        {
+            var v = (raw ?? "").Trim();
+            if (v == "normal") return 400;
+            if (v == "bold") return 700;
+            return double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var w) ? w : fallback;
+        }
+
         /// <param name="options">Kit text styles, text-size steps, the right-to-left alignment rule and the font set reference.</param>
         public static CompiledScreen Build(IrScreen ir, ScreenBuildOptions options, Func<IrAsset, string> assetPath, Func<string, string> fontDefinition)
         {
@@ -143,6 +187,7 @@ namespace DesignUi.Editor
             if (ir.Root == null) throw new IrFormatException("IR has no root node");
             options = options ?? new ScreenBuildOptions();
             var className = Pascal(ir.Screen, "screen id");
+            if (options.TextStyleTable != null) ReconcileTextStyles(ir.Root, options.TextStyleTable);
             var lowered = Lowering.Apply(ir.Root, ir.Breakpoints);
             var builder = new Builder(assetPath, fontDefinition, options, AncestorTargets(lowered), InheritedFamilies(lowered));
             builder.PlanTextHeights(lowered, null, ir.Breakpoints);

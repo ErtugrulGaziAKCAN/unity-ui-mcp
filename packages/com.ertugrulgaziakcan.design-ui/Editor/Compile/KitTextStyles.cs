@@ -10,6 +10,13 @@ namespace DesignUi.Editor
     /// The kit's text styles (<c>text-styles.json</c>: name to <c>{ fontSize, lineHeight, weight }</c>, spec 5.3). The
     /// compiler writes a text node's font size from the style the IR names (<c>text.style</c>), at full precision.
     /// </summary>
+    /// <summary>One kit text style: font size and line height in px, and weight.</summary>
+    public readonly struct KitTextStyle
+    {
+        public readonly double FontSize, LineHeight, Weight;
+        public KitTextStyle(double fontSize, double lineHeight, double weight) { FontSize = fontSize; LineHeight = lineHeight; Weight = weight; }
+    }
+
     public static class KitTextStyles
     {
         public const string FileName = "text-styles.json";
@@ -68,6 +75,20 @@ namespace DesignUi.Editor
             {
                 throw new IrFormatException("cannot read text styles '" + path + "': " + e.Message, e);
             }
+        }
+
+        /// <summary>Style name to its size, line height and weight (400 when it names none); styles without a positive size are left out.</summary>
+        public static IReadOnlyDictionary<string, KitTextStyle> LoadTable(string path)
+        {
+            var result = new Dictionary<string, KitTextStyle>(StringComparer.Ordinal);
+            foreach (var p in Read(path))
+            {
+                var (s, l) = SizeAndLine(p.Value as JObject);
+                var w = (p.Value as JObject)?["weight"];
+                if (s <= 0) continue;
+                result[p.Key] = new KitTextStyle(s, l, w != null && (w.Type == JTokenType.Integer || w.Type == JTokenType.Float) ? w.Value<double>() : 400);
+            }
+            return result;
         }
 
         /// <summary>Style name to font size in px. Throws IrFormatException when the file is not a valid style table.</summary>

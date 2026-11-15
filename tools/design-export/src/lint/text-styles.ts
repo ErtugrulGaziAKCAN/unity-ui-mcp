@@ -25,9 +25,15 @@ export function matchTextStyle(styles: TextStyle[], fontSize: number, lineHeight
   return styles.find((s) => sameLength(fontSize, s.fontSize) && sameLength(lineHeight, s.lineHeight) && s.weight === weight) ?? null;
 }
 
-/** For rich inline text (b, span): a kit style with this size and weight (line height comes from the paragraph). */
-export function matchRichStyle(styles: TextStyle[], fontSize: number, weight: number): TextStyle | null {
-  return styles.find((s) => sameLength(fontSize, s.fontSize) && s.weight === weight) ?? null;
+/**
+ * For rich inline text inside a paragraph (b, span without a key): a kit style with this size and weight; the line comes
+ * from the paragraph, so only the size is used. Several styles share a size and weight (caption 20/28 and label 20/24):
+ * the one with `lineHeight` (the run's computed line height) comes first. A text of its own (a keyed inline run) is never
+ * matched here: it takes `matchTextStyle`, line height included.
+ */
+export function matchRichStyle(styles: TextStyle[], fontSize: number, weight: number, lineHeight: number | null = null): TextStyle | null {
+  const same = styles.filter((s) => sameLength(fontSize, s.fontSize) && s.weight === weight);
+  return (lineHeight !== null ? same.find((s) => sameLength(lineHeight, s.lineHeight)) : undefined) ?? same[0] ?? null;
 }
 
 /** Closest kit style, for fix hints. */
