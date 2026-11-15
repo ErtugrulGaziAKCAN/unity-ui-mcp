@@ -89,9 +89,6 @@ namespace DesignUi.Editor
             return list;
         }
 
-        /// <summary>The scaled viewports that are not also listed as exact.</summary>
-        public IEnumerable<Vector2Int> ScaledOnly => DeclaredViewports().Where(v => v.cls == DesignViewportClass.Scaled).Select(v => v.size);
-
         /// <summary>PanelSettings for design screens: <see cref="panelSettings"/>, or the package's settings when empty.</summary>
         public PanelSettings DesignPanelSettings => panelSettings != null ? panelSettings : LoadDefaultPanelSettings();
 

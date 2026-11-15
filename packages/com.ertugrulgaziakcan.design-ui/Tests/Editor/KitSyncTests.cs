@@ -252,7 +252,7 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(JToken.DeepEquals(config["viewports"], KitSync.ViewportsJson(profile)), "the Text section compares the same form");
             // a viewport in both lists counts once, as exact
             profile.scaledViewports = new[] { new Vector2Int(1280, 720), new Vector2Int(1366, 768) };
-            CollectionAssert.AreEqual(new[] { new Vector2Int(1366, 768) }, profile.ScaledOnly.ToArray());
+            CollectionAssert.AreEqual(new[] { new Vector2Int(1366, 768) }, profile.DeclaredViewports().Where(v => v.cls == DesignViewportClass.Scaled).Select(v => v.size).ToArray());
         }
 
         /// <summary>

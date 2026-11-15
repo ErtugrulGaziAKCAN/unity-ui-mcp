@@ -402,7 +402,7 @@ namespace DesignUi.Editor.Tests
             Directory.GetFiles(folder, "*.asset").Select(f => Path.GetFileName(f)).OrderBy(f => f, StringComparer.Ordinal).ToArray();
 
         [Test]
-        public void KitSync_RemovesTwinsOfFacesAndLineBoxesNothingUses_AndReportsThem()
+        public void KitSync_RemovesTwinsOfFacesAndLineBoxesNothingUses_AndScaledViewportTwins_AndReportsThem()
         {
             var bold = FontFixture.CreateTmp(FontFixture.BoldTtf, "Prune Bold");
             var light = FontFixture.CreateTmp(FontFixture.RegularTtf, "Prune Light");
@@ -418,6 +418,9 @@ namespace DesignUi.Editor.Tests
             FontMap.EnsureTwins(plan);
             CollectionAssert.Contains(Files(Twins), "Prune Light UITK.asset");
             CollectionAssert.Contains(Files(Twins), "Prune Regular UITK r125s32.asset");
+            // a scaled viewport's twin of the package before the root scale (…x0p625): nothing makes or uses them any more
+            Assert.IsTrue(AssetDatabase.CopyAsset(Twins + "/Prune Regular UITK r125s16.asset", Twins + "/Prune Regular UITK r125s16x0p625.asset"));
+            CollectionAssert.Contains(Files(Twins), "Prune Regular UITK r125s16x0p625.asset");
 
             var r = KitSync.Run(profile, Kit(OneBox), new ProfileLocaleFontResolver(profile, null));
             Assert.IsTrue(r.Ok, string.Join("\n", r.Errors));
@@ -428,7 +431,7 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.IsSupersetOf(r.RemovedTwins.ToArray(), new[]
             {
                 Twins + "/Prune Light UITK.asset", Twins + "/Prune Light UITK r125s16.asset", Twins + "/Prune Regular UITK r125s32.asset",
-                Twins + "/Prune Regular UITK r13333s24.asset",
+                Twins + "/Prune Regular UITK r13333s24.asset", Twins + "/Prune Regular UITK r125s16x0p625.asset",
             });
         }
 

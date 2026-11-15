@@ -579,13 +579,11 @@ namespace DesignUi.Editor
             return key => tables.Strings(collection, new[] { key }).Values.SelectMany(v => v);
         }
 
-        /// <summary>The kit's line boxes and each of them scaled by every text-size step (each key once).</summary>
         /// <summary>The panel scale of each of the profile's exact viewports (distinct, in the profile's order): the screen root's <c>exact-scales</c>.</summary>
         internal static List<double> ExactViewportScales(DesignUiProfile profile) =>
-            (profile?.DeclaredViewports() ?? new List<(UnityEngine.Vector2Int, DesignViewportClass)>())
-                .Where(v => v.cls == DesignViewportClass.Exact && v.size.x > 0 && v.size.y > 0)
-                .Select(v => BoxesWriter.Scale(v.size, profile.referenceResolution, profile.screenMatch)).Distinct().ToList();
+            profile == null ? new List<double>() : KitSync.ExactScales(profile).Select(v => v.scale).Distinct().ToList();
 
+        /// <summary>The kit's line boxes and each of them scaled by every text-size step (each key once).</summary>
         internal static IReadOnlyList<FontTwinGenerator.LineBox> ScaledLineBoxes(IReadOnlyList<FontTwinGenerator.LineBox> kit, IEnumerable<DesignUi.DesignTextSize> steps)
         {
             var sizes = kit.Select(b => (b.FontSize, b.LineHeight)).ToList();
