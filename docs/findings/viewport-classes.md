@@ -1073,32 +1073,43 @@ ones; every other count is the table's (3840×2160 698/89, 2560×1440 and 1920×
 No scaled-class limit was recorded in `fidelity-thresholds.json`: the colour and SSIM differences at 1600×900 come with
 geometry failures that need a ruling first, and geometry limits stay ±1 device px.
 
-## Ellipsis point: the package cuts by the browser's rule (ruling R144)
+## Ellipsis point: one grapheme at the scaled viewports (ruling R146)
 
-A pilot's verify at 1600×900 and 1366×768: an ellipsized card title kept one more character in Unity than in the design
-(ink edge +9.79 device px); at 1920×1080 and the other exact viewports they matched. Task 36 measured the cause and R144
-closes it.
+A pilot's verify at 1600×900 and 1366×768: ellipsized titles kept one grapheme more or fewer in Unity than in the design,
+the line's ink end +2.5 to +10.6 device px from the design's, each one grapheme's advance; at the exact viewports they
+matched. G8 is closed by R146 (it replaces R144, whose runtime cut was reverted: a TwoWay binding could write the cut back
+to its source, a same-text rewrite lost it, shrinking titles were never cut, and it still differed from Chromium at the
+cut).
 
-- **The browser's rule** (Chromium, measured by comparing the clipped render with each candidate cut at device scale 1,
-  0.75 and 0.5): a prefix is kept when its width plus the ellipsis's own advance fits the content box; the kerning between
-  the last kept letter and the ellipsis is not counted. With Inter Regular 20 px the pilot's title needed 94.00 css px for
-  its longer cut (the prefix plus 16.39 for "…"; the kerned string was 1.48 px narrower) in a box of 93.00 to 93.64 css px
-  at every viewport, so the design showed the shorter cut everywhere. A repo example: "Weekly preview" in an 84 px box,
-  "Weekly" 68.05 + "…" 16.39 = 84.44 > 84, so "Weekl…" ("Weekly…" kerned is 82.95, which UI Toolkit's own measure fits).
-- **UI Toolkit's own elision** measures the kerned string and decides inside its text generator; at the scaled viewports
-  the layout is 1920×1080's (box 84.00 css px, 63 device px at 0.75) but the root scale (0.833, 0.711) draws it, and the
-  pilot's title kept the longer cut there although 1920×1080 matched. Its elision point is not readable from code
-  (`elidedText` stays empty), so the mechanism was not isolated; R144 makes it irrelevant.
-- **R144**: `DesignOverflowLabel` (the compiler writes every line that does not wrap and ends in an ellipsis as one) cuts
-  the line itself: the longest prefix of whole grapheme clusters whose width plus the ellipsis's own width fits the
-  content box, both measured as the text fit measures (`DesignTextFit.MeasureWidth`: UI Toolkit's unrounded width at the
-  layout scale, the letter-spacing UI Toolkit leaves out after the last character added back). The cut is written as the
-  label's displayed text; the whole text stays the label's `FullText` (view setters and `DesignView.GetText` use it), and
-  the layout measures the whole text, so the box never follows the cut. It cuts again only when the text, font, size,
-  spacing, width or panel scale changes; a text written to the label is cut at the panel's next update. Measured
-  (`RootScaleTests`): "Weekly preview" in boxes of 83.69 to 84 css px shows "Weekl…" at 1600×900, 1366×768 and
-  1920×1080, "Weekly" alone stays whole, 70 px gives "Week…", 160 px the whole text.
-- **Left to UI Toolkit**: right-to-left text and text the advanced generator lays out keep UI Toolkit's own ellipsis (the
-  shaper joins and reorders glyphs, so a cut of the logical text is not the browser's visual cut), as does a line whose
-  characters the drawing face does not hold yet (measuring would add glyphs outside the draw; UI Toolkit's draw adds them
-  and the line is cut after it; the import pre-adds the ellipsis of every screen that has one).
+- **Chromium's rule** (measured; Inter Regular 20 px, device scale 1, 0.75 and 0.5): it keeps the longest prefix of whole
+  graphemes whose advance *inside the whole line* plus the ellipsis's own advance fits the content box. The prefix's
+  advance includes the kerning with the first dropped grapheme ("Weekly Today" in a 101.5 px box: "Weekly T…", whose
+  in-line end is 84.55 while "Weekly T" measured alone is 86.28); the ellipsis carries no letter-spacing while the prefix
+  keeps its own ("Weekly preview" with 4 px spacing in 95.3 px: "Weekl…"); and the first grapheme always stays, clipped,
+  in a box narrower than it and the ellipsis. Without kerning or spacing at the cut: "Weekly preview" in an 84 px box,
+  "Weekly" 68.05 + "…" 16.39 = 84.44 > 84, so "Weekl…".
+- **UI Toolkit's own elision** cut where Chromium does at every exact viewport (the fidelity suite's two ellipsized lines at
+  four exact viewports, and the pilot's titles). Under the root scale of a scaled viewport it decides inside its text
+  generator at the layout scale and draws scaled; within about an advance of the threshold it keeps one grapheme more or
+  fewer. Its elision point is not readable from code (`elidedText` stays empty), so the comparison allows the measured
+  difference instead.
+- **R146, the comparison** (`ellipsisGraphemes`, scaled block 1, exact class 0; compare.ts `ELLIPSIS_SHAPE`,
+  `ELLIPSIS_AMOUNT`): the golden capture records a cut line's `ellipsis` (the kept prefix's in-line end, the advances of
+  the last kept and the first dropped grapheme, the ellipsis's width; capture.test.ts checks that the design's ink ends
+  within the ellipsis's advance after it for the kerned, spaced and narrow cases). At a scaled viewport a line whose start
+  is within ±boxPx, whose end is the design's ellipsis glyph (its column profile matched to the design's: shape error at
+  most 0.45, ink amount 0.8–1.6 of the design's) and whose ellipsis lies within the advance of the design's first
+  dropped grapheme (one more) or last kept grapheme (one fewer) plus boxPx passes its ink extent; its baseline and ink
+  colour keep their limits, and its ink amount is taken over the prefix both draw plus the ellipsis. Measured on the
+  suite's lines with the dots drawn right: shape 0.07–0.34, amount 1.07–1.30 (Unity's dots are a little heavier); a letter
+  where the dots are: 0.65–1.30 and 3.5–4.1. Tests (compare.test.ts): one grapheme more or fewer passes at a scaled
+  viewport and fails at an exact one; two graphemes, a wrong text (other glyphs, half the ink) and a missing ellipsis
+  fail; a line the design does not cut gets no allowance.
+- **The ellipsis glyph itself**: a twin without U+2026 added it while drawing, and the line-box variant drew another glyph
+  (a curve) in place of the dots at every viewport of the suite's text-spacing capture; the ink extent check let it pass,
+  and one 3840×2160 capture failed by 1.15 px. The import adds U+2026 to the twins of every screen with an ellipsized text
+  (`ScreenCompilerTests.ScreenStrings_HoldTheEllipsis_WhenATextEndsInOne`); the dots then match the design's at all six
+  viewports. The exact class does not judge the glyph's shape (only the scaled allowance does).
+- **Left as they are**: right-to-left text and text the advanced generator lays out get no capture record (the shaper
+  joins and reorders glyphs, so a logical cut is not the visual one) and so no allowance.
+

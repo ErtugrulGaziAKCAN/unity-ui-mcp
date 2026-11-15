@@ -14,8 +14,10 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   the viewports it declared besides the clone's six. `tokens.css` is merged token by token in the clone's file: a project
   value that equals one an earlier clone had (read from the clone's git history) takes the clone's new value and is named,
   a value the project changed is kept and named, and the project's own tokens follow the clone's (one line each, comments
-  kept). `components.json` keeps the project's own components after the clone's, and a list key the clone ships
-  (`allowedScriptOrigins`) keeps the project's entries too. The merge is built on a staging copy first (`kit build`, then
+  kept). `components.json` keeps the project's own components after the clone's (a project file that does not parse stops
+  the upgrade before anything is written), and a list key the clone ships (`allowedScriptOrigins`) keeps the project's
+  entries too: a list that holds the clone's current or an earlier one gets the clone's new entries, a list the project
+  narrowed stays as it is, with the clone's entries it lacks named. The merge is built on a staging copy first (`kit build`, then
   `kit build --check`): a merge that does not build writes nothing. The files it replaces are backed up into
   `<kitDir>/.backup/<UTC time>/files/`, with `kit-upgrade.json` listing the files it replaced and added (the newest three
   backups are kept, older ones removed and named); it prints what it kept, replaced, added and backed up and the command
@@ -29,6 +31,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   padding or border above it moves its lines down). A box that ends between two lines, content that runs off a taller box
   and content inside a scroll area are not judged. The lint snapshot records each text element's
   own lines.
+- Comparison: an ellipsized line may keep one grapheme more or fewer than the design's at a scaled viewport (ruling R146,
+  `ellipsisGraphemes`: 1 in the thresholds' scaled block, 0 at the exact class). The golden capture records where Chromium
+  put a cut line's ellipsis (boxes `ellipsis`: the kept prefix's end inside the whole line, the advances of the last kept
+  and the first dropped grapheme, the ellipsis's own width). A line Unity ends in the design's ellipsis glyph (its column
+  profile and ink amount, measured) and starts within `boxPx` may end up to that grapheme's advance plus `boxPx` from the
+  design's end; its baseline and ink colour keep their limits and its ink amount is taken over the part both draw. Two
+  graphemes off, a wrong text or a missing ellipsis still fails; the verdict row names the shift (`ellipsisCut`).
 - Lint **W-TEXT-001** (warning): a word wider than its wrapping text box. The browser keeps a word without a break
   opportunity on its line and lets it overflow; UI Toolkit breaks it inside the word (the standard text generator after
   the last character that fits, the advanced one after a quotation mark or other punctuation), so the lines differ. The
@@ -268,11 +277,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
-- The ellipsis point at the scaled viewports (task 36, ruling R144): a card title kept one more character in Unity than in
-  the design at 1600×900 and 1366×768 (ink edge +9.79 device px). Measured: the browser keeps a prefix when its width plus
-  the ellipsis's own advance fits (no kerning across the cut); UI Toolkit's own elision measured the kerned string and,
-  under the root scale, decided differently. Fixed under Fixed below (`docs/findings/viewport-classes.md`, "Ellipsis
-  point").
+- The ellipsis point at the scaled viewports (task 36, ruling R146): a pilot's ellipsized titles at 1600×900 and
+  1366×768 kept one grapheme more or fewer in Unity than in the design (the line's ink end +2.5 to +10.6 device px), where
+  UI Toolkit decides its cut under the root scale; at every exact viewport its own elision cuts where Chromium does. The
+  comparison allows exactly that at the scaled viewports (`ellipsisGraphemes`, under Added); the package does not cut text
+  itself (`docs/findings/viewport-classes.md`, "Ellipsis point").
 
 - Task 35's fix round 4 fidelity run (4728 captures, 14 min 26 s): **every capture passes** at all six viewports; the
   same 180 hairline lines take the colour-direction path (at most 0.26°). The previous comparison run on the same captures
@@ -314,14 +323,10 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
-- An ellipsized line is cut by the package, by the browser's rule (ruling R144): the compiler writes every text that does
-  not wrap and ends in an ellipsis as a `DesignOverflowLabel`, which displays the longest prefix of whole grapheme clusters
-  whose width plus the ellipsis's own width fits its content box, measured as the text fit measures at the layout scale.
-  UI Toolkit's own elision measured the kerned string ("Weekly preview" in 84 px: "Weekly…" against the browser's
-  "Weekl…") and depended on the root scale at the scaled viewports. The label keeps the whole text (`FullText`; the view's
-  setters write it, `DesignView.GetText` reads it, a text written to the label becomes it), the layout measures the whole
-  text, and it cuts again only when the text, font, size, spacing, width or scale changes. Right-to-left and
-  advanced-generator text keep UI Toolkit's own ellipsis; the import pre-adds the ellipsis glyph.
+- A line UI Toolkit cuts with an ellipsis drew another glyph (a curve) in place of the three dots when the screen's font
+  twin lacked U+2026: UI Toolkit added the glyph while drawing, and the line-box variant drew a different one. The fidelity
+  suite's text-spacing capture showed it at the exact viewports, where the ink extent check let it pass. The import now
+  adds the ellipsis to the twins of every screen with a text that ends in one.
 - A keyed inline text matched its kit text style on size and weight only, so with caption 20/28 and label 20/24 a 20/24
   label (an inline text beside an icon, or one a state shows) was exported as caption and drawn with the 28 px line box:
   1.6–4 px lower or taller, and the rows below it 4 px down (every verify failure of a pilot's screen at 2560×1440 and

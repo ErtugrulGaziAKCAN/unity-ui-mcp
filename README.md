@@ -66,7 +66,7 @@ Guides: [usage guide](docs/guide/usage.md) · [Türkçe kullanım rehberi](docs/
 version with `npx design-export kit upgrade <kitDir> --dry-run` (in the clone; it prints what it would replace, keep and
 back up), then without `--dry-run`. It takes the clone's base stylesheet, rules, components, text styles and
 configuration keys and keeps the project's fonts, the tokens it changed or added (a value an earlier clone shipped takes
-the new one), its own components and list entries, its locales, own keys, own text styles and files, and any viewport it
+the new one), its own components and list entries (a list it narrowed stays narrowed), its locales, own keys, own text styles and files, and any viewport it
 declared besides the clone's; it builds the merged kit before it writes anything, backs up the files it replaces into
 `<kitDir>/.backup/<UTC time>/files/` (with `kit-upgrade.json` listing what it replaced and added; the newest three are
 kept), prints the command that restores the kit and runs `kit build` and `kit build --check`. Then run a kit sync. A
@@ -260,11 +260,11 @@ the root scale: game code's own inline `translate`, `rotate`, `scale` or `transf
 overwritten (move or animate a container instead). `design_ui_status`, `design_ui_verify` (captures per
 class) and `Window > Design UI > Status` show each viewport's class.
 
-A line that does not wrap and ends in an ellipsis is cut by the package, by the browser's rule (ruling R144): the longest
-prefix whose width plus the ellipsis's own width fits the box ("Weekly preview" in 84 px is "Weekl…", where UI Toolkit's
-own elision kept "Weekly…"), at the layout scale, so the cut is the same at every viewport. The label keeps the whole text
-(`FullText`, what the view's setters write and `DesignView.GetText` reads) and displays the cut. Right-to-left and
-advanced-generator text keep UI Toolkit's own ellipsis.
+A line that does not wrap and ends in an ellipsis is cut by UI Toolkit's own elision, which matched Chromium's cut at
+every exact viewport (the fidelity suite's lines and a pilot's titles). At a scaled viewport it decides under the root scale and can keep one grapheme more or fewer when
+the box lies within about an advance of the threshold; verify allows exactly that there (ruling R146,
+`ellipsisGraphemes`): the line must end in the design's ellipsis glyph, start where the design's does and differ by at
+most one grapheme. The package never changes a label's text.
 
 Text-sized elements (a button or label whose width is its text's) lay out at the golden's width for their text: the
 golden ceils Chromium's text width to whole device pixels at the viewport's scale, UI Toolkit ceils on the grid of the

@@ -638,7 +638,9 @@ this section are in `docs/findings/animation.md`.
     boxes of a repeat's later items, whose straight edges the band takes (ruling R124). Scaled-only measured keys for
     resampling and small text: `ssimResampledPicture` 0.95 and `deltaE2000ResampledPicture` 5.89 for a raster picture
     drawn at another size than its own (ruling R125), and `textInkDeltaEFirstSmall` 5.89 for text under 13 device px
-    (ruling R126, at most 6.5). Verdicts, the
+    (ruling R126, at most 6.5), and `ellipsisGraphemes` 1 (ruling R146): a line the design cuts with an ellipsis may keep
+    one grapheme more or fewer in Unity, its end within that grapheme's advance plus `boxPx`, when it ends in the
+    design's ellipsis glyph and starts within `boxPx`. Verdicts, the
     report, `design_ui_verify` and the fidelity summary count captures per class.
   - *Root scale at any other panel scale.* UI Toolkit puts font sizes, paddings, margins and border widths on whole
     device pixels before layout and ceils text sizes, so a design lays out as designed only where its lengths are whole
