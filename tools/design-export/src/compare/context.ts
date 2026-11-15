@@ -10,12 +10,17 @@
 import type { CaptureBoxes } from "../boxes/types.js";
 import { breakpointsHold, type CaptureApply } from "../capture/matrix.js";
 import type { BoxRect, IrScreen } from "../ir/types.js";
+import { unityPaintOrder, type PaintSibling } from "../lint/paint-order.js";
 import { colorAlpha, isTransparentColor } from "./color.js";
 import type { Rect } from "./ssim.js";
 
 /** Per-capture facts from the IR; every field is optional (absent: the comparison works from the boxes alone). */
 export interface CaptureContext {
-  /** Element ids in paint order (IR pre-order: an element paints after its ancestors and earlier subtrees). */
+  /**
+   * Element ids in paint order: the IR's pre-order with each element's children in the order the compiler gives them
+   * (`paintOrdered`: an element paints after its ancestors and the subtrees before it). CSS paints overlapping siblings in
+   * the same order (lint U-CSS-004, U-CSS-032), so both renderers paint a later id over an earlier one.
+   */
   order?: string[];
   /** The screen root (its region is the whole capture, measured by the whole-capture SSIM). */
   root?: string | null;
@@ -132,6 +137,38 @@ export interface IrIndex {
 
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
+/**
+ * Whether the compiler lays an element's children out in a flex container (Lowering.VisibleDisplay): its base layer sets
+ * a display and the first layer that shows it is flex or inline-flex (an absent base display is a block).
+ */
+function flexContainer(n: LooseNode): boolean {
+  if (!isObj(n.style?.base) || !("display" in n.style.base)) return false;
+  for (const layer of Object.values(n.style ?? {})) {
+    const d = isObj(layer) && typeof layer.display === "string" ? layer.display.trim() : "";
+    if (d && d !== "none") return d === "flex" || d === "inline-flex";
+  }
+  return false;
+}
+
+/**
+ * An element's children in the order the compiler paints them (fix round 4, N-9): lint/paint-order.ts `unityPaintOrder`,
+ * the rule the compiler (Lowering.PaintOrder) and lint share, on the base layer's position and z-index: an absolute
+ * sibling moves into the gap between in-flow siblings that gives it its CSS stacking level (a scrim written before the
+ * caption it covers paints after it). Siblings the compiler rejects keep the DOM order.
+ */
+function paintOrdered(n: LooseNode): LooseNode[] {
+  const kids = Array.isArray(n.children) ? n.children : [];
+  if (kids.length < 2) return kids;
+  const sibs: PaintSibling[] = kids.map((c, index) => {
+    const base = isObj(c?.style?.base) ? c.style.base : {};
+    const position = typeof base.position === "string" ? base.position.trim() : "";
+    const z = typeof base["z-index"] === "string" && /^-?\d+$/.test(base["z-index"].trim()) ? Number(base["z-index"].trim()) : null;
+    return { index, name: String(c?.id), position: position === "absolute" || position === "relative" ? position : "static", z };
+  });
+  const r = unityPaintOrder(sibs, flexContainer(n));
+  return r.ok ? r.order.map((i) => kids[i]) : kids;
+}
+
 /** Indexes an IR (screen.ir.json content). Throws when it is not a screen IR. */
 export function indexIr(json: unknown): IrIndex {
   if (!isObj(json) || !isObj(json.root) || typeof json.root.id !== "string") throw new Error("not a screen IR (no root element)");
@@ -141,7 +178,7 @@ export function indexIr(json: unknown): IrIndex {
     nodes.set(n.id, n);
     order.push(n.id);
     if (p !== null) parent.set(n.id, p);
-    for (const c of Array.isArray(n.children) ? n.children : []) walk(c, n.id);
+    for (const c of paintOrdered(n)) walk(c, n.id);
   };
   walk(json.root as unknown as LooseNode, null);
   const ref = Array.isArray(json.referenceViewport) ? (json.referenceViewport as [number, number]) : [2560, 1440] as [number, number];

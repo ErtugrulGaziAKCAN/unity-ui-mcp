@@ -1505,6 +1505,29 @@ describe("compareCapture: edge, colour and ink checks", () => {
         expect(kinds(design, boxes(c), stems(bg, c, 1, 0.4, missing), ctx), "missing glyphs").toContain("inkCoverage");
         expect(kinds(design, boxes(c), stems(bg, c, 1, 0.4), ctx), "the same text").toEqual([]);
       });
+
+      it("fix round 4, N-9: an absolute scrim before the caption in the DOM, which both renderers paint over it, counts as a later layer", () => {
+        // the re-review's probe E: <div style="position:absolute;inset:0;background:rgba(11,31,38,.3)"> before a static
+        // caption; the compiler moves it after the caption (lint/paint-order.ts), as CSS paints it
+        const bg = surfaces["surface-700"], c = colours.secondary, veilC: Rgb = [11, 31, 38];
+        const veiled = (k: number, drawn?: number[]) => {
+          const png = stems(bg, c, k, 0, drawn);
+          for (let p = 0; p < 48 * 40; p++) { const o = p * 4; for (let j = 0; j < 3; j++) png.data[o + j] = Math.round(0.7 * png.data[o + j] + 0.3 * veilC[j]); }
+          return png;
+        };
+        const ix = indexIr({ irVersion: 1, screen: "s", referenceViewport: [2560, 1440], screenMatch: 0.5, states: ["default"], breakpoints: [],
+          root: { id: "root", kind: "container", style: { base: { position: "relative", "background-color": "rgb(18, 60, 71)" } }, children: [
+            { id: "scrim", kind: "container", style: { base: { position: "absolute", "background-color": "rgba(11, 31, 38, 0.3)" } }, children: [] },
+            { id: "t", kind: "text", text: { tr: "Ay" }, style: { base: { "font-size": "20px" } }, children: [] },
+          ] } });
+        const boxes: CaptureBoxes = { capture: "c", viewport: [48, 40], scale: 0.5, external: [],
+          elements: { root: el(0, 0, 48, 40), scrim: el(0, 0, 48, 40), t: el(7, 3, 30, 16, { text: true, lines: [line], ...own(c) }) } };
+        const ctx: CaptureContext = { ...captureContext(ix, { state: "default", viewport: [48, 40], apply: [] }, boxes), viewportClass: "exact" };
+        expect(ctx.fontPx).toEqual({ t: 10 });
+        expect(kinds(veiled(1), boxes, veiled(0.7), ctx), "lighter").toContain("ink");
+        expect(kinds(veiled(1), boxes, veiled(1, missing), ctx), "missing glyphs").toContain("inkCoverage");
+        expect(kinds(veiled(1), boxes, veiled(1), ctx), "the same text").toEqual([]);
+      });
     });
 
     it("R133: the evidence names every condition that does not hold, not only the first", () => {
@@ -1839,6 +1862,24 @@ describe("IR context", () => {
     expect(moving(0, 3, 1)).toEqual(["btn", "card"]);
     // an IR without the animation's properties: it may move
     expect(moving(4)).toEqual(["btn", "card"]);
+  });
+
+  it("orders siblings as the compiler paints them (fix round 4, N-9: lint/paint-order.ts, not the DOM order)", () => {
+    const node = (id: string, base: Record<string, string>, children: unknown[] = []) => ({ id, kind: "container", style: { base }, children });
+    const ordered = indexIr({ ...ir, root: node("root", { display: "flex", position: "relative" }, [
+      // DOM order: a scrim before the caption it lies over, a backdrop behind everything, a badge and a pill
+      node("scrim", { position: "absolute", "background-color": "rgba(11, 31, 38, 0.3)" }, [node("scrim-icon", {})]),
+      node("caption", {}),
+      node("backdrop", { position: "absolute", "z-index": "-1" }),
+      node("badge", { position: "absolute", "z-index": "2" }),
+      node("pill", { position: "relative" }),
+    ]) });
+    // the compiler: a positioned sibling of z auto paints after the in-flow ones before it; z < 0 first; z > 0 last; a
+    // subtree keeps its place after its element
+    expect(ordered.order).toEqual(["root", "backdrop", "caption", "scrim", "scrim-icon", "pill", "badge"]);
+    // siblings the compiler cannot order (it rejects them) keep the DOM order
+    const rejected = indexIr({ ...ir, root: node("root", { display: "flex" }, [node("a", { "z-index": "1" }), node("b", {})]) });
+    expect(rejected.order).toEqual(["root", "a", "b"]);
   });
 
   it("knows which text has a blurred text-shadow in the capture", () => {

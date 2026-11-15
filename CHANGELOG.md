@@ -176,18 +176,18 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   width and an edge-band relaxation's border centre colour among them (a colour-only animation let a wrong 2.13 device px
   border pass in a sample).
 - A hairline text line is judged by its ink's colour direction (rulings R138, R141, fix round 3): text of at most 12
-  device px, drawn at opacity 1 in the colour the capture recorded for it (boxes `color` and `opacity`, design side only;
-  a repeat copy's own), all of the line in it (a line with a rich span of another colour or opacity is marked `mixed` and
-  keeps the usual checks), with no later element, written-out repeat copy or outer shadow over it, whose design has fewer
-  than 3 fully covered pixels (at least 0.85 of that colour's
-  distance from the background; an em dash or a "1" whose one stroke lies between two device pixels), has an ink colour
-  and amount that measure coverage, which the renderers lay differently. Such a line is judged by the angle between the
-  design's and Unity's ink directions from the background in sRGB (`textInkDirection` 0.66°: the suite's highest 0.26° plus
-  0.4) and by an ink amount within 0.5–2 times the design's (both measured against the text colour). On such a line a
-  lightness-only error within that amount is not caught; a dash in another hue fails (36° and 38° for the warning and accent
-  colours), and so does a faded, veiled or muted larger text drawn lighter or missing glyphs, a small one under a later
-  card's shadow or another item's layer, or in a span of another colour. The 120 `repeat-items` captures this concerned
-  pass.
+  device px, drawn at opacity 1 in the colour the capture recorded for it (boxes `color` and `opacity`, design side
+  only; a repeat copy's own), all of the line in it (a line with a rich span of another colour or opacity is marked
+  `mixed` and keeps the usual checks), with no element, written-out repeat copy or outer shadow over it that both
+  renderers paint after it, whose design has fewer than 3 fully covered pixels (at least 0.85 of that colour's distance
+  from the background; an em dash or a "1" whose one stroke lies between two device pixels), has an ink colour and
+  amount that measure coverage, which the renderers lay differently. Such a line is judged by the angle between the
+  design's and Unity's ink directions from the background in sRGB (`textInkDirection` 0.66°: the suite's highest 0.26°
+  plus 0.4) and by an ink amount within 0.5–2 times the design's (both measured against the text colour). On such a line
+  a lightness-only error within that amount is not caught; a dash in another hue fails (36° and 38° for the warning and
+  accent colours), and so does a faded, veiled or muted larger text drawn lighter or missing glyphs, a small one under a
+  later card's shadow or another item's layer, or in a span of another colour. The 120 `repeat-items` captures this
+  concerned pass.
 - An edge-band relaxation that fails names every condition that does not hold (a block, a window, a border's colour
   evidence, its centre, its width), not only the first.
 - The ring width check keeps its limit (more than 0.5 device px fails) and decides reliably from 0.75 device px (ruling

@@ -718,13 +718,18 @@ Playwright do not colour-judge anti-aliased pixels either):
 
 - **Which text can be one (ruling R141, fix round 3).** Text of at most 12 device px (`HAIRLINE_MAX_PX`; the suite's
   hairline lines are 10 and 10.67), drawn at opacity 1 (its own times its ancestors', an animation sample's running value
-  included) in the colour the capture recorded for it, all of the line in it, and with nothing painted later over its line.
+  included) in the colour the capture recorded for it, all of the line in it, and with nothing painted after it over its
+  line (after it in the compiler's paint order, which both renderers follow: fix round 4).
   The golden records each text's computed colour and drawn opacity (boxes `color` and `opacity`, design side only), a repeat
   copy its own (a copy whose class mutes it is judged against its muted colour), and marks a line with a run of another
-  colour or opacity, a rich inline span (line `mixed`; N-6). Painted later: every IR element and every written-out repeat
-  copy after the text in paint order that paints something, on either side, and the outer shadow each casts (`shadows`,
-  a copy's placed by its own box; N-5); a later item of a repeat paints after an earlier one, inside an item the IR's order
-  holds. Without a paint order no line is a hairline line. R138's first rule took the colour from the IR's static style and had no size,
+  colour or opacity, a rich inline span (line `mixed`; N-6). Painted after it: every IR element and every written-out
+  repeat copy after the text in paint order that paints something, on either side, and the outer shadow each casts (N-5;
+  a copy's placed by its own box). What a copy paints is what the golden recorded for it in its own item's state (boxes
+  `paints` and `shadow`, design side only: a job's hover or class on a later item gives that copy its fill or its lift's
+  shadow), and a later text's text shadow counts too (fix round 4, N-8). A later item of a repeat paints after an earlier
+  one; inside an item the compiler's sibling order holds (lint/paint-order.ts, the rule the compiler and lint share: an
+  absolute scrim written before the caption it covers paints after it, in CSS and in UI Toolkit; fix round 4, N-9). Without
+  a paint order no line is a hairline line. R138's first rule took the colour from the IR's static style and had no size,
   opacity or cover bound: any text whose design ink sat on that colour's ray nearer the background counted, and the fix
   round 1 re-review's probes passed at 16 px with Unity wrong: a label sampled mid-fade (design at opacity 0.6, Unity 0.8 or
   missing glyphs), text under a 30 % veil (Unity at 0.7 or missing glyphs), a muted copy drawn lighter or missing glyphs.

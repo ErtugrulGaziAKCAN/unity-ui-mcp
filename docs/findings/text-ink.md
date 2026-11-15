@@ -339,8 +339,8 @@ wholly. A text of one glyph of one stroke thinner than two device pixels, on a l
 pixels (an em dash, a "1" at 10 and 10.67 device px), may cover none: its measured ink colour and amount are its coverage,
 which Chromium and UI Toolkit lay differently on the pixel grid (the dash: 0.84 and 0.44 of two rows against 1 and 0.12;
 ink colour ΔE2000 6.06 to 8.99, ink amount 0.69 to 0.75). Such a line (text of at most 12 device px, drawn at opacity 1 in the
-colour the capture recorded for it, all of the line in it, with no later element, repeat copy or outer shadow over it, and
-fewer than 3 pixels at 0.85 of that colour's distance from the background, in its direction, its most covered pixel at half
+colour the capture recorded for it, all of the line in it, with no element, repeat copy (in its own item's state) or outer
+box or text shadow over it that both renderers paint after it (the compiler's paint order), and fewer than 3 pixels at 0.85 of that colour's distance from the background, in its direction, its most covered pixel at half
 of it or more) is judged by the angle between the two inks' directions from the background in sRGB instead, limit 0.66°
 (the suite's highest 0.26°, plus 0.4), and its ink amount against the text colour within 0.5 to 2 times the design's (the
 suite's 0.86 to 1.01). On such a line a lightness-only error within that band is not caught. Measurements and the exact rule: docs/findings/viewport-classes.md, "Hairline lines".

@@ -968,8 +968,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const paints = (id: string) => !ctx.painters || ctx.painters.has(id);
     const paintIndex = new Map(order.map((id, i) => [id, i]));
     /**
-     * Boxes painted over the element on either side: later elements in paint order that paint something (IR), else
-     * the elements it contains. A point under one of them on either side is not this element's colour.
+     * Boxes painted over the element on either side: later elements in paint order (the compiler's, `ctx.order`) that
+     * paint something (IR), else the elements it contains. A point under one of them on either side is not this element's
+     * colour.
      */
     const coveringIds = (id: string): string[] => {
       const ge = g.elements[id];
@@ -1214,7 +1215,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
      * What paints after the text `key` of element `id` and may lie over its lines (ruling R141, fix round 3 N-5, fix round 4
      * N-8): every IR element and every written-out repeat copy later in paint order that paints something or casts a shadow
      * in the capture (`layerOf`), on both sides. A later item of a repeat paints after an earlier one; inside one item the
-     * IR's paint order holds. Null when the paint order is unknown.
+     * compiler's paint order holds (`ctx.order`: an absolute sibling the compiler moves after in-flow ones is later there,
+     * as CSS paints it, fix round 4 N-9). Null when the paint order is unknown.
      */
     const laterLayers = (id: string, key: string): Rect[] | null => {
       if (!paintIndex.has(id)) return null;
