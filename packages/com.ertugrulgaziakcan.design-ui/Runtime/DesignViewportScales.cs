@@ -144,8 +144,9 @@ namespace DesignUi
     /// preset or copy, scene and no Undo snapshot taken in Edit mode can carry a held factor. In Play mode a held asset is
     /// written in memory: a save during Play writes its own factor (DesignUi.Editor's save guard,
     /// <see cref="GiveBackForSave"/>), an Undo or Redo of a snapshot taken while held puts the snapshot's own factor back
-    /// (<see cref="AfterUndoRedo"/>, also after a script reload), and leaving Play, a script reload, a build and quitting give
-    /// every factor back.</para>
+    /// (<see cref="AfterUndoRedo"/>, also after a script reload; only on the settings the Undo touched, and only for a factor
+    /// this wrote since the settings' own last changed: a value the game or the user set, also one equal to an earlier held
+    /// factor, is never reset), and leaving Play, a script reload, a player build and quitting give every factor back.</para>
     /// </summary>
     internal static class DesignRootScalePanels
     {
@@ -156,8 +157,13 @@ namespace DesignUi
             public float Own;
             /// <summary>The factor last written here (NaN: none): the only value that counts as this class's own write.</summary>
             public float Written = float.NaN;
-            /// <summary>Every factor written here with the own factor it was written over (Editor: an Undo snapshot can bring one back).</summary>
+            /// <summary>
+            /// The factors written here since the settings' own last changed, each with the own factor it was written over, and
+            /// the one held when it changed (Editor: an Undo of that change, or of a snapshot taken while held, brings one back).
+            /// </summary>
             public readonly List<(float factor, float own)> History = new List<(float, float)>();
+            /// <summary>The scale this class last wrote or saw on the settings (Editor): an Undo that leaves it as it is did not touch them.</summary>
+            public float Observed = float.NaN;
             public IReadOnlyList<double> ExactScales;
             public readonly List<DesignScreen> Screens = new List<DesignScreen>();
             /// <summary>The factor was given back for a save and is held again after it.</summary>
@@ -210,6 +216,8 @@ namespace DesignUi
             UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += RestoreAll;
             UnityEditor.EditorApplication.quitting += RestoreAll;
             UnityEditor.Undo.undoRedoPerformed += AfterUndoRedo;
+            UnityEditor.Undo.postprocessModifications += ObserveModifications;
+            UnityEditor.EditorApplication.update += Observe;
         }
 #endif
 
@@ -293,6 +301,9 @@ namespace DesignUi
             // any factor but the one last written here is the settings' own from now on: the game's UI scale, whatever value
             if (float.IsNaN(e.Written) || settings.scale != e.Written)
             {
+#if UNITY_EDITOR
+                KeepLastWritten(e);
+#endif
                 e.Own = settings.scale;
                 e.Written = float.NaN;
             }
@@ -314,6 +325,9 @@ namespace DesignUi
                 RequestUpdate(tree);
             }
             else if (factor != e.Own) e.Written = factor;
+#if UNITY_EDITOR
+            e.Observed = settings.scale;
+#endif
             // the panel applies a new factor on its next update; until then the root scales from the scale it lays out at now
             double r = actual / ppp;
             rootScale = Math.Abs(r - 1) <= DesignViewportScales.Tolerance ? 1f : (float)r;
@@ -369,6 +383,7 @@ namespace DesignUi
             if (e.Settings == null) return;
             if (!float.IsNaN(e.Written) && e.Settings.scale == e.Written || e.Suspended && e.Settings.scale == e.Own) e.Settings.scale = e.Own;
 #if UNITY_EDITOR
+            e.Observed = e.Settings.scale;
             if (e.History.Count > 0)
             {
                 e.Written = float.NaN;
@@ -404,31 +419,66 @@ namespace DesignUi
         [Serializable]
         sealed class Remembered
         {
-            public List<string> ids = new List<string>();
+            public List<Record> records = new List<Record>();
+        }
+
+        [Serializable]
+        sealed class Record
+        {
+            public string id;
+            public float observed;
             public List<float> factors = new List<float>();
             public List<float> owns = new List<float>();
         }
 
         /// <summary>
-        /// Keeps an asset's written factors for the Editor session (SessionState): an Undo after a script reload, which empties
-        /// the statics but keeps the Undo stack, can still put the snapshot's own factor back.
+        /// A held entry keeps, of the factors it wrote, only the one held when its own changed (an Undo of that change brings
+        /// it back): an earlier factor that equals a later own (the game's or the user's) must never be taken for this class's.
+        /// </summary>
+        static void KeepLastWritten(Entry e)
+        {
+            float written = e.Written;
+            if (float.IsNaN(written)) { e.History.Clear(); return; }
+            for (int i = e.History.Count - 1; i >= 0; i--)
+                if (e.History[i].factor == written)
+                {
+                    var pair = e.History[i];
+                    e.History.Clear();
+                    e.History.Add(pair);
+                    return;
+                }
+            e.History.Clear();
+        }
+
+        /// <summary>
+        /// Keeps a given-back asset's written factors and the scale it was left with for the Editor session (SessionState): an
+        /// Undo after a script reload, which empties the statics but keeps the Undo stack, can still put the snapshot's own
+        /// factor back.
         /// </summary>
         static void Remember(Entry e)
         {
             if (e.Settings == null || !UnityEditor.EditorUtility.IsPersistent(e.Settings)) return;
             var id = UnityEditor.GlobalObjectId.GetGlobalObjectIdSlow(e.Settings).ToString();
             var r = Load();
+            r.records.RemoveAll(x => x.id == id);
+            var record = new Record { id = id, observed = e.Observed };
             foreach (var (factor, own) in e.History)
             {
-                bool known = false;
-                for (int i = 0; i < r.ids.Count; i++)
-                    if (r.ids[i] == id && r.factors[i] == factor) { r.owns[i] = own; known = true; }
-                if (known) continue;
-                r.ids.Add(id);
-                r.factors.Add(factor);
-                r.owns.Add(own);
+                record.factors.Add(factor);
+                record.owns.Add(own);
             }
+            r.records.Add(record);
             UnityEditor.SessionState.SetString(RememberedKey, JsonUtility.ToJson(r));
+        }
+
+        /// <summary>Forgets a given-back settings: its scale is the game's or the user's now.</summary>
+        static void Forget(Entry r)
+        {
+            s_Released.Remove(r);
+            if (r.Settings == null || !UnityEditor.EditorUtility.IsPersistent(r.Settings)) return;
+            var id = UnityEditor.GlobalObjectId.GetGlobalObjectIdSlow(r.Settings).ToString();
+            var all = Load();
+            if (all.records.RemoveAll(x => x.id == id) > 0) UnityEditor.SessionState.SetString(RememberedKey, JsonUtility.ToJson(all));
         }
 
         static Remembered Load()
@@ -437,23 +487,73 @@ namespace DesignUi
             catch (ArgumentException) { return new Remembered(); }
         }
 
-        /// <summary>The own factor a remembered asset had under <paramref name="factor"/> (this session, across script reloads), or NaN.</summary>
-        static float RememberedOwn(PanelSettings settings, float factor)
+        static bool s_Rehydrated;
+
+        /// <summary>After a script reload: the given-back assets the session remembers are tracked again, with the scale they were left with.</summary>
+        static void Rehydrate()
         {
-            if (settings == null || !UnityEditor.EditorUtility.IsPersistent(settings)) return float.NaN;
-            var r = Load();
-            if (r.ids.Count == 0) return float.NaN;
-            var id = UnityEditor.GlobalObjectId.GetGlobalObjectIdSlow(settings).ToString();
-            for (int i = r.ids.Count - 1; i >= 0; i--)
-                if (r.ids[i] == id && r.factors[i] == factor) return r.owns[i];
-            return float.NaN;
+            if (s_Rehydrated) return;
+            s_Rehydrated = true;
+            foreach (var record in Load().records)
+            {
+                if (!UnityEditor.GlobalObjectId.TryParse(record.id, out var gid)) continue;
+                var settings = UnityEditor.GlobalObjectId.GlobalObjectIdentifierToObjectSlow(gid) as PanelSettings;
+                if (settings == null || Find(s_Entries, settings) != null || Find(s_Released, settings) != null) continue;
+                var e = new Entry { Settings = settings, Own = record.observed, Observed = record.observed };
+                for (int i = 0; i < record.factors.Count && i < record.owns.Count; i++) e.History.Add((record.factors[i], record.owns[i]));
+                s_Released.Add(e);
+            }
+        }
+
+        /// <summary>
+        /// Every Editor update: a scale this class did not write and no Undo brought back (the game's code, the Inspector) is the
+        /// settings' own. A held entry keeps only the pair of the factor held when it changed; a given-back settings is
+        /// forgotten. So an Undo or a save later never takes such a value for one of this class's factors.
+        /// </summary>
+        internal static void Observe()
+        {
+            Rehydrate();
+            foreach (var e in s_Entries) ObserveEntry(e, false);
+            for (int i = s_Released.Count - 1; i >= 0; i--) ObserveEntry(s_Released[i], true);
+        }
+
+        static void ObserveEntry(Entry e, bool released)
+        {
+            if (e.Settings == null)
+            {
+                if (released) s_Released.Remove(e);
+                return;
+            }
+            float scale = e.Settings.scale;
+            if (float.IsNaN(e.Observed) || scale == e.Observed) return;
+            if (released) { Forget(e); return; }
+            // a held entry: its screens take the new value as the own on their next evaluation
+            KeepLastWritten(e);
+            e.Observed = scale;
+        }
+
+        /// <summary>A scale set through the Inspector or a SerializedObject (recorded for Undo) is observed at once.</summary>
+        static UnityEditor.UndoPropertyModification[] ObserveModifications(UnityEditor.UndoPropertyModification[] modifications)
+        {
+            foreach (var m in modifications)
+            {
+                if (!(m.currentValue?.target is PanelSettings settings) || m.currentValue.propertyPath != "m_Scale") continue;
+                if (!float.TryParse(m.currentValue.value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value)) continue;
+                var e = Find(s_Entries, settings);
+                var released = e == null;
+                if (released) e = Find(s_Released, settings);
+                if (e == null || value == e.Observed) continue;
+                if (released) Forget(e);
+                else { KeepLastWritten(e); e.Observed = value; }
+            }
+            return modifications;
         }
 
         /// <summary>
         /// Before a save (DesignUi.Editor's save guard): every PanelSettings <paramref name="saved"/> names that holds the factor
-        /// this wrote last gets its own factor for the write; one given back earlier and brought back to a factor it held (an
-        /// Undo) gets the own factor of that snapshot. The ones still held get theirs again from the Editor's next update
-        /// (<see cref="ReapplyAfterSave"/>). Returns how many were given back.
+        /// this wrote last gets its own factor for the write (an Undo that brings a given-back settings to a factor it held is
+        /// mapped to that snapshot's own at once, <see cref="AfterUndoRedo"/>). The ones still held get theirs again from the
+        /// Editor's next update (<see cref="ReapplyAfterSave"/>). Returns how many were given back.
         /// </summary>
         internal static int GiveBackForSave(Func<PanelSettings, bool> saved)
         {
@@ -465,18 +565,11 @@ namespace DesignUi
                 if (!float.IsNaN(e.Written) && e.Settings.scale == e.Written && e.Settings.scale != e.Own)
                 {
                     e.Settings.scale = e.Own;
+                    e.Observed = e.Own;
                     e.Suspended = true;
                     again = true;
                     n++;
                 }
-            }
-            for (int i = s_Released.Count - 1; i >= 0; i--)
-            {
-                var r = s_Released[i];
-                if (r.Settings == null) { s_Released.RemoveAt(i); continue; }
-                if (!saved(r.Settings) || !r.OwnBefore(r.Settings.scale, out var own)) continue;
-                r.Settings.scale = own;
-                n++;
             }
             if (again)
             {
@@ -500,26 +593,33 @@ namespace DesignUi
                 e.Suspended = false;
                 if (e.Settings == null || float.IsNaN(e.Written) || e.Settings.scale != e.Own) continue;
                 e.Settings.scale = e.Written;
+                e.Observed = e.Written;
                 foreach (var s in e.Screens)
                     if (s.panel != null) { RequestUpdate(s.panel.visualTree); break; }
             }
         }
 
         /// <summary>
-        /// After an Undo or Redo: a PanelSettings brought back to a factor this wrote earlier gets the own factor that factor was
-        /// written over (the snapshot's own): held, the screens hold the factor of that own again; given back, it keeps that own.
-        /// Also after a script reload, for assets (SessionState).
+        /// After an Undo or Redo, only on the PanelSettings it touched (whose scale is no longer the one this class last wrote or
+        /// saw): one brought back to a factor this wrote (since its own last changed, or the one held then) gets the own factor
+        /// that factor was written over (the snapshot's own): held, the screens hold the factor of that own again; given back,
+        /// it keeps that own. Any other value an Undo brings back is the settings' own. Also after a script reload, for assets
+        /// (SessionState).
         /// </summary>
         internal static void AfterUndoRedo()
         {
+            Rehydrate();
             foreach (var e in s_Entries)
             {
-                if (e.Settings == null || e.Settings.scale == e.Written) continue;
-                float own = e.OwnBefore(e.Settings.scale, out var o) ? o : RememberedOwn(e.Settings, e.Settings.scale);
-                if (float.IsNaN(own)) continue;
+                if (e.Settings == null) continue;
+                float scale = e.Settings.scale;
+                if (scale == e.Observed) continue; // not touched
+                e.Observed = scale;
+                if (scale == e.Written || !e.OwnBefore(scale, out var own)) continue;
                 e.Own = own;
                 e.Written = float.NaN;
                 e.Settings.scale = own;
+                e.Observed = own;
                 foreach (var s in e.Screens)
                     if (s.panel != null) { RequestUpdate(s.panel.visualTree); break; }
             }
@@ -527,15 +627,11 @@ namespace DesignUi
             {
                 var r = s_Released[i];
                 if (r.Settings == null) { s_Released.RemoveAt(i); continue; }
-                if (r.OwnBefore(r.Settings.scale, out var own)) r.Settings.scale = own;
-            }
-            // assets a script reload made this forget
-            if (Load().ids.Count == 0) return;
-            foreach (var settings in Resources.FindObjectsOfTypeAll<PanelSettings>())
-            {
-                if (settings == null || Find(s_Entries, settings) != null || Find(s_Released, settings) != null) continue;
-                var own = RememberedOwn(settings, settings.scale);
-                if (!float.IsNaN(own)) settings.scale = own;
+                float scale = r.Settings.scale;
+                if (scale == r.Observed) continue; // not touched
+                r.Observed = r.OwnBefore(scale, out var own) ? own : scale;
+                r.Settings.scale = r.Observed;
+                Remember(r);
             }
         }
 
@@ -549,13 +645,18 @@ namespace DesignUi
         }
 
         /// <summary>Forgets what a script reload empties: the settings given back earlier, not the session's record (tests).</summary>
-        internal static void ForgetStatics() => s_Released.Clear();
+        internal static void ForgetStatics()
+        {
+            s_Released.Clear();
+            s_Rehydrated = false;
+        }
 
         /// <summary>Forgets the settings given back earlier, also the session's remembered ones (tests).</summary>
         internal static void ForgetReleased()
         {
             s_Released.Clear();
             UnityEditor.SessionState.EraseString(RememberedKey);
+            s_Rehydrated = true;
         }
 #endif
     }

@@ -669,6 +669,90 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
+        /// An Undo acts only on the PanelSettings it touched, and only for a factor this wrote: an asset held at 1600×900 in Play
+        /// mode (factor 1.2) and given back keeps the user's own 1.2 set later in the Inspector (equal to the held factor) through
+        /// an Undo of another object's change and a save, also after a script reload.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AUsersOwnFactor_EqualToAnEarlierHeldOne_SurvivesAnUnrelatedUndo_AndASave()
+        {
+            DesignRootScalePanels.Playing = () => true;
+            var asset = SettingsAsset("User");
+            var screen = ShowOn(asset, out var doc);
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, asset.scale, 1e-4, "held at 1600×900");
+            screen.RemoveFromHierarchy();
+            Assert.AreEqual(1f, asset.scale, "given back");
+            Object.DestroyImmediate(doc.gameObject);
+            DesignRootScalePanels.Playing = () => false;
+            // the user's 120 %, through the Inspector (a recorded change)
+            var so = new SerializedObject(asset);
+            so.FindProperty("m_Scale").floatValue = 1.2f;
+            so.ApplyModifiedProperties();
+            yield return null;
+            var other = Track(new GameObject("RootScaleTests other"));
+            Undo.IncrementCurrentGroup();
+            Undo.RecordObject(other.transform, "move");
+            other.transform.position = new Vector3(3, 0, 0);
+            Undo.PerformUndo();
+            Assert.AreEqual(1.2f, asset.scale, 1e-6, "an Undo of another object's change leaves the user's factor");
+            AssetDatabase.SaveAssetIfDirty(asset);
+            Assert.AreEqual("1.2", ScaleInFile(AssetDatabase.GetAssetPath(asset)), "a save writes it");
+            // after a script reload too
+            DesignRootScalePanels.ForgetStatics();
+            Undo.IncrementCurrentGroup();
+            Undo.RecordObject(other.transform, "move");
+            other.transform.position = new Vector3(5, 0, 0);
+            Undo.PerformUndo();
+            Assert.AreEqual(1.2f, asset.scale, 1e-6, "after a script reload");
+        }
+
+        /// <summary>
+        /// A game's own factor equal to a factor held earlier survives an Undo in Play mode: held at 1600×900 (1.2), exact at
+        /// 1920×1080, the game's 120 % option writes 1.2, an Undo of another object's change runs while a screen holds a factor
+        /// on top of it and after the screen closed: the factor stays the game's 1.2.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AGamesOwnFactor_SurvivesAnUndo_InPlayMode()
+        {
+            DesignRootScalePanels.Playing = () => true;
+            var doc = Document(1600, 900);
+            _settings.hideFlags = HideFlags.None;
+            yield return Frames(2);
+            var screen = PlainScreen("root");
+            doc.rootVisualElement.Add(screen);
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, _settings.scale, 1e-4, "held at 1600×900");
+            _settings.targetTexture = Texture(1920, 1080);
+            yield return Frames(6);
+            _settings.scale = 1.2f; // the game's "120 %"
+            screen.panel.visualTree.MarkDirtyRepaint();
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, DesignRootScalePanels.OwnScale(_settings) ?? float.NaN, 1e-6);
+            // (0.75 × 1.2 = 0.9 lays out at the next exact scale up, 1: the held factor is 1.2 / 0.9)
+            Assert.AreEqual(1.2f / 0.9f, _settings.scale, 1e-4);
+            var other = Track(new GameObject("RootScaleTests other"));
+            void UndoAMove()
+            {
+                Undo.IncrementCurrentGroup();
+                Undo.RecordObject(other.transform, "move");
+                other.transform.position += new Vector3(3, 0, 0);
+                Undo.PerformUndo();
+            }
+            UndoAMove();
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, DesignRootScalePanels.OwnScale(_settings) ?? float.NaN, 1e-6, "the game's 120 % stays the own factor");
+            Assert.AreEqual(1.2f / 0.9f, _settings.scale, 1e-4, "held on top of it");
+            // the screen closed (a menu without design screens): the game's 1.2, equal to the factor held at 1600×900
+            screen.RemoveFromHierarchy();
+            Assert.AreEqual(1.2f, _settings.scale, 1e-6, "given back as the game's");
+            UndoAMove();
+            yield return Frames(2);
+            Assert.AreEqual(1.2f, _settings.scale, 1e-6, "an Undo leaves the game's 120 %");
+            Object.DestroyImmediate(doc.gameObject);
+        }
+
+        /// <summary>
         /// An Undo of an edit of the factor while a screen held it gives back the factor of the snapshot's own (a factor/own pair):
         /// held at 1600×900 (own 1, factor 1.2), the own factor set to 1.3 (factor 1.56), Undo: own 1 and factor 1.2 again. An
         /// Undo after the screen left and a script reload (the statics forgotten, the session's record kept) still gives the
