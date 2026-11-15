@@ -919,6 +919,42 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(compareCapture(golden, { png: draw(null), boxes }, [], T, ctx).issues.map((i) => i.kind)).toEqual(["color", "edge", "ssim"]);
   });
 
+  describe("the ellipsis glyph at every viewport (ruling R147): crops of the suite's text-spacing captures", () => {
+    // the end of the text-spacing fixture's ellipsized body line ("…kala…") at all six viewports, design and Unity, with the
+    // boxes the captures recorded (in crop coordinates); `curve`: Unity's capture with the twin pre-add of U+2026 turned off,
+    // where a line-box variant drew a curve in place of the dots
+    const geo = JSON.parse(fs.readFileSync(path.join(here, "fixtures", "compare", "r147-ellipsis.json"), "utf8")) as Record<string, {
+      size: [number, number]; scale: number; viewport: [number, number]; element: { x: number; y: number; w: number; h: number };
+      design: CaptureBoxes["elements"][string]["lines"][number]; unity: CaptureBoxes["elements"][string]["lines"][number];
+    }>;
+    const png = (name: string) => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `${name}.png`)));
+    const side = (w: string, image: Rgba, unity: boolean) => {
+      const g = geo[w];
+      return {
+        png: image,
+        boxes: { capture: `default@${g.viewport[0]}x${g.viewport[1]}`, viewport: g.size, scale: g.scale, external: [],
+          elements: { root: el(0, 0, g.size[0], g.size[1]), title: el(g.element.x, g.element.y, g.element.w, g.element.h, { text: true, lines: [unity ? g.unity : g.design] }) } } as CaptureBoxes,
+      };
+    };
+    const repo = readThresholds();
+    const judge = (w: string, unity: string) => {
+      const cls = w === "1366" || w === "1600" ? "scaled" : "exact";
+      return compareCapture(side(w, png(`r147-ellipsis-${w}.design`), false), side(w, png(unity), true), [], thresholdsFor(repo, cls), { viewportClass: cls });
+    };
+    const viewports = ["1280", "1366", "1600", "1920", "2560", "3840"];
+
+    it("passes the dots Unity draws at all six viewports", () => {
+      for (const w of viewports) expect(judge(w, `r147-ellipsis-${w}.unity`).issues, w).toEqual([]);
+    });
+
+    it("fails the curve a twin without U+2026 drew, at the exact viewports too", () => {
+      for (const w of viewports) {
+        const v = judge(w, `r147-curve-${w}.unity`);
+        expect(v.issues.filter((i) => i.id === "title" && i.kind === "ink" && /ellipsis/.test(i.detail)), w).toHaveLength(1);
+      }
+    });
+  });
+
   describe("ssimRoundEdge at every viewport (ruling R119): crops of the suite's 1280×720 captures", () => {
     // the design's and Unity's pixels around two elements of the fidelity suite at 1280×720 (scale 0.5), with their boxes
     const crop = (name: string, side: "design" | "unity") => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r119-${name}.${side}.png`)));

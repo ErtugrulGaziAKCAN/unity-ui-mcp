@@ -272,8 +272,8 @@ export const HAIRLINE_PEAK = 0.5;
 export const HAIRLINE_MAX_PX = 12;
 export const HAIRLINE_INK_BAND: readonly [number, number] = [0.5, 2];
 /**
- * How far an ellipsized line's ellipsis may differ from the design's for the one-grapheme allowance of ruling R146 to apply
- * (Unity must end the line in the design's ellipsis glyph): the shape, as the L1 difference of the column profiles over the
+ * How far an ellipsized line's ellipsis may differ from the design's at any viewport (ruling R147; at a scaled viewport also
+ * the condition of the one-grapheme allowance of ruling R146): the shape, as the L1 difference of the column profiles over the
  * design's ellipsis mass, each scaled to the design's mass (ellipsisCut), and the ink amount, Unity's over the design's.
  * Measured on the fidelity suite's two ellipsized lines at all six viewports with the dots drawn right: shape 0.07–0.34,
  * amount 1.07–1.30 (Unity's dots are a little heavier); a letter where the dots are 0.65–1.30 and 3.5–4.1, the wrong glyph
@@ -516,6 +516,11 @@ export interface ElementRow {
    * prefix differs by one grapheme at a scaled viewport (ruling R146); absent when no line took that allowance.
    */
   ellipsisCut?: number;
+  /**
+   * The ellipsis Unity ends the element's ellipsized line in, against the design's (ruling R147): the column profile's shape
+   * error and the ink amount ratio of the line with the largest shape error; absent when the design cuts no line.
+   */
+  ellipsisGlyph?: { shape: number; amount: number };
   /** `<design>/<Unity>` line counts; "not compared" for text without DOM lines. */
   lines: string | null;
 }
@@ -1303,10 +1308,17 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           const dl = endShift(a, b, a.left, a.left + em, b.left - a.left), dr = endShift(a, b, a.right - em, a.right, b.right - a.right);
           const dw = dr - dl;
           let worst = Math.max(Math.abs(dl), Math.abs(dr), Math.abs(dw));
+          // ruling R147 (every viewport): a line the design ends in an ellipsis ends in the design's ellipsis glyph in Unity,
+          // its column profile and ink amount found next to the end of Unity's ink (a wrong glyph is a visible defect at any size)
+          const cut = gl.ellipsis ? ellipsisCut(a, b, gl.ellipsis) : null;
+          const glyph = !!cut && cut.shape <= ELLIPSIS_SHAPE + EPS && cut.amount >= ELLIPSIS_AMOUNT[0] - EPS && cut.amount <= ELLIPSIS_AMOUNT[1] + EPS;
+          if (cut) {
+            if (!row.ellipsisGlyph || cut.shape > row.ellipsisGlyph.shape) row.ellipsisGlyph = { shape: r6(cut.shape), amount: r6(cut.amount) };
+            if (!glyph) issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: the line does not end in the design's ellipsis: its shape differs by ${cut.shape.toFixed(2)} (limit ${ELLIPSIS_SHAPE}), its ink is ${cut.amount.toFixed(2)}× the design's (expected ${ELLIPSIS_AMOUNT[0]}–${ELLIPSIS_AMOUNT[1]}×): another glyph or none`, gl);
+          }
           // ruling R146 (scaled viewports): Unity keeps one grapheme more or fewer before the design's ellipsis; its start is
-          // judged as before, its ellipsis must be the design's glyph, and its end may move by that grapheme's advance
-          const cut = gl.ellipsis && t.ellipsisGraphemes >= 1 && worst > t.boxPx + GEOMETRY_EPS && Math.abs(dl) <= t.boxPx + GEOMETRY_EPS ? ellipsisCut(a, b, gl.ellipsis) : null;
-          if (cut && cut.shape <= ELLIPSIS_SHAPE + EPS && cut.amount >= ELLIPSIS_AMOUNT[0] - EPS && cut.amount <= ELLIPSIS_AMOUNT[1] + EPS &&
+          // judged as before, its ellipsis is the design's glyph (above), and its end may move by that grapheme's advance
+          if (cut && glyph && t.ellipsisGraphemes >= 1 && worst > t.boxPx + GEOMETRY_EPS && Math.abs(dl) <= t.boxPx + GEOMETRY_EPS &&
               cut.shift <= gl.ellipsis!.next + t.boxPx + GEOMETRY_EPS && cut.shift >= -(gl.ellipsis!.last + t.boxPx) - GEOMETRY_EPS) {
             worst = Math.abs(dl);
             common = cut.common;

@@ -1109,7 +1109,13 @@ cut).
   (a curve) in place of the dots at every viewport of the suite's text-spacing capture; the ink extent check let it pass,
   and one 3840×2160 capture failed by 1.15 px. The import adds U+2026 to the twins of every screen with an ellipsized text
   (`ScreenCompilerTests.ScreenStrings_HoldTheEllipsis_WhenATextEndsInOne`); the dots then match the design's at all six
-  viewports. The exact class does not judge the glyph's shape (only the scaled allowance does).
+  viewports.
+- **R147, the glyph at every viewport**: a wrong ellipsis glyph is a visible defect at any size, so the glyph check of
+  R146 (shape error at most 0.45, ink amount 0.8–1.6) applies at the exact viewports too; a line that fails it is an `ink`
+  issue ("does not end in the design's ellipsis"). Measured on crops of the text-spacing capture (`r147-*` in the
+  compare fixtures): the dots 0.07–0.32 and 1.08–1.26 at the exact viewports, 0.22–0.34 and 1.18–1.31 at the scaled
+  ones, so one band serves both classes; the curve 0.95–1.67 at the exact viewports and 1.20–1.38 at the scaled ones.
+  Tests: the dots pass at all six viewports, the curve fails at all six.
 - **Left as they are**: right-to-left text and text the advanced generator lays out get no capture record (the shaper
   joins and reorders glyphs, so a logical cut is not the visual one) and so no allowance.
 

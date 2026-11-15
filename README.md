@@ -263,8 +263,8 @@ class) and `Window > Design UI > Status` show each viewport's class.
 A line that does not wrap and ends in an ellipsis is cut by UI Toolkit's own elision, which matched Chromium's cut at
 every exact viewport (the fidelity suite's lines and a pilot's titles). At a scaled viewport it decides under the root scale and can keep one grapheme more or fewer when
 the box lies within about an advance of the threshold; verify allows exactly that there (ruling R146,
-`ellipsisGraphemes`): the line must end in the design's ellipsis glyph, start where the design's does and differ by at
-most one grapheme. The package never changes a label's text.
+`ellipsisGraphemes`): the line must start where the design's does and differ by at most one grapheme. At every viewport
+the line must end in the design's ellipsis glyph (ruling R147). The package never changes a label's text.
 
 Text-sized elements (a button or label whose width is its text's) lay out at the golden's width for their text: the
 golden ceils Chromium's text width to whole device pixels at the viewport's scale, UI Toolkit ceils on the grid of the

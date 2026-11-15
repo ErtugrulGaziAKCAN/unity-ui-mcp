@@ -38,6 +38,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   profile and ink amount, measured) and starts within `boxPx` may end up to that grapheme's advance plus `boxPx` from the
   design's end; its baseline and ink colour keep their limits and its ink amount is taken over the part both draw. Two
   graphemes off, a wrong text or a missing ellipsis still fails; the verdict row names the shift (`ellipsisCut`).
+- Comparison: the ellipsis glyph is judged at every viewport, the exact class included (ruling R147): a line the design
+  cuts with an ellipsis must end in Unity in the design's ellipsis (its column profile within a shape error of 0.45 and its
+  ink 0.8–1.6 of the design's, measured: the dots 0.07–0.34 and 1.08–1.31 at all six viewports, one band for both classes;
+  the curve a twin without U+2026 drew 0.95–1.67), else an `ink` issue says so. The verdict row records the values
+  (`ellipsisGlyph`).
 - Lint **W-TEXT-001** (warning): a word wider than its wrapping text box. The browser keeps a word without a break
   opportunity on its line and lets it overflow; UI Toolkit breaks it inside the word (the standard text generator after
   the last character that fits, the advanced one after a quotation mark or other punctuation), so the lines differ. The
