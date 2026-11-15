@@ -219,6 +219,32 @@ describe("compareCapture", () => {
     expect(short.issues[0].detail).toMatch(/right Δ -8\.\d\d px/);
   });
 
+  it("keeps a line's window margin out of another text line's box (labels laid edge to edge, ruling R150)", () => {
+    // label a ends at x 120 in the design, 120.5 in Unity (a box on whole device px); label b starts right there, its first
+    // stem at 121 in the design and 122 in Unity. A pixel of margin past a's lines took b's first stem into a's ink in the
+    // design only (a pilot screen's untimed section labels at 1920×1080: right Δ −4.35 px)
+    const pair = (unity: boolean, aLonger = 0) => {
+      const png = canvas(320, 120, [16, 24, 32]);
+      glyphs(png, { x: 41, y: 44, w: 78 - aLonger, h: 12 }, [250, 250, 250]);
+      glyphs(png, { x: unity ? 122 : 121, y: 44, w: 40, h: 12 }, [250, 250, 250]);
+      const ax = unity ? 40.5 : 40, bx = unity ? 121 : 120.5;
+      return {
+        png,
+        boxes: { capture: "default@320x120", viewport: [320, 120], scale: 1, external: [],
+          elements: {
+            root: el(0, 0, 320, 120),
+            a: el(ax, 42, 80, 16, { text: true, lines: [{ x: ax, y: 42, w: 80, h: 16, baseline: 55 }] }),
+            b: el(bx, 42, 40, 16, { text: true, lines: [{ x: bx, y: 42, w: 40, h: 16, baseline: 55 }] }),
+          } } as CaptureBoxes,
+      };
+    };
+    const ctx: CaptureContext = { order: ["root", "a", "b"], parent: new Map([["a", "root"], ["b", "root"]]) };
+    const of = (v: CaptureVerdict, id: string) => v.issues.filter((i) => i.id === id).map((i) => i.kind);
+    expect(of(compareCapture(pair(false), pair(true), [], T, ctx), "a")).toEqual([]);
+    // a's own text two stems shorter in Unity still fails
+    expect(of(compareCapture(pair(false), pair(true, 4), [], T, ctx), "a")).toContain("inkExtent");
+  });
+
   describe("text an ancestor's overflow clips: only what both renders show is compared (scroll areas, clipped boxes)", () => {
     // a panel (y 0–100) holds a scroll area (y 20–80, overflow-y auto) with three rows; below the panel lies the game shell's
     // placeholder (an external element), which the design paints and Unity leaves to the capture's magenta backdrop (a pilot
