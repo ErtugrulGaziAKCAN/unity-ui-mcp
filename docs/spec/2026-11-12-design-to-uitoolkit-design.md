@@ -612,35 +612,61 @@ this section are in `docs/findings/animation.md`.
   - *scaled*: supported, laid out and verified, but exempt from the whole-device-pixel rules, since no design value can
     be whole there (1366×768 is 0.53346). Default: 1600×900 (0.625), 1366×768. Verify holds them to the same thresholds:
     boxes, baselines and line extents within ±1 device px plus `GEOMETRY_EPS`; a measured scaled-class limit for colour,
-    ink or SSIM may be recorded under `fidelity-thresholds.json` `scaled` (never the geometry limits). Verdicts, the
+    ink or SSIM may be recorded under `fidelity-thresholds.json` `scaled` (never the geometry limits). Recorded: only the
+    anti-aliasing ramp of round shapes, with per-capture evidence: `ssimRoundEdge` 0.974 for an element whose SSIM with
+    the edge band of its round shapes masked (1 device px either side of a corner's outer curve and its border's inner
+    curve) meets `ssimElement` and whose other checks pass, and `deltaE2000RoundEdge` 5.5 for a corner sample whose window
+    reaches that band and whose pixels outside it meet `deltaE2000` (both off at exact viewports). Verdicts, the
     report, `design_ui_verify` and the fidelity summary count captures per class.
   - *Root scale at any other panel scale.* UI Toolkit puts font sizes, paddings, margins and border widths on whole
     device pixels before layout and ceils text sizes, so a design lays out as designed only where its lengths are whole
     device pixels: at an exact viewport's scale. The compiler writes the exact viewports' panel scales on the screen root
     (`DesignScreen`, UXML attribute `exact-scales`) and a custom property on its type (`DesignScreen { --design-screen: 1 }`).
     On a runtime panel whose scale is none of them (a scaled viewport, or any resolution the profile does not declare),
-    the root sets its PanelSettings' `scale` factor so the panel lays out at the exact scale nearest in log scale
-    (`DesignViewportScales.LayoutScale`; 1600×900 at 0.75, 1366×768 at 0.5) and draws itself scaled by actual / exact
-    from its top-left corner (inline `scale`, `transform-origin` and `flex-shrink: 0`). Every edge then lies where the
+    the root sets its PanelSettings' `scale` factor so the panel lays out at the next exact scale up
+    (`DesignViewportScales.LayoutScale`, rule `Up`; 1600×900 and 1366×768 at 0.75, so the root scale is at most 1 and
+    layout's rounding of each edge stays within half a device pixel) and draws itself scaled by actual / exact
+    from its top-left corner (an inline transform and `flex-shrink: 0`). Every edge then lies where the
     design puts it at the actual scale (text is generated at the exact scale's whole size and drawn scaled; UI Toolkit
-    does not set it again at the world scale). The factor is the PanelSettings' own times exact / actual, kept per
+    does not set it again at the world scale). The root composes the root scale with the design's own transform of the
+    root: the animation player's `translate`, `rotate` and `scale` of a `DesignScreen` go through it, and the compiler
+    writes each of the root's transform declarations again as a custom property (`--dui-root-translate`, `-rotate`,
+    `-scale`, `-origin`, the value as a string) that the root reads in every state and breakpoint; under a root scale `r`
+    the inline transform is scale `r·S`, rotate `R`, translate `r·(t + c − R·S·c)` about the top-left corner (the design's
+    translate `t`, rotate `R`, scale `S` about its origin `c`), unscaled only what the player plays. A screen inside a
+    screen with exact scales is scaled with it, never again itself. The factor is the PanelSettings' own times exact / actual, kept per
     PanelSettings while a screen is on its panel and given back when the last one leaves; a factor the game writes
-    meanwhile is kept as its own; a region's sort-order copy starts with the asset's own. The root re-evaluates on attach,
+    meanwhile is kept as its own (a factor this wrote before, which an Undo snapshot can bring back, is not); a region's
+    sort-order copy starts with the asset's own. The held factor never reaches a file: in the Editor an
+    `AssetModificationProcessor` gives a held PanelSettings asset its own factor for every save that writes it (an asset
+    save, File > Save, the save after an Inspector edit, the save when the Editor quits) and holds it again from the next
+    Editor update; an Undo or Redo of a snapshot taken while held puts the right factor back; leaving Play, a script
+    reload and quitting give every factor back. Screens with different exact scales on one PanelSettings lay out at the
+    first's, with a warning. While a panel has no size for a moment the held root scale stays. The root re-evaluates on attach,
     on geometry changes of itself and the panel's root, and on `CustomStyleResolvedEvent` (UI Toolkit resolves every
     style again when a panel's scale changes, also from one 16:9 resolution to another), so no polling. Breakpoints hold
     at the design's size (the panel's target over the actual scale). Picking, pointer events (hover, active, clicks,
     wheel, drags in local coordinates), the gamma composite's texture and pointer mapping and `DesignUiPanelRegion`
     frames follow the transform (`RootScaleTests`). The capture is the game's path: its PanelSettings copy gets the same
     factor and `boxes.json` records the scale the panel lays out at. Measured: docs/findings/viewport-classes.md.
-  - *Text widths.* Chromium ceils a text's width to whole device pixels at the page's scale (a 69.469 px text makes its
-    button 70 px of content at 2560×1440, 105 device px at 3840×2160); UI Toolkit ceils on the grid of the scale it lays
-    out at and with no tolerance (a text of 86 px in the browser is 86.003 in Unity and takes 87). A text or button node
+  - *Text widths.* The golden lays a text-sized box out with Chromium's text width ceiled to whole device pixels at the
+    viewport's scale (the exporter's pageTextCeil; a 69.469 px text makes its button 70 px of content at 2560×1440, 105
+    device px at 3840×2160); UI Toolkit ceils on the grid of the scale it lays out at and with no tolerance (a text of 86 px
+    in the browser is 86.0100 in Unity and takes 87). A text or button node
     whose width is its content's (no width, min or max width, flex-basis in any layer; not grown in a row, not stretched
     in a column, not pinned by left and right; no animated size or text size) is written as `DesignLabel` or
     `DesignButton` (`dui:`), which set an inline width of the generator's unrounded width ceiled on the design's device
-    grid less 0.025 device px (`DesignTextFit.Snap`) plus horizontal padding and borders, and `white-space: nowrap`
-    (`pre` where the design keeps spaces); taken off when the parent holds the element narrower. A rule on their types
-    (`--design-text-fit`) makes UI Toolkit tell them when their styles change.
+    grid less 0.012 device px (`DesignTextFit.Snap`; measured on the suite's 984 text-sized texts) plus horizontal padding
+    and borders as the golden lays them out (with letter-spacing: the text without its last spacing ceiled, plus the
+    spacing, the design's padding and the borders, rounded to whole device pixels), and `white-space: nowrap`
+    (`pre` where the design keeps spaces). A text the design lets wrap keeps wrapping where its line has no room: in a
+    row the width comes off when the row holds the element narrower than UI Toolkit's own width for the text (judged
+    after a layout of it); in a column and for an absolute text (pinned by its left side; one pinned by its right side is
+    fitted only when it cannot wrap), where layout never narrows an explicit width, a line longer than its room (the
+    parent's content width less margins, or the padding box right of the text's left edge) gets that width with the
+    design's white-space, the browser's fit-content box. A rule on their types (`--design-text-fit`) makes UI Toolkit tell
+    them when their styles change, and they watch their parent's geometry; a measure is kept for the same text, font,
+    size, spacing and scale (an inline colour sends a style event every frame and measures nothing).
 - **Drift-free stacked text.** UI Toolkit ceils each text element's measured height to whole device pixels; where a line
   box is fractional (16/20 at 0.625: 12.5 px) a column of texts drifts by up to a pixel per text. The compiler gives a
   text whose line count the design fixes (no wrapping in any layer: `text-wrap-mode: nowrap`, `white-space: nowrap` or

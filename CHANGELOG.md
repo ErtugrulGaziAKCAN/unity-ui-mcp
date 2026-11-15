@@ -11,21 +11,32 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   device pixels before layout, so a design only lays out as designed at an exact viewport's scale. The compiler writes the
   exact viewports' panel scales on the screen root (`DesignScreen`, `exact-scales`); on a runtime panel whose scale is none
   of them (1600×900, 1366×768, or any resolution the profile does not declare) the root sets its PanelSettings' `scale`
-  factor so the panel lays out at the exact scale nearest in log scale (0.75 and 0.5) and draws itself scaled to the
-  actual one from its top-left corner. The factor is the settings' own times exact / actual while a screen is on the
-  panel and is given back when the last one leaves (a factor the game writes meanwhile is kept as its own; a region's
-  sort-order copy starts with the asset's own). The root follows the panel's scale through `CustomStyleResolvedEvent`
+  factor so the panel lays out at the next exact scale up (0.75 for both: drawn at most 1, a box's edges stay within half a
+  device pixel; laid out at 0.5, 1366×768 drew layout's rounding 1.067 times larger) and draws itself scaled to the actual
+  one from its top-left corner, composed with the design's own transform of the root (the animation player's translate,
+  rotate and scale of the root go through it; the compiler writes the root's transform declarations again as
+  `--dui-root-*` custom properties it reads in every state). The factor is the settings' own times exact / actual while a
+  screen is on the panel and is given back when the last one leaves (a factor the game writes meanwhile is kept as its
+  own; a region's sort-order copy starts with the asset's own). In the Editor the held factor never reaches a file: a save
+  guard gives a held PanelSettings asset its own factor for every save that writes it and holds it again after, and an
+  Undo of a snapshot taken while held puts the right factor back. A screen inside a screen with exact scales is scaled
+  with it, never twice; screens with different exact viewports on one PanelSettings are reported. The root follows the panel's scale through `CustomStyleResolvedEvent`
   (UI Toolkit resolves every style again when a panel's scale changes, also between two 16:9 resolutions), so the
   100 ms watch is gone. Picking, pointer events, breakpoints, the gamma composite and `DesignUiPanelRegion` frames follow
   the scaled root (`RootScaleTests`; measurements: `docs/findings/viewport-classes.md`).
-- Text-sized elements keep the browser's width. Chromium ceils a text's width to whole device pixels at the page's scale and
-  puts border widths on whole device pixels (a 4 px border is 3 device px at 1600×900); UI Toolkit ceils on the grid of the
-  scale it lays out at and with no tolerance (a text of 86 px measures 86.003 in Unity and took 87, so every button after it
-  in a row moved a pixel). A text or button whose width is its content's compiles to `DesignLabel` / `DesignButton`
-  (`DesignTextFit`), which lay out at the generator's unrounded width ceiled on the design's device grid (0.025 device px
-  forgiven) plus padding and the browser's border widths, with `white-space: nowrap`; the width comes off when the parent
-  holds the element narrower. A row of ten text-sized buttons starts within 0.34 device px of the browser's positions at
-  every default viewport (1 to 8.7 without). New fidelity fixture `text-row`.
+- Text-sized elements keep the golden's width. The golden lays a text-sized box out with Chromium's text width ceiled to
+  whole device pixels at the viewport's scale and its borders on whole device pixels (a 4 px border is 3 device px at
+  1600×900); UI Toolkit ceils on the grid of the scale it lays out at and with no tolerance (a text of 86 px measures
+  86.0100 in Unity and took 87, so every button after it in a row moved a pixel). A text or button whose width is its
+  content's compiles to `DesignLabel` / `DesignButton` (`DesignTextFit`), which lay out at the generator's unrounded width
+  ceiled on the design's device grid (0.012 device px forgiven: measured on the suite's 984 text-sized texts, 4 left a
+  pixel off, 8 with 0.025) plus padding and borders as the golden lays them out (letter-spaced text: its last spacing, which
+  UI Toolkit leaves out and the compiler wrote as right padding, counted once, the box rounded to whole device pixels),
+  with `white-space: nowrap`. A text the design wraps keeps wrapping: in a row the width comes off where the row has no
+  room; in a column and for an absolute text a longer line gets the width of its room with the design's white-space (the
+  browser's fit-content box). A row of ten text-sized buttons starts within 0.35 device px of the golden's positions (built
+  from Chromium's text widths, `Data/chromium-row-buttons.json`) at every default viewport (1 to 8.7 without). New fidelity
+  fixture `text-row`.
 - Lint **W-IMG-001** (warning): a raster image drawn larger than its pixels at a declared viewport, with the image, its
   pixels, its drawn size and the size to export (its drawn size at the largest declared viewport). The browser and Unity
   resample an enlarged picture differently (element SSIM 0.948–0.962 at 3840×2160). The fidelity fixtures' pictures have the
@@ -123,14 +134,26 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   other sizes, and the ink colour is off in both directions (more so where the design puts a line at a half device
   pixel). No generic weight or sharpness adjustment fits both, and UI Toolkit 6000.3 gives runtime panels no SDF
   sharpness; the limits and the kit's readability warning stay (`docs/findings/text-ink.md` section 9).
-- The fidelity suite (22 fixtures, 9 components, 4728 captures at six viewports, 12 min 53 s) passes every capture at
-  3840×2160, 2560×1440 and 1920×1080 and all but the known 8 px ink case at 1280×720; at the scaled viewports 712
-  (1600×900) and 633 (1366×768) of 788 pass (before: 431 and 17), every stacked column ends within 0.00 device px (before:
-  up to +14), and what fails is drawing the root scale leaves: small round shapes' anti-aliasing (SSIM), text ink colour at
-  1366×768, focus ring corners, and boxes in 11 captures (`docs/findings/viewport-classes.md`).
+- The fidelity suite (22 fixtures, 9 components, 4728 captures at six viewports, 13 min 5 s) passes every capture at
+  3840×2160, 2560×1440 and 1920×1080 and all but the known 8 px ink case at 1280×720; at the scaled viewports 772
+  (1600×900) and 678 (1366×768) of 788 pass (before the review's fixes: 712 and 633; before the root scale: 431 and 17).
+  No box fails at any viewport. What fails there: text ink at 1366×768 (12.8 px body text: the renderers' small-text ink
+  scatter just above the 12 px small-text boundary, not the layout scale; 8.54 px and 6.4 px labels: the pending ~8 px
+  decision), and SSIM outside the round-edge band (pictures drawn scaled, a baked gradient, 12.8 px text in a text field
+  and table rows with their 1 px dividers, a vector icon, transition samples Chromium draws from a resampled layer)
+  (`docs/findings/viewport-classes.md`).
 
 ### Fixed
 
+- Lint W-IMG-001 reads the background-size of the image's own layer (an image behind a gradient), counts the scale an
+  element or its ancestors get now, in a state or in a keyframe animation, takes an `<img>`'s pixels from its file (a
+  srcset density no longer halves them), and no longer aborts the lint on a file name with a bare `%`; a data URI is named
+  by its type. The design snapshot waits at most 3 s for an image (a lazy image outside the viewport never loads).
+- The comparison of the scaled class can tell the anti-aliasing ramp of round shapes from other differences: an element
+  whose SSIM with the edge band of its round shapes masked meets the element limit (and whose other checks pass) may meet
+  the measured `ssimRoundEdge`, a corner sample whose window reaches that band the measured `deltaE2000RoundEdge`
+  (`fidelity-thresholds.json` `scaled`; off at exact viewports). The golden's text-sized width forgives the same 0.012
+  device px as `DesignTextFit` (a text that little over a whole pixel is that pixel on both sides).
 - A radial gradient that ends transparent (the toggle switch's knob) is baked as the ellipse it paints, inside its box:
   Unity's VectorImage drew a speckled ring where the gradient's pad region starts, which failed the knob's SSIM at
   3840×2160 (0.967).

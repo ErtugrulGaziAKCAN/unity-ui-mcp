@@ -48,7 +48,7 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
    boyutu, satır yüksekliği ve kenarlık tam cihaz pikselidir, lint, kit build ve kit sync tasarımı buna göre denetler.
    **Scaled Viewports** (ölçekli) oyuncuların kullandığı diğerleri (1600×900, 1366×768): orada hiçbir tasarım değeri tam
    olamaz, bu yüzden bu kurallardan muaftır; verify yine de yerleşimi aynı ±1 cihaz pikseli sınırıyla denetler. Böyle
-   bir ölçekte ekranın paneli en yakın tam ölçekte yerleşir (1600×900'de 0,75, 1366×768'de 0,5) ve ekran kökü gerçek
+   bir ölçekte ekranın paneli bir üstteki tam ölçekte yerleşir (1600×900 ve 1366×768'de 0,75) ve ekran kökü gerçek
    ölçeğe küçültülüp büyütülerek çizilir: her kenar ve her yazı satırı tasarımın koyduğu yere düşer. Kit sync iki listeyi
    de `kit.config.json`'a yazar; ikisinde de olmayan bir çözünürlük aynı yolla yerleşir ama doğrulanmaz.
 9. **Doğrulama görüntüleri:** kurulumun yazdığı yakalama komutu projenin geçici bir kopyasında çizer (aşağıda); projenin
@@ -90,7 +90,11 @@ Kit'in Design System'ini canvas'a ekle. Sonra:
   izler) ya da sabit renklerle boyanmış satır içi `<svg>`'dir. Görseller yüklenmiş dosyalardır; ağdan bir şey yüklenmez.
   Bir raster görseli bildirilen en büyük çözünürlük için dışa aktar (3840×2160 ile CSS boyutunun 1,5 katı) ve ona CSS
   boyutunu ver (`<img>` genişliği ve yüksekliği, `background-size`): pikselinden büyük çizilen bir resmi tarayıcı ve
-  Unity farklı örnekler (lint W-IMG-001 uyarır).
+  Unity farklı örnekler (lint W-IMG-001 uyarır). Aynı resim 1280×720'de o piksellerin üçte biriyle çizilir ve UI Toolkit
+  bir dokunun mipmap'siz tam boy seviyesini örnekler; bu yüzden ince raster ayrıntı (kıl çizgi, bir fotoğraftaki küçük
+  yazı) varsayılan çözünürlüklerin 3 katlık aralığında tarayıcıdaki gibi korunmaz: böyle ayrıntıyı vektör olarak (satır
+  içi `<svg>`) çiz ya da raster resmin ayrıntısını en küçük çözünürlüğe yetecek kadar kaba tut. (Çözünürlük başına resim
+  çeşitleri ileride eklenebilecek bir özelliktir; şu an yoktur.)
 - **Hareket.** Transform'ların (`translate`, `rotate`, `scale`), `opacity`'nin, renklerin ve köşe yarıçaplarının
   geçişleri ve `@keyframes` animasyonları; tetikleyici ekranın açılması, bir durum, bir etkileşim durumu ya da bir
   `is-*` sınıfıdır. Boyut ya da konum değişimi `width` ya da `top` ile değil, `translate` ya da `scale` ile yapılır.
@@ -149,6 +153,21 @@ dolduracağı RectTransform'a `DesignUiPanelRegion` ekle: ekran o dikdörtgeni i
 çizilir; sıralaması daha düşük **ya da aynı** olan Screen Space - Overlay canvas'larının üstünde, daha yüksek olanların
 altında (aynı sıralamadaki panellerde sonra yapılan üstte) ve fare/dokunma girdisi de bu sırayı izler. Ekranı örtmesi
 gereken bir menünün sıralaması region'ınkinden yüksek olmalı. Composite yoksa region bir kez uyarır.
+
+**Ölçekli ya da bildirilmemiş bir çözünürlükte** (1600×900, 1366×768 ya da profilin bildirmediği herhangi biri) bir
+tasarım ekranı panelini bir üstteki tam ölçekte yerleştirir ve kökünü ölçekli çizer (README, Viewports). Oyun için üç sonucu
+vardır:
+
+- Bir ekran paneldeyken PanelSettings'inin `scale` değeri tam ölçeğin çarpanını okur (tam / gerçek × oyunun kendi
+  çarpanı) ve o PanelSettings'in `Instantiate` kopyası bu değeri alır. Oyunun kendi çarpanını her zamanki gibi yaz:
+  yazdığın değer kök ölçeğinin üstüne uygulandığı taban olur (onu bir ekran gösterilmeden önce oku ya da kendi kopyanı
+  tut). Editor'de varlığın dosyası tutulan çarpanı hiç almaz.
+- Aynı PanelSettings üzerindeki her doküman tam ölçekte yerleşir; bu yüzden onun üzerindeki tasarım ekranı olmayan UI
+  daha büyük ya da küçük çizilir (1600×900'de %20 büyük). Tasarım ekranlarına kendi PanelSettings'lerini (profilinkini) ver.
+- Ekran kökünün dışındaki panel koordinatları tam ölçeğin birimindedir: `RuntimePanelUtils.ScreenToPanel`, ekranın
+  çevresindeki bir kabın padding'i ve hizalaması. Ekranı ortalayan bir kap (`align-items: center`) 1600×900'de 2560 px'lik
+  yerleşim kutusunu 2133 px'lik panelde ortalar ve ekranı −160 cihaz pikseli kaydırır. Ekranı, artboard gibi, kabının
+  sol üst köşesine koy.
 
 ```csharp
 using UnityEngine;

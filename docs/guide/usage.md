@@ -48,7 +48,7 @@ fix; a difference after import is reported, never smoothed over.
    every text size, line height and border is whole device pixels there, and lint, kit build and kit sync hold the
    design to it. **Scaled Viewports** are the others players use (1600×900, 1366×768): no design value can be whole
    there, so they are exempt from those rules; verify still lays them out and checks them with the same ±1 device px
-   geometry. At such a scale the screen's panel lays out at the nearest exact scale (1600×900 at 0.75, 1366×768 at 0.5)
+   geometry. At such a scale the screen's panel lays out at the next exact scale up (1600×900 and 1366×768 at 0.75)
    and the screen root draws scaled to the actual one, so every edge and line of text lands where the design puts it.
    Kit sync writes both lists into `kit.config.json`; a resolution in neither list lays out the same way but is not
    verified.
@@ -90,7 +90,11 @@ Attach the kit's Design System to the canvas. Then:
   follow the text colour) or with fixed colours. Images are uploads; nothing loads from the network. Export a raster
   image for the largest declared viewport (its CSS size × 1.5 with 3840×2160) and give it its CSS size (an `<img>`
   width and height, a `background-size`): a picture drawn larger than its pixels is resampled differently by the
-  browser and Unity (lint W-IMG-001 warns).
+  browser and Unity (lint W-IMG-001 warns). The same picture is drawn at a third of those pixels at 1280×720, and UI
+  Toolkit samples a texture's full-size level without mipmaps, so fine raster detail (a hairline, small text in a
+  photo) does not survive the 3× range of the default viewports the way it does in the browser: draw such detail as a
+  vector (inline `<svg>`), or keep a raster picture's detail coarse enough for the smallest viewport. (Picture variants
+  per viewport are a possible later feature; they do not exist now.)
 - **Motion.** Transitions and `@keyframes` of transforms (`translate`, `rotate`, `scale`), `opacity`, colours and border
   radii, triggered by the screen opening, a state, a pseudo-state or an `is-*` class. A size or position change is a
   `translate` or `scale`, never `width` or `top`.
@@ -149,6 +153,20 @@ canvases (the profile's `host` settings), applies the locale's fonts and right-t
 as UI Toolkit draws a panel, over Screen Space - Overlay canvases of a lower **or the same** sort order and under those
 of a higher one (panels of the same sort order: the one made later on top), and pointer input follows that order. A
 menu that must cover the screen needs a higher sort order than the region's. Without a composite the region warns once.
+
+**At a scaled or undeclared resolution** (1600×900, 1366×768, or any the profile does not declare) a design screen lays
+its panel out at the next exact scale up and draws its root scaled (README, Viewports). Three things follow for the game:
+
+- While a screen is on a panel, its PanelSettings' `scale` reads the exact scale's factor (exact / actual × the game's
+  own factor), and `Instantiate` of that PanelSettings copies it. Set the game's own factor as usual: a value you write
+  becomes the base the root scale applies on top of (read it before a screen is shown, or keep your own copy). In the
+  Editor the asset's file never gets the held factor.
+- Every document on the same PanelSettings lays out at the exact scale, so UI that is not a design screen on it is drawn
+  larger or smaller (20 % larger at 1600×900). Give design screens their own PanelSettings (the profile's).
+- Positions in panel coordinates are in the exact scale's units outside the screen root: `RuntimePanelUtils.ScreenToPanel`,
+  a container's padding and alignment around the screen. A container that centres the screen (`align-items: center`)
+  centres its 2560 px layout box in a 2133 px panel at 1600×900, which moves the screen by −160 device px. Put the
+  screen at its container's top-left corner, as the artboard is.
 
 ```csharp
 using UnityEngine;
