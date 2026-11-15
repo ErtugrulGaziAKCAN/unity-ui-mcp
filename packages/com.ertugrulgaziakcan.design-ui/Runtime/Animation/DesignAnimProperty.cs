@@ -259,8 +259,24 @@ namespace DesignUi
 
         static Length L(in DesignAnimValue v) => new Length(v.X, v.UnitX);
 
-        /// <summary>Writes the value as the element's inline style (allocation-free).</summary>
+        static bool IsTransform(DesignAnimProperty p) => p == DesignAnimProperty.Translate || p == DesignAnimProperty.Rotate || p == DesignAnimProperty.Scale;
+
+        /// <summary>
+        /// Writes the value as the element's inline style (allocation-free). A transform of a screen root goes through the
+        /// root (<see cref="DesignScreen.SetAnimatedTransform"/>), which composes it with its root scale.
+        /// </summary>
         public static void Write(VisualElement e, DesignAnimProperty p, in DesignAnimValue v)
+        {
+            if (e is DesignScreen screen && IsTransform(p))
+            {
+                screen.SetAnimatedTransform(p, v);
+                return;
+            }
+            WriteInline(e, p, v);
+        }
+
+        /// <summary>Writes the value as the element's inline style, nothing composed.</summary>
+        internal static void WriteInline(VisualElement e, DesignAnimProperty p, in DesignAnimValue v)
         {
             var s = e.style;
             switch (p)
@@ -287,9 +303,17 @@ namespace DesignUi
 
         static StyleLength Len(in DesignAnimValue v) => new StyleLength(new Length(v.X, v.UnitX));
 
-        /// <summary>Removes the player's inline style: the USS rule's value applies again (at once, without a style pass).</summary>
+        /// <summary>
+        /// Removes the player's inline style: the USS rule's value applies again (at once, without a style pass). A screen root
+        /// composes its transform again (<see cref="DesignScreen.ClearAnimatedTransform"/>).
+        /// </summary>
         public static void Clear(VisualElement e, DesignAnimProperty p)
         {
+            if (e is DesignScreen screen && IsTransform(p))
+            {
+                screen.ClearAnimatedTransform(p);
+                return;
+            }
             var s = e.style;
             switch (p)
             {
@@ -314,6 +338,8 @@ namespace DesignUi
         /// <summary>The element's current value of the property: its computed style (radii as the rule writes them, in px).</summary>
         public static DesignAnimValue Read(VisualElement e, DesignAnimProperty p)
         {
+            // a scaled screen root's inline transform is composed with its root scale: the design's own value
+            if (e is DesignScreen screen && IsTransform(p) && screen.ComposesTransform) return screen.ReadDesignTransform(p);
             var s = e.resolvedStyle;
             var v = new DesignAnimValue();
             switch (p)

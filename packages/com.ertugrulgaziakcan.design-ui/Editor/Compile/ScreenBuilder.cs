@@ -651,6 +651,11 @@ namespace DesignUi.Editor
                             decls.Add(new UssDeclaration(TintProperty, color.Value));
                     if (images.CssBackground) BackgroundGeometry(decls, painted, node, key, images);
                     if (anim != null) decls.AddRange(anim.For(key));
+                    // the screen root composes its own transform with the root scale at runtime (DesignScreen): it reads the
+                    // design's value in each state and breakpoint from these, the same value as a string
+                    if (d.IsRoot && d.Tag == ScreenTag)
+                        foreach (var t in decls.Where(x => RootTransforms.ContainsKey(x.Property)).ToList())
+                            decls.Add(new UssDeclaration(RootTransforms[t.Property], "\"" + t.Value + "\""));
                     var inner = content == null ? new List<UssDeclaration>() : decls.Where(x => content.Contains(x.Property)).ToList();
                     var outer = content == null ? decls : decls.Where(x => !content.Contains(x.Property)).ToList();
                     if (key == Base)
@@ -666,6 +671,15 @@ namespace DesignUi.Editor
                     if (inner.Count > 0) d.Layers.Add(new LayerRules { Key = key, Content = true, Declarations = inner });
                 }
             }
+
+            /// <summary>The screen root's transform properties and the custom properties that carry the design's value of each (<see cref="DesignUi.DesignScreen"/>).</summary>
+            static readonly Dictionary<string, string> RootTransforms = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "translate", DesignUi.DesignScreen.TranslateProperty },
+                { "rotate", DesignUi.DesignScreen.RotateProperty },
+                { "scale", DesignUi.DesignScreen.ScaleProperty },
+                { "transform-origin", DesignUi.DesignScreen.OriginProperty },
+            };
 
             static readonly Regex UrlItem = new Regex(@"^url\(\s*(?:""([^""]*)""|'([^']*)'|([^)""']*?))\s*\)$", RegexOptions.Compiled);
 

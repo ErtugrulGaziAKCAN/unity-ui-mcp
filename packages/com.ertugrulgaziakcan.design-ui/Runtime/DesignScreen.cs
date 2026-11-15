@@ -1,3 +1,4 @@
+using System;
 using UnityEngine.UIElements;
 
 namespace DesignUi
@@ -10,9 +11,10 @@ namespace DesignUi
     /// When the design animates (the UXML attribute <c>animated</c>, written by the compiler), it attaches the screen's
     /// <see cref="DesignUiAnimationPlayer"/> on attach, so transitions and keyframe animations play without any wiring.
     /// On a runtime panel whose scale is not one of the profile's exact viewports' (<see cref="ExactScales"/>), it lays the
-    /// screen out at the nearest exact scale and draws its root scaled to the actual one (inline <c>scale</c>,
-    /// <c>transform-origin</c> and <c>flex-shrink: 0</c>: the root keeps its design size); it applies the design's breakpoints.
-    /// Otherwise it is a plain VisualElement.
+    /// screen out at the nearest exact scale and draws its root scaled to the actual one (an inline transform that composes
+    /// the root scale with the design's own transform of the root and its animations, and <c>flex-shrink: 0</c>: the root
+    /// keeps its design size); it applies the design's breakpoints. A screen inside another screen that has exact scales
+    /// is scaled with it (it never scales itself again). Otherwise it is a plain VisualElement.
     /// </summary>
     [UxmlElement]
     public partial class DesignScreen : VisualElement
@@ -35,6 +37,7 @@ namespace DesignUi
         }
 
         DesignBreakpoints m_Breakpoints;
+        string[] m_BreakpointClasses;
         string m_BreakpointsText;
 
         /// <summary>
@@ -50,6 +53,12 @@ namespace DesignUi
             {
                 m_BreakpointsText = value;
                 m_Breakpoints = string.IsNullOrEmpty(value) ? null : DesignBreakpoints.Parse(value);
+                m_BreakpointClasses = null;
+                if (m_Breakpoints != null)
+                {
+                    m_BreakpointClasses = new string[m_Breakpoints.All.Count];
+                    for (int i = 0; i < m_BreakpointClasses.Length; i++) m_BreakpointClasses[i] = DesignBreakpoints.ClassPrefix + m_Breakpoints.All[i].Name;
+                }
                 ApplyBreakpoints();
             }
         }
@@ -113,7 +122,11 @@ namespace DesignUi
             // UI Toolkit resolves every style again when a panel's scale changes (a new resolution, or the exact-scale factor
             // taking effect), also when the panel's size in panel pixels stays (16:9 to 16:9): the root, which has custom
             // properties (the compiler writes one, DesignFonts.uss its locale's fonts), gets this event then
-            RegisterCallback<CustomStyleResolvedEvent>(e => ApplyRootScale());
+            RegisterCallback<CustomStyleResolvedEvent>(e =>
+            {
+                ReadRuleTransform();
+                ApplyRootScale();
+            });
         }
 
         readonly EventCallback<GeometryChangedEvent> m_OnGeometry;
@@ -147,6 +160,14 @@ namespace DesignUi
             if (p != null && m_ExactScales != null && p is IRuntimePanel runtime && runtime.panelSettings != null)
             {
                 if (DesignRootScalePanels.Evaluate(this, p, runtime.panelSettings, m_ExactScales, out var actual, out r)) design = actual;
+                else if (DesignRootScalePanels.Holds(runtime.panelSettings))
+                {
+                    // the panel has no size for a moment (a target texture swap): the factor is still held, so is the root scale
+                    r = RootScale;
+                    design = DesignScale;
+                }
+                // inside a screen that applies the root scale: drawn scaled with it, never scaled again
+                if (OuterScreen() != null) r = 1f;
             }
             else DesignRootScalePanels.Leave(this);
             bool changed = design != DesignScale || r != RootScale;
@@ -154,6 +175,14 @@ namespace DesignUi
             SetRootScale(r);
             ApplyBreakpoints();
             if (changed) RefitTextsLater();
+        }
+
+        /// <summary>The nearest screen above this one that lays out at an exact scale, or null.</summary>
+        DesignScreen OuterScreen()
+        {
+            for (var e = hierarchy.parent; e != null; e = e.hierarchy.parent)
+                if (e is DesignScreen outer && outer.m_ExactScales != null) return outer;
+            return null;
         }
 
         IVisualElementScheduledItem m_Refit;
@@ -185,29 +214,25 @@ namespace DesignUi
 
         void SetRootScale(float r)
         {
-            if (r != RootScale)
+            RootScale = r;
+            // the design's transform of the root with the root scale on top (or only the design's where unscaled), written
+            // whenever it differs from what the root holds (an animation that ended, a state's transform)
+            ComposeTransform();
+            if (r == 1f)
             {
-                RootScale = r;
-                if (r == 1f)
-                {
-                    style.scale = StyleKeyword.Null;
-                    style.transformOrigin = StyleKeyword.Null;
-                    style.flexShrink = StyleKeyword.Null;
-                    return;
-                }
-                style.transformOrigin = new TransformOrigin(new Length(0), new Length(0), 0);
-                style.scale = new Scale(new UnityEngine.Vector3(r, r, 1));
+                if (style.flexShrink.keyword != StyleKeyword.Null) style.flexShrink = StyleKeyword.Null;
+                return;
             }
             // the parent is laid out in panel pixels of the exact scale, 1 / r of the design's: the root keeps its design size
-            if (r != 1f && style.flexShrink != 0f) style.flexShrink = 0f;
+            if (style.flexShrink.keyword != StyleKeyword.Undefined || style.flexShrink.value != 0f) style.flexShrink = 0f;
         }
 
-
         /// <summary>
-        /// Sets the <c>bp-*</c> class of every breakpoint that holds at the design's size of the panel (its logical size at
-        /// the design's scale: the panel's root over <see cref="RootScale"/>, rounded to whole pixels as the exporter rounds
-        /// it) and removes the others. Does nothing outside a panel or before the panel has a size; called by
-        /// <see cref="ApplyRootScale"/>.
+        /// Sets the <c>bp-*</c> class of every breakpoint that holds at the design's size of the panel and removes the others.
+        /// The design's size is the panel's target in device pixels over <see cref="DesignScale"/> (not the panel's laid-out
+        /// size, which is the exact scale's: 2133 px wide at 1600×900, where the design is 2560), rounded to whole pixels as
+        /// the exporter rounds it; without a design scale, the panel's laid-out size. Does nothing outside a panel or before
+        /// the panel has a size; called by <see cref="ApplyRootScale"/>.
         /// </summary>
         public void ApplyBreakpoints()
         {
@@ -223,9 +248,10 @@ namespace DesignUi
                 if (w.keyword == StyleKeyword.Undefined && h.keyword == StyleKeyword.Undefined && ppp > 0)
                     size = new UnityEngine.Vector2((float)(w.value.value * ppp / DesignScale.Value), (float)(h.value.value * ppp / DesignScale.Value));
             }
-            var active = new System.Collections.Generic.HashSet<string>(m_Breakpoints.Active(size.x, size.y));
-            foreach (var b in m_Breakpoints.All)
-                EnableInClassList(DesignBreakpoints.ClassPrefix + b.Name, active.Contains(b.Name));
+            // the exporter's rounding of the logical size (DesignBreakpoints.Active)
+            double width = Math.Round(size.x, MidpointRounding.AwayFromZero), height = Math.Round(size.y, MidpointRounding.AwayFromZero);
+            for (int i = 0; i < m_BreakpointClasses.Length; i++)
+                EnableInClassList(m_BreakpointClasses[i], m_Breakpoints.All[i].Holds(width, height));
         }
 
         void OnDetach(DetachFromPanelEvent e)

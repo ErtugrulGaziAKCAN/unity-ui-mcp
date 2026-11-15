@@ -35,12 +35,20 @@ namespace DesignUi.Editor.Tests
         DesignViewportScales.BaseRule _rule;
 
         [SetUp]
-        public void KeepRule() => _rule = DesignViewportScales.Rule;
+        public void KeepRule()
+        {
+            _rule = DesignViewportScales.Rule;
+            // a test that failed half-way leaves no held factor behind for the next
+            DesignRootScalePanels.RestoreAll();
+            DesignRootScalePanels.ForgetReleased();
+        }
 
         [TearDown]
         public void Cleanup()
         {
             DesignViewportScales.Rule = _rule;
+            DesignRootScalePanels.RestoreAll();
+            DesignRootScalePanels.ForgetReleased();
             for (int i = _objects.Count - 1; i >= 0; i--)
                 if (_objects[i] is GameObject g && g != null) Object.DestroyImmediate(g);
             for (int i = _objects.Count - 1; i >= 0; i--)
@@ -104,10 +112,12 @@ namespace DesignUi.Editor.Tests
 
         /// <summary>
         /// A screen with odd design lengths: a box at (397, 101) of 403×37 px, a column of ten rows with 4 px padding above and
-        /// below a 20 px child (UI Toolkit lays 4 px out as 3 device px at 0.625 and 2 at 0.5335), a caption, and a breakpoint
-        /// that holds below 1600 px of design width.
+        /// below a 20 px child (UI Toolkit lays 4 px out as 3 device px at 0.625 and 2 at 0.5335), a caption, and two width
+        /// breakpoints at 2400 px of design width (<c>wide</c>: at least, <c>narrow</c>: at most), which only the design's size
+        /// tells apart from the panel's laid-out size: the design is 2560 px wide at every 16:9 viewport and 2114 at 1280×1024,
+        /// the panel lays out 2133 px at 1600×900 and 2560 at 1280×1024.
         /// </summary>
-        string Export()
+        string Export(Action<IrNode> edit = null)
         {
             var dir = Path.Combine(Path.GetTempPath(), "design-ui-rootscale-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
             Directory.CreateDirectory(dir);
@@ -121,16 +131,18 @@ namespace DesignUi.Editor.Tests
             var caption = Text("caption", "Merhaba dünya, bugün", ("color", "#ffffff"), ("position", "absolute"), ("left", "801px"), ("top", "203px"), ("font-size", "12px"),
                 ("font-family", family), ("white-space", "nowrap"));
             var root = Node("root", "container", ("position", "relative"), ("width", "2560px"), ("height", "1440px"), ("font-family", family)).Add(box, rows, caption);
+            edit?.Invoke(root);
             var screen = TestIr.Screen(root, "rootscale.screen");
-            screen.Breakpoints = new[] { new IrBreakpoint { Name = "wide", MinAspect = 1.7f } };
+            screen.Breakpoints = new[] { new IrBreakpoint { Name = "wide", MinWidth = 2400 }, new IrBreakpoint { Name = "narrow", MaxWidth = 2400 } };
+            if (root.Style.Keys.Any(k => k.StartsWith("state:", StringComparison.Ordinal))) screen.States = new[] { "default", "moved" };
             File.WriteAllText(Path.Combine(dir, ScreenCompiler.IrFileName), JsonConvert.SerializeObject(screen, Formatting.Indented));
             File.WriteAllText(Path.Combine(dir, KitTextStyles.FileName), "{ \"caption\": { \"fontSize\": 12, \"lineHeight\": 16, \"weight\": 400 } }");
             return dir;
         }
 
-        VisualTreeAsset CompileScreen()
+        VisualTreeAsset CompileScreen(Action<IrNode> edit = null)
         {
-            var result = ScreenCompiler.Compile(Export(), Profile(), false, NoView());
+            var result = ScreenCompiler.Compile(Export(edit), Profile(), false, NoView());
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
             return AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/RootscaleScreen/RootscaleScreen.uxml");
         }
@@ -195,7 +207,7 @@ namespace DesignUi.Editor.Tests
             yield return Frames(6);
             var captionAt1 = 0.0;
             var report = new List<string>();
-            foreach (var (w, h) in new[] { (1920, 1080), (2560, 1440), (1600, 900), (1366, 768), (3840, 2160), (1280, 720), (1600, 900) })
+            foreach (var (w, h) in new[] { (1920, 1080), (2560, 1440), (1600, 900), (1366, 768), (3840, 2160), (1280, 720), (1280, 1024), (1600, 900) })
             {
                 if (_settings.targetTexture.width != w || _settings.targetTexture.height != h) _settings.targetTexture = Texture(w, h);
                 yield return Frames(6);
@@ -217,7 +229,10 @@ namespace DesignUi.Editor.Tests
                 double width = caption.worldBound.width * ppp;
                 if (w == 2560) captionAt1 = width;
                 if (captionAt1 > 0) Assert.AreEqual(captionAt1 * actual, width, 1.0, at + ": the caption keeps its width (the panel's text is whole device px)");
-                Assert.AreEqual(w / (double)h >= 1.7, screen.ClassListContains("bp-wide"), at + ": the breakpoint at the design's size");
+                // the design's width: 2560 at 16:9, 1280 / 0.6056 = 2114 at 1280×1024 (the panel's laid-out width: 2133 at 1600×900, 2560 at 1280×1024)
+                double designWidth = w / actual;
+                Assert.AreEqual(designWidth >= 2400, screen.ClassListContains("bp-wide"), at + ": min-width 2400 at the design's width " + designWidth.ToString("0"));
+                Assert.AreEqual(designWidth <= 2400, screen.ClassListContains("bp-narrow"), at + ": max-width 2400 at the design's width " + designWidth.ToString("0"));
                 report.Add(at + ": panel " + ppp.ToString("0.#####") + ", root " + screen.RootScale.ToString("0.#####") + ", caption " + width.ToString("0.###") + " device px");
             }
             Debug.Log("Root scale across the default viewports:\n" + string.Join("\n", report));
@@ -396,8 +411,10 @@ namespace DesignUi.Editor.Tests
         /// <summary>
         /// Picking and pointer events through the scaled root at 1600×900 (panel at 0.75, root 0.8333) and 1366×768 (panel at
         /// 0.5, root 1.067): the pointer reaches an element where the design draws it at the actual scale and nowhere else
-        /// (a point inside the unscaled box but outside the drawn one misses); hover, active, a click, a toggle, focus and
-        /// typing in a text field, a wheel over a scroll view and a drag (the event's position in the dragged element's space).
+        /// (a point inside the unscaled box but outside the drawn one misses); hover, active, a click, a toggle, a wheel over a
+        /// scroll view and a drag (the event's position in the dragged element's space). A text field is focused directly (a
+        /// synthesized press does not pick a runtime TextField in Edit mode at any scale) and typing is not covered: keyboard
+        /// input has no geometry, and synthesized keys hit the field's selection state in Edit mode.
         /// </summary>
         [UnityTest]
         public IEnumerator PickingAndPointerEvents_FollowTheScaledRoot()
@@ -485,6 +502,279 @@ namespace DesignUi.Editor.Tests
                 Object.DestroyImmediate(doc.gameObject);
                 yield return null;
             }
+        }
+
+        // ---- the held factor and the project's files --------------------------------------------------------------------
+
+        static string ScaleInFile(string path)
+        {
+            foreach (var line in File.ReadAllLines(path))
+                if (line.TrimStart().StartsWith("m_Scale:", StringComparison.Ordinal)) return line.Trim().Substring("m_Scale:".Length).Trim();
+            return null;
+        }
+
+        static string SortingOrderInFile(string path)
+        {
+            foreach (var line in File.ReadAllLines(path))
+                if (line.TrimStart().StartsWith("m_SortingOrder:", StringComparison.Ordinal)) return line.Trim().Substring("m_SortingOrder:".Length).Trim();
+            return null;
+        }
+
+        /// <summary>
+        /// In Edit mode the root scale holds the project's PanelSettings asset (its <c>scale</c> in memory: 0.75 / 0.625 = 1.2
+        /// at 1600×900). Its file never gets the held factor: a save after an Inspector edit (AssetDatabase.SaveAssets, which
+        /// the Editor's File > Save runs too), a save of that asset alone (SaveAssetIfDirty) and a save after an Undo that brought
+        /// a snapshot taken while it was held all write the asset's own factor 1 with the edit, and the factor is held again
+        /// after each save while the screen stays.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AHeldFactor_NeverReachesThePanelSettingsFile_ThroughASave_OrAnUndo()
+        {
+            if (!AssetDatabase.IsValidFolder(Out)) AssetDatabase.CreateFolder("Assets", Out.Substring("Assets/".Length));
+            var rt = new RenderTexture(1600, 900, 24);
+            AssetDatabase.CreateAsset(rt, Out + "/Target.renderTexture");
+            var asset = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+            asset.scaleMode = PanelScaleMode.ScaleWithScreenSize;
+            asset.referenceResolution = Reference;
+            asset.screenMatchMode = PanelScreenMatchMode.MatchWidthOrHeight;
+            asset.match = 0.5f;
+            asset.scale = 1f;
+            asset.targetTexture = rt;
+            var path = Out + "/Held.asset";
+            AssetDatabase.CreateAsset(asset, path);
+            AssetDatabase.SaveAssets();
+            Assert.AreEqual("1", ScaleInFile(path));
+
+            var doc = Track(new GameObject("RootScaleTests held")).AddComponent<UIDocument>();
+            doc.panelSettings = asset;
+            yield return Frames(2);
+            var screen = new DesignScreen { name = "root", ExactScales = DesignViewportScales.Encode(Exact) };
+            screen.style.width = 2560;
+            screen.style.height = 1440;
+            doc.rootVisualElement.Add(screen);
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, asset.scale, 1e-4, "held: the panel lays out at 0.75");
+            Assert.AreEqual(0.75, screen.panel.scaledPixelsPerPoint, 1e-4);
+
+            // an Inspector edit (a SerializedObject change marks the asset dirty), then the project save
+            using (var so = new SerializedObject(asset))
+            {
+                so.FindProperty("m_SortingOrder").floatValue = 7;
+                so.ApplyModifiedProperties();
+            }
+            Assert.IsTrue(EditorUtility.IsDirty(asset));
+            AssetDatabase.SaveAssets();
+            Assert.AreEqual("1", ScaleInFile(path), "the save wrote the asset's own factor");
+            Assert.AreEqual("7", SortingOrderInFile(path), "and the edit");
+            yield return Frames(2);
+            Assert.AreEqual(1.2f, asset.scale, 1e-4, "held again after the save");
+            yield return Frames(4);
+            Assert.AreEqual(0.75, screen.panel.scaledPixelsPerPoint, 1e-4, "the panel still lays out at the exact scale");
+
+            // a save of that asset alone
+            asset.sortingOrder = 8;
+            EditorUtility.SetDirty(asset);
+            AssetDatabase.SaveAssetIfDirty(asset);
+            Assert.AreEqual("1", ScaleInFile(path));
+            Assert.AreEqual("8", SortingOrderInFile(path));
+            yield return Frames(2);
+            Assert.AreEqual(1.2f, asset.scale, 1e-4);
+
+            // an Undo snapshot taken while held, undone after the screen left (the factor was given back meanwhile)
+            Undo.IncrementCurrentGroup();
+            Undo.RecordObject(asset, "sorting order");
+            asset.sortingOrder = 9;
+            screen.RemoveFromHierarchy();
+            Assert.AreEqual(1f, asset.scale, "given back when the screen left");
+            Undo.PerformUndo();
+            Assert.AreEqual(8, asset.sortingOrder, "the undo applied");
+            Assert.AreEqual(1f, asset.scale, "not the snapshot's held factor");
+            EditorUtility.SetDirty(asset);
+            AssetDatabase.SaveAssets();
+            Assert.AreEqual("1", ScaleInFile(path));
+            Object.DestroyImmediate(doc.gameObject);
+            yield return null;
+        }
+
+        // ---- the design's own transform of the root ------------------------------------------------------------------------
+
+        /// <summary>
+        /// The root scale composes with the design's transform of the root (the root's own player and rules), at 1600×900 (root
+        /// 0.8333) and at the exact 1920×1080: an open animation (keyframes scale 0.96 to 1 about the root's centre) draws the
+        /// box where the design's scale puts it at the actual scale in every frame, and when it ends the root scale and its
+        /// top-left origin are back; a state's translate (100, 50) moves the root by design pixels at the actual scale.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AnAnimatedRoot_ComposesTheDesignsTransformWithTheRootScale_AndTheRootScaleComesBack()
+        {
+            var tree = CompileScreen(root =>
+            {
+                root.With("state:moved", ("translate", "100px 50px"));
+                root.Anims.Add(AnimationPlayerTests.Keyframes("show", "enter", 400, 0, "linear", 1, "normal", "none",
+                    (0, null, new[] { ("scale", "0.96") }), (1, null, new[] { ("scale", "1") })));
+            });
+            StringAssert.Contains(DesignScreen.TranslateProperty + ": \"100px 50px\"", File.ReadAllText(Out + "/RootscaleScreen/RootscaleScreen.uss"),
+                "the root's rules carry the design's transform for the runtime");
+            foreach (var (w, h) in new[] { (1600, 900), (1920, 1080) })
+            {
+                var doc = Document(w, h);
+                yield return Frames(2);
+                var clock = new DesignManualClock();
+                var instance = tree.Instantiate();
+                doc.rootVisualElement.Add(instance);
+                var screen = instance.Q<DesignScreen>("root");
+                var player = screen.Animations;
+                Assert.IsNotNull(player);
+                player.Clock = clock;
+                yield return Frames(6);
+                string at = w + "×" + h;
+                double actual = ScaleOf(w, h), ppp = screen.panel.scaledPixelsPerPoint;
+                float r = screen.RootScale;
+                Assert.AreEqual(w == 1600, r != 1f, at);
+                double tolerance = 0.5 * r + 0.05;
+                var box = instance.Q("box");
+                // the design's scale k about the root's centre (1280, 720), in design px, times the actual scale
+                Rect Scaled(double k, double dx = 0, double dy = 0) => new Rect(
+                    (float)((1280 + k * (397 - 1280) + dx) * actual), (float)((720 + k * (101 - 720) + dy) * actual), (float)(403 * k * actual), (float)(37 * k * actual));
+                foreach (var ms in new[] { 0.0, 100, 200, 399 })
+                {
+                    clock.Milliseconds = ms;
+                    player.Tick();
+                    yield return Frames(2);
+                    double k = 0.96 + 0.04 * ms / 400;
+                    AreDevice(Scaled(k), box.worldBound, ppp, tolerance, at + " box at " + ms + " ms (scale " + k.ToString("0.###") + ")");
+                }
+                clock.Milliseconds = 1000;
+                player.Tick();
+                yield return Frames(4);
+                AreDevice(Scaled(1), box.worldBound, ppp, tolerance, at + " box after the animation");
+                Assert.AreEqual(r, screen.resolvedStyle.scale.value.x, 1e-5, at + ": the root scale is back");
+                if (r != 1f)
+                {
+                    Assert.AreEqual(0f, screen.resolvedStyle.transformOrigin.x, 1e-5, at + ": its origin is the top-left corner");
+                    Assert.AreEqual(0f, screen.resolvedStyle.transformOrigin.y, 1e-5, at);
+                }
+                else Assert.AreEqual(StyleKeyword.Null, screen.style.scale.keyword, at + ": nothing inline where unscaled");
+
+                screen.AddToClassList(ScreenBuilder.StateClassPrefix + "moved");
+                yield return Frames(4);
+                AreDevice(Scaled(1, 100, 50), box.worldBound, ppp, tolerance, at + " box in the state that moves the root");
+                screen.RemoveFromClassList(ScreenBuilder.StateClassPrefix + "moved");
+                yield return Frames(4);
+                AreDevice(Scaled(1), box.worldBound, ppp, tolerance, at + " box back");
+                Object.DestroyImmediate(doc.gameObject);
+                yield return null;
+            }
+        }
+
+        // ---- several screens --------------------------------------------------------------------------------------------
+
+        static DesignScreen PlainScreen(string name)
+        {
+            var screen = new DesignScreen { name = name, ExactScales = DesignViewportScales.Encode(Exact) };
+            screen.style.width = 2560;
+            screen.style.height = 1440;
+            return screen;
+        }
+
+        /// <summary>
+        /// A screen inside another screen (both with exact scales) is drawn scaled with it and never scales itself again: at
+        /// 1600×900 an element of the inner screen is where the design puts it at the actual scale, the inner root's scale is 1
+        /// and its design scale the outer's.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AScreenInsideAnother_IsScaledWithIt_NotTwice()
+        {
+            var doc = Document(1600, 900);
+            yield return Frames(2);
+            var outer = PlainScreen("outer");
+            var inner = PlainScreen("inner");
+            outer.Add(inner);
+            var target = Place(new VisualElement { name = "target" }, inner, 400, 200, 300, 100);
+            doc.rootVisualElement.Add(outer);
+            yield return Frames(8);
+            double actual = ScaleOf(1600, 900), ppp = outer.panel.scaledPixelsPerPoint;
+            Assert.AreEqual(actual / 0.75, outer.RootScale, 1e-4);
+            Assert.AreEqual(1f, inner.RootScale, "the inner screen is not scaled again");
+            Assert.AreEqual(actual, inner.DesignScale ?? double.NaN, 1e-4, "it has the design's scale");
+            AreDevice(new Rect((float)(400 * actual), (float)(200 * actual), (float)(300 * actual), (float)(100 * actual)), target.worldBound, ppp, 0.5 * outer.RootScale + 0.05, "the inner screen's element");
+            Object.DestroyImmediate(doc.gameObject);
+        }
+
+        /// <summary>
+        /// Two screens on one PanelSettings: the factor stays held while either is on the panel and comes back when the last
+        /// leaves; a screen with other exact viewports on the same PanelSettings is reported (it lays out at the first's).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TwoScreensOnOnePanelSettings_HoldTheFactorUntilTheLastLeaves_AndOtherExactViewportsAreReported()
+        {
+            var doc = Document(1600, 900);
+            yield return Frames(2);
+            var a = PlainScreen("a");
+            var b = PlainScreen("b");
+            doc.rootVisualElement.Add(a);
+            doc.rootVisualElement.Add(b);
+            yield return Frames(6);
+            Assert.AreEqual(1, DesignRootScalePanels.Count);
+            Assert.AreEqual(1.2f, _settings.scale, 1e-4);
+            a.RemoveFromHierarchy();
+            yield return Frames(2);
+            Assert.AreEqual(1.2f, _settings.scale, 1e-4, "held while a screen is on the panel");
+            Assert.AreEqual(b.RootScale, (float)(ScaleOf(1600, 900) / 0.75), 1e-4);
+            var other = new DesignScreen { name = "other", ExactScales = DesignViewportScales.Encode(new double[] { 1, 0.5 }) };
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("screens with different exact viewports share the PanelSettings"));
+            doc.rootVisualElement.Add(other);
+            yield return Frames(4);
+            other.RemoveFromHierarchy();
+            b.RemoveFromHierarchy();
+            Assert.AreEqual(1f, _settings.scale, "the last screen gave the factor back");
+            Assert.AreEqual(0, DesignRootScalePanels.Count);
+            Object.DestroyImmediate(doc.gameObject);
+        }
+
+        /// <summary>A held PanelSettings destroyed before its screen leaves: the screen leaves without an error and nothing stays held.</summary>
+        [UnityTest]
+        public IEnumerator AHeldPanelSettingsDestroyedFirst_LeavesNothingHeld()
+        {
+            var doc = Document(1600, 900);
+            yield return Frames(2);
+            var screen = PlainScreen("root");
+            doc.rootVisualElement.Add(screen);
+            yield return Frames(6);
+            Assert.AreEqual(1, DesignRootScalePanels.Count);
+            Object.DestroyImmediate(_settings);
+            Object.DestroyImmediate(doc.gameObject);
+            yield return null;
+            Assert.AreEqual(0, DesignRootScalePanels.Count);
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        /// <summary>
+        /// While the panel has no size for a moment (here its root's size taken away, as between target textures) the factor
+        /// stays held and the root keeps its scale, so the screen is not drawn at the exact scale unscaled meanwhile.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator APanelWithoutASizeForAMoment_KeepsTheRootScale()
+        {
+            var doc = Document(1600, 900);
+            yield return Frames(2);
+            var screen = PlainScreen("root");
+            doc.rootVisualElement.Add(screen);
+            yield return Frames(6);
+            float r = screen.RootScale;
+            Assert.AreNotEqual(1f, r);
+            var tree = screen.panel.visualTree;
+            var width = tree.style.width;
+            tree.style.width = StyleKeyword.Null;
+            screen.ApplyRootScale();
+            Assert.AreEqual(r, screen.RootScale, "the root keeps its scale");
+            Assert.AreEqual(ScaleOf(1600, 900), screen.DesignScale ?? double.NaN, 1e-4, "and its design scale");
+            Assert.AreEqual(1.2f, _settings.scale, 1e-4, "the factor stays held");
+            tree.style.width = width;
+            tree.MarkDirtyRepaint();
+            yield return Frames(4);
+            Assert.AreEqual(r, screen.RootScale, 1e-6);
+            Object.DestroyImmediate(doc.gameObject);
         }
     }
 }
