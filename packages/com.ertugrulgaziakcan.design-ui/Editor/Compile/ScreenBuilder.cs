@@ -54,7 +54,7 @@ namespace DesignUi.Editor
         /// styles are resolved again (a state, the locale's fonts, a text size): they measure their text again then.
         /// </summary>
         public const string TextFitProperty = "--design-text-fit";
-        public const string FitLabelTag = "dui:DesignLabel", FitButtonTag = "dui:DesignButton";
+        public const string FitLabelTag = "dui:DesignLabel", FitButtonTag = "dui:DesignButton", OverflowLabelTag = "dui:DesignOverflowLabel";
 
         /// <summary>The UXML namespace prefix of the package's runtime elements (<c>xmlns:dui="DesignUi"</c>).</summary>
         public const string RuntimeNamespace = "DesignUi";
@@ -1218,6 +1218,31 @@ namespace DesignUi.Editor
             {
                 foreach (var child in node.Children) PlanTextWidths(child, node);
                 if (FitsTextWidth(node, parent)) _fitWidths.Add(node);
+                else if (OverflowStarts(node)) _overflowStart.Add(node);
+            }
+
+            /// <summary>Text nodes whose single line the design aligns right or centred (<see cref="OverflowStarts"/>).</summary>
+            readonly HashSet<IrNode> _overflowStart = new HashSet<IrNode>();
+
+            /// <summary>
+            /// A text node that does not wrap in some layer and is aligned right or centred (or at the end) in some layer: its
+            /// line can be wider than its box, which the browser then start-aligns before it clips the line or puts the ellipsis
+            /// where it is cut, where UI Toolkit aligns the cut text. Written as a <see cref="DesignUi.DesignOverflowLabel"/>,
+            /// which is left-aligned while its text is wider than its box.
+            /// </summary>
+            bool OverflowStarts(IrNode node)
+            {
+                if (node.Text == null || node.Children.Length > 0 || node.Field != null || node.Kind != "text") return false;
+                var keys = node.Style.Keys.Select(LayerKey.Parse).ToList();
+                if (!keys.Any(k => k.Text == Base)) keys.Add(LayerKey.Parse(Base));
+                bool aligned = false, single = false;
+                foreach (var k in keys)
+                {
+                    var align = Lowering.Resolve(node, k, "text-align", true);
+                    if (align == "right" || align == "center" || align == "end") aligned = true;
+                    if (!Wraps(node, k)) single = true;
+                }
+                return aligned && single;
             }
 
             bool FitsTextWidth(IrNode node, IrNode parent)
@@ -1495,6 +1520,7 @@ namespace DesignUi.Editor
                 }
                 e.Clickable = node.Clickable && d.Tag != "ui:Button" && d.Tag != "ui:Toggle";
                 e.FitWidth = (d.Tag == "ui:Label" || d.Tag == "ui:Button") && _fitWidths.Contains(node);
+                e.OverflowStart = d.Tag == "ui:Label" && !e.FitWidth && _overflowStart.Contains(node);
                 // markup hiding in the design's repeat items is sample data: the view's setter shows and hides the element that
                 // owns its visibility, the shadow host that took its slot when it has one
                 if (node.ItemVisibility)

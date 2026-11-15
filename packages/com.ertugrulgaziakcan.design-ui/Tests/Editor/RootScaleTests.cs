@@ -800,6 +800,52 @@ namespace DesignUi.Editor.Tests
             Object.DestroyImmediate(doc2.gameObject);
         }
 
+        // ---- an overflowing line the design aligns right ------------------------------------------------------------------
+
+        /// <summary>
+        /// The browser start-aligns a line wider than its box (CSS Text) before it puts the ellipsis where the line is cut, so
+        /// the visible text starts at the box's left edge; UI Toolkit right-aligned the cut text (3.3 CSS px further right in
+        /// the fixture). A right-aligned text that does not wrap compiles to a DesignOverflowLabel: left-aligned while its text
+        /// overflows, right-aligned when it fits, at 2560×1440 and 1600×900.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ARightAlignedLine_WiderThanItsBox_StartsAtTheLeftEdge_AsTheBrowserDrawsIt()
+        {
+            var family = "\"" + FontFixture.Regular.faceInfo.familyName + "\"";
+            (string, string)[] Cut(int top) => new[] { ("position", "absolute"), ("left", "100px"), ("top", top + "px"), ("width", "200px"), ("height", "16px"),
+                ("white-space", "nowrap"), ("overflow-x", "hidden"), ("overflow-y", "hidden"), ("text-overflow", "ellipsis"), ("text-align", "right"),
+                ("color", "#ffffff"), ("font-size", "12px"), ("font-family", family) };
+            var tree = CompileScreen(root => root.Add(Text("cut", "Transfer dönemi bu gece yarısı kapanıyor, kulüpler son tekliflerini veriyor", Cut(600)),
+                Text("fits", "Kısa", Cut(640))));
+            var uxml = File.ReadAllText(Out + "/RootscaleScreen/RootscaleScreen.uxml");
+            StringAssert.Contains("<" + ScreenBuilder.OverflowLabelTag + " name=\"cut\"", uxml);
+            StringAssert.Contains("<" + ScreenBuilder.OverflowLabelTag + " name=\"fits\"", uxml);
+            StringAssert.DoesNotContain("<" + ScreenBuilder.OverflowLabelTag + " name=\"caption\"", uxml, "a left-aligned text stays a Label");
+            foreach (var (w, h) in new[] { (2560, 1440), (1600, 900) })
+            {
+                var doc = Document(w, h);
+                yield return Frames(2);
+                var instance = tree.Instantiate();
+                doc.rootVisualElement.Add(instance);
+                yield return Frames(8);
+                var cut = instance.Q<DesignOverflowLabel>("cut");
+                var fits = instance.Q<DesignOverflowLabel>("fits");
+                Assert.IsNotNull(cut);
+                Assert.IsTrue(cut.Overflows, w + "×" + h + ": the long line overflows");
+                Assert.AreEqual(DesignOverflowLabel.StartOf(fits.resolvedStyle.unityTextAlign) == fits.resolvedStyle.unityTextAlign, false, "the design aligns right");
+                Assert.AreEqual(DesignOverflowLabel.StartOf(fits.resolvedStyle.unityTextAlign), cut.resolvedStyle.unityTextAlign, w + "×" + h + ": the overflowing line starts at the left edge");
+                Assert.IsFalse(fits.Overflows, w + "×" + h + ": the short line fits");
+                Assert.AreEqual(StyleKeyword.Null, fits.style.unityTextAlign.keyword, w + "×" + h + ": the short line keeps the design's alignment");
+                // the text changes to one that fits: the design's alignment again
+                cut.text = "Kısa";
+                yield return Frames(4);
+                Assert.IsFalse(cut.Overflows);
+                Assert.AreEqual(fits.resolvedStyle.unityTextAlign, cut.resolvedStyle.unityTextAlign, w + "×" + h + ": right-aligned when it fits");
+                Object.DestroyImmediate(doc.gameObject);
+                yield return null;
+            }
+        }
+
         // ---- nested borders ---------------------------------------------------------------------------------------------
 
         /// <summary>

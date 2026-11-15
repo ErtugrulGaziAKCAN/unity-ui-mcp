@@ -49,6 +49,11 @@ namespace DesignUi.Editor
         /// <see cref="DesignUi.DesignButton"/>, which lay out at the browser's width for the text (<see cref="DesignUi.DesignTextFit"/>).
         /// </summary>
         public bool FitWidth;
+        /// <summary>
+        /// A Label whose single line the design aligns right or centred: written as <see cref="DesignUi.DesignOverflowLabel"/>,
+        /// left-aligned while its text is wider than its box, as the browser start-aligns an overflowing line.
+        /// </summary>
+        public bool OverflowStart;
         /// <summary>A shadow host: the view attaches a PseudoStateMirror to <see cref="MirrorElement"/> that targets this host.</summary>
         public bool MirrorHost;
         /// <summary>Name of the element whose pseudo-states or classes this host mirrors, or null.</summary>

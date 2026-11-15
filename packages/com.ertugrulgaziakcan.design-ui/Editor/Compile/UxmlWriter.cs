@@ -50,9 +50,13 @@ namespace DesignUi.Editor
         /// <summary>Whether the element or a descendant is one of the package's runtime elements (<c>dui:</c>).</summary>
         static bool UsesRuntime(CompiledElement e) => e.DescendantsAndSelf().Any(x => TagOf(x).StartsWith("dui:", System.StringComparison.Ordinal));
 
-        /// <summary>The element's UXML tag: an exact-width Label or Button is the package's DesignLabel or DesignButton.</summary>
+        /// <summary>
+        /// The element's UXML tag: an exact-width Label or Button is the package's DesignLabel or DesignButton, a Label whose
+        /// single line is aligned right or centred its DesignOverflowLabel.
+        /// </summary>
         static string TagOf(CompiledElement e)
         {
+            if (e.OverflowStart && e.Tag == "ui:Label") return ScreenBuilder.OverflowLabelTag;
             if (!e.FitWidth) return e.Tag;
             if (e.Tag == "ui:Label") return ScreenBuilder.FitLabelTag;
             if (e.Tag == "ui:Button") return ScreenBuilder.FitButtonTag;
