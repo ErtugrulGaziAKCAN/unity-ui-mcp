@@ -7,6 +7,31 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Added
 
+- Scaled viewports lay out at an exact scale. UI Toolkit puts font sizes, paddings, margins and border widths on whole
+  device pixels before layout, so a design only lays out as designed at an exact viewport's scale. The compiler writes the
+  exact viewports' panel scales on the screen root (`DesignScreen`, `exact-scales`); on a runtime panel whose scale is none
+  of them (1600×900, 1366×768, or any resolution the profile does not declare) the root sets its PanelSettings' `scale`
+  factor so the panel lays out at the exact scale nearest in log scale (0.75 and 0.5) and draws itself scaled to the
+  actual one from its top-left corner. The factor is the settings' own times exact / actual while a screen is on the
+  panel and is given back when the last one leaves (a factor the game writes meanwhile is kept as its own; a region's
+  sort-order copy starts with the asset's own). The root follows the panel's scale through `CustomStyleResolvedEvent`
+  (UI Toolkit resolves every style again when a panel's scale changes, also between two 16:9 resolutions), so the
+  100 ms watch is gone. Picking, pointer events, breakpoints, the gamma composite and `DesignUiPanelRegion` frames follow
+  the scaled root (`RootScaleTests`; measurements: `docs/findings/viewport-classes.md`).
+- Text-sized elements keep the browser's width. Chromium ceils a text's width to whole device pixels at the page's scale and
+  puts border widths on whole device pixels (a 4 px border is 3 device px at 1600×900); UI Toolkit ceils on the grid of the
+  scale it lays out at and with no tolerance (a text of 86 px measures 86.003 in Unity and took 87, so every button after it
+  in a row moved a pixel). A text or button whose width is its content's compiles to `DesignLabel` / `DesignButton`
+  (`DesignTextFit`), which lay out at the generator's unrounded width ceiled on the design's device grid (0.025 device px
+  forgiven) plus padding and the browser's border widths, with `white-space: nowrap`; the width comes off when the parent
+  holds the element narrower. A row of ten text-sized buttons starts within 0.34 device px of the browser's positions at
+  every default viewport (1 to 8.7 without). New fidelity fixture `text-row`.
+- Lint **W-IMG-001** (warning): a raster image drawn larger than its pixels at a declared viewport, with the image, its
+  pixels, its drawn size and the size to export (its drawn size at the largest declared viewport). The browser and Unity
+  resample an enlarged picture differently (element SSIM 0.948–0.962 at 3840×2160). The fidelity fixtures' pictures have the
+  pixels 3840×2160 draws; RULES.md and the guides say to export rasters for the largest declared viewport and size them in
+  CSS.
+
 - Lint **U-CSS-046**: a padding, margin or gap (the compiler writes a gap as margins) that is not a whole number of device
   pixels at an exact viewport. UI Toolkit lays these lengths out as whole device pixels, halves up (measured: position
   offsets and translations are not snapped, `docs/findings/viewport-classes.md`), so a 10 px padding is 8 device px at
@@ -70,6 +95,10 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Changed
 
+- The scaled viewports' font twins (`<face> UITK <box>x<scale>.asset`, `DesignFonts.uss` `.vs-<scale>` blocks, the screen
+  root's `viewport-scales` and its 100 ms watch) are removed: under the root scale text is set at the exact scale's whole
+  size and drawn scaled. Kit sync and pruning remove such twins an earlier version made.
+
 - `word-spacing` is converted to UI Toolkit's unit (hundredths of an em, as `letter-spacing`); it was written as px and
   came out far too narrow.
 - Lint and the compiler reject what does not match the design in Unity: `flex-wrap: wrap-reverse`,
@@ -94,10 +123,17 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   other sizes, and the ink colour is off in both directions (more so where the design puts a line at a half device
   pixel). No generic weight or sharpness adjustment fits both, and UI Toolkit 6000.3 gives runtime panels no SDF
   sharpness; the limits and the kit's readability warning stay (`docs/findings/text-ink.md` section 9).
-- The fidelity suite (21 fixtures, 9 components, 4722 captures at six viewports) passes every capture at 2560×1440 and
-  1920×1080 and all but one at 1280×720; 3840×2160 and the scaled viewports fail as before (89, 356 and 770 of 787).
+- The fidelity suite (22 fixtures, 9 components, 4728 captures at six viewports, 12 min 53 s) passes every capture at
+  3840×2160, 2560×1440 and 1920×1080 and all but the known 8 px ink case at 1280×720; at the scaled viewports 712
+  (1600×900) and 633 (1366×768) of 788 pass (before: 431 and 17), every stacked column ends within 0.00 device px (before:
+  up to +14), and what fails is drawing the root scale leaves: small round shapes' anti-aliasing (SSIM), text ink colour at
+  1366×768, focus ring corners, and boxes in 11 captures (`docs/findings/viewport-classes.md`).
 
 ### Fixed
+
+- A radial gradient that ends transparent (the toggle switch's knob) is baked as the ellipse it paints, inside its box:
+  Unity's VectorImage drew a speckled ring where the gradient's pad region starts, which failed the knob's SSIM at
+  3840×2160 (0.967).
 
 - `DesignUiGammaComposite` draws its panel where UI Toolkit would draw the panel on screen instead of at the end of the
   frame over everything: over Screen Space - Overlay canvases of a lower or the same sort order, under those of a higher

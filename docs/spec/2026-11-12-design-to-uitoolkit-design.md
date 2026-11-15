@@ -198,7 +198,7 @@ exactly `n × L` tall with baselines within 0.5 px, and texts stacked in a colum
 height would be ceiled per text). The kit ships Inter Regular and Bold in these seven sizes; the table is generated from
 the two ratios by `tools/design-export/src/kit/textStyles.ts`. `design-export kit build` and kit sync refuse a table
 whose font size or line height is not a whole number of device pixels at the scale of any exact viewport (scaled
-viewports, §12, are exempt and get scaled font twins), and kit
+viewports, §12, are exempt: the screen lays out at an exact scale there), and kit
 sync builds the twins with the same line box. Lint matches the numbers (U-CSS-016). Every listing of the table (RULES.md,
 the base stylesheet's `.text-<style>` classes, the Claude Design System's type styles) is generated from
 `text-styles.json`. The IR records the matched style name, and the USS writer formats numbers with the invariant
@@ -614,14 +614,33 @@ this section are in `docs/findings/animation.md`.
     boxes, baselines and line extents within ±1 device px plus `GEOMETRY_EPS`; a measured scaled-class limit for colour,
     ink or SSIM may be recorded under `fidelity-thresholds.json` `scaled` (never the geometry limits). Verdicts, the
     report, `design_ui_verify` and the fidelity summary count captures per class.
-  - *Fonts at a scaled viewport.* Unity sets text at whole device pixels, halves up (a 12 px style at 0.625 renders at
-    8 device px instead of 7.5: lines 6.7 % wider, line pitch 10.67 instead of 10). For each scaled viewport's panel scale
-    where a line box's font size is fractional, kit sync and the compiler make a twin variant with
-    `faceInfo.scale = exact / rounded` size (`<face> UITK <box>x<scale>.asset`); `DesignFonts.uss` points the line-box
-    variables at them under `.locale-<code>.vs-<scale>`, and the screen root (`DesignScreen`, UXML attribute
-    `viewport-scales`) carries the class of the scale its panel renders at (`IPanel.scaledPixelsPerPoint`, checked on
-    attach, geometry changes and every 100 ms). Measured: widths within 0.92 device px of Chromium's for every kit
-    style, n lines within one device pixel of n line boxes (`ViewportScaleTextTests`, docs/findings/viewport-classes.md).
+  - *Root scale at any other panel scale.* UI Toolkit puts font sizes, paddings, margins and border widths on whole
+    device pixels before layout and ceils text sizes, so a design lays out as designed only where its lengths are whole
+    device pixels: at an exact viewport's scale. The compiler writes the exact viewports' panel scales on the screen root
+    (`DesignScreen`, UXML attribute `exact-scales`) and a custom property on its type (`DesignScreen { --design-screen: 1 }`).
+    On a runtime panel whose scale is none of them (a scaled viewport, or any resolution the profile does not declare),
+    the root sets its PanelSettings' `scale` factor so the panel lays out at the exact scale nearest in log scale
+    (`DesignViewportScales.LayoutScale`; 1600×900 at 0.75, 1366×768 at 0.5) and draws itself scaled by actual / exact
+    from its top-left corner (inline `scale`, `transform-origin` and `flex-shrink: 0`). Every edge then lies where the
+    design puts it at the actual scale (text is generated at the exact scale's whole size and drawn scaled; UI Toolkit
+    does not set it again at the world scale). The factor is the PanelSettings' own times exact / actual, kept per
+    PanelSettings while a screen is on its panel and given back when the last one leaves; a factor the game writes
+    meanwhile is kept as its own; a region's sort-order copy starts with the asset's own. The root re-evaluates on attach,
+    on geometry changes of itself and the panel's root, and on `CustomStyleResolvedEvent` (UI Toolkit resolves every
+    style again when a panel's scale changes, also from one 16:9 resolution to another), so no polling. Breakpoints hold
+    at the design's size (the panel's target over the actual scale). Picking, pointer events (hover, active, clicks,
+    wheel, drags in local coordinates), the gamma composite's texture and pointer mapping and `DesignUiPanelRegion`
+    frames follow the transform (`RootScaleTests`). The capture is the game's path: its PanelSettings copy gets the same
+    factor and `boxes.json` records the scale the panel lays out at. Measured: docs/findings/viewport-classes.md.
+  - *Text widths.* Chromium ceils a text's width to whole device pixels at the page's scale (a 69.469 px text makes its
+    button 70 px of content at 2560×1440, 105 device px at 3840×2160); UI Toolkit ceils on the grid of the scale it lays
+    out at and with no tolerance (a text of 86 px in the browser is 86.003 in Unity and takes 87). A text or button node
+    whose width is its content's (no width, min or max width, flex-basis in any layer; not grown in a row, not stretched
+    in a column, not pinned by left and right; no animated size or text size) is written as `DesignLabel` or
+    `DesignButton` (`dui:`), which set an inline width of the generator's unrounded width ceiled on the design's device
+    grid less 0.025 device px (`DesignTextFit.Snap`) plus horizontal padding and borders, and `white-space: nowrap`
+    (`pre` where the design keeps spaces); taken off when the parent holds the element narrower. A rule on their types
+    (`--design-text-fit`) makes UI Toolkit tell them when their styles change.
 - **Drift-free stacked text.** UI Toolkit ceils each text element's measured height to whole device pixels; where a line
   box is fractional (16/20 at 0.625: 12.5 px) a column of texts drifts by up to a pixel per text. The compiler gives a
   text whose line count the design fixes (no wrapping in any layer: `text-wrap-mode: nowrap`, `white-space: nowrap` or

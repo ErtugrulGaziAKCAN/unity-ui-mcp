@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Date | 2026-11-14 |
+| Date | 2026-11-14; the root scale, text widths and pictures 2026-11-15 |
 | Question | A game offers 1280×720, 1366×768, 1600×900, 1920×1080, 2560×1440 and 3840×2160. Which of them can hold the kit's whole-device-pixel rules, and what does Unity do with the design at the others? |
-| Unity | 6000.3.6f1, standard text generator, real panels (`ViewportScaleTextTests`, `FixedLineTextHeightTests`) and the fidelity suite |
+| Unity | 6000.3.6f1, standard text generator, real panels (`ViewportScaleTextTests`, `FixedLineTextHeightTests`, `RootScaleTests`, `TextFitTests`) and the fidelity suite |
 | Chromium | Chrome Headless Shell 158 (Playwright 1.65.0) |
 
 ## Classes
@@ -13,9 +13,120 @@ With the 2560×1440 reference and match 0.5 (Unity's linear blend), the panel sc
 and 0.5. The kit's values are multiples of 4 px, so they are whole device pixels at 1.5, 1, 0.75 and 0.5 (a 0.25 step):
 those are **exact** viewports, held to the kit build, kit sync and lint rules as before (`kit build --check` passes
 with 3840×2160 added). At 0.625 a 4 px border is 2.5 device px and a 12 px font 7.5; at 0.53346 no kit value is whole.
-Those are **scaled** viewports: exempt from the whole-pixel rules, verified with the same limits.
+Those are **scaled** viewports: exempt from the whole-pixel rules, verified with the same limits. Since 2026-11-15 a
+screen lays out at an exact scale there and draws scaled (next section); the sections after it record what UI Toolkit does
+when a panel lays a design out at such a scale itself.
 
-## Text sizes at a scaled viewport
+## Root scale: lay out at an exact scale, draw scaled
+
+**Mechanism.** The compiler writes the exact viewports' panel scales on the screen root (`DesignScreen`, `exact-scales`,
+here 1.5, 1, 0.75, 0.5) and a custom property on its type. On a runtime panel whose scale (without the factor below) is
+none of them, the root sets its PanelSettings' `scale` factor so the panel resolves an exact scale (`LayoutScale`, the
+nearest in log scale: 1600×900 at 0.75, 1366×768 at 0.5) and gives itself an inline `scale` of actual / exact with
+`transform-origin` at its top-left corner and `flex-shrink: 0` (the root is the reference size, 2560×1440, and its parent
+is laid out in the exact scale's panel pixels). Every length is then whole device pixels where it is laid out, and
+`layout × root scale × panel scale` is the design times the actual scale. The factor is kept per PanelSettings while a
+screen is on its panel (the settings' own factor, or a factor the game writes meanwhile, stays the base) and given back
+when the last screen leaves; a region's sort-order copy starts with the asset's own factor. The design's size for
+breakpoints is the panel's target over the actual scale.
+
+**When the scale changes.** UI Toolkit resolves every style again when a panel's scale changes (`BaseVisualElementPanel.scale`
+increments the visual tree's StyleSheet version), also between two 16:9 resolutions where the panel keeps its size in panel
+pixels, and sends `CustomStyleResolvedEvent` to elements with custom properties: the root re-evaluates there (no polling;
+measured: one event per scale change, `RootScaleTests.FullScreenDocument_…` moves a document from 1920×1080 to 1600×900
+without a call into the screen). A runtime panel applies a new factor when it updates: every frame in Play mode and in
+players; in Edit mode only when something on it changed after its last update, so the root asks the Editor for one more
+update (an `EditorApplication.update` callback that marks the panel dirty; `delayCall` did not run inside the test runner).
+
+**Measured on panels** (`RootScaleTests`, `ViewportScaleTextTests`, `TextFitTests`, device px):
+
+| What | Result |
+|---|---|
+| A box at (397, 101), 403×37 px, at every default viewport | the design × the actual scale within half a device pixel of the layout scale's grid (edges are rounded where laid out: at 1600×900 within 0.42) |
+| Ten rows of a 20 px child with 4 px padding above and below | 175 at 0.625 (CSS 175; laid out natively 185), 149.37 at 0.53346 (natively 147) |
+| Every kit style's kerned 33-character line (Chromium's width × the actual scale) | within 0.635 device px at 0.625 from 0.75, 0.674 from 0.5; within 0.575 at 0.53346 from 0.5, 0.542 from 0.75 (the scaled twins: 0.92) |
+| Five lines of every kit style | exactly five line boxes from either exact scale |
+| Ink extent of 30 H at 12 px | 164.533 through the root at 0.625, 262.855 × 0.625 = 164.284 expected; natively 175.51 (UI Toolkit sets the text at the exact scale's whole size and does not set it again at the world scale) |
+| Pointer input at 1600×900 and 1366×768 (and 1920×1080, not scaled) | picks only where the scaled root draws an element; hover, active, a click, a toggle, a text field's focus, a wheel over a scroll view, a captured drag (positions in the element's own space are the design's) |
+| Gamma composite and a region's sort-order copy | the copy's panel holds the exact scale, the asset keeps its own factor, the composite's texture is the screen's size, a screen point picks the element the design puts there, `IsPointerOverPanel` agrees |
+| A game's own factor (0.9 at 1600×900) | kept as the base (0.5625 actual, laid out at 0.5), given back when the screen leaves |
+
+**Which exact scale.** Measured on the panels above (text widths and line boxes are within a device pixel from
+either neighbour) and on the fidelity suite: 15 fixtures (the text, round-shape, bordered and picture ones; 257 captures
+per scaled viewport) with each rule (`DESIGN_UI_ROOT_SCALE_RULE`, a measurement knob of the capture):
+
+| Viewport | Laid out at | PASS | FAIL | of which SSIM / edge and colour / text ink / boxes |
+|---|---|---|---|---|
+| 1600×900 (0.625) | 0.75 (nearest in log scale, also the next up) | 191 | 66 | 51 / 8 / 0 / 7 |
+| 1600×900 | 0.5 (next down) | 104 | 153 | 114 / 37 / 0 / 2 |
+| 1366×768 (0.53346) | 0.5 (nearest, also the next down) | 109 | 148 | 52 / 7 / 85 / 4 |
+| 1366×768 | 0.75 (next up) | 106 | 151 | 57 / 8 / 84 / 2 |
+
+The nearest exact scale in log scale measures best at both (a ratio closest to 1 keeps edges, anti-aliasing and pictures
+closest to a native layout); the worst text ink colours at 1366×768 are the same from either base (ΔE2000 2.34, 2.52,
+4.63), so the text-ink difference there does not come from the base. `DesignViewportScales.Rule` stays `Nearest`.
+
+**Cost.** A sample of 300 rounded tiles with labels at 1600×900 in Edit mode: 2–3 draw calls and 20–22 µs of
+`UIR.DrawChain` per frame with the root scale, 3 and 22–26 µs laid out at 0.625 natively (two runs each). The text is set at
+the exact scale's size (larger at 1600×900, smaller at 1366×768), the same glyph count. A change of the root's scale
+transforms the screen's vertices once.
+
+**What it does not reproduce.** Chromium lays a page out in device pixels at a fractional scale: it puts border widths
+on whole device pixels (halves up; a 4 px border is 3 device px at 1600×900, 2 at 1366×768) and ceils text widths to
+them, and keeps paddings and margins fractional. Under the root scale a border is drawn at its exact width (2.5 device
+px at 1600×900); text-sized elements take the browser's width anyway (next section). UI Toolkit anti-aliases rounded
+shapes with a ramp of one device pixel of the scale it lays out at, so under the root scale the ramp is 0.83 device px at
+1600×900 and 1.07 at 1366×768, and small round shapes compare below the SSIM limit there (a 30 px circle 0.972). Text drawn
+through the root scale has the design's size and place, and its ink colour at 1366×768 differs more than at an exact
+viewport (12.8 px text ΔE2000 up to 3.49 against the limit 2; 8.54 px up to 4.84 against 4.5).
+
+## Text widths: the browser's rule
+
+Measured on the kit's buttons and tabs at every default viewport (`button` and `tabs` goldens): Chromium's content box of
+a text-sized element is the text's width ceiled to whole device pixels at the page's scale (a tab's text of 69.469 px makes
+70 px of content at 2560×1440 and 105 device px at 3840×2160, 104.2 ceiled), and its borders are whole device pixels
+(halves up, at least one). Unity's unrounded text widths are within 0.021 device px of Chromium's (largest of 40 texts).
+UI Toolkit ceils on the grid of the scale it lays out at and without a tolerance: "Vazgeç" is exactly 86 px in Chromium
+and 86.003 in Unity, which took 87, so every button after it in a row moved a pixel (the +1.02 at 3840×2160 of the
+earlier suite). Under the root scale its grid is not the design's either.
+
+`DesignTextFit` (on `DesignLabel` and `DesignButton`, which the compiler writes for a text or button whose width is its
+content's) sets an inline width of the generator's unrounded width ceiled on the design's device grid less 0.025 device px
+(`Snap`), plus padding and borders as the browser lays them out (`SnapBorder`), and `white-space: nowrap`. UI Toolkit
+rounds a measured size to the device grid after the measure function, so a measure override could not carry the
+fraction. A row of ten text-sized buttons (`TextFitTests`, body bold, 32 px padding, 4 px borders, 24 px apart):
+
+| Viewport | Largest offset from the browser's positions, device px, with `DesignButton` | with `Button` |
+|---|---|---|
+| 2560×1440, 1920×1080, 1280×720, 3840×2160 | 0 | 1, 0, 1, 1 |
+| 1600×900 | 0.333 | 8.667 |
+| 1366×768 | 0.315 | 5.55 |
+
+## Raster pictures
+
+At 3840×2160 a picture shown at its natural size is drawn 1.5 times larger, and Chromium and UI Toolkit resample it
+differently (the earlier suite: element SSIM 0.948–0.962 against the picture limit 0.985). Lint **W-IMG-001** warns when a
+raster image has fewer pixels than it is drawn at the largest declared viewport (object-fit in the content box,
+background-size in the padding box) and names the size to export. A picture exported for 3840×2160 is drawn at a third of
+its pixels at 1280×720: UI Toolkit samples level 0 without mipmaps (mipmaps were ruled out before: `pixel-grid.md`), and the
+fixture photo's 6 px separators failed there (SSIM 0.963–0.969 at 1280×720 and 1920×1080). So the fixtures' pictures have
+the pixels 3840×2160 draws, with their size in CSS, and no detail finer than a block: a 60×36 tile drawn at 40×24 px and
+four-block photos at 480×270, 640×360 and 960×540 px. Detail that must survive the whole range of viewports belongs in a
+vector image.
+
+## The toggle switch's knob
+
+The knob is `radial-gradient(circle 12px at 16px 16px, #ffffff 10px, transparent 11px)` on a 64×32 rounded box, baked into
+an SVG. Unity's VectorImage drew a speckled ring of light pixels at the gradient's radius, where its pad region starts, at
+every viewport (largest at 3840×2160: element SSIM 0.967 against 0.984); Chromium draws nothing past the last stop. The bake
+now draws a radial gradient that ends transparent as the ellipse it paints (inside the gradient's end) when that ellipse
+lies inside the painted shape, so the gradient is never sampled at or past its end; the toggle passes at all six
+viewports.
+
+## Text sizes at a scaled viewport (before the root scale)
+
+The scaled font twins this section measured (86722eb) are removed: under the root scale text is set at the exact scale's
+whole size and drawn scaled.
 
 Measured on a panel (each kit style, the kerned 33-character line of `Data/chromium-kerning-line.json`, Chromium's width
 at scale 1 times the scale; Chromium lays text out at the exact size at any device scale factor):
@@ -70,7 +181,9 @@ column's end mark (the fidelity run's boxes; "before" is the same build without 
 | 1600×900 (scaled) | +24 → 0 | 0 → 0 | +21 → +14 | +9.5 → +0.5 |
 | 1366×768 (scaled) | +0.94 → −0.06 | +9.73 → −0.27 | +0.81 → −4.19 | +4.41 → +4.41 |
 
-The explicit heights remove the text part of the drift. What is left comes from the box model, measured next.
+The explicit heights remove the text part of the drift. What is left comes from the box model, measured next. Under the
+root scale (2026-11-15) every column ends where the design's does at all six viewports: 0.00 device px for the
+single-line rows, captions and titles, key/value rows and paragraphs alike.
 
 ## Box-model lengths are whole device pixels too
 
@@ -111,9 +224,26 @@ pixel per button (3840×2160: +1.02 at the fourth).
 
 ## Suite at six viewports
 
-`scripts/fidelity.sh`, 20 fixtures and 9 components (4716 captures: 2316 static, 2400 animation samples), 13 min 38 s
-(setup 17 s, exports 198 s, import 28 s, capture 194 s, comparisons 378 s with four fixtures at a time; the transitions
-fixture's 2130 captures take 330 s of it):
+**With the root scale, exact text widths and the new pictures (2026-11-15).** `scripts/fidelity.sh`, 22 fixtures and 9
+components (4728 captures, 2400 of them animation samples), 12 min 53 s (setup 17 s, exports 187 s, import 28 s, capture
+198 s, comparisons 339 s):
+
+| Viewport | Class | PASS | FAIL | What fails |
+|---|---|---|---|---|
+| 3840×2160 | exact | 788 | 0 | |
+| 2560×1440 | exact | 788 | 0 | |
+| 1920×1080 | exact | 788 | 0 | |
+| 1280×720 | exact | 787 | 1 | `stacked-text` "41.200" at 8 device px, ink colour ΔE2000 4.65 against 4.5 (text-ink.md section 9, a pending decision) |
+| 1600×900 | scaled | 712 | 76 | 61 SSIM only (46 `keyframes` and 9 `transitions` captures of small round shapes, 5 `icons`, 1 `scroll-area`), 8 corner edges of focus rings (ΔE2000 1.1–1.7 against 1), 7 boxes (Δw −1.16 to −1.49: a letter-spaced title, a bordered state box, a chip in `half-pixel-frame`) |
+| 1366×768 | scaled | 633 | 155 | 85 text ink colour (60 `repeat-items` at 8.54 px, ΔE2000 4.63 against 4.5; 17 `controls`, 6 `card` and others at 12.8 px, 2.1–3.5 against 2), 58 SSIM only (52 `keyframes`), 8 corner edges, 4 boxes |
+
+Every remaining scaled failure is a rendering difference the root scale leaves (section "Root scale", "What it does not
+reproduce") or a box in 11 captures (Δw −1.06 to −1.78 device px), not drift: the stacked-text columns end within 0.00
+device px everywhere. No limit was widened.
+
+**Before (2026-11-14).** `scripts/fidelity.sh`, 20 fixtures and 9 components (4716 captures: 2316 static, 2400 animation
+samples), 13 min 38 s (setup 17 s, exports 198 s, import 28 s, capture 194 s, comparisons 378 s with four fixtures at a
+time; the transitions fixture's 2130 captures take 330 s of it):
 
 | Viewport | Class | PASS | FAIL |
 |---|---|---|---|

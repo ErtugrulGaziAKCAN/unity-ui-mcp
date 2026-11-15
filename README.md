@@ -212,15 +212,19 @@ keeps its own list and declares no scaled viewport until one is added. Each has 
 - **scaled** (`{ "size": [w, h], "class": "scaled" }`): a resolution players use where no design value can be whole
   (1600×900 is scale 0.625, so a 4 px border is 2.5 device px; 1366×768 is 0.5335, so nothing is). The screen is laid
   out and verified there with the same limits (boxes, baselines and line extents within ±1 device px), but the
-  whole-pixel rules do not apply to it. Today scaled viewports fail verify where padded, spaced or bordered elements
-  stack (UI Toolkit lays those lengths out as whole device pixels; see Fidelity below). Unity sets text at whole device pixels: the compiler gives each scaled viewport
-  font twins whose face is scaled by exact / rounded size, and the screen root switches to them at that panel scale,
-  so text keeps the design's size and line box. For a designer nothing changes: design at 2560×1440 with the kit;
-  borders and fractional edges are drawn where Unity's whole pixels put them, within a pixel.
+  whole-pixel rules do not apply to it. UI Toolkit puts font sizes, paddings, margins and borders on whole device pixels
+  before layout, so at such a scale the screen's panel lays out at the nearest exact scale (1600×900 at 0.75, 1366×768 at
+  0.5) and the screen root draws scaled to the actual one: every edge and every line of text lands where the design puts
+  it. For a designer nothing changes: design at 2560×1440 with the kit.
 
-Declare every resolution the game offers, in the class it belongs to; a resolution that is not declared still works
-(UI Toolkit scales the panel) but is not verified, and its text renders at Unity's rounded sizes. `design_ui_status`,
-`design_ui_verify` (captures per class) and `Window > Design UI > Status` show each viewport's class.
+Declare every resolution the game offers, in the class it belongs to. A resolution that is not declared lays out the same
+way (at the nearest exact scale, drawn scaled) but is not verified. `design_ui_status`, `design_ui_verify` (captures per
+class) and `Window > Design UI > Status` show each viewport's class.
+
+Text-sized elements (a button or label whose width is its text's) lay out at the browser's width for their text:
+Chromium ceils a text's width to whole device pixels at the page's scale, UI Toolkit on the grid of the scale it lays out
+at, with no tolerance; the compiler writes such elements as `DesignButton` / `DesignLabel`, which keep the browser's
+width, so a row of them does not drift.
 
 ## Fidelity and speed
 
@@ -234,15 +238,14 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`):
 | Structure (SSIM, non-text) | ≥ 0.99 for the capture and for each element (small elements ≥ 0.984, pictures ≥ 0.985, rotated animation samples ≥ 0.975) |
 | Animation samples | at the delay and every quarter of each animation, the same limits |
 
-The fidelity suite (`scripts/fidelity.sh`: 21 fidelity fixtures and the 9 kit components, at the kit's six
-viewports, 4722 captures, about 14 minutes) passes every capture at 2560×1440 and 1920×1080 and all but one at 1280×720
-(8 device px digits, ink colour ΔE2000 4.65 against 4.5: [docs/findings/text-ink.md](docs/findings/text-ink.md) section 9).
-It does **not** pass yet at 3840×2160 (89 of 787 fail: a row of
-text-sized buttons moves 1.02 px because UI Toolkit rounds each text's width up, and raster pictures drawn 1.5× larger)
-or at the scaled viewports (1600×900: 356 of 787 fail, 1366×768: 770 of 787): UI Toolkit lays every padding, margin and
-border out as whole device pixels, so stacked elements drift past the ±1 px limit there
-([docs/findings/viewport-classes.md](docs/findings/viewport-classes.md)). Nothing is waived: those viewports report
-FAIL until the layout is compensated or a different limit is decided.
+The fidelity suite (`scripts/fidelity.sh`: 22 fidelity fixtures and the 9 kit components at the kit's six viewports,
+4728 captures, about 13 minutes) passes every capture at 3840×2160, 2560×1440 and 1920×1080 and all but one at 1280×720
+(8 device px digits, ink colour ΔE2000 4.65 against 4.5: [docs/findings/text-ink.md](docs/findings/text-ink.md) section
+9). At the scaled viewports the layout holds (stacked columns end within 0.00 device px; 1600×900: 712 of 788 pass,
+1366×768: 633 of 788); what fails there is drawing that the root scale does not reproduce: small round shapes
+anti-aliased with a ramp of the layout scale's pixel (SSIM), text ink colour at 1366×768 (12.8 px and 8.54 px text), focus
+ring corners, and boxes in 11 captures ([docs/findings/viewport-classes.md](docs/findings/viewport-classes.md)). Nothing is
+waived.
 
 **Linear colour space.** UI Toolkit blends an ordinary on-screen panel of a Linear project in linear light; the design's
 browser blends in sRGB. Captured that way, 2248 of the suite's 2355 captures fail (text ink 0.63–1.42× the design's,
@@ -267,7 +270,7 @@ Measured on the sample project (macOS, Apple silicon, warm browser):
 | Import through the Editor bridge, view class unchanged | 0.2 s Unity request; 4.5 s for the whole tool call with its export |
 | Import that changes the view class | 1.8–3.3 s Unity step (script compile and domain reload); longer in a large project |
 | Unity capture | about 33 ms per capture job after one mount per viewport |
-| Fidelity suite Unity steps (29 screens, six viewports) | import 28 s, capture 206 s |
+| Fidelity suite Unity steps (31 screens, six viewports) | import 28 s, capture 198 s |
 
 ## MCP tools
 

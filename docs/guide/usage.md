@@ -48,8 +48,10 @@ fix; a difference after import is reported, never smoothed over.
    every text size, line height and border is whole device pixels there, and lint, kit build and kit sync hold the
    design to it. **Scaled Viewports** are the others players use (1600×900, 1366×768): no design value can be whole
    there, so they are exempt from those rules; verify still lays them out and checks them with the same ±1 device px
-   geometry, and the compiled fonts keep the design's text size there. Kit sync writes both lists into
-   `kit.config.json`; a resolution in neither list works but is not verified.
+   geometry. At such a scale the screen's panel lays out at the nearest exact scale (1600×900 at 0.75, 1366×768 at 0.5)
+   and the screen root draws scaled to the actual one, so every edge and line of text lands where the design puts it.
+   Kit sync writes both lists into `kit.config.json`; a resolution in neither list lays out the same way but is not
+   verified.
 9. **Verification captures**: setup's capture command renders on a temporary copy of the project (below); it needs the
    Unity Hub install of the project's version, or `UNITY_BIN`.
 
@@ -85,7 +87,10 @@ Attach the kit's Design System to the canvas. Then:
 - **Look.** Shadows (`box-shadow`, also `inset`) and gradients are allowed; they are baked into images. Borders and
   lines thinner than 8 px stay on whole device pixels. Opacity below 1 only on elements whose parts do not overlap;
   use the kit's disabled colours for disabled controls. Icons are inline `<svg>` painted with `currentColor` (they then
-  follow the text colour) or with fixed colours. Images are uploads; nothing loads from the network.
+  follow the text colour) or with fixed colours. Images are uploads; nothing loads from the network. Export a raster
+  image for the largest declared viewport (its CSS size × 1.5 with 3840×2160) and give it its CSS size (an `<img>`
+  width and height, a `background-size`): a picture drawn larger than its pixels is resampled differently by the
+  browser and Unity (lint W-IMG-001 warns).
 - **Motion.** Transitions and `@keyframes` of transforms (`translate`, `rotate`, `scale`), `opacity`, colours and border
   radii, triggered by the screen opening, a state, a pseudo-state or an `is-*` class. A size or position change is a
   `translate` or `scale`, never `width` or `top`.
@@ -312,6 +317,7 @@ In Unity: `Window > Design UI > Import Screen…` and `Window > Design UI > Kit 
 | U-CSS-039 | opacity below 1 on an element with overlapping parts | the kit's disabled colours |
 | U-CSS-040 | a thin border or line off the device grid | the listed lengths |
 | U-CSS-046 | a padding, margin or gap off the device grid (10 px is 7.5 device px at 1920×1080) | the nearest lengths named, multiples of 4 px |
+| W-IMG-001 (warning) | a raster image drawn larger than its pixels at a declared viewport | export it at the size named (its CSS size × the largest viewport's scale) and give it that CSS size |
 | U-CSS-013, U-CSS-042 | an animation of a layout property | `translate` or `scale` |
 | U-MRK-003 | a control, bound or action element without `data-u-id` | add one |
 | U-MRK-004 | a visible text without `data-l10n` and `data-en` | add the key and English text |

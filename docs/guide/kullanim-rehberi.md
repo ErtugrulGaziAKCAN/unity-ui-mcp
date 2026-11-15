@@ -47,9 +47,10 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
    4 px ızgarasını tam tutanlar (2560×1440 referansıyla 3840×2160, 2560×1440, 1920×1080, 1280×720); orada her yazı
    boyutu, satır yüksekliği ve kenarlık tam cihaz pikselidir, lint, kit build ve kit sync tasarımı buna göre denetler.
    **Scaled Viewports** (ölçekli) oyuncuların kullandığı diğerleri (1600×900, 1366×768): orada hiçbir tasarım değeri tam
-   olamaz, bu yüzden bu kurallardan muaftır; verify yine de yerleşimi aynı ±1 cihaz pikseli sınırıyla denetler ve
-   derlenen fontlar yazıyı tasarımın boyutunda tutar. Kit sync iki listeyi de `kit.config.json`'a yazar; ikisinde de
-   olmayan bir çözünürlük çalışır ama doğrulanmaz.
+   olamaz, bu yüzden bu kurallardan muaftır; verify yine de yerleşimi aynı ±1 cihaz pikseli sınırıyla denetler. Böyle
+   bir ölçekte ekranın paneli en yakın tam ölçekte yerleşir (1600×900'de 0,75, 1366×768'de 0,5) ve ekran kökü gerçek
+   ölçeğe küçültülüp büyütülerek çizilir: her kenar ve her yazı satırı tasarımın koyduğu yere düşer. Kit sync iki listeyi
+   de `kit.config.json`'a yazar; ikisinde de olmayan bir çözünürlük aynı yolla yerleşir ama doğrulanmaz.
 9. **Doğrulama görüntüleri:** kurulumun yazdığı yakalama komutu projenin geçici bir kopyasında çizer (aşağıda); projenin
    sürümündeki Unity Hub kurulumunu ya da `UNITY_BIN`'i kullanır.
 
@@ -87,6 +88,9 @@ Kit'in Design System'ini canvas'a ekle. Sonra:
   kenarlıklar ve çizgiler tam cihaz pikselinde kalır. 1'den küçük opacity yalnız parçaları üst üste binmeyen
   elemanlarda; devre dışı kontroller için kit'in disabled renklerini kullan. İkonlar `currentColor` ile (metin rengini
   izler) ya da sabit renklerle boyanmış satır içi `<svg>`'dir. Görseller yüklenmiş dosyalardır; ağdan bir şey yüklenmez.
+  Bir raster görseli bildirilen en büyük çözünürlük için dışa aktar (3840×2160 ile CSS boyutunun 1,5 katı) ve ona CSS
+  boyutunu ver (`<img>` genişliği ve yüksekliği, `background-size`): pikselinden büyük çizilen bir resmi tarayıcı ve
+  Unity farklı örnekler (lint W-IMG-001 uyarır).
 - **Hareket.** Transform'ların (`translate`, `rotate`, `scale`), `opacity`'nin, renklerin ve köşe yarıçaplarının
   geçişleri ve `@keyframes` animasyonları; tetikleyici ekranın açılması, bir durum, bir etkileşim durumu ya da bir
   `is-*` sınıfıdır. Boyut ya da konum değişimi `width` ya da `top` ile değil, `translate` ya da `scale` ile yapılır.
@@ -314,6 +318,7 @@ Unity'de: `Window > Design UI > Import Screen…` ve `Window > Design UI > Kit S
 | U-CSS-039 | parçaları üst üste binen elemanda 1'den küçük opacity | kit'in disabled renkleri |
 | U-CSS-040 | cihaz pikseline oturmayan ince bir kenarlık ya da çizgi | listelenen uzunluklar |
 | U-CSS-046 | cihaz pikseline oturmayan bir padding, margin ya da gap (10 px, 1920×1080'de 7,5 cihaz pikseli) | bulgunun söylediği en yakın uzunluklar, 4 px'in katları |
+| W-IMG-001 (uyarı) | bildirilen bir çözünürlükte pikselinden büyük çizilen bir raster görsel | bulgunun söylediği boyutta (CSS boyutu × en büyük çözünürlüğün ölçeği) dışa aktar ve o CSS boyutunu ver |
 | U-CSS-013, U-CSS-042 | yerleşim özelliğinin animasyonu | `translate` ya da `scale` |
 | U-MRK-003 | `data-u-id`'si olmayan kontrol, bağlı ya da aksiyonlu eleman | bir kimlik ekle |
 | U-MRK-004 | `data-l10n` ve `data-en`'i olmayan görünür metin | anahtarı ve İngilizce metni ekle |
