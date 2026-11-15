@@ -1242,6 +1242,37 @@ describe("compareCapture: edge, colour and ink checks", () => {
         .toContain("name#2 missing");
     });
 
+    it("fix round 1, I-1: a repeat copy's paint stays judged, only its text lines are masked", () => {
+      // the reviewer's probe: a three-row list, each row holding a text chip (IR `chip`, copies `chip#1`, `chip#2`) that
+      // paints a 64×20 background behind a line of glyphs; Unity paints chip#2's background in another colour
+      const bgC: Rgb = [16, 24, 32], rowC: Rgb = [30, 44, 56], chipC: Rgb = [180, 60, 60], ink: Rgb = [240, 240, 240];
+      const chips = [0, 1, 2].map((k) => ({ x: 16, y: 8 + 28 * k, w: 64, h: 20 }));
+      const draw = (last: Rgb = chipC) => {
+        const png = canvas(160, 96, bgC);
+        chips.forEach((c, k) => {
+          fill(png, { x: 8, y: c.y - 4, w: 144, h: 28 }, rowC);
+          fill(png, c, k === 2 ? last : chipC);
+          glyphs(png, { x: c.x + 6, y: c.y + 6, w: 40, h: 8 }, ink);
+        });
+        return png;
+      };
+      const line = (k: number) => ({ x: chips[k].x + 6, y: chips[k].y + 5, w: 40, h: 10, baseline: chips[k].y + 13 });
+      const boxes: CaptureBoxes = { capture: "c", viewport: [160, 96], scale: 1, external: [], elements: { root: el(0, 0, 160, 96), list: el(8, 4, 144, 84),
+        row: el(8, 4, 144, 28), chip: el(chips[0].x, chips[0].y, 64, 20, { text: true, lines: [line(0)] }) },
+        items: { "row#1": { ...el(8, 32, 144, 28), text: false, lines: [] }, "row#2": { ...el(8, 60, 144, 28), text: false, lines: [] },
+          "chip#1": { ...el(chips[1].x, chips[1].y, 64, 20), text: true, lines: [line(1)] }, "chip#2": { ...el(chips[2].x, chips[2].y, 64, 20), text: true, lines: [line(2)] } } };
+      const ctx: CaptureContext = { backgrounds: new Set(["row", "chip"]), painters: new Set(["row", "chip"]), order: ["root", "list", "row", "chip"], root: "root",
+        parent: new Map([["list", "root"], ["row", "list"], ["chip", "row"]]), repeats: new Set(["list"]), viewportClass: "exact" };
+      const right = compareCapture({ png: draw(), boxes }, { png: draw(), boxes }, [], T, ctx);
+      expect(right.issues).toEqual([]);
+      const wrong = compareCapture({ png: draw(), boxes }, { png: draw([60, 160, 200]), boxes }, [], T, ctx);
+      // the copy's background is no longer hidden from the whole capture's and the list's SSIM
+      expect(wrong.pass).toBe(false);
+      expect(wrong.issues.map((i) => `${i.id} ${i.kind}`)).toContain("list ssim");
+      // its text is still masked and checked on its own
+      expect(wrong.elements.find((e) => e.id === "chip#2")).toMatchObject({ lines: "1/1" });
+    });
+
     it("R138: a hairline line (no fully covered pixel) is judged by its ink's colour direction, not its lightness or amount", () => {
       // a 10 device px em dash in the secondary text colour on a row's fill (repeat-items row-time#2 at 1280×720): Chromium
       // splits its 1.2 px stroke over two pixel rows (covering 0.84 and 0.44 of each), UI Toolkit draws most of it in one

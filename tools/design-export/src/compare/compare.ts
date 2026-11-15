@@ -912,13 +912,17 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const o = u.elements[id];
       if (o && shown(id)) { textBoxes.push(o); textLines.push(...(o.lines.length ? o.lines : [o])); }
     }
-    // the text of the copies in later repeat items, as the IR elements' (ruling R133): its own checks judge it
+    // the text lines of the copies in later repeat items (ruling R133): their own checks judge them. Only the lines, not the
+    // copy's box: a copy has no element SSIM or colour samples of its own, so what it paints (a chip's background, a pill's
+    // border) stays in the whole capture's and its containers' SSIM (fix round 1, I-1). A copy without lines (a form
+    // control's value) keeps its box masked, as the IR element's line mask does
     for (const [key, e] of Object.entries(g.items ?? {})) {
       if (!e.text || !e.visible) continue;
-      textBoxes.push(e);
-      textLines.push(...(e.lines.length ? e.lines : [e]));
+      const own = e.lines.length ? e.lines : [e];
+      textBoxes.push(...own);
+      textLines.push(...own);
       const o = u.items?.[key];
-      if (o?.visible) { textBoxes.push(o); textLines.push(...(o.lines.length ? o.lines : [o])); }
+      if (o?.visible) { const theirs = o.lines.length ? o.lines : [o]; textBoxes.push(...theirs); textLines.push(...theirs); }
     }
     const externalBoxes = g.external.flatMap((id) => [g.elements[id], u.external.includes(id) ? u.elements[id] : undefined]).filter((e): e is Box => !!e);
     const mask = maskRects(w, h, [...textBoxes, ...externalBoxes], 2);
