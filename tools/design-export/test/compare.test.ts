@@ -1386,7 +1386,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
       });
     });
 
-    describe("fix round 3: what paints over a hairline line", () => {
+    describe("fix round 3: what paints over a hairline line, and the colours drawn on it", () => {
       // the kit's surfaces and text colours; the kit's shadows are black (--shadow-card: 0 8px 24px rgba(0, 0, 0, 0.4))
       const surfaces: Record<string, Rgb> = { "surface-900": [11, 31, 38], "surface-800": [15, 42, 51], "surface-700": [18, 60, 71] };
       const colours: Record<string, Rgb> = { primary: [255, 255, 255], secondary: [185, 208, 214], muted: [134, 167, 176] };
@@ -1438,6 +1438,20 @@ describe("compareCapture: edge, colour and ink checks", () => {
         expect(kinds(veiled(1), boxes, veiled(0.7), ctx), "lighter").toContain("ink");
         expect(kinds(veiled(1), boxes, veiled(1, missing), ctx), "missing glyphs").toContain("inkCoverage");
         expect(kinds(veiled(1), boxes, veiled(1), ctx), "the same text").toEqual([]);
+      });
+
+      it("N-6: a 10 px line drawn in a muted span inside secondary text, Unity lighter or missing glyphs, fails", () => {
+        const bg = surfaces["surface-700"], secondary = colours.secondary, muted = colours.muted;
+        // the capture records the element's colour (secondary) and that the line holds text in another colour
+        const boxes = (mixed: boolean): CaptureBoxes => ({ capture: "c", viewport: [48, 40], scale: 0.5, external: [],
+          elements: { root: el(0, 0, 48, 40), t: el(7, 3, 30, 16, { text: true, lines: [{ ...line, ...(mixed ? { mixed: true } : {}) }], ...own(secondary) }) } });
+        const ctx: CaptureContext = { fontPx: { t: 10 }, backgrounds: new Set(), painters: new Set(), order: ["root", "t"], root: "root", viewportClass: "exact" };
+        for (const k of [1, 0.85]) {
+          const design = stems(bg, muted, k);
+          expect(kinds(design, boxes(true), stems(bg, muted, 0.75 * k), ctx), `${k}: lighter`).toContain("ink");
+          expect(kinds(design, boxes(true), stems(bg, muted, k, 0, missing), ctx), `${k}: missing glyphs`).toContain("inkCoverage");
+          expect(kinds(design, boxes(true), stems(bg, muted, k), ctx), `${k}: the same text`).toEqual([]);
+        }
       });
     });
 

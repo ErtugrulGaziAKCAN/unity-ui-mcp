@@ -501,6 +501,12 @@ describe("captures", () => {
       const mixed = b.elements.mixed.lines;
       expect(mixed).toHaveLength(2);
       expect(mixed[0].h).toBeGreaterThan(mixed[1].h);
+      // a run in another colour marks its line (fix round 3, N-6); runs in the element's colour (bold, larger) do not
+      expect(mixed.map((l) => l.mixed ?? false)).toEqual([false, false]);
+      const tinted = b.elements.tinted.lines;
+      expect(tinted).toHaveLength(2);
+      expect(tinted.map((l) => l.mixed ?? false)).toEqual([true, false]);
+      expect(b.elements.tinted).toMatchObject({ color: [255, 255, 255, 1], opacity: 1 });
     }
   });
 

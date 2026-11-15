@@ -64,7 +64,11 @@
         "required": ["x", "y", "w", "h", "baseline"],
         "properties": {
           "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" },
-          "baseline": { "type": "number", "description": "Line top plus the rendered ascent of the line's font at its size (findings R7)." }
+          "baseline": { "type": "number", "description": "Line top plus the rendered ascent of the line's font at its size (findings R7)." },
+          "mixed": {
+            "type": "boolean",
+            "description": "Design side only, optional, written only when true: some of the line's text is drawn in another colour or opacity than the element's own (`color`, `opacity`), as a rich inline span draws it. Unity captures do not write it."
+          }
         }
       }
     },

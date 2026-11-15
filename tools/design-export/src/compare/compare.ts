@@ -825,7 +825,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   const rowOf = new Map<string, ElementRow>();
   let maxBox: { id: string; px: number } | null = null;
   const compared: string[] = [];
-  type TextBox = { lines: readonly (Rect & { baseline: number })[] };
+  type TextBox = { lines: readonly (Rect & { baseline: number; mixed?: boolean })[] };
   /** A text's line count and baselines (an IR element's, or its copy's in a later repeat item, `key` naming it). */
   const lineCheck = (key: string, ge: TextBox & Rect, ue: TextBox, row: ElementRow) => {
     if (!ge.lines.length) { row.lines = "not compared"; linesNotCompared.push(key); return; }
@@ -1231,9 +1231,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       let wX: { i: number; dl: number; dr: number; dw: number; worst: number } | null = null;
       let wDir: { dir: number; i: number; a: number[]; b: number[] } | null = null, wAmount: { ratio: number; i: number } | null = null;
       // ruling R141: a hairline line is small text drawn in its own colour (the one the capture recorded for this element or
-      // this copy) at full opacity (its own and its ancestors', an animation sample's running value included), and nothing
-      // painted later lies over it (a later element or copy, or the shadow it casts: fix round 3, N-5); then R138's
-      // conditions (isHairline)
+      // this copy) at full opacity (its own and its ancestors', an animation sample's running value included), all of the
+      // line in it (no span of another colour: fix round 3, N-6), and nothing painted later lies over it (a later element or
+      // copy, or the shadow it casts: N-5); then R138's conditions (isHairline)
       const own = key === id ? g.elements[id] : g.items?.[key];
       const declared = own?.color && own.opacity !== undefined ? { rgb: own.color.slice(0, 3), alpha: own.color[3] * own.opacity } : undefined;
       const later = declared && px <= HAIRLINE_MAX_PX && declared.alpha >= 1 - 1e-6 ? laterLayers(id, key) : null;
@@ -1258,7 +1258,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
         // a hairline line (rulings R138, R141): its lightness measures coverage; its ink's colour direction is judged, and its
         // ink amount only within HAIRLINE_INK_BAND (a stroke drawn a row off scatters, a missing or added glyph does not)
-        if (b && mayBeHairline && !later!.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y) &&
+        if (b && mayBeHairline && !gl.mixed && !later!.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y) &&
             isHairline(a, declared!)) {
           const dir = angleBetween(a.dirSrgb, b.dirSrgb);
           if (!wDir || dir > wDir.dir) wDir = { dir, i, a: a.ink, b: b.ink };

@@ -331,7 +331,7 @@ export function itemSuffix(item: readonly number[]): string {
   return out;
 }
 
-type LineBox = { x: number; y: number; w: number; h: number; baseline: number };
+type LineBox = { x: number; y: number; w: number; h: number; baseline: number; mixed?: boolean };
 type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; rotation?: number; lines: LineBox[]; color?: [number, number, number, number]; opacity?: number };
 /**
  * Boxes of the IR elements in device px: border box, visibility, text lines with baselines (see the boxes schema for
@@ -421,10 +421,12 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
     if (isText && rendered) {
       // the colour its text is drawn in and the opacity it draws with, as computed now (a later repeat item's copy has its
       // own, its classes' and the job's state's)
-      const color = rgba(getComputedStyle(el).color);
+      const ownColor = getComputedStyle(el).color;
+      const color = rgba(ownColor);
       if (color) box.color = color;
       box.opacity = drawnOpacity(el);
-      type Frag = { l: number; t: number; r: number; b: number; base: number };
+      // a run of the text drawn in another colour or opacity (a rich inline span) marks its line
+      type Frag = { l: number; t: number; r: number; b: number; base: number; mixed: boolean };
       const frags: Frag[] = [];
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
         acceptNode: (n) => {
@@ -435,8 +437,10 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
       for (let n = walker.nextNode(); n; n = walker.nextNode()) {
         const range = document.createRange();
         range.selectNodeContents(n);
-        const a = ascent(getComputedStyle(n.parentElement!));
-        for (const r of Array.from(range.getClientRects())) if (r.width > 0 && r.height > 0) frags.push({ l: r.left, t: r.top, r: r.right, b: r.bottom, base: r.top + a });
+        const pe = n.parentElement!, cs = getComputedStyle(pe);
+        const a = ascent(cs);
+        const mixed = pe !== el && (cs.color !== ownColor || drawnOpacity(pe) !== box.opacity);
+        for (const r of Array.from(range.getClientRects())) if (r.width > 0 && r.height > 0) frags.push({ l: r.left, t: r.top, r: r.right, b: r.bottom, base: r.top + a, mixed });
       }
       // fragments on one line share its baseline (to half a device pixel); with a line height below the ascent,
       // neighbouring lines' text boxes overlap, so overlap cannot be the test
@@ -444,10 +448,10 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
       const lines: Frag[] = [];
       for (const f of frags.sort((p, q) => p.base - q.base || p.l - q.l)) {
         const line = lines.find((x) => Math.abs(f.base - x.base) <= tol);
-        if (line) { line.l = Math.min(line.l, f.l); line.r = Math.max(line.r, f.r); line.t = Math.min(line.t, f.t); line.b = Math.max(line.b, f.b); }
+        if (line) { line.l = Math.min(line.l, f.l); line.r = Math.max(line.r, f.r); line.t = Math.min(line.t, f.t); line.b = Math.max(line.b, f.b); line.mixed ||= f.mixed; }
         else lines.push({ ...f });
       }
-      box.lines = lines.sort((p, q) => p.base - q.base).map((x) => ({ x: dev(x.l), y: dev(x.t), w: dev(x.r - x.l), h: dev(x.b - x.t), baseline: dev(x.base) }));
+      box.lines = lines.sort((p, q) => p.base - q.base).map((x) => ({ x: dev(x.l), y: dev(x.t), w: dev(x.r - x.l), h: dev(x.b - x.t), baseline: dev(x.base), ...(x.mixed ? { mixed: true } : {}) }));
     }
     out.push([id, box]);
   }
