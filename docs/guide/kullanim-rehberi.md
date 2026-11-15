@@ -166,9 +166,13 @@ vardır:
   yazdığın değer kök ölçeğinin üstüne uygulandığı taban olur (onu bir ekran gösterilmeden önce oku ya da kendi kopyanı
   tut). Daha önce tutulmuş bir çarpana eşit bir değer de senindir (yalnız ekranın son yazdığı çarpan onundur).
 - Çarpanın tutulduğu yer. Oyuncuda ve Play modunda her PanelSettings'te: Editor'de kayıt, tutulan bir varlığı kendi
-  çarpanıyla yazar, bir build önce her tutulan çarpanı geri verir (uyarıyla), Undo anlık görüntünün kendi çarpanını
-  geri getirir (script yeniden yüklendikten sonra da), Play'den çıkış, script yeniden yükleme ve çıkış her çarpanı geri
-  verir. Editor'de Play dışında yalnız hiçbir kaydın yazmadığı PanelSettings'te (`HideFlags.DontSaveInEditor`: yakalamanın
+  çarpanıyla yazar, bir oyuncu (player) build'i önce her tutulan çarpanı geri verir (uyarıyla), Undo anlık görüntünün
+  kendi çarpanını geri getirir (script yeniden yüklendikten sonra da; yalnız dokunduğu ayarlarda ve oyunun ya da senin
+  verdiğin bir değere asla), Play'den çıkış, script yeniden yükleme ve çıkış her çarpanı geri verir. Play modunda
+  korunmayanlar: Scriptable Build Pipeline ya da Addressables içerik build'i (Unity'nin kendi
+  `BuildPipeline.BuildAssetBundles`'ı Play modunda çalışmaz; ötekiler tutulan bir varlığın çarpanını yazar: içeriği Play
+  dışında build et) ve bir ekran çarpanı tutarken kaydedilen bir preset ya da kopyalanan bir varlık (`Instantiate` +
+  `CreateAsset`) çarpanı taşır. Editor'de Play dışında yalnız hiçbir kaydın yazmadığı PanelSettings'te (`HideFlags.DontSaveInEditor`: yakalamanın
   ve bir bölgenin kopyası gibi çalışma zamanı kopyaları); bir PanelSettings varlığındaki ya da sahnenin kendi
   ayarlarındaki ekran orada kök ölçeği olmadan gerçek ölçekte yerleşir, yani ölçekli bir çözünürlükte Edit modundaki
   Game görünümü oyunun yerleşimi değildir (Play'e gir ya da verify çalıştır).
@@ -249,7 +253,10 @@ kuralını alır (başa hizalı metin sağa döner, yerleşim aynalanmaz); Enabl
 yönde çizilir.
 
 **Yazı boyutu.** Oyunun yazı boyutu seçeneklerini (anahtar ve ölçek) profilin `textSizes` listesine yaz ve yeniden
-aktar; bölgenin `TextSizes` alanına `IDesignTextSizeSource` uygulayan bir bileşen ver (oyunun ayarı).
+aktar; bölgenin `TextSizes` alanına `IDesignTextSizeSource` uygulayan bir bileşen ver (oyunun ayarı). ×1'in altındaki bir
+seçenek metni okunabilir sınırın (9 cihaz pikseli) altına çizebilir; bu oyuncunun seçimidir, bu yüzden kit eşitleme
+seçenekleri kit.config.json'a yazar ve `kit build` böyle bir seçenek için uyarır (varsayılan kit'le seçenekleri ×0,9 ve
+üstünde tut: 1280×720'de 9 cihaz pikseli). Paketin varsayılan bir seçeneği yoktur.
 
 **Hareket.** Animasyonlar kendiliğinden oynar. Bir erişilebilirlik ayarı için
 `if (DesignUiAnimationPlayer.For(view.Root) is { } motion) motion.ReducedMotion = true;` yaz (animasyonu olmayan
@@ -346,7 +353,7 @@ Unity'de: `Window > Design UI > Import Screen…` ve `Window > Design UI > Kit S
 | U-CSS-010 | kit'e ait olmayan bir font | `var(--font-ui)`; kit senkronundan sonra token'ın yeni ailesi |
 | U-CSS-011 | satır kaydıran kapsayıcıda `gap` | öğelere margin |
 | U-CSS-016 | kit yazı stili olmayan bir boyut, satır yüksekliği ya da kalınlık | bir `.text-<stil>` sınıfı |
-| U-FONT-004 | bildirilen bir görünümde (dönüşümleriyle) 9 cihaz pikselinin altında çizilen metin | en az 18 px'lik bir yazı stili (kit'in caption ya da label'ı), küçültülmeden |
+| U-FONT-004 | bildirilen bir görünümde (dönüşümleriyle, çizildiği bir durumda) 9 cihaz pikselinin altında çizilen metin | en az 18 px'lik bir yazı stili (kit'in caption ya da label'ı), küçültülmeden |
 | U-CSS-019 | içeriğinin altına küçülen bir öğe | `flex-shrink: 0` ya da açık bir boyut |
 | U-CSS-038 | gri tonlamalı yumuşatması olmayan metin | kit'in temel stil sayfasını koru |
 | U-CSS-039 | parçaları üst üste binen elemanda 1'den küçük opacity | kit'in disabled renkleri |

@@ -58,8 +58,13 @@ In Play mode (and in players) the factor is held on any PanelSettings, also on a
 asset only through a save, and every save that writes it (an asset save, File > Save, the save after an Inspector edit,
 the save when the Editor quits) asks `AssetModificationProcessor.OnWillSaveAssets` first with the paths: the package's
 save guard gives a held asset its own factor for the write and holds the factor again from the next Editor update. A
-build writes loaded objects as they are in memory: an `IPreprocessBuildWithReport` gives every held factor back before
-the build and warns. Each write keeps its (factor, own) pair, and a factor counts as the package's own write only while
+player build writes loaded objects as they are in memory: an `IPreprocessBuildWithReport` gives every held factor back
+before it and warns. Not covered: a Scriptable Build Pipeline or Addressables content build started in Play mode (Unity's
+own `BuildPipeline.BuildAssetBundles` refuses to run in Play mode; those pipelines do not check), and a preset or asset copy
+made while held. An Undo acts only on the PanelSettings it touched (whose scale is no longer the one this class last wrote
+or saw) and only for a factor written since the settings' own last changed: a value the game or the user sets (seen every
+Editor update, and at once for a recorded Inspector edit) drops the earlier pairs (`RootScaleTests.AUsersOwnFactor_…`,
+`AGamesOwnFactor_SurvivesAnUndo_InPlayMode`; red before: both reset to 1). Each write keeps its (factor, own) pair, and a factor counts as the package's own write only while
 it equals the last factor written: a game's factor equal to an older held one is the game's. An Undo snapshot taken while
 held brings that snapshot's own factor back (held: the screens hold the factor of that own again; given back: the
 snapshot's own), also after a script reload, through `SessionState` records of the assets. `RootScaleTests`:
@@ -118,18 +123,19 @@ the text ink at 1366×768 is the same from either base (section "Text ink at 136
 the exact scale's size (larger at 1600×900, smaller at 1366×768), the same glyph count. A change of the root's scale
 transforms the screen's vertices once.
 
-**What it does not reproduce.** Chromium lays a page out in device pixels at a fractional scale: it puts border widths
-on whole device pixels (halves up; a 4 px border is 3 device px at 1600×900, 2 at 1366×768) and keeps paddings and margins
-fractional. Under the root scale a border is drawn at its layout width times the root scale (a 4 px border 2.5 device px at
+**What it does not reproduce.** Chromium lays a page out in device pixels at a fractional scale: a text-sized button's
+border takes whole device pixels in its width (halves up; a 4 px border is 3 device px at 1600×900, 2 at 1366×768, measured
+on a row of buttons), while a box's border in a layout keeps its fraction (2.5 at 1600×900, measured on nested boxes), as
+paddings and margins do. Under the root scale a border is drawn at its layout width times the root scale (a 4 px border 2.5 device px at
 1600×900, 2.13 at 1366×768); text-sized elements take the golden's width anyway (next section). Nested bordered boxes
-add the difference up: inside each 4 px border level the content starts 0.5 device px earlier than the golden's at
-1600×900 (2.5 against 3) and 0.13 px later at 1366×768 (2.13 against 2), so the content of three nested 4 px-bordered
-boxes is 1.5 device px off at 1600×900, past the ±1 px box limit, and 0.4 at 1366×768 (`RootScaleTests.NestedBorders_…`
-measures Unity's side; the golden's border widths are Chromium's whole device pixels, as `DesignTextFit.SnapBorder`
-models them). The suite's fixtures nest at most two bordered levels; a design that nests three or more 4 px borders
-fails the box check at 1600×900. Other widths differ per level by their own rounding (UI Toolkit snaps each border to
-whole device px of the exact scale before layout, so the levels add up; at 1600×900, the golden against Unity: 1 px 1
-against 0.83, 2 px 1 against 1.67, 3 px 2 against 1.67). UI Toolkit anti-aliases
+do not add a difference up, measured (round 3): the findings page `docs/findings/viewport-classes/nested-borders.html`
+(one, two and three levels of 4 px borders on `div`s) through the fidelity suite passes every capture; at 1600×900 the
+golden lays each border out at 2.5 device px, as UI Toolkit draws it (3 at the exact 0.75, drawn ×0.833:
+`RootScaleTests.NestedBorders_…` measures 2.5 / 5 / 7.5), and the label inside three levels is within 0.16 device px of
+the golden (0.28 at 1366×768, where the group's own position differs by as much, from the text widths before it). The
+whole-device-pixel border of `DesignTextFit.SnapBorder` (3 device px at 1600×900) was measured on text-sized buttons and
+holds for their widths; a box's border inside a layout is the fraction. An earlier note here predicted 1.5 device px at
+three levels from that model; the measurement replaced it, and no lint warning is needed. UI Toolkit anti-aliases
 rounded shapes with a ramp of one device pixel of the scale it lays out at, so under the root scale the ramp is 0.83
 device px at 1600×900 and 0.71 at 1366×768, and small round shapes compare below the SSIM limit there; the scaled class
 has a measured limit for exactly that (section "Round edges at scaled viewports"). Text drawn through the root scale has
@@ -221,6 +227,17 @@ Both keys are the exact-class values (`ssimElement`, `deltaE2000`: off) outside 
 (design, Unity, difference): the circle's difference is a ring along its edge, the focus ring's lies along the curve and
 the ring's own rows, the not-confined text field's and table's are glyphs.
 
+**Ring colour (ruling R117).** A ring on a round element without text (a radio, an avatar ring) lies wholly in the edge
+band at 2 device px or less, so neither SSIM nor a colour sample of the fill sees its colour. The middle of each border
+side of 2 device px or more (the ring's centre pixel, fully covered on both renderers) is now compared at every viewport
+(`deltaE2000Ring`). Measured over the suite (69 such elements, 12168 element samples of static captures): highest 2.67, a
+hovered 2 px radio ring at 1280×720 (the unchecked radio 1.10; at 1920×1080 0.57, 2560×1440 0.50, 3840×2160 0.17, at the
+scaled viewports 0.38 and 0.17). Limit 3.1, the highest plus 0.4. Animation samples are not judged: Chromium draws a
+moving element from its resampled layer, and a translated cell's 2 px border reaches 14.2 there. A ring of another hue at
+the same lightness keeps the element's SSIM at 0.99 or more and fails this check (`compare.test.ts`). A ring under 2 device
+px has no such sample: it gives the scaled class's SSIM relaxation no evidence, and the element is held to `ssimElement`
+there (a missing 1.25 px ring passed before).
+
 ## Text ink at 1366×768
 
 The scaled class's text-ink failures are at 1366×768: body text (24 px) is 12.8 device px there, ink colour ΔE2000 2.1 to
@@ -248,7 +265,28 @@ its native width (1366×768 over 1280×720: 0.905 to 1.053, mean 0.996, where a 
 UI Toolkit evaluates its SDF text in screen space. So it is not the layout scale's anti-aliasing: both renderers' ink of thin
 stems shifts with a fractional text size and where the stems fall on the pixel grid (the design's by −17 to +3, Unity's by
 −31 to +8 from 12 to 12.8 px), the scatter the exact class allows for text of at most 12 device px (`text-ink.md` section 7:
-up to 4.5). The scaled class's body text is 12.8 px, above that size. These lines keep failing; no limit changes for them.
+up to 4.5). The scaled class's body text is 12.8 px, above that size. These lines kept failing then; no limit changed.
+
+## Text ink at fractional sizes (ruling R115)
+
+Measured on 7 fixtures and 5 components (`stacked-text`, `text-styles`, `text-row`, `text-spacing`, `letter-spacing`,
+`half-pixel-frame`, `controls`, card, list-row, button, tabs, text-field), the kit as it is and a kit copy with caption
+26/32 and label 28/36 (13 and 14 device px at 1280×720), per text element the largest ink colour ΔE2000 over its lines:
+
+| Device px | Class | Elements | ΔE2000 median / p90 / max |
+|---|---|---|---|
+| 12 (body at 1280×720) | exact, whole | 125 | 0.00 / 1.19 / 2.28 (its limit: 4.5, text of at most 12 px) |
+| 13 (26 px at 1280×720) | exact, whole | 25 | 0.50 / 1.62 / 1.98 |
+| 14 (28 px at 1280×720) | exact, whole | 99 | 0.00 / 0.81 / 1.94 |
+| 12.5 (caption, label at 1600×900) | scaled, fractional | 124 | 0.69 / 1.95 / 4.29 |
+| 12.8 (body at 1366×768) | scaled, fractional | 125 | 0.00 / 1.97 / 3.80 (3.14 in the second kit) |
+
+The whole sizes 13 and 14 stay within the full limit 2, and 12 within its small-text limit; only the fractional sizes the
+root scale draws exceed 2, from the same stems shifting on the pixel grid. As ruled, in the scaled class only the small-text
+ink limits apply below 13 device px (`fidelity-thresholds.json` `scaled.textInkSmallPx` 12.99: text of at most 12.99 device
+px; the exact class keeps 12). Above 13 the scaled sizes stay on the full limit (13.87 and 14.94 px of the second kit:
+max 2.36 and 2.90, one line each, kept failing). Test: `viewport-classes.test.ts`, "the scaled class holds text under 13
+device px to the small-text ink limits".
 
 ## Raster pictures
 
@@ -377,7 +415,51 @@ fixed here: it is the main reason the scaled class fails (below). Text measuring
 UI Toolkit ceils a text's measured width to whole device pixels, so a row of text-sized buttons moves right by up to a
 pixel per button (3840×2160: +1.02 at the fourth).
 
+## Exact-class captures after the kit's raised text (ruling R114)
+
+Raising caption and label to 20 px moved the fixtures' layout by whole device pixels and showed three differences the
+suite had passed by chance or not exercised; measured on the captures of round 3:
+
+- **A right-aligned line wider than its box** (`text-spacing` ellipsis-right, label-bold 20 px, at every viewport): the
+  browser start-aligns a line that does not fit (CSS Text) and then puts the ellipsis where it is cut, so the visible text
+  starts at the box's left edge; UI Toolkit right-aligned the cut text, 3.3 CSS px further right (same cut, same width:
+  Δwidth +0.05). **Fixed**: a text that does not wrap and is aligned right, centred or at the end compiles to a
+  `DesignOverflowLabel`, left-aligned while its text overflows its box (`RootScaleTests.ARightAlignedLine_…`).
+- **The unchecked radio at 1280×720** (`controls` radio-b, 20 device px, a 2 px ring; SSIM 0.979 against the small-element
+  limit 0.984, every `controls` capture): the ring's anti-aliasing. Luma of the outermost ring pixels, design / Unity, with
+  the geometric coverage of a circle of radius 10 about (426, 178): the left middle (416, 177) 78 / 85 (0.99), the top
+  middle (425, 168) 79 / 85 (0.99), a diagonal pixel (420, 169) 32 / 50 (0.38; background 26, ring 85). UI Toolkit's
+  coverage is the circle's; Chromium's outer edge lies 0.1 px inside it on the axes and about 0.28 px on the diagonals,
+  and the inner edges agree within 3 luma. It is not a radius (a smaller circle cannot be 0.1 in on the axes and 0.28 on
+  the diagonals) or a pixel alignment (the box is on whole device pixels on both sides); matching it means matching
+  Skia's coverage, which UI Toolkit does not offer. Its SSIM also depends on where the 8 px block grid falls on the
+  ring: over the 64 alignments 0.972–0.985, 57 of them below 0.984, so before the raise it passed by alignment. At 0.75
+  (a 30 px circle) and 1 it passes (0.995, 0.998). Left failing, for a decision.
+- **One `transitions` sample at 1280×720** (`active-ease`, sample 6, SSIM 0.98276 against 0.984): the element is 0.774
+  device px down a running translate. Chromium draws it from its composited layer, resampled, so the bottom border's
+  edge rows blend (row 199: 129, 126, 77, between the fill 150, 132, 69 and the border 43, 101, 115); UI Toolkit draws its
+  straight edges unfiltered at the nearest pixel row (row 199: the fill). Its SSIM over the 64 block alignments: 0.983–
+  0.999, 8 below 0.984; the other nine samples of the same transition pass. UI Toolkit has no filtering for a translated
+  element's straight edges. Left failing, for a decision.
+
 ## Suite at six viewports
+
+**Round 3 (2026-11-15, latest).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
+animation samples), 12 min 53 s (setup 15 s, exports 188 s, import 26 s, capture 192 s, comparisons 349 s): **4669 PASS,
+59 FAIL**, nothing incomplete; animation samples 2394 / 6.
+
+| Viewport | Class | PASS | FAIL | Of which |
+|---|---|---|---|---|
+| 3840×2160 | exact | 788 | 0 | |
+| 2560×1440 | exact | 788 | 0 | (the right-aligned ellipsis fixed by `DesignOverflowLabel`) |
+| 1920×1080 | exact | 788 | 0 | |
+| 1280×720 | exact | 771 | 17 | 16 `controls` (the unchecked radio's ring anti-aliasing) and 1 `transitions` sample (a translated border Chromium resamples): measured, pending a decision (section "Exact-class captures after the kit's raised text") |
+| 1600×900 | scaled | 779 | 9 | 5 `icons`, 1 `background-images` (a picture drawn scaled: SSIM and colour), 1 `button` (focus, SSIM 0.973 not confined), 1 `scroll-area` (1 px dividers), 1 `repeat-items` focus-ring corner (the corner evidence rule) |
+| 1366×768 | scaled | 755 | 33 | 17 `controls` (12.8 px table rows and 1 px dividers: SSIM), 5 `icons`, 5 `transitions` samples, 3 `colors-gradients`, 1 `background-images`, 1 `repeat-items` focus-ring corner, 1 `stacked-text` line at 10.67 px (ΔE2000 5.49 against 4.5) |
+
+The 12.5 and 12.8 px ink failures of round 2 pass under the scaled class's small-text bound (section "Text ink at
+fractional sizes"); the ring colour check fails nothing (highest 2.67 against 3.1); every box, baseline and line extent
+passes.
 
 **After the review's fixes (2026-11-15, later).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
 animation samples), 13 min 5 s (setup 18 s, exports 188 s, import 26 s, capture 195 s, comparisons 354 s); the screen lays

@@ -649,9 +649,13 @@ this section are in `docs/findings/animation.md`.
     (`DesignRootScalePanels.CanHold`), so no asset save, build, preset, copy or scene sees a held factor. In Play mode an
     `AssetModificationProcessor` gives a held PanelSettings asset its own factor for every save that writes it (an asset
     save, File > Save, the save after an Inspector edit, the save when the Editor quits) and holds it again from the next
-    Editor update; an `IPreprocessBuildWithReport` gives every held factor back before a build, with a warning; each write
-    keeps its (factor, own) pair, so an Undo or Redo of a snapshot taken while held restores that snapshot's own factor,
-    also after a script reload (SessionState); leaving Play, a script reload and quitting give every factor back. Game
+    Editor update; an `IPreprocessBuildWithReport` gives every held factor back before a player build, with a warning (a
+    Scriptable Build Pipeline or Addressables content build started in Play mode is not guarded; Unity's
+    `BuildPipeline.BuildAssetBundles` refuses to run then; a preset or asset copy made while held carries the factor); each
+    write keeps its (factor, own) pair, so an Undo or Redo of a snapshot taken while held restores that snapshot's own
+    factor, also after a script reload (SessionState), only on the PanelSettings it touched (whose scale is no longer the
+    one last written or seen) and only for a factor written since the settings' own last changed (a value the game or the
+    user sets, seen every Editor update and at once for recorded Inspector edits, drops the earlier pairs); leaving Play, a script reload and quitting give every factor back. Game
     code's own inline transform on a screen root is overwritten. Screens with different exact scales on one PanelSettings lay out at the
     first's, with a warning. While a panel has no size for a moment the held root scale stays. The root re-evaluates on attach,
     on geometry changes of itself and the panel's root, and on `CustomStyleResolvedEvent` (UI Toolkit resolves every

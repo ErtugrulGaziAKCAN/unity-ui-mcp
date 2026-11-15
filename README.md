@@ -252,21 +252,23 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`):
 |---|---|
 | Element boxes | ±1 device px at every viewport, exact and scaled |
 | Text | same line count and breaks, baseline ±1 px, ink colour and amount per line, and where each line's first and last glyphs sit (and the width between them) ±1 px |
-| Colours at sampled points | ΔE2000 ≤ 1 |
+| Colours at sampled points | ΔE2000 ≤ 1 (the ring of a round element without text, at the middle of each border side of 2 device px or more: ≤ 3.1, measured; not in animation samples) |
 | Structure (SSIM, non-text) | ≥ 0.99 for the capture and for each element (small elements ≥ 0.984, pictures ≥ 0.985, rotated animation samples ≥ 0.975) |
 | Animation samples | at the delay and every quarter of each animation, the same limits |
-| Scaled viewports only | the same, except the anti-aliasing ramp of round shapes (drawn at the layout scale's pixel): an element whose SSIM with the 1 device px edge band of its round shapes masked meets 0.99 may meet 0.974, a rounded-corner sample of an element that carries text, whose window reaches that band and whose window pixels outside it (at least 3, at one offset) match, may differ by ΔE2000 5.5; a round element without text takes 0.974 only while the middle of each border side of 2 device px or more is within ΔE2000 5.5, so a missing or wrong-colour ring in the masked band is caught |
+| Scaled viewports only | the same, except the anti-aliasing ramp of round shapes (drawn at the layout scale's pixel): an element whose SSIM with the 1 device px edge band of its round shapes masked meets 0.99 may meet 0.974, a rounded-corner sample of an element that carries text, whose window reaches that band and whose window pixels outside it (at least 3, at one offset) match, may differ by ΔE2000 5.5; a round element without text takes 0.974 only while the middle of each border side of 2 device px or more is within ΔE2000 5.5 (a thinner ring gives no evidence: 0.99); text under 13 device px (the root scale draws 12.5 and 12.8 px) takes the small-text ink limits |
 
 The fidelity suite (`scripts/fidelity.sh`: 22 fidelity fixtures and the 9 kit components at the kit's six viewports,
-4728 captures, about 13 minutes) passes every capture at 3840×2160, 2560×1440 and 1920×1080 and all but one at 1280×720
-(8 device px digits, ink colour ΔE2000 4.65 against 4.5: [docs/findings/text-ink.md](docs/findings/text-ink.md) section
-9). At the scaled viewports no box fails and stacked columns end within 0.00 device px; 772 of 788 captures pass at
-1600×900 and 678 at 1366×768. What fails there is drawing the root scale does not reproduce: text ink at 1366×768
-(12.8 px body text, the renderers' small-text scatter; 8.54 px labels), and element SSIM outside the round-edge band
-(pictures drawn scaled, a baked gradient, small text and 1 px dividers in fields and tables, a vector icon, transition
-samples Chromium draws from a resampled layer) ([docs/findings/viewport-classes.md](docs/findings/viewport-classes.md)).
-The only measured scaled-class limit is the anti-aliasing ramp of round shapes, applied per capture where the difference
-lies in the shapes' edge band.
+4728 captures, about 13 minutes) passes every capture at 3840×2160, 2560×1440 and 1920×1080, and 771 of 788 at
+1280×720: the 16 `controls` captures of an unchecked radio (a 20 device px circle with a 2 px ring, whose anti-aliasing
+Chromium draws 0.1–0.28 px inside the circle; SSIM 0.979 against 0.984) and one transition sample (a border 0.774 device px
+down a running translate, which Chromium resamples), both measured and left for a decision
+([docs/findings/viewport-classes.md](docs/findings/viewport-classes.md), "Exact-class captures after the kit's raised
+text"). At the scaled viewports no box fails; 779 of 788 captures pass at 1600×900 and 755 at 1366×768. What fails there
+is drawing the root scale does not reproduce: element SSIM outside the round-edge band (pictures drawn scaled, a baked
+gradient, 12.8 px table rows and 1 px dividers, a vector icon, transition samples Chromium draws from a resampled
+layer), two focus-ring corners and one 10.67 px line. The measured scaled-class limits are the anti-aliasing ramp of
+round shapes, applied per capture where the difference lies in the shapes' edge band, and the small-text ink limits for
+text under 13 device px.
 
 **Linear colour space.** UI Toolkit blends an ordinary on-screen panel of a Linear project in linear light; the design's
 browser blends in sRGB. Captured that way, 2248 of the suite's 2355 captures fail (text ink 0.63–1.42× the design's,

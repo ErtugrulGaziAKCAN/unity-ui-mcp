@@ -165,8 +165,12 @@ its panel out at the next exact scale up and draws its root scaled (README, View
   becomes the base the root scale applies on top of (read it before a screen is shown, or keep your own copy); a value
   equal to one held earlier is yours too (only the last factor the screen wrote counts as its own).
 - Where a factor is held. In players and in Play mode on any PanelSettings: in the Editor a save writes a held asset with
-  its own factor, a build gives every held factor back first (with a warning), an Undo restores the snapshot's own
-  factor (also after a script reload), and leaving Play, a script reload and quitting give every factor back. In the
+  its own factor, a player build gives every held factor back first (with a warning), an Undo restores the snapshot's
+  own factor (also after a script reload; only on the settings it touched, and never a value the game or you set), and
+  leaving Play, a script reload and quitting give every factor back. Not guarded in Play mode: a Scriptable Build
+  Pipeline or Addressables content build (Unity's own `BuildPipeline.BuildAssetBundles` refuses to run in Play mode; the
+  others would write a held asset's factor: build content outside Play), and a preset saved or an asset copied
+  (`Instantiate` + `CreateAsset`) while a screen holds the factor carries it. In the
   Editor outside Play mode only on PanelSettings no save writes (`HideFlags.DontSaveInEditor`: runtime copies such as
   the capture's and a region's); a screen on a PanelSettings asset or a scene's own settings lays out at the actual
   scale there with no root scale, so the Edit-mode Game view at a scaled resolution is not the game's layout (enter Play,
@@ -248,7 +252,10 @@ rule (start-aligned text flips; the layout is not mirrored) and, with Enable Adv
 direction.
 
 **Text size.** List the game's text-size steps (key and scale) in the profile's `textSizes` and import again; give the
-region a component that implements `IDesignTextSizeSource` (the game's setting) in its `TextSizes` field.
+region a component that implements `IDesignTextSizeSource` (the game's setting) in its `TextSizes` field. A step below
+×1 can draw text under the readable floor (9 device px); that is the player's choice, so kit sync writes the steps to
+kit.config.json and `kit build` warns about such a step (with the default kit keep the steps at ×0.9 or more, 9 device px
+at 1280×720). The package has no default steps.
 
 **Motion.** Animations play by themselves. For an accessibility setting, set
 `if (DesignUiAnimationPlayer.For(view.Root) is { } motion) motion.ReducedMotion = true;` (a screen without animations
@@ -344,7 +351,7 @@ In Unity: `Window > Design UI > Import Screen…` and `Window > Design UI > Kit 
 | U-CSS-010 | a font that is not the kit's | `var(--font-ui)`; after a kit sync, the token's new family |
 | U-CSS-011 | `gap` on a wrapping container | margins on the items |
 | U-CSS-016 | a size, line height or weight that is not a kit text style | a `.text-<style>` class |
-| U-FONT-004 | text that draws below 9 device px at a declared viewport (with its transforms) | a text style of at least 18 px (the kit's caption or label), not scaled down |
+| U-FONT-004 | text that draws below 9 device px at a declared viewport (with its transforms, in a state it is drawn in) | a text style of at least 18 px (the kit's caption or label), not scaled down |
 | U-CSS-019 | an item that shrinks below its content | `flex-shrink: 0` or an explicit size |
 | U-CSS-038 | text without grayscale smoothing | keep the kit base stylesheet |
 | U-CSS-039 | opacity below 1 on an element with overlapping parts | the kit's disabled colours |
