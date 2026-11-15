@@ -73,6 +73,12 @@ export interface SnapElement {
    * as `box`). Undefined without direct text or when it is not rendered.
    */
   lines?: SnapLine[];
+  /**
+   * A wrapping text (text-wrap-mode wrap) whose characters reach past its content box: how far (CSS px) on the left and
+   * the right, the word that reaches farthest, that word's width and the content box's width. The browser keeps a word that
+   * has no break opportunity on its line and lets it overflow (W-TEXT-001). Undefined when nothing reaches past the box.
+   */
+  textOverflow?: { left: number; right: number; word: string; wordWidth: number; boxWidth: number };
 }
 
 /** One line of an element's text: its content-area extent (CSS px, page coordinates). */
@@ -165,7 +171,7 @@ interface RawElement {
   tag: string; ns: string; attrs: Record<string, string>; parent: number; texts: string[]; rendered: boolean; box: Box | null;
   size: Size | null; computed: Record<string, string>; pseudo: Record<string, Record<string, string>>; inline: RawStyle | null;
   vars: Record<string, string>; minAuto: { axis: "row" | "column"; before: Box; after: Box } | null; shadow: boolean;
-  lines?: SnapLine[];
+  lines?: SnapLine[]; textOverflow?: SnapElement["textOverflow"];
 }
 interface RawPage {
   viewport: { width: number; height: number; scale: number };
@@ -273,8 +279,8 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
     return list;
   };
   const textRange = document.createRange();
-  /** Lines of the element's own text (fragments that overlap vertically are one line). */
-  const textLines = (el: Element): Pick<RawElement, "lines"> => {
+  /** Lines of the element's own text (fragments that overlap vertically are one line) and how far a wrapping text overflows its content box. */
+  const textLines = (el: Element, cs: CSSStyleDeclaration): Pick<RawElement, "lines" | "textOverflow"> => {
     const nodes = ownTexts(el);
     if (!nodes.length) return {};
     const frags: SnapLine[] = [];
@@ -291,7 +297,35 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
         l.top = Math.min(l.top, f.top); l.bottom = Math.max(l.bottom, f.bottom); l.left = Math.min(l.left, f.left); l.right = Math.max(l.right, f.right);
       } else lines.push({ ...f });
     }
-    return { lines };
+    if (cs.getPropertyValue("text-wrap-mode") !== "wrap" || cs.display.startsWith("inline")) return { lines };
+    const b = el.getBoundingClientRect();
+    const left = b.left + num(cs.borderLeftWidth) + num(cs.paddingLeft), right = b.right - num(cs.borderRightWidth) - num(cs.paddingRight);
+    if (!lines.some((l) => l.right > right + 0.5 || l.left < left - 0.5)) return { lines };
+    // per character (white space hangs and does not count): the farthest one and its word
+    let over = { left: 0, right: 0, word: "", wordWidth: 0, boxWidth: right - left }, far = 0.5;
+    for (const t of nodes) {
+      const d = t.data;
+      for (let i = 0; i < d.length; ) {
+        const step = d.codePointAt(i)! > 0xffff ? 2 : 1;
+        if (/\s/.test(d[i])) { i += step; continue; }
+        textRange.setStart(t, i); textRange.setEnd(t, i + step);
+        for (const r of Array.from(textRange.getClientRects())) {
+          const l = left - r.left, rr = r.right - right;
+          over.left = Math.max(over.left, l); over.right = Math.max(over.right, rr);
+          if (Math.max(l, rr) > far) {
+            far = Math.max(l, rr);
+            let a = i, z = i + step;
+            while (a > 0 && !/\s/.test(d[a - 1])) a--;
+            while (z < d.length && !/\s/.test(d[z])) z++;
+            textRange.setStart(t, a); textRange.setEnd(t, z);
+            const w = Array.from(textRange.getClientRects()).reduce((m, x) => Math.max(m, x.width), 0);
+            over = { ...over, word: d.slice(a, z), wordWidth: w };
+          }
+        }
+        i += step;
+      }
+    }
+    return over.left > 0.5 || over.right > 0.5 ? { lines, textOverflow: over } : { lines };
   };
   els.forEach((el, i) => {
     const cs = getComputedStyle(el);
@@ -339,7 +373,7 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
     out.elements.push({
       tag: el.localName, ns, attrs, parent: parentIdx, texts, rendered, box: rendered ? rect(el) : null, size, computed, pseudo, inline, vars,
       minAuto: null, shadow: !!(el as HTMLElement).shadowRoot,
-      ...(rendered && texts.length ? textLines(el) : {}),
+      ...(rendered && texts.length ? textLines(el, cs) : {}),
     });
   });
 
@@ -733,7 +767,7 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
     rendered: e.rendered, box: e.box, size: e.size, computed: e.computed, pseudo: e.pseudo,
     inline: inlinePlans[i] ? finish(inlinePlans[i]!) : null, vars: e.vars, minAuto: e.minAuto,
     shadowRoot: e.shadow ? "open" : cdpEls[i].shadow, ua: ua[i] ?? {},
-    ...(e.lines ? { lines: e.lines } : {}),
+    ...(e.lines ? { lines: e.lines } : {}), ...(e.textOverflow ? { textOverflow: e.textOverflow } : {}),
     ...(raw.svgPaint[i] ? { svgPaint: raw.svgPaint[i] } : {}),
     ...(images.has(i) ? { image: images.get(i) } : {}),
   }));

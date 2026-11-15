@@ -438,6 +438,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | W-FONT-001 | warning | a weight or italic without a real face in another active locale's font (warning) | add the face or avoid the weight |
 | W-FONT-002 | warning | a kit font file that cannot be read (WOFF2, `local()`) (warning) | TTF/OTF/WOFF via `url()` |
 | W-IMG-001 | warning | a raster image drawn larger than its pixels at a declared viewport (the browser and Unity resample it differently) (warning) | export it for the largest declared viewport (its drawn size × that scale, 1.5 at 3840×2160) and give it its size in CSS |
+| W-TEXT-001 | warning | a word wider than its wrapping text box: the browser lets it overflow its line, UI Toolkit breaks it inside the word (after a quotation mark with Enable Advanced Text) (warning) | room for the longest word (also in translations), or `white-space: nowrap` with an ellipsis |
 | I-MRK-001 | info | a `title` attribute: a tooltip, which UI Toolkit shows only in Editor panels (info) | nothing for an Editor-only hint; show hints players need with a visible element |
 
 ## Components

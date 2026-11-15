@@ -638,7 +638,7 @@ describe("collectSnapshot", () => {
   });
 });
 
-describe("text cut by its box: clipped line boxes (U-CSS-047)", () => {
+describe("text cut by its box: clipped line boxes (U-CSS-047) and words wider than their box (W-TEXT-001)", () => {
   /** The repository's own design kit: caption 20/28 and label 20/24, the six default viewports. */
   const designKit = readKit(path.join(here, "..", "..", "..", "design-kit"));
   const page = (body: string, css: string) => {
@@ -687,5 +687,19 @@ describe("text cut by its box: clipped line boxes (U-CSS-047)", () => {
        .scroll{display:flex;flex-direction:column;flex-shrink:0;height:100px;overflow-y:auto}`, "U-CSS-047");
     expect(f.map((x) => x.path)).toEqual(["[data-u-screen=s] > div:0 > p:0"]);
     expect(f[0].detail).toMatch(/36 px tall/);
+  });
+  it("W-TEXT-001: a word wider than its wrapping box is a warning naming the quotation mark the advanced generator breaks after; a box that fits it and a nowrap text are not", async () => {
+    const box = `flex-shrink:0;align-self:flex-start;margin-bottom:16px`;
+    const f = await ids(
+      `${text("narrow", "Today’s matches", "AUJOURD’HUI")}${text("quoted", "Matches", "«AUJOURD»HUI")}${text("wide", "Today’s matches", "AUJOURD’HUI")}${text("cut", "Today’s matches", "AUJOURD’HUI")}`,
+      `.narrow{${box};width:96px} .quoted{${box};width:96px} .wide{${box};width:240px} .cut{${box};width:96px;height:24px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}`,
+      "W-TEXT-001");
+    expect(f.map((x) => x.path)).toEqual(["[data-u-screen=s] > p:0", "[data-u-screen=s] > p:1"]);
+    expect(f[0].severity).toBe("warning");
+    expect(f[0].detail).toMatch(/AUJOURD’HUI/);
+    expect(f[0].detail).toMatch(/96 px/);
+    expect(f[0].detail).not.toMatch(/after “/);
+    expect(f[1].detail).toMatch(/after “«”, “»”/);
+    expect(f[0].fix).toMatch(/nowrap/);
   });
 });

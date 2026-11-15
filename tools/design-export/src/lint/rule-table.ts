@@ -120,5 +120,9 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
     when: "a raster image drawn larger than its pixels at a declared viewport (the browser and Unity resample it differently) (warning)",
     fix: "export it for the largest declared viewport (its drawn size × that scale, 1.5 at 3840×2160) and give it its size in CSS",
   },
+  "W-TEXT-001": {
+    when: "a word wider than its wrapping text box: the browser lets it overflow its line, UI Toolkit breaks it inside the word (after a quotation mark with Enable Advanced Text) (warning)",
+    fix: "room for the longest word (also in translations), or `white-space: nowrap` with an ellipsis",
+  },
   "I-MRK-001": { when: "a `title` attribute: a tooltip, which UI Toolkit shows only in Editor panels (info)", fix: "nothing for an Editor-only hint; show hints players need with a visible element" },
 };
