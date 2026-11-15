@@ -23,7 +23,8 @@ namespace DesignUi
     /// (ruling R144), not by UI Toolkit's text generator: the longest prefix (whole grapheme clusters) whose width plus the
     /// ellipsis's own width fits the content box, both measured as the fit measures text (<see cref="DesignTextFit"/>) at the
     /// layout scale, with the label's font, size and spacing. UI Toolkit's own elision depended on the root scale at the
-    /// scaled viewports and kept a character the browser drops (a pilot's "Bayview…" against "Bayvie…"). The label keeps
+    /// scaled viewports and kept a character the browser drops (Inter Regular 20 px "Weekly preview" in an 84 css px box: the
+    /// browser's "Weekl…", since "Weekly" 68.05 + "…" 16.39 = 84.44 does not fit, while "Weekly…" kerned is 82.95). The label keeps
     /// the whole text (<see cref="FullText"/>: what a view setter, <see cref="DesignView.GetText"/> and a String Table binding
     /// write or read), the layout measures it, and only the displayed text (<see cref="TextElement.text"/>, which UI Toolkit
     /// draws) is cut; a text written to it is taken as the new whole text. It cuts again only when the text, its font, size,
