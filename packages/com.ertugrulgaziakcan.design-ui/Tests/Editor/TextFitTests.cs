@@ -285,6 +285,86 @@ namespace DesignUi.Editor.Tests
         }
 
         // ---- text the design wraps -------------------------------------------------------------------------------------
+        /// <summary>
+        /// A row of bordered tabs at 1600×900 just too short for the golden's widths: the golden's box of each (Chromium's
+        /// border on whole device pixels, 4.8 panel px a side, the text ceiled on the 0.625 grid) is wider than UI Toolkit's own
+        /// (borders 4, the text on the 0.75 grid), and the row's width lies between the two sums. The row takes the exact
+        /// widths off once and keeps UI Toolkit's own; they come back when the row has room again. Each tab's width is the
+        /// same on every frame after that, with no width written.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ATightRowOfBorderedTabs_AtAScaledViewport_KeepsItsWidths()
+        {
+            var font = BodyBold();
+            var doc = Document(1600, 900);
+            yield return Frames(2);
+            var screen = new DesignScreen { ExactScales = DesignViewportScales.Encode(Exact) };
+            screen.style.width = 2560;
+            screen.style.height = 1440;
+            doc.rootVisualElement.Add(screen);
+            var words = Words.Take(6).ToArray();
+            VisualElement MakeRow(float y, bool fit, out List<Button> tabs)
+            {
+                var row = new VisualElement();
+                row.style.position = Position.Absolute;
+                row.style.left = 64;
+                row.style.top = y;
+                row.style.flexDirection = FlexDirection.Row;
+                screen.Add(row);
+                tabs = new List<Button>();
+                foreach (var word in words)
+                {
+                    var b = fit ? new DesignButton() : new Button();
+                    b.text = word;
+                    b.style.height = 64;
+                    b.style.paddingLeft = 16;
+                    b.style.paddingRight = 16;
+                    b.style.marginLeft = 0;
+                    b.style.marginRight = 0;
+                    foreach (var side in new Action<float>[] { v => b.style.borderLeftWidth = v, v => b.style.borderRightWidth = v, v => b.style.borderTopWidth = v, v => b.style.borderBottomWidth = v })
+                        side(4);
+                    b.style.fontSize = 24;
+                    b.style.unityFontDefinition = font;
+                    if (!fit) b.style.flexShrink = 0;
+                    row.Add(b);
+                    tabs.Add(b);
+                }
+                return row;
+            }
+            var fitRow = MakeRow(100, true, out var fitTabs);
+            MakeRow(300, false, out var plainTabs);
+            yield return Frames(10);
+            float box = fitTabs.Sum(t => ((DesignButton)t).Fit.Width), own = plainTabs.Sum(t => t.layout.width);
+            float grid = 1f / screen.panel.scaledPixelsPerPoint + 0.01f;
+            Assert.Greater(box - own, words.Length * grid, "the golden's boxes are wider than UI Toolkit's own by more than the layout grid each");
+            // between the sums: UI Toolkit's own widths fit, the golden's do not (a tab flipping between the two widths writes
+            // its width on every layout, until UI Toolkit gives up on the frame's layout with "Layout update is struggling")
+            var before = fitTabs.Select(t => ((DesignButton)t).Fit.Writes).ToArray();
+            fitRow.style.width = own + 0.25f * words.Length;
+            yield return null;
+            var widths = fitTabs.Select(t => t.layout.width).ToArray();
+            for (int frame = 0; frame < 10; frame++)
+            {
+                yield return null;
+                for (int i = 0; i < words.Length; i++)
+                    Assert.AreEqual(widths[i], fitTabs[i].layout.width, 1e-4, "tab " + (i + 1) + " on frame " + frame);
+            }
+            int released = 0;
+            for (int i = 0; i < words.Length; i++)
+            {
+                var fit = ((DesignButton)fitTabs[i]).Fit;
+                Assert.LessOrEqual(fit.Writes - before[i], 1, "tab " + (i + 1) + ": its width taken off at most once, never put back in the same room");
+                if (float.IsNaN(fit.Width)) released++;
+                else Assert.GreaterOrEqual(fitTabs[i].layout.width, fit.Width - grid, "tab " + (i + 1) + ": an exact width the row has room for");
+            }
+            Assert.Greater(released, 0, "the row took the exact width off its tabs (UI Toolkit's own widths fit, the golden's do not)");
+            // (the struggling layout logs an error, which fails the test too)
+            // room again: the golden's widths
+            fitRow.style.width = box + 50;
+            yield return Frames(8);
+            foreach (var t in fitTabs) Assert.IsFalse(float.IsNaN(((DesignButton)t).Fit.Width), t.text + ": the golden's width when the row has room");
+        }
+
 
         static T Styled<T>(T label, FontDefinition font) where T : Label
         {

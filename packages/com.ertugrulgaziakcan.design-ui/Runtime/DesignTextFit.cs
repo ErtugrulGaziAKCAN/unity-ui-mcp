@@ -47,9 +47,11 @@ namespace DesignUi
     /// box as wide as its text must not break it when the grid takes a fraction of a pixel off. It is measured again when
     /// the text, the element's styles (a state, the locale's fonts, a text size) or its geometry change. A text the design
     /// lets wrap keeps wrapping where its line does not fit. In a row the layout shows that (it holds the element narrower
-    /// than its text) and the inline width and white-space come off until the element has room again (UI Toolkit's own
-    /// layout, which wraps it: a row that a column sizes to its content does not shrink an explicit flex basis, so the
-    /// browser's width cannot stay as the basis). In a column, and for an absolutely positioned text, layout never narrows an explicit
+    /// than its text) and the inline width and white-space come off (UI Toolkit's own layout, which wraps it: a row that a
+    /// column sizes to its content does not shrink an explicit flex basis, so the browser's width cannot stay as the basis).
+    /// They come back only when the row's content box grows past the width it had then, or the text needs less than the
+    /// box it had no room for: under a scaled root UI Toolkit's own box can be narrower than the golden's (its borders and
+    /// its text grid), and a row between the two would otherwise flip the element between them on every layout. In a column, and for an absolutely positioned text, layout never narrows an explicit
     /// width (and UI Toolkit does not wrap an absolute Label at its parent's width at all), so the room is measured (the
     /// parent's content width less the element's margins; for an absolute text the parent's padding box right of its left
     /// edge) and a longer line gets that width with the design's own white-space: the browser's fit-content box, as wide as
@@ -199,19 +201,36 @@ namespace DesignUi
                 if (!float.IsNaN(laidOut) && laidOut < Width - grid && laidOut < box - grid)
                 {
                     Release();
+                    // it comes back only once the row has more room than now or the text needs less: UI Toolkit's own width
+                    // can be narrower than the box (its borders and rounding, not the golden's), so a row between the two
+                    // would otherwise take it off and put it back on every layout
+                    m_ReleasedRoom = ParentRoom();
+                    m_ReleasedBox = box;
                     return;
                 }
                 if (Mathf.Abs(Width - box) < 1e-4f) return;
             }
             else if (!Wrapping)
             {
-                // UI Toolkit's own width: applied once a layout of it since the last change shows the room (a callback right
-                // after the width came off, before the next layout, would put it back where the row has no room)
-                if (float.IsNaN(laidOut)) return;
-                // narrower than UI Toolkit's own width for the text (its rounding and borders, not the browser's): the row has
-                // no room for it either; keep it, wrapping as the design would
-                float own = m_MeasuredRounded + rs.paddingLeft + rs.paddingRight + rs.borderLeftWidth + rs.borderRightWidth;
-                if (laidOut > 0 && laidOut < own - grid) return;
+                if (!float.IsNaN(m_ReleasedBox))
+                {
+                    // the one way back after a row took it off: the row grew or the text needs less (tried once: a row
+                    // still without room takes it off again and remembers its new room)
+                    float room = ParentRoom();
+                    bool grew = !float.IsNaN(room) && !float.IsNaN(m_ReleasedRoom) && room > m_ReleasedRoom + grid;
+                    if (!grew && box >= m_ReleasedBox - grid) return;
+                    m_ReleasedRoom = m_ReleasedBox = float.NaN;
+                }
+                else
+                {
+                    // UI Toolkit's own width: applied once a layout of it since the last change shows the room (a callback
+                    // right after the width came off, before the next layout, would put it back where the row has no room)
+                    if (float.IsNaN(laidOut)) return;
+                    // narrower than UI Toolkit's own width for the text (its rounding and borders, not the browser's): the row
+                    // has no room for it either; keep it, wrapping as the design would
+                    float own = m_MeasuredRounded + rs.paddingLeft + rs.paddingRight + rs.borderLeftWidth + rs.borderRightWidth;
+                    if (laidOut > 0 && laidOut < own - grid) return;
+                }
             }
             if (!exact)
             {
@@ -223,6 +242,7 @@ namespace DesignUi
             Wrapping = false;
             Width = box;
             m_Laid = false;
+            Writes++;
             e.style.width = box;
             if (e.style.whiteSpace != m_NoWrap) e.style.whiteSpace = m_NoWrap;
         }
@@ -256,12 +276,24 @@ namespace DesignUi
             Wrapping = true;
             Width = room;
             m_Laid = false;
+            Writes++;
             m_Element.style.width = room;
             m_Element.style.whiteSpace = StyleKeyword.Null;
         }
 
         WhiteSpace m_NoWrap = WhiteSpace.NoWrap;
         bool m_Laid, m_DesignWraps;
+        /// <summary>After a row took the width off: the parent's content width then and the box it had no room for (NaN: none).</summary>
+        float m_ReleasedRoom = float.NaN, m_ReleasedBox = float.NaN;
+
+        /// <summary>How many times the inline width was written (tests: a layout that changes nothing writes nothing).</summary>
+        internal int Writes { get; private set; }
+
+        float ParentRoom()
+        {
+            var parent = m_Element.hierarchy.parent;
+            return parent != null ? parent.contentRect.width : float.NaN;
+        }
 
         /// <summary>
         /// The room the element's border box has where layout does not narrow an explicit width (panel px), or NaN (in a row,
@@ -341,6 +373,7 @@ namespace DesignUi
             Width = float.NaN;
             Wrapping = false;
             m_Laid = false;
+            Writes++;
             m_Element.style.width = StyleKeyword.Null;
             m_Element.style.whiteSpace = StyleKeyword.Null;
         }
