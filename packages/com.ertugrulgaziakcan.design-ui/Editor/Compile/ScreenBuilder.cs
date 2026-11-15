@@ -1133,8 +1133,7 @@ namespace DesignUi.Editor
                 foreach (var k in keys)
                 {
                     string At(string prop) => Lowering.Resolve(node, k, prop, true);
-                    var wrap = At("text-wrap-mode") ?? (At("white-space") is string ws ? (ws == "nowrap" || ws == "pre" ? "nowrap" : "wrap") : "wrap");
-                    if (wrap != "nowrap") return false;
+                    if (Wraps(node, k)) return false;
                     if (!IsNone(At("height"), "auto") || !IsNone(At("min-height"), "auto", "0", "0px") || !IsNone(At("max-height"), "none")) return false;
                     if (absolute)
                     {
@@ -1144,13 +1143,41 @@ namespace DesignUi.Editor
                     if (!IsNone(At("flex-basis"), "auto", "content")) return false;
                 }
                 if (absolute) return true;
-                // the parent's direction and alignment in every layer of it (the node's own align-self in every layer of the node)
+                if (!ContentSizedAlong(node, parent, keys, false)) return false;
+                // padding and borders in px (a percentage depends on the parent's width)
+                foreach (var k in keys)
+                    foreach (var prop in new[] { "padding-top", "padding-bottom", "border-top-width", "border-bottom-width" })
+                    {
+                        var v = Lowering.Resolve(node, k, prop, true);
+                        if (v != null && !PxValue.IsMatch(v)) return false;
+                    }
+                return true;
+            }
+
+            static bool IsNone(string value, params string[] none) => value == null || none.Contains(value.Trim());
+
+            /// <summary>Whether the node's text may wrap in a layer (CSS text-wrap-mode, else white-space: nowrap and pre do not).</summary>
+            static bool Wraps(IrNode node, LayerKey k)
+            {
+                var mode = Lowering.Resolve(node, k, "text-wrap-mode", true);
+                if (mode != null) return mode != "nowrap";
+                var ws = Lowering.Resolve(node, k, "white-space", true);
+                return ws != "nowrap" && ws != "pre";
+            }
+
+            /// <summary>
+            /// Whether an in-flow node's size along one axis (<paramref name="horizontal"/>: its width) is its content's in every
+            /// layer of the node (<paramref name="keys"/>) and of its parent: on the parent's main axis unless it grows, on the
+            /// cross axis only where it is aligned, not stretched (the node's align-self, else the parent's align-items).
+            /// </summary>
+            static bool ContentSizedAlong(IrNode node, IrNode parent, List<LayerKey> keys, bool horizontal)
+            {
                 var parentKeys = parent.Style.Keys.Select(LayerKey.Parse).ToList();
                 if (!parentKeys.Any(k => k.Text == Base)) parentKeys.Add(LayerKey.Parse(Base));
                 foreach (var pk in parentKeys)
                 {
                     var direction = Lowering.Resolve(parent, pk, "flex-direction", true) ?? "row";
-                    if (direction.StartsWith("column", StringComparison.Ordinal))
+                    if (direction.StartsWith(horizontal ? "row" : "column", StringComparison.Ordinal))
                     {
                         // the main axis: content-sized unless it grows
                         foreach (var k in keys) if (!IsNone(Lowering.Resolve(node, k, "flex-grow", true), "0")) return false;
@@ -1166,17 +1193,8 @@ namespace DesignUi.Editor
                         }
                     }
                 }
-                // padding and borders in px (a percentage depends on the parent's width)
-                foreach (var k in keys)
-                    foreach (var prop in new[] { "padding-top", "padding-bottom", "border-top-width", "border-bottom-width" })
-                    {
-                        var v = Lowering.Resolve(node, k, prop, true);
-                        if (v != null && !PxValue.IsMatch(v)) return false;
-                    }
                 return true;
             }
-
-            static bool IsNone(string value, params string[] none) => value == null || none.Contains(value.Trim());
 
             // ---- exact text widths ----------------------------------------------------------------------------------
 
@@ -1192,8 +1210,9 @@ namespace DesignUi.Editor
             /// as a DesignLabel or DesignButton, which lays out at the browser's width for its text
             /// (<see cref="DesignUi.DesignTextFit"/>): no layer sizes its width (width, min or max width, flex-basis), and it is
             /// not grown or stretched along it (in a row without flex-grow, in a column whose items are aligned, not stretched,
-            /// or absolute without both left and right); its horizontal padding and borders are px; no animation changes its
-            /// width or its text's size.
+            /// or absolute without both left and right, and pinned by its left side unless its text cannot wrap); its
+            /// horizontal padding and borders are px; no animation changes its width or its text's size. Where the design
+            /// wraps the text, the runtime takes the exact width off (DesignTextFit).
             /// </summary>
             public void PlanTextWidths(IrNode node, IrNode parent)
             {
@@ -1217,34 +1236,16 @@ namespace DesignUi.Editor
                         if (At(prop) is string v && !PxValue.IsMatch(v)) return false;
                     if (absolute)
                     {
-                        if (!IsNone(At("left"), "auto") && !IsNone(At("right"), "auto")) return false;
+                        bool left = !IsNone(At("left"), "auto"), right = !IsNone(At("right"), "auto");
+                        if (left && right) return false;
+                        // pinned by its right side, a text that wraps has the room left of that side, which the runtime
+                        // does not measure (DesignTextFit measures right of the left edge)
+                        if (right && Wraps(node, k)) return false;
                         continue;
                     }
                     if (!IsNone(At("flex-basis"), "auto", "content")) return false;
                 }
-                if (absolute) return true;
-                var parentKeys = parent.Style.Keys.Select(LayerKey.Parse).ToList();
-                if (!parentKeys.Any(k => k.Text == Base)) parentKeys.Add(LayerKey.Parse(Base));
-                foreach (var pk in parentKeys)
-                {
-                    var direction = Lowering.Resolve(parent, pk, "flex-direction", true) ?? "row";
-                    if (direction.StartsWith("row", StringComparison.Ordinal))
-                    {
-                        // the main axis: content-sized unless it grows
-                        foreach (var k in keys) if (!IsNone(Lowering.Resolve(node, k, "flex-grow", true), "0")) return false;
-                    }
-                    else
-                    {
-                        // the cross axis: content-sized only where it is aligned, not stretched
-                        foreach (var k in keys)
-                        {
-                            var self = Lowering.Resolve(node, k, "align-self", true);
-                            var align = self == null || self == "auto" ? Lowering.Resolve(parent, pk, "align-items", true) : self;
-                            if (align == null || !NonStretch.Contains(align)) return false;
-                        }
-                    }
-                }
-                return true;
+                return absolute || ContentSizedAlong(node, parent, keys, true);
             }
 
             /// <summary>The fixed-line text height a layer of the node writes: its base layer, and every layer that changes the size, padding or borders.</summary>

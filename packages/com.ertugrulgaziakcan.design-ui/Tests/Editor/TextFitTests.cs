@@ -133,7 +133,7 @@ namespace DesignUi.Editor.Tests
         {
             var bold = FontFixture.Kept(FontFixture.BoldTtf, "Kept Table Bold");
             var twin = FontTwinGenerator.GetOrCreateTwin(bold, FontFixture.KeptFolder + "/FitTwins", FontTwinGenerator.LineBox.For(24, 32));
-            DesignText.Prepare(twin, string.Concat(Words));
+            DesignText.Prepare(twin, string.Concat(Words) + " ");
             return FontDefinition.FromSDFFont(twin);
         }
 
@@ -175,8 +175,8 @@ namespace DesignUi.Editor.Tests
         /// starts where the browser puts it: the sum of the widths before it, each text's width ceiled on the device grid of the
         /// actual scale (Chromium's rule, <see cref="DesignTextFit.Snap"/>) plus paddings, borders on whole device pixels
         /// (<see cref="DesignTextFit.SnapBorder"/>) and gaps, times the actual
-        /// scale, within a device pixel however far along the row; the same row of plain Buttons is logged beside it (UI
-        /// Toolkit ceils on the grid of the scale it lays out at).
+        /// scale, within half a device pixel however far along the row; the same row of plain Buttons (UI Toolkit ceils on the
+        /// grid of the scale it lays out at) is a whole device pixel off at the exact viewports, so the limit tells them apart.
         /// </summary>
         [UnityTest]
         public IEnumerator ARowOfTenTextSizedButtons_StartsWhereTheDesignPutsEach_AtEveryDefaultViewport()
@@ -191,6 +191,7 @@ namespace DesignUi.Editor.Tests
             Object.DestroyImmediate(warm.gameObject);
             var report = new List<string>();
             var failures = new List<string>();
+            double worstPlainExact = 0;
             foreach (var (w, h) in DefaultViewports)
             {
                 var doc = Document(w, h);
@@ -207,27 +208,31 @@ namespace DesignUi.Editor.Tests
                 for (int i = 0; i < Words.Length; i++)
                 {
                     var exactText = ((DesignButton)fit[i]).Fit.TextWidth();
+                    Assert.IsTrue(DesignTextFit.Supported, "DesignTextFit reads the text handle's unrounded width through internal members " +
+                                  "(TextElement.uitkTextHandle, UITKTextHandle.MeasuredWidth) that Unity " + Application.unityVersion + " does not have: find their replacement");
                     Assert.IsFalse(float.IsNaN(exactText), "the text's exact width");
                     double expected = x * actual;
                     double fitX = fit[i].worldBound.x * ppp, plainX = plain[i].worldBound.x * ppp;
                     worstFit = Math.Max(worstFit, Math.Abs(fitX - expected));
                     worstPlain = Math.Max(worstPlain, Math.Abs(plainX - expected));
-                    if (Math.Abs(fitX - expected) > 1 + 1e-3) failures.Add(w + "×" + h + " button " + (i + 1) + ": x " + fitX.ToString("0.###") + " device px, the design's " + expected.ToString("0.###") +
+                    if (Math.Abs(fitX - expected) > 0.5 + 1e-3) failures.Add(w + "×" + h + " button " + (i + 1) + ": x " + fitX.ToString("0.###") + " device px, the design's " + expected.ToString("0.###") +
                         " (fit width " + ((DesignButton)fit[i]).Fit.Width + ", border " + fit[i].resolvedStyle.borderLeftWidth + ", text " + exactText + ", layout " + fit[i].layout.width + ")");
                     // the browser's width: the text's, ceiled on the device grid of the actual scale
                     x += DesignTextFit.Snap(exactText, actual) + 2 * 32 + 2 * DesignTextFit.SnapBorder(4, actual) + 24;
                 }
                 report.Add(w + "×" + h + ": largest |x − design| " + worstFit.ToString("0.###") + " device px with exact widths, " + worstPlain.ToString("0.###") + " without");
+                if (Math.Abs(actual - DesignViewportScales.LayoutScale(Exact, actual)) < 1e-4) worstPlainExact = Math.Max(worstPlainExact, worstPlain);
                 Object.DestroyImmediate(doc.gameObject);
                 yield return null;
             }
             Debug.Log("A row of ten text-sized buttons:\n" + string.Join("\n", report));
             Assert.IsEmpty(failures, string.Join("\n", failures));
+            Assert.Greater(worstPlainExact, 0.5 + 1e-3, "plain Buttons drift past the limit at an exact viewport (the limit tells the two apart)");
         }
 
         /// <summary>
-        /// A new text is measured again; a parent without room for the text takes the exact width off (the element keeps UI
-        /// Toolkit's own width and may wrap, as the design would) and it comes back when the parent has room again.
+        /// A new text is measured again; a row without room for the text takes the exact width off (the element keeps UI
+        /// Toolkit's own width and wraps, as the design does) and it comes back when the row has room again.
         /// </summary>
         [UnityTest]
         public IEnumerator ANewText_IsMeasuredAgain_AndAParentWithoutRoomTakesTheExactWidthOff()
@@ -267,7 +272,206 @@ namespace DesignUi.Editor.Tests
 
             box.style.width = 1000;
             yield return Frames(6);
+            Assert.IsFalse(label.Fit.Wrapping, "one line again");
             Assert.AreEqual(DesignTextFit.Snap(longer, 1), label.Fit.Width, 1e-3, "back to the browser's width");
+            Assert.AreEqual(WhiteSpace.NoWrap, label.resolvedStyle.whiteSpace);
+        }
+
+        // ---- text the design wraps -------------------------------------------------------------------------------------
+
+        static T Styled<T>(T label, FontDefinition font) where T : Label
+        {
+            label.style.fontSize = 24;
+            label.style.unityFontDefinition = font;
+            return label;
+        }
+
+        static VisualElement Container(VisualElement parent, float x, float y, FlexDirection direction, float height = float.NaN)
+        {
+            var c = new VisualElement();
+            c.style.position = Position.Absolute;
+            c.style.left = x;
+            c.style.top = y;
+            c.style.width = 300;
+            if (!float.IsNaN(height)) c.style.height = height;
+            c.style.flexDirection = direction;
+            c.style.alignItems = Align.FlexStart;
+            parent.Add(c);
+            return c;
+        }
+
+        /// <summary>
+        /// A text the design wraps keeps wrapping where its line has no room, as the browser lays it out: in a 300 px column
+        /// whose items are aligned to the start and as an absolute child at left 10 px of a 300 px box, its box is as wide as
+        /// its room (the browser's fit-content: 300 and 290 px) and the text wraps there with the design's white-space (a plain
+        /// Label is as wide as its widest line in the column and does not wrap at all as an absolute child); in a row inside
+        /// such a column the row narrows it, the exact width comes off and it lays out as a Label does (its widest line, 297
+        /// px; the browser's row shrinks it to 300). A short text in the same places gets its exact width on one line.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AWrappingText_WithoutRoom_InAColumn_AsAnAbsoluteChild_OrInARowInAColumn_WrapsAtItsRoom()
+        {
+            var font = BodyBold();
+            var doc = Document(2560, 1440);
+            yield return Frames(2);
+            var root = doc.rootVisualElement;
+            string longText = string.Join(" ", Words) + " " + string.Join(" ", Words);
+            var cases = new List<(string what, DesignLabel fit, Label plain, bool wraps, float room)>();
+            float x = 10;
+            foreach (var (text, wraps) in new[] { (longText, true), ("Kaydet", false) })
+            {
+                {
+                    var fit = Styled(new DesignLabel(text), font);
+                    var plain = Styled(new Label(text), font);
+                    Container(root, x, 10, FlexDirection.Column).Add(fit);
+                    Container(root, x, 700, FlexDirection.Column).Add(plain);
+                    cases.Add(("a flex-start column", fit, plain, wraps, 300));
+                    x += 320;
+                }
+                {
+                    var fit = Styled(new DesignLabel(text), font);
+                    var plain = Styled(new Label(text), font);
+                    foreach (var l in new Label[] { fit, plain })
+                    {
+                        l.style.position = Position.Absolute;
+                        l.style.left = 10;
+                        l.style.top = 10;
+                    }
+                    Container(root, x, 10, FlexDirection.Column, 600).Add(fit);
+                    Container(root, x, 700, FlexDirection.Column, 600).Add(plain);
+                    cases.Add(("an absolute child", fit, plain, wraps, 290));
+                    x += 320;
+                }
+                {
+                    var fit = Styled(new DesignLabel(text), font);
+                    var plain = Styled(new Label(text), font);
+                    var fitRow = new VisualElement();
+                    fitRow.style.flexDirection = FlexDirection.Row;
+                    fitRow.Add(fit);
+                    var plainRow = new VisualElement();
+                    plainRow.style.flexDirection = FlexDirection.Row;
+                    plainRow.Add(plain);
+                    Container(root, x, 10, FlexDirection.Column).Add(fitRow);
+                    Container(root, x, 700, FlexDirection.Column).Add(plainRow);
+                    cases.Add(("a row in a flex-start column", fit, plain, wraps, float.NaN));
+                    x += 320;
+                }
+            }
+            yield return Frames(10);
+            var failures = new List<string>();
+            var report = new List<string>();
+            foreach (var (what, fit, plain, wraps, room) in cases)
+            {
+                string at = (wraps ? "a long text in " : "a short text in ") + what;
+                report.Add(at + ": " + fit.layout.size + " (Label " + plain.layout.size + ")");
+                if (fit.resolvedStyle.whiteSpace == WhiteSpace.NoWrap && wraps) failures.Add(at + ": nowrap");
+                if (wraps && float.IsNaN(room))
+                {
+                    if (!float.IsNaN(fit.Fit.Width)) failures.Add(at + ": still has an exact width " + fit.Fit.Width);
+                    if (Math.Abs(fit.layout.width - plain.layout.width) > 0.01f || Math.Abs(fit.layout.height - plain.layout.height) > 0.01f)
+                        failures.Add(at + ": " + fit.layout.size + ", a Label " + plain.layout.size);
+                    if (fit.layout.height < 40) failures.Add(at + ": does not wrap (" + fit.layout.size + ")");
+                }
+                else if (wraps)
+                {
+                    if (!fit.Fit.Wrapping) failures.Add(at + ": not wrapping at its room (width " + fit.Fit.Width + ")");
+                    if (Math.Abs(fit.layout.width - room) > 0.01f) failures.Add(at + ": " + fit.layout.width + " px wide, its room " + room);
+                    if (fit.layout.height < 40) failures.Add(at + ": does not wrap (" + fit.layout.size + ")");
+                }
+                else
+                {
+                    var text = fit.Fit.TextWidth();
+                    if (fit.Fit.Wrapping || Math.Abs(fit.Fit.Width - DesignTextFit.Snap(text, 1)) > 1e-3) failures.Add(at + ": no exact width (" + fit.Fit.Width + ", text " + text + ")");
+                    if (fit.layout.height > 40) failures.Add(at + ": wraps (" + fit.layout.size + ")");
+                }
+            }
+            Debug.Log("Wrapping texts:\n" + string.Join("\n", report));
+            Assert.IsEmpty(failures, string.Join("\n", failures));
+
+            // the room grows: the long text in the column fits on one line again and gets its exact width
+            var column = cases[0].fit;
+            column.parent.style.width = 2000;
+            yield return Frames(6);
+            Assert.IsFalse(column.Fit.Wrapping, "one line again");
+            Assert.AreEqual(DesignTextFit.Snap(column.Fit.TextWidth(), 1), column.Fit.Width, 1e-3);
+            Assert.AreEqual(WhiteSpace.NoWrap, column.resolvedStyle.whiteSpace);
+        }
+
+        // ---- a compiled screen: state changes reach the exact width -----------------------------------------------------
+
+        const string Out = "Assets/DesignUiTextFitTests";
+
+        /// <summary>
+        /// A compiled exact-width label (its rule's custom property makes UI Toolkit report style changes) is measured again when
+        /// a state changes its size, and back; an animated colour (the animation player's inline writes, every frame) measures
+        /// nothing: the measure is kept for the same text in the same style at the same scale.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ACompiledExactWidthText_IsMeasuredAgainForAState_AndAnAnimatedColourMeasuresNothing()
+        {
+            try
+            {
+                var dir = Path.Combine(Path.GetTempPath(), "design-ui-textfit-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
+                Directory.CreateDirectory(dir);
+                var family = "\"" + FontFixture.Regular.faceInfo.familyName + "\"";
+                var tab = Text("tab", "Kadro", ("font-size", "24px"), ("font-family", family), ("color", "#ffffff"));
+                tab.With("state:big", ("font-size", "32px"));
+                var row = Node("row", "container", ("display", "flex"), ("flex-direction", "row"), ("position", "absolute"), ("left", "100px"), ("top", "100px")).Add(tab);
+                var ir = TestIr.Screen(Node("root", "container", ("position", "relative"), ("width", "2560px"), ("height", "1440px")).Add(row), "textfit.screen");
+                ir.States = new[] { "default", "big" };
+                File.WriteAllText(Path.Combine(dir, ScreenCompiler.IrFileName), Newtonsoft.Json.JsonConvert.SerializeObject(ir, Newtonsoft.Json.Formatting.Indented));
+                var profile = ScriptableObject.CreateInstance<DesignUiProfile>();
+                _objects.Add(profile);
+                profile.outputFolder = Out;
+                FontFixture.Use(profile);
+                var result = ScreenCompiler.Compile(dir, profile, false, NoView());
+                Directory.Delete(dir, true);
+                Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
+                var tree = UnityEditor.AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/TextfitScreen/TextfitScreen.uxml");
+                var doc = Document(2560, 1440);
+                yield return Frames(2);
+                var instance = tree.Instantiate();
+                doc.rootVisualElement.Add(instance);
+                var screen = instance.Q<DesignScreen>("root");
+                var label = instance.Q<DesignLabel>("tab");
+                Assert.IsNotNull(label, "compiled as a DesignLabel");
+                DesignText.Prepare(label.resolvedStyle.unityFontDefinition.fontAsset, "Kadro");
+                yield return Frames(4);
+                // a style change after the glyphs arrived (a text whose glyphs arrive when drawn keeps UI Toolkit's width until one)
+                screen.AddToClassList(ScreenBuilder.StateClassPrefix + "big");
+                yield return Frames(4);
+                screen.RemoveFromClassList(ScreenBuilder.StateClassPrefix + "big");
+                yield return Frames(4);
+                float small = label.Fit.Width;
+                Assert.IsFalse(float.IsNaN(small), "the exact width");
+                Assert.AreEqual(DesignTextFit.Snap(label.Fit.TextWidth(), 1), small, 1e-3);
+                screen.AddToClassList(ScreenBuilder.StateClassPrefix + "big");
+                yield return Frames(4);
+                Assert.AreEqual(32, label.resolvedStyle.fontSize, 1e-3);
+                Assert.AreEqual(DesignTextFit.Snap(label.Fit.TextWidth(), 1), label.Fit.Width, 1e-3, "measured again in the state");
+                Assert.Greater(label.Fit.Width, small * 1.25f, "the state's larger text");
+                screen.RemoveFromClassList(ScreenBuilder.StateClassPrefix + "big");
+                yield return Frames(4);
+                Assert.AreEqual(small, label.Fit.Width, 1e-3, "and back");
+
+                int events = 0;
+                label.RegisterCallback<CustomStyleResolvedEvent>(_ => events++);
+                int measures = label.Fit.Measures;
+                for (int i = 0; i < 10; i++)
+                {
+                    DesignAnimProperties.Write(label, DesignAnimProperty.Color, new DesignAnimValue { X = i / 10f, Y = 1, Z = 1, W = 1 });
+                    yield return null;
+                }
+                DesignAnimProperties.Clear(label, DesignAnimProperty.Color);
+                yield return Frames(2);
+                Debug.Log("An inline colour written on 10 frames: " + events + " CustomStyleResolvedEvent(s) on the label, " + (label.Fit.Measures - measures) + " measure(s)");
+                Assert.AreEqual(measures, label.Fit.Measures, "an animated colour measures nothing");
+            }
+            finally
+            {
+                if (UnityEditor.AssetDatabase.IsValidFolder(Out)) UnityEditor.AssetDatabase.DeleteAsset(Out);
+                FontFixture.Delete();
+            }
         }
     }
 }

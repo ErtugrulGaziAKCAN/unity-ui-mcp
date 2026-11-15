@@ -44,9 +44,16 @@ namespace DesignUi
     /// generator's unrounded width ceiled on the design's device grid (<see cref="Snap"/>) plus its horizontal padding and
     /// borders (each as the browser lays a border out, <see cref="SnapBorder"/>), which layout keeps exactly (only each edge
     /// is put on the device grid), and <c>white-space: nowrap</c> (<c>pre</c> for a text that keeps its spaces), because a
-    /// box as wide as its text must not break it when the grid takes a fraction of a pixel off. It is measured again when the text, the element's styles (a state, the locale's fonts, a
-    /// text size) or its geometry change. When the layout holds the element narrower than its text (the parent has no room,
-    /// so the design would wrap it), the inline width and white-space are taken off until the element has room again.
+    /// box as wide as its text must not break it when the grid takes a fraction of a pixel off. It is measured again when
+    /// the text, the element's styles (a state, the locale's fonts, a text size) or its geometry change. A text the design
+    /// lets wrap keeps wrapping where its line does not fit. In a row the layout shows that (it holds the element narrower
+    /// than its text) and the inline width and white-space come off until the element has room again (UI Toolkit's own
+    /// layout, which wraps it: a row that a column sizes to its content does not shrink an explicit flex basis, so the
+    /// browser's width cannot stay as the basis). In a column, and for an absolutely positioned text, layout never narrows an explicit
+    /// width (and UI Toolkit does not wrap an absolute Label at its parent's width at all), so the room is measured (the
+    /// parent's content width less the element's margins; for an absolute text the parent's padding box right of its left
+    /// edge) and a longer line gets that width with the design's own white-space: the browser's fit-content box, as wide as
+    /// its room, wrapping there (<see cref="Wrapping"/>).
     /// <para>Unity has no public unrounded text width: it is read from the text handle's last measure (an internal member,
     /// found by reflection; <see cref="Supported"/> is false and nothing changes when a Unity version renames it).</para>
     /// </summary>
@@ -61,14 +68,23 @@ namespace DesignUi
 
         readonly TextElement m_Element;
 
-        /// <summary>The inline width this applied (border box, panel px), or NaN while the element has UI Toolkit's own width.</summary>
+        /// <summary>
+        /// The inline width this applied (border box, panel px): the browser's width for the text on one line, or the room a
+        /// wrapping text wraps at (<see cref="Wrapping"/>); NaN while the element has UI Toolkit's own width.
+        /// </summary>
         public float Width { get; private set; } = float.NaN;
 
         public DesignTextFit(TextElement element)
         {
             m_Element = element ?? throw new ArgumentNullException(nameof(element));
             if (!Supported) return;
-            element.RegisterCallback<AttachToPanelEvent>(_ => Update());
+            m_OnParentGeometry = _ => Update();
+            element.RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                WatchParent(element.hierarchy.parent);
+                Update();
+            });
+            element.RegisterCallback<DetachFromPanelEvent>(_ => WatchParent(null));
             element.RegisterCallback<CustomStyleResolvedEvent>(_ => Update());
             element.RegisterCallback<GeometryChangedEvent>(_ =>
             {
@@ -76,6 +92,21 @@ namespace DesignUi
                 Update();
             });
             element.RegisterCallback<ChangeEvent<string>>(e => { if (e.target == element) Update(); });
+        }
+
+        readonly EventCallback<GeometryChangedEvent> m_OnParentGeometry;
+        VisualElement m_Parent;
+
+        /// <summary>
+        /// The parent's geometry changes the room of a text whose width is explicit (layout does not change the element itself
+        /// then): it is measured again on the parent's geometry changes too.
+        /// </summary>
+        void WatchParent(VisualElement parent)
+        {
+            if (ReferenceEquals(parent, m_Parent)) return;
+            m_Parent?.UnregisterCallback(m_OnParentGeometry);
+            m_Parent = parent;
+            m_Parent?.RegisterCallback(m_OnParentGeometry);
         }
 
         /// <summary>The unrounded width of the element's text on one line in its resolved style (panel px), or NaN.</summary>
@@ -87,15 +118,47 @@ namespace DesignUi
             // only text whose characters the font holds: a measure that adds glyphs to a dynamic font queues its atlas update
             // outside the panel's repaint (a font deleted before the next repaint breaks TextCore's queue), and a glyph added
             // now would bring its kerning pairs only later; the element keeps UI Toolkit's width until the text is drawn
-            var font = e.resolvedStyle.unityFontDefinition.fontAsset;
-            if (font == null || font.atlasTexture == null || !DesignText.AllPresent(font, text)) return float.NaN;
+            var rs = e.resolvedStyle;
+            var font = rs.unityFontDefinition.fontAsset;
+            if (font == null || font.atlasTexture == null) return float.NaN;
+            // the same text in the same style at the same scale measures the same: style and geometry callbacks (an animated
+            // colour, a moved parent) measure nothing
+            float size = rs.fontSize, letter = rs.letterSpacing, word = rs.wordSpacing, ppp = e.scaledPixelsPerPoint;
+            var fontStyle = rs.unityFontStyleAndWeight;
+            // (a font that gained characters since may have gained their kerning pairs too)
+            int characters = font.characterTable.Count;
+            if (!float.IsNaN(m_Measured) && string.Equals(text, m_MeasuredText, StringComparison.Ordinal) && ReferenceEquals(font, m_MeasuredFont) && size == m_MeasuredSize &&
+                letter == m_MeasuredLetter && word == m_MeasuredWord && ppp == m_MeasuredPpp && fontStyle == m_MeasuredStyle && characters == m_MeasuredCharacters)
+                return m_Measured;
+            if (!DesignText.AllPresent(font, text)) return float.NaN;
             Vector2 rounded;
             try { rounded = e.MeasureTextSize(text, 0, VisualElement.MeasureMode.Undefined, 0, VisualElement.MeasureMode.Undefined); }
             catch (MissingReferenceException) { return float.NaN; }
             if (float.IsNaN(rounded.x)) return float.NaN;
             var handle = s_Handle.GetValue(e);
-            return handle != null && s_MeasuredWidth.GetValue(handle) is float w ? w : float.NaN;
+            float width = handle != null && s_MeasuredWidth.GetValue(handle) is float w ? w : float.NaN;
+            m_Measured = width;
+            m_MeasuredRounded = rounded.x;
+            m_MeasuredText = text;
+            m_MeasuredFont = font;
+            m_MeasuredSize = size;
+            m_MeasuredLetter = letter;
+            m_MeasuredWord = word;
+            m_MeasuredPpp = ppp;
+            m_MeasuredStyle = fontStyle;
+            m_MeasuredCharacters = characters;
+            Measures++;
+            return width;
         }
+
+        float m_Measured = float.NaN, m_MeasuredRounded, m_MeasuredSize, m_MeasuredLetter, m_MeasuredWord, m_MeasuredPpp;
+        string m_MeasuredText;
+        UnityEngine.TextCore.Text.FontAsset m_MeasuredFont;
+        FontStyle m_MeasuredStyle;
+        int m_MeasuredCharacters;
+
+        /// <summary>How many times the text was measured (tests: a style or geometry change that changes nothing measures nothing).</summary>
+        internal int Measures { get; private set; }
 
         /// <summary>Measures the text again and applies the browser's width for it (or UI Toolkit's own, see the class summary).</summary>
         public void Update()
@@ -115,32 +178,94 @@ namespace DesignUi
             float laidOut = m_Laid ? e.layout.width : float.NaN;
             // layout puts each edge on the device grid: a laid-out width is within a device pixel of the width it was given
             float grid = 1f / Mathf.Max(e.scaledPixelsPerPoint, 1e-3f) + 0.01f;
-            if (!float.IsNaN(Width))
+            bool exact = !float.IsNaN(Width) && !Wrapping;
+            // the design's white-space (while the exact width is applied, the element's own is the one this set)
+            bool wraps = exact ? m_DesignWraps : rs.whiteSpace == WhiteSpace.Normal || rs.whiteSpace == WhiteSpace.PreWrap;
+            if (wraps)
             {
-                // held narrower than the width this gave it: the parent has no room, the text may wrap there
+                // in a column or absolutely positioned, a line wider than its room wraps at the room: the design's box (fit
+                // content) is as wide as the room then, which layout keeps
+                float room = Room();
+                if (!float.IsNaN(room) && box > room + grid)
+                {
+                    WrapAt(room);
+                    return;
+                }
+            }
+            if (exact)
+            {
+                // held narrower than the width this gave it: the row has no room, the text may wrap there (UI Toolkit's own
+                // width: a row inside a column that sizes it to its content does not shrink an explicit flex basis)
                 if (!float.IsNaN(laidOut) && laidOut < Width - grid && laidOut < box - grid)
                 {
                     Release();
                     return;
                 }
+                if (Mathf.Abs(Width - box) < 1e-4f) return;
             }
-            else if (!float.IsNaN(laidOut) && laidOut > 0 && laidOut < box - grid)
-                return; // UI Toolkit's own (rounded up) width does not fit either: keep it, wrapping as the design would
-            if (Mathf.Abs(Width - box) < 1e-4f) return;
-            // the design's own white-space keeps its spaces (pre) and only stops wrapping
-            if (float.IsNaN(Width))
+            else if (!Wrapping)
             {
+                // UI Toolkit's own width: applied once a layout of it since the last change shows the room (a callback right
+                // after the width came off, before the next layout, would put it back where the row has no room)
+                if (float.IsNaN(laidOut)) return;
+                // narrower than UI Toolkit's own width for the text (its rounding and borders, not the browser's): the row has
+                // no room for it either; keep it, wrapping as the design would
+                float own = m_MeasuredRounded + rs.paddingLeft + rs.paddingRight + rs.borderLeftWidth + rs.borderRightWidth;
+                if (laidOut > 0 && laidOut < own - grid) return;
+            }
+            if (!exact)
+            {
+                // the design's own white-space keeps its spaces (pre) and only stops wrapping
                 var own = rs.whiteSpace;
                 m_NoWrap = own == WhiteSpace.Pre || own == WhiteSpace.PreWrap ? WhiteSpace.Pre : WhiteSpace.NoWrap;
+                m_DesignWraps = wraps;
             }
+            Wrapping = false;
             Width = box;
             m_Laid = false;
             e.style.width = box;
             if (e.style.whiteSpace != m_NoWrap) e.style.whiteSpace = m_NoWrap;
         }
 
+        /// <summary>Whether the element's text wraps at the room of a column or of an absolute text (<see cref="Width"/>), with the design's white-space.</summary>
+        public bool Wrapping { get; private set; }
+
+        void WrapAt(float room)
+        {
+            if (Wrapping && Mathf.Abs(Width - room) < 1e-4f) return;
+            Wrapping = true;
+            Width = room;
+            m_Laid = false;
+            m_Element.style.width = room;
+            m_Element.style.whiteSpace = StyleKeyword.Null;
+        }
+
         WhiteSpace m_NoWrap = WhiteSpace.NoWrap;
-        bool m_Laid;
+        bool m_Laid, m_DesignWraps;
+
+        /// <summary>
+        /// The room the element's border box has where layout does not narrow an explicit width (panel px), or NaN (in a row,
+        /// which narrows it itself, or before the parent is laid out): in a column, the parent's content width less the
+        /// element's margins; absolutely positioned, the parent's padding box right of the element's left edge, less its
+        /// right margin (the browser's available width of a box pinned by its left side).
+        /// </summary>
+        float Room()
+        {
+            var e = m_Element;
+            var parent = e.hierarchy.parent;
+            if (parent == null) return float.NaN;
+            var rs = e.resolvedStyle;
+            float room;
+            if (rs.position == Position.Absolute)
+                room = parent.layout.width - parent.resolvedStyle.borderRightWidth - e.layout.x - rs.marginRight;
+            else
+            {
+                var direction = parent.resolvedStyle.flexDirection;
+                if (direction == FlexDirection.Row || direction == FlexDirection.RowReverse) return float.NaN;
+                room = parent.contentRect.width - rs.marginLeft - rs.marginRight;
+            }
+            return !float.IsNaN(room) && room > 0 ? room : float.NaN;
+        }
 
         /// <summary>
         /// How much wider than the browser's a text may measure in Unity and still be the browser's width: the two renderers'
@@ -191,6 +316,7 @@ namespace DesignUi
         {
             if (float.IsNaN(Width)) return;
             Width = float.NaN;
+            Wrapping = false;
             m_Laid = false;
             m_Element.style.width = StyleKeyword.Null;
             m_Element.style.whiteSpace = StyleKeyword.Null;
