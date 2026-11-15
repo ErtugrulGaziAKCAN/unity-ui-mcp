@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.clipped-text</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 20px; line-height: 24px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 20px; line-height: 28px; font-weight: 400; }
+.text-caption-bold { font-size: 20px; line-height: 28px; font-weight: 700; }
+.text-label { font-size: 20px; line-height: 24px; font-weight: 400; }
+.text-label-bold { font-size: 20px; line-height: 24px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
+.text-subtitle-bold { font-size: 32px; line-height: 40px; font-weight: 700; }
+.text-title { font-size: 36px; line-height: 48px; font-weight: 400; }
+.text-title-bold { font-size: 36px; line-height: 48px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 60px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 60px; font-weight: 700; }
+.text-display { font-size: 64px; line-height: 80px; font-weight: 400; }
+.text-display-bold { font-size: 64px; line-height: 80px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; }
+.shell { position: absolute; left: 0; top: 0; width: 2560px; height: 1440px; background-color: var(--color-surface-700); }
+.frame { position: absolute; left: 64px; top: 64px; width: 1400px; height: 1100px; display: flex; flex-direction: column; padding: 24px; background-color: var(--color-surface-900); }
+.heading { margin-bottom: 24px; }
+.panel { display: flex; flex-direction: column; flex-grow: 1; flex-shrink: 1; flex-basis: 0px; min-height: 0px; border-radius: var(--radius-lg); background-color: var(--color-surface-800); }
+.panel-head { height: 100px; flex-shrink: 0; padding: 12px 24px; color: var(--color-text-primary); }
+.panel-scroll { display: flex; flex-direction: column; flex-grow: 1; flex-shrink: 1; flex-basis: 0px; min-height: 0px; overflow-y: auto; }
+.entries { display: flex; flex-direction: column; flex-shrink: 0; }
+.entry { display: flex; flex-direction: column; height: 76px; flex-shrink: 0; margin-bottom: 8px; padding: 12px 24px; }
+.entry-title { height: 24px; flex-shrink: 0; color: var(--color-text-primary); white-space: nowrap; }
+.entry-meta { display: flex; flex-direction: row; height: 24px; flex-shrink: 0; margin-top: 4px; }
+.entry-time { width: 80px; flex-shrink: 0; color: var(--color-text-secondary); }
+.entry-type { width: 240px; flex-shrink: 0; color: var(--color-text-secondary); }
+.entry-status { color: #3ccf7a; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.clipped-text">
+  <!-- text an ancestor's overflow clips: the panel's scroll area holds more entries than it shows. The eleventh entry's
+       title crosses the scroll area's bottom edge (only its top shows) and its second line lies below it, across the frame's
+       bottom, where the design shows the host shell (external) and Unity its backdrop; both renders hide what the scroll
+       area clips (a pilot screen's day panel) -->
+  <div class="shell" data-u-external="shell"></div>
+  <div class="frame" data-u-id="frame">
+    <h1 class="heading text-headline-bold" data-l10n="fidelity.clipped-text.heading" data-en="Clipped text">Kırpılan metin</h1>
+    <div class="panel" data-u-id="panel">
+      <p class="panel-head text-subtitle-bold" data-u-id="panel-head" data-l10n="fidelity.clipped-text.panel-head" data-en="Agenda">Ajanda</p>
+      <div class="panel-scroll" data-u-id="panel-scroll">
+        <div class="entries" data-u-id="entries">
+          <div class="entry" data-u-repeat="entries" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Kiralık oyuncu raporu</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">10:00</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Rapor</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Bekliyor</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Sponsor toplantısı</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">11:30</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Toplantı</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Onaylandı</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Stadyum bakım planı</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">12:15</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Tesis</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Bekliyor</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Altyapı turnuvası</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">14:00</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Maç</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Planlandı</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Bütçe görüşmesi</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">15:30</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Finans</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Onaylandı</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Taraftar anketi</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">16:45</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Anket</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Bekliyor</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Sağlık raporu</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">18:00</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Rapor</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Gecikti</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Kiralık oyuncu raporu</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">10:00</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Rapor</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Bekliyor</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Sponsor toplantısı</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">11:30</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Toplantı</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Onaylandı</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Stadyum bakım planı</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">12:15</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Tesis</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Bekliyor</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Altyapı turnuvası</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">14:00</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Maç</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Planlandı</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Bütçe görüşmesi</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">15:30</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Finans</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Onaylandı</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Taraftar anketi</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">16:45</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Anket</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Bekliyor</span></div>
+          </div>
+          <div class="entry" data-u-id="entry">
+            <p class="entry-title text-label-bold" data-u-id="entry-title" data-u-bind="entry.title">Sağlık raporu</p>
+            <div class="entry-meta" data-u-id="entry-meta"><span class="entry-time text-label" data-u-id="entry-time" data-u-bind="entry.time">18:00</span><span class="entry-type text-label" data-u-id="entry-type" data-u-bind="entry.type">Rapor</span><span class="entry-status text-label" data-u-id="entry-status" data-u-bind="entry.status">Gecikti</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

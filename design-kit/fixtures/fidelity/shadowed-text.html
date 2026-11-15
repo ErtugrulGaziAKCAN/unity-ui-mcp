@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.shadowed-text</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 20px; line-height: 24px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 20px; line-height: 28px; font-weight: 400; }
+.text-caption-bold { font-size: 20px; line-height: 28px; font-weight: 700; }
+.text-label { font-size: 20px; line-height: 24px; font-weight: 400; }
+.text-label-bold { font-size: 20px; line-height: 24px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
+.text-subtitle-bold { font-size: 32px; line-height: 40px; font-weight: 700; }
+.text-title { font-size: 36px; line-height: 48px; font-weight: 400; }
+.text-title-bold { font-size: 36px; line-height: 48px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 60px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 60px; font-weight: 700; }
+.text-display { font-size: 64px; line-height: 80px; font-weight: 400; }
+.text-display-bold { font-size: 64px; line-height: 80px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 64px; background-color: var(--color-surface-900); }
+.heading { margin-bottom: 48px; }
+.days { display: flex; flex-direction: row; align-items: flex-start; }
+.day { display: flex; flex-direction: column; width: 352px; height: 352px; flex-shrink: 0; margin-right: 16px; padding: 8px; overflow: hidden; border-radius: var(--radius-md); background-color: var(--color-surface-800); }
+.card { display: flex; flex-direction: column; justify-content: center; height: 48px; flex-shrink: 0; margin-bottom: 8px; padding: 0 12px; border-radius: var(--radius-md); background-color: var(--color-surface-700); }
+.card-line { display: flex; flex-direction: row; align-items: center; height: 24px; overflow: hidden; }
+.card-time { flex-shrink: 0; margin-right: 8px; color: var(--color-text-primary); white-space: nowrap; }
+.card-title { flex-shrink: 1; min-width: 0; overflow: hidden; color: var(--color-text-primary); white-space: nowrap; }
+.popup { position: absolute; left: 300px; top: 172px; width: 1200px; height: 228px; display: flex; flex-direction: column; padding: 32px; border-radius: var(--radius-lg); background-color: var(--color-surface-800); box-shadow: var(--shadow-dialog); }
+.popup-title { color: var(--color-text-primary); }
+.popup-note { margin-top: 16px; color: var(--color-text-secondary); }
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.shadowed-text">
+  <!-- text under a later element's box shadow: a dialog's shadow (0 24px 64px) darkens the cards below it by a few levels
+       from top to bottom and towards its sides, so the background under each card's text varies across its line. The titles run on past their boxes, which clip
+       them (a line's rect is the whole text's width, as an ellipsized title's is); neither the shadowed background nor
+       what lies past the box is the title's ink (a pilot screen's card titles under a month picker) -->
+  <h1 class="heading text-headline-bold" data-l10n="fidelity.shadowed-text.heading" data-en="Text under a shadow">Gölge altında metin</h1>
+  <div class="days" data-u-id="days">
+    <div class="day" data-u-repeat="days" data-u-id="day">
+      <div class="card" data-u-repeat="events" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">09:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Antrenman raporu ve sakatlık listesi</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">11:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Yönetim kurulu toplantısı ve bütçe</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">13:15</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Basın toplantısı öncesi notlar</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">15:45</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Altyapı oyuncuları ve burs planı</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">17:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Deplasman yolculuğu ve otel planı</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">19:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Taraftar derneği ziyareti ve imza günü</span></div>
+      </div>
+    </div>
+    <div class="day" data-u-id="day">
+      <div class="card" data-u-repeat="events" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">11:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Yönetim kurulu toplantısı ve bütçe</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">13:15</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Basın toplantısı öncesi notlar</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">15:45</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Altyapı oyuncuları ve burs planı</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">17:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Deplasman yolculuğu ve otel planı</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">19:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Taraftar derneği ziyareti ve imza günü</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">09:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Antrenman raporu ve sakatlık listesi</span></div>
+      </div>
+    </div>
+    <div class="day" data-u-id="day">
+      <div class="card" data-u-repeat="events" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">13:15</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Basın toplantısı öncesi notlar</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">15:45</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Altyapı oyuncuları ve burs planı</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">17:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Deplasman yolculuğu ve otel planı</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">19:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Taraftar derneği ziyareti ve imza günü</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">09:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Antrenman raporu ve sakatlık listesi</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">11:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Yönetim kurulu toplantısı ve bütçe</span></div>
+      </div>
+    </div>
+    <div class="day" data-u-id="day">
+      <div class="card" data-u-repeat="events" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">15:45</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Altyapı oyuncuları ve burs planı</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">17:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Deplasman yolculuğu ve otel planı</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">19:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Taraftar derneği ziyareti ve imza günü</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">09:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Antrenman raporu ve sakatlık listesi</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">11:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Yönetim kurulu toplantısı ve bütçe</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">13:15</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Basın toplantısı öncesi notlar</span></div>
+      </div>
+    </div>
+    <div class="day" data-u-id="day">
+      <div class="card" data-u-repeat="events" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">17:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Deplasman yolculuğu ve otel planı</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">19:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Taraftar derneği ziyareti ve imza günü</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">09:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Antrenman raporu ve sakatlık listesi</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">11:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Yönetim kurulu toplantısı ve bütçe</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">13:15</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Basın toplantısı öncesi notlar</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">15:45</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Altyapı oyuncuları ve burs planı</span></div>
+      </div>
+    </div>
+    <div class="day" data-u-id="day">
+      <div class="card" data-u-repeat="events" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">19:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Taraftar derneği ziyareti ve imza günü</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">09:30</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Antrenman raporu ve sakatlık listesi</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">11:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Yönetim kurulu toplantısı ve bütçe</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">13:15</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Basın toplantısı öncesi notlar</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">15:45</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Altyapı oyuncuları ve burs planı</span></div>
+      </div>
+      <div class="card" data-u-id="card">
+        <div class="card-line" data-u-id="card-line"><span class="card-time text-label-bold" data-u-id="card-time" data-u-bind="event.time">17:00</span><span class="card-title text-label" data-u-id="card-title" data-u-bind="event.title">Deplasman yolculuğu ve otel planı</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="popup" data-u-id="popup">
+    <p class="popup-title text-subtitle-bold" data-u-id="popup-title" data-l10n="fidelity.shadowed-text.popup-title" data-en="Choose a month">Ay seçin</p>
+    <p class="popup-note text-body" data-u-id="popup-note" data-l10n="fidelity.shadowed-text.popup-note" data-en="The cards below lie in this dialog's shadow.">Aşağıdaki kartlar bu pencerenin gölgesinde kalıyor.</p>
+  </div>
+</div>
+</body>
+</html>
