@@ -108,7 +108,7 @@ export const INSTALLED_PIPELINE: Pipeline = {
         if (fs.existsSync(picsNext)) fs.renameSync(picsNext, pics);
         const at = (f: string) => path.join(pics, path.relative(picsNext, f));
         const kept: ReportPictures = new Map([...staged].map(([k, p]) => [k, {
-          design: at(p.design), unity: at(p.unity), diff: p.diff ? at(p.diff) : null,
+          ...p, design: p.design ? at(p.design) : null, unity: p.unity ? at(p.unity) : null, diff: p.diff ? at(p.diff) : null,
           crops: p.crops.map((c) => ({ ...c, design: at(c.design), unity: at(c.unity), diff: c.diff ? at(c.diff) : null })),
         }]));
         for (const c of v.captures) c.diff = null;

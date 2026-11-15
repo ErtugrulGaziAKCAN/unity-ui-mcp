@@ -14,7 +14,7 @@ import { captureContext, indexIr } from "../src/compare/context.js";
 import { flatAt, nearCurve, ringPoints, type RingPoint } from "../src/compare/samples.js";
 import { decodePngAsync, encodePng } from "../src/compare/png.js";
 import { writeReport, writeVerdict } from "../src/compare/report.js";
-import { writeReportPictures } from "../src/compare/pictures.js";
+import { MAX_THUMB_CAPTURES, writeReportPictures } from "../src/compare/pictures.js";
 import { blockSsimMap, maskRects, regionSsim, ssimMasked, unionRect } from "../src/compare/ssim.js";
 import { runCli } from "../src/commands.js";
 
@@ -2313,6 +2313,61 @@ describe("writeReport and writeVerdict", () => {
     const vf = path.join(out, ".report", "verdict.json");
     writeVerdict(v, vf);
     expect(JSON.parse(fs.readFileSync(vf, "utf8"))).toMatchObject({ screen: "inbox", pass: false, notRun: ["default@320x192.anim.panel.1"] });
+  });
+
+  it("bounds a verify of many failing captures: thumbnails of the first failures that differ, one crop per element, check and viewport, slim verdict and report", async () => {
+    const f = screenFixture((name, s) => {
+      if (name === "busy@320x192") s.boxes.elements.panel.x += 3;
+      return s;
+    });
+    const out = tmp(), report = path.join(out, "report.html"), pics = path.join(out, ".pics");
+    const v = await compareScreen(f.exportDir, f.unityDir, T, { diffDir: path.join(out, "diff") });
+    const busy = v.captures.find((c) => c.capture === "busy@320x192")!;
+    // 60 more failing captures with the same issue (a pilot's state matrix) and 40 with an issue of their own
+    const copy = (name: string) => {
+      fs.copyFileSync(path.join(f.exportDir, "goldens", "busy@320x192.png"), path.join(f.exportDir, "goldens", `${name}.png`));
+      fs.copyFileSync(path.join(f.unityDir, "busy@320x192.png"), path.join(f.unityDir, `${name}.png`));
+    };
+    for (let k = 0; k < 60; k++) {
+      const name = `busy.s${k}@320x192`;
+      copy(name);
+      v.captures.push({ ...structuredClone(busy), capture: name, diff: null });
+    }
+    for (let k = 0; k < 40; k++) {
+      const name = `busy.o${k}@320x192`;
+      copy(name);
+      const c = { ...structuredClone(busy), capture: name, diff: null };
+      c.issues = c.issues.map((i) => ({ ...i, id: `other-${k}` }));
+      v.captures.push(c);
+    }
+    const kept = await writeReportPictures(v, f.exportDir, f.unityDir, pics);
+    const files = fs.readdirSync(pics);
+    const thumbs = files.filter((n) => /^\d+-(design|unity|diff)\.png$/.test(n));
+    // thumbnails: the first failing capture of each issue set, at most MAX_THUMB_CAPTURES of them
+    expect(new Set(thumbs.map((n) => n.split("-")[0])).size).toBe(MAX_THUMB_CAPTURES);
+    // crops: one set per element, check and viewport (busy's panel and other-0 … other-39), reused by later captures
+    const cropSets = new Set(files.filter((n) => /^\d+-\d+-design\.png$/.test(n)).map((n) => n.replace(/-design\.png$/, "")));
+    expect(cropSets.size).toBe(41);
+    expect(kept.get("busy.s59@320x192")!.crops[0].design).toBe(kept.get("busy@320x192")!.crops[0].design);
+    expect(kept.get("busy.s59@320x192")!.like).toBe("busy@320x192");
+
+    writeReport(v, f.exportDir, f.unityDir, report, kept);
+    const html = fs.readFileSync(report, "utf8");
+    for (const c of v.captures) expect(html).toContain(c.capture);
+    expect(html).toMatch(/Fails with the same issues as <a href="#cap-\d+">busy@320x192<\/a>/);
+    expect(html).not.toMatch(/class="st-ok"/); // per-element rows: failing elements only
+    expect(html).toMatch(/Per-element measures \(\d+ of \d+:/);
+    const vf = path.join(out, "verdict.json");
+    writeVerdict(v, vf);
+    const text = fs.readFileSync(vf, "utf8");
+    expect(text).not.toMatch(/\n {2}"/); // compact
+    const json = JSON.parse(text);
+    for (const c of json.captures) {
+      expect(c.masked).toBeUndefined();
+      for (const e of c.elements) expect(["ok", "hidden"]).not.toContain(e.status);
+      expect(c.elementsListed).toBe("not ok or hidden");
+    }
+    expect(json.captures.find((c: { capture: string }) => c.capture === "busy@320x192").elements.map((e: { id: string }) => e.id)).toContain("panel");
   });
 
   it("escapes text from the design and the captures", async () => {

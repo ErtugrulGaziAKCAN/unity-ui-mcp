@@ -1470,6 +1470,12 @@ describe("design_ui_verify keeps what its report shows and nothing else", () => 
     expect(srcs.every((s) => s.startsWith(".design-ui/report/"))).toBe(true);
     expect(fs.existsSync(path.join(dir, ".design-ui", "unity"))).toBe(false);
     expect(fs.readdirSync(path.join(dir, ".design-ui", "compare"))).toEqual(["verdict.json"]);
+    // the next verify replaces the previous one's output: no picture, verdict or difference image of the earlier run stays
+    fs.writeFileSync(path.join(dir, ".design-ui", "report", "99-design.png"), "an older run's picture");
+    fs.writeFileSync(path.join(dir, ".design-ui", "compare", "old-diff.png"), "an older run's difference image");
+    expect((await call(client, "design_ui_verify", { screen: "clean-screen" })).data.verdict).toBe("fail");
+    expect(fs.readdirSync(path.join(dir, ".design-ui", "report")).sort()).toEqual(pics);
+    expect(fs.readdirSync(path.join(dir, ".design-ui", "compare"))).toEqual(["verdict.json"]);
   });
 });
 

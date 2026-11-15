@@ -15,11 +15,24 @@ import type { Rect } from "./ssim.js";
 export const THUMB_WIDTH = 960;
 /** Crops per failing capture, and their largest size. */
 export const MAX_CROPS = 6;
+/**
+ * Failing captures that keep thumbnails: the first of each set of issues (element and check), up to this many. A screen's
+ * state matrix often fails the same way in hundreds of captures (a pilot's 918 failing captures kept 175 MB of
+ * thumbnails); a later capture with the same issues points at the first one's pictures.
+ */
+export const MAX_THUMB_CAPTURES = 24;
+/** Issue crops written per report: one per element, check and viewport, reused by the later captures that share it. */
+export const MAX_CROP_SETS = 200;
 const CROP_MAX: [number, number] = [640, 400];
 const CROP_MARGIN = 16;
 
-export interface CropSet { detail: string; design: string; unity: string; diff: string | null }
-export interface CapturePictures { design: string; unity: string; diff: string | null; crops: CropSet[] }
+/** An issue's crop; `from`: the capture whose pictures it is, when an earlier capture with the same issue made it. */
+export interface CropSet { detail: string; design: string; unity: string; diff: string | null; from?: string }
+/**
+ * A failing capture's pictures: thumbnails (null when it keeps none: `like` names the earlier capture with the same issues
+ * whose thumbnails show them, else the thumbnail cap was reached) and its issues' crops.
+ */
+export interface CapturePictures { design: string | null; unity: string | null; diff: string | null; crops: CropSet[]; like?: string }
 /** Pictures by capture name; file paths are absolute. */
 export type ReportPictures = Map<string, CapturePictures>;
 
@@ -61,9 +74,11 @@ function window(at: Rect): Rect {
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 /**
- * Writes the pictures of every failing capture of `v` into `outDir` (`<index>-design.png`, `-unity.png`, `-diff.png`,
+ * Writes the pictures of the failing captures of `v` into `outDir` (`<index>-design.png`, `-unity.png`, `-diff.png`,
  * `<index>-<k>-design.png` …) from the goldens in `exportDir`, the Unity captures in `unityDir` and the difference images
- * the comparison wrote; returns them by capture.
+ * the comparison wrote; returns them by capture. Bounded: thumbnails for the first failing capture of each set of issues
+ * (at most {@link MAX_THUMB_CAPTURES}), one crop per element, check and viewport (at most {@link MAX_CROP_SETS}, at most
+ * {@link MAX_CROPS} per capture), which later captures with the same issue reuse.
  */
 export async function writeReportPictures(v: ScreenVerdict, exportDir: string, unityDir: string, outDir: string): Promise<ReportPictures> {
   const pictures: ReportPictures = new Map();
@@ -76,31 +91,53 @@ export async function writeReportPictures(v: ScreenVerdict, exportDir: string, u
     return file;
   };
   const read = async (file: string | null) => (file && fs.existsSync(file) ? decodePngAsync(fs.readFileSync(file)) : null);
+  const thumbsOf = new Map<string, string>(); // issue set -> the capture that keeps its thumbnails
+  const cropsOf = new Map<string, CropSet & { capture: string }>(); // element, check and viewport -> its crop
+  let thumbs = 0;
   for (const [c, i] of failing) {
-    const [design, unity, diff] = await Promise.all([
-      read(path.join(exportDir, "goldens", `${c.capture}.png`)), read(path.join(unityDir, `${c.capture}.png`)), read(c.diff ?? null),
-    ]);
-    if (!design || !unity) continue;
+    const signature = Array.from(new Set(c.issues.map((x) => `${x.id}\u0000${x.kind}`))).sort().join("\u0001");
+    const like = thumbsOf.get(signature);
+    const wantThumbs = like === undefined && thumbs < MAX_THUMB_CAPTURES;
+    const cropKey = (x: { id: string; kind: string }) => `${x.id}\u0000${x.kind}\u0000${c.size[0]}x${c.size[1]}`;
+    const newCrops = c.issues.some((x) => x.at && !cropsOf.has(cropKey(x))) && cropsOf.size < MAX_CROP_SETS;
+    let design: Rgba | null = null, unity: Rgba | null = null, diff: Rgba | null = null;
+    if (wantThumbs || newCrops) {
+      [design, unity, diff] = await Promise.all([
+        read(path.join(exportDir, "goldens", `${c.capture}.png`)), read(path.join(unityDir, `${c.capture}.png`)), read(c.diff ?? null),
+      ]);
+      if (!design || !unity) continue;
+    }
     const thumb = (img: Rgba) => downscale(img, Math.min(THUMB_WIDTH, img.w));
-    const set: CapturePictures = {
-      design: await write(`${i}-design.png`, thumb(design)),
-      unity: await write(`${i}-unity.png`, thumb(unity)),
-      diff: diff ? await write(`${i}-diff.png`, thumb(diff)) : null,
-      crops: [],
-    };
+    const set: CapturePictures = { design: null, unity: null, diff: null, crops: [], ...(like !== undefined ? { like } : {}) };
+    if (wantThumbs && design && unity) {
+      set.design = await write(`${i}-design.png`, thumb(design));
+      set.unity = await write(`${i}-unity.png`, thumb(unity));
+      set.diff = diff ? await write(`${i}-diff.png`, thumb(diff)) : null;
+      thumbsOf.set(signature, c.capture);
+      thumbs++;
+    }
     const windows: Rect[] = [];
     for (const issue of c.issues) {
       if (!issue.at || set.crops.length >= MAX_CROPS) continue;
+      const detail = `${issue.id === "*" ? "whole capture" : issue.id}: ${issue.detail}`;
+      const known = cropsOf.get(cropKey(issue));
+      if (known) {
+        if (!set.crops.some((x) => x.design === known.design)) set.crops.push({ detail, design: known.design, unity: known.unity, diff: known.diff, from: known.capture });
+        continue;
+      }
+      if (cropsOf.size >= MAX_CROP_SETS || !design || !unity) continue;
       const w = window(issue.at);
       if (windows.some((x) => overlaps(x, issue.at!) && x.x <= issue.at!.x && x.y <= issue.at!.y && x.x + x.w >= issue.at!.x + issue.at!.w && x.y + x.h >= issue.at!.y + issue.at!.h)) continue;
       windows.push(w);
       const k = set.crops.length;
-      set.crops.push({
-        detail: `${issue.id === "*" ? "whole capture" : issue.id}: ${issue.detail}`,
+      const made: CropSet = {
+        detail,
         design: await write(`${i}-${k}-design.png`, crop(design, w)),
         unity: await write(`${i}-${k}-unity.png`, crop(unity, w)),
         diff: diff ? await write(`${i}-${k}-diff.png`, crop(diff, w)) : null,
-      });
+      };
+      cropsOf.set(cropKey(issue), { ...made, capture: c.capture });
+      set.crops.push(made);
     }
     pictures.set(c.capture, set);
   }

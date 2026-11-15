@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { viewportLabel } from "../viewport.js";
 import type { CaptureVerdict, ElementIssue, ScreenVerdict, Thresholds } from "./compare.js";
-import type { ReportPictures } from "./pictures.js";
+import { MAX_THUMB_CAPTURES, type ReportPictures } from "./pictures.js";
 
 const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const num = (n: number | null | undefined, d: number) => (n === null || n === undefined || Number.isNaN(n) ? "—" : n.toFixed(d));
@@ -87,13 +87,18 @@ function maskBoxes(c: CaptureVerdict): string {
   return c.masked.map((r) => `<div class="maskbox" style="${pct(r, c.size)}"></div>`).join("");
 }
 
-function captureSection(c: CaptureVerdict, i: number, img: { golden: string; unity: string; diff: string | null } | null, crops: { detail: string; design: string; unity: string; diff: string | null }[] = []): string {
+/** Element rows the report and verdict.json list: those that did not pass (an element that is ok or hidden is counted only). */
+export const listedElement = (r: { status: string }) => r.status !== "ok" && r.status !== "hidden";
+
+function captureSection(c: CaptureVerdict, i: number, img: { golden: string; unity: string; diff: string | null } | null,
+  crops: { detail: string; design: string; unity: string; diff: string | null; from?: string }[] = [], noPictures?: string): string {
   const badge = c.pass ? '<span class="badge pass">PASS</span>' : '<span class="badge fail">FAIL</span>';
   const issues = c.issues.length
     ? `<table class="issues"><thead><tr><th>Element</th><th>Check</th><th>Detail</th></tr></thead><tbody>${c.issues.map((x) =>
       `<tr><td><code>${x.id === "*" ? "whole capture" : esc(x.id)}</code></td><td>${esc(KIND_LABEL[x.kind] ?? x.kind)}</td><td>${esc(x.detail)}</td></tr>`).join("")}</tbody></table>`
     : '<p class="muted">No issues.</p>';
-  const rows = c.elements.map((r) => `<tr class="st-${r.status}"><td><code>${esc(r.id)}</code></td><td>${esc(r.status)}</td>` +
+  const listed = c.elements.filter(listedElement);
+  const rows = listed.map((r) => `<tr class="st-${r.status}"><td><code>${esc(r.id)}</code></td><td>${esc(r.status)}</td>` +
     `<td class="num">${r.box ? r.box.map((d) => (d >= 0 ? "+" : "") + d.toFixed(2)).join(" ") : "—"}</td>` +
     `<td class="num">${num(r.ssim, 5)}</td><td class="num">${num(r.ssimShifted, 5)}${r.ssimLimit !== null && r.ssimLimit !== undefined ? ` <span class="muted">(≥ ${r.ssimLimit})</span>` : ""}</td>` +
     `<td class="num">${r.samples === 0 ? '<span class="warn-text">not sampled</span>' : `${num(r.deltaE, 2)}${r.samples ? ` <span class="muted">(${r.samples})</span>` : ""}`}</td>` +
@@ -115,8 +120,8 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
       <div class="view view-overlay"><div class="stack"><img class="under" src="${esc(img.golden)}" alt="Design" loading="lazy"><img class="over" src="${esc(img.unity)}" alt="Unity" loading="lazy" style="opacity:0.5"></div>
         <label class="slider">Design <input type="range" min="0" max="100" value="50" data-overlay> Unity</label></div>
       <div class="view view-diff">${diffView}</div>
-    </div>` : '<p class="muted">Passed: its pictures are not kept (the report keeps pictures of failing captures only; the design capture stays in the export).</p>';
-  const cropRows = crops.length ? `<div class="crops">${crops.map((k) => `<figure class="crop"><figcaption>${esc(k.detail)}</figcaption>` +
+    </div>` : `<p class="muted">${noPictures ?? "Passed: its pictures are not kept (the report keeps pictures of failing captures only; the design capture stays in the export)."}</p>`;
+  const cropRows = crops.length ? `<div class="crops">${crops.map((k) => `<figure class="crop"><figcaption>${esc(k.detail)}${k.from ? ` <span class="muted">(pictures of ${esc(k.from)}, the first capture with this issue)</span>` : ""}</figcaption>` +
     `<div class="cropset"><span class="lbl">Design</span><img src="${esc(k.design)}" alt="Design" loading="lazy"><span class="lbl">Unity</span><img src="${esc(k.unity)}" alt="Unity" loading="lazy">` +
     `${k.diff ? `<span class="lbl">Difference</span><img src="${esc(k.diff)}" alt="Difference" loading="lazy">` : ""}</div></figure>`).join("")}</div>` : "";
   return `
@@ -139,7 +144,7 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     ${(c.linesCovered ?? []).length ? `<p class="muted">Lines not judged (covered by an opaque later element): ${c.linesCovered.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${c.notSampled.length ? `<p class="warn-text">Background not sampled (every sample point covered or on text): ${c.notSampled.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${c.translucent ? `<p class="muted">${c.translucent} Unity pixels are translucent; colours were compared premultiplied.</p>` : ""}
-    <details class="elements"><summary>Per-element measures (${c.elements.length})</summary>
+    <details class="elements"><summary>Per-element measures (${listed.length} of ${c.elements.length}: elements that are ok or hidden are counted, not listed)</summary>
       <table><thead><tr><th>Element</th><th>Status</th><th>Box Δ x y w h (px)</th><th>SSIM</th><th>SSIM ≤ 1 px</th><th>Background ΔE (samples)</th><th>Edge ΔE</th><th>Shadow band ΔE</th><th>Text colour ΔE</th><th>Text ink</th><th>Ink extent Δ (px)</th><th>Lines design/Unity</th></tr></thead><tbody>${rows}</tbody></table>
     </details>
   </div>
@@ -270,7 +275,7 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
     const frames = !pictures
       ? `<span class="lbl">Design</span><img src="${esc(golden(f.capture))}" alt="Design at ${esc(f.time)} ms" loading="lazy">` +
         (c ? `<span class="lbl">Unity</span><img src="${esc(unity(f.capture))}" alt="Unity at ${esc(f.time)} ms" loading="lazy">` : "")
-      : k ? `<span class="lbl">Design</span><img src="${esc(rel(dir, k.design))}" alt="Design at ${esc(f.time)} ms" loading="lazy">` +
+      : k?.design && k.unity ? `<span class="lbl">Design</span><img src="${esc(rel(dir, k.design))}" alt="Design at ${esc(f.time)} ms" loading="lazy">` +
         `<span class="lbl">Unity</span><img src="${esc(rel(dir, k.unity))}" alt="Unity at ${esc(f.time)} ms" loading="lazy">` : "";
     return `<a class="frame${cls}" data-name="${esc(f.capture)}" data-pass="${!!c?.pass}" href="${i === undefined ? "#not-run" : `#${anchor(i)}`}"><div class="t"><span>${esc(f.time)} ms</span>${state}</div>` +
       frames + `</a>`;
@@ -323,8 +328,13 @@ ${v.animations.length ? `<section><h2>Animations</h2><p class="muted">Each anima
 <section><h2>Capture details</h2>${v.captures.map((c, i) => {
     if (!pictures) return captureSection(c, i, { golden: golden(c.capture), unity: unity(c.capture), diff: c.diff ? rel(dir, path.resolve(c.diff)) : null });
     const k = kept(c.capture);
-    return captureSection(c, i, k ? { golden: rel(dir, k.design), unity: rel(dir, k.unity), diff: k.diff ? rel(dir, k.diff) : null } : null,
-      (k?.crops ?? []).map((x) => ({ detail: x.detail, design: rel(dir, x.design), unity: rel(dir, x.unity), diff: x.diff ? rel(dir, x.diff) : null })));
+    const like = k?.like !== undefined ? index.get(k.like) : undefined;
+    const none = c.pass ? undefined
+      : like !== undefined ? `Fails with the same issues as <a href="#${anchor(like)}">${esc(k!.like!)}</a>: its thumbnails are shown there; this capture's issues are listed below.`
+        : k ? `Its thumbnails are not kept: the report keeps those of the first ${MAX_THUMB_CAPTURES} failing captures with different issues; its issues are listed below.`
+          : "No pictures were kept for this capture (its design or Unity capture was missing).";
+    return captureSection(c, i, k?.design && k.unity ? { golden: rel(dir, k.design), unity: rel(dir, k.unity), diff: k.diff ? rel(dir, k.diff) : null } : null,
+      (k?.crops ?? []).map((x) => ({ detail: x.detail, design: rel(dir, x.design), unity: rel(dir, x.unity), diff: x.diff ? rel(dir, x.diff) : null, from: x.from })), none);
   }).join("")}</section>
 </main><script>${SCRIPT}</script></body></html>
 `;
@@ -334,10 +344,15 @@ ${v.animations.length ? `<section><h2>Animations</h2><p class="muted">Each anima
   fs.renameSync(tmp, outFile);
 }
 
-/** Writes the verdict as JSON (the machine-readable result next to the report). */
+/**
+ * Writes the verdict as JSON (the machine-readable result next to the report), compact: per capture the element rows that
+ * did not pass (`elementsListed` says so; an element that is ok or hidden repeats in every capture, 90 % of a pilot's
+ * 186 MB verdict) and no masked regions (the report draws them).
+ */
 export function writeVerdict(v: ScreenVerdict, file: string): void {
   fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const tmp = `${file}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, JSON.stringify(v, null, 2) + "\n");
+  const slim = { ...v, captures: v.captures.map(({ masked: _masked, elements, ...c }) => ({ ...c, elements: elements.filter(listedElement), elementsListed: "not ok or hidden" })) };
+  fs.writeFileSync(tmp, JSON.stringify(slim) + "\n");
   fs.renameSync(tmp, file);
 }
