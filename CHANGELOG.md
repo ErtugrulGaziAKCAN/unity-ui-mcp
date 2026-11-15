@@ -142,6 +142,23 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   element whose straight edges fall between device pixels), `ssimVectorEdge` 0.975 (a vector picture's drawn edges) and
   `deltaE2000FractionalEdge` 5.3 (a corner sample reaching such straight edges); `fidelity-thresholds.json` `scaled`,
   off at exact viewports (`docs/findings/viewport-classes.md`, "Scaled-class residuals").
+- Edge-band evidence at the level of pixels (rulings R129, R130): every edge-band relaxation (`ssimRoundEdge`,
+  `ssimFractionalEdge`, `ssimVectorEdge` and the corner limits) needs, outside its band, every 8 px SSIM block at 0.99 or
+  more and every 3×3 window within ΔE2000 1 of Unity's closest within 1 px, not only the region's mean; and every border
+  the band masks (rectangular too, also a descendant's or a repeat item's) keeps the design's drawn width within 0.5
+  device px and, in static captures, its centre colour within `deltaE2000Ring` 3.1 (the scaled class's 5.5 for a ring is
+  gone). A ring 1.5 device px too thin on a 160 px avatar, a dent beside the band and a wrong-colour 2.13 device px border
+  that passed before now fail; the suite's relaxations keep passing (`docs/findings/viewport-classes.md`, "Edge-band
+  evidence").
+- A ring width check (ruling R127): a round element without text fails in a static capture when its ring is drawn more
+  than 0.5 device px wider or thinner than the design's, across the middle of each side and each round corner (the
+  suite's largest difference is 0.44).
+- The captures record the boxes of a repeat's later items (boxes `items`, both sides), and the band of straight edges
+  between device pixels takes their edges (ruling R124).
+- Two scaled-only measured keys: a raster picture drawn at another size than its own may meet SSIM 0.95 and its colour
+  samples ΔE2000 5.89 (`ssimResampledPicture`, `deltaE2000ResampledPicture`; ruling R125: resampling, measured lowest
+  0.95284 and highest 5.49), and text under 13 device px takes the ink colour limit 5.89 (`scaled.textInkDeltaEFirstSmall`,
+  at most 6.5; ruling R126: measured highest 5.49 over 10746 element samples).
 
 ### Changed
 
@@ -169,6 +186,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
+- Round 5 of the fidelity suite (4728 captures, 13 min 33 s): every capture passes at the four exact viewports; 787 of 788
+  at 1600×900 and 770 at 1366×768. The 19 left: 17 `controls` and 1 `scroll-area` captures whose dividers' band the repeat
+  items' boxes now place, failing on the glyphs of the later rows' text outside it (12.8 and 12.5 device px), and the
+  letter-spacing fixture's caps label, whose text fit did not measure in that run (its font reported a character missing in
+  a face of its weight table; seen in 2 of 3 full runs, never alone) (`docs/findings/viewport-classes.md`, "Edge-band
+  evidence").
 - Round 4 of the fidelity suite (4728 captures, 13 min 4 s): every capture passes at the four exact viewports; 786 of 788
   at 1600×900 and 769 at 1366×768. The remaining 21 are repeated table rows' dividers (no box for a repeat's later items,
   so their edges' band cannot be placed), a picture drawn at 0.42 and 0.36 of its pixels (below the SSIM floor) and one
@@ -188,6 +211,15 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   one 10.67 px line (ink colour ΔE2000 5.49 against 4.5) (`docs/findings/viewport-classes.md`).
 
 ### Fixed
+
+- U-FONT-004 treats a rule whose animation keeps its end (fill forwards or both) and ends visible as showing the element at
+  its last keyframe's scale, judges a closed scale under `:not(.is-open)` only where it can apply with a rule that shows the
+  element, takes a reveal split over two rules of one state as one, and judges a rule of no state that a state rule
+  replaces now (three false import-blocking errors and one miss of the re-review).
+- An Undo of a scale edit made while a screen held a factor maps back to that snapshot's own factor also after the same
+  factor was written again later (each written factor keeps the range of Undo groups it was held in).
+- The fidelity run deletes the fonts, twins and screens it wrote into the project copy at its end (other test runs on the
+  copy count every twin in the project).
 
 - U-FONT-004 judges text the design keeps hidden where a rule or code shows it: a hidden element's own scale counts
   unless every rule that shows it sets that property (a pop-in), so a closed dialog's, menu's or toast's text under a

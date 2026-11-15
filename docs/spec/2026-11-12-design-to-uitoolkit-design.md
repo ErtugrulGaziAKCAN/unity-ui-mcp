@@ -621,8 +621,7 @@ this section are in `docs/findings/animation.md`.
     curve, of its own round shapes and its descendants') meets `ssimElement` and whose other checks pass, and
     `deltaE2000RoundEdge` 5.5 for a corner sample of an element that carries text whose window reaches that band and whose
     pixels outside it (at least 3 at one offset) meet `deltaE2000` (both off at exact viewports, where the file's own values
-    must be). A round element without text takes `ssimRoundEdge` only while the middle of each border side of 2 device px
-    or more is within `deltaE2000RoundEdge` (its ring lies in the masked band). Also scaled-only, with the same kind of
+    must be). Also scaled-only, with the same kind of
     evidence: `ssimFractionalEdge` 0.97 (an element whose straight edges, its box's and its border's inner edges, fall
     between device pixels: those edges' band, the pixels within 1 device px of the edge in the design and in Unity, added),
     `ssimVectorEdge` 0.975 (a vector picture: the band of its drawn edges in the design, at least half its region left
@@ -630,7 +629,16 @@ this section are in `docs/findings/animation.md`.
     the round-edge band matching). At every viewport (ruling R119) `ssimRoundEdge` 0.974 also applies to a round element
     without text (evidence: the ring's colour within `deltaE2000Ring` at an exact viewport) and, in an animation sample, to
     an element moved to a fractional device offset (its moved straight edges' band added; the ring's colour is not
-    evidence there). Verdicts, the
+    evidence there). Every such relaxation needs evidence at the level of pixels (rulings R129, R130): outside its band
+    every 8 px SSIM block meets `ssimElement` and every 3×3 window is within `deltaE2000` of Unity's closest within 1 px,
+    and every border the band masks (the element's, a descendant's, a repeat's later item's, rectangular ones too) keeps
+    the design's drawn width within 0.5 device px and, in static captures, its centre colour within `deltaE2000Ring` (the
+    file's own; a side under 2 device px gives no evidence). A round element without text also fails a static capture
+    whose ring is drawn more than 0.5 device px wider or thinner (ruling R127). The boxes' `items` (both sides) hold the
+    boxes of a repeat's later items, whose straight edges the band takes (ruling R124). Scaled-only measured keys for
+    resampling and small text: `ssimResampledPicture` 0.95 and `deltaE2000ResampledPicture` 5.89 for a raster picture
+    drawn at another size than its own (ruling R125), and `textInkDeltaEFirstSmall` 5.89 for text under 13 device px
+    (ruling R126, at most 6.5). Verdicts, the
     report, `design_ui_verify` and the fidelity summary count captures per class.
   - *Root scale at any other panel scale.* UI Toolkit puts font sizes, paddings, margins and border widths on whole
     device pixels before layout and ceils text sizes, so a design lays out as designed only where its lengths are whole

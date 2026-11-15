@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Date | 2026-11-14; the root scale, text widths and pictures 2026-11-15 |
+| Date | 2026-11-14; the root scale, text widths and pictures 2026-11-15; edge-band evidence 2026-11-15 (round 5) |
 | Question | A game offers 1280×720, 1366×768, 1600×900, 1920×1080, 2560×1440 and 3840×2160. Which of them can hold the kit's whole-device-pixel rules, and what does Unity do with the design at the others? |
 | Unity | 6000.3.6f1, standard text generator, real panels (`ViewportScaleTextTests`, `FixedLineTextHeightTests`, `RootScaleTests`, `TextFitTests`) and the fidelity suite |
 | Chromium | Chrome Headless Shell 158 (Playwright 1.65.0) |
@@ -241,7 +241,7 @@ px has no such sample: it gives the scaled class's SSIM relaxation no evidence, 
 there (a missing 1.25 px ring passed before). **What it admits** (ruling R123): a ring whose colour is within ΔE2000 3.1 of
 the design's, judged only on rings of at least 2 device px; a ring thinner than that has no colour sample and is judged by
 SSIM alone. The sample takes the best of Unity's offsets up to 1 device px, so it sees a wrong colour, not a ring a device
-pixel thinner (section "Edge bands at every viewport").
+pixel thinner; the ring's drawn width is its own check since round 5 (ruling R127, section "Edge-band evidence").
 
 ## Scaled-class residuals (ruling R121)
 
@@ -282,22 +282,21 @@ is the measured extreme plus the usual margin; every element it relaxed passes a
 Left failing, with the cause:
 
 - **Dividers of repeated items** (`controls` table, 17 captures at 1366×768, 0.98639; `scroll-area` inbox at 1600×900,
-  0.98955): the difference lies on the rows' bottom borders (straight edges between pixels), but the captures record a box
-  only for a repeat's first item, so the band cannot be placed on the other items' edges on either side: band-masked
-  0.98789 and 0.98960. A scale-only cause without the evidence the ruling asks for.
+  0.98955): the difference lies on the rows' bottom borders (straight edges between pixels), but the captures recorded a
+  box only for a repeat's first item, so the band could not be placed on the other items' edges: band-masked 0.98789 and
+  0.98960. Round 5 records every item's box (ruling R124): the band confines them, and they keep failing on the glyphs of the
+  later rows' text (section "Edge-band evidence").
 - **Pictures drawn scaled** (`background-images`, 1 capture at each scaled viewport): a picture exported for 3840×2160 is
   drawn at 0.42 and 0.36 of its pixels; Chromium filters, UI Toolkit samples level 0, so block edges differ: element SSIM
   0.95284–0.96867 at 1600×900 (below the absolute floor of 0.97 no measured limit may go under) and 0.97866–0.97986 at
-  1366×768, and a colour sample on a resampled edge (ΔE2000 3.22 and 1.64). The raster limitation of section "Raster
-  pictures"; a key would need the floor and a picture colour limit, which the ruling does not cover.
+  1366×768, and colour samples on resampled edges (ΔE2000 3.22 at 1600×900, 1.64 and 5.49 at 1366×768). The raster
+  limitation of section "Raster pictures"; they pass since round 5 through the scaled-only key of ruling R125.
 - **Text ink at 10.67 px** (`stacked-text` value-12 at 1366×768, ΔE2000 5.49 against the small-text 4.5): the fractional
-  size's ink scatter (section "Text ink at fractional sizes"; the measured maximum there was 4.29). Ink is neither an edge
-  band nor a resampled raster, so the ruling gives it no key.
-- **One letter-spaced box** (`letter-spacing` caps-label at 1366×768, Δw −1.30, and −0.996 at 1600×900, in that run only):
-  the box had UI Toolkit's own width there (150 px at 0.75, drawn ×0.711), not the text fit's. Not reproduced: the
-  fixture alone and two later full runs give the fit's width at both scaled viewports (202.45 and 201.6 design px, Δw
-  within 0.17), each viewport measuring the text after its first layout, and the round-4 run passes it at every viewport. No
-cause found in that run.
+  size's ink scatter (section "Text ink at fractional sizes"; the measured maximum there was 4.29). It passes since round 5
+  through the scaled-only small-text key of ruling R126.
+- **One letter-spaced box** (`letter-spacing` caps-label at 1366×768, Δw −1.30, and −0.996 at 1600×900): the box had UI
+  Toolkit's own width there (150 px at 0.75, drawn ×0.711), not the text fit's. Seen in round 4's first run, again in round
+  5's second and third full runs; what the trace found is in section "Edge-band evidence" ("Letter-spacing box").
 
 ## Text ink at 1366×768
 
@@ -523,6 +522,9 @@ least 0.974.
   The ring's colour is not evidence in an animation sample (Chromium resamples the moving layer, so a border's centre pixel
   blends; R117 already left animation samples out of the ring check); the middle of a moved straight border stays compared.
 
+Since round 5 every such relaxation also needs the pixel-level evidence of rulings R129 and R130, and the ring is judged at
+3.1 at every viewport (section "Edge-band evidence").
+
 Measured on the suite's captures (provisional limit 0.97 to see every value):
 
 | Where | Elements below 0.99 in scope | Band-masked SSIM | Lowest unmasked (best offset) |
@@ -543,9 +545,111 @@ masked); the same element in a static capture gets no moved-edge band. A round e
 curves, by at most SSIM 0.974 over its box, with its ring's colour within ΔE2000 3.1; an element in an animation sample whose
 pixels differ only within 1 device px of its curves and of its edges where both renderers put them, by at most 0.974.
 
+## Edge-band evidence (rulings R124 to R130)
+
+Round 5 (2026-11-15). Every edge-band relaxation needs its evidence at the level of pixels, a round element's ring has its
+width checked, a repeat's later items have boxes, and two residual kinds of the scaled class have their ruled keys.
+
+**Evidence (rulings R129, R130).** `ssimRoundEdge`, `ssimFractionalEdge`, `ssimVectorEdge` and the corner limits
+(`deltaE2000RoundEdge`, `deltaE2000FractionalEdge`) apply only when, besides their earlier conditions:
+
+- outside the band, every 8 px SSIM block of the element's region (each at its best offset of up to 1 px) meets
+  `ssimElement`, and every 3×3 window whose pixels all lie outside the band is within `deltaE2000` (1) of Unity's closest
+  3×3 mean within 1 px: the element colour limit as the comparison defines it, at every pixel instead of the region's
+  mean. A ΔE per pixel was measured first: Chromium's anti-aliasing of a curve reaches about 1.1 device px past it (a 3 %
+  coverage step there), so 98 `keyframes` captures failed on ΔE2000 1.1–2.7 just past the 1 px band with nothing else
+  differing; the windows that touch the band leave those pixels out;
+- every border the band masks (the element's own, its descendants', a repeat's later items'): its drawn width within 0.5
+  device px of the design's (R127's measure, below) and, in static captures, the centre pixel of each side of 2 device px or
+  more within the file's own `deltaE2000Ring` (3.1; the scaled block cannot change it, where a round element's ring was
+  judged at 5.5 before); a side under 2 device px gives no evidence. In an animation sample the centre colour is not sampled:
+  Chromium draws the moving element from its resampled layer, where a 2.13 device px border's centre pixel blends (ΔE2000
+  3.42–14.17 on three `transitions` samples at 1366×768 whose evidence otherwise holds); the static captures judge that
+  border's colour, and the width and the windows count in the sample too (resampling keeps a border's covered width);
+- the band reaches as far as the region's SSIM blocks: a moving edge's spill past its box lies in the region's last row of
+  blocks (cut at the box, it left five `transitions` samples at 1366×768 with a block of 0.98993 outside the band).
+
+Measured on round 5's second run, compared with the final code: the 179 SSIM relaxations it admits have every block outside
+the band at 0.99428 or more, every window within ΔE2000 0.854, every masked border's centre within 1.10 and its width within
+0.26 device px; the 20 corner samples it admits at the scaled viewports are 1.02–5.10. Tests (`compare.test.ts`, "edge-band
+evidence"): the re-review's avatars (below); a 3 px dent of another colour in a 160 px avatar's fill, between the colour
+grid's points (band-masked mean 0.99 or more; a block fails); a ring 1.5 device px thinner in an animation sample (the
+windows match within 1 px, the width fails); the re-review's N4-3 box, its 2.13 device px border another colour (no window
+outside the band reaches it; its centre fails); a corner sample of an element whose border is under 2 device px (no
+evidence: held to `deltaE2000`).
+
+**Ring width (ruling R127).** The drawn width of a border across the middle of each side of 2 device px or more and, on a
+round corner whose radius holds it, across its curve at 45°: along the normal every sample between the colour outside and
+the ring's counts as ring by its place on that segment, every sample between the ring's and the colour inside likewise (the
+ring's colour is the design's centre pixel, for both renderers, so a thinner ring in Unity counts as thinner). Exact to 0.01
+device px across a side's middle; across a diagonal it reads up to 0.16 device px more on a thinner ring. A round element
+without text fails in a static capture when the design's and Unity's widths differ by more than 0.5 device px anywhere.
+Measured over the suite (11126 static element samples): largest difference 0.44 device px (a menu panel at 1280×720),
+nothing fails. The re-review's probe, an 80 and a 160 CSS px avatar whose ring Unity draws 3 CSS px wide instead of 4: both
+fail at 1920×1080, 2560×1440 and 3840×2160 (0.75, 1 and 1.5 device px thinner; before, the 160 px one passed at all three
+and the 80 px one at two). At 1280×720 the ring is 0.5 device px thinner, R127's own limit: the 160 px avatar passes there,
+as it did before ruling R119, and the 80 px one fails on its SSIM.
+
+**Repeated items (ruling R124).** Both captures record the boxes of a repeat's later items (`items`: the IR id and the item
+suffix the Unity capture names the copy with, `row#3`, `day#0#1`), and the band of straight edges between device pixels
+takes their edges. `controls` table at 1366×768: band-masked 0.98789 → 0.99432; `scroll-area` inbox at 1600×900: 0.98960
+→ 0.99339; the band confines both. They still fail (17 + 1 captures) on R129's evidence: an SSIM block outside the band of
+0.71900 (the table, block at 904, 312) and 0.51854 (the inbox, 576, 160), on the glyphs of a later row's text (12.8 and 12.5
+device px): the comparison masks the IR elements' own text, not their copies in later items, and at those fractional sizes
+the renderers' glyphs differ (section "Text ink at fractional sizes"; the crops show the same text). Masking the later
+items' text would leave it unchecked, so it stays as it is.
+
+**Resampled pictures (ruling R125).** Scaled only: an element that draws a raster picture at another size than its own may
+meet `ssimResampledPicture` 0.95 when its other checks pass (measured lowest 0.95284, rounded down to 0.01: its own floor,
+below the general 0.97), and its colour samples `deltaE2000ResampledPicture` 5.89 (measured highest 5.49, plus 0.4). The
+pictures pass at every exact viewport of the same run; no cross-viewport check is built (ruling R130's reasoning: a defect
+that shows at an exact viewport fails there in the same run). Round 5 admits 6 picture elements in 2 captures (SSIM
+0.95284–0.97986) and 3 colour samples (ΔE2000 1.64–5.49).
+
+**Small text (ruling R126).** Scaled only: text of at most 12.99 device px takes the ink colour limit 5.89
+(`scaled.textInkDeltaEFirstSmall`): measured over the suite's 10746 element samples of such text at the scaled viewports
+(12.5 device px at 1600×900, 12.8 and 10.67 at 1366×768) the highest is 5.49 (`stacked-text` value-12 at 1366×768), then
+4.29 and 3.80; under the ruling's 6.5 cap. Every such text passes at every exact viewport. Round 5 admits one line above the
+earlier 4.5 (ΔE2000 5.49).
+
+**Letter-spacing box (ruling R128).** Seen in round 4's first run and in two of round 5's three full runs (caps-label
+Δw −1.30 at 1366×768 and −0.996 at 1600×900: UI Toolkit's own width, 200 design px, at both scaled viewports), in none of 7
+runs of the fixture alone (5 on the warm copy, 2 on a fresh one), each with the fit's width (Δw +0.122 and −0.163). A
+fourth full run traced every text-fit update of the label (a temporary trace, not committed) and failed the same way: all
+34 updates of the screen's six captures found the label's font (`Inter UI UITK r12s20`, the label-bold line box) without a
+character of "BÖLÜM BAŞLIĞI" in a face of its weight table (`DesignText.AllPresent` false: the fit measures only text every
+face already holds, so a measure never adds glyphs outside a repaint), so the fit never applied and the label kept UI
+Toolkit's own width at every viewport. At the exact viewports that width equals the golden's box once Yoga rounds it (201,
+200, 202 and 200 design px; the golden's 201, 200.125, 202, 200.125); at the scaled ones it does not (200 against 201.594 and
+202.438). Which face lacks which character, and why only in some full runs (the fixture alone never), is not found: the twins'
+characters are added at runtime and the run deletes the fonts at its end, so the next step is a trace that names the missing
+characters per face. A guard against a stale geometry report, written first for another explanation, did not change the
+outcome in the following run and was reverted.
+
 ## Suite at six viewports
 
-**Round 4 (2026-11-15, latest).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
+**Round 5 (2026-11-15, latest).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
+animation samples), 13 min 33 s (setup 15 s, exports 191 s, import 30 s, capture 198 s, comparisons 364 s, cleanup of the
+project copy 14 s): **4709 PASS, 19 FAIL**, nothing incomplete; animation samples 2400 / 0.
+
+| Viewport | Class | PASS | FAIL | What fails |
+|---|---|---|---|---|
+| 3840×2160 | exact | 788 | 0 | |
+| 2560×1440 | exact | 788 | 0 | |
+| 1920×1080 | exact | 788 | 0 | |
+| 1280×720 | exact | 788 | 0 | |
+| 1600×900 | scaled | 787 | 1 | `scroll-area` (a later message's text glyphs outside the dividers' band) |
+| 1366×768 | scaled | 770 | 18 | 17 `controls` (a later row's text glyphs outside the dividers' band), `letter-spacing` (the caps label's fit, section "Edge-band evidence") |
+
+What the keys admitted in this run: `ssimRoundEdge` 17 elements at 1280×720 (lowest 0.98088) and 148 at the scaled viewports
+(lowest 0.97664); `ssimFractionalEdge` 4 (lowest 0.9735); `ssimVectorEdge` 10 (lowest 0.97875); the corner limits 20 samples
+at the scaled viewports (ΔE2000 1.02–5.10); `ssimResampledPicture` 6 picture elements (lowest 0.95284) and
+`deltaE2000ResampledPicture` 3 colour samples (highest 5.49); the scaled small-text ink limit one line above 4.5 (5.49).
+Every admitted SSIM relaxation's evidence: lowest block outside its band 0.99428, largest 3×3 window ΔE2000 0.854, largest
+border centre ΔE2000 1.10, largest border width difference 0.26 device px. No box, baseline or line-extent check fails but
+the letter-spaced box.
+
+**Round 4 (2026-11-15).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
 animation samples), 13 min 4 s (setup 18 s, exports 186 s, import 27 s, capture 192 s, comparisons 358 s): **4707 PASS,
 21 FAIL**, nothing incomplete; animation samples 2400 / 0.
 
