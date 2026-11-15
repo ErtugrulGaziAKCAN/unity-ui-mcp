@@ -791,8 +791,8 @@ describe("compareCapture: edge, colour and ink checks", () => {
   });
 
   it("catches a missing or wrong-colour ring on a round element without text where ssimRoundEdge applies", () => {
-    // an 80 px avatar at a scaled viewport: a light disc with a 2 px ring, low contrast, drawn with the same ramp on both
-    // sides; the ring lies wholly in the edge band (the outer curve and the border's inner curve, a pixel either side)
+    // an 80 px avatar at a scaled viewport: a light disc with a 2 px grey ring, drawn with the same ramp on both sides; the
+    // ring lies wholly in the edge band (the outer curve and the border's inner curve, a pixel either side)
     const bg: Rgb = [30, 30, 30], disc: Rgb = [200, 200, 200];
     const draw = (ring: Rgb | null) => {
       const png = canvas(320, 192, bg);
@@ -807,13 +807,18 @@ describe("compareCapture: edge, colour and ink checks", () => {
     const boxes: CaptureBoxes = { capture: "c", viewport: [320, 192], scale: 0.5335, external: [], elements: { root: el(0, 0, 320, 192), avatar: el(80, 56, 80, 80) } };
     const ctx: CaptureContext = { borders: { avatar: [2, 2, 2, 2] }, radii: { avatar: [40, 40, 40, 40] }, backgrounds: new Set(["avatar"]), painters: new Set(["avatar"]), order: ["root", "avatar"], root: "root" };
     const scaled: Thresholds = { ...T, ssimRoundEdge: 0.95, deltaE2000RoundEdge: 5.5 };
-    const golden = { png: draw([176, 176, 176]), boxes };
-    expect(compareCapture(golden, { png: draw([176, 176, 176]), boxes }, [], scaled, ctx).issues).toEqual([]);
-    // the ring missing, or another colour: its border sides are sampled at deltaE2000 (the band hides it from SSIM)
-    for (const ring of [null, [150, 176, 200] as Rgb]) {
+    const golden = { png: draw([150, 150, 150]), boxes };
+    expect(compareCapture(golden, { png: draw([150, 150, 150]), boxes }, [], scaled, ctx).issues).toEqual([]);
+    // the ring missing, or another colour: masked, the element's SSIM would meet ssimRoundEdge; its border sides, the
+    // evidence that limit needs, differ by more than deltaE2000RoundEdge, so it is held to ssimElement
+    for (const ring of [null, [96, 120, 168] as Rgb]) {
       const v = compareCapture(golden, { png: draw(ring), boxes }, [], scaled, ctx);
-      expect(v.issues).toContainEqual(expect.objectContaining({ id: "avatar", kind: "color", detail: expect.stringMatching(/border/) }));
+      expect(v.issues).toEqual([expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/border differs by ΔE2000 .*the ring in that band is not the design's/) })]);
     }
+    // (a ring of another hue with the same lightness keeps the element's SSIM at 0.99 or more: no viewport compares an
+    // element without text for its border colour, so neither does this)
+    // at an exact viewport (ssimRoundEdge off) nothing is relaxed and nothing more is sampled
+    expect(compareCapture(golden, { png: draw(null), boxes }, [], T, ctx).issues.map((i) => i.kind)).toEqual(["ssim"]);
   });
 
   it("masks for ssimRoundEdge the edge band of the element's own and its descendants' round shapes, not of others", () => {

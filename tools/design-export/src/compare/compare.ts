@@ -164,7 +164,10 @@ export const ROUND_EDGE_BAND = 1;
  * that show its difference lies in the band (`deltaE2000RoundEdge`); a window with fewer keeps `deltaE2000`.
  */
 export const ROUND_EDGE_KEPT = 3;
-/** The narrowest border side (device px) an element without text has sampled for colour: its centre pixel is fully covered. */
+/**
+ * The narrowest border side (device px) a round element without text has sampled as the evidence `ssimRoundEdge` needs
+ * (its ring lies in the masked band): its centre pixel is covered on both renderers.
+ */
 export const BORDER_SAMPLE_PX = 2;
 
 function checkThresholds(raw: Record<string, unknown>, file: string, scaled = false): Thresholds {
@@ -743,6 +746,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
 
     /** Elements below ssimElement, judged after every other check (a measured lower limit needs those to pass). */
     const lowSsim: { id: string; s0: number; best: number; region: Rect; carriesText: boolean; shadow: boolean }[] = [];
+    // ssimRoundEdge applies (scaled viewports); a round element's border side samples, worst first, for its evidence
+    const roundEdge = t.ssimRoundEdge < t.ssimElement - EPS && !!ctx.radii;
+    const ringEvidence = new Map<string, { de: number; p: RingPoint; a: number[]; b: number[] }>();
     for (const id of compared) {
       const ge = g.elements[id], ue = u.elements[id], row = rowOf.get(id)!;
       if (external.has(id)) continue;
@@ -802,7 +808,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         if (painted && !use.length && covered < pts.length) {
           issue(id, "color", `a line ${Number(gThick.toFixed(2))} device px thick: no colour sample left on its centre line (on text, an off-grid edge or a curve)`, ge);
         }
-      } else if (solid || (!carriesText && paints(id) && ctx.borders?.[id])) {
+      } else if (solid) {
         // background colour: the grid, then the ring inside the border, never silently nothing
         const ix0 = Math.max(ge.x, ue.x), iy0 = Math.max(ge.y, ue.y), ix1 = Math.min(ge.x + ge.w, ue.x + ue.w), iy1 = Math.min(ge.y + ge.h, ue.y + ue.h);
         const cw = ix1 - ix0, ch = iy1 - iy0;
@@ -814,15 +820,20 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           for (const [x, y] of grid) pts.push({ where: `(${x}, ${y})`, kind: "edge", gx: x, gy: y, ux: x, uy: y, win: 3 });
         }
         // and where the design is flat (a picture's detail or an edge is measured by SSIM)
-        use = !solid ? [] : pts.filter((p) => usable(p, cover) && !curve(p) && flatAt(gp, p.gx, p.gy));
-        if (solid && !use.length) use = ringPoints(gPaint, ue, ctx.borders?.[id], ["edge"], ctx.radii?.[id]).filter((p) => usable(p, cover));
-        // an element without text: the middle of each border side of 2 device px or more (its centre pixel fully covered
-        // on both renderers), at deltaE2000 (an element that carries text samples its border with its ring below); a ring
-        // on a round shape lies in the edge band that ssimRoundEdge masks, so only these catch a missing or wrong ring
-        const sides = ctx.borders?.[id];
-        if (!carriesText && paints(id) && sides) {
-          const full = sides.map((v) => (v >= BORDER_SAMPLE_PX ? v : 0));
-          if (full.some((v) => v > 0)) use.push(...ringPoints(gPaint, ue, full, ["border"], ctx.radii?.[id]).filter((p) => usable(p, cover)));
+        use = pts.filter((p) => usable(p, cover) && !curve(p) && flatAt(gp, p.gx, p.gy));
+        if (!use.length) use = ringPoints(gPaint, ue, ctx.borders?.[id], ["edge"], ctx.radii?.[id]).filter((p) => usable(p, cover));
+      }
+      // a round element without text: the middle of each border side of 2 device px or more (its centre pixel covered on
+      // both renderers), the evidence ssimRoundEdge needs: its ring lies in the edge band that limit masks, so a missing
+      // or wrong-colour ring shows only here (an element that carries text samples its border with its ring below)
+      const sides = ctx.borders?.[id];
+      if (roundEdge && !carriesText && ctx.radii?.[id] && paints(id) && sides) {
+        const full = sides.map((v) => (v >= BORDER_SAMPLE_PX ? v : 0));
+        for (const p of full.some((v) => v > 0) ? ringPoints(gPaint, ue, full, ["border"], ctx.radii[id]) : []) {
+          if (!usable(p, cover)) continue;
+          const r = bestDeltaE(gp, p.gx, p.gy, up, p.ux, p.uy, p.win);
+          const prev = ringEvidence.get(id);
+          if (!prev || r.de > prev.de) ringEvidence.set(id, { de: r.de, p, a: r.a, b: r.b });
         }
       }
       if (use) {
@@ -977,7 +988,6 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     // the edge band of the element's own round shapes and its descendants' (outer curve and the border's inner curve, both
     // sides, in the element's region), where the scaled class's anti-aliasing ramp differs: masked on top of the element's
     // own mask for `ssimRoundEdge`; another element's curves (a sibling drawn over it) are that element's
-    const roundEdge = t.ssimRoundEdge < t.ssimElement - EPS && lowSsim.length > 0 && !!ctx.radii;
     const within = (id: string, anc: string) => {
       for (let x: string | undefined = id; x !== undefined; x = ctx.parent?.get(x)) if (x === anc) return true;
       return false;
@@ -1009,8 +1019,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         const banded = regionSsimShifted(gp, up, roundMasked(l.id, l.carriesText ? lineMask : mask, l.region), l.region, 1);
         row.ssimRoundEdgeMasked = r6(banded);
         const confined = banded >= t.ssimElement - EPS;
-        if (confined && !otherIssue.has(l.id) && l.best >= t.ssimRoundEdge - EPS) { row.ssimLimit = t.ssimRoundEdge; continue; }
-        roundWhy = `; ${banded.toFixed(5)} with the edge band of round shapes masked` + (confined ? (otherIssue.has(l.id) ? `, the limit ${t.ssimRoundEdge} for it needs its other checks to pass` : `, below ${t.ssimRoundEdge} unmasked`) : ` (below ${t.ssimElement}: not confined to that band)`);
+        // the ring the band hides must be there: its border sides within the band's colour limit
+        const ring = ringEvidence.get(l.id);
+        const ringOff = ring && ring.de > t.deltaE2000RoundEdge + EPS ? ring : null;
+        if (confined && !ringOff && !otherIssue.has(l.id) && l.best >= t.ssimRoundEdge - EPS) { row.ssimLimit = t.ssimRoundEdge; continue; }
+        roundWhy = `; ${banded.toFixed(5)} with the edge band of round shapes masked` + (!confined ? ` (below ${t.ssimElement}: not confined to that band)`
+          : ringOff ? `, but its ${ringOff.p.where} differs by ΔE2000 ${ringOff.de.toFixed(2)} (design ${hex(ringOff.a)}, Unity ${hex(ringOff.b)}; limit ${t.deltaE2000RoundEdge}): the ring in that band is not the design's`
+          : otherIssue.has(l.id) ? `, the limit ${t.ssimRoundEdge} for it needs its other checks to pass` : `, below ${t.ssimRoundEdge} unmasked`);
       }
       const why = relaxed ? (otherIssue.has(l.id) ? `; the limit ${relaxed.limit} for ${relaxed.why} needs its other checks to pass` : `; ${relaxed.limit} for ${relaxed.why}`) : "";
       issue(l.id, "ssim", `element SSIM ${l.s0.toFixed(5)} (${row.ssimShifted!.toFixed(5)} with offsets up to 1 px) over the ${l.carriesText ? "box with its text lines copied from the design" : "box"}${l.shadow ? " and baked shadow" : ""} (limit ${t.ssimElement}${why}${roundWhy})`, l.region);
