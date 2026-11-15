@@ -510,15 +510,15 @@ describe("U-FONT-004: the readable-text floor", () => {
 
   it("counts the scale a transform draws the text at in a state it is drawn in, its font size in a state, not an animation", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "floor-"));
-    const page = (css: string) => {
+    const page = (css: string, cls = "box") => {
       const file = path.join(dir, `p${Math.random().toString(36).slice(2)}.html`);
       fs.writeFileSync(file, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0}
         .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:24px;line-height:30px;color:#ffffff;background-color:#0b1f26}
         p{margin:0} .box{display:flex;flex-direction:column;flex-shrink:0;transform-origin:0 0} ${css}</style></head>
-        <body><div class="screen" data-u-screen="lint.sample"><div class="box" data-u-id="box"><p data-l10n="lint.sample.t" data-en="T">Metin</p></div></div></body></html>`);
+        <body><div class="screen" data-u-screen="lint.sample"><div class="${cls}" data-u-id="box"><p data-l10n="lint.sample.t" data-en="T">Metin</p></div></div></body></html>`);
       return file;
     };
-    const floor = async (css: string) => (await lintFile(page(css))).filter((x) => x.ruleId === "U-FONT-004").map((x) => x.detail);
+    const floor = async (css: string, cls?: string) => (await lintFile(page(css, cls))).filter((x) => x.ruleId === "U-FONT-004").map((x) => x.detail);
     try {
       // 24 px × 0.5 × 0.5 = 6 device px: the minimum is 36 px under that transform
       expect(await floor(".box{transform:scale(0.5)}")).toEqual([expect.stringMatching(/^text style body \(24px\), scaled ×0\.5 by its transforms, draws 6 device px at 1280×720: .* the minimum design size here is 36px$/)]);
@@ -555,6 +555,16 @@ describe("U-FONT-004: the readable-text floor", () => {
       expect(await floor("@keyframes pop{to{opacity:1;transform:scale(0.5)}} .box{opacity:0} .box.is-open{animation:pop 300ms ease-out forwards}")).toHaveLength(1);
       // drawn at 0.5 while open: a rule of no state that a state rule replaces only while closed
       expect(await floor(".box{transform:scale(0.5)} .box:not(.is-open){transform:none}")).toEqual([expect.stringMatching(/scaled ×0\.5 by its transforms, draws 6 device px at 1280×720/)]);
+      // never drawn at 0.5: a more specific or a later rule of no state overrides it, also when a state rule sets the property
+      // (a hover's scale); the one of no state that wins without the state rule is judged (the cascade's, !important first)
+      for (const [css, cls] of [[".box{transform:scale(0.5)} .box.wide{transform:none} .box:hover{transform:scale(1.1)}", "box wide"],
+        [".box{transform:scale(0.5)} .box{transform:none} .box:hover{transform:scale(1.1)}", "box"],
+        [".box{transform:scale(0.5)} .box{transform:none}", "box"],
+        [".box{transform:scale(0.5)} .box.wide{transform:none} .box.is-open{transform:scale(1.1)}", "box wide is-open"]])
+        expect(await floor(css, cls), css).toEqual([]);
+      for (const [css, cls] of [[".box.wide{transform:scale(0.5)} .box{transform:none} .box:not(.is-open){transform:scale(1.1)}", "box wide"],
+        [".box{transform:scale(0.5) !important} .box.wide{transform:none} .box:hover{transform:scale(1.1)}", "box wide"]])
+        expect(await floor(css, cls), css).toEqual([expect.stringMatching(/scaled ×0\.5 by its transforms, draws 6 device px at 1280×720/)]);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 

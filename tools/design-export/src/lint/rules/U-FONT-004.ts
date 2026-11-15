@@ -76,9 +76,10 @@ function animationEnd(s: DomSnapshot, decls: readonly { name: string; value: str
  * is the smallest `scale` times the smallest `transform` (each is judged with every other). A rule that hides the element
  * (opacity 0, visibility hidden, display none) draws nothing and does not count, nor does a factor of 0; neither do an
  * animation's or a transition's passing frames (only states are judged); an animation that keeps its end (fill forwards or
- * both) leaves its last keyframe's values while its rule applies. A rule of no state counts when a state rule sets the same
- * property and its value is not the one shown now (`.box{transform:scale(.5)} .box:not(.is-open){transform:none}`: drawn
- * at 0.5 when open).
+ * both) leaves its last keyframe's values while its rule applies. The rule of no state that wins the cascade among those
+ * that set a property (not one a later or more specific rule of no state overrides) counts when a state rule that sets the
+ * same property holds now and its value is not the one shown now (`.box{transform:scale(.5)}
+ * .box:not(.is-open){transform:none}`: drawn at 0.5 when open).
  *
  * An element hidden now is drawn when a rule shows it (a value of opacity, visibility or display that is not hidden, or an
  * animation that ends visible), or when code does (a dialog, a menu or a toast the design keeps closed). Its now values count
@@ -93,7 +94,10 @@ function drawnFactors(s: DomSnapshot, i: number): { scale: number[]; transform: 
   const hiddenNow = hides([{ name: "opacity", value: e.computed["opacity"] ?? "1" }, { name: "visibility", value: e.computed["visibility"] ?? "visible" },
     { name: "display", value: e.computed["display"] ?? "block" }]);
   type Entry = { sc?: number; tr?: number; shows: boolean; cond: Cond };
-  const rules: Entry[] = [], base: { sc?: number; tr?: number }[] = [];
+  // a rule of no state's value of each property with its cascade rank: !important, then an animation's kept end, then
+  // specificity (its selectors' that reach the element), then source order
+  type Ranked = { v: number; rank: number[] };
+  const rules: Entry[] = [], base: { sc?: Ranked; tr?: Ranked }[] = [];
   for (const r of s.rules) {
     const own = r.selectors.filter((x) => !x.pseudoElement && x.elements?.includes(i));
     if (!own.length) continue;
@@ -104,7 +108,16 @@ function drawnFactors(s: DomSnapshot, i: number): { scale: number[]; transform: 
     const sc = decls.find((d) => d.name === "scale") ?? last("scale"), tr = decls.find((d) => d.name === "transform") ?? last("transform");
     const value = { sc: sc ? scaleValue(sc.value) ?? 1 : undefined, tr: tr ? transformScale(tr.value) ?? 1 : undefined };
     // a rule of no state applies now: its values are the computed ones, unless a state rule replaces them now (below)
-    if (!r.media.length && !own.some((x) => touchesRuntime(x.parsed))) { base.push(value); continue; }
+    if (!r.media.length && !own.some((x) => touchesRuntime(x.parsed))) {
+      const spec = own.map((x) => x.specificity).sort((a, b) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2])[0];
+      const rank = (name: string) => {
+        const d = r.decls.find((x) => x.name === name);
+        return [d?.important ? 2 : d ? 0 : 1, ...spec, r.index];
+      };
+      base.push({ sc: value.sc === undefined ? undefined : { v: value.sc, rank: rank("scale") },
+        tr: value.tr === undefined ? undefined : { v: value.tr, rank: rank("transform") } });
+      continue;
+    }
     const shows = decls.some((d) => d.name === "opacity" || d.name === "visibility" || d.name === "display") ||
       (end.length > 0 && !hides(end) && end.some((d) => d.name === "opacity" || d.name === "visibility" || d.name === "display"));
     for (const x of own) rules.push({ ...value, shows, cond: runtimeConditions(x.parsed) });
@@ -123,6 +136,12 @@ function drawnFactors(s: DomSnapshot, i: number): { scale: number[]; transform: 
   // a rule's values count when the element is drawn while it applies: always when visible now, else with a rule that shows it
   const drawnWith = (c: Cond) => !hiddenNow || !showing.length || showing.some((a) => together(a.cond, c));
   type Pick = (r: { sc?: number; tr?: number }) => number | undefined;
+  /** The value of the rule of no state that wins the cascade among those that set the property: shown without the state rules. */
+  const baseWinner = (own: (r: { sc?: Ranked; tr?: Ranked }) => Ranked | undefined): number | undefined => {
+    const ranked = base.map(own).filter((x): x is Ranked => x !== undefined);
+    const after = (a: number[], b: number[]) => { for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return a[k] > b[k]; return false; };
+    return ranked.reduce<Ranked | undefined>((w, x) => (!w || after(x.rank, w.rank) ? x : w), undefined)?.v;
+  };
   const nowCounts = (own: Pick) => {
     if (!hiddenNow || !showing.length) return true;
     // the now value from a state rule that applies now: only when that rule can apply with a rule that shows the element
@@ -130,16 +149,20 @@ function drawnFactors(s: DomSnapshot, i: number): { scale: number[]; transform: 
     if (from.length && !from.some((r) => drawnWith(r.cond))) return false;
     return showing.some((a) => !rules.some((b) => own(b) !== undefined && implied(b.cond, a.cond)));
   };
-  const collect = (now: number, own: Pick) => {
+  const collect = (now: number, own: Pick, ownBase: (r: { sc?: Ranked; tr?: Ranked }) => Ranked | undefined) => {
     const stated = rules.filter((r) => own(r) !== undefined);
+    // the value of no state applies in the states the state rules that replace it now do not: only the cascade's winner of
+    // the rules of no state (one a later or more specific rule of no state overrides is never shown), and only when a
+    // state rule that sets the property holds now (else the now value is that winner, or an inline style's)
+    const winner = baseWinner(ownBase);
+    const replaced = winner !== undefined && Math.abs(winner - now) > 1e-9 && stated.some((r) => holdsNow(r.cond));
     return [
       ...(nowCounts(own) ? [now] : []),
       ...stated.filter((r) => drawnWith(r.cond)).map((r) => own(r)!),
-      // a rule of no state whose value a state rule replaces now applies in the states that rule does not
-      ...(stated.length ? base.map(own).filter((v): v is number => v !== undefined && Math.abs(v - now) > 1e-9) : []),
+      ...(replaced ? [winner] : []),
     ].filter((f) => f > 0);
   };
-  const scale = collect(nowScale, (r) => r.sc), transform = collect(nowTransform, (r) => r.tr);
+  const scale = collect(nowScale, (r) => r.sc, (r) => r.sc), transform = collect(nowTransform, (r) => r.tr, (r) => r.tr);
   return scale.length && transform.length ? { scale, transform } : null;
 }
 
