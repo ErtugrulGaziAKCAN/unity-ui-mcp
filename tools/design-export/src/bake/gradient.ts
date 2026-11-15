@@ -58,7 +58,8 @@ interface Piece {
   /**
    * A radial gradient that ends transparent: the ellipse (relative to the padding box) beyond which it paints nothing. Drawn
    * as that ellipse instead of the rect when it lies inside the painted shape, so the gradient is never sampled past its end
-   * (Unity's VectorImage draws a speckled ring where a radial gradient's pad region starts: docs/findings/gradients.md).
+   * (Unity's VectorImage draws a speckled ring where a radial gradient's pad region starts: docs/findings/viewport-classes.md,
+   * "The toggle switch's knob").
    */
   ends?: { cx: number; cy: number; rx: number; ry: number; stops: Stop[]; attrs: (ox: number, oy: number) => string };
 }

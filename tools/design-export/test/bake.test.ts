@@ -273,6 +273,18 @@ describe("gradientToSvg", () => {
     expect(gradientToSvg("radial-gradient(circle 12px at 16px 16px, #ffffff 10px, #000000 11px)", 64, 32)).toContain("<rect");
   });
 
+  it("draws an elliptical gradient that ends transparent as its ellipse (ry scaled like the gradient), pinned with other layers", () => {
+    const e = gradientToSvg("radial-gradient(ellipse 20px 10px at 32px 16px, #ffffff 80%, rgba(255, 255, 255, 0) 90%)", 64, 32);
+    expect(e).toContain('gradientTransform="translate(32 16) scale(1 0.5) translate(-32 -16)"');
+    expect(e).toContain('<ellipse cx="32" cy="16" rx="18.36" ry="9.18" fill="url(#g0)"/>');
+    expect(e).toContain('<rect x="0" y="0" width="64" height="32" fill="#000000" fill-opacity="0"/>');
+    // the knob over a linear layer: the linear layer fills the shape below the ellipse, the box stays pinned
+    const two = gradientToSvg("radial-gradient(circle 12px at 16px 16px, #ffffff 10px, rgba(255, 255, 255, 0) 11px), linear-gradient(90deg, #102030, #304050)", 64, 32, { radii: [16, 16, 16, 16] });
+    expect(two).toContain('<rect x="0" y="0" width="64" height="32" fill="#000000" fill-opacity="0"/>');
+    expect(two.indexOf('fill="url(#g1)"')).toBeLessThan(two.indexOf('<ellipse cx="16" cy="16" rx="11.22" ry="11.22" fill="url(#g0)"/>'));
+    expect(two).toMatch(/<path d="M16 0H48[^"]*" fill="url\(#g1\)"\/>/);
+  });
+
   it("writes a linear gradient in user space over the element box", () => {
     const svg = gradientToSvg("linear-gradient(90deg, #000 0%, #fff 100%)", 200, 50);
     expect(svg).toContain("<linearGradient");

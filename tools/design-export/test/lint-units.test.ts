@@ -15,6 +15,8 @@ import { individualTransformProblem, splitTransform } from "../src/lint/resolve/
 import { parseSelector, pseudoElement, reachSelector, specificity, structural } from "../src/lint/selectors.js";
 import { matchRichStyle, matchTextStyle, readTextStyles } from "../src/lint/text-styles.js";
 import { mediaFeatures } from "../src/lint/rules/U-CSS-012.js";
+import { drawnSize, imageName, scaleOf } from "../src/lint/rules/W-IMG-001.js";
+import type { DomSnapshot, SnapElement } from "../src/lint/snapshot.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const kit = readKit(path.join(here, "fixtures", "lint", "kit"));
@@ -284,5 +286,51 @@ describe("paint order (the compiler's sibling order)", () => {
     expect(cssPaintOrder(sibs, true)).toEqual([0, 1]);
     expect(order(unityPaintOrder(sibs, true))).toEqual([1, 0]);
     expect(cssPaintOrder([sib(0, "relative"), sib(1, "static")], false)).toEqual([1, 0]);
+  });
+});
+
+describe("W-IMG-001 drawn size", () => {
+  // a synthetic element: the snapshot's fields drawnSize and scaleOf read
+  const el = (tag: string, size: { w: number; h: number }, image: { w: number; h: number; layer?: number }, computed: Record<string, string> = {}, parent = -1, index = 0) =>
+    ({ tag, size, index, parent, image: { src: "assets/a.png", raster: true, ...image }, computed }) as unknown as SnapElement;
+  const snap = (elements: SnapElement[], rules: unknown[] = [], keyframes: unknown[] = []) => ({ elements, rules, keyframes }) as unknown as DomSnapshot;
+
+  it.each([
+    ["img, fill: the content box", "img", { "object-fit": "fill" }, { w: 400, h: 200 }, { w: 400, h: 200 }],
+    ["img, contain: the image's aspect inside the box", "img", { "object-fit": "contain" }, { w: 400, h: 400 }, { w: 400, h: 200 }],
+    ["img, cover: the image's aspect over the box", "img", { "object-fit": "cover" }, { w: 400, h: 400 }, { w: 800, h: 400 }],
+    ["img, none: the natural size", "img", { "object-fit": "none" }, { w: 100, h: 100 }, { w: 200, h: 100 }],
+    ["img, scale-down: none when smaller", "img", { "object-fit": "scale-down" }, { w: 400, h: 400 }, { w: 200, h: 100 }],
+    ["img with padding and borders: the content box", "img", { "padding-left": "10px", "padding-right": "10px", "border-left-width": "5px", "border-right-width": "5px" }, { w: 430, h: 200 }, { w: 400, h: 200 }],
+    ["background, auto: the natural size", "div", { "background-size": "auto" }, { w: 400, h: 400 }, { w: 200, h: 100 }],
+    ["background, cover", "div", { "background-size": "cover" }, { w: 400, h: 400 }, { w: 800, h: 400 }],
+    ["background, contain", "div", { "background-size": "contain" }, { w: 400, h: 400 }, { w: 400, h: 200 }],
+    ["background, percentages of the padding box", "div", { "background-size": "50% 25%" }, { w: 400, h: 400 }, { w: 200, h: 100 }],
+    ["background, one auto keeps the aspect", "div", { "background-size": "300px auto" }, { w: 400, h: 400 }, { w: 300, h: 150 }],
+    ["background, auto and a height", "div", { "background-size": "auto 50px" }, { w: 400, h: 400 }, { w: 100, h: 50 }],
+  ])("%s", (_what, tag, computed, size, expected) => {
+    expect(drawnSize(el(tag, size, { w: 200, h: 100 }, computed))).toEqual(expected);
+  });
+
+  it("takes the background-size of the image's own layer, a shorter list repeating", () => {
+    // the url() is the second layer, behind a gradient
+    expect(drawnSize(el("div", { w: 400, h: 400 }, { w: 200, h: 100, layer: 1 }, { "background-size": "cover, 40px 20px" }))).toEqual({ w: 40, h: 20 });
+    expect(drawnSize(el("div", { w: 400, h: 400 }, { w: 200, h: 100, layer: 1 }, { "background-size": "40px 20px" }))).toEqual({ w: 40, h: 20 });
+  });
+
+  it("scales by the element's and its ancestors' transforms now and in every state and animation", () => {
+    const parent = el("div", { w: 1000, h: 1000 }, { w: 1, h: 1 }, { scale: "1.25" }, -1, 0);
+    const child = el("img", { w: 100, h: 100 }, { w: 100, h: 100 }, { transform: "matrix(1.2, 0, 0, 1.2, 0, 0)" }, 0, 1);
+    expect(scaleOf(snap([parent, child]), 1)).toBeCloseTo(1.5, 6);
+    // a hover rule's scale and a keyframe animation the element uses
+    const hover = { selectors: [{ elements: [1] }], decls: [{ name: "scale", value: "1.1" }, { name: "animation-name", value: "pop, fade" }] };
+    const pop = { name: "pop", frames: [{ key: "0%", decls: [{ name: "transform", value: "scale(1.4)" }] }, { key: "100%", decls: [{ name: "transform", value: "none" }] }] };
+    expect(scaleOf(snap([parent, el("img", { w: 100, h: 100 }, { w: 100, h: 100 }, {}, 0, 1)], [hover], [pop]), 1)).toBeCloseTo(1.25 * 1.4, 6);
+  });
+
+  it("names a file without failing on a bare % and shortens a data URI", () => {
+    expect(imageName("assets/50%.png")).toBe("50%.png");
+    expect(imageName("assets/a%20b.png?v=1")).toBe("a b.png");
+    expect(imageName("data:image/png;base64,iVBORw0KGgo=")).toBe("image/png data URI");
   });
 });

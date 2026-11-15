@@ -62,11 +62,14 @@ export interface SnapElement {
    */
   svgPaint?: "current" | "fixed" | "mixed" | "none";
   /**
-   * The image the element draws: an `<img>`'s, else its first url() background image; natural size in image pixels and
-   * whether it is a raster image (not SVG). Undefined without one, or when it did not load.
+   * The image the element draws: an `<img>`'s, else its first url() background image (`layer`: its index in the
+   * background-image list); size in image pixels (for an `<img>` the file's own, whatever srcset density chose it) and
+   * whether it is a raster image (not SVG). Undefined without one, or when it did not load within the snapshot's wait.
    */
-  image?: { src: string; w: number; h: number; raster: boolean };
+  image?: SnapImage;
 }
+
+export interface SnapImage { src: string; w: number; h: number; raster: boolean; layer?: number }
 
 export interface SnapSelector {
   text: string;
@@ -418,28 +421,58 @@ function elementPaths(els: { tag: string; attrs: Record<string, string>; parent:
   return paths;
 }
 
-/** Runs in the page: the natural size of each element's image (an `<img>`'s, else its first url() background image). */
-async function pageImages(): Promise<[number, { src: string; w: number; h: number; raster: boolean }][]> {
+/** How long the snapshot waits for an image (a lazy image outside the viewport never loads). */
+export const IMAGE_WAIT_MS = 3000;
+
+/**
+ * Runs in the page: the pixel size of each element's image (an `<img>`'s file, else its first url() background image and
+ * that layer's index). An image that does not load within `wait` ms is left out.
+ */
+async function pageImages(wait: number): Promise<[number, { src: string; w: number; h: number; raster: boolean; layer?: number }][]> {
+  type Found = [number, { src: string; w: number; h: number; raster: boolean; layer?: number }] | null;
   const els: Element[] = [document.body, ...Array.from(document.body.querySelectorAll("*"))];
   const vector = (src: string) => /^data:image\/svg/i.test(src) || /\.svg(z)?([?#].*)?$/i.test(src);
-  const jobs: Promise<[number, { src: string; w: number; h: number; raster: boolean }] | null>[] = [];
+  const timeout = () => new Promise<null>((resolve) => setTimeout(() => resolve(null), wait));
+  // the file's own pixels: an Image of the chosen source without its srcset (whose density divides naturalWidth)
+  const pixels = (src: string) => new Promise<{ w: number; h: number } | null>((resolve) => {
+    const im = new Image();
+    im.onload = () => resolve(im.naturalWidth > 0 ? { w: im.naturalWidth, h: im.naturalHeight } : null);
+    im.onerror = () => resolve(null);
+    im.src = src;
+  });
+  const jobs: Promise<Found>[] = [];
   els.forEach((el, i) => {
     if (el instanceof HTMLImageElement) {
-      const src = el.currentSrc || el.src;
-      const load = el.complete ? Promise.resolve() : new Promise<void>((resolve) => { el.addEventListener("load", () => resolve(), { once: true }); el.addEventListener("error", () => resolve(), { once: true }); });
-      jobs.push(load.then(() => (el.naturalWidth > 0 ? [i, { src, w: el.naturalWidth, h: el.naturalHeight, raster: !vector(src) }] : null)));
+      const loaded = el.complete ? Promise.resolve() : new Promise<void>((resolve) => { el.addEventListener("load", () => resolve(), { once: true }); el.addEventListener("error", () => resolve(), { once: true }); });
+      const job = loaded.then(async (): Promise<Found> => {
+        const src = el.currentSrc || el.src;
+        if (!src || !(el.naturalWidth > 0)) return null;
+        const own = await pixels(src);
+        return own ? [i, { src, w: own.w, h: own.h, raster: !vector(src) }] : null;
+      });
+      jobs.push(Promise.race([job, timeout()]));
       return;
     }
-    const m = /url\(\s*(['"]?)(.*?)\1\s*\)/.exec(getComputedStyle(el).backgroundImage);
+    const layers = getComputedStyle(el).backgroundImage;
+    if (!layers || layers === "none") return;
+    // the background-image list's layers, split at top-level commas
+    const parts: string[] = [];
+    let depth = 0, from = 0;
+    for (let k = 0; k < layers.length; k++) {
+      const ch = layers[k];
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+      else if (ch === "," && depth === 0) { parts.push(layers.slice(from, k)); from = k + 1; }
+    }
+    parts.push(layers.slice(from));
+    const layer = parts.findIndex((p) => /^\s*url\(/.test(p));
+    if (layer < 0) return;
+    const m = /url\(\s*(['"]?)(.*?)\1\s*\)/.exec(parts[layer]);
     if (!m) return;
-    jobs.push(new Promise((resolve) => {
-      const im = new Image();
-      im.onload = () => resolve(im.naturalWidth > 0 ? [i, { src: m[2], w: im.naturalWidth, h: im.naturalHeight, raster: !vector(m[2]) }] : null);
-      im.onerror = () => resolve(null);
-      im.src = m[2];
-    }));
+    const src = m[2];
+    jobs.push(Promise.race([pixels(src).then((own): Found => (own ? [i, { src, w: own.w, h: own.h, raster: !vector(src), layer }] : null)), timeout()]));
   });
-  return (await Promise.all(jobs)).filter((x): x is [number, { src: string; w: number; h: number; raster: boolean }] => x !== null);
+  return (await Promise.all(jobs)).filter((x): x is NonNullable<Found> => x !== null);
 }
 
 async function evaluate<A, R>(page: Page, fn: (a: A) => R, arg: A): Promise<R> {
@@ -643,7 +676,7 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
 
   const fontFaces = await declaredFontFaces(page, kit);
   lap("fonts");
-  const images = new Map(await page.evaluate(pageImages));
+  const images = new Map(await page.evaluate(pageImages, IMAGE_WAIT_MS));
   lap("images");
 
   const elements: SnapElement[] = raw.elements.map((e, i) => ({
