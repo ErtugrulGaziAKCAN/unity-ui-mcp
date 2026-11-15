@@ -252,7 +252,7 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`):
 | Check | Limit |
 |---|---|
 | Element boxes | ±1 device px at every viewport, exact and scaled |
-| Text | same line count and breaks, baseline ±1 px, ink colour and amount per line, and where each line's first and last glyphs sit (and the width between them) ±1 px; the same for the text of a repeat's later items |
+| Text | same line count and breaks, baseline ±1 px, ink colour and amount per line, and where each line's first and last glyphs sit (and the width between them) ±1 px; the same for the text of a repeat's later items. A hairline line (fewer than 3 fully covered pixels in the design: an em dash, a "1" whose one stroke lies between two device pixels) is judged by its ink's colour direction from the background (0.66°, measured) instead of its ink colour and amount: on such a line a lightness-only error is not caught |
 | Colours at sampled points | ΔE2000 ≤ 1 (the ring of a round element without text, at the middle of each border side of 2 device px or more: ≤ 3.1, measured; not where an animation sample moves the element, by an animation of its geometry; a ring thinner than 2 device px has no colour sample, and the sample, the best of ±1 px offsets, judges a ring's colour, not its width) |
 | Ring width | a round element without text: its ring's drawn width across the middle of each side and each round corner within 0.5 device px of the design's, unless an animation sample moves it. The check decides reliably from 0.75 device px: a ring 1 CSS px thinner at 1280×720 (0.5 device px) can pass |
 | Structure (SSIM, non-text) | ≥ 0.99 for the capture and for each element (small elements ≥ 0.984, pictures ≥ 0.985, rotated animation samples ≥ 0.975) |
@@ -261,16 +261,13 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`):
 | Scaled viewports only | the same, except the anti-aliasing the root scale draws at the layout scale's pixel, each only with the same band evidence: any element with round shapes may meet 0.974 for its curves' band, a rounded-corner sample of an element that carries text, whose window reaches that band and whose window pixels outside it (at least 3, at one offset) match, may differ by ΔE2000 5.5; an element whose straight edges (box and border's inner edges, also of a repeat's later items) fall between device pixels may meet 0.97 for their band, a vector picture 0.975 for its drawn edges' band, a corner sample reaching straight edges between pixels ΔE2000 5.3; a raster picture drawn at another size than its own 0.95, its colour samples ΔE2000 5.89 (resampling, measured); text under 13 device px (the root scale draws 10.67, 12.5 and 12.8 px) takes the small-text ink limits, its colour ΔE2000 5.89 (measured, at most 6.5) |
 
 The fidelity suite (`scripts/fidelity.sh`: 22 fidelity fixtures and the 9 kit components at the kit's six viewports,
-4728 captures, about 14 minutes) passes every capture at 3840×2160, 2560×1440, 1920×1080 and 1600×900, and 728 of 788 at
-1280×720 and at 1366×768 (an unchecked radio's ring and a transition sample at 1280×720 pass through the anti-aliasing edge
-band). Since the text of a repeat's later items is checked too, what fails is two such texts of one glyph in the
-`repeat-items` fixture, an em dash at 10 device px (1280×720) and a "1" at 10.67 (1366×768): a single stroke thinner than
-two device pixels on a baseline between two device pixels, which Chromium and UI Toolkit cover differently (ink colour
-ΔE2000 6.06 and 6.65 against 4.5 and 5.89; measured, left for a decision; [docs/findings/viewport-classes.md](docs/findings/viewport-classes.md),
-"Repeat items' text, the face that draws, what moves"). The measured scaled-class limits are the anti-aliasing the root
-scale draws at the layout scale's pixel (round shapes, straight edges between device pixels, vector pictures' edges and
-corners next to such edges), each applied per capture only with evidence at the level of pixels, the resampling of raster
-pictures drawn at another size, and the small-text ink limits for text under 13 device px.
+4728 captures, about 14 minutes) passes every capture at all six viewports, exact and scaled (an unchecked radio's ring and
+a transition sample at 1280×720 pass through the anti-aliasing edge band, and two one-glyph texts of a repeat's later items,
+an em dash and a "1" whose stroke lies between two device pixels, through the hairline rule;
+[docs/findings/viewport-classes.md](docs/findings/viewport-classes.md)). The measured scaled-class limits are the
+anti-aliasing the root scale draws at the layout scale's pixel (round shapes, straight edges between device pixels, vector
+pictures' edges and corners next to such edges), each applied per capture only with evidence at the level of pixels, the
+resampling of raster pictures drawn at another size, and the small-text ink limits for text under 13 device px.
 
 **Linear colour space.** UI Toolkit blends an ordinary on-screen panel of a Linear project in linear light; the design's
 browser blends in sRGB. Captured that way, 2248 of the suite's 2355 captures fail (text ink 0.63–1.42× the design's,

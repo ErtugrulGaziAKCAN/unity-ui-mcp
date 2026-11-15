@@ -158,8 +158,9 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 - The text of a repeat's later items is checked (ruling R133): both captures record each later item's copy of a text with
   its own line boxes (boxes `items`: `text` and `lines`, as for elements; schema and shared contract sample), the golden
   rounds a copy's text-sized width as the item template's `DesignLabel` lays it out, and the comparison masks the copies'
-  text as it masks the IR elements' (whole-capture and element SSIM, edge-band evidence, colour samples) and gives each copy
-  the same text checks: present and visible as in the design, line count, baselines, ink colour, ink amount (in the
+  text lines (whole-capture and element SSIM, edge-band evidence, colour samples; only the lines, so what a copy paints, a
+  chip's background or a pill's border, stays in the whole capture's and its containers' SSIM) and gives each copy the same
+  text checks: present and visible as in the design, line count, baselines, ink colour, ink amount (in the
   capture's medians) and where each line's glyphs sit, reported under the copy's name (`row#3`). Before, a later row's
   text was neither masked nor checked: a wrong colour passed, and the dividers' band evidence failed on its glyphs.
 - Two scaled-only measured keys: a raster picture drawn at another size than its own may meet SSIM 0.95 and its colour
@@ -174,6 +175,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   colour, an opacity, a filter or a shadow). Every other element of a sample gets the static checks, its ring's colour and
   width and an edge-band relaxation's border centre colour among them (a colour-only animation let a wrong 2.13 device px
   border pass in a sample).
+- A hairline text line is judged by its ink's colour direction (ruling R138): a line whose design has fewer than 3 fully
+  covered pixels (at least 0.85 of the declared colour's distance from the background; an em dash or a "1" whose one stroke
+  lies between two device pixels) has an ink colour and amount that measure coverage, which the renderers lay differently;
+  such a line is judged by the angle between the design's and Unity's ink directions from the background in sRGB
+  (`textInkDirection` 0.66°: the suite's highest 0.26° plus 0.4) instead. On such a line a lightness-only error is not
+  caught; a dash in another hue fails (36° and 38° for the warning and accent colours). The 120 `repeat-items` captures
+  this concerned pass.
 - An edge-band relaxation that fails names every condition that does not hold (a block, a window, a border's colour
   evidence, its centre, its width), not only the first.
 - The ring width check keeps its limit (more than 0.5 device px fails) and decides reliably from 0.75 device px (ruling
@@ -202,13 +210,15 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
-- Task 35's fidelity suite (4728 captures, 14 min 3 s, four full runs with the same result): every capture passes at
+- Task 35's final fidelity run (4728 captures, 14 min 12 s): **every capture passes** at all six viewports; 180 hairline
+  lines of `repeat-items` pass through ruling R138 (colour direction at most 0.26° against 0.66°).
+- Task 35's earlier fidelity runs (4728 captures, 14 min 3 s, four full runs with the same result): every capture passes at
   3840×2160, 2560×1440, 1920×1080 and 1600×900; 728 of 788 at 1280×720 and at 1366×768. The 18 divider captures of round 5
   and the letter-spaced label pass in every run. The 120 left are new checks finding what they look for: the text of two
   repeat items' copies in `repeat-items`, one glyph of one stroke on a baseline between device pixels (an em dash at 10
   device px, ink colour ΔE2000 6.06 against 4.5; a "1" at 10.67, 6.65 against 5.89), which Chromium and UI Toolkit cover
-  differently; measured, left for a decision, no limit changed (`docs/findings/viewport-classes.md`, "Repeat items' text,
-  the face that draws, what moves").
+  differently; measured, no limit changed, and judged by their colour direction since ruling R138 (above)
+  (`docs/findings/viewport-classes.md`, "Repeat items' text, the face that draws, what moves").
 - Round 5 of the fidelity suite (4728 captures, 13 min 33 s): every capture passes at the four exact viewports; 787 of 788
   at 1600×900 and 770 at 1366×768. The 19 left: 17 `controls` and 1 `scroll-area` captures whose dividers' band the repeat
   items' boxes now place, failing on the glyphs of the later rows' text outside it (12.8 and 12.5 device px), and the
@@ -235,6 +245,14 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- A rebuilt font twin kept looking up the characters its rebuild dropped (ruling R139): the generator copies a fresh
+  asset's fields over a twin it rebuilds, which replaces the character table but not TextCore's lookup, so
+  `DesignText.Prepare` added nothing to it afterwards. The rebuild reads the font asset definition again.
+- An empty text-sized label with a font asked the Editor for another update on every repaint (the font it compares was
+  recorded only for non-empty text); and a label measured while its face's new glyphs still waited for their kerning pairs
+  in TextCore's queue (another label's layout added them that frame) kept the unkerned width (262.23 against 249.41 panel
+  px). The fit records text, font and style together, measures again after the next draw while the queue holds the face's
+  glyphs, and keys its cache on the face's pair count.
 - A text-sized label or button kept its earlier text's width when its text was written without a change event (a data
   binding, a list rebinding an item, `SetValueWithoutNotify`): a language switched while a screen was open left labels at
   their earlier text's widths (ruling R136). The fit now also measures again when a repaint shows a text, font or style other

@@ -332,6 +332,18 @@ instead of looser checks for tiny text. No text may draw below 9 device px at an
   scatter of 12.8 px body text at 1366×768 is a separate case and stays reported as it is
   (docs/findings/viewport-classes.md, "Text ink at 1366×768").
 
+## 10. Lines without a fully covered pixel (ruling R138)
+
+The ink colour (the median of a line's most inked tenth) and the ink amount assume that the stroke covers some pixels
+wholly. A text of one glyph of one stroke thinner than two device pixels, on a line the design puts between two device
+pixels (an em dash, a "1" at 10 and 10.67 device px), may cover none: its measured ink colour and amount are its coverage,
+which Chromium and UI Toolkit lay differently on the pixel grid (the dash: 0.84 and 0.44 of two rows against 1 and 0.12;
+ink colour ΔE2000 6.06 to 8.99, ink amount 0.69 to 0.75). Such a line (fewer than 3 pixels at 0.85 of the declared colour's
+distance from the background, in its direction, its most covered pixel at half of it or more) is judged by the angle between
+the two inks' directions from the background in sRGB instead, limit 0.66° (the suite's highest 0.26°, plus 0.4). On such a
+line a lightness-only error is not caught. Measurements and the exact rule: docs/findings/viewport-classes.md, "Hairline
+lines".
+
 ## Reproduction
 
 ```
