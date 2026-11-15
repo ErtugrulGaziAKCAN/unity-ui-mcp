@@ -37,6 +37,37 @@ export function bestDeltaE(gp: Rgba, gx: number, gy: number, up: Rgba, ux: numbe
 }
 
 /**
+ * `bestDeltaE` over only the window pixels a predicate keeps on both sides (`keep(x, y, design)`): the means of the kept
+ * pixels of the design's window and of Unity's at its best offset of up to 1 px. NaN when no pixel is kept at any offset.
+ */
+export function bestDeltaEKept(gp: Rgba, gx: number, gy: number, up: Rgba, ux: number, uy: number, win: number,
+                               keep: (x: number, y: number, design: boolean) => boolean): number {
+  const r = win >> 1;
+  const at = (img: Rgba, x: number, y: number): Rgb3 | null => {
+    if (x < 0 || y < 0 || x >= img.w || y >= img.h) return null;
+    const o = (y * img.w + x) * 4;
+    return [img.data[o], img.data[o + 1], img.data[o + 2]];
+  };
+  let best = NaN;
+  for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+    const a = [0, 0, 0], b = [0, 0, 0];
+    let n = 0;
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const gxx = gx + dx, gyy = gy + dy, uxx = ux + ox + dx, uyy = uy + oy + dy;
+      if (!keep(gxx, gyy, true) || !keep(uxx, uyy, false)) continue;
+      const pa = at(gp, gxx, gyy), pb = at(up, uxx, uyy);
+      if (!pa || !pb) continue;
+      for (let k = 0; k < 3; k++) { a[k] += pa[k]; b[k] += pb[k]; }
+      n++;
+    }
+    if (!n) continue;
+    const de = deltaE2000(a.map((v) => v / n), b.map((v) => v / n));
+    if (!(de >= best)) best = de;
+  }
+  return best;
+}
+
+/**
  * Where Chromium paints a box laid out at `b` (device px) at a device scale: its layout rect snapped to whole CSS px
  * (Blink snaps boxes in layout space; the device scale is applied when rastering), so at scale 0.75 a box laid out at
  * 180.996 device px (241.33 CSS px) paints from 180.75 (241 CSS px), a quarter-covered first column. UI Toolkit snaps

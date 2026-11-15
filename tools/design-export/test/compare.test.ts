@@ -7,7 +7,7 @@ import { decodePng, type Rgba } from "../src/bake/png.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
 import type { CaptureJob } from "../src/capture/matrix.js";
 import { deltaE2000, deltaE2000Lab, isTransparentColor } from "../src/compare/color.js";
-import { classLines, compareCapture, compareScreen, readThresholds, summarizeIssues, WHOLE, type CaptureContext, type Thresholds } from "../src/compare/compare.js";
+import { classLines, compareCapture, compareScreen, cornerInRoundBand, readThresholds, summarizeIssues, WHOLE, type CaptureContext, type Thresholds } from "../src/compare/compare.js";
 import { captureContext, indexIr } from "../src/compare/context.js";
 import { flatAt, nearCurve, ringPoints, type RingPoint } from "../src/compare/samples.js";
 import { decodePngAsync, encodePng } from "../src/compare/png.js";
@@ -22,7 +22,7 @@ const T: Thresholds = {
   textInkFullPx: 14, textInkDeltaESmall: [[12, 5], [9, 10], [0, 14]], textInkMedianTolerance: 0.2, ssimElementSmall: [], ssimPicture: 0.99,
   textInkDeltaELater: [], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
   textInkSmallPx: 0, textInkDeltaEFirstSmall: 3, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.2, textInkShadowHigh: 1.15,
-  ssimRotated: 0.99,
+  ssimRotated: 0.99, ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1,
 };
 /** The measured element SSIM limit of rotated animation samples (fidelity-thresholds.json, docs/findings/animation.md). */
 const ROTATED = 0.975;
@@ -741,6 +741,55 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(wrong.issues.filter((i) => i.id === "dot").map((i) => i.kind).sort()).toEqual(["color", "ssim"]);
   });
 
+  it("does not sample a painted line under half a device pixel on both sides: it paints nothing (a closed drawer)", () => {
+    // 0 px wide at a fractional x (1366×768): its one centre-line pixel lies in the off-grid band
+    const mk = () => ({ png: canvas(320, 192, [30, 30, 30]), boxes: { capture: "c", viewport: [320, 192] as [number, number], scale: 1, external: [],
+      elements: { root: el(0, 0, 320, 192), drawer: el(173.62, 40, 0, 100) } } });
+    const ctx: CaptureContext = { order: ["root", "drawer"], backgrounds: new Set(["root", "drawer"]), painters: new Set(["root", "drawer"]) };
+    const v = compareCapture(mk(), mk(), [], T, ctx);
+    expect(v.issues).toEqual([]);
+    // a line the design paints and Unity loses is still a box issue
+    const g = mk(); g.boxes.elements.drawer = el(173.62, 40, 2, 100); fill(g.png, { x: 174, y: 40, w: 2, h: 100 }, [200, 200, 200]);
+    expect(compareCapture(g, mk(), [], T, ctx).issues.map((i) => i.kind)).toContain("box");
+  });
+
+  it("lets an element at a scaled viewport meet ssimRoundEdge only when its difference lies in the edge band of its round shapes", () => {
+    // a 40 px circle drawn with an anti-aliasing ramp of `ramp` px (the scaled class draws its layout scale's ramp)
+    const disc = (png: Rgba, cx: number, cy: number, r: number, ramp: number, c: Rgb, bg: Rgb) => {
+      for (let y = Math.floor(cy - r - 2); y <= cy + r + 2; y++) for (let x = Math.floor(cx - r - 2); x <= cx + r + 2; x++) {
+        const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+        const a = Math.max(0, Math.min(1, (r + ramp / 2 - d) / ramp));
+        const o = (y * png.w + x) * 4;
+        for (let k = 0; k < 3; k++) png.data[o + k] = Math.round(c[k] * a + bg[k] * (1 - a));
+      }
+      return png;
+    };
+    const bg: Rgb = [30, 30, 30], knob: Rgb = [240, 240, 240];
+    const mk = (ramp: number, dent = false) => {
+      const png = disc(canvas(320, 192, bg), 120, 96, 20, ramp, knob, bg);
+      if (dent) fill(png, { x: 116, y: 92, w: 8, h: 8 }, [120, 120, 120]); // a defect inside the shape, away from its edge
+      return { png, boxes: { capture: "c", viewport: [320, 192] as [number, number], scale: 1, external: [], elements: { root: el(0, 0, 320, 192), knob: el(100, 76, 40, 40) } } };
+    };
+    const ctx = { radii: { knob: [20, 20, 20, 20] as [number, number, number, number] } };
+    const g = mk(0.8), u = mk(1.8);
+    const row = compareCapture(g, u, [], T, ctx).elements.find((e) => e.id === "knob")!;
+    const best = Math.max(row.ssim!, row.ssimShifted ?? -1);
+    expect(best).toBeLessThan(0.99);
+    expect(row.ssimRoundEdgeMasked).toBeUndefined(); // off where ssimRoundEdge is ssimElement (exact viewports)
+    const scaled: Thresholds = { ...T, ssimRoundEdge: 0.95 };
+    const v = compareCapture(g, u, [], scaled, ctx);
+    expect(v.issues).toEqual([]);
+    const r = v.elements.find((e) => e.id === "knob")!;
+    expect(r.ssimRoundEdgeMasked).toBeGreaterThanOrEqual(0.99);
+    expect(r.ssimLimit).toBe(0.95);
+    // a difference away from the edge band is not the ramp: masked, it still fails, and so does the element
+    const dented = compareCapture(g, mk(1.8, true), [], scaled, ctx);
+    const issue = dented.issues.find((i) => i.id === "knob" && i.kind === "ssim")!;
+    expect(issue.detail).toMatch(/with the edge band of round shapes masked \(below 0.99: not confined to that band\)/);
+    // without radii the band is empty: the limit never applies
+    expect(compareCapture(g, u, [], scaled).issues).toEqual([expect.objectContaining({ id: "knob", kind: "ssim" })]);
+  });
+
   it("samples a border where both renderers paint it: Chromium snaps a box to whole CSS px, UI Toolkit to device px", () => {
     // a content-sized button at 1920×1080 (scale 0.75): laid out at x 180.996 (241.328 CSS px), Chromium paints it from
     // 241 CSS px = 180.75 device px (a quarter-covered first column), UI Toolkit from 181; a 3-px border either way
@@ -983,6 +1032,21 @@ describe("IR context", () => {
   it("knows each element's corner radii in device px in the capture", () => {
     expect(captureContext(ix, { state: "default", viewport: [1280, 720], apply: [] }, boxes).radii).toEqual({ card: [8, 0, 4, 0] });
     expect(captureContext(ix, { state: "busy", viewport: [1280, 720], apply: [] }, boxes).radii).toEqual({ card: [0, 0, 4, 0] });
+  });
+
+  it("tells a corner sample in the edge band of a round shape (scaled class: deltaE2000RoundEdge) from one away from it", () => {
+    // a focused button at 1600×900: radius 5 device px, the focus border 2.5 device px; its 4 px corner sample's window
+    // reaches the border's inner curve (radius 2.5 about (5, 5)): in the band
+    const box = { x: 40, y: 40, w: 100, h: 40 };
+    const corner = ringPoints(box, box, [2.5, 2.5, 2.5, 2.5], ["corner"], [5, 5, 5, 5]).find((p) => p.where === "top-left corner, 4 px in")!;
+    expect(cornerInRoundBand(corner, box, box, [2.5, 2.5, 2.5, 2.5], [5, 5, 5, 5])).toBe(true);
+    // square corners have no band; a deeper sample of a large radius lies well inside its curves
+    expect(cornerInRoundBand(corner, box, box, [2.5, 2.5, 2.5, 2.5], undefined)).toBe(false);
+    const deep = ringPoints(box, box, undefined, ["corner"], [8, 8, 8, 8]).find((p) => p.where === "top-left corner, 11 px in")!;
+    expect(cornerInRoundBand(deep, box, box, undefined, [8, 8, 8, 8])).toBe(false);
+    // an edge sample never takes the corner's limit
+    const edge = ringPoints(box, box, [2.5, 2.5, 2.5, 2.5], ["edge"], [5, 5, 5, 5])[0];
+    expect(cornerInRoundBand(edge, box, box, [2.5, 2.5, 2.5, 2.5], [5, 5, 5, 5])).toBe(false);
   });
 
   it("keeps ring samples off a rounded corner's anti-aliased curve", () => {
@@ -1402,6 +1466,8 @@ describe("design-export compare", () => {
       ssimElementSmall: [[32768, 0.984]], ssimPicture: 0.985, textInkDeltaELater: [[9, 4.5], [8, 6]], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
       textInkSmallPx: 12, textInkDeltaEFirstSmall: 4.5, textInkBandSmall: [0.8, 1.25], textInkMedianToleranceSmall: 0.25, textInkShadowHigh: 1.15,
       ssimRotated: ROTATED,
+      // the scaled class's round edges (docs/findings/viewport-classes.md): off at exact viewports, measured at scaled ones
+      ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5 },
     });
     const bad = path.join(tmp(), "t.json");
     fs.writeFileSync(bad, JSON.stringify({ boxPx: 1 }));
@@ -1427,5 +1493,7 @@ describe("design-export compare", () => {
     expect(areas([[1024, 0.995]])).toThrow(/must lie between 0.97 and ssimElement/);
     expect(small({ ssimRotated: 0.96 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
     expect(small({ ssimRotated: 0.995 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
+    expect(small({ ssimRoundEdge: 0.96 })).toThrow(/"ssimRoundEdge" must lie between 0.97 and 1/);
+    expect(small({ deltaE2000RoundEdge: 0.5 })).toThrow(/"deltaE2000RoundEdge" must be at least deltaE2000/);
   });
 });
