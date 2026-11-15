@@ -304,6 +304,7 @@ function backgroundPlane(lum: Float64Array, off: Int32Array, n: number, imgW: nu
  * at 1: an area in pixels that grows with weight and size. Null when nothing differs from the background by 8 luma levels.
  */
 export function inkIn(img: Rgba, r: Rect, hidden?: (x: number, y: number) => boolean): Ink | null {
+  if (![r.x, r.y, r.w, r.h].every(Number.isFinite)) throw new Error(`inkIn: the window is not finite (${r.x}, ${r.y}, ${r.w}, ${r.h})`);
   const x0 = Math.max(0, Math.floor(r.x)), x1 = Math.min(img.w, Math.ceil(r.x + r.w));
   const y0 = Math.max(0, Math.floor(r.y)), y1 = Math.min(img.h, Math.ceil(r.y + r.h));
   const all = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);

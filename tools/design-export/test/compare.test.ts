@@ -319,6 +319,79 @@ describe("compareCapture", () => {
       expect(kinds(compareCapture(open, { ...u, boxes: { ...u.boxes, elements: { ...u.boxes.elements, scroll: el(20, 20, 280, 100) } } }, [], T, ctx))).toContain("b#1:missing");
     });
 
+    describe("copies in nested repeats (review finding 1): the clip is looked up by the capture's item keys", () => {
+      // weeks (repeat) > week > days (repeat) > day (overflow hidden) > title (overflow hidden): the copy in week 0, day 1 is
+      // `title#1` and its day `day#1` (the capture leaves out an outer level whose item is 0); a lookup of `day#1#0` missed,
+      // the clip came out infinite and the window NaN, and the line was never judged
+      const nested = (unity: boolean, o: { colour?: Rgb; bar?: number; noUnityDay?: boolean } = {}) => {
+        const png = canvas(320, 120, [16, 24, 32]);
+        fill(png, { x: 20, y: 20, w: 100, h: 40 }, [18, 60, 71]);
+        fill(png, { x: 140, y: 20, w: 100, h: 40 }, [18, 60, 71]);
+        glyphs(png, { x: 25, y: 34, w: 50, h: 12 }, [255, 255, 255]);
+        glyphs(png, { x: 145, y: 34, w: 50, h: 12 }, unity && o.colour ? o.colour : [255, 255, 255]);
+        if (o.bar !== undefined) fill(png, { x: o.bar, y: 22, w: 4, h: 36 }, [22, 194, 213]);
+        const title = (x: number) => el(x, 30, 60, 20, { text: true, lines: [{ x, y: 31, w: 200, h: 18, baseline: 45 }] });
+        const items: Record<string, Box> = { "day#1": el(140, 20, 100, 40), "title#1": title(144) };
+        if (unity && o.noUnityDay) delete items["day#1"];
+        return {
+          png,
+          boxes: { capture: "default@320x120", viewport: [320, 120], scale: 1, external: [],
+            elements: { root: el(0, 0, 320, 120), weeks: el(0, 0, 320, 120), week: el(0, 0, 320, 120), days: el(0, 0, 320, 120), day: el(20, 20, 100, 40), title: title(24) },
+            items } as CaptureBoxes,
+        };
+      };
+      const ctx: CaptureContext = {
+        order: ["root", "weeks", "week", "days", "day", "title"],
+        parent: new Map([["weeks", "root"], ["week", "weeks"], ["days", "week"], ["day", "days"], ["title", "day"]]),
+        repeats: new Set(["weeks", "days"]),
+        clips: { title: [{ id: "day", x: true, y: true, inset: [0, 0, 0, 0] }, { id: "title", x: true, y: true, inset: [0, 0, 0, 0] }] },
+      };
+      const of = (v: CaptureVerdict, id: string) => v.issues.filter((i) => i.id === id).map((i) => i.kind);
+
+      it("judges the copy: a wrong colour fails, the right one passes", () => {
+        const same = compareCapture(nested(false), nested(true), [], T, ctx);
+        expect(of(same, "title#1")).toEqual([]);
+        expect(same.linesCovered).toEqual([]);
+        expect(same.elements.find((r) => r.id === "title#1")!.ink).not.toBeNull();
+        expect(of(compareCapture(nested(false), nested(true, { colour: [240, 140, 40] }), [], T, ctx), "title#1")).toContain("ink");
+      });
+
+      it("applies the copy's own clip: a neighbour's paint past its box is not its ink", () => {
+        expect(of(compareCapture(nested(false, { bar: 230 }), nested(true, { bar: 232 }), [], T, ctx), "title#1")).toEqual([]);
+      });
+
+      it("still judges the copy when a clip box is missing on one side", () => {
+        expect(of(compareCapture(nested(false), nested(true, { colour: [240, 140, 40], noUnityDay: true }), [], T, ctx), "title#1")).toContain("ink");
+      });
+
+      it("judges a line the design shows and Unity's clip hides: missing ink fails (review finding 2)", () => {
+        // Unity lays the copy's own clipping box out at width 0 and draws no title there
+        const u = nested(true);
+        fill(u.png, { x: 140, y: 20, w: 100, h: 40 }, [18, 60, 71]);
+        u.boxes.items!["title#1"] = { ...u.boxes.items!["title#1"], w: 0 };
+        const v = compareCapture(nested(false), u, [], T, ctx);
+        expect(v.linesClipped ?? []).toEqual([]);
+        expect(of(v, "title#1")).toContain("inkCoverage");
+      });
+
+      it("flags a line Unity draws where the design's clip hides it", () => {
+        // the design lays the copy's day out above the title (the title below its clip); Unity's day holds it and draws it
+        const g = nested(false);
+        fill(g.png, { x: 140, y: 20, w: 100, h: 40 }, [18, 60, 71]);
+        fill(g.png, { x: 140, y: 30, w: 100, h: 20 }, [16, 24, 32]);
+        g.boxes.items!["day#1"] = { ...g.boxes.items!["day#1"], h: 8 };
+        const v = compareCapture(g, nested(true), [], T, ctx);
+        expect(v.linesClipped ?? []).toEqual([]);
+        expect(v.issues.filter((i) => i.id === "title#1" && /clips away/.test(i.detail))).toHaveLength(1);
+      });
+
+      it("refuses a window that is not finite instead of skipping the line", () => {
+        const bad = nested(true);
+        bad.boxes.items!["day#1"] = { ...bad.boxes.items!["day#1"], x: Number.NaN };
+        expect(() => compareCapture(nested(false), bad, [], T, ctx)).toThrow(/not finite/);
+      });
+    });
+
     it("compares a line the clip cuts on the rows both renders show, and still fails a wrong line there", () => {
       // Unity's scroll area a pixel taller (within the box limit) shows a fourth row of row b's glyphs
       expect(kinds(compareCapture(clipped(false), clipped(true, 81), [], T, ctx))).toEqual([]);

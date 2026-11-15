@@ -15,6 +15,7 @@
  * panel scale; a line's baseline is its top plus the font's ascent at the rendered size, measured once per font with
  * an inline-block probe (Chromium rounds the ascent). Values are rounded to 1e-6 device px so output is byte-stable.
  */
+import { itemSuffix } from "../boxes/items.js";
 import fs from "node:fs";
 import path from "node:path";
 import type { Browser, CDPSession } from "playwright";
@@ -320,16 +321,8 @@ function pageFinishAll(): void {
   for (const a of document.getAnimations()) { try { a.finish(); } catch { /* infinite */ } }
 }
 
-/**
- * The name suffix of an IR element's copy in written-out repeat items `item` (outermost first), as the Unity capture
- * names it (DesignUi.Editor.CaptureApply.ItemSuffix): `#k` per repeat, innermost first, for each repeat whose item is a
- * later one or that sits inside a later item of an outer repeat (`day#3`, `day#0#1`, `day#3#1`); empty for the IR's own.
- */
-export function itemSuffix(item: readonly number[]): string {
-  let out = "";
-  for (let k = item.length - 1; k >= 0; k--) if (item[k] > 0 || item.slice(0, k).some((v) => v > 0)) out += `#${item[k]}`;
-  return out;
-}
+/** The name suffix of a copy in written-out repeat items (boxes/items.ts, shared with the comparison). */
+export { itemSuffix };
 
 type LineBox = { x: number; y: number; w: number; h: number; baseline: number; mixed?: boolean; ellipsis?: { at: number; last: number; next: number; width: number } };
 type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; rotation?: number; lines: LineBox[]; color?: [number, number, number, number]; opacity?: number;

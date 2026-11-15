@@ -64,6 +64,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Rgba } from "../bake/png.js";
 import type { CaptureBoxes, LineEllipsis } from "../boxes/types.js";
+import { itemSuffix } from "../boxes/items.js";
 import { validateBoxes } from "../boxes/validate.js";
 import type { CaptureApply, CaptureJob } from "../capture/matrix.js";
 import { viewportClassOf, type ViewportClass } from "../viewport.js";
@@ -583,8 +584,10 @@ export interface CaptureVerdict {
   /** Text lines an opaque later element covers entirely (an open dialog over the screen): their ink is not judged. */
   linesCovered: string[];
   /**
-   * Text lines an ancestor's overflow clip hides in both renders (a scroll area's rows below its bottom): their ink is not
-   * judged; a line it cuts is judged on what both renders show (CaptureContext.clips).
+   * Text lines the overflow clips around them (CaptureContext.clips) hide in the design and in Unity (a scroll area's rows
+   * below its bottom): their ink is not judged. A line both renders show part of is judged on the rows both show; one the
+   * design shows and Unity's clip hides is judged on the design's rows (its missing ink fails); one Unity draws where the
+   * design's clip hides it is an `ink` issue.
    */
   linesClipped?: string[];
   /**
@@ -697,6 +700,7 @@ function insideRounded(b: Rect, r: readonly number[] | undefined, x: number, y: 
 
 /** Whether every pixel of a window inside the image is hidden. */
 function everyPixel(r: Rect, w: number, h: number, hidden: (x: number, y: number) => boolean): boolean {
+  if (![r.x, r.y, r.w, r.h].every(Number.isFinite)) throw new Error(`everyPixel: the window is not finite (${r.x}, ${r.y}, ${r.w}, ${r.h})`);
   const x0 = Math.max(0, Math.floor(r.x)), x1 = Math.min(w, Math.ceil(r.x + r.w)), y0 = Math.max(0, Math.floor(r.y)), y1 = Math.min(h, Math.ceil(r.y + r.h));
   if (x1 <= x0 || y1 <= y0) return false;
   for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (!hidden(x, y)) return false;
@@ -881,7 +885,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   const linesNotCompared: string[] = [], notSampled: string[] = [];
   /** Text lines an opaque later element covers entirely: their ink is not judged (`<id>: line <k> of <n>`). */
   const linesCovered: string[] = [];
-  /** Text lines an ancestor's overflow clips away in both renders: their ink is not judged (`<key>: line <k> of <n>`). */
+  /** Text lines the overflow clips around them hide in both renders: their ink is not judged (`<key>: line <k> of <n>`). */
   const linesClipped: string[] = [];
   /** Ellipsized lines whose design dots do not resolve into three below ELLIPSIS_DOTS_BELOW_PX (ruling R148). */
   const ellipsisNotJudged: string[] = [];
@@ -909,38 +913,47 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     key.slice(id.length).split("#").slice(1).forEach((k, j) => { const level = cs.length - 1 - j; if (level >= 0) path[level] = Number(k); });
     return { cs, path };
   };
+  /** Where an element or its copy in item `path` (outermost first) is in a side's boxes (keys as the captures write them). */
+  const boxOf = (side: CaptureBoxes, id: string, path: readonly number[]): Box | ItemCopy | undefined => {
+    const suffix = itemSuffix(path);
+    return suffix ? side.items?.[id + suffix] : side.elements[id];
+  };
+  /** A clip's bounds: each edge, ±Infinity where nothing clips that side. */
+  interface Bounds { x0: number; y0: number; x1: number; y1: number }
   /**
    * Where the overflow clips around a text (CaptureContext.clips) let it show on one side: the intersection of the clipping
    * elements' padding boxes on the clipped axes, each element's box from that side's boxes (for a copy in a later repeat
-   * item, the element's copy in the same item when it lies inside the repeat), rounded inwards to whole device pixels. Null
-   * when nothing clips it.
+   * item, the element's copy in the same item when it lies inside the repeat), rounded inwards to whole device pixels. An
+   * element without a box on that side clips nothing there. Null when nothing clips the text.
    */
-  const clipOf = (side: CaptureBoxes, id: string, key: string): Rect | null => {
+  const clipOf = (side: CaptureBoxes, id: string, key: string): Bounds | null => {
     const cl = ctx.clips?.[id];
     if (!cl?.length) return null;
     const me = placeOf(id, key);
-    let x0 = -Infinity, y0 = -Infinity, x1 = Infinity, y1 = Infinity;
+    const b: Bounds = { x0: -Infinity, y0: -Infinity, x1: Infinity, y1: Infinity };
     for (const c of cl) {
-      const levels = containersOf(c.id).length, path = me.path.slice(0, levels);
-      const box = path.some((k) => k !== 0) ? side.items?.[`${c.id}#${[...path].reverse().join("#")}`] : side.elements[c.id];
+      const box = boxOf(side, c.id, me.path.slice(0, containersOf(c.id).length));
       if (!box || !box.visible) continue;
-      if (c.x) { x0 = Math.max(x0, box.x + c.inset[3]); x1 = Math.min(x1, box.x + box.w - c.inset[1]); }
-      if (c.y) { y0 = Math.max(y0, box.y + c.inset[0]); y1 = Math.min(y1, box.y + box.h - c.inset[2]); }
+      if (c.x) { b.x0 = Math.max(b.x0, box.x + c.inset[3]); b.x1 = Math.min(b.x1, box.x + box.w - c.inset[1]); }
+      if (c.y) { b.y0 = Math.max(b.y0, box.y + c.inset[0]); b.y1 = Math.min(b.y1, box.y + box.h - c.inset[2]); }
     }
     // whole pixels only: a clip edge between two device pixels is rounded its own way by each renderer (Chromium drew the
     // row a scroll area's bottom at y 807.5 crosses, UI Toolkit did not: a pilot screen's half-clipped label at 0.73× the ink)
-    x0 = Math.ceil(x0); y0 = Math.ceil(y0); x1 = Math.floor(x1); y1 = Math.floor(y1);
+    return { x0: Math.ceil(b.x0), y0: Math.ceil(b.y0), x1: Math.floor(b.x1), y1: Math.floor(b.y1) };
+  };
+  /** A rect within bounds (null: the rect as it is); its width or height is 0 or less when nothing of it is inside. */
+  const inBounds = (a: Rect, b: Bounds | null): Rect => {
+    const x0 = b ? Math.max(a.x, b.x0) : a.x, y0 = b ? Math.max(a.y, b.y0) : a.y;
+    const x1 = b ? Math.min(a.x + a.w, b.x1) : a.x + a.w, y1 = b ? Math.min(a.y + a.h, b.y1) : a.y + a.h;
+    // never a window that is not finite: it would be neither empty nor anywhere, and the line silently not judged
+    if (![x0, y0, x1, y1].every(Number.isFinite)) throw new Error(`a text line's ink window is not finite (${[x0, y0, x1, y1].join(", ")}): a clip or line box with a non-finite edge`);
     return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   };
-  const intersect = (a: Rect, b: Rect | null): Rect => {
-    if (!b) return a;
-    const x0 = Math.max(a.x, b.x), y0 = Math.max(a.y, b.y), x1 = Math.min(a.x + a.w, b.x + b.w), y1 = Math.min(a.y + a.h, b.y + b.h);
-    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-  };
+  const empty = (r: Rect) => !(r.w >= 1 && r.h >= 1);
   /** Whether the overflow clips around a text hide all of its lines (or its box, without lines) on one side. */
   const clippedAway = (side: CaptureBoxes, id: string, key: string, b: Rect & { lines: readonly Rect[] }): boolean => {
     const c = clipOf(side, id, key);
-    return !!c && (b.lines.length ? b.lines : [b]).every((l) => { const r = intersect(l, c); return r.w < 1 || r.h < 1; });
+    return !!c && (b.lines.length ? b.lines : [b]).every((l) => empty(inBounds(l, c)));
   };
 
   // ---- element order: paint order when the IR is known, then any other golden ids
@@ -1398,8 +1411,18 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const clipG = clipOf(g, id, key), clipU = clipOf(u, id, key);
       let covered = 0, clipped = 0;
       ge.lines.forEach((gl, i) => {
-        const win = intersect(intersect(marginWindow(key, unionRect(gl, ue.lines[i])), clipG), clipU);
-        if (win.w < 1 || win.h < 1) { clipped++; linesClipped.push(`${key}: line ${i + 1} of ${ge.lines.length}`); return; }
+        // what each render shows of the line (review finding 2): the design's clip decides what must show. Both show some:
+        // the rows both show; only the design: its window (Unity's missing ink fails); only Unity: a line the design clips
+        // away is drawn (an issue); neither: not judged
+        const margin = marginWindow(key, unionRect(gl, ue.lines[i]));
+        const gw = inBounds(margin, clipG), uw = inBounds(margin, clipU);
+        if (empty(gw) && empty(uw)) { clipped++; linesClipped.push(`${key}: line ${i + 1} of ${ge.lines.length}`); return; }
+        if (empty(gw)) {
+          if (inkIn(up, uw, hidden ?? undefined)) issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: Unity draws text the design's overflow clips away (a box that should clip it does not, or is larger)`, gl);
+          return;
+        }
+        const both = empty(uw) ? gw : inBounds(gw, clipU);
+        const win = empty(both) ? gw : both;
         if (hidden && everyPixel(win, w, h, hidden)) { covered++; linesCovered.push(`${key}: line ${i + 1} of ${ge.lines.length}`); return; }
         const a = inkIn(gp, win, hidden ?? undefined);
         if (!a) return;
