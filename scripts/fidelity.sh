@@ -15,14 +15,16 @@
 #                run's id (DESIGN_UI_RUN_ID): only a capture-done.json carrying it counts as captured
 #   5. compare   design-export compare <out>/<name>/export --unity <out>/<name>/unity --report <out>/<name>/report.html,
 #                FIDELITY_COMPARE_JOBS fixtures at a time (default 4)
-#   6. summary   one row per fixture x viewport x job (PASS, FAIL with the first issue, not captured with the reason,
+#   6. cleanup   one Unity run: FidelityProject.FidelitySetup.CleanupFromEnv deletes everything the run wrote below
+#                DESIGN_UI_FIDELITY_ROOT in the project copy (profile, fonts and twins, compiled screens), whatever failed
+#   7. summary   one row per fixture x viewport x job (PASS, FAIL with the first issue, not captured with the reason,
 #                incomplete for a job the design hides in every context) and
 #                the timings, printed and written to <out>/summary.md
 # Exit: 0 every job passes (static captures and animation samples alike), 1 a job fails, a job or a fixture is not
 # captured, a job is hidden in the design (incomplete), or a step fails; 2 usage.
 #
-# Environment: DESIGN_UI_FIDELITY_ROOT (Assets/... folder in the project copy; default below, a folder the copy keeps
-# between runs), the setup's measurement knobs (see samples/FidelityProject/Assets/Fidelity/Editor/FidelitySetup.cs) and
+# Environment: DESIGN_UI_FIDELITY_ROOT (Assets/... folder in the project copy; default below, deleted at the end of every
+# run), the setup's measurement knobs (see samples/FidelityProject/Assets/Fidelity/Editor/FidelitySetup.cs) and
 # FIDELITY_UNITY_CHECK (the Unity runner, default scripts/unity-check.sh; scripts/fidelity-test.sh passes a stub).
 # If the project copy stops compiling (a generated view that does not compile), fix the cause and reset the copy with
 # scripts/unity-check.sh --stop warm.
@@ -101,6 +103,18 @@ unity() { # unity <log> <regex> ; runs one EditMode filter on the project copy, 
   return $rc
 }
 
+# the run's fonts, twins and screens leave the project copy (other test runs on it count every twin in the project)
+cleanup_copy() {
+  local t0 rc=0
+  t0=$(now)
+  DESIGN_UI_FIDELITY_ROOT="$UNITY_ROOT" unity "$OUT/logs/cleanup.log" "FidelityProject.FidelitySetup.CleanupFromEnv" || rc=$?
+  timing "*" cleanup $(( $(now) - t0 ))
+  if [ $rc -ne 0 ]; then
+    record "*" cleanup failed "$(detail "$OUT/logs/cleanup.log")"
+    echo "fidelity: the cleanup of $UNITY_ROOT in the project copy failed (exit $rc); see $OUT/logs/cleanup.log" >&2
+  fi
+}
+
 # ---- 1. kit -------------------------------------------------------------------------------------------------------
 t0=$(now)
 rm -rf "$OUT/kit"; mkdir -p "$OUT/kit"
@@ -115,6 +129,7 @@ if [ $setup_rc -ne 0 ] || [ ! -f "$OUT/kit/fonts/fonts.css" ]; then
     echo "fidelity: the project copy does not compile (a generated view from an earlier run?); after fixing the cause, reset" \
       "the copy with: scripts/unity-check.sh --stop warm" >&2
   fi
+  cleanup_copy
   exit 1
 fi
 
@@ -210,7 +225,10 @@ if [ ${#EXPORTED[@]} -gt 0 ]; then
   fi
 fi
 
-# ---- 6. summary ---------------------------------------------------------------------------------------------------
+# ---- 6. cleanup ---------------------------------------------------------------------------------------------------
+cleanup_copy
+
+# ---- 7. summary ---------------------------------------------------------------------------------------------------
 node --input-type=module - "$OUT" ${NAMES[@]+"${NAMES[@]}"} ${PENDING[@]+"${PENDING[@]}"} <<'JS'
 import fs from "node:fs";
 import path from "node:path";
@@ -294,6 +312,7 @@ const timing = ["| Step | Time |", "|---|---|",
   ...names.map((n) => `| export ${n} | ${step(n, "export")} ms |`),
   `| import, all fixtures (Unity) | ${(step("*", "import") / 1000).toFixed(1)} s |`,
   `| capture, all fixtures (Unity) | ${(step("*", "capture") / 1000).toFixed(1)} s |`,
+  `| cleanup of the project copy (Unity) | ${(step("*", "cleanup") / 1000).toFixed(1)} s |`,
   ...names.map((n) => {
     const meta = read(path.join(out, n, "unity", "boxes.meta.json"));
     return `| capture ${n} (its part of the capture run) | ${meta?.timings?.totalMs != null ? `${Math.round(meta.timings.totalMs)} ms` : "–"} |`;
@@ -305,7 +324,9 @@ const head = `${pass} PASS, ${fail} FAIL, ${notCaptured} not captured, ${incompl
   (animTotal ? `; of these, animation samples: ${anim.pass} PASS, ${anim.fail} FAIL, ${anim.notCaptured} not captured` : "");
 const classTable = ["| Viewport class | Viewports | PASS | FAIL | not captured |", "|---|---|---|---|---|",
   ...["exact", "scaled"].filter((k) => classes[k]).map((k) => `| ${k} | ${[...classes[k].viewports].sort((a, b) => parseInt(b) - parseInt(a)).join(", ")} | ${classes[k].pass} | ${classes[k].fail} | ${classes[k].notRun} |`)];
-const md = `# Fidelity summary\n\n${head}\n\n${classTable.length > 2 ? `${classTable.join("\n")}\n\n` : ""}${table.join("\n")}\n\n## Timings\n\n${timing.join("\n")}\n`;
+const cleanup = status.find((s) => s[0] === "*" && s[1] === "cleanup" && s[2] === "failed");
+if (cleanup) failures.push("cleanup");
+const md = `# Fidelity summary\n\n${head}${cleanup ? `\n\nThe cleanup of the project copy failed: ${cleanup[3]}` : ""}\n\n${classTable.length > 2 ? `${classTable.join("\n")}\n\n` : ""}${table.join("\n")}\n\n## Timings\n\n${timing.join("\n")}\n`;
 fs.writeFileSync(path.join(out, "summary.md"), md);
 process.stdout.write(md);
 process.exitCode = failures.length ? 1 : 0;

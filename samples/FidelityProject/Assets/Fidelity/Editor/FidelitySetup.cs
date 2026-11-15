@@ -182,6 +182,25 @@ namespace FidelityProject
             return id.Length == 0 || char.IsDigit(id[0]) ? "_" + id : id;
         }
 
+        /// <summary>
+        /// The end of a fidelity run: deletes everything the run wrote below <c>$DESIGN_UI_FIDELITY_ROOT</c> (the profile, the
+        /// fonts and their twins, the compiled screens), so the project copy keeps none of its fonts for later test runs (the
+        /// twin guard's tests count every twin in the project). Without that variable it passes without doing anything.
+        /// </summary>
+        [Test]
+        public void CleanupFromEnv()
+        {
+            var root = Env("DESIGN_UI_FIDELITY_ROOT");
+            if (root == null) Assert.Pass("not configured; nothing to clean up (set DESIGN_UI_FIDELITY_ROOT)");
+            root = root.Replace('\\', '/').TrimEnd('/');
+            Assert.IsTrue(root.StartsWith("Assets/", StringComparison.Ordinal) && root.Length > "Assets/".Length,
+                "DESIGN_UI_FIDELITY_ROOT is a folder below Assets/: " + root);
+            if (!AssetDatabase.IsValidFolder(root)) Assert.Pass("nothing to clean up: " + root + " does not exist");
+            Assert.IsTrue(AssetDatabase.DeleteAsset(root), "could not delete " + root);
+            AssetDatabase.Refresh();
+            Assert.IsFalse(AssetDatabase.IsValidFolder(root), root + " is still there");
+        }
+
         static void Save(UnityEngine.Object o)
         {
             EditorUtility.SetDirty(o);

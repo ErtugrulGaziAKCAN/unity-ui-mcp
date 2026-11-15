@@ -9,22 +9,27 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 T="$(mktemp -d "${TMPDIR:-/tmp}/fidelity-test.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
-FIXTURE="$ROOT/tools/design-export/test/fixtures/extract/repeat.html" # screen "squad", the kit's "Inter UI" font
-NAME="repeat"
+FIXTURE="$ROOT/design-kit/fixtures/fidelity/text-row.html" # a fixture of the repository kit, which the run copies
+NAME="text-row"
 OUT="$T/out"
 fails=0
 
 # the stub: setup passes (the kit copy already has the repository kit's fonts); import reports the case's code per folder;
-# capture does what $STUB_CAPTURE says
+# capture does what $STUB_CAPTURE says; the cleanup notes its root in $STUB_CLEANED and does what $STUB_CLEANUP says
 cat > "$T/unity-stub.sh" <<'STUB'
 #!/usr/bin/env bash
 filter=""
 while [ $# -gt 0 ]; do [ "$1" = "--editmode" ] && filter="$2"; shift; done
 case "$filter" in
-  *SetupFromEnv*) echo "klon-test=editmode sonuç=PASS detay=total:1 pass:1 png=yok"; exit 0 ;;
+  *SetupFromEnv*) [ "$STUB_SETUP" = die ] && { echo "klon-test=editmode sonuç=FAIL detay=setup broke png=yok"; exit 1; }
+    echo "klon-test=editmode sonuç=PASS detay=total:1 pass:1 png=yok"; exit 0 ;;
+  *CleanupFromEnv*)
+    echo "$DESIGN_UI_FIDELITY_ROOT" >> "$STUB_CLEANED"
+    [ "$STUB_CLEANUP" = die ] && { echo "klon-test=editmode sonuç=FAIL detay=cleanup broke png=yok"; exit 1; }
+    echo "klon-test=editmode sonuç=PASS detay=total:1 pass:1 png=yok"; exit 0 ;;
   *ImportFromEnv*)
     IFS=":" read -r -a dirs <<< "$DESIGN_UI_EXPORT_DIR"
-    for d in "${dirs[@]}"; do printf '%s\t%s\t%s\n' "${STUB_IMPORT_CODE:-0}" "$d" "${STUB_IMPORT_LINE:-Imported squad}" >> "$DESIGN_UI_IMPORT_REPORT"; done
+    for d in "${dirs[@]}"; do printf '%s\t%s\t%s\n' "${STUB_IMPORT_CODE:-0}" "$d" "${STUB_IMPORT_LINE:-Imported the screen}" >> "$DESIGN_UI_IMPORT_REPORT"; done
     exit 0 ;;
   *CaptureFromEnv*)
     IFS=":" read -r -a outs <<< "$DESIGN_UI_OUT"
@@ -55,8 +60,10 @@ run_case() { # run_case <case> <env assignments…>; sets rc and the summary in 
   local name="$1"; shift
   stale
   rc=0
-  env FIDELITY_UNITY_CHECK="$T/unity-stub.sh" "$@" "$ROOT/scripts/fidelity.sh" --out "$OUT" "$FIXTURE" > "$T/$name.log" 2>&1 || rc=$?
+  : > "$T/cleaned"
+  env FIDELITY_UNITY_CHECK="$T/unity-stub.sh" STUB_CLEANED="$T/cleaned" "$@" "$ROOT/scripts/fidelity.sh" --out "$OUT" "$FIXTURE" > "$T/$name.log" 2>&1 || rc=$?
 }
+cleaned_once() { [ "$(cat "$T/cleaned")" = "Assets/UnityCloneTest/DesignUiFidelity" ]; }
 
 row() { grep -E "^\| $NAME \|" "$OUT/summary.md" || true; }
 
@@ -66,6 +73,7 @@ check died "the fixture is not captured, with the capture run's failure" grep -q
 check died "no PASS row" sh -c "! grep -q '| PASS |' '$OUT/summary.md'"
 check died "the earlier verdict and report are gone" sh -c "[ ! -e '$OUT/$NAME/verdict.json' ] && [ ! -e '$OUT/$NAME/report.html' ]"
 check died "the earlier marker is gone" test ! -e "$OUT/$NAME/unity/capture-done.json"
+check died "the run's root in the project copy is cleaned up once" cleaned_once
 
 run_case foreign STUB_CAPTURE=foreign
 check foreign "exit 1" test "$rc" -eq 1
@@ -75,6 +83,15 @@ run_case import STUB_IMPORT_CODE=1 STUB_IMPORT_LINE="Import failed; nothing was 
 check import "exit 1" test "$rc" -eq 1
 check import "the import's own failure is the reason" grep -q "import failed: Import failed; nothing was written" "$OUT/summary.md"
 check import "nothing is captured for a screen that was not imported" sh -c "! grep -q 'capturing' '$T/import.log'"
+check import "the run's root in the project copy is cleaned up once" cleaned_once
+
+run_case setup STUB_SETUP=die
+check setup "exit 1" test "$rc" -eq 1
+check setup "a failed setup is cleaned up too" cleaned_once
+
+run_case cleanup STUB_CAPTURE=die STUB_CLEANUP=die
+check cleanup "exit 1" test "$rc" -eq 1
+check cleanup "a failed cleanup is named in the summary" grep -q "The cleanup of the project copy failed: cleanup broke" "$OUT/summary.md"
 
 if [ $fails -gt 0 ]; then
   echo "fidelity-test: $fails check(s) failed; logs:"; for f in "$T"/*.log; do echo "== $f"; tail -20 "$f"; done
