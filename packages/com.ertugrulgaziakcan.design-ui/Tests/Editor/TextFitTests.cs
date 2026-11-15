@@ -428,6 +428,98 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
+        /// Fix round 1, I-2: a label whose text is empty repaints without asking for another measure (its font and style are
+        /// recorded with its text, so a repaint of the same empty text shows nothing new), also when its font changes.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AnEmptyLabel_RepaintsWithoutAskingForAnotherMeasure()
+        {
+            var font = BodyBold();
+            var doc = Document(2560, 1440);
+            yield return Frames(2);
+            var label = new DesignLabel("");
+            label.style.position = Position.Absolute;
+            label.style.left = 100;
+            label.style.top = 100;
+            label.style.fontSize = 24;
+            label.style.unityFontDefinition = font;
+            doc.rootVisualElement.Add(label);
+            yield return Frames(6);
+            int requests = label.Fit.ChangeRequests;
+            for (int i = 0; i < 10; i++) { label.MarkDirtyRepaint(); yield return null; }
+            Assert.AreEqual(requests, label.Fit.ChangeRequests, "ten repaints of the same empty text ask for no measure");
+            Assert.IsTrue(float.IsNaN(label.Fit.Width), "an empty text keeps UI Toolkit's own width");
+            label.text = "Kaydet";
+            yield return Frames(6);
+            Assert.AreEqual(DesignTextFit.Snap(label.Fit.TextWidth(), 1), label.Fit.Width, 1e-3, "a text after it is measured");
+        }
+
+        /// <summary>
+        /// Fix round 1, M-1: a label measured while its face holds the characters but not yet their kerning pairs (another
+        /// label's layout added them this frame, TextCore brings their pairs through its update queue) is measured again once
+        /// the pairs are there: the same width as the same text measured on that face afterwards (before: 262.23 against
+        /// 249.41 panel px). The pairs TextCore's own add brings are not all of them (a pair whose first glyph the face held
+        /// before is missing: 248.54 with <see cref="DesignText.Prepare"/>'s complete pairs); UI Toolkit draws with the face's.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ALabelMeasuredBeforeItsFacesKerningPairsArrive_IsMeasuredAgainWithThem()
+        {
+            const string first = "Kaydet", text = "AVATAR Toyota Wave";
+            UnityEngine.TextCore.Text.FontAsset Twin(string name) =>
+                FontTwinGenerator.GetOrCreateTwin(FontFixture.Kept(FontFixture.BoldTtf, name), FontFixture.KeptTwinFolder + "/M1");
+            var twin = Twin("Kept M1 Bold");
+            DesignText.Prepare(twin, first);
+            var doc = Document(2560, 1440);
+            yield return Frames(2);
+            var label = new DesignLabel(first);
+            label.style.position = Position.Absolute;
+            label.style.left = 100;
+            label.style.top = 100;
+            label.style.fontSize = 24;
+            label.style.unityFontDefinition = FontDefinition.FromSDFFont(twin);
+            doc.rootVisualElement.Add(label);
+            yield return Frames(6);
+            Assert.IsFalse(float.IsNaN(label.Fit.Width));
+
+            // another label's layout adds the characters to the face (TextCore brings their kerning pairs through its update
+            // queue), and this label's text is set in that label's geometry callback, before the pairs are there
+            var newly = typeof(UnityEngine.TextCore.Text.FontAsset).GetField("m_GlyphIndexListNewlyAdded",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            int pendingThen = -1;
+            var other = new Label(text);
+            other.style.position = Position.Absolute;
+            other.style.left = 100;
+            other.style.top = 300;
+            other.style.fontSize = 24;
+            other.style.unityFontDefinition = FontDefinition.FromSDFFont(twin);
+            EventCallback<GeometryChangedEvent> rebind = null;
+            rebind = _ =>
+            {
+                other.UnregisterCallback(rebind);
+                pendingThen = (newly?.GetValue(twin) as System.Collections.IList)?.Count ?? -1;
+                label.text = text;
+            };
+            other.RegisterCallback(rebind);
+            doc.rootVisualElement.Add(other);
+            yield return Frames(8);
+            Assert.AreEqual(text, label.text);
+            Debug.Log("M-1: glyphs waiting for their pairs when the label's text was set: " + pendingThen);
+            // the same text measured on the same face now that the queue brought the pairs (what UI Toolkit draws it with)
+            var reference = new DesignLabel(text);
+            reference.style.position = Position.Absolute;
+            reference.style.left = 100;
+            reference.style.top = 200;
+            reference.style.fontSize = 24;
+            reference.style.unityFontDefinition = FontDefinition.FromSDFFont(twin);
+            doc.rootVisualElement.Add(reference);
+            yield return Frames(8);
+            Debug.Log("M-1 widths: label " + label.Fit.Width + " (text " + label.Fit.TextWidth() + "), measured after the pairs " + reference.Fit.Width + " (text " + reference.Fit.TextWidth() + ")");
+            Assert.AreEqual(reference.Fit.TextWidth(), label.Fit.TextWidth(), 1e-3, "the text width with the pairs");
+            Assert.AreEqual(reference.Fit.Width, label.Fit.Width, 1e-3, "and its box");
+            Assert.AreEqual(label.Fit.Width, label.layout.width, 1e-3, "laid out at it");
+        }
+
+        /// <summary>
         /// A row of bordered tabs at 1600×900 just too short for the golden's widths: the golden's box of each (Chromium's
         /// border on whole device pixels, 4.8 panel px a side, the text ceiled on the 0.625 grid) is wider than UI Toolkit's own
         /// (borders 4, the text on the 0.75 grid), and the row's width lies between the two sums. The row takes the exact

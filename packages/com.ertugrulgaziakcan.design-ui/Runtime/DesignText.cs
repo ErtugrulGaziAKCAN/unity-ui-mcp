@@ -224,6 +224,16 @@ namespace DesignUi
             return removed;
         }
 
+        /// <summary>
+        /// Whether glyphs of <paramref name="font"/> wait for their kerning pairs in TextCore's update queue (a glyph UI Toolkit
+        /// added while it laid text out; TextCore's newly added list), or null when this Unity version does not tell.
+        /// </summary>
+        internal static bool? FeaturesPending(FontAsset font) =>
+            font == null || s_NewlyAdded == null ? (bool?)null : s_NewlyAdded.GetValue(font) is List<uint> l && l.Count > 0;
+
+        /// <summary>How many kerning pairs <paramref name="font"/> holds (0 when this Unity version does not tell).</summary>
+        internal static int PairCount(FontAsset font) => PairRecords(font)?.Count ?? 0;
+
         /// <summary>Whether this Unity version's FontAsset lets <see cref="CompleteFeatures"/> query its font engine records.</summary>
         internal static bool CanCompleteFeatures => s_NewlyAdded != null && s_UpdatePairs != null && s_UpdateMarks != null && s_PairList != null;
 

@@ -124,6 +124,7 @@ namespace DesignUi
             if (string.Equals(e.text, m_SeenText, StringComparison.Ordinal) && ReferenceEquals(rs.unityFontDefinition.fontAsset, m_SeenFont) &&
                 rs.unityFontStyleAndWeight == m_SeenStyle)
                 return;
+            ChangeRequests++;
             m_Changed = e.schedule.Execute(() =>
             {
                 m_Changed = null;
@@ -156,12 +157,13 @@ namespace DesignUi
             var e = m_Element;
             var text = e.text;
             m_Lacking = null;
-            m_SeenText = text;
-            if (!Supported || e.panel == null || string.IsNullOrEmpty(text)) return float.NaN;
+            // what the repaint check compares, recorded together whatever this returns (an empty text too: fix round 1, I-2)
             var rs = e.resolvedStyle;
             var font = rs.unityFontDefinition.fontAsset;
+            m_SeenText = text;
             m_SeenFont = font;
             m_SeenStyle = rs.unityFontStyleAndWeight;
+            if (!Supported || e.panel == null || string.IsNullOrEmpty(text)) return float.NaN;
             if (font == null || font.atlasTexture == null) return float.NaN;
             // the same text in the same style at the same scale measures the same: style and geometry callbacks (an animated
             // colour, a moved parent) measure nothing
@@ -171,9 +173,11 @@ namespace DesignUi
             // count (ruling R134; a face of the weight table that never draws this text never gets its characters). A face that
             // gained characters since may have gained their kerning pairs too
             var face = DesignText.DrawingFace(font, fontStyle);
-            int characters = face.characterTable.Count;
+            // its glyphs and their kerning pairs (fix round 1, M-1: pairs that arrive later change no character count)
+            int characters = face.characterTable.Count, pairs = DesignText.PairCount(face);
             if (!float.IsNaN(m_Measured) && string.Equals(text, m_MeasuredText, StringComparison.Ordinal) && ReferenceEquals(font, m_MeasuredFont) && size == m_MeasuredSize &&
-                letter == m_MeasuredLetter && word == m_MeasuredWord && ppp == m_MeasuredPpp && fontStyle == m_MeasuredStyle && characters == m_MeasuredCharacters)
+                letter == m_MeasuredLetter && word == m_MeasuredWord && ppp == m_MeasuredPpp && fontStyle == m_MeasuredStyle && characters == m_MeasuredCharacters &&
+                pairs == m_MeasuredPairs)
                 return m_Measured;
             // only text whose characters that face holds: a measure that adds glyphs to a dynamic font queues its atlas update
             // outside the panel's repaint (a font deleted before the next repaint breaks TextCore's queue), and a glyph added
@@ -201,14 +205,15 @@ namespace DesignUi
             m_MeasuredPpp = ppp;
             m_MeasuredStyle = fontStyle;
             m_MeasuredCharacters = characters;
+            m_MeasuredPairs = pairs;
             Measures++;
-            if (m_AfterLacking)
-            {
-                // the face's glyphs arrived since a measure found it lacking (UI Toolkit added them while laying the text out or
-                // drawing it): their kerning pairs come through TextCore's update queue, so measure once more after the next draw
-                m_AfterLacking = false;
-                m_Confirm = true;
-            }
+            // glyphs whose kerning pairs are still in TextCore's update queue (this label's own missing characters UI Toolkit
+            // added since, or another label's layout this frame: fix round 1, M-1) were measured without them: measure once
+            // more after the next draw, again while the queue still holds them, a few times at most
+            bool pending = DesignText.FeaturesPending(face) ?? m_AfterLacking;
+            m_AfterLacking = false;
+            if (pending && m_Confirms < MaxConfirms) { m_Confirms++; m_Confirm = true; }
+            else if (!pending) m_Confirms = 0;
             return width;
         }
 
@@ -252,7 +257,13 @@ namespace DesignUi
         string m_MeasuredText;
         UnityEngine.TextCore.Text.FontAsset m_MeasuredFont;
         FontStyle m_MeasuredStyle;
-        int m_MeasuredCharacters;
+        int m_MeasuredCharacters, m_MeasuredPairs, m_Confirms;
+
+        /// <summary>The most measures in a row that wait for kerning pairs TextCore's queue still holds (it brings them within a frame).</summary>
+        const int MaxConfirms = 4;
+
+        /// <summary>How many times a repaint asked for another measure (tests: a repaint that shows nothing new asks for none).</summary>
+        internal int ChangeRequests { get; private set; }
 
         /// <summary>How many times the text was measured (tests: a style or geometry change that changes nothing measures nothing).</summary>
         internal int Measures { get; private set; }
