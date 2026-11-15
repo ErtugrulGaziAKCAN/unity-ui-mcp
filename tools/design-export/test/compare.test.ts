@@ -2360,7 +2360,9 @@ describe("writeReport and writeVerdict", () => {
     const vf = path.join(out, "verdict.json");
     writeVerdict(v, vf);
     const text = fs.readFileSync(vf, "utf8");
-    expect(text).not.toMatch(/\n {2}"/); // compact
+    expect(text).not.toMatch(/\n {2}"/); // compact, but one capture per line: a line-limited reader sees each whole
+    expect(text.split("\n").length).toBeGreaterThan(v.captures.length);
+    for (const l of text.split("\n")) expect(l.length).toBeLessThan(20_000);
     const json = JSON.parse(text);
     for (const c of json.captures) {
       expect(c.masked).toBeUndefined();
@@ -2368,6 +2370,14 @@ describe("writeReport and writeVerdict", () => {
       expect(c.elementsListed).toBe("not ok or hidden");
     }
     expect(json.captures.find((c: { capture: string }) => c.capture === "busy@320x192").elements.map((e: { id: string }) => e.id)).toContain("panel");
+
+    // past the crop limit a capture's new issues get no crop: it says how many and why
+    const few = await writeReportPictures(v, f.exportDir, f.unityDir, path.join(out, ".few"), { maxCropSets: 10 });
+    expect(new Set(fs.readdirSync(path.join(out, ".few")).filter((n) => /^\d+-\d+-design\.png$/.test(n)).map((n) => n.replace(/-design\.png$/, ""))).size).toBe(10);
+    const skipped = [...few.values()].filter((p) => (p.cropsSkipped ?? 0) > 0);
+    expect(skipped.length).toBe(31);
+    writeReport(v, f.exportDir, f.unityDir, report, few);
+    expect(fs.readFileSync(report, "utf8")).toMatch(/1 crop skipped: the report keeps at most 10 crops/);
   });
 
   it("escapes text from the design and the captures", async () => {

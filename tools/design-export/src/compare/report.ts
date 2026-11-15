@@ -91,7 +91,7 @@ function maskBoxes(c: CaptureVerdict): string {
 export const listedElement = (r: { status: string }) => r.status !== "ok" && r.status !== "hidden";
 
 function captureSection(c: CaptureVerdict, i: number, img: { golden: string; unity: string; diff: string | null } | null,
-  crops: { detail: string; design: string; unity: string; diff: string | null; from?: string }[] = [], noPictures?: string): string {
+  crops: { detail: string; design: string; unity: string; diff: string | null; from?: string }[] = [], noPictures?: string, cropsSkipped = 0, cropLimit = 0): string {
   const badge = c.pass ? '<span class="badge pass">PASS</span>' : '<span class="badge fail">FAIL</span>';
   const issues = c.issues.length
     ? `<table class="issues"><thead><tr><th>Element</th><th>Check</th><th>Detail</th></tr></thead><tbody>${c.issues.map((x) =>
@@ -131,6 +131,7 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     <p class="setup">${applied(c)}</p>
     ${pictures}
     ${cropRows}
+    ${cropsSkipped ? `<p class="muted">${cropsSkipped} crop${cropsSkipped === 1 ? "" : "s"} skipped: the report keeps at most ${cropLimit} crops, one per element, check and viewport; the issues are listed below.</p>` : ""}
     <dl class="measures">
       <div><dt>Whole SSIM</dt><dd>${num(c.ssim, 5)}</dd></div>
       <div><dt>Worst element SSIM</dt><dd>${c.worstElement ? `${num(c.worstElement.ssim, 5)} <code>${esc(c.worstElement.id)}</code>` : "—"}</dd></div>
@@ -237,6 +238,8 @@ const SCRIPT = `
  * passing ones, so the Unity captures and difference images can be deleted; without, it links every capture.
  */
 export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: string, outFile: string, pictures?: ReportPictures): void {
+  // the crop limit the pictures were made with: the count of distinct crops when some were skipped
+  const cropLimit = pictures && [...pictures.values()].some((p) => p.cropsSkipped) ? new Set([...pictures.values()].flatMap((p) => p.crops.map((c) => c.design))).size : 0;
   const dir = path.dirname(path.resolve(outFile));
   const golden = (n: string) => rel(dir, path.join(path.resolve(exportDir), "goldens", `${n}.png`));
   const unity = (n: string) => rel(dir, path.join(path.resolve(unityDir), `${n}.png`));
@@ -334,7 +337,8 @@ ${v.animations.length ? `<section><h2>Animations</h2><p class="muted">Each anima
         : k ? `Its thumbnails are not kept: the report keeps those of the first ${MAX_THUMB_CAPTURES} failing captures with different issues; its issues are listed below.`
           : "No pictures were kept for this capture (its design or Unity capture was missing).";
     return captureSection(c, i, k?.design && k.unity ? { golden: rel(dir, k.design), unity: rel(dir, k.unity), diff: k.diff ? rel(dir, k.diff) : null } : null,
-      (k?.crops ?? []).map((x) => ({ detail: x.detail, design: rel(dir, x.design), unity: rel(dir, x.unity), diff: x.diff ? rel(dir, x.diff) : null, from: x.from })), none);
+      (k?.crops ?? []).map((x) => ({ detail: x.detail, design: rel(dir, x.design), unity: rel(dir, x.unity), diff: x.diff ? rel(dir, x.diff) : null, from: x.from })), none,
+      k?.cropsSkipped ?? 0, cropLimit);
   }).join("")}</section>
 </main><script>${SCRIPT}</script></body></html>
 `;
@@ -345,14 +349,18 @@ ${v.animations.length ? `<section><h2>Animations</h2><p class="muted">Each anima
 }
 
 /**
- * Writes the verdict as JSON (the machine-readable result next to the report), compact: per capture the element rows that
- * did not pass (`elementsListed` says so; an element that is ok or hidden repeats in every capture, 90 % of a pilot's
+ * Writes the verdict as JSON (the machine-readable result next to the report), compact with one top-level key and one
+ * capture per line: per capture the element rows that did not pass (`elementsListed` says so; an element that is ok or hidden repeats in every capture, 90 % of a pilot's
  * 186 MB verdict) and no masked regions (the report draws them).
  */
 export function writeVerdict(v: ScreenVerdict, file: string): void {
   fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const tmp = `${file}.tmp-${process.pid}`;
   const slim = { ...v, captures: v.captures.map(({ masked: _masked, elements, ...c }) => ({ ...c, elements: elements.filter(listedElement), elementsListed: "not ok or hidden" })) };
-  fs.writeFileSync(tmp, JSON.stringify(slim) + "\n");
+  // one top-level key and one capture per line: compact, and whole for a reader that reads a limited number of lines
+  const body = Object.entries(slim).map(([k, val]) => k === "captures"
+    ? `${JSON.stringify(k)}: [\n${(val as unknown[]).map((c) => JSON.stringify(c)).join(",\n")}\n]`
+    : `${JSON.stringify(k)}: ${JSON.stringify(val)}`);
+  fs.writeFileSync(tmp, `{\n${body.join(",\n")}\n}\n`);
   fs.renameSync(tmp, file);
 }

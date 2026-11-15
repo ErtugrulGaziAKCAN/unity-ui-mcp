@@ -32,7 +32,14 @@ export interface CropSet { detail: string; design: string; unity: string; diff: 
  * A failing capture's pictures: thumbnails (null when it keeps none: `like` names the earlier capture with the same issues
  * whose thumbnails show them, else the thumbnail cap was reached) and its issues' crops.
  */
-export interface CapturePictures { design: string | null; unity: string | null; diff: string | null; crops: CropSet[]; like?: string }
+export interface CapturePictures {
+  design: string | null; unity: string | null; diff: string | null; crops: CropSet[]; like?: string;
+  /** Issues with a place that got no crop because the report's crop limit was reached. */
+  cropsSkipped?: number;
+}
+
+/** The limits of a report's pictures (tests lower them). */
+export interface PictureLimits { maxThumbCaptures?: number; maxCropSets?: number }
 /** Pictures by capture name; file paths are absolute. */
 export type ReportPictures = Map<string, CapturePictures>;
 
@@ -80,7 +87,8 @@ const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y
  * (at most {@link MAX_THUMB_CAPTURES}), one crop per element, check and viewport (at most {@link MAX_CROP_SETS}, at most
  * {@link MAX_CROPS} per capture), which later captures with the same issue reuse.
  */
-export async function writeReportPictures(v: ScreenVerdict, exportDir: string, unityDir: string, outDir: string): Promise<ReportPictures> {
+export async function writeReportPictures(v: ScreenVerdict, exportDir: string, unityDir: string, outDir: string, limits: PictureLimits = {}): Promise<ReportPictures> {
+  const maxThumbs = limits.maxThumbCaptures ?? MAX_THUMB_CAPTURES, maxCrops = limits.maxCropSets ?? MAX_CROP_SETS;
   const pictures: ReportPictures = new Map();
   const failing = v.captures.map((c, i) => [c, i] as const).filter(([c]) => !c.pass);
   if (!failing.length) return pictures;
@@ -97,9 +105,9 @@ export async function writeReportPictures(v: ScreenVerdict, exportDir: string, u
   for (const [c, i] of failing) {
     const signature = Array.from(new Set(c.issues.map((x) => `${x.id}\u0000${x.kind}`))).sort().join("\u0001");
     const like = thumbsOf.get(signature);
-    const wantThumbs = like === undefined && thumbs < MAX_THUMB_CAPTURES;
+    const wantThumbs = like === undefined && thumbs < maxThumbs;
     const cropKey = (x: { id: string; kind: string }) => `${x.id}\u0000${x.kind}\u0000${c.size[0]}x${c.size[1]}`;
-    const newCrops = c.issues.some((x) => x.at && !cropsOf.has(cropKey(x))) && cropsOf.size < MAX_CROP_SETS;
+    const newCrops = c.issues.some((x) => x.at && !cropsOf.has(cropKey(x))) && cropsOf.size < maxCrops;
     let design: Rgba | null = null, unity: Rgba | null = null, diff: Rgba | null = null;
     if (wantThumbs || newCrops) {
       [design, unity, diff] = await Promise.all([
@@ -125,7 +133,8 @@ export async function writeReportPictures(v: ScreenVerdict, exportDir: string, u
         if (!set.crops.some((x) => x.design === known.design)) set.crops.push({ detail, design: known.design, unity: known.unity, diff: known.diff, from: known.capture });
         continue;
       }
-      if (cropsOf.size >= MAX_CROP_SETS || !design || !unity) continue;
+      if (cropsOf.size >= maxCrops) { set.cropsSkipped = (set.cropsSkipped ?? 0) + 1; continue; }
+      if (!design || !unity) continue;
       const w = window(issue.at);
       if (windows.some((x) => overlaps(x, issue.at!) && x.x <= issue.at!.x && x.y <= issue.at!.y && x.x + x.w >= issue.at!.x + issue.at!.w && x.y + x.h >= issue.at!.y + issue.at!.h)) continue;
       windows.push(w);
