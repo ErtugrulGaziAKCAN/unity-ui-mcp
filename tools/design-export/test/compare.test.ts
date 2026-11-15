@@ -790,6 +790,59 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(compareCapture(g, u, [], scaled).issues).toEqual([expect.objectContaining({ id: "knob", kind: "ssim" })]);
   });
 
+  it("catches a missing or wrong-colour ring on a round element without text where ssimRoundEdge applies", () => {
+    // an 80 px avatar at a scaled viewport: a light disc with a 2 px ring, low contrast, drawn with the same ramp on both
+    // sides; the ring lies wholly in the edge band (the outer curve and the border's inner curve, a pixel either side)
+    const bg: Rgb = [30, 30, 30], disc: Rgb = [200, 200, 200];
+    const draw = (ring: Rgb | null) => {
+      const png = canvas(320, 192, bg);
+      for (let y = 50; y < 142; y++) for (let x = 74; x < 166; x++) {
+        const d = Math.hypot(x + 0.5 - 120, y + 0.5 - 96);
+        const a = Math.max(0, Math.min(1, 40.5 - d)), c = ring && d > 38 ? ring : disc;
+        const o = (y * png.w + x) * 4;
+        for (let k = 0; k < 3; k++) png.data[o + k] = Math.round(c[k] * a + bg[k] * (1 - a));
+      }
+      return png;
+    };
+    const boxes: CaptureBoxes = { capture: "c", viewport: [320, 192], scale: 0.5335, external: [], elements: { root: el(0, 0, 320, 192), avatar: el(80, 56, 80, 80) } };
+    const ctx: CaptureContext = { borders: { avatar: [2, 2, 2, 2] }, radii: { avatar: [40, 40, 40, 40] }, backgrounds: new Set(["avatar"]), painters: new Set(["avatar"]), order: ["root", "avatar"], root: "root" };
+    const scaled: Thresholds = { ...T, ssimRoundEdge: 0.95, deltaE2000RoundEdge: 5.5 };
+    const golden = { png: draw([176, 176, 176]), boxes };
+    expect(compareCapture(golden, { png: draw([176, 176, 176]), boxes }, [], scaled, ctx).issues).toEqual([]);
+    // the ring missing, or another colour: its border sides are sampled at deltaE2000 (the band hides it from SSIM)
+    for (const ring of [null, [150, 176, 200] as Rgb]) {
+      const v = compareCapture(golden, { png: draw(ring), boxes }, [], scaled, ctx);
+      expect(v.issues).toContainEqual(expect.objectContaining({ id: "avatar", kind: "color", detail: expect.stringMatching(/border/) }));
+    }
+  });
+
+  it("masks for ssimRoundEdge the edge band of the element's own and its descendants' round shapes, not of others", () => {
+    // a square card 64 px wide with a round 40 px knob over it, drawn with a ramp of 0.5 px in the design and 2.5 in Unity
+    const bg: Rgb = [30, 30, 30], cardC: Rgb = [60, 70, 80], knob: Rgb = [240, 240, 240];
+    const draw = (ramp: number) => {
+      const png = fill(canvas(320, 192, bg), { x: 88, y: 64, w: 64, h: 64 }, cardC);
+      for (let y = 70; y < 122; y++) for (let x = 94; x < 146; x++) {
+        const d = Math.hypot(x + 0.5 - 120, y + 0.5 - 96);
+        const a = Math.max(0, Math.min(1, (20 + ramp / 2 - d) / ramp)), o = (y * png.w + x) * 4;
+        for (let k = 0; k < 3; k++) png.data[o + k] = Math.round(knob[k] * a + png.data[o + k] * (1 - a));
+      }
+      return png;
+    };
+    const boxes: CaptureBoxes = { capture: "c", viewport: [320, 192], scale: 0.5335, external: [], elements: { root: el(0, 0, 320, 192), card: el(88, 64, 64, 64), knob: el(100, 76, 40, 40) } };
+    const scaled: Thresholds = { ...T, ssimRoundEdge: 0.95 };
+    const run = (parent: string) => {
+      const ctx: CaptureContext = { radii: { knob: [20, 20, 20, 20] }, backgrounds: new Set(["card", "knob"]), painters: new Set(["card", "knob"]), order: ["root", "card", "knob"], root: "root",
+        parent: new Map([["card", "root"], ["knob", parent]]) };
+      return compareCapture({ png: draw(0.5), boxes }, { png: draw(2.5), boxes }, [], scaled, ctx);
+    };
+    // the knob inside the card: the card's region holds its descendant's ramp, masked
+    expect(run("card").issues).toEqual([]);
+    // the knob a sibling drawn over the card: its ramp is the knob's (relaxed there), not the card's
+    const v = run("root");
+    expect(v.issues.filter((i) => i.id === "knob")).toEqual([]);
+    expect(v.issues).toEqual([expect.objectContaining({ id: "card", kind: "ssim", detail: expect.stringMatching(/not confined to that band/) })]);
+  });
+
   it("samples a border where both renderers paint it: Chromium snaps a box to whole CSS px, UI Toolkit to device px", () => {
     // a content-sized button at 1920×1080 (scale 0.75): laid out at x 180.996 (241.328 CSS px), Chromium paints it from
     // 241 CSS px = 180.75 device px (a quarter-covered first column), UI Toolkit from 181; a 3-px border either way
@@ -1047,6 +1100,44 @@ describe("IR context", () => {
     // an edge sample never takes the corner's limit
     const edge = ringPoints(box, box, [2.5, 2.5, 2.5, 2.5], ["edge"], [5, 5, 5, 5])[0];
     expect(cornerInRoundBand(edge, box, box, [2.5, 2.5, 2.5, 2.5], [5, 5, 5, 5])).toBe(false);
+  });
+
+  it("gives a corner sample deltaE2000RoundEdge only with evidence: three or more matching window pixels outside the band", () => {
+    // a text-carrying button, radius r, border bw, painted by Chromium from 40.75 (scale 0.25: 163 CSS px) and by UI
+    // Toolkit from 40; near the top-left corner each renderer paints the pixels within ROUND_EDGE_BAND of its own curves
+    // in its own ramp colour (the scaled class's ramps differ), and Unity also the pixels outside the band where asked
+    const fillC: Rgb = [60, 120, 180], rampG: Rgb = [96, 146, 196], rampU: Rgb = [72, 128, 184], off: Rgb = [70, 128, 190], bg: Rgb = [16, 24, 32];
+    const run = (bw: number, r: number, outsideToo: boolean, t: Thresholds) => {
+      const border = [bw, bw, bw, bw] as [number, number, number, number], radii = [r, r, r, r] as [number, number, number, number];
+      const boxes = (x: number): CaptureBoxes => ({
+        capture: "c", viewport: [320, 200], scale: 0.25, external: [],
+        elements: { root: el(0, 0, 320, 200), btn: el(x, x, 100, 40, { text: true, lines: [{ x: 100, y: 52, w: 30, h: 16, baseline: 64 }] }) },
+      });
+      const draw = () => glyphs(fill(canvas(320, 200, bg), { x: 40, y: 40, w: 101, h: 41 }, fillC), { x: 102, y: 54, w: 26, h: 12 }, [250, 250, 250]);
+      const golden = { png: draw(), boxes: boxes(40.75) }, unity = { png: draw(), boxes: boxes(40) };
+      const g = { x: 40.75, y: 40.75, w: 100, h: 40 }, u = { x: 40, y: 40, w: 100, h: 40 };
+      for (let y = 37; y < 52; y++) for (let x = 37; x < 52; x++) {
+        if (nearCurve(g, border, radii, x, y, 1)) fill(golden.png, { x, y, w: 1, h: 1 }, rampG);
+        if (nearCurve(u, border, radii, x, y, 1)) fill(unity.png, { x, y, w: 1, h: 1 }, rampU);
+        else if (outsideToo && !nearCurve(g, border, radii, x, y, 1)) fill(unity.png, { x, y, w: 1, h: 1 }, off);
+      }
+      const ctx: CaptureContext = { borders: { btn: border }, radii: { btn: radii }, backgrounds: new Set(["btn"]), painters: new Set(["btn"]), order: ["root", "btn"], root: "root" };
+      const v = compareCapture(golden, unity, [], t, ctx);
+      return { edge: v.elements.find((e) => e.id === "btn")!.edge!, issues: v.issues.filter((i) => i.kind === "edge") };
+    };
+    const scaled: Thresholds = { ...T, ssimRoundEdge: 0.95, deltaE2000RoundEdge: 5.5 };
+    // border 1.5, radius 5: the 4 px corner window keeps 4-6 pixels outside the band; they match, the rest is the ramp
+    const confined = run(1.5, 5, false, scaled);
+    expect(confined.edge).toBeGreaterThan(1);
+    expect(confined.issues).toEqual([]);
+    expect(run(1.5, 5, false, T).issues).toEqual([expect.objectContaining({ id: "btn", detail: expect.stringMatching(/top-left corner, 4 px in: .*\(limit 1\)/) })]);
+    // the same corner where the pixels outside the band differ too (at every offset): not the ramp, held to deltaE2000
+    expect(run(1.5, 5, true, scaled).issues).toEqual([expect.objectContaining({ id: "btn", detail: expect.stringMatching(/top-left corner, \d+ px in: .*\(limit 1\)/) })]);
+    // border 2.5, radius 6: the window keeps at most 2 pixels outside the band at any offset, too few to show where its
+    // difference lies: held to deltaE2000
+    const thin = run(2.5, 6, false, scaled);
+    expect(thin.edge).toBeGreaterThan(1);
+    expect(thin.issues).toEqual([expect.objectContaining({ id: "btn", detail: expect.stringMatching(/top-left corner, 4 px in: .*\(limit 1\)/) })]);
   });
 
   it("keeps ring samples off a rounded corner's anti-aliased curve", () => {
@@ -1493,7 +1584,11 @@ describe("design-export compare", () => {
     expect(areas([[1024, 0.995]])).toThrow(/must lie between 0.97 and ssimElement/);
     expect(small({ ssimRotated: 0.96 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
     expect(small({ ssimRotated: 0.995 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
-    expect(small({ ssimRoundEdge: 0.96 })).toThrow(/"ssimRoundEdge" must lie between 0.97 and 1/);
-    expect(small({ deltaE2000RoundEdge: 0.5 })).toThrow(/"deltaE2000RoundEdge" must be at least deltaE2000/);
+    // the round-edge limits are off in the file's own values (they apply at exact viewports): only "scaled" may hold measured ones
+    expect(small({ ssimRoundEdge: 0.98 })).toThrow(/"ssimRoundEdge" must lie between ssimElement and 1 \(off\): only "scaled" may lower it/);
+    expect(small({ deltaE2000RoundEdge: 2 })).toThrow(/"deltaE2000RoundEdge" must equal deltaE2000 \(off\): only "scaled" may raise it/);
+    expect(small({ scaled: { ssimRoundEdge: 0.96 } })).toThrow(/\(scaled\): "ssimRoundEdge" must lie between 0.97 and 1/);
+    expect(small({ scaled: { deltaE2000RoundEdge: 0.5 } })).toThrow(/\(scaled\): "deltaE2000RoundEdge" must be at least deltaE2000/);
+    expect(small({ scaled: { ssimRoundEdge: 0.975, deltaE2000RoundEdge: 4 } })()).toMatchObject({ ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, scaled: { ssimRoundEdge: 0.975, deltaE2000RoundEdge: 4 } });
   });
 });

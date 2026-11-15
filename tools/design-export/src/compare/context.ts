@@ -19,6 +19,8 @@ export interface CaptureContext {
   order?: string[];
   /** The screen root (its region is the whole capture, measured by the whole-capture SSIM). */
   root?: string | null;
+  /** Each element's parent id (IR); absent: no element counts as another's descendant. */
+  parent?: ReadonlyMap<string, string>;
   /** Outer baked shadow rect per element active in this capture, in device px (element box + IR `shadow.offset` × scale). */
   shadows?: Record<string, Rect>;
   /** Elements that paint a background in this capture (colour, gradient or image); null or absent: every element. */
@@ -223,5 +225,5 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     }
     if (setup.anim && b && typeof b.rotation === "number" && !axisAligned(b.rotation)) rotated.add(id);
   }
-  return { order: ix.order, root: ix.root, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
+  return { order: ix.order, root: ix.root, parent: ix.parent, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
 }

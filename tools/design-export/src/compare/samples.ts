@@ -38,17 +38,18 @@ export function bestDeltaE(gp: Rgba, gx: number, gy: number, up: Rgba, ux: numbe
 
 /**
  * `bestDeltaE` over only the window pixels a predicate keeps on both sides (`keep(x, y, design)`): the means of the kept
- * pixels of the design's window and of Unity's at its best offset of up to 1 px. NaN when no pixel is kept at any offset.
+ * pixels of the design's window and of Unity's at its best offset of up to 1 px among the offsets that keep at least
+ * `minKept` pixels, and how many that offset keeps. `de` is NaN (and `kept` 0) when no offset keeps that many.
  */
 export function bestDeltaEKept(gp: Rgba, gx: number, gy: number, up: Rgba, ux: number, uy: number, win: number,
-                               keep: (x: number, y: number, design: boolean) => boolean): number {
+                               keep: (x: number, y: number, design: boolean) => boolean, minKept = 1): { de: number; kept: number } {
   const r = win >> 1;
   const at = (img: Rgba, x: number, y: number): Rgb3 | null => {
     if (x < 0 || y < 0 || x >= img.w || y >= img.h) return null;
     const o = (y * img.w + x) * 4;
     return [img.data[o], img.data[o + 1], img.data[o + 2]];
   };
-  let best = NaN;
+  let best = { de: NaN, kept: 0 };
   for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
     const a = [0, 0, 0], b = [0, 0, 0];
     let n = 0;
@@ -60,9 +61,9 @@ export function bestDeltaEKept(gp: Rgba, gx: number, gy: number, up: Rgba, ux: n
       for (let k = 0; k < 3; k++) { a[k] += pa[k]; b[k] += pb[k]; }
       n++;
     }
-    if (!n) continue;
+    if (!n || n < minKept) continue;
     const de = deltaE2000(a.map((v) => v / n), b.map((v) => v / n));
-    if (!(de >= best)) best = de;
+    if (!(de >= best.de)) best = { de, kept: n };
   }
   return best;
 }

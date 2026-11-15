@@ -159,8 +159,15 @@ export const SSIM_FLOOR = 0.97;
  * of either renderer (one device pixel wide, a pixel either side of the curve).
  */
 export const ROUND_EDGE_BAND = 1;
+/**
+ * The fewest pixels of a corner sample's window outside the edge band of round shapes (on both sides, at one offset)
+ * that show its difference lies in the band (`deltaE2000RoundEdge`); a window with fewer keeps `deltaE2000`.
+ */
+export const ROUND_EDGE_KEPT = 3;
+/** The narrowest border side (device px) an element without text has sampled for colour: its centre pixel is fully covered. */
+export const BORDER_SAMPLE_PX = 2;
 
-function checkThresholds(raw: Record<string, unknown>, file: string): Thresholds {
+function checkThresholds(raw: Record<string, unknown>, file: string, scaled = false): Thresholds {
   for (const k of THRESHOLD_KEYS) if (typeof raw[k] !== "number" || !Number.isFinite(raw[k])) throw new Error(`${file}: "${k}" must be a number`);
   const table = raw.textInkDeltaESmall;
   const pairs = Array.isArray(table) && table.length > 0 && table.every((p) => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0));
@@ -190,10 +197,15 @@ function checkThresholds(raw: Record<string, unknown>, file: string): Thresholds
   if ((raw.textInkDeltaEFirstSmall as number) < (raw.textInkDeltaE as number)) throw new Error(`${file}: "textInkDeltaEFirstSmall" must be at least textInkDeltaE`);
   if ((raw.textInkShadowHigh as number) < 1 + (raw.textInkCoverage as number) - 1e-9) throw new Error(`${file}: "textInkShadowHigh" must be at least 1 + textInkCoverage`);
   if (!inRange(raw.ssimRotated as number)) throw new Error(`${file}: "ssimRotated" must lie between ${SSIM_FLOOR} and ssimElement`);
-  // at or above ssimElement it is off (the exact viewports' value)
-  if (!((raw.ssimRoundEdge as number) >= SSIM_FLOOR && (raw.ssimRoundEdge as number) <= 1))
+  // off at exact viewports (at or above ssimElement, equal to deltaE2000): only the scaled block may hold measured values
+  const roundSsim = raw.ssimRoundEdge as number, roundDe = raw.deltaE2000RoundEdge as number;
+  if (!scaled && !(roundSsim >= elementSsim && roundSsim <= 1))
+    throw new Error(`${file}: "ssimRoundEdge" must lie between ssimElement and 1 (off): only "scaled" may lower it`);
+  if (scaled && !(roundSsim >= SSIM_FLOOR && roundSsim <= 1))
     throw new Error(`${file}: "ssimRoundEdge" must lie between ${SSIM_FLOOR} and 1 (off at or above ssimElement)`);
-  if (!((raw.deltaE2000RoundEdge as number) >= (raw.deltaE2000 as number)))
+  if (!scaled && roundDe !== (raw.deltaE2000 as number))
+    throw new Error(`${file}: "deltaE2000RoundEdge" must equal deltaE2000 (off): only "scaled" may raise it`);
+  if (scaled && !(roundDe >= (raw.deltaE2000 as number)))
     throw new Error(`${file}: "deltaE2000RoundEdge" must be at least deltaE2000`);
   return {
     ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater" | "textInkBandSmall" | "scaled">),
@@ -222,7 +234,7 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
     if (GEOMETRY_KEYS.has(k)) throw new Error(`${file}: "scaled" cannot change "${k}": boxes and baselines stay within the same device px limit at every viewport`);
     if (!(k in base) || k === "scaled") throw new Error(`${file}: "scaled" has an unknown threshold key "${k}"`);
   }
-  const merged = checkThresholds({ ...raw, ...own }, `${file} (scaled)`);
+  const merged = checkThresholds({ ...raw, ...own }, `${file} (scaled)`, true);
   const scaled = Object.fromEntries(Object.keys(own).map((k) => [k, merged[k as keyof Thresholds]])) as Thresholds["scaled"];
   return { ...base, scaled };
 }
@@ -790,7 +802,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         if (painted && !use.length && covered < pts.length) {
           issue(id, "color", `a line ${Number(gThick.toFixed(2))} device px thick: no colour sample left on its centre line (on text, an off-grid edge or a curve)`, ge);
         }
-      } else if (solid) {
+      } else if (solid || (!carriesText && paints(id) && ctx.borders?.[id])) {
         // background colour: the grid, then the ring inside the border, never silently nothing
         const ix0 = Math.max(ge.x, ue.x), iy0 = Math.max(ge.y, ue.y), ix1 = Math.min(ge.x + ge.w, ue.x + ue.w), iy1 = Math.min(ge.y + ge.h, ue.y + ue.h);
         const cw = ix1 - ix0, ch = iy1 - iy0;
@@ -802,8 +814,16 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           for (const [x, y] of grid) pts.push({ where: `(${x}, ${y})`, kind: "edge", gx: x, gy: y, ux: x, uy: y, win: 3 });
         }
         // and where the design is flat (a picture's detail or an edge is measured by SSIM)
-        use = pts.filter((p) => usable(p, cover) && !curve(p) && flatAt(gp, p.gx, p.gy));
-        if (!use.length) use = ringPoints(gPaint, ue, ctx.borders?.[id], ["edge"], ctx.radii?.[id]).filter((p) => usable(p, cover));
+        use = !solid ? [] : pts.filter((p) => usable(p, cover) && !curve(p) && flatAt(gp, p.gx, p.gy));
+        if (solid && !use.length) use = ringPoints(gPaint, ue, ctx.borders?.[id], ["edge"], ctx.radii?.[id]).filter((p) => usable(p, cover));
+        // an element without text: the middle of each border side of 2 device px or more (its centre pixel fully covered
+        // on both renderers), at deltaE2000 (an element that carries text samples its border with its ring below); a ring
+        // on a round shape lies in the edge band that ssimRoundEdge masks, so only these catch a missing or wrong ring
+        const sides = ctx.borders?.[id];
+        if (!carriesText && paints(id) && sides) {
+          const full = sides.map((v) => (v >= BORDER_SAMPLE_PX ? v : 0));
+          if (full.some((v) => v > 0)) use.push(...ringPoints(gPaint, ue, full, ["border"], ctx.radii?.[id]).filter((p) => usable(p, cover)));
+        }
       }
       if (use) {
         row.samples = use.length;
@@ -826,13 +846,14 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       // an element that carries text and paints: background, border and corner shape around the text
       if (carriesText && paints(id)) {
         // a corner sample whose window reaches a round shape's edge band, where the scaled class's ramp differs, and whose
-        // window pixels outside that band meet deltaE2000: its difference lies in the band
+        // window pixels outside that band (at least ROUND_EDGE_KEPT of them, the evidence) meet deltaE2000: its difference
+        // lies in the band. A window with fewer pixels outside the band keeps deltaE2000
         const roundBand = (p: RingPoint) => {
           if (!(t.deltaE2000RoundEdge > t.deltaE2000) || !cornerInRoundBand(p, gPaint, ue, ctx.borders?.[id], ctx.radii?.[id])) return false;
           const radii = ctx.radii![id], border = ctx.borders?.[id];
           const outside = (x: number, y: number, design: boolean) => !nearCurve(design ? gPaint : ue, border, radii, x, y, ROUND_EDGE_BAND);
-          const kept = bestDeltaEKept(gp, p.gx, p.gy, up, p.ux, p.uy, p.win, outside);
-          return Number.isNaN(kept) || kept <= t.deltaE2000 + EPS;
+          const kept = bestDeltaEKept(gp, p.gx, p.gy, up, p.ux, p.uy, p.win, outside, ROUND_EDGE_KEPT);
+          return kept.de <= t.deltaE2000 + EPS;
         };
         let bestR: { de: number; p: RingPoint; a: number[]; b: number[]; limit: number } | null = null;
         let maxRing = -1;
@@ -953,24 +974,29 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       }
     }
 
-    // the edge band of every round shape (outer curve and the border's inner curve, both sides), where the scaled class's
-    // anti-aliasing ramp differs: masked on top of the element's own mask for `ssimRoundEdge`
-    let roundMasks: { box: Uint8Array; lines: Uint8Array } | null = null;
-    if (t.ssimRoundEdge < t.ssimElement - EPS && lowSsim.length && ctx.radii) {
-      const band = new Uint8Array(w * h);
+    // the edge band of the element's own round shapes and its descendants' (outer curve and the border's inner curve, both
+    // sides, in the element's region), where the scaled class's anti-aliasing ramp differs: masked on top of the element's
+    // own mask for `ssimRoundEdge`; another element's curves (a sibling drawn over it) are that element's
+    const roundEdge = t.ssimRoundEdge < t.ssimElement - EPS && lowSsim.length > 0 && !!ctx.radii;
+    const within = (id: string, anc: string) => {
+      for (let x: string | undefined = id; x !== undefined; x = ctx.parent?.get(x)) if (x === anc) return true;
+      return false;
+    };
+    /** The element's own mask with the edge band of its own and its descendants' round shapes in `region` added. */
+    const roundMasked = (owner: string, base: Uint8Array, region: Rect): Uint8Array => {
+      const out = base.slice();
       for (const id of compared) {
-        const radii = ctx.radii[id];
-        if (!radii) continue;
+        const radii = ctx.radii?.[id];
+        if (!radii || !within(id, owner)) continue;
         for (const b of [g.elements[id]?.visible ? paintedRect(g.elements[id], g.scale) : null, u.elements[id]?.visible ? u.elements[id] : null]) {
           if (!b) continue;
-          const x0 = Math.max(0, Math.floor(b.x) - 2), x1 = Math.min(w, Math.ceil(b.x + b.w) + 2);
-          const y0 = Math.max(0, Math.floor(b.y) - 2), y1 = Math.min(h, Math.ceil(b.y + b.h) + 2);
-          for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (nearCurve(b, ctx.borders?.[id], radii, x, y, ROUND_EDGE_BAND)) band[y * w + x] = 1;
+          const x0 = Math.max(0, Math.floor(Math.max(b.x, region.x)) - 2), x1 = Math.min(w, Math.ceil(Math.min(b.x + b.w, region.x + region.w)) + 2);
+          const y0 = Math.max(0, Math.floor(Math.max(b.y, region.y)) - 2), y1 = Math.min(h, Math.ceil(Math.min(b.y + b.h, region.y + region.h)) + 2);
+          for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (nearCurve(b, ctx.borders?.[id], radii, x, y, ROUND_EDGE_BAND)) out[y * w + x] = 1;
         }
       }
-      const or = (m: Uint8Array) => { const out = m.slice(); for (let i = 0; i < out.length; i++) if (band[i]) out[i] = 1; return out; };
-      roundMasks = { box: or(mask), lines: or(lineMask) };
-    }
+      return out;
+    };
 
     // element SSIM below ssimElement: a measured lower limit when the element's every other check passed
     const otherIssue = new Set(issues.filter((i) => i.kind !== "ssim").map((i) => i.id));
@@ -979,8 +1005,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const relaxed = relaxedSsimLimit(t, l.region.w * l.region.h, !!ctx.pictures?.has(l.id), !!ctx.rotated?.has(l.id));
       if (relaxed && !otherIssue.has(l.id) && l.best >= relaxed.limit - EPS) { row.ssimLimit = relaxed.limit; continue; }
       let roundWhy = "";
-      if (roundMasks) {
-        const banded = regionSsimShifted(gp, up, l.carriesText ? roundMasks.lines : roundMasks.box, l.region, 1);
+      if (roundEdge) {
+        const banded = regionSsimShifted(gp, up, roundMasked(l.id, l.carriesText ? lineMask : mask, l.region), l.region, 1);
         row.ssimRoundEdgeMasked = r6(banded);
         const confined = banded >= t.ssimElement - EPS;
         if (confined && !otherIssue.has(l.id) && l.best >= t.ssimRoundEdge - EPS) { row.ssimLimit = t.ssimRoundEdge; continue; }
