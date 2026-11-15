@@ -1083,8 +1083,9 @@ namespace DesignUi.Editor.Tests
                     var inner = n < 3 ? levels[n] : content;
                     double drawn = inner.worldBound.x * ppp - 400 * actual;
                     report.Add(n + " level(s): " + drawn.ToString("0.###") + " device px");
-                    Assert.AreEqual(n * 3 * screen.RootScale, drawn, 0.02, at + ": " + n + " level(s) of 3 device px at 0.75, drawn through the root scale");
-                    Assert.AreEqual(n * 4 * actual, drawn, 0.02, at + ": the borders' width at the actual scale, as the golden lays them out");
+                    // n × 3 device px at 0.75 drawn through the root scale is n × 4 × the actual scale: the golden's layout of the
+                    // same borders (pinned by design-export's viewport-classes test on docs/findings/viewport-classes/nested-borders.html)
+                    Assert.AreEqual(n * 4 * actual, drawn, 0.02, at + ": " + n + " level(s) of 3 device px at 0.75, drawn through the root scale");
                 }
                 Debug.Log("Nested 4 px borders at " + at + ": " + string.Join("; ", report));
                 Object.DestroyImmediate(doc.gameObject);

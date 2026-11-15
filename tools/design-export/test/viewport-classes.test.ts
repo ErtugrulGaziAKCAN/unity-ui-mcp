@@ -2,7 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { chromium } from "playwright";
+import { exportScreen } from "../src/export.js";
 import { buildMatrix } from "../src/capture/matrix.js";
 import { inkColourLimit, readThresholds, thresholdsFor } from "../src/compare/compare.js";
 import { exactViewports, readKit } from "../src/kit.js";
@@ -140,4 +142,42 @@ describe("thresholds per viewport class", () => {
     const own = Object.keys(base.scaled ?? {}).filter((k) => !k.startsWith("$"));
     expect(Object.keys(t.scaled ?? {}).sort()).toEqual(own.sort());
   });
+});
+
+describe("the golden's nested borders (docs/findings/viewport-classes.md, nested borders)", () => {
+  // measured with docs/findings/viewport-classes/nested-borders.html through the fidelity suite: Chromium lays a box's 4 px
+  // border out at its fraction of a device pixel (2.5 at 1600×900, 2.134 at 1366×768), as UI Toolkit draws it under the
+  // root scale, so one, two and three levels put the content 2.5 / 5 / 7.5 and 2.13 / 4.27 / 6.40 device px in; at an
+  // exact viewport each border is whole (3 at 1920×1080). A golden that snapped such borders to whole device pixels
+  // (3 at 1600×900) would make UI Toolkit's drawing differ there: this pins the layout the comparison relies on.
+  const page = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../docs/findings/viewport-classes/nested-borders.html");
+  let boxes: Record<string, { scale: number; elements: Record<string, { x: number; y: number; w: number; h: number }> }>;
+  beforeAll(async () => {
+    const browser = await chromium.launch();
+    try {
+      const out = path.join(tmp(), "out");
+      const r = await exportScreen(page, kitDir, out, { browser });
+      expect(r.ok, JSON.stringify(r.findings)).toBe(true);
+      boxes = JSON.parse(fs.readFileSync(path.join(out, "goldens", "boxes.json"), "utf8"));
+    } finally { await browser.close(); }
+  }, 120_000);
+
+  const at = (vp: string) => {
+    const c = Object.entries(boxes).find(([name]) => name.endsWith(`@${vp}`));
+    expect(c, vp).toBeDefined();
+    return c![1].elements;
+  };
+  for (const [vp, inset] of [["1600x900", [2.5, 5, 7.5]], ["1366x768", [2.13, 4.27, 6.40]], ["1920x1080", [3, 6, 9]]] as const) {
+    it(`at ${vp} the content of one, two and three levels lies ${inset.join(" / ")} device px in`, () => {
+      const e = at(vp);
+      const levels = [["one-a", "one"], ["two-a", "two-b", "two"], ["three-a", "three-b", "three-c", "three"]];
+      for (const ids of levels) {
+        const outer = e[ids[0]];
+        ids.slice(1).forEach((id, n) => {
+          expect(e[id].x - outer.x, `${vp} ${id} left`).toBeCloseTo(inset[n], 2);
+          expect(e[id].y - outer.y, `${vp} ${id} top`).toBeCloseTo(inset[n], 2);
+        });
+      }
+    });
+  }
 });
