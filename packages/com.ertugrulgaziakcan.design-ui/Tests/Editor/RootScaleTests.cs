@@ -925,6 +925,114 @@ namespace DesignUi.Editor.Tests
             }
         }
 
+        const string LongLine = "Transfer dönemi bu gece yarısı kapanıyor, kulüpler son tekliflerini veriyor";
+
+        (string, string)[] OverflowCss(int top, string align)
+        {
+            var family = "\"" + FontFixture.Regular.faceInfo.familyName + "\"";
+            return new[] { ("position", "absolute"), ("left", "100px"), ("top", top + "px"), ("width", "200px"), ("height", "16px"),
+                ("white-space", "nowrap"), ("overflow-x", "hidden"), ("overflow-y", "hidden"), ("text-overflow", "ellipsis"), ("text-align", align),
+                ("color", "#ffffff"), ("font-size", "12px"), ("font-family", family) };
+        }
+
+        /// <summary>
+        /// In right-to-left text (the resolved language direction, which <see cref="LocaleFontController"/> sets on the root of
+        /// an RTL locale with the advanced text generator) the start of a line is its right edge: an overflowing right-aligned
+        /// line stays right-aligned and an overflowing centred one becomes right-aligned, so the beginning of the text shows;
+        /// back in left-to-right text (with the locale's class change, as the controller makes it) both start at the left.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AnOverflowingLine_StartsAtItsRightEdge_InRightToLeftText()
+        {
+            var tree = CompileScreen(root => root.Add(Text("right", LongLine, OverflowCss(600, "right")), Text("centred", LongLine, OverflowCss(640, "center")),
+                Text("fits-right", "Kısa", OverflowCss(680, "right")), Text("fits-centred", "Kısa", OverflowCss(720, "center"))));
+            StringAssert.Contains("DesignOverflowLabel {\n    " + ScreenBuilder.TextFitProperty + ": 1;\n}", File.ReadAllText(Out + "/RootscaleScreen/RootscaleScreen.uss"),
+                "the type has a custom property: UI Toolkit tells it when its styles resolve");
+            var doc = Document(2560, 1440);
+            yield return Frames(2);
+            var instance = tree.Instantiate();
+            instance.languageDirection = LanguageDirection.RTL;
+            doc.rootVisualElement.Add(instance);
+            yield return Frames(8);
+            var right = instance.Q<DesignOverflowLabel>("right");
+            var centred = instance.Q<DesignOverflowLabel>("centred");
+            var designRight = instance.Q<DesignOverflowLabel>("fits-right").resolvedStyle.unityTextAlign;
+            var designCentred = instance.Q<DesignOverflowLabel>("fits-centred").resolvedStyle.unityTextAlign;
+            Assert.IsTrue(right.Overflows && centred.Overflows);
+            Assert.IsTrue(DesignOverflowLabel.RightToLeft(right));
+            Assert.AreEqual(designRight, right.resolvedStyle.unityTextAlign, "right to left: a right-aligned line starts where it is aligned");
+            Assert.AreEqual(StyleKeyword.Null, right.style.unityTextAlign.keyword, "no alignment of its own");
+            Assert.AreEqual(DesignOverflowLabel.StartOf(designCentred, true), centred.resolvedStyle.unityTextAlign, "a centred line starts at the right edge");
+            Assert.AreNotEqual(designCentred, centred.resolvedStyle.unityTextAlign);
+            // left to right again (the locale's class changes with it)
+            instance.languageDirection = LanguageDirection.Inherit;
+            instance.EnableInClassList("locale-test", true);
+            yield return Frames(4);
+            Assert.AreEqual(DesignOverflowLabel.StartOf(designRight), right.resolvedStyle.unityTextAlign, "left to right: the right-aligned line starts at the left");
+            Assert.AreEqual(DesignOverflowLabel.StartOf(designCentred), centred.resolvedStyle.unityTextAlign);
+            Object.DestroyImmediate(doc.gameObject);
+        }
+
+        /// <summary>
+        /// The label measures its text only when the text, its font, its width or the panel's scale changed: a colour change
+        /// resolves its styles again (it gets <c>CustomStyleResolvedEvent</c>) and measures nothing; a style-only change of its
+        /// font size on the open screen (a text-size step, the box fixed) is seen and aligns it; a layer where its text wraps
+        /// gives it the design's alignment; two text changes in one frame keep the design's alignment as the one to return to.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AnOverflowLabel_MeasuresOnlyWhenItsTextFontWidthOrScaleChanges_AndFollowsStyleOnlyChanges()
+        {
+            var tree = CompileScreen(root => root.Add(Text("cut", LongLine, OverflowCss(600, "right")), Text("fits", "Kısa", OverflowCss(640, "right"))));
+            var doc = Document(2560, 1440);
+            yield return Frames(2);
+            var instance = tree.Instantiate();
+            doc.rootVisualElement.Add(instance);
+            yield return Frames(8);
+            var cut = instance.Q<DesignOverflowLabel>("cut");
+            var fits = instance.Q<DesignOverflowLabel>("fits");
+            var design = fits.resolvedStyle.unityTextAlign;
+            var start = DesignOverflowLabel.StartOf(design);
+            Assert.IsTrue(cut.Overflows);
+            Assert.AreEqual(start, cut.resolvedStyle.unityTextAlign);
+            int resolved = 0;
+            cut.RegisterCallback<CustomStyleResolvedEvent>(_ => resolved++);
+            int measured = cut.Measurements;
+            cut.style.color = Color.red;
+            yield return Frames(4);
+            Assert.Greater(resolved, 0, "its styles resolved again");
+            Assert.AreEqual(measured, cut.Measurements, "an unrelated style change measures nothing");
+            Assert.AreEqual(start, cut.resolvedStyle.unityTextAlign);
+            // a larger font on the open screen (the box does not change): the short line overflows now
+            fits.style.fontSize = 120;
+            yield return Frames(4);
+            Assert.IsTrue(fits.Overflows, "a style-only change of its font is seen");
+            Assert.AreEqual(start, fits.resolvedStyle.unityTextAlign);
+            fits.style.fontSize = StyleKeyword.Null;
+            yield return Frames(4);
+            Assert.IsFalse(fits.Overflows);
+            Assert.AreEqual(design, fits.resolvedStyle.unityTextAlign);
+            // where the text wraps, a line never overflows its box: the design's alignment
+            cut.style.whiteSpace = WhiteSpace.Normal;
+            yield return Frames(4);
+            Assert.IsFalse(cut.Overflows, "a wrapping text");
+            Assert.AreEqual(design, cut.resolvedStyle.unityTextAlign);
+            cut.style.whiteSpace = StyleKeyword.Null;
+            yield return Frames(4);
+            Assert.AreEqual(start, cut.resolvedStyle.unityTextAlign);
+            // two text changes in one frame: one that fits, then one that overflows again
+            measured = cut.Measurements;
+            cut.text = "Kısa";
+            cut.text = LongLine;
+            yield return Frames(4);
+            Assert.AreEqual(measured + 2, cut.Measurements, "each text change measures once");
+            Assert.IsTrue(cut.Overflows);
+            Assert.AreEqual(start, cut.resolvedStyle.unityTextAlign, "the overflowing line starts at the left edge");
+            cut.text = "Kısa";
+            yield return Frames(4);
+            Assert.AreEqual(design, cut.resolvedStyle.unityTextAlign, "and the design's alignment comes back");
+            Object.DestroyImmediate(doc.gameObject);
+        }
+
         // ---- nested borders ---------------------------------------------------------------------------------------------
 
         /// <summary>

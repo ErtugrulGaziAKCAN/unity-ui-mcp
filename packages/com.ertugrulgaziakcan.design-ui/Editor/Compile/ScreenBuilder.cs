@@ -50,8 +50,9 @@ namespace DesignUi.Editor
         /// </summary>
         public const string ScaleWatchProperty = "--design-screen";
         /// <summary>
-        /// A custom property the exact-width text elements carry (a rule on their types), so UI Toolkit tells them when their
-        /// styles are resolved again (a state, the locale's fonts, a text size): they measure their text again then.
+        /// A custom property the exact-width text elements and the overflow labels carry (a rule on their types), so UI Toolkit
+        /// tells them when their styles are resolved again (a state, the locale's fonts or direction, a text size): they measure
+        /// their text again then, when its font changed.
         /// </summary>
         public const string TextFitProperty = "--design-text-fit";
         public const string FitLabelTag = "dui:DesignLabel", FitButtonTag = "dui:DesignButton", OverflowLabelTag = "dui:DesignOverflowLabel";
@@ -1458,8 +1459,12 @@ namespace DesignUi.Editor
                 // the design's @media breakpoints: the screen root applies their bp-* classes from the panel's size at runtime
                 if (compiledRoot.Tag == ScreenTag && ir.Breakpoints != null && ir.Breakpoints.Length > 0)
                     compiledRoot.Attributes.Add(new KeyValuePair<string, string>("breakpoints", DesignUi.DesignBreakpoints.Encode(BreakpointsOf(ir))));
-                // exact-width text elements: their custom property makes UI Toolkit tell them when their styles change
-                if (compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf()))).Any(e => e.FitWidth))
+                // exact-width text elements and overflow labels: their custom property makes UI Toolkit tell them when their styles
+                // change (a state, the locale's fonts or direction, a text size)
+                var compiled = compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf()))).ToList();
+                if (compiled.Any(e => e.OverflowStart))
+                    _rules.Insert(0, new UssRule(nameof(DesignUi.DesignOverflowLabel), new List<UssDeclaration> { new UssDeclaration(TextFitProperty, "1") }));
+                if (compiled.Any(e => e.FitWidth))
                     _rules.Insert(0, new UssRule(nameof(DesignUi.DesignLabel) + ", " + nameof(DesignUi.DesignButton),
                         new List<UssDeclaration> { new UssDeclaration(TextFitProperty, "1") }));
                 // the exact viewports' panel scales: at any other panel scale the screen lays out at the next of them up and
