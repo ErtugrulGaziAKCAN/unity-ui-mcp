@@ -49,6 +49,12 @@ namespace DesignUi.Editor
         /// panel's scale changed (<see cref="DesignUi.DesignScreen.ApplyRootScale"/>).
         /// </summary>
         public const string ScaleWatchProperty = "--design-screen";
+        /// <summary>
+        /// A custom property the exact-width text elements carry (a rule on their types), so UI Toolkit tells them when their
+        /// styles are resolved again (a state, the locale's fonts, a text size): they measure their text again then.
+        /// </summary>
+        public const string TextFitProperty = "--design-text-fit";
+        public const string FitLabelTag = "dui:DesignLabel", FitButtonTag = "dui:DesignButton";
 
         /// <summary>The UXML namespace prefix of the package's runtime elements (<c>xmlns:dui="DesignUi"</c>).</summary>
         public const string RuntimeNamespace = "DesignUi";
@@ -139,6 +145,7 @@ namespace DesignUi.Editor
             var lowered = Lowering.Apply(ir.Root, ir.Breakpoints);
             var builder = new Builder(assetPath, fontDefinition, options, AncestorTargets(lowered), InheritedFamilies(lowered));
             builder.PlanTextHeights(lowered, null, ir.Breakpoints);
+            builder.PlanTextWidths(lowered, null);
             var root = builder.Draft(lowered, true, false);
             builder.RemoveWrappers(root);
             return builder.Finish(root, ir, className);
@@ -1157,6 +1164,75 @@ namespace DesignUi.Editor
 
             static bool IsNone(string value, params string[] none) => value == null || none.Contains(value.Trim());
 
+            // ---- exact text widths ----------------------------------------------------------------------------------
+
+            /// <summary>Label and button nodes whose width is their text's (<see cref="PlanTextWidths"/>).</summary>
+            readonly HashSet<IrNode> _fitWidths = new HashSet<IrNode>();
+
+            static readonly string[] WidthAnimated = { "all", "width", "min-width", "max-width", "font-size", "letter-spacing", "word-spacing", "font-weight", "font-family" };
+
+            /// <summary>
+            /// UI Toolkit rounds a text's measured width up on the device grid of the scale it lays out at, with no tolerance, where
+            /// Chromium ceils it on the design's device grid, so text-sized elements that share a row drift by a device pixel
+            /// here and there (docs/findings/viewport-classes.md). A text or button node whose width is its content's is written
+            /// as a DesignLabel or DesignButton, which lays out at the browser's width for its text
+            /// (<see cref="DesignUi.DesignTextFit"/>): no layer sizes its width (width, min or max width, flex-basis), and it is
+            /// not grown or stretched along it (in a row without flex-grow, in a column whose items are aligned, not stretched,
+            /// or absolute without both left and right); its horizontal padding and borders are px; no animation changes its
+            /// width or its text's size.
+            /// </summary>
+            public void PlanTextWidths(IrNode node, IrNode parent)
+            {
+                foreach (var child in node.Children) PlanTextWidths(child, node);
+                if (FitsTextWidth(node, parent)) _fitWidths.Add(node);
+            }
+
+            bool FitsTextWidth(IrNode node, IrNode parent)
+            {
+                if (parent == null || node.Text == null || node.Children.Length > 0 || node.Field != null || (node.Kind != "text" && node.Kind != "button")) return false;
+                if ((node.Anims ?? new List<IrAnim>()).Any(a => (a.Properties ?? new string[0]).Any(p => WidthAnimated.Contains(p) || p.StartsWith("padding", StringComparison.Ordinal) || p.StartsWith("border", StringComparison.Ordinal))))
+                    return false;
+                var keys = node.Style.Keys.Select(LayerKey.Parse).ToList();
+                if (!keys.Any(k => k.Text == Base)) keys.Add(LayerKey.Parse(Base));
+                bool absolute = Get(node, Base, "position") == "absolute";
+                foreach (var k in keys)
+                {
+                    string At(string prop) => Lowering.Resolve(node, k, prop, true);
+                    if (!IsNone(At("width"), "auto") || !IsNone(At("min-width"), "auto", "0", "0px") || !IsNone(At("max-width"), "none")) return false;
+                    foreach (var prop in new[] { "padding-left", "padding-right", "border-left-width", "border-right-width" })
+                        if (At(prop) is string v && !PxValue.IsMatch(v)) return false;
+                    if (absolute)
+                    {
+                        if (!IsNone(At("left"), "auto") && !IsNone(At("right"), "auto")) return false;
+                        continue;
+                    }
+                    if (!IsNone(At("flex-basis"), "auto", "content")) return false;
+                }
+                if (absolute) return true;
+                var parentKeys = parent.Style.Keys.Select(LayerKey.Parse).ToList();
+                if (!parentKeys.Any(k => k.Text == Base)) parentKeys.Add(LayerKey.Parse(Base));
+                foreach (var pk in parentKeys)
+                {
+                    var direction = Lowering.Resolve(parent, pk, "flex-direction", true) ?? "row";
+                    if (direction.StartsWith("row", StringComparison.Ordinal))
+                    {
+                        // the main axis: content-sized unless it grows
+                        foreach (var k in keys) if (!IsNone(Lowering.Resolve(node, k, "flex-grow", true), "0")) return false;
+                    }
+                    else
+                    {
+                        // the cross axis: content-sized only where it is aligned, not stretched
+                        foreach (var k in keys)
+                        {
+                            var self = Lowering.Resolve(node, k, "align-self", true);
+                            var align = self == null || self == "auto" ? Lowering.Resolve(parent, pk, "align-items", true) : self;
+                            if (align == null || !NonStretch.Contains(align)) return false;
+                        }
+                    }
+                }
+                return true;
+            }
+
             /// <summary>The fixed-line text height a layer of the node writes: its base layer, and every layer that changes the size, padding or borders.</summary>
             TextHeight TextHeightAt(IrNode node, string key, Dictionary<string, string> css)
             {
@@ -1342,6 +1418,10 @@ namespace DesignUi.Editor
                 // the design's @media breakpoints: the screen root applies their bp-* classes from the panel's size at runtime
                 if (compiledRoot.Tag == ScreenTag && ir.Breakpoints != null && ir.Breakpoints.Length > 0)
                     compiledRoot.Attributes.Add(new KeyValuePair<string, string>("breakpoints", DesignUi.DesignBreakpoints.Encode(BreakpointsOf(ir))));
+                // exact-width text elements: their custom property makes UI Toolkit tell them when their styles change
+                if (compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf()))).Any(e => e.FitWidth))
+                    _rules.Insert(0, new UssRule(nameof(DesignUi.DesignLabel) + ", " + nameof(DesignUi.DesignButton),
+                        new List<UssDeclaration> { new UssDeclaration(TextFitProperty, "1") }));
                 // the exact viewports' panel scales: at any other panel scale the screen lays out at the nearest of them and
                 // draws scaled; a custom property on the root makes UI Toolkit tell it (CustomStyleResolvedEvent) when the
                 // panel's scale changes
@@ -1399,6 +1479,7 @@ namespace DesignUi.Editor
                                       ?? throw new IrFormatException("shadow host '" + node.Id + "' has no element to mirror");
                 }
                 e.Clickable = node.Clickable && d.Tag != "ui:Button" && d.Tag != "ui:Toggle";
+                e.FitWidth = (d.Tag == "ui:Label" || d.Tag == "ui:Button") && _fitWidths.Contains(node);
                 // markup hiding in the design's repeat items is sample data: the view's setter shows and hides the element that
                 // owns its visibility, the shadow host that took its slot when it has one
                 if (node.ItemVisibility)

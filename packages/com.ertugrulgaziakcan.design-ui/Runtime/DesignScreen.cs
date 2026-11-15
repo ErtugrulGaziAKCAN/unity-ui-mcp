@@ -104,7 +104,12 @@ namespace DesignUi
         {
             RegisterCallback<AttachToPanelEvent>(OnAttach);
             RegisterCallback<DetachFromPanelEvent>(OnDetach);
-            RegisterCallback<GeometryChangedEvent>(m_OnGeometry = e => ApplyRootScale());
+            RegisterCallback<GeometryChangedEvent>(m_OnGeometry = e =>
+            {
+                ApplyRootScale();
+                // laid out at the new scale: the exact-width texts measure their paddings and borders again
+                if (m_RefitPending) RefitTexts();
+            });
             // UI Toolkit resolves every style again when a panel's scale changes (a new resolution, or the exact-scale factor
             // taking effect), also when the panel's size in panel pixels stays (16:9 to 16:9): the root, which has custom
             // properties (the compiler writes one, DesignFonts.uss its locale's fonts), gets this event then
@@ -144,9 +149,38 @@ namespace DesignUi
                 if (DesignRootScalePanels.Evaluate(this, p, runtime.panelSettings, m_ExactScales, out var actual, out r)) design = actual;
             }
             else DesignRootScalePanels.Leave(this);
+            bool changed = design != DesignScale || r != RootScale;
             DesignScale = design;
             SetRootScale(r);
             ApplyBreakpoints();
+            if (changed) RefitTextsLater();
+        }
+
+        IVisualElementScheduledItem m_Refit;
+        bool m_RefitPending;
+
+        /// <summary>
+        /// Measures the screen's exact-width texts again (<see cref="DesignTextFit"/>) once the panel has laid them out at its
+        /// new scale (their paddings and borders are the previous scale's until then): on the next geometry change of the root
+        /// or the panel's root, or on the panel's next update, whichever comes first.
+        /// </summary>
+        void RefitTextsLater()
+        {
+            m_RefitPending = true;
+            if (panel == null) return;
+            if (m_Refit == null) m_Refit = schedule.Execute(RefitTexts);
+            else m_Refit.ExecuteLater(0);
+            DesignRootScalePanels.RequestUpdate(panel.visualTree);
+        }
+
+        void RefitTexts()
+        {
+            m_RefitPending = false;
+            this.Query<TextElement>().ForEach(t =>
+            {
+                if (t is DesignLabel label) label.Fit.Update();
+                else if (t is DesignButton button) button.Fit.Update();
+            });
         }
 
         void SetRootScale(float r)

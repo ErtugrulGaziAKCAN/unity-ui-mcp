@@ -44,6 +44,11 @@ namespace DesignUi.Editor
         public bool PickingIgnore;
         /// <summary>The element needs a Clickable from the view so that :active works (not a Button or Toggle, which have one).</summary>
         public bool Clickable;
+        /// <summary>
+        /// A Label or Button whose width the design leaves to its text: written as <see cref="DesignUi.DesignLabel"/> or
+        /// <see cref="DesignUi.DesignButton"/>, which lay out at the browser's width for the text (<see cref="DesignUi.DesignTextFit"/>).
+        /// </summary>
+        public bool FitWidth;
         /// <summary>A shadow host: the view attaches a PseudoStateMirror to <see cref="MirrorElement"/> that targets this host.</summary>
         public bool MirrorHost;
         /// <summary>Name of the element whose pseudo-states or classes this host mirrors, or null.</summary>

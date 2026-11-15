@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>fidelity.text-row</title>
+<style>
+/* kit-base: begin (design kit base stylesheet; copy it unchanged to the top of every screen's style) */
+:root { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
+body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
+b, strong { font-weight: 700; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
+textarea { resize: none; }
+::placeholder { color: var(--color-text-muted); }
+.text-caption { font-size: 12px; line-height: 16px; font-weight: 400; }
+.text-caption-bold { font-size: 12px; line-height: 16px; font-weight: 700; }
+.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
+.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
+.text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
+.text-subtitle-bold { font-size: 32px; line-height: 40px; font-weight: 700; }
+.text-title { font-size: 36px; line-height: 48px; font-weight: 400; }
+.text-title-bold { font-size: 36px; line-height: 48px; font-weight: 700; }
+.text-headline { font-size: 48px; line-height: 60px; font-weight: 400; }
+.text-headline-bold { font-size: 48px; line-height: 60px; font-weight: 700; }
+.text-display { font-size: 64px; line-height: 80px; font-weight: 400; }
+.text-display-bold { font-size: 64px; line-height: 80px; font-weight: 700; }
+/* kit-base: end */
+.screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 64px; background-color: var(--color-surface-900); }
+.heading { margin-bottom: 48px; }
+.row { display: flex; flex-direction: row; align-items: center; margin-bottom: 48px; }
+.btn { display: flex; flex-direction: row; align-items: center; justify-content: center; height: 64px; padding: 0 32px; margin-right: 24px; border: 4px solid var(--color-line); border-radius: var(--radius-md); background-color: var(--color-surface-700); color: var(--color-text-primary); }
+.btn-small { height: 48px; padding: 0 24px; margin-right: 16px; }
+.tab { margin-right: 32px; color: var(--color-text-secondary); white-space: nowrap; }
+.chip { display: flex; flex-direction: row; margin-right: 16px; padding: 4px 12px; border-radius: var(--radius-sm); background-color: var(--color-surface-500); }
+.chip-text { color: var(--color-text-primary); white-space: nowrap; }
+.column { display: flex; flex-direction: column; align-items: flex-start; }
+.stack-item { margin-bottom: 8px; padding: 4px 16px; background-color: var(--color-surface-700); color: var(--color-text-primary); }
+
+</style>
+</head>
+<body>
+<div class="screen" data-u-screen="fidelity.text-row">
+  <!-- rows of ten elements whose width is their text's: UI Toolkit rounds each text's width up to whole device pixels,
+       so without exact text widths every element after the first drifts right (+1.02 device px by the fourth button at
+       3840×2160). The column's items are as wide as their text (12 device px or more at every exact viewport elsewhere,
+       16 in the column: text-ink.md section 9) -->
+  <h1 class="heading text-headline-bold" data-l10n="fidelity.text-row.heading" data-en="Rows of text">Metin satırları</h1>
+  <div class="row" data-u-id="buttons">
+    <button class="btn text-body-bold" data-u-id="btn-confirm" data-u-action="confirm" data-l10n="fidelity.text-row.btn-confirm" data-en="Confirm">Onayla</button>
+    <button class="btn text-body-bold" data-u-id="btn-cancel" data-u-action="cancel" data-l10n="fidelity.text-row.btn-cancel" data-en="Cancel">Vazgeç</button>
+    <button class="btn text-body-bold" data-u-id="btn-save" data-u-action="save" data-l10n="fidelity.text-row.btn-save" data-en="Save">Kaydet</button>
+    <button class="btn text-body-bold" data-u-id="btn-back" data-u-action="back" data-l10n="fidelity.text-row.btn-back" data-en="Back">Geri</button>
+    <button class="btn text-body-bold" data-u-id="btn-delete" data-u-action="delete" data-l10n="fidelity.text-row.btn-delete" data-en="Delete">Sil</button>
+    <button class="btn text-body-bold" data-u-id="btn-share" data-u-action="share" data-l10n="fidelity.text-row.btn-share" data-en="Share">Paylaş</button>
+    <button class="btn text-body-bold" data-u-id="btn-refresh" data-u-action="refresh" data-l10n="fidelity.text-row.btn-refresh" data-en="Refresh">Yenile</button>
+    <button class="btn text-body-bold" data-u-id="btn-edit" data-u-action="edit" data-l10n="fidelity.text-row.btn-edit" data-en="Edit">Düzenle</button>
+    <button class="btn text-body-bold" data-u-id="btn-add" data-u-action="add" data-l10n="fidelity.text-row.btn-add" data-en="Add">Ekle</button>
+    <button class="btn text-body-bold" data-u-id="btn-close" data-u-action="close" data-l10n="fidelity.text-row.btn-close" data-en="Close">Kapat</button>
+  </div>
+  <div class="row" data-u-id="small-buttons">
+    <button class="btn btn-small text-label-bold" data-u-id="small-confirm" data-u-action="small-confirm" data-l10n="fidelity.text-row.small-confirm" data-en="Confirm">Onayla</button>
+    <button class="btn btn-small text-label-bold" data-u-id="small-cancel" data-u-action="small-cancel" data-l10n="fidelity.text-row.small-cancel" data-en="Cancel">Vazgeç</button>
+    <button class="btn btn-small text-label-bold" data-u-id="small-save" data-u-action="small-save" data-l10n="fidelity.text-row.small-save" data-en="Save">Kaydet</button>
+    <button class="btn btn-small text-label-bold" data-u-id="small-back" data-u-action="small-back" data-l10n="fidelity.text-row.small-back" data-en="Back">Geri</button>
+    <button class="btn btn-small text-label-bold" data-u-id="small-delete" data-u-action="small-delete" data-l10n="fidelity.text-row.small-delete" data-en="Delete">Sil</button>
+    <button class="btn btn-small text-label-bold" data-u-id="small-share" data-u-action="small-share" data-l10n="fidelity.text-row.small-share" data-en="Share">Paylaş</button>
+    <button class="btn btn-small text-label-bold" data-u-id="small-refresh" data-u-action="small-refresh" data-l10n="fidelity.text-row.small-refresh" data-en="Refresh">Yenile</button>
+    <button class="btn btn-small text-label-bold" data-u-id="small-edit" data-u-action="small-edit" data-l10n="fidelity.text-row.small-edit" data-en="Edit">Düzenle</button>
+    <button class="btn btn-small text-label-bold" data-u-id="small-add" data-u-action="small-add" data-l10n="fidelity.text-row.small-add" data-en="Add">Ekle</button>
+    <button class="btn btn-small text-label-bold" data-u-id="small-close" data-u-action="small-close" data-l10n="fidelity.text-row.small-close" data-en="Close">Kapat</button>
+  </div>
+  <div class="row" data-u-id="tabs">
+    <p class="tab text-subtitle" data-u-id="tab-squad" data-l10n="fidelity.text-row.tab-squad" data-en="Squad">Kadro</p>
+    <p class="tab text-subtitle" data-u-id="tab-tactics" data-l10n="fidelity.text-row.tab-tactics" data-en="Tactics">Taktik</p>
+    <p class="tab text-subtitle" data-u-id="tab-matches" data-l10n="fidelity.text-row.tab-matches" data-en="Matches">Maçlar</p>
+    <p class="tab text-subtitle" data-u-id="tab-transfers" data-l10n="fidelity.text-row.tab-transfers" data-en="Transfers">Transfer</p>
+    <p class="tab text-subtitle" data-u-id="tab-finance" data-l10n="fidelity.text-row.tab-finance" data-en="Finance">Finans</p>
+    <p class="tab text-subtitle" data-u-id="tab-facilities" data-l10n="fidelity.text-row.tab-facilities" data-en="Facilities">Tesisler</p>
+    <p class="tab text-subtitle" data-u-id="tab-youth" data-l10n="fidelity.text-row.tab-youth" data-en="Youth">Gençlik</p>
+    <p class="tab text-subtitle" data-u-id="tab-press" data-l10n="fidelity.text-row.tab-press" data-en="Press">Basın</p>
+    <p class="tab text-subtitle" data-u-id="tab-settings" data-l10n="fidelity.text-row.tab-settings" data-en="Settings">Ayarlar</p>
+    <p class="tab text-subtitle" data-u-id="tab-help" data-l10n="fidelity.text-row.tab-help" data-en="Help">Yardım</p>
+  </div>
+  <div class="row" data-u-id="chips">
+    <div class="chip" data-u-id="chip-goals"><p class="chip-text text-body" data-u-id="chip-text-goals" data-l10n="fidelity.text-row.chip-goals" data-en="Goals 12">Gol 12</p></div>
+    <div class="chip" data-u-id="chip-assists"><p class="chip-text text-body" data-u-id="chip-text-assists" data-l10n="fidelity.text-row.chip-assists" data-en="Assists 7">Asist 7</p></div>
+    <div class="chip" data-u-id="chip-cards"><p class="chip-text text-body" data-u-id="chip-text-cards" data-l10n="fidelity.text-row.chip-cards" data-en="Cards 3">Kart 3</p></div>
+    <div class="chip" data-u-id="chip-minutes"><p class="chip-text text-body" data-u-id="chip-text-minutes" data-l10n="fidelity.text-row.chip-minutes" data-en="Minutes 940">Dakika 940</p></div>
+    <div class="chip" data-u-id="chip-rating"><p class="chip-text text-body" data-u-id="chip-text-rating" data-l10n="fidelity.text-row.chip-rating" data-en="Rating 7.4">Not 7,4</p></div>
+    <div class="chip" data-u-id="chip-form"><p class="chip-text text-body" data-u-id="chip-text-form" data-l10n="fidelity.text-row.chip-form" data-en="Good form">Form iyi</p></div>
+    <div class="chip" data-u-id="chip-age"><p class="chip-text text-body" data-u-id="chip-text-age" data-l10n="fidelity.text-row.chip-age" data-en="Age 24">Yaş 24</p></div>
+    <div class="chip" data-u-id="chip-height"><p class="chip-text text-body" data-u-id="chip-text-height" data-l10n="fidelity.text-row.chip-height" data-en="Height 182">Boy 182</p></div>
+    <div class="chip" data-u-id="chip-foot"><p class="chip-text text-body" data-u-id="chip-text-foot" data-l10n="fidelity.text-row.chip-foot" data-en="Right foot">Sağ ayak</p></div>
+    <div class="chip" data-u-id="chip-value"><p class="chip-text text-body" data-u-id="chip-text-value" data-l10n="fidelity.text-row.chip-value" data-en="Value 4M">Değer 4M</p></div>
+  </div>
+  <div class="column" data-u-id="column">
+    <p class="stack-item text-subtitle" data-u-id="stack-squad" data-l10n="fidelity.text-row.stack-squad" data-en="Squad">Kadro</p>
+    <p class="stack-item text-subtitle" data-u-id="stack-tactics" data-l10n="fidelity.text-row.stack-tactics" data-en="Tactics">Taktik</p>
+    <p class="stack-item text-subtitle" data-u-id="stack-matches" data-l10n="fidelity.text-row.stack-matches" data-en="Matches">Maçlar</p>
+    <p class="stack-item text-subtitle" data-u-id="stack-transfers" data-l10n="fidelity.text-row.stack-transfers" data-en="Transfers">Transfer</p>
+    <p class="stack-item text-subtitle" data-u-id="stack-finance" data-l10n="fidelity.text-row.stack-finance" data-en="Finance">Finans</p>
+  </div>
+</div>
+</body>
+</html>

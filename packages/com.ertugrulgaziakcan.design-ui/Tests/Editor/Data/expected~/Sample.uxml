@@ -10,7 +10,7 @@
         </ui:VisualElement>
         <ui:Button name="play" class="s-954c8309 dui-anim" tooltip="Maçı başlat">
             <ui:VisualElement name="play__inset" class="s-017d281b" picking-mode="Ignore" />
-            <ui:Label name="play-label" class="s-5c4a4bce" text="Oyna" />
+            <dui:DesignLabel name="play-label" class="s-5c4a4bce" text="Oyna" />
         </ui:Button>
         <ui:ListView name="rows" class="s-3c615655" fixed-item-height="64" selection-type="None" />
     </dui:DesignScreen>

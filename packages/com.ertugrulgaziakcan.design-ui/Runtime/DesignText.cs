@@ -81,7 +81,7 @@ namespace DesignUi
         }
 
         /// <summary>Whether the font and every face of its weight table already have every character (no allocation).</summary>
-        static bool AllPresent(FontAsset font, string text)
+        internal static bool AllPresent(FontAsset font, string text)
         {
             if (!Has(font, text)) return false;
             foreach (var pair in font.fontWeightTable ?? new UnityEngine.TextCore.Text.FontWeightPair[0])

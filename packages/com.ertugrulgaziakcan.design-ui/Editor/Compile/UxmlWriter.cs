@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace DesignUi.Editor
@@ -22,7 +23,7 @@ namespace DesignUi.Editor
         {
             var sb = new StringBuilder();
             sb.Append(Header).Append('\n');
-            sb.Append(s.Root.Tag == ScreenBuilder.ScreenTag ? OpenWithRuntime : Open).Append('\n');
+            sb.Append(s.Root.Tag == ScreenBuilder.ScreenTag || UsesRuntime(s.Root) ? OpenWithRuntime : Open).Append('\n');
             foreach (var r in s.Repeats)
                 if (r.TemplateFile != null)
                     sb.Append("    <ui:Template name=\"").Append(Escape(System.IO.Path.GetFileNameWithoutExtension(r.TemplateFile)))
@@ -40,16 +41,29 @@ namespace DesignUi.Editor
         public static string WriteItemTemplate(CompiledRepeat repeat)
         {
             var sb = new StringBuilder();
-            sb.Append(Header).Append('\n').Append(Open).Append('\n');
+            sb.Append(Header).Append('\n').Append(repeat.Items.Any(UsesRuntime) ? OpenWithRuntime : Open).Append('\n');
             foreach (var item in repeat.Items) Element(sb, item, 1);
             sb.Append(Close).Append('\n');
             return sb.ToString();
         }
 
+        /// <summary>Whether the element or a descendant is one of the package's runtime elements (<c>dui:</c>).</summary>
+        static bool UsesRuntime(CompiledElement e) => e.DescendantsAndSelf().Any(x => TagOf(x).StartsWith("dui:", System.StringComparison.Ordinal));
+
+        /// <summary>The element's UXML tag: an exact-width Label or Button is the package's DesignLabel or DesignButton.</summary>
+        static string TagOf(CompiledElement e)
+        {
+            if (!e.FitWidth) return e.Tag;
+            if (e.Tag == "ui:Label") return ScreenBuilder.FitLabelTag;
+            if (e.Tag == "ui:Button") return ScreenBuilder.FitButtonTag;
+            return e.Tag;
+        }
+
         static void Element(StringBuilder sb, CompiledElement e, int depth)
         {
             var indent = new string(' ', depth * 4);
-            sb.Append(indent).Append('<').Append(e.Tag);
+            var tag = TagOf(e);
+            sb.Append(indent).Append('<').Append(tag);
             Attribute(sb, "name", e.Name);
             if (e.Classes.Count > 0) Attribute(sb, "class", string.Join(" ", e.Classes));
             if (e.PickingIgnore) Attribute(sb, "picking-mode", "Ignore");
@@ -78,7 +92,7 @@ namespace DesignUi.Editor
                 sb.Append(inner).Append("</Bindings>\n");
             }
             foreach (var child in e.Children) Element(sb, child, depth + 1);
-            sb.Append(indent).Append("</").Append(e.Tag).Append(">\n");
+            sb.Append(indent).Append("</").Append(tag).Append(">\n");
         }
 
         static void Attribute(StringBuilder sb, string name, string value) => sb.Append(' ').Append(name).Append("=\"").Append(Escape(value)).Append('"');
