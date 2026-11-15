@@ -201,11 +201,12 @@ namespace DesignUi
             var face = DesignText.DrawingFace(font, fontStyle);
             // glyphs UI Toolkit added to the face while it laid text out (this label's own missing characters, or another
             // label's this frame) wait for their kerning pairs in TextCore's update queue, which runs when some text is next
-            // generated: give the face all its glyphs' pairs now, so the text is measured as it will draw (fix rounds 1 and 2,
-            // M-1; DesignText.CompleteFeatures, the compiler's path, which also gives the pairs TextCore's own add leaves out)
+            // generated: give the face all its glyphs' pairs now, so the text is measured as it will draw (fix rounds 1 to 3,
+            // M-1; DesignText.AddFeatures also gives the pairs TextCore's own add leaves out, and removes none: a line-box
+            // variant shares its twin's table, N-7)
             if (DesignText.FeaturesPending(face) == true && DesignText.CanCompleteFeatures)
             {
-                DesignText.CompleteFeatures(face);
+                DesignText.AddFeatures(face);
                 DesignText.ClearPairFlags(face);
             }
             // its glyphs and their kerning pairs (fix round 1, M-1: pairs that arrive later change no character count)

@@ -3,9 +3,11 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
+using UnityEngine.TextCore.LowLevel;
 using UnityEngine.UIElements;
 using static DesignUi.Editor.Tests.TestIr;
 using Object = UnityEngine.Object;
@@ -438,7 +440,8 @@ namespace DesignUi.Editor.Tests
 
         /// <summary>
         /// Fix round 1, I-2: a label whose text is empty repaints without asking for another measure (its font and style are
-        /// recorded with its text, so a repaint of the same empty text shows nothing new), also when its font changes.
+        /// recorded with its text, so a repaint of the same empty text shows nothing new), also after its font changed (at
+        /// most one request for the new font).
         /// </summary>
         [UnityTest]
         public IEnumerator AnEmptyLabel_RepaintsWithoutAskingForAnotherMeasure()
@@ -458,12 +461,14 @@ namespace DesignUi.Editor.Tests
             for (int i = 0; i < 10; i++) { label.MarkDirtyRepaint(); yield return null; }
             Assert.AreEqual(requests, label.Fit.ChangeRequests, "ten repaints of the same empty text ask for no measure");
             Assert.IsTrue(float.IsNaN(label.Fit.Width), "an empty text keeps UI Toolkit's own width");
-            // its font changed while the text stays empty: one request, then none
+            // its font changed while the text stays empty: at most one request (none when a layout callback looked at the
+            // new font before the repaint: an empty label's first geometry event can come that late), then none
             label.style.unityFontDefinition = BodyBold("Kept Tabs Bold");
             yield return Frames(4);
-            Assert.AreEqual(requests + 1, label.Fit.ChangeRequests, "the new font asks for one measure");
+            int afterFont = label.Fit.ChangeRequests;
+            Assert.LessOrEqual(afterFont - requests, 1, "the new font asks for one measure at most");
             for (int i = 0; i < 10; i++) { label.MarkDirtyRepaint(); yield return null; }
-            Assert.AreEqual(requests + 1, label.Fit.ChangeRequests, "and ten repaints after it ask for none");
+            Assert.AreEqual(afterFont, label.Fit.ChangeRequests, "and ten repaints after it ask for none");
             label.text = "Kaydet";
             yield return Frames(6);
             Assert.AreEqual(DesignTextFit.Snap(label.Fit.TextWidth(), 1), label.Fit.Width, 1e-3, "a text after it is measured");
@@ -472,7 +477,7 @@ namespace DesignUi.Editor.Tests
         /// <summary>
         /// Fix round 1, M-1: a label measured while its face holds the characters but not yet their kerning pairs (another
         /// label's layout added them this frame, TextCore brings their pairs through its update queue) is measured again once
-        /// its pairs are given to the face before it is measured (<see cref="DesignText.CompleteFeatures"/>, which also gives the
+        /// its pairs are given to the face before it is measured (<see cref="DesignText.AddFeatures"/>, which also gives the
         /// pairs TextCore's own add leaves out): the same width as the same text measured on that face afterwards (before:
         /// 262.23 panel px kept, the pairs TextCore's queue brought later giving 249.41, the complete pairs 248.54).
         /// </summary>
@@ -587,6 +592,69 @@ namespace DesignUi.Editor.Tests
             yield return Frames(8);
             Assert.AreEqual(previous, label.Fit.Width, 1e-3);
             Assert.AreEqual(previous, label.layout.width, 1e-3, "laid out at it");
+        }
+
+        static List<GlyphPairAdjustmentRecord> PairsOf(UnityEngine.TextCore.Text.FontAsset font) =>
+            (List<GlyphPairAdjustmentRecord>)typeof(UnityEngine.TextCore.Text.FontFeatureTable).GetProperty("glyphPairAdjustmentRecords",
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).GetValue(font.fontFeatureTable);
+
+        /// <summary>
+        /// Fix round 3, N-7: a line-box variant shares its twin's kerning table (<see cref="FontTwinLink"/>). Before a measure the
+        /// fit gave a face whose glyphs waited for their pairs every pair of two of its glyphs and took out every pair with a
+        /// glyph it does not hold: on a variant that removed the pairs of the glyphs its twin added at runtime, on the twin those
+        /// its variants added, so text drawn in the other one lost its kerning, depending on which label measured first. The fit
+        /// only adds pairs now: each one's runtime-added pairs survive a measure of the other, in either order.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AMeasureOnALinkedVariantOrItsTwin_KeepsThePairsTheOtherAddedAtRuntime()
+        {
+            const string text = "Takvim Kulüp avare oyun";
+            var doc = Document(2560, 1440);
+            yield return Frames(2);
+            foreach (var variantMeasures in new[] { true, false })
+            {
+                var what = variantMeasures ? "a measure on the variant" : "a measure on the twin";
+                var tmp = FontFixture.Kept(FontFixture.RegularTtf, variantMeasures ? "Kept N7 Variant" : "Kept N7 Twin");
+                // a twin and its line-box variant as an import makes them, the text pre-added
+                var run = new FontTwinGenerator.TwinRun(new TMPro.TMP_FontAsset[0]);
+                var twin = FontTwinGenerator.GetOrCreateTwin(tmp, FontFixture.KeptTwinFolder + "/N7", run);
+                var variant = FontTwinGenerator.GetOrCreateTwin(tmp, FontFixture.KeptTwinFolder + "/N7", run, FontTwinGenerator.LineBox.For(24, 32));
+                int before = twin.characterTable.Count;
+                DesignText.Prepare(twin, text);
+                TwinAtlas.Maintain(run, twin.characterTable.Count != before ? new[] { twin } : null);
+                FontTwinLink.Link(variant, twin);
+                Assert.AreSame(twin, FontTwinLink.SourceOf(variant), "the variant is linked to its twin");
+                Assert.AreSame(PairsOf(twin), PairsOf(variant), "one kerning table");
+                var face = variantMeasures ? variant : twin;
+                var other = variantMeasures ? twin : variant;
+                var label = new DesignLabel(text);
+                label.style.position = Position.Absolute;
+                label.style.left = 100;
+                label.style.top = variantMeasures ? 100 : 200;
+                label.style.fontSize = 24;
+                label.style.unityFontDefinition = FontDefinition.FromSDFFont(face);
+                doc.rootVisualElement.Add(label);
+                yield return Frames(6);
+                Assert.IsFalse(float.IsNaN(label.Fit.Width), what + ": measured");
+
+                // the other font adds a glyph with its pairs (as text drawn in it does), the measured face one whose pairs wait
+                // in TextCore's queue (as a draw adds it), and the fit measures
+                Assert.IsTrue(other.TryAddCharacters("V", out string _, true));
+                uint v = other.characterLookupTable['V'].glyphIndex;
+                var held = new HashSet<uint>(other.glyphTable.Select(g => g.index));
+                var added = PairsOf(other).Where(r => r.firstAdjustmentRecord.glyphIndex == v && held.Contains(r.secondAdjustmentRecord.glyphIndex))
+                    .Select(r => (r.firstAdjustmentRecord.glyphIndex, r.secondAdjustmentRecord.glyphIndex)).ToList();
+                Assert.Greater(added.Count, 0, what + ": the other font kerns its new glyph with glyphs it holds");
+                Assert.IsFalse(face.characterLookupTable.ContainsKey('V'), what + ": the measured face does not hold it");
+                Assert.IsTrue(face.TryAddCharacters("W", out string _, false));
+                Assert.AreEqual(true, DesignText.FeaturesPending(face), what + ": the face's new glyph waits for its pairs");
+                label.Fit.TextWidth();
+                Assert.AreEqual(false, DesignText.FeaturesPending(face), what + ": the fit gave the face its pairs");
+                var now = new HashSet<(uint, uint)>(PairsOf(other).Select(r => (r.firstAdjustmentRecord.glyphIndex, r.secondAdjustmentRecord.glyphIndex)));
+                var lost = added.Where(k => !now.Contains(k)).ToList();
+                Assert.AreEqual(0, lost.Count, what + ": the other font keeps its new glyph's pairs (" + lost.Count + " of " + added.Count + " lost)");
+                label.RemoveFromHierarchy();
+            }
         }
 
         /// <summary>

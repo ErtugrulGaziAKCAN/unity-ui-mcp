@@ -293,6 +293,35 @@ namespace DesignUi
             return removed;
         }
 
+        /// <summary>
+        /// Gives a dynamic font every kerning pair and mark record of two of its own glyphs that it lacks, and removes none;
+        /// returns how many pairs it added. The text fit calls it before a measure while glyphs of the face wait for their pairs
+        /// in TextCore's queue (a glyph UI Toolkit added while it laid text out). A line-box variant shares its twin's feature
+        /// table (<see cref="FontTwinLink"/>), and the twin and each variant can hold glyphs the other lacks (each adds what its
+        /// own text needs at runtime): taking out the records of glyphs this one does not hold, as <see cref="CompleteFeatures"/>
+        /// does for a twin's file, would take the others' pairs away (fix round 3, N-7). TextCore's own queue adds them the same
+        /// way, against every glyph of the font file; an import prunes a twin to its own glyphs' records (<see cref="CompleteFeatures"/>).
+        /// </summary>
+        internal static int AddFeatures(FontAsset font)
+        {
+            if (font == null || font.fontFeatureTable == null || !CanCompleteFeatures || font.atlasPopulationMode == UnityEngine.TextCore.Text.AtlasPopulationMode.Static)
+                return 0;
+            var newly = s_NewlyAdded.GetValue(font) as List<uint>;
+            if (newly == null) return 0;
+            int before = PairCount(font);
+            newly.Clear();
+            foreach (var g in font.glyphTable) newly.Add(g.index);
+            try
+            {
+                // TextCore adds a glyph's records with the glyph first, against every glyph of the file, and keeps its lookups
+                s_UpdatePairs.Invoke(font, null);
+                s_UpdateMarks.Invoke(font, null);
+            }
+            catch (TargetInvocationException) { }
+            finally { newly.Clear(); }
+            return PairCount(font) - before;
+        }
+
         const BindingFlags Internal = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
         static readonly PropertyInfo s_PairList = typeof(FontFeatureTable).GetProperty("glyphPairAdjustmentRecords", Internal);
         static readonly FieldInfo s_PairLookup = typeof(FontFeatureTable).GetField("m_GlyphPairAdjustmentRecordLookup", Internal);
