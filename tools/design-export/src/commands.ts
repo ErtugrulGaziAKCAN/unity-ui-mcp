@@ -5,6 +5,7 @@ import { writeReport, writeVerdict } from "./compare/report.js";
 import { exportScreen, lintScreen } from "./export.js";
 import { buildKit } from "./kit/build.js";
 import { writeClaudeDesignSystem } from "./kit/claudeDesignSystem.js";
+import { KEEP_BACKUPS, upgradeKit } from "./kit/upgrade.js";
 import { DEFAULT_TITLE } from "./kit/rulesDoc.js";
 import type { Finding } from "./lint/index.js";
 
@@ -19,6 +20,11 @@ Commands:
                                                  Compare Unity captures with the goldens; write the report and verdict.json
   kit build <kitDir> [--check]                   Regenerate base.css, RULES.md and the base block of kit pages;
                                                  check that the font tokens name families fonts.css declares
+  kit upgrade <kitDir> [--from <cloneKit>] [--dry-run]
+                                                 Bring a project's kit to this clone's kit: the clone's base, rules,
+                                                 components, text styles and config keys; the project's fonts, own and
+                                                 changed tokens, locales, own keys, styles and extra viewports kept;
+                                                 changed files backed up into <kitDir>/.backup/; kit build and --check
   kit claude <kitDir> <outDir> [--title <name>] [--force] [--all-faces]
                                                  Write the kit as a Claude Design System folder (<outDir>/project): the
                                                  font faces the text styles and font tokens reach (--all-faces: every
@@ -26,7 +32,7 @@ Commands:
 
 Exit codes: 0 ok (compare: every capture passes), 1 lint errors (compare: a capture fails or is not run;
 kit build --check: generated files are stale; kit build: a --font-* token names a family fonts.css does not
-declare), 2 usage or internal error.
+declare; kit upgrade: the merged kit does not build, nothing written), 2 usage or internal error.
 `;
 
 const line = (f: Finding) => `${f.severity.padEnd(7)} ${f.ruleId} ${f.path}: ${f.detail}${f.fix ? `\n        fix: ${f.fix}` : ""}`;
@@ -106,6 +112,30 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       for (const e of r.errors) io.out(`error: ${e}\n`);
       if (!r.changed.length && !r.errors.length) io.out("kit is current\n");
       return r.errors.length || (o.check && r.changed.length) ? 1 : 0;
+    }) as never);
+
+  kitCmd.command("upgrade").allowExcessArguments(false).argument("<kitDir>")
+    .option("--from <cloneKit>", "the kit to upgrade to (default: this clone's design-kit)")
+    .option("--dry-run", "print what would change; write nothing")
+    .description("Bring a project's kit to this clone's kit, keeping the project's fonts, tokens, locales and own parts")
+    .action(guard(async (dir: string, o: { from?: string; dryRun?: boolean }) => {
+      const r = upgradeKit(path.resolve(dir), { from: o.from ? path.resolve(o.from) : undefined, dryRun: o.dryRun });
+      const would = (verb: string, past: string) => (r.dryRun ? `would ${verb}` : past);
+      if (r.dryRun) io.out("Dry run: nothing is changed.\n");
+      io.out(`kit upgrade ${r.kitDir} from ${r.from}\n`);
+      if (!r.ok) {
+        for (const e of r.errors) io.out(`error: ${e}\n`);
+        io.out("The merged kit does not build: nothing was written.\n");
+        return 1;
+      }
+      io.out(r.replaced.length ? `${would("replace", "replaced")}: ${r.replaced.join(", ")}\n` : "nothing to replace: the kit is the clone's version\n");
+      for (const k of r.kept) io.out(`${would("keep", "kept")}: ${k}\n`);
+      for (const n of r.notes) io.out(`note: ${n}\n`);
+      if (r.replaced.length) io.out(r.dryRun ? `would back up the replaced files into ${path.join(r.kitDir, ".backup", "<UTC time>")} (the newest ${KEEP_BACKUPS} backups are kept)\n`
+        : `backed up the replaced files into ${r.backup} (restore: copy its files back into the kit)\n`);
+      for (const p of r.pruned) io.out(`removed the older backup ${p}\n`);
+      io.out(`kit build and kit build --check: ${r.dryRun ? "pass on the merged copy" : "the kit is current"}\n`);
+      return 0;
     }) as never);
 
   kitCmd.command("claude").allowExcessArguments(false).argument("<kitDir>").argument("<outDir>")

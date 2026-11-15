@@ -288,6 +288,12 @@ fi
 # into it, never into this clone (whose design-kit is tracked, so a sync would make `git pull` fail and put a project's
 # fonts into a public checkout). Verification captures run scripts/capture-on-copy.sh: a temporary copy of the project,
 # removed afterwards, the only place that lists the package's tests.
+# upgrade_hint <kitDir>: setup keeps a project's existing kit; this says how to bring it to this clone's kit version
+upgrade_hint() {
+  info "the project's design kit $1 is kept as it is; to bring it to this clone's kit (text styles, rules, components,"
+  info "viewports; the project's fonts, tokens, locales and own parts stay; changed files are backed up into its .backup/):"
+  info "  $(quoted cd "$REPO") && $(quoted npx design-export kit upgrade "$1" --dry-run)   # then without --dry-run"
+}
 echo "[4/7] design-ui.config.json"
 CONFIG="$PROJECT/design-ui.config.json"
 CAPTURE="$REPO/scripts/capture-on-copy.sh"
@@ -302,6 +308,9 @@ if [ -f "$CONFIG" ]; then
   # a config of an earlier setup points kitDir at this clone's kit: say how to move it (setup never edits an existing config)
   CFG_KIT="$("$NODE" -e 'try { const p = require("path"), c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const d = p.dirname(process.argv[1]); process.stdout.write(typeof c.kitDir === "string" ? p.resolve(d, c.kitDir) : "") } catch {}' "$CONFIG")"
   CFG_DESIGN="$("$NODE" -e 'try { const p = require("path"), c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(typeof c.designRoot === "string" ? p.resolve(p.dirname(process.argv[1]), c.designRoot) : "") } catch {}' "$CONFIG")"
+  if [ -n "$CFG_KIT" ] && [ "$CFG_KIT" != "$REPO/design-kit" ] && [ -f "$CFG_KIT/kit.config.json" ]; then
+    upgrade_hint "$CFG_KIT"
+  fi
   if [ -n "$CFG_KIT" ] && [ "$CFG_KIT" = "$REPO/design-kit" ]; then
     MOVE_TO="${CFG_DESIGN:-$DESIGN_ABS}/design-kit"
     info "warning: kitDir is this clone's design-kit ($REPO/design-kit): kit sync would write the project's fonts into the clone. Copy it into the project and point kitDir there:"
@@ -311,6 +320,7 @@ if [ -f "$CONFIG" ]; then
 else
   if [ -e "$KIT_ABS" ]; then
     info "kept existing design kit $KIT_ABS"
+    [ ! -f "$KIT_ABS/kit.config.json" ] || upgrade_hint "$KIT_ABS"
   else
     change "copy the design kit $REPO/design-kit into $KIT_ABS (the project's own kit: kit sync writes into it)"
     if [ "$DRY" != 1 ]; then

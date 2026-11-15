@@ -205,6 +205,19 @@ describe("scripts/setup.sh", () => {
     expect(fs.existsSync(path.join(e.project, "Designs", "design-kit")), "setup changes no existing config and copies nothing for it").toBe(false);
   });
 
+  it("an existing project kit is kept, with the command that upgrades it to this clone's kit", () => {
+    const e = setupEnv();
+    const kit = path.join(e.project, "Designs", "design-kit");
+    fs.mkdirSync(kit, { recursive: true });
+    fs.writeFileSync(path.join(kit, "kit.config.json"), "{}\n");
+    fs.writeFileSync(path.join(e.project, "design-ui.config.json"), JSON.stringify({ designRoot: "Designs", kitDir: "Designs/design-kit", profileAsset: "Assets/P.asset", mcpServer: SERVER_JS }) + "\n");
+    const r = e.run("--client", "none");
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(`the project's design kit ${kit} is kept as it is`);
+    expect(r.out).toMatch(/npx design-export kit upgrade .*Designs\/design-kit --dry-run/);
+    expect(read(path.join(kit, "kit.config.json"))).toBe("{}\n");
+  });
+
   it("keeps an existing package entry and an existing config", () => {
     const e = setupEnv();
     const manifest = MANIFEST.replace(`"dependencies": {`, `"dependencies": {\n    "com.ertugrulgaziakcan.design-ui": "file:/somewhere/else",`);
