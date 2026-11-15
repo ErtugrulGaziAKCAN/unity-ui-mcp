@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -54,6 +55,20 @@ function oldProjectKit(): string {
   fs.writeFileSync(f("RULES.md"), "# older rules\n");
   fs.writeFileSync(f("components/button.html"), fs.readFileSync(f("components/button.html"), "utf8").replace("</body>", "<!-- older --></body>"));
   fs.writeFileSync(f("components/club-card.md"), "The game's own component note.\n");
+  // a component the project registered, an origin it allowed, a token whose value spans lines, a clone component it lacks
+  fs.copyFileSync(f("components/card.html"), f("components/fixture-card.html"));
+  fs.writeFileSync(f("components/fixture-card.md"), "A fixture card of the game. It shows two clubs.\n");
+  const comps = JSON.parse(fs.readFileSync(f("components/components.json"), "utf8"));
+  comps.components = comps.components.filter((c: { name: string }) => c.name !== "Toggle");
+  comps.components.push({ name: "FixtureCard", file: "fixture-card.html", group: "Containers" });
+  fs.writeFileSync(f("components/components.json"), JSON.stringify(comps, null, 2) + "\n");
+  fs.rmSync(f("components/toggle.html"));
+  fs.rmSync(f("components/toggle.md"));
+  const cfg2 = JSON.parse(fs.readFileSync(f("kit.config.json"), "utf8"));
+  cfg2.allowedScriptOrigins = [...cfg2.allowedScriptOrigins, "https://example.org"];
+  fs.writeFileSync(f("kit.config.json"), JSON.stringify(cfg2) + "\n");
+  fs.writeFileSync(f("tokens.css"), fs.readFileSync(f("tokens.css"), "utf8").replace(/\n\}/,
+    "\n  --shadow-stack: 0 1px 2px rgba(0, 0, 0, 0.2),\n    0 4px 8px rgba(0, 0, 0, 0.3); /* Two layers. */\n}"));
   return dir;
 }
 
@@ -104,8 +119,8 @@ describe("kit upgrade", () => {
 
     // the old files are backed up under the kit's own .backup/, and the run says what it kept, replaced and backed up
     expect(r.backup).toBe(path.join(kit, ".backup", "2026-11-15T10-00-00Z"));
-    expect(fs.readFileSync(path.join(r.backup!, "RULES.md"), "utf8")).toBe("# older rules\n");
-    expect(JSON.parse(fs.readFileSync(path.join(r.backup!, "text-styles.json"), "utf8")).caption.fontSize).toBe(12);
+    expect(fs.readFileSync(path.join(r.backup!, "files", "RULES.md"), "utf8")).toBe("# older rules\n");
+    expect(JSON.parse(fs.readFileSync(path.join(r.backup!, "files", "text-styles.json"), "utf8")).caption.fontSize).toBe(12);
     expect(r.replaced).toEqual(expect.arrayContaining(["RULES.md", "base.css", "components/button.html", "text-styles.json"]));
     expect(r.kept.join("\n")).toMatch(/fonts\//);
     expect(r.kept.join("\n")).toMatch(/--font-ui/);
@@ -174,4 +189,61 @@ describe("kit upgrade", () => {
     expect(await runCli(["kit", "upgrade", kit, "--from", CLONE_KIT], c.io)).toBe(1);
     expect(c.out.join("") + c.err.join("")).toMatch(/nothing was written/i);
   });
+
+  it("keeps the project's registered components and extended lists, merges tokens by declaration, and says each merge", async () => {
+    const kit = oldProjectKit();
+    const r = upgradeKit(kit, { from: CLONE_KIT, now: new Date("2026-11-15T10:00:00Z"), tmpRoot: tmp("kit-upgrade-staging-") });
+    expect(r.ok, r.errors.join("\n")).toBe(true);
+    const names = JSON.parse(fs.readFileSync(path.join(kit, "components/components.json"), "utf8")).components.map((c: { name: string }) => c.name);
+    expect(names).toContain("FixtureCard");
+    expect(names).toContain("Toggle"); // the clone's component the project lacked comes with its files
+    expect(fs.existsSync(path.join(kit, "components/toggle.html"))).toBe(true);
+    expect(fs.readFileSync(path.join(kit, "RULES.md"), "utf8")).toContain("FixtureCard");
+    const cfg = JSON.parse(fs.readFileSync(path.join(kit, "kit.config.json"), "utf8"));
+    const clone = JSON.parse(fs.readFileSync(path.join(CLONE_KIT, "kit.config.json"), "utf8"));
+    expect(cfg.allowedScriptOrigins).toEqual([...clone.allowedScriptOrigins, "https://example.org"]);
+    const tokens = fs.readFileSync(path.join(kit, "tokens.css"), "utf8");
+    expect(tokens).toContain("--shadow-stack: 0 1px 2px rgba(0, 0, 0, 0.2),\n    0 4px 8px rgba(0, 0, 0, 0.3); /* Two layers. */");
+    const said = [...r.kept, ...r.notes].join("\n");
+    expect(said).toMatch(/components\.json: .*FixtureCard/);
+    expect(said).toMatch(/allowedScriptOrigins.*https:\/\/example\.org/);
+    expect(said).toMatch(/--shadow-stack/);
+    expect(said).toMatch(/--color-accent: #00ffcc \(kept: differs from the clone/);
+  });
+
+  it("records the files it added in the backup and prints how to restore the kit exactly", async () => {
+    const kit = oldProjectKit();
+    const r = upgradeKit(kit, { from: CLONE_KIT, now: new Date("2026-11-15T10:00:00Z"), tmpRoot: tmp("kit-upgrade-staging-") });
+    expect(r.added).toEqual(expect.arrayContaining(["components/toggle.html", "components/toggle.md"]));
+    const manifest = JSON.parse(fs.readFileSync(path.join(r.backup!, "kit-upgrade.json"), "utf8"));
+    expect(manifest.added).toEqual(expect.arrayContaining(["components/toggle.html", "components/toggle.md"]));
+    expect(manifest.replaced).toEqual(expect.arrayContaining(["RULES.md", "tokens.css"]));
+    const again = oldProjectKit();
+    const a = io();
+    expect(await runCli(["kit", "upgrade", again, "--from", CLONE_KIT], a.io)).toBe(0);
+    const text = a.out.join("");
+    expect(text).toMatch(/added: .*components\/toggle\.html/);
+    expect(text).toMatch(/restore: .*cp -R .*\.backup\/.* && .*rm .*components\/toggle\.html/);
+  });
+
+  it("takes the clone's new value for a token the project never changed, when the clone's history has the project's value", async () => {
+    // a clone repository whose tokens.css had --color-accent: #111111 before its current value
+    const repo = path.join(tmp(), "clone");
+    fs.cpSync(CLONE_KIT, path.join(repo, "design-kit"), { recursive: true, filter: (src) => !src.startsWith(path.join(CLONE_KIT, "fixtures")) });
+    const tokensFile = path.join(repo, "design-kit", "tokens.css");
+    const current = fs.readFileSync(tokensFile, "utf8");
+    const git = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.email=t@example.org", "-c", "user.name=t", ...a], { stdio: "pipe" });
+    git("init", "-q");
+    fs.writeFileSync(tokensFile, current.replace("--color-accent: #16c2d5;", "--color-accent: #111111;"));
+    git("add", "-A"); git("commit", "-q", "-m", "old");
+    fs.writeFileSync(tokensFile, current);
+    git("add", "-A"); git("commit", "-q", "-m", "new");
+    const kit = oldProjectKit();
+    fs.writeFileSync(path.join(kit, "tokens.css"), fs.readFileSync(path.join(kit, "tokens.css"), "utf8").replace("--color-accent: #00ffcc;", "--color-accent: #111111;"));
+    const r = upgradeKit(kit, { from: path.join(repo, "design-kit"), tmpRoot: tmp("kit-upgrade-staging-") });
+    expect(r.ok, r.errors.join("\n")).toBe(true);
+    expect(fs.readFileSync(path.join(kit, "tokens.css"), "utf8")).toContain("--color-accent: #16c2d5;");
+    expect(r.notes.join("\n")).toMatch(/--color-accent: #111111 → #16c2d5 \(an earlier clone value\)/);
+  });
+
 });

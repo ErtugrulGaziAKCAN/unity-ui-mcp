@@ -128,11 +128,21 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         io.out("The merged kit does not build: nothing was written.\n");
         return 1;
       }
-      io.out(r.replaced.length ? `${would("replace", "replaced")}: ${r.replaced.join(", ")}\n` : "nothing to replace: the kit is the clone's version\n");
+      io.out(r.replaced.length || r.added.length ? "" : "nothing to replace: the kit is the clone's version\n");
+      if (r.replaced.length) io.out(`${would("replace", "replaced")}: ${r.replaced.join(", ")}\n`);
+      if (r.added.length) io.out(`${would("add", "added")}: ${r.added.join(", ")}\n`);
       for (const k of r.kept) io.out(`${would("keep", "kept")}: ${k}\n`);
       for (const n of r.notes) io.out(`note: ${n}\n`);
-      if (r.replaced.length) io.out(r.dryRun ? `would back up the replaced files into ${path.join(r.kitDir, ".backup", "<UTC time>")} (the newest ${KEEP_BACKUPS} backups are kept)\n`
-        : `backed up the replaced files into ${r.backup} (restore: copy its files back into the kit)\n`);
+      const q = (p: string) => `'${p.replace(/'/g, "'\\''")}'`;
+      if (r.replaced.length || r.added.length) {
+        if (r.dryRun) io.out(`would back up the replaced files into ${path.join(r.kitDir, ".backup", "<UTC time>", "files")} and name the added ones in kit-upgrade.json (the newest ${KEEP_BACKUPS} backups are kept)\n`);
+        else {
+          io.out(`backed up the replaced files into ${path.join(r.backup!, "files")}; ${path.join(r.backup!, "kit-upgrade.json")} names the replaced and added files\n`);
+          const steps = [...(r.replaced.length ? [`cp -R ${q(path.join(r.backup!, "files"))}/. ${q(r.kitDir)}/`] : []),
+            ...(r.added.length ? [`rm -f ${r.added.map((a) => q(path.join(r.kitDir, a))).join(" ")}`] : [])];
+          io.out(`restore: ${steps.join(" && ")}\n`);
+        }
+      }
       for (const p of r.pruned) io.out(`removed the older backup ${p}\n`);
       io.out(`kit build and kit build --check: ${r.dryRun ? "pass on the merged copy" : "the kit is current"}\n`);
       return 0;

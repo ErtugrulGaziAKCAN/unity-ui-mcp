@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 import { buildKit } from "./build.js";
 import { parseViewports } from "../viewport.js";
 
@@ -18,9 +19,9 @@ import { parseViewports } from "../viewport.js";
  * - Kept as they are: the fonts folder (fonts CSS and JSON included) and every file the clone does not have.
  *
  * Everything is merged and built (`kit build`, then `kit build --check`) on a staging copy first: a merge that does not
- * build writes nothing. Then the files that change are backed up into `<kitDir>/.backup/<UTC time>/` (dot folders are
- * not imported by Unity nor read by the exporter), written, and the backups beyond the newest {@link KEEP_BACKUPS} are
- * removed. `dryRun` reports the same plan and writes nothing. The staging copy is always removed.
+ * build writes nothing. Then the files it replaces are backed up into `<kitDir>/.backup/<UTC time>/files/`, with
+ * `kit-upgrade.json` listing the files it replaced and added (dot folders are not imported by Unity nor read by the
+ * exporter), written, and the backups beyond the newest {@link KEEP_BACKUPS} are removed. `dryRun` reports the same plan and writes nothing. The staging copy is always removed.
  */
 export interface KitUpgradeOptions {
   /** The kit to upgrade to: the clone's `design-kit` by default. */
@@ -37,8 +38,10 @@ export interface KitUpgradeResult {
   dryRun: boolean;
   kitDir: string;
   from: string;
-  /** Files written with the clone's content or a merge (relative to the kit, '/' separators). */
+  /** Files written over the project's, with the clone's content or a merge (relative to the kit, '/' separators). */
   replaced: string[];
+  /** Files the project's kit did not have, added from the clone. */
+  added: string[];
   /** What was kept from the project, one line each. */
   kept: string[];
   /** Other changes worth saying (a new clone token, a viewport class taken from the clone). */
@@ -52,6 +55,8 @@ export interface KitUpgradeResult {
 
 export const KEEP_BACKUPS = 3;
 export const BACKUP_DIR = ".backup";
+/** Inside a backup: the old files (at their kit paths) and the manifest naming what the upgrade replaced and added. */
+export const BACKUP_FILES = "files", BACKUP_MANIFEST = "kit-upgrade.json";
 
 /** The clone's own kit: `design-kit` at the root of the repository this module belongs to. */
 export function cloneKitDir(): string {
@@ -85,37 +90,86 @@ function files(dir: string, skip: (r: string) => boolean): string[] {
   return out.sort();
 }
 
-/** The project's tokens.css merged into the clone's: the clone's file, with the project's changed and own tokens. */
-function mergeTokens(clone: string, project: string, kept: string[], notes: string[]): string {
-  const DECL = /^(\s*)--([A-Za-z0-9_-]+)\s*:\s*([^;]*);(.*)$/;
-  const projectLines = new Map<string, { line: string; value: string }>();
-  const projectOrder: string[] = [];
-  for (const line of project.split(/\r?\n/)) {
-    const m = DECL.exec(line);
-    if (m) { projectLines.set(m[2], { line, value: m[3].trim().replace(/\s+/g, " ") }); projectOrder.push(m[2]); }
+/** A tokens.css declaration: its name, value (whitespace collapsed), its text as written (a value may span lines) and where it is. */
+interface Decl { name: string; value: string; text: string; start: number; end: number }
+
+/** The declarations of a tokens.css text, by declaration, not by line (a value may span several lines). */
+function declarations(css: string): Decl[] {
+  const out: Decl[] = [];
+  for (const m of css.matchAll(/--([A-Za-z0-9_-]+)\s*:\s*([^;]*);[ \t]*(?:\/\*[\s\S]*?\*\/)?/g))
+    out.push({ name: m[1], value: m[2].trim().replace(/\s+/g, " "), text: m[0], start: m.index!, end: m.index! + m[0].length });
+  return out;
+}
+
+/**
+ * Every earlier value of each token in the clone's tokens.css, from the clone's git history (empty when the kit is not in a
+ * git repository or git is not available): a project value found there is one the clone changed since the project copied
+ * it, not one the project changed.
+ */
+function cloneTokenHistory(cloneTokens: string): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 20_000 });
+  try {
+    const dir = path.dirname(cloneTokens);
+    const root = git(dir, "rev-parse", "--show-toplevel").trim();
+    const relPath = rel(path.relative(fs.realpathSync(root), fs.realpathSync(cloneTokens)));
+    const shas = git(root, "log", "--format=%H", "-n", "500", "--", relPath).split("\n").filter(Boolean);
+    for (const sha of shas) {
+      let text: string;
+      try { text = git(root, "show", `${sha}:${relPath}`); } catch { continue; }
+      for (const d of declarations(text)) {
+        if (!out.has(d.name)) out.set(d.name, new Set());
+        out.get(d.name)!.add(d.value);
+      }
+    }
+  } catch { /* not a git checkout: no history */ }
+  return out;
+}
+
+/**
+ * The project's tokens.css merged into the clone's: the clone's file, with each token the project changed (its whole
+ * declaration as written) and each token of its own appended before the end of :root. A project value that is an earlier
+ * value of the clone's (its git history) takes the clone's current one; any other differing value is kept and said.
+ */
+function mergeTokens(clone: string, project: string, history: Map<string, Set<string>>, kept: string[], notes: string[]): string {
+  const theirs = declarations(project);
+  const byName = new Map(theirs.map((d) => [d.name, d]));
+  const mine = declarations(clone);
+  const cloneNames = new Set(mine.map((d) => d.name));
+  let out = clone;
+  // splice from the end, so earlier positions stay valid
+  for (const d of mine.slice().reverse()) {
+    const p = byName.get(d.name);
+    if (!p) { notes.push(`tokens.css: added the clone's token --${d.name}: ${d.value}`); continue; }
+    if (p.value === d.value) continue;
+    if (history.get(d.name)?.has(p.value)) { notes.push(`tokens.css: --${d.name}: ${p.value} → ${d.value} (an earlier clone value)`); continue; }
+    kept.push(`tokens.css: --${d.name}: ${p.value} (kept: differs from the clone's ${d.value})`);
+    out = out.slice(0, d.start) + p.text + out.slice(d.end);
   }
-  const cloneNames = new Set<string>();
-  const out: string[] = [];
-  for (const line of clone.split(/\r?\n/)) {
-    const m = DECL.exec(line);
-    if (!m) { out.push(line); continue; }
-    cloneNames.add(m[2]);
-    const p = projectLines.get(m[2]);
-    if (!p) { notes.push(`tokens.css: added the clone's token --${m[2]}: ${m[3].trim()}`); out.push(line); continue; }
-    if (p.value === m[3].trim().replace(/\s+/g, " ")) { out.push(line); continue; }
-    kept.push(`tokens.css: --${m[2]}: ${p.value} (the project's value; the clone's is ${m[3].trim()})`);
-    out.push(`${m[1]}${p.line.trimStart()}`);
-  }
-  const own = projectOrder.filter((n) => !cloneNames.has(n));
+  const own = theirs.filter((d) => !cloneNames.has(d.name));
   if (own.length) {
-    const close = out.lastIndexOf(out.slice().reverse().find((l) => /^\s*\}\s*$/.test(l)) ?? "}");
-    const indent = DECL.exec(out.find((l) => DECL.test(l)) ?? "  --x: 0;")?.[1] ?? "  ";
-    const lines = own.map((n) => `${indent}${projectLines.get(n)!.line.trimStart()}`);
-    for (const n of own) kept.push(`tokens.css: --${n}: ${projectLines.get(n)!.value} (the project's own token)`);
-    if (close >= 0) out.splice(close, 0, ...lines);
-    else out.push(...lines);
+    const close = out.lastIndexOf("}");
+    const block = own.map((d) => `  ${d.text}`).join("\n") + "\n";
+    for (const d of own) kept.push(`tokens.css: --${d.name}: ${d.value} (the project's own token)`);
+    out = close >= 0 ? out.slice(0, close).replace(/[ \t]*$/, "") + block + out.slice(close) : out + "\n" + block;
   }
-  return out.join("\n");
+  return out;
+}
+
+/** components/components.json: the clone's components in its order, then each component only the project registered. */
+function mergeComponents(clone: string, project: string | null, kept: string[]): string {
+  if (project === null) return clone;
+  type Entry = { name?: unknown };
+  let theirs: Entry[] = [];
+  try { theirs = ((JSON.parse(project) as { components?: Entry[] }).components ?? []).filter((c) => c && typeof c === "object"); } catch { return clone; }
+  const parsed = JSON.parse(clone) as Record<string, unknown> & { components?: Entry[] };
+  const names = new Set((parsed.components ?? []).map((c) => String(c.name)));
+  const own = theirs.filter((c) => !names.has(String(c.name)));
+  if (!own.length) return clone;
+  for (const c of own) kept.push(`components/components.json: the project's component ${String(c.name)}`);
+  const all = [...(parsed.components ?? []), ...own];
+  const line = (e: Entry) => JSON.stringify(e).replace(/^\{/, "{ ").replace(/\}$/, " }").replace(/,"/g, ', "').replace(/":/g, '": ');
+  return `{\n  "components": [\n${all.map((e) => `    ${line(e)}`).join(",\n")}\n  ]\n}\n`;
 }
 
 /** kit.config.json: the clone's keys and order, the project's profile-written keys, own keys, paths and extra viewports. */
@@ -132,6 +186,19 @@ function mergeConfig(clone: Json, project: Json, kept: string[], notes: string[]
     if (k in clone || PROJECT_KEYS.includes(k) || k === "viewports") continue;
     out[k] = v;
     kept.push(`kit.config.json: "${k}" (the project's own key)`);
+  }
+  // the clone's other keys: a list keeps the values only the project added (a union); any other value is the clone's, said
+  for (const [k, v] of Object.entries(clone)) {
+    if (PROJECT_KEYS.includes(k) || k === "viewports" || project[k] === undefined || JSON.stringify(project[k]) === JSON.stringify(v)) continue;
+    if (k === "filterFunctions") { notes.push(`kit.config.json: "filterFunctions" follows css-support.json (kit build writes it): ${JSON.stringify(v)}`); continue; }
+    if (Array.isArray(v) && Array.isArray(project[k])) {
+      const seen = new Set(v.map((x) => JSON.stringify(x)));
+      const extra = (project[k] as unknown[]).filter((x) => !seen.has(JSON.stringify(x)));
+      out[k] = [...v, ...extra];
+      if (extra.length) kept.push(`kit.config.json: "${k}" keeps the project's ${extra.map((x) => JSON.stringify(x)).join(", ")} besides the clone's`);
+      continue;
+    }
+    notes.push(`kit.config.json: "${k}" takes the clone's ${JSON.stringify(v)} (the project had ${JSON.stringify(project[k])})`);
   }
   const cloneVps = Array.isArray(clone.viewports) ? (clone.viewports as unknown[]) : [];
   const projectVps = Array.isArray(project.viewports) ? (project.viewports as unknown[]) : [];
@@ -151,7 +218,7 @@ const stamp = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z").replace(/:/
 
 export function upgradeKit(kitDir: string, opts: KitUpgradeOptions = {}): KitUpgradeResult {
   const kit = path.resolve(kitDir), from = path.resolve(opts.from ?? cloneKitDir());
-  const result: KitUpgradeResult = { ok: false, dryRun: !!opts.dryRun, kitDir: kit, from, replaced: [], kept: [], notes: [], backup: null, pruned: [], errors: [] };
+  const result: KitUpgradeResult = { ok: false, dryRun: !!opts.dryRun, kitDir: kit, from, replaced: [], added: [], kept: [], notes: [], backup: null, pruned: [], errors: [] };
   const real = (p: string) => { try { return fs.realpathSync(p); } catch { return p; } };
   if (!fs.existsSync(path.join(from, "kit.config.json"))) throw new Error(`${from} is not a design kit (no kit.config.json)`);
   if (!fs.existsSync(path.join(kit, "kit.config.json"))) throw new Error(`${kit} is not a design kit (no kit.config.json)`);
@@ -176,6 +243,11 @@ export function upgradeKit(kitDir: string, opts: KitUpgradeOptions = {}): KitUpg
     for (const r of files(from, (q) => q === "fixtures" || q === BACKUP_DIR || inFonts(q, cloneFonts))) {
       if (r === "kit.config.json" || r === cloneTokens) continue;
       if (r === cloneStyles) continue;
+      if (r === "components/components.json") {
+        const theirs = path.join(kit, r);
+        write(r, mergeComponents(fs.readFileSync(path.join(from, r), "utf8"), fs.existsSync(theirs) ? fs.readFileSync(theirs, "utf8") : null, result.kept));
+        continue;
+      }
       write(r, fs.readFileSync(path.join(from, r)));
     }
     if (projectFonts !== "." && fs.existsSync(path.join(kit, projectFonts))) result.kept.push(`${projectFonts}/: the project's fonts, fonts CSS and JSON (kit sync writes them)`);
@@ -197,7 +269,7 @@ export function upgradeKit(kitDir: string, opts: KitUpgradeOptions = {}): KitUpg
     if (fs.existsSync(path.join(from, cloneTokens))) {
       const ct = fs.readFileSync(path.join(from, cloneTokens), "utf8");
       const pt = fs.existsSync(path.join(kit, projectTokens)) ? fs.readFileSync(path.join(kit, projectTokens), "utf8") : "";
-      write(projectTokens, mergeTokens(ct, pt, result.kept, result.notes));
+      write(projectTokens, mergeTokens(ct, pt, cloneTokenHistory(path.join(from, cloneTokens)), result.kept, result.notes));
     }
     write("kit.config.json", JSON.stringify(mergeConfig(cloneCfg, projectCfg, result.kept, result.notes)) + "\n");
 
@@ -215,24 +287,27 @@ export function upgradeKit(kitDir: string, opts: KitUpgradeOptions = {}): KitUpg
     const staged = files(staging, () => false);
     for (const r of staged) {
       const target = path.join(kit, r);
-      if (!fs.existsSync(target) || !fs.readFileSync(target).equals(fs.readFileSync(path.join(staging, r)))) result.replaced.push(r);
+      if (!fs.existsSync(target)) result.added.push(r);
+      else if (!fs.readFileSync(target).equals(fs.readFileSync(path.join(staging, r)))) result.replaced.push(r);
     }
     for (const r of projectFiles) {
       if (inFonts(r, projectFonts) || r === projectTokens || r === "kit.config.json") continue;
       if (!fs.existsSync(path.join(from, r)) && !(r === projectStyles)) result.kept.push(`${r} (not in the clone's kit)`);
     }
     result.ok = true;
-    if (opts.dryRun || result.replaced.length === 0) return result;
+    if (opts.dryRun || result.replaced.length + result.added.length === 0) return result;
 
-    // back up what changes, write it, keep the newest backups
+    // back up what changes (the old files under files/, and kit-upgrade.json naming the files it adds), write it, keep the
+    // newest backups
     const backup = path.join(kit, BACKUP_DIR, stamp(opts.now ?? new Date()));
     for (const r of result.replaced) {
-      if (!fs.existsSync(path.join(kit, r))) continue;
-      fs.mkdirSync(path.dirname(path.join(backup, r)), { recursive: true });
-      fs.copyFileSync(path.join(kit, r), path.join(backup, r));
+      fs.mkdirSync(path.dirname(path.join(backup, BACKUP_FILES, r)), { recursive: true });
+      fs.copyFileSync(path.join(kit, r), path.join(backup, BACKUP_FILES, r));
     }
+    fs.mkdirSync(backup, { recursive: true });
+    fs.writeFileSync(path.join(backup, BACKUP_MANIFEST), JSON.stringify({ from, replaced: result.replaced, added: result.added }, null, 2) + "\n");
     result.backup = backup;
-    for (const r of result.replaced) {
+    for (const r of [...result.replaced, ...result.added]) {
       const target = path.join(kit, r), tmp = `${target}.upgrade-${process.pid}`;
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(path.join(staging, r), tmp);
