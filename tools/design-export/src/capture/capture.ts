@@ -332,7 +332,7 @@ export function itemSuffix(item: readonly number[]): string {
 }
 
 type LineBox = { x: number; y: number; w: number; h: number; baseline: number };
-type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; rotation?: number; lines: LineBox[] };
+type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; rotation?: number; lines: LineBox[]; color?: [number, number, number, number]; opacity?: number };
 /**
  * Boxes of the IR elements in device px: border box, visibility, text lines with baselines (see the boxes schema for
  * the rules). Ascents are cached per font and per state of the page's font set (faces added or loaded since).
@@ -391,6 +391,17 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
     turned.set(e, v);
     return v;
   };
+  // the opacity the element draws with: its own times its ancestors' (an animation sample's running value included)
+  const drawnOpacity = (e: Element | null): number => {
+    let o = 1;
+    for (let x = e; x && x !== document.documentElement; x = x.parentElement) { const v = parseFloat(getComputedStyle(x).opacity); if (Number.isFinite(v)) o *= v; }
+    return Math.round(o * 1e6) / 1e6;
+  };
+  /** A computed `rgb()`/`rgba()` colour as [r, g, b, alpha]; null for another syntax. */
+  const rgba = (v: string): [number, number, number, number] | null => {
+    const m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/.exec(v.trim());
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])] : null;
+  };
   const out: [string, ElBox][] = [];
   for (const [id, i, isText] of arg.items) {
     const el = els[i];
@@ -408,6 +419,11 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
       if (deg !== 0 && !Object.is(deg, -0)) box.rotation = deg;
     }
     if (isText && rendered) {
+      // the colour its text is drawn in and the opacity it draws with, as computed now (a later repeat item's copy has its
+      // own, its classes' and the job's state's)
+      const color = rgba(getComputedStyle(el).color);
+      if (color) box.color = color;
+      box.opacity = drawnOpacity(el);
       type Frag = { l: number; t: number; r: number; b: number; base: number };
       const frags: Frag[] = [];
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
@@ -830,7 +846,8 @@ export class CaptureSession {
     fs.mkdirSync(goldensDir, { recursive: true });
     fs.writeFileSync(path.join(goldensDir, `${name}.png`), png);
     const boxes: CaptureBoxes = { capture: name, viewport: [job.viewport[0], job.viewport[1]], scale: this.scale, elements: Object.fromEntries(els), external: [...this.external] };
-    if (copies.length) boxes.items = Object.fromEntries(copies.map(([k, b]) => [k, { x: b.x, y: b.y, w: b.w, h: b.h, visible: b.visible, text: b.text, lines: b.lines }]));
+    if (copies.length) boxes.items = Object.fromEntries(copies.map(([k, b]) => [k, { x: b.x, y: b.y, w: b.w, h: b.h, visible: b.visible, text: b.text, lines: b.lines,
+      ...(b.color ? { color: b.color } : {}), ...(b.opacity !== undefined ? { opacity: b.opacity } : {}) }]));
     return boxes;
   }
 

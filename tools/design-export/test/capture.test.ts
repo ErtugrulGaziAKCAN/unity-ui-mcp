@@ -644,6 +644,10 @@ describe("captures", () => {
       expect(c.w - c.lines[0].w, k).toBeLessThan(1);
     }
     expect(date.w).toBe(Math.round(date.w));
+    // and the colour each text is drawn in and the opacity it draws with, the copies' own (ruling R141)
+    expect(date).toMatchObject({ color: [255, 255, 255, 1], opacity: 1 });
+    expect(items["date#2"]).toMatchObject({ color: [255, 255, 255, 1], opacity: 1 });
+    expect(items["day#1"].color).toBeUndefined();
     expect(itemSuffix([0, 2])).toBe("#2");
     expect(itemSuffix([1, 0])).toBe("#0#1");
     expect(itemSuffix([3, 1])).toBe("#1#3");

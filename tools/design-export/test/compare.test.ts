@@ -1287,17 +1287,20 @@ describe("compareCapture: edge, colour and ink checks", () => {
       };
       const design = draw([[6, 0.84], [7, 0.44]], secondary);
       const line = { x: 9, y: 2, w: 12, h: 10, baseline: 9 };
-      const boxes: CaptureBoxes = { capture: "c", viewport: [32, 16], scale: 0.5, external: [], elements: { root: el(0, 0, 32, 16), t: el(9, 2, 12, 10, { text: true, lines: [line] }) } };
-      const ctx: CaptureContext = { fontPx: { t: 10 }, textColor: { t: { rgb: secondary, alpha: 1 } }, backgrounds: new Set(), painters: new Set(), order: ["root", "t"], root: "root", viewportClass: "exact" };
+      // the text's colour and opacity as the capture records them (ruling R141)
+      const recorded = (color?: Rgb): CaptureBoxes => ({ capture: "c", viewport: [32, 16], scale: 0.5, external: [], elements: { root: el(0, 0, 32, 16),
+        t: el(9, 2, 12, 10, { text: true, lines: [line], ...(color ? { color: [...color, 1] as [number, number, number, number], opacity: 1 } : {}) }) } });
+      const boxes = recorded(secondary);
+      const ctx: CaptureContext = { fontPx: { t: 10 }, backgrounds: new Set(), painters: new Set(), order: ["root", "t"], root: "root", viewportClass: "exact" };
       const exactT = thresholdsFor(readThresholds(), "exact");
-      const run = (png: Rgba, c = ctx) => compareCapture({ png: design, boxes }, { png, boxes }, [], exactT, c).issues.filter((i) => i.id === "t");
+      const run = (png: Rgba, b = boxes) => compareCapture({ png: design, boxes: b }, { png, boxes: b }, [], exactT, ctx).issues.filter((i) => i.id === "t");
       // the correct dash, drawn over other rows: its lightness and amount measure coverage there, so they are not judged
       const right = draw([[5, 0.01], [6, 1], [7, 0.12]], secondary);
       expect(run(right)).toEqual([]);
       const row = compareCapture({ png: design, boxes }, { png: right, boxes }, [], exactT, ctx).elements.find((e) => e.id === "t")!;
       expect(row.inkDirection).toBeLessThan(exactT.textInkDirection);
-      // without the declared colour (no IR) nothing is recognised: the usual checks, which fail on the coverage
-      expect(run(right, { ...ctx, textColor: undefined }).map((i) => i.kind).sort()).toEqual(["ink", "inkCoverage"]);
+      // without the recorded colour nothing is recognised: the usual checks, which fail on the coverage
+      expect(run(right, recorded()).map((i) => i.kind).sort()).toEqual(["ink", "inkCoverage"]);
       // a dash of another hue (the accent or the warning colour) fails on its direction
       for (const hue of [[22, 194, 213], [242, 181, 68]] as Rgb[])
         expect(run(draw([[5, 0.01], [6, 1], [7, 0.12]], hue)), hue.join()).toEqual([expect.objectContaining({ kind: "ink",
@@ -1312,6 +1315,75 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(normal.issues.filter((i) => i.id === "t").map((i) => i.kind)).toContain("ink");
       expect(normal.elements.find((e) => e.id === "t")!.inkDirection ?? null).toBeNull();
       expect(compareCapture({ png: stems(secondary), boxes }, { png: stems(secondary), boxes }, [], exactT, ctx).issues).toEqual([]);
+    });
+
+    describe("R141: a hairline line is only a small, unattenuated, uncovered text in its own colour", () => {
+      // kit colours: rows on surface-700, secondary and muted text
+      const bgC: Rgb = [18, 60, 71], secondary: Rgb = [185, 208, 214], muted: Rgb = [134, 167, 176], veilC: Rgb = [11, 31, 38];
+      const exactT = thresholdsFor(readThresholds(), "exact");
+      const mix = (c: Rgb, k: number, under: Rgb = bgC): Rgb => [0, 1, 2].map((j) => Math.round(under[j] + k * (c[j] - under[j]))) as Rgb;
+      /** Five stems 2 device px wide (an ordinary glyph run), `k` of the colour over the background, from `first` to `last`. */
+      const stems = (c: Rgb, k = 1, first = 0, last = 5, veil = 0) => {
+        const png = canvas(48, 24, bgC);
+        for (let s2 = first; s2 < last; s2++) fill(png, { x: 8 + 6 * s2, y: 5, w: 2, h: 12 }, mix(c, k));
+        if (veil) for (let p = 0; p < 48 * 24; p++) { const o = p * 4; for (let j = 0; j < 3; j++) png.data[o + j] = Math.round((1 - veil) * png.data[o + j] + veil * veilC[j]); }
+        return png;
+      };
+      /** The R138 dash: rows of coverage of the colour. */
+      const dash = (rows: [number, number][], c: Rgb) => {
+        const png = canvas(48, 24, bgC);
+        for (const [y, cov] of rows) for (let x = 10; x < 20; x++) { const o = (y * 48 + x) * 4; const m = mix(c, cov); for (let j = 0; j < 3; j++) png.data[o + j] = m[j]; }
+        return png;
+      };
+      const line = { x: 7, y: 3, w: 30, h: 16, baseline: 15 };
+      /** The golden boxes: element `t` (or its copy `t#1`) with its computed colour and opacity as the capture records them. */
+      const boxes = (color: Rgb, opacity: number, copy = false, more: Record<string, Box> = {}): CaptureBoxes => {
+        const own = { color: [...color, 1] as [number, number, number, number], opacity };
+        const t = el(7, 3, 30, 16, { text: true, lines: [line], ...(copy ? {} : own) });
+        return { capture: "c", viewport: [48, 24], scale: 0.5, external: [], elements: { root: el(0, 0, 48, 24), list: el(0, 0, 48, 24), t: copy ? el(7, 3, 30, 16, { visible: false }) : t, ...more },
+          ...(copy ? { items: { "t#1": { ...t, ...own } } } : {}) };
+      };
+      // (851cf10 took the colour from the IR's static style for the element and its copies, the secondary here)
+      const ctxOf = (px: number, _ir: Rgb, more: Partial<CaptureContext> = {}): CaptureContext => ({ fontPx: { t: px }, backgrounds: new Set(), painters: new Set(),
+        order: ["root", "list", "t"], root: "root", parent: new Map([["list", "root"], ["t", "list"]]), repeats: new Set(["list"]), viewportClass: "exact", ...more });
+      const kinds = (gp: Rgba, gb: CaptureBoxes, up: Rgba, c: CaptureContext, id = "t") =>
+        compareCapture({ png: gp, boxes: gb }, { png: up, boxes: gb }, [], exactT, c).issues.filter((i) => i.id === id).map((i) => i.kind).sort();
+
+      it("an opacity-animation sample (design at 0.6) with Unity at 0.8 or missing glyphs fails, at 16 and at 10 px", () => {
+        for (const px of [16, 10]) {
+          const c = ctxOf(px, secondary, { anim: true, moving: new Set() });
+          const gb = boxes(secondary, 0.6);
+          expect(kinds(stems(secondary, 0.6), gb, stems(secondary, 0.8), c), `${px} px, wrong opacity`).toContain("ink");
+          expect(kinds(stems(secondary, 0.6), gb, stems(secondary, 0.6, 0, 3), c), `${px} px, missing glyphs`).toContain("inkCoverage");
+        }
+      });
+
+      it("text under a later layer at 30 % with Unity at 0.7 or missing glyphs fails, at 16 and at 10 px", () => {
+        for (const px of [16, 10]) {
+          const veil = el(0, 0, 48, 24);
+          const c = ctxOf(px, secondary, { order: ["root", "list", "t", "veil"], painters: new Set(["veil"]) });
+          const gb = boxes(secondary, 1, false, { veil });
+          expect(kinds(stems(secondary, 1, 0, 5, 0.3), gb, stems(secondary, 0.7, 0, 5, 0.3), c), `${px} px, lighter`).toContain("ink");
+          expect(kinds(stems(secondary, 1, 0, 5, 0.3), gb, stems(secondary, 1, 0, 3, 0.3), c), `${px} px, missing glyphs`).toContain("inkCoverage");
+        }
+      });
+
+      it("a later item's muted copy (the IR element secondary) drawn lighter or with missing glyphs fails, at 16 and at 10 px", () => {
+        for (const px of [16, 10]) {
+          const c = ctxOf(px, secondary);
+          const gb = boxes(muted, 1, true);
+          expect(kinds(stems(muted), gb, stems(muted, 0.75), c, "t#1"), `${px} px, lighter`).toContain("ink");
+          expect(kinds(stems(muted), gb, stems(muted, 1, 0, 3), c, "t#1"), `${px} px, missing glyphs`).toContain("inkCoverage");
+        }
+      });
+
+      it("a hairline dash keeps an ink amount between 0.5 and 2 times the design's: at 0.09 it fails", () => {
+        const c = ctxOf(10, secondary);
+        const gb = boxes(secondary, 1);
+        const design = dash([[6, 0.84], [7, 0.44]], secondary);
+        expect(kinds(design, gb, dash([[5, 0.01], [6, 1], [7, 0.12]], secondary), c)).toEqual([]);
+        expect(kinds(design, gb, dash([[6, 0.12]], secondary), c)).toEqual(["inkCoverage"]);
+      });
     });
 
     it("R133: the evidence names every condition that does not hold, not only the first", () => {

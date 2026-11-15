@@ -241,7 +241,7 @@ export const RESAMPLED_PICTURE_FLOOR = 0.95;
 export const SCALED_SMALL_INK_CAP = 6.5;
 /**
  * Hairline lines (ruling R138). A pixel of a text line is fully covered when its luma distance from the line's background is
- * at least HAIRLINE_FULL of the declared text colour's (its `color` times its alpha and opacity, over that background). A line
+ * at least HAIRLINE_FULL of the text colour's (the one the capture recorded for the text, over that background). A line
  * whose design shows fewer than HAIRLINE_PIXELS such pixels (the fewest the ink colour takes its median of), whose ink in the
  * design points the declared colour's way from the background (within HAIRLINE_SAME_COLOUR degrees: it is that colour at
  * partial coverage) and whose most covered pixel reaches HAIRLINE_PEAK of it (a stroke, not text under a translucent layer),
@@ -253,6 +253,13 @@ export const HAIRLINE_FULL = 0.85;
 export const HAIRLINE_PIXELS = 3;
 export const HAIRLINE_SAME_COLOUR = 2;
 export const HAIRLINE_PEAK = 0.5;
+/**
+ * Ruling R141: only text of at most HAIRLINE_MAX_PX device px can be a hairline line (the suite's are 10 and 10.67), drawn at
+ * full opacity in the colour the capture recorded for it (a copy's own) with no later layer over it; and its ink amount stays
+ * within HAIRLINE_INK_BAND of the design's (measured 0.69–1.14 on the suite's hairline lines).
+ */
+export const HAIRLINE_MAX_PX = 12;
+export const HAIRLINE_INK_BAND: readonly [number, number] = [0.5, 2];
 
 /** The angle in degrees between two colour directions. */
 function angleBetween(p: readonly number[], q: readonly number[]): number {
@@ -1184,9 +1191,16 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
       let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number } | null = null, maxDe = 0;
       let wX: { i: number; dl: number; dr: number; dw: number; worst: number } | null = null;
-      let wDir: { dir: number; i: number; a: number[]; b: number[] } | null = null;
-      // the colour the design declares for the text (a copy: without what the capture applies to the IR's own elements)
-      const declared = key === id ? ctx.textColor?.[id] : ctx.itemTextColor?.[id];
+      let wDir: { dir: number; i: number; a: number[]; b: number[] } | null = null, wAmount: { ratio: number; i: number } | null = null;
+      // ruling R141: a hairline line is small text drawn in its own colour (the one the capture recorded for this element or
+      // this copy) at full opacity (its own and its ancestors', an animation sample's running value included), and no later
+      // layer covers it; then R138's conditions (isHairline)
+      const own = key === id ? g.elements[id] : g.items?.[key];
+      const declared = own?.color && own.opacity !== undefined ? { rgb: own.color.slice(0, 3), alpha: own.color[3] * own.opacity } : undefined;
+      const mayBeHairline = !!declared && px <= HAIRLINE_MAX_PX && declared.alpha >= 1 - 1e-6;
+      const suffix = key.slice(id.length);
+      const later: Rect[] = mayBeHairline ? coveringIds(id).flatMap((x): (Rect & { visible: boolean } | undefined)[] => [g.elements[x], u.elements[x], g.items?.[x + suffix], u.items?.[x + suffix]])
+        .filter((e): e is Rect & { visible: boolean } => !!e && e.visible && e.w > 0 && e.h > 0) : [];
       const hidden = hiddenBy(id);
       let covered = 0;
       ge.lines.forEach((gl, i) => {
@@ -1205,10 +1219,18 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           const dw = dr - dl, worst = Math.max(Math.abs(dl), Math.abs(dr), Math.abs(dw));
           if (!wX || worst > wX.worst) wX = { i, dl, dr, dw, worst };
         }
-        // a hairline line (ruling R138): its lightness and amount measure coverage; its ink's colour direction is judged
-        if (b && declared && isHairline(a, declared)) {
+        // a hairline line (rulings R138, R141): its lightness measures coverage; its ink's colour direction is judged, and its
+        // ink amount only within HAIRLINE_INK_BAND (a stroke drawn a row off scatters, a missing or added glyph does not)
+        if (b && mayBeHairline && !later.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y) &&
+            isHairline(a, declared!)) {
           const dir = angleBetween(a.dirSrgb, b.dirSrgb);
           if (!wDir || dir > wDir.dir) wDir = { dir, i, a: a.ink, b: b.ink };
+          // the ink amount against the text colour on both sides (each pixel's distance from the background over the colour's),
+          // not each side's own ink colour: a stroke drawn faint everywhere is little ink, not a full stroke of a lighter colour
+          const sum = (x: Float64Array) => { let v = 0; for (const d of x) v += d; return v; };
+          const ratio = sum(b.dists) / Math.max(sum(a.dists), 1);
+          const off = Math.max(HAIRLINE_INK_BAND[0] - ratio, ratio - HAIRLINE_INK_BAND[1]);
+          if (off > EPS && (!wAmount || off > Math.max(HAIRLINE_INK_BAND[0] - wAmount.ratio, wAmount.ratio - HAIRLINE_INK_BAND[1]))) wAmount = { ratio, i };
           return;
         }
         inkLines.push({ id: key, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow: !!ctx.textShadows?.has(id) });
@@ -1232,6 +1254,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         if (x.dir > t.textInkDirection + EPS) {
           issue(key, "ink", `line ${x.i + 1} of ${ge.lines.length}: a hairline line (fewer than ${HAIRLINE_PIXELS} fully covered pixels in the design): its ink's colour direction from the background differs by ${x.dir.toFixed(2)}° (design ${hex(x.a)}, Unity ${hex(x.b)}; limit ${t.textInkDirection}°)`, ge.lines[x.i]);
         }
+      }
+      if (wAmount) {
+        const x = wAmount as { ratio: number; i: number };
+        issue(key, "inkCoverage", `line ${x.i + 1} of ${ge.lines.length}: a hairline line: Unity draws ${x.ratio.toFixed(2)}× the design's text ink (expected ${HAIRLINE_INK_BAND[0]}–${HAIRLINE_INK_BAND[1]}×): glyphs missing, added or another size`, ge.lines[x.i]);
       }
       if (wDe) {
         const x = wDe as { de: number; i: number; a: number[]; b: number[]; limit: number };

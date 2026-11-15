@@ -40,17 +40,6 @@ export interface CaptureContext {
   borders?: Record<string, [number, number, number, number]>;
   /** Font size of each text element in device px (its `font-size` in this capture times the capture scale). */
   fontPx?: Record<string, number>;
-  /**
-   * The colour each text element declares in this capture (its `color`, sRGB 0–255) and the share of it a fully covered pixel
-   * shows (the colour's alpha times the element's opacity and its ancestors'): what a pixel the glyphs cover wholly is in
-   * the design, over its background. Absent: unknown (no hairline line is recognised, text keeps the usual ink checks).
-   */
-  textColor?: Record<string, { rgb: [number, number, number]; alpha: number }>;
-  /**
-   * The same for the element's copies in later repeat items, which what the capture applies to the IR's own elements (its
-   * pseudo-states and classes) does not reach: the colour in the capture's state and breakpoints only.
-   */
-  itemTextColor?: Record<string, { rgb: [number, number, number]; alpha: number }>;
   /** Corner radii per element in device px (top-left, top-right, bottom-right, bottom-left); absent: square corners. */
   radii?: Record<string, [number, number, number, number]>;
   /** Elements that draw a raster picture (IR asset kind `image`) at another size than its own, in device px. */
@@ -195,19 +184,6 @@ function dimensionTest(ix: IrIndex, setup: CaptureSetup): (dim: string, id: stri
   };
 }
 
-/** An IR colour (`#rrggbb`, `#rrggbbaa` or `rgb()`/`rgba()` as the exporter normalises it), or null. */
-export function parseRgba(value: string | undefined): { rgb: [number, number, number]; alpha: number } | null {
-  if (!value) return null;
-  const v = value.trim().toLowerCase();
-  const hex = /^#([0-9a-f]{6})([0-9a-f]{2})?$/.exec(v);
-  if (hex) return { rgb: [0, 2, 4].map((o) => parseInt(hex[1].slice(o, o + 2), 16)) as [number, number, number], alpha: hex[2] ? parseInt(hex[2], 16) / 255 : 1 };
-  const fn = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(v);
-  if (!fn) return null;
-  const n = fn.slice(1, 4).map(Number);
-  const alpha = fn[4] === undefined ? 1 : Number(fn[4]);
-  return n.every(Number.isFinite) && Number.isFinite(alpha) ? { rgb: n as [number, number, number], alpha } : null;
-}
-
 /** The value of the most specific holding layer that has one (`base` when none holds). */
 function resolve<T>(base: T, layers: Record<string, T> | undefined, holds: (key: string) => boolean): T {
   let best = base, dims = 0;
@@ -234,19 +210,6 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
   const backgrounds = new Set<string>(), painters = new Set<string>();
   const borders: Record<string, [number, number, number, number]> = {};
   const fontPx: Record<string, number> = {};
-  const textColor: Record<string, { rgb: [number, number, number]; alpha: number }> = {};
-  const itemTextColor: Record<string, { rgb: [number, number, number]; alpha: number }> = {};
-  // what holds for a copy in a later repeat item: the capture's state and breakpoints, nothing applied to the IR's elements
-  const bare = dimensionTest(ix, { ...setup, apply: [] });
-  const bareOpacity = new Map<string, number>();
-  const bareOpacityOf = (id: string): number => {
-    if (bareOpacity.has(id)) return bareOpacity.get(id)!;
-    const own = parseFloat(styleValue(ix.nodes.get(id)!, "opacity", (key) => key.split("+").every((d) => bare(d, id))) ?? "1");
-    const up = ix.parent.get(id);
-    const v = (Number.isFinite(own) ? own : 1) * (up ? bareOpacityOf(up) : 1);
-    bareOpacity.set(id, v);
-    return v;
-  };
   const radii: Record<string, [number, number, number, number]> = {};
   const pictures = new Set<string>(), textShadows = new Set<string>(), rotated = new Set<string>(), opaque = new Set<string>(), vectors = new Set<string>();
   const repeats = new Set<string>();
@@ -289,10 +252,6 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     if (n.kind === "text" || n.text) {
       const size = parseFloat(styleValue(n, "font-size", holds) ?? "");
       if (Number.isFinite(size) && size > 0) fontPx[id] = size * golden.scale;
-      const color = parseRgba(styleValue(n, "color", holds));
-      if (color) textColor[id] = { rgb: color.rgb, alpha: color.alpha * opacityOf(id, holds) };
-      const itemColor = parseRgba(styleValue(n, "color", (key) => key.split("+").every((d) => bare(d, id))));
-      if (itemColor) itemTextColor[id] = { rgb: itemColor.rgb, alpha: itemColor.alpha * bareOpacityOf(id) };
       // offset-x offset-y blur: the third length (the colour may come first or last)
       const lengths = (styleValue(n, "text-shadow", holds) ?? "none").replace(/(rgba?|hsla?)\([^)]*\)|#[0-9a-f]+/gi, " ").match(/-?(?:\d+\.?\d*|\.\d+)(?:px)?(?=\s|$)/g) ?? [];
       if (lengths.length >= 3 && parseFloat(lengths[2]) > 0) textShadows.add(id);
@@ -319,5 +278,5 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     return movesBox(Array.isArray(anims) && typeof r.index === "number" ? anims[r.index] : undefined) ? r.elementId : null;
   }).filter((x): x is string => x !== null));
   if (runIds.size) for (const id of ix.order) for (let x: string | undefined = id; x !== undefined; x = ix.parent.get(x)) if (runIds.has(x)) { moving.add(id); break; }
-  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, textColor, itemTextColor, radii, pictures, textShadows, rotated };
+  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
 }
