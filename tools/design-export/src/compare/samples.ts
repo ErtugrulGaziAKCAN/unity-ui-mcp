@@ -330,3 +330,107 @@ export function endShift(design: Ink, unity: Ink, from: number, to: number, arou
   for (let s = centre - 0.25; s <= centre + 0.25 + 1e-9; s += 0.02) { const e = err(s); if (e < bestErr) { bestErr = e; best = s; } }
   return best;
 }
+
+/** The colour of an image at a point between pixel centres (a pixel's centre is at x + 0.5), bilinear, clamped to the image. */
+function bilinear(img: Rgba, x: number, y: number): Rgb3 {
+  const fx = x - 0.5, fy = y - 0.5, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+  const at = (xx: number, yy: number, k: number) => img.data[(Math.min(img.h - 1, Math.max(0, yy)) * img.w + Math.min(img.w - 1, Math.max(0, xx))) * 4 + k];
+  const out: Rgb3 = [0, 0, 0];
+  for (let k = 0; k < 3; k++) {
+    const top = at(x0, y0, k) * (1 - tx) + at(x0 + 1, y0, k) * tx, bottom = at(x0, y0 + 1, k) * (1 - tx) + at(x0 + 1, y0 + 1, k) * tx;
+    out[k] = top * (1 - ty) + bottom * ty;
+  }
+  return out;
+}
+
+const dist3 = (a: readonly number[], b: readonly number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+/** Where `c` lies on the segment from `a` to `b` (0 at a, 1 at b, clamped) and how far it is from it (RGB). */
+function onSegment(c: Rgb3, a: Rgb3, b: Rgb3): { t: number; off: number } {
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], len2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+  const t = Math.min(1, Math.max(0, ((c[0] - a[0]) * d[0] + (c[1] - a[1]) * d[1] + (c[2] - a[2]) * d[2]) / len2));
+  return { t, off: Math.hypot(c[0] - a[0] - t * d[0], c[1] - a[1] - t * d[1], c[2] - a[2] - t * d[2]) };
+}
+
+/** The least RGB distance between a border's colour and what lies outside it, and inside it, for its width to be measured. */
+export const RING_WIDTH_CONTRAST = 20;
+/** The step (device px) along a border's normal at which its width profile is sampled. */
+const WIDTH_STEP = 0.25;
+
+/**
+ * The drawn width of a border across one point of it: along the normal `n` (unit, inward) from the outer edge `p` (device
+ * px), each sample between the colour outside (`o`, 2 px out) and the ring's (`r`) counts as ring by its place on that segment,
+ * each between the ring's and the colour inside (`i`, 2.5 px past the border's width `bw`) by its place on that one (the
+ * nearer segment; where both are as near, the side of the border's middle decides), so the sum over the profile is the
+ * border's covered width, also where an edge falls between pixels or the border is a pixel thinner. Null when the ring's
+ * colour is too close to what lies outside or inside it to tell its edges (RING_WIDTH_CONTRAST).
+ */
+export function borderWidthAt(img: Rgba, p: readonly [number, number], n: readonly [number, number], bw: number, r: Rgb3): number | null {
+  const at = (s: number) => bilinear(img, p[0] + s * n[0], p[1] + s * n[1]);
+  const o = at(-2), i = at(bw + 2.5);
+  if (dist3(r, o) < RING_WIDTH_CONTRAST || dist3(r, i) < RING_WIDTH_CONTRAST) return null;
+  let width = 0;
+  for (let s = -2; s <= bw + 2.5 + 1e-9; s += WIDTH_STEP) {
+    const c = at(s), outer = onSegment(c, o, r), inner = onSegment(c, r, i);
+    const useOuter = Math.abs(outer.off - inner.off) < 2 ? s < bw / 2 : outer.off < inner.off;
+    width += (useOuter ? outer.t : 1 - inner.t) * WIDTH_STEP;
+  }
+  return width;
+}
+
+/** A border's drawn width at one place on both renderers (device px): `where` as the ring samples name it. */
+export interface WidthPoint { where: string; design: number; unity: number }
+
+/**
+ * The drawn width of an element's border on both renderers: at the middle of each side of BORDER_SAMPLE_PX or more and, on a
+ * rounded corner whose two sides are as wide and whose radius holds the border, across its curve at 45°, each on its own box
+ * (the design's `g`, Unity's `u`). The ring's colour is the design's at the middle of a side (its centre pixel, fully covered
+ * for a side of 2 device px or more), the same for both, so a thinner ring in Unity counts as thinner. `skip(x, y)`: a
+ * design pixel the profile may not cross (text, a later element). Points whose edges cannot be told apart are left out.
+ */
+export function borderWidths(gp: Rgba, g: Rect, up: Rgba, u: Rect, border: readonly number[], radii: readonly number[] | undefined,
+                             minSide: number, skip?: (x: number, y: number) => boolean): WidthPoint[] {
+  const out: WidthPoint[] = [];
+  const crosses = (b: Rect, p: readonly [number, number], n: readonly [number, number], bw: number) => {
+    if (!skip) return false;
+    for (let s = -3; s <= bw + 3.5; s += 0.5) if (skip(Math.floor(p[0] + s * n[0]), Math.floor(p[1] + s * n[1]))) return true;
+    return false;
+  };
+  const ring: (Rgb3 | null)[] = [null, null, null, null];
+  SIDES.forEach((side, k) => {
+    const bw = border[k];
+    if (!(bw >= minSide)) return;
+    const place = (b: Rect): { p: [number, number]; n: [number, number] } => side === "top" ? { p: [Math.floor(b.x + b.w / 2) + 0.5, b.y], n: [0, 1] }
+      : side === "bottom" ? { p: [Math.floor(b.x + b.w / 2) + 0.5, b.y + b.h], n: [0, -1] }
+      : side === "left" ? { p: [b.x, Math.floor(b.y + b.h / 2) + 0.5], n: [1, 0] } : { p: [b.x + b.w, Math.floor(b.y + b.h / 2) + 0.5], n: [-1, 0] };
+    const pg = place(g), pu = place(u);
+    if (crosses(g, pg.p, pg.n, bw)) return;
+    // the ring's colour: the design's pixel at the middle of the side's band
+    const mid = [pg.p[0] + (bw / 2) * pg.n[0], pg.p[1] + (bw / 2) * pg.n[1]];
+    const o = (Math.min(gp.h - 1, Math.max(0, Math.floor(mid[1]))) * gp.w + Math.min(gp.w - 1, Math.max(0, Math.floor(mid[0])))) * 4;
+    const r: Rgb3 = [gp.data[o], gp.data[o + 1], gp.data[o + 2]];
+    ring[k] = r;
+    const design = borderWidthAt(gp, pg.p, pg.n, bw, r), unity = borderWidthAt(up, pu.p, pu.n, bw, r);
+    if (design !== null && unity !== null) out.push({ where: `${side} border`, design, unity });
+  });
+  if (radii) {
+    // corners [top-left, top-right, bottom-right, bottom-left], with the sides [vertical, horizontal] each joins
+    const corners: [string, number, number, number, number, number][] = [["top-left", 0, 3, 0, -1, -1], ["top-right", 1, 1, 0, 1, -1], ["bottom-right", 2, 1, 2, 1, 1], ["bottom-left", 3, 3, 2, -1, 1]];
+    for (const [name, k, vs, hs, sx, sy] of corners) {
+      const bw = border[hs];
+      if (!(bw >= minSide) || Math.abs(border[vs] - bw) > 1e-3) continue;
+      const r = ring[hs] ?? ring[vs];
+      if (!r || (ring[hs] && ring[vs] && dist3(ring[hs]!, ring[vs]!) >= RING_WIDTH_CONTRAST)) continue;
+      const place = (b: Rect): { p: [number, number]; n: [number, number] } | null => {
+        const rad = Math.min(radii[k], b.w / 2, b.h / 2);
+        if (!(rad >= bw + 1)) return null;
+        const cx = sx < 0 ? b.x + rad : b.x + b.w - rad, cy = sy < 0 ? b.y + rad : b.y + b.h - rad;
+        return { p: [cx + sx * rad * Math.SQRT1_2, cy + sy * rad * Math.SQRT1_2], n: [-sx * Math.SQRT1_2, -sy * Math.SQRT1_2] };
+      };
+      const pg = place(g), pu = place(u);
+      if (!pg || !pu || crosses(g, pg.p, pg.n, bw)) continue;
+      const design = borderWidthAt(gp, pg.p, pg.n, bw, r), unity = borderWidthAt(up, pu.p, pu.n, bw, r);
+      if (design !== null && unity !== null) out.push({ where: `${name} corner`, design, unity });
+    }
+  }
+  return out;
+}

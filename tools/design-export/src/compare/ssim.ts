@@ -102,12 +102,20 @@ export const unionRect = (p: Rect, q: Rect): Rect => {
  * shape, a dashed border) still does. NaN when no full block overlaps.
  */
 export function regionSsimShifted(a: Rgba, b: Rgba, mask: Uint8Array | null, r: Rect, radius = 1): number {
+  return regionSsimShiftedBlocks(a, b, mask, r, radius).mean;
+}
+
+/**
+ * `regionSsimShifted` with its lowest block too (`min`, each block at its best offset; `minAt` its top-left pixel): a difference
+ * confined to a few pixels lowers that block although the region's mean barely moves. NaN for both when no full block overlaps.
+ */
+export function regionSsimShiftedBlocks(a: Rgba, b: Rgba, mask: Uint8Array | null, r: Rect, radius = 1): { mean: number; min: number; minAt: [number, number] } {
   if (a.w !== b.w || a.h !== b.h) throw new Error(`images differ in size: ${a.w}×${a.h} and ${b.w}×${b.h}`);
   const cols = Math.floor(a.w / 8), rows = Math.floor(a.h / 8), w = a.w, h = a.h;
   const c0 = Math.max(0, Math.floor(r.x / 8)), c1 = Math.min(cols, Math.ceil((r.x + r.w) / 8));
   const r0 = Math.max(0, Math.floor(r.y / 8)), r1 = Math.min(rows, Math.ceil((r.y + r.h) / 8));
   const ya = new Float64Array(64), yb = new Float64Array(64), da = a.data, db = b.data;
-  let s = 0, n = 0;
+  let s = 0, n = 0, min = Infinity, minAt: [number, number] = [-1, -1];
   for (let br = r0; br < r1; br++) {
     for (let bc = c0; bc < c1; bc++) {
       let i = 0, ma = 0;
@@ -138,7 +146,8 @@ export function regionSsimShifted(a: Rgba, b: Rgba, mask: Uint8Array | null, r: 
         if (v > best) best = v;
       }
       s += best; n++;
+      if (best < min) { min = best; minAt = [bc * 8, br * 8]; }
     }
   }
-  return n ? s / n : NaN;
+  return n ? { mean: s / n, min, minAt } : { mean: NaN, min: NaN, minAt };
 }

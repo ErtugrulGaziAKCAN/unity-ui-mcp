@@ -1,4 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,7 +9,7 @@ import { decodePng, type Rgba } from "../src/bake/png.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
 import type { CaptureJob } from "../src/capture/matrix.js";
 import { deltaE2000, deltaE2000Lab, isTransparentColor } from "../src/compare/color.js";
-import { classLines, compareCapture, compareScreen, cornerInRoundBand, readThresholds, summarizeIssues, WHOLE, type CaptureContext, type CaptureVerdict, type Thresholds } from "../src/compare/compare.js";
+import { classLines, compareCapture, compareScreen, cornerInRoundBand, inkColourLimit, readThresholds, summarizeIssues, thresholdsFor, WHOLE, type CaptureContext, type CaptureVerdict, type Thresholds } from "../src/compare/compare.js";
 import { captureContext, indexIr } from "../src/compare/context.js";
 import { flatAt, nearCurve, ringPoints, type RingPoint } from "../src/compare/samples.js";
 import { decodePngAsync, encodePng } from "../src/compare/png.js";
@@ -23,6 +25,7 @@ const T: Thresholds = {
   textInkDeltaELater: [], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
   textInkSmallPx: 0, textInkDeltaEFirstSmall: 3, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.2, textInkShadowHigh: 1.15,
   ssimRotated: 0.99, ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, deltaE2000Ring: 1.5, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
+  ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1,
 };
 /** The measured element SSIM limit of rotated animation samples (fidelity-thresholds.json, docs/findings/animation.md). */
 const ROTATED = 0.975;
@@ -803,7 +806,10 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(t.deltaE2000RoundEdge).toBe(t.deltaE2000);
     for (const k of ["ssimFractionalEdge", "ssimVectorEdge"] as const) expect(t[k], k).toBe(t.ssimElement);
     expect(t.deltaE2000FractionalEdge).toBe(t.deltaE2000);
-    expect(Object.keys(t.scaled ?? {}).sort()).toEqual(["deltaE2000FractionalEdge", "deltaE2000RoundEdge", "ssimFractionalEdge", "ssimRoundEdge", "ssimVectorEdge", "textInkSmallPx"]);
+    expect(Object.keys(t.scaled ?? {}).sort()).toEqual(["deltaE2000FractionalEdge", "deltaE2000ResampledPicture", "deltaE2000RoundEdge", "ssimFractionalEdge", "ssimResampledPicture", "ssimRoundEdge",
+      "ssimVectorEdge", "textInkDeltaEFirstSmall", "textInkSmallPx"]);
+    expect(t.ssimResampledPicture).toBe(t.ssimElement);
+    expect(t.deltaE2000ResampledPicture).toBe(t.deltaE2000);
   });
 
   it("catches a missing or wrong-colour ring on a round element without text, also one of another hue at the same lightness", () => {
@@ -825,17 +831,17 @@ describe("compareCapture: edge, colour and ink checks", () => {
     const scaled: Thresholds = { ...T, ssimRoundEdge: 0.95, deltaE2000RoundEdge: 5.5 };
     const golden = { png: draw([150, 150, 150]), boxes };
     expect(compareCapture(golden, { png: draw([150, 150, 150]), boxes }, [], scaled, ctx).issues).toEqual([]);
-    // the ring missing, or another colour: its colour check (deltaE2000Ring, every viewport) fails, and the element's SSIM,
-    // which masked would meet ssimRoundEdge, is held to ssimElement (its other checks fail)
-    for (const ring of [null, [96, 120, 168] as Rgb]) {
-      const v = compareCapture(golden, { png: draw(ring), boxes }, [], scaled, ctx);
-      expect(v.issues).toEqual([
-        expect.objectContaining({ id: "avatar", kind: "color", detail: expect.stringMatching(/^ring \w+ border: ΔE2000 [\d.]+, .*\(limit 1\.5\): the ring's colour differs/) }),
-        expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/the ring in that band is not the design's/) })]);
-      // the evidence alone (with no ring colour limit) holds it too: the ring in the band is not the design's
-      const evidenceOnly = compareCapture(golden, { png: draw(ring), boxes }, [], { ...scaled, deltaE2000Ring: 99 }, ctx);
-      expect(evidenceOnly.issues).toEqual([expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/border differs by ΔE2000 .*the ring in that band is not the design's/) })]);
-    }
+    // the ring missing: its colour check (deltaE2000Ring, every viewport) and its width check (ruling R127) fail, and the
+    // element's SSIM, which masked would meet ssimRoundEdge, is held to ssimElement (its other checks fail)
+    expect(compareCapture(golden, { png: draw(null), boxes }, [], scaled, ctx).issues).toEqual([
+      expect.objectContaining({ id: "avatar", kind: "color", detail: expect.stringMatching(/^ring \w+ border: ΔE2000 [\d.]+, .*\(limit 1\.5\): the ring's colour differs/) }),
+      expect.objectContaining({ id: "avatar", kind: "edge", detail: expect.stringMatching(/^ring \w+ border: drawn 0\.\d+ device px wide, the design's 2\.00 \(limit ±0\.5\): the ring's width differs/) }),
+      expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/needs its other checks to pass/) })]);
+    // another colour: the colour check fails; with no ring colour limit of its own the relaxation's evidence (ruling R130,
+    // the file's deltaE2000Ring) still holds the element: the ring in the band is not the design's
+    const blue = compareCapture(golden, { png: draw([96, 120, 168]), boxes }, [], scaled, ctx);
+    expect(blue.issues.map((i) => i.kind)).toEqual(["color", "ssim"]);
+    expect(blue.issues[1].detail).toMatch(/needs its other checks to pass/);
     // a ring of another hue at the same lightness keeps the element's SSIM at 0.99 or more; its colour check fails, at
     // an exact viewport too
     const hue = compareCapture(golden, { png: draw([128, 154, 168]), boxes }, [], T, ctx);
@@ -851,9 +857,9 @@ describe("compareCapture: edge, colour and ink checks", () => {
     const thinGolden = { png: draw([150, 150, 150], 1.25), boxes };
     expect(compareCapture(thinGolden, { png: draw([150, 150, 150], 1.25), boxes }, [], scaled, thin).issues).toEqual([]);
     expect(compareCapture(thinGolden, { png: draw(null), boxes }, [], scaled, thin).issues).toEqual([
-      expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/its ring \(a border under 2 device px, or no usable point on it\) gives no evidence: held to 0\.99/) })]);
-    // at an exact viewport (ssimRoundEdge off) nothing is relaxed: a missing ring fails its colour check and SSIM
-    expect(compareCapture(golden, { png: draw(null), boxes }, [], T, ctx).issues.map((i) => i.kind)).toEqual(["color", "ssim"]);
+      expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/but the border of avatar \(a side under 2 device px, or no usable point on it\) gives no evidence of its colour/) })]);
+    // at an exact viewport (ssimRoundEdge off) nothing is relaxed: a missing ring fails its colour and width checks and SSIM
+    expect(compareCapture(golden, { png: draw(null), boxes }, [], T, ctx).issues.map((i) => i.kind)).toEqual(["color", "edge", "ssim"]);
   });
 
   describe("ssimRoundEdge at every viewport (ruling R119): crops of the suite's 1280×720 captures", () => {
@@ -996,6 +1002,204 @@ describe("compareCapture: edge, colour and ink checks", () => {
         return out;
       };
       expect(edgeIssue({ ...scaled, deltaE2000FractionalEdge: 5.3 }, recolour(crop("focus-1366", "unity")))).toHaveLength(1);
+    });
+  });
+
+  describe("edge-band evidence and the scaled class's residual keys (rulings R124 to R130)", () => {
+    const repo = readThresholds();
+    const exactT = thresholdsFor(repo, "exact"), scaledT = thresholdsFor(repo, "scaled");
+    const issuesOf = (v: CaptureVerdict, id: string) => v.issues.filter((i) => i.id === id);
+    /** A round element with a ring, anti-aliased by its covered area (8×8 samples a pixel): fill inside, ring, background. */
+    const avatar = (size: number, x0: number, y0: number, outer: number, ring: number, ringC: Rgb, fillC: Rgb, bgC: Rgb, w: number, h: number) => {
+      const png = canvas(w, h, bgC), r = outer / 2, cx = x0 + r, cy = y0 + r;
+      for (let y = Math.floor(y0) - 1; y < Math.ceil(y0 + outer) + 1; y++) for (let x = Math.floor(x0) - 1; x < Math.ceil(x0 + outer) + 1; x++) {
+        let inRing = 0, inFill = 0;
+        for (let sy = 0; sy < 8; sy++) for (let sx = 0; sx < 8; sx++) {
+          const d = Math.hypot(x + (sx + 0.5) / 8 - cx, y + (sy + 0.5) / 8 - cy);
+          if (d < r - ring) inFill++; else if (d < r) inRing++;
+        }
+        const a = inFill / 64, b = inRing / 64, o = (y * w + x) * 4;
+        for (let k = 0; k < 3; k++) png.data[o + k] = Math.round(fillC[k] * a + ringC[k] * b + bgC[k] * (1 - a - b));
+      }
+      void size;
+      return png;
+    };
+
+    it("R129, R127: an avatar whose ring Unity draws 3 CSS px wide instead of 4 fails wherever that is more than 0.5 device px", () => {
+      // the re-review's probe (N4-1): a text-less avatar of 80 or 160 CSS px with a 4 CSS px ring at each exact scale, drawn
+      // the same way on both sides but the ring's width; repository thresholds
+      const ringC: Rgb = [22, 194, 213], fillC: Rgb = [60, 70, 80], bgC: Rgb = [11, 31, 38];
+      const at: string[] = [];
+      for (const css of [80, 160]) for (const scale of [0.5, 0.75, 1, 1.5]) {
+        const outer = css * scale, W = Math.ceil(outer / 8) * 8 + 32, x0 = 16;
+        const boxes: CaptureBoxes = { capture: "c", viewport: [W, W], scale, external: [], elements: { root: el(0, 0, W, W), avatar: el(x0, x0, outer, outer) } };
+        const ctx: CaptureContext = { borders: { avatar: [4 * scale, 4 * scale, 4 * scale, 4 * scale] }, radii: { avatar: [outer / 2, outer / 2, outer / 2, outer / 2] },
+          backgrounds: new Set(["avatar"]), painters: new Set(["avatar"]), order: ["root", "avatar"], root: "root", viewportClass: "exact" };
+        const design = { png: avatar(css, x0, x0, outer, 4 * scale, ringC, fillC, bgC, W, W), boxes };
+        const same = compareCapture(design, { png: avatar(css, x0, x0, outer, 4 * scale, ringC, fillC, bgC, W, W), boxes }, [], exactT, ctx);
+        expect(issuesOf(same, "avatar"), `${css} px at ${scale}`).toEqual([]);
+        const v = compareCapture(design, { png: avatar(css, x0, x0, outer, 3 * scale, ringC, fillC, bgC, W, W), boxes }, [], exactT, ctx);
+        // the drawn width differs by a quarter of the design's ring (the largest over the sides' middles, exact to 0.01
+        // there, and the diagonals, where the measure reads up to 0.16 device px more on a thinner ring)
+        const width = v.elements.find((e) => e.id === "avatar")!.ringWidth!;
+        expect(width, `${css} px at ${scale}`).toBeGreaterThan(scale - 0.02);
+        expect(width, `${css} px at ${scale}`).toBeLessThan(scale + 0.2);
+        // (the element's own verdict: on this small canvas the avatar is most of the capture, whose SSIM a screen dilutes)
+        const own = issuesOf(v, "avatar");
+        at.push(`${css}@${scale}:${own.length ? own.map((i) => i.kind).join("+") : "pass"}`);
+      }
+      // a ring a device pixel or more too thin fails its width (R127) and, with it, every relaxation (R129); at 1280×720 the
+      // ring is 0.5 device px thinner, R127's own limit: the 160 px avatar passes there (its SSIM passes too), the 80 px
+      // one fails on SSIM below the floor as before
+      expect(at).toEqual(["80@0.5:ssim", "80@0.75:edge+ssim", "80@1:edge+ssim", "80@1.5:edge+ssim",
+        "160@0.5:pass", "160@0.75:edge+ssim", "160@1:edge+ssim", "160@1.5:edge+ssim"]);
+    });
+
+    it("R129: a relaxation needs every SSIM block and every 3×3 window outside its band to match, and its borders' widths", () => {
+      // the 160 px avatar at 3840×2160 in an animation sample that moves it to a fractional offset (its own ring checks are
+      // for static captures), with Unity's ring drawn by a coarser ramp (a few pixels along the curves differ, as between
+      // the renderers): the band-masked mean (the earlier rule) meets 0.99 in each case below, the evidence does not
+      const ringC: Rgb = [240, 240, 240], fillC: Rgb = [20, 24, 28], bgC: Rgb = [0, 0, 0], outer = 240, W = 272, x0 = 16.4;
+      const boxes: CaptureBoxes = { capture: "c", viewport: [W, W], scale: 1.5, external: [], elements: { root: el(0, 0, W, W), avatar: el(x0, x0, outer, outer) } };
+      const ctx: CaptureContext = { borders: { avatar: [6, 6, 6, 6] }, radii: { avatar: [120, 120, 120, 120] }, backgrounds: new Set(["avatar"]), painters: new Set(["avatar"]),
+        order: ["root", "avatar"], root: "root", viewportClass: "exact", anim: true, moving: new Set(["avatar"]) };
+      /** Unity's drawing: its curves 0.4 device px further in, their pixels rounded to whole coverage (a hard ramp). */
+      const coarse = (ring: number) => {
+        const img = avatar(160, x0 + 0.4, x0 + 0.4, outer - 0.8, ring, ringC, fillC, bgC, W, W), ref = avatar(160, x0 + 0.4, x0 + 0.4, outer - 0.8, ring, ringC, fillC, bgC, W, W);
+        for (let p = 0; p < W * W; p++) {
+          const o = p * 4, near = (c: Rgb) => Math.hypot(ref.data[o] - c[0], ref.data[o + 1] - c[1], ref.data[o + 2] - c[2]);
+          const c = [bgC, ringC, fillC].reduce((a, k) => (near(k) < near(a) ? k : a));
+          img.data.set(c, o);
+        }
+        return img;
+      };
+      const design = { png: avatar(160, x0, x0, outer, 6, ringC, fillC, bgC, W, W), boxes };
+      const run = (png: Rgba) => { const v = compareCapture(design, { png, boxes }, [], exactT, ctx); return { v, row: v.elements.find((e) => e.id === "avatar")! }; };
+      const ok = run(coarse(6));
+      expect(Math.max(ok.row.ssim!, ok.row.ssimShifted!)).toBeLessThan(0.99);
+      expect(issuesOf(ok.v, "avatar")).toEqual([]);
+      expect(ok.row.ssimLimit).toBe(exactT.ssimRoundEdge);
+      // a 3 px dent of another colour inside the fill, outside the band: one block and its windows show it
+      const dented = coarse(6);
+      fill(dented, { x: 110, y: 110, w: 3, h: 3 }, [200, 80, 40]); // between the colour grid's points
+      const d = run(dented);
+      expect(d.row.ssimRoundEdgeMasked).toBeGreaterThanOrEqual(0.99);
+      expect(issuesOf(d.v, "avatar")).toEqual([expect.objectContaining({ kind: "ssim", detail: expect.stringMatching(/masked, but an SSIM block outside the band, the 8 px block at \(\d+, \d+\), is 0\.\d+ \(below 0\.99: not confined to it\)/) })]);
+      // the ring 4.5 device px instead of 6: its inner edge half a pixel past the band; Unity's colour within 1 px matches
+      // there (the box allowance), so the windows do not show it: its width does (R127)
+      const thin = run(coarse(4.5));
+      expect(thin.row.ssimRoundEdgeMasked).toBeGreaterThanOrEqual(0.99);
+      expect(thin.row.bandEvidence!.maxDe).toBeLessThanOrEqual(1);
+      expect(thin.row.bandEvidence!.width).toBeGreaterThan(1.4);
+      expect(issuesOf(thin.v, "avatar")).toEqual([expect.objectContaining({ kind: "ssim",
+        detail: expect.stringMatching(/masked, but avatar \w+ (border|corner) is drawn 4\.\d+ device px wide, the design's 6\.\d+ \(limit ±0\.5\): the border in that band is not the design's/) })]);
+    });
+
+    it("R130: a straight border of another colour in the band of straight edges gives no evidence (the re-review's N4-3 probe)", () => {
+      // a text-less 113 × 57 CSS px box with a 4 CSS px border at 1366×768 (2.13 device px), its edges between device pixels:
+      // Chromium covers the edge pixels partly, UI Toolkit draws them whole at the nearest pixel
+      const s0 = 0.533464, fillC: Rgb = [18, 60, 71], line: Rgb = [200, 210, 220], bgC: Rgb = [11, 31, 38], bw = 4 * s0;
+      const box = { x: 16 * s0, y: 29 * s0, w: 58 * s0, h: 77 * s0 };
+      const draw = (whole: boolean, c: Rgb) => {
+        const r = whole ? { x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.x + box.w) - Math.round(box.x), h: Math.round(box.y + box.h) - Math.round(box.y) } : box;
+        const b = whole ? 2 : bw;
+        const png = canvas(128, 88, bgC);
+        const put = whole ? (img: Rgba, q: R, col: Rgb) => fill(img, { x: Math.round(q.x), y: Math.round(q.y), w: Math.round(q.w), h: Math.round(q.h) }, col) : paint;
+        put(png, r, c);
+        put(png, { x: r.x + b, y: r.y + b, w: r.w - 2 * b, h: r.h - 2 * b }, fillC);
+        return png;
+      };
+      const boxes = (whole: boolean): CaptureBoxes => ({ capture: "c", viewport: [128, 88], scale: 0.533464, external: [], elements: { root: el(0, 0, 128, 88),
+        box: whole ? el(Math.round(box.x), Math.round(box.y), Math.round(box.x + box.w) - Math.round(box.x), Math.round(box.y + box.h) - Math.round(box.y)) : el(box.x, box.y, box.w, box.h) } });
+      const ctx: CaptureContext = { borders: { box: [bw, bw, bw, bw] }, backgrounds: new Set(["box"]), painters: new Set(["box"]), order: ["root", "box"], root: "root", viewportClass: "scaled" };
+      const golden = { png: draw(false, line), boxes: boxes(false) };
+      const right = compareCapture(golden, { png: draw(true, line), boxes: boxes(true) }, [], scaledT, ctx);
+      const row = right.elements.find((e) => e.id === "box")!;
+      expect(Math.max(row.ssim!, row.ssimShifted!)).toBeLessThan(0.984);
+      expect(issuesOf(right, "box")).toEqual([]);
+      expect(row.ssimLimit).toBe(scaledT.ssimFractionalEdge);
+      // the border ΔE2000 7 or more off: its SSIM with the band masked still meets 0.99; its centre's colour does not
+      const wrong = compareCapture(golden, { png: draw(true, [216, 196, 168]), boxes: boxes(true) }, [], scaledT, ctx);
+      expect(wrong.elements.find((e) => e.id === "box")!.ssimFractionalEdgeMasked).toBeGreaterThanOrEqual(0.99);
+      // no 3×3 window outside the band reaches the border (R129 sees nothing there): its centre's colour holds it (R130)
+      expect(issuesOf(wrong, "box")).toEqual([expect.objectContaining({ kind: "ssim",
+        detail: expect.stringMatching(/masked as well, but the centre of box \w+ border differs by ΔE2000 [\d.]+ \(design #\w+, Unity #\w+; limit 3\.1\): the border in that band is not the design's/) })]);
+      expect(wrong.elements.find((e) => e.id === "box")!.bandEvidence!.maxDe).toBeLessThanOrEqual(1);
+    });
+
+    it("R124: the edge bands of a repeat's later items come from their boxes; a later item's wrong divider is not the design's", () => {
+      // a table at 1366×768: three rows of a repeat, each with a 2.13 device px bottom border between device pixels; the
+      // captures hold the IR's first row, and the later ones in `items`
+      const s0 = 0.533464, fillC: Rgb = [18, 60, 71], line: Rgb = [36, 90, 104], bgC: Rgb = [11, 31, 38], bw = 4 * s0;
+      const rows = [0, 1, 2].map((k) => ({ x: 16 * s0, y: (16 + 30 * k) * s0, w: 210 * s0, h: 30 * s0 }));
+      const draw = (whole: boolean, last: Rgb = line) => {
+        const png = canvas(128, 80, bgC);
+        rows.forEach((r, k) => {
+          const q = whole ? { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.x + r.w) - Math.round(r.x), h: Math.round(r.y + r.h) - Math.round(r.y) } : r;
+          const b = whole ? 2 : bw;
+          (whole ? fill : paint)(png, q, fillC);
+          const div = { x: q.x, y: q.y + q.h - b, w: q.w, h: b };
+          (whole ? fill : paint)(png, whole ? { ...div, y: Math.round(div.y) } : div, k === 2 ? last : line);
+        });
+        return png;
+      };
+      const boxes = (whole: boolean, items: boolean): CaptureBoxes => {
+        const at = (k: number) => whole ? { x: Math.round(rows[k].x), y: Math.round(rows[k].y), w: Math.round(rows[k].x + rows[k].w) - Math.round(rows[k].x), h: Math.round(rows[k].y + rows[k].h) - Math.round(rows[k].y) } : rows[k];
+        const b: CaptureBoxes = { capture: "c", viewport: [128, 80], scale: s0, external: [], elements: { root: el(0, 0, 128, 80), table: el(16 * s0, 16 * s0, 210 * s0, 90 * s0),
+          list: el(16 * s0, 16 * s0, 210 * s0, 90 * s0), row: el(at(0).x, at(0).y, at(0).w, at(0).h) } };
+        if (items) b.items = { "row#1": { ...at(1), visible: true }, "row#2": { ...at(2), visible: true } };
+        return b;
+      };
+      const ctx: CaptureContext = { borders: { row: [0, 0, bw, 0] }, backgrounds: new Set(["table", "row"]), painters: new Set(["table", "row"]), order: ["root", "table", "list", "row"],
+        root: "root", parent: new Map([["table", "root"], ["list", "table"], ["row", "list"]]), repeats: new Set(["list"]), viewportClass: "scaled" };
+      const run = (items: boolean, last?: Rgb) => compareCapture({ png: draw(false), boxes: boxes(false, items) }, { png: draw(true, last), boxes: boxes(true, items) }, [], scaledT, ctx);
+      const without = run(false);
+      expect(issuesOf(without, "table")).toEqual([expect.objectContaining({ kind: "ssim", detail: expect.stringMatching(/masked as well \(below 0\.99: not confined to them\)/) })]);
+      const withItems = run(true);
+      expect(issuesOf(withItems, "table")).toEqual([]);
+      expect(withItems.elements.find((e) => e.id === "table")!.ssimLimit).toBe(scaledT.ssimFractionalEdge);
+      // the last row's divider in another colour: its band hides it, its centre does not
+      const wrong = run(true, [92, 64, 104]);
+      expect(wrong.elements.find((e) => e.id === "table")!.ssimFractionalEdgeMasked).toBeGreaterThanOrEqual(0.99);
+      expect(issuesOf(wrong, "table")).toEqual([expect.objectContaining({ kind: "ssim", detail: expect.stringMatching(/masked as well, but the centre of row#2 bottom border differs by ΔE2000/) })]);
+    });
+
+    it("R125: a raster picture resampled at a scaled viewport meets ssimResampledPicture and its colour limit, nowhere else", () => {
+      // background-images root__1__0 at 1600×900: a 225 × 135 device px picture exported for 3840×2160 drawn at 0.42 of its
+      // pixels (crop of the suite's capture, on the 8 px block grid)
+      const crop = (side: string) => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r125-picture-1600.${side}.png`)));
+      const boxes: CaptureBoxes = { capture: "c", viewport: [256, 168], scale: 0.625, external: [], elements: { root: el(0, 0, 256, 168), pic: el(14, 16, 225, 135) } };
+      const ctx: CaptureContext = { pictures: new Set(["pic"]), backgrounds: new Set(["pic"]), painters: new Set(["pic"]), order: ["root", "pic"], root: "root", viewportClass: "scaled" };
+      const v = (t: Thresholds, c: CaptureContext = ctx) => compareCapture({ png: crop("design"), boxes }, { png: crop("unity"), boxes }, [], t, c);
+      const scaled = v(scaledT);
+      expect(issuesOf(scaled, "pic")).toEqual([]);
+      const row = scaled.elements.find((e) => e.id === "pic")!;
+      expect(Math.max(row.ssim!, row.ssimShifted!)).toBeCloseTo(0.95522, 4); // 0.95284 in the whole capture (its text masks), the suite's lowest
+      expect(row.ssimLimit).toBe(0.95);
+      expect(row.deltaE).toBeCloseTo(3.22, 2);
+      // the same crop held to the exact class's limits, or as an element that is no picture
+      expect(issuesOf(v(exactT, { ...ctx, viewportClass: "exact" }), "pic").map((i) => i.kind).sort()).toEqual(["color", "ssim"]);
+      expect(issuesOf(v(scaledT, { ...ctx, pictures: new Set() }), "pic").map((i) => i.kind).sort()).toEqual(["color", "ssim"]);
+      // a picture below the measured floor fails at a scaled viewport too
+      expect(issuesOf(v({ ...scaledT, ssimResampledPicture: 0.96 }), "pic")).toEqual([expect.objectContaining({ kind: "ssim" })]);
+    });
+
+    it("R126: text under 13 device px at a scaled viewport takes the measured small-text ink limit, capped at 6.5", () => {
+      // stacked-text value-12 at 1366×768: a 10.67 device px line, ink colour ΔE2000 5.49 (crop of the suite's capture)
+      const crop = (side: string) => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r126-ink-1366.${side}.png`)));
+      const line = (x: number, w: number) => ({ x: x - 792, y: 206.983854 - 200, w, h: 12.803125, baseline: 217.119662 - 200 });
+      const boxes = (unity: boolean): CaptureBoxes => ({ capture: "c", viewport: [56, 24], scale: 0.533464, external: [], elements: { root: el(0, 0, 56, 24),
+        v: unity ? el(798.061391 - 792, 206.983855 - 200, 39.831947, 12.803126, { text: true, lines: [line(798.061391, 39.883033)] })
+          : el(798.061459 - 792, 206.983854 - 200, 39.993095, 12.803125, { text: true, lines: [line(798.061459, 39.884735)] }) } });
+      const ctx: CaptureContext = { fontPx: { v: 10.669271 }, backgrounds: new Set(), painters: new Set(), order: ["root", "v"], root: "root", viewportClass: "scaled" };
+      const v = (t: Thresholds) => compareCapture({ png: crop("design"), boxes: boxes(false) }, { png: crop("unity"), boxes: boxes(true) }, [], t, ctx);
+      expect(scaledT.textInkDeltaEFirstSmall).toBe(5.89);
+      expect(inkColourLimit(scaledT, 10.67)).toBe(5.89);
+      expect(inkColourLimit(scaledT, 13)).toBe(scaledT.textInkDeltaE);
+      expect(inkColourLimit(exactT, 10.67)).toBe(exactT.textInkDeltaEFirstSmall); // 4.5: text of at most 12 device px
+      expect(issuesOf(v(scaledT), "v")).toEqual([]);
+      expect(v(scaledT).elements.find((e) => e.id === "v")!.ink).toBeCloseTo(5.49, 2);
+      expect(issuesOf(v({ ...scaledT, textInkDeltaEFirstSmall: 4.5 }), "v")).toEqual([expect.objectContaining({ kind: "ink", detail: expect.stringMatching(/ΔE2000 5\.49/) })]);
     });
   });
 
@@ -1309,13 +1513,16 @@ describe("IR context", () => {
       return { edge: v.elements.find((e) => e.id === "btn")!.edge!, issues: v.issues.filter((i) => i.kind === "edge") };
     };
     const scaled: Thresholds = { ...T, ssimRoundEdge: 0.95, deltaE2000RoundEdge: 5.5 };
-    // border 1.5, radius 5: the 4 px corner window keeps 4-6 pixels outside the band; they match, the rest is the ramp
-    const confined = run(1.5, 5, false, scaled);
+    // border 2, radius 5: the 4 px corner window keeps pixels outside the band; they match, the rest is the ramp
+    const confined = run(2, 5, false, scaled);
     expect(confined.edge).toBeGreaterThan(1);
     expect(confined.issues).toEqual([]);
-    expect(run(1.5, 5, false, T).issues).toEqual([expect.objectContaining({ id: "btn", detail: expect.stringMatching(/top-left corner, 4 px in: .*\(limit 1\)/) })]);
+    expect(run(2, 5, false, T).issues).toEqual([expect.objectContaining({ id: "btn", detail: expect.stringMatching(/top-left corner, 4 px in: .*\(limit 1\)/) })]);
     // the same corner where the pixels outside the band differ too (at every offset): not the ramp, held to deltaE2000
-    expect(run(1.5, 5, true, scaled).issues).toEqual([expect.objectContaining({ id: "btn", detail: expect.stringMatching(/top-left corner, \d+ px in: .*\(limit 1\)/) })]);
+    expect(run(2, 5, true, scaled).issues).toEqual([expect.objectContaining({ id: "btn", detail: expect.stringMatching(/top-left corner, \d+ px in: .*\(limit 1/) })]);
+    // a border under 2 device px has no centre pixel to show its colour (ruling R130): no evidence, held to deltaE2000
+    expect(run(1.5, 5, false, scaled).issues).toEqual([expect.objectContaining({ id: "btn",
+      detail: expect.stringMatching(/top-left corner, 4 px in: .*\(limit 1; the corner limits of edge bands need the evidence: the border of btn \(a side under 2 device px/) })]);
     // border 2.5, radius 6: the window keeps at most 2 pixels outside the band at any offset, too few to show where its
     // difference lies: held to deltaE2000
     const thin = run(2.5, 6, false, scaled);
@@ -1743,7 +1950,10 @@ describe("design-export compare", () => {
       // edge bands (docs/findings/viewport-classes.md): ssimRoundEdge at every viewport (R119); the round-edge corner limit and
       // the scaled class's own keys (R121) off at exact viewports, measured at scaled ones
       ssimRoundEdge: 0.974, deltaE2000RoundEdge: 1, deltaE2000Ring: 3.1, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
-      scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, textInkSmallPx: 12.99, ssimFractionalEdge: 0.97, ssimVectorEdge: 0.975, deltaE2000FractionalEdge: 5.3 },
+      ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1,
+      // the scaled class: R109, R115, R121, and R125 (resampled pictures), R126 (small text ink, at most 6.5)
+      scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, textInkSmallPx: 12.99, ssimFractionalEdge: 0.97, ssimVectorEdge: 0.975, deltaE2000FractionalEdge: 5.3,
+        ssimResampledPicture: 0.95, deltaE2000ResampledPicture: 5.89, textInkDeltaEFirstSmall: 5.89 },
     });
     const bad = path.join(tmp(), "t.json");
     fs.writeFileSync(bad, JSON.stringify({ boxPx: 1 }));
@@ -1779,6 +1989,14 @@ describe("design-export compare", () => {
     expect(small({ deltaE2000RoundEdge: 2 })).toThrow(/"deltaE2000RoundEdge" must equal deltaE2000 \(off\): only "scaled" may raise it/);
     expect(small({ scaled: { ssimRoundEdge: 0.96 } })).toThrow(/\(scaled\): "ssimRoundEdge" must lie between 0.97 and 1/);
     expect(small({ scaled: { deltaE2000RoundEdge: 0.5 } })).toThrow(/\(scaled\): "deltaE2000RoundEdge" must be at least deltaE2000/);
+    // R125: the resampled-picture keys are off in the file's own values; the scaled block's SSIM floor is 0.95
+    expect(small({ ssimResampledPicture: 0.95 })).toThrow(/"ssimResampledPicture" must lie between ssimElement and 1 \(off\): only "scaled" may lower it/);
+    expect(small({ deltaE2000ResampledPicture: 5 })).toThrow(/"deltaE2000ResampledPicture" must equal deltaE2000 \(off\)/);
+    expect(small({ scaled: { ssimResampledPicture: 0.95, deltaE2000ResampledPicture: 5.89 } })()).toMatchObject({ scaled: { ssimResampledPicture: 0.95, deltaE2000ResampledPicture: 5.89 } });
+    expect(small({ scaled: { ssimResampledPicture: 0.94 } })).toThrow(/\(scaled\): "ssimResampledPicture" must lie between 0\.95 and 1/);
+    // R126: the scaled class's small-text ink limit, at most 6.5; R130: the scaled block cannot change the ring limit
+    expect(small({ scaled: { textInkDeltaEFirstSmall: 6.6 } })).toThrow(/\(scaled\): "textInkDeltaEFirstSmall" may not exceed 6\.5/);
+    expect(small({ scaled: { deltaE2000Ring: 5.5 } })).toThrow(/"scaled" cannot change "deltaE2000Ring"/);
     expect(small({ scaled: { ssimRoundEdge: 0.975, deltaE2000RoundEdge: 4 } })()).toMatchObject({ ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, scaled: { ssimRoundEdge: 0.975, deltaE2000RoundEdge: 4 } });
     expect(small({ deltaE2000Ring: 0.5 })).toThrow(/"deltaE2000Ring" must be at least deltaE2000/);
   });

@@ -16,7 +16,11 @@
  *   whose box, baseline, colour, ring, ink and shadow checks all pass may instead meet a measured lower limit: a raster
  *   picture drawn scaled `ssimPicture` (UI Toolkit filters it in linear light, Chromium in sRGB), and an element whose SSIM
  *   region is smaller than an area of `ssimElementSmall` that pair's limit (SSIM over a few 8-px blocks is dominated by
- *   anti-aliased edges); both measured on identical geometry (docs/findings/ssim-small-elements.md), never below 0.97;
+ *   anti-aliased edges); both measured on identical geometry (docs/findings/ssim-small-elements.md), never below 0.97 (a
+ *   raster picture resampled at a scaled viewport: `ssimResampledPicture`, ruling R125). An edge-band limit (the anti-aliasing
+ *   of round shapes, moved edges, straight edges between device pixels, vector edges, and the corner samples next to them)
+ *   needs its band's evidence too: outside the band every SSIM block and every 3×3 window match, and every border it masks
+ *   has the design's width and, in static captures, its centre colour (evidenceOf; rulings R129, R130);
  * - colour (samples.ts): elements that paint a background get a 5×3 grid of 3×3 means inside both boxes (inset 6 px;
  *   one centre sample under 16 px), skipping points under later elements that paint or on text lines; when every
  *   grid point is covered, samples just inside the border take over; an element left without any sample is listed
@@ -62,8 +66,8 @@ import { viewportClassOf, type ViewportClass } from "../viewport.js";
 import { deltaE2000, hex } from "./color.js";
 import { captureContext, indexIr, type CaptureContext, type IrIndex } from "./context.js";
 import { decodePngAsync, encodePngAsync } from "./png.js";
-import { bestDeltaE, bestDeltaEKept, endShift, flatAt, inkIn, nearCurve, paintedRect, ringPoints, type RingPoint } from "./samples.js";
-import { blockSsimMap, maskRects, regionSsim, regionSsimShifted, unionRect, wholeSsim, type Rect } from "./ssim.js";
+import { bestDeltaE, bestDeltaEKept, borderWidths, endShift, flatAt, inkIn, nearCurve, paintedRect, ringPoints, type RingPoint } from "./samples.js";
+import { blockSsimMap, maskRects, regionSsim, regionSsimShifted, regionSsimShiftedBlocks, unionRect, wholeSsim, type Rect } from "./ssim.js";
 
 export type { CaptureContext } from "./context.js";
 
@@ -172,6 +176,19 @@ export interface Thresholds {
    */
   deltaE2000FractionalEdge: number;
   /**
+   * Element SSIM limit at a scaled viewport for a raster picture drawn at another size than its own (ruling R125): Chromium
+   * filters it at a high quality when it downscales, UI Toolkit samples its top level bilinearly, so its block edges differ at
+   * the fractional scales of that class. Only when the element's other checks pass. Equal to `ssimElement` (off) at exact
+   * viewports, where the picture keeps `ssimPicture`; the scaled block holds the measured value, which may lie below the
+   * absolute floor down to RESAMPLED_PICTURE_FLOOR.
+   */
+  ssimResampledPicture: number;
+  /**
+   * The colour limit of a raster picture's colour samples at a scaled viewport (ruling R125, the same resampling: a sample
+   * near a block edge of the picture). Equal to `deltaE2000` (off) at exact viewports; the scaled block holds the measured value.
+   */
+  deltaE2000ResampledPicture: number;
+  /**
    * Measured limits for captures at scaled viewports (fidelity-thresholds.json `scaled`), which replace the file's own
    * values there; never the geometry limits. Absent: scaled viewports use the same thresholds.
    */
@@ -182,7 +199,8 @@ export interface Thresholds {
 export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.json", import.meta.url));
 const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage",
   "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater", "textInkSmallPx", "textInkDeltaEFirstSmall", "textInkMedianToleranceSmall", "textInkShadowHigh",
-  "ssimRotated", "ssimRoundEdge", "deltaE2000RoundEdge", "deltaE2000Ring", "ssimFractionalEdge", "ssimVectorEdge", "deltaE2000FractionalEdge"] as const;
+  "ssimRotated", "ssimRoundEdge", "deltaE2000RoundEdge", "deltaE2000Ring", "ssimFractionalEdge", "ssimVectorEdge", "deltaE2000FractionalEdge",
+  "ssimResampledPicture", "deltaE2000ResampledPicture"] as const;
 /** No measured policy may accept an element SSIM below this. */
 export const SSIM_FLOOR = 0.97;
 /**
@@ -200,6 +218,15 @@ export const ROUND_EDGE_KEPT = 3;
  * (its ring lies in the masked band): its centre pixel is covered on both renderers.
  */
 export const BORDER_SAMPLE_PX = 2;
+/**
+ * The most a border's drawn width may differ between the design and Unity (device px, ruling R127): a text-less round
+ * element's ring in every static capture, and every border an edge-band relaxation masks (ruling R129).
+ */
+export const RING_WIDTH_PX = 0.5;
+/** The lowest `ssimResampledPicture` the scaled block may hold (ruling R125: the measured 0.95284, rounded down to 0.01). */
+export const RESAMPLED_PICTURE_FLOOR = 0.95;
+/** The highest small-text ink colour limit the scaled block may hold (ruling R126); text measured above it keeps failing. */
+export const SCALED_SMALL_INK_CAP = 6.5;
 
 function checkThresholds(raw: Record<string, unknown>, file: string, scaled = false): Thresholds {
   for (const k of THRESHOLD_KEYS) if (typeof raw[k] !== "number" || !Number.isFinite(raw[k])) throw new Error(`${file}: "${k}" must be a number`);
@@ -250,6 +277,14 @@ function checkThresholds(raw: Record<string, unknown>, file: string, scaled = fa
   const fractionalDe = raw.deltaE2000FractionalEdge as number;
   if (!scaled && fractionalDe !== (raw.deltaE2000 as number)) throw new Error(`${file}: "deltaE2000FractionalEdge" must equal deltaE2000 (off): only "scaled" may raise it`);
   if (scaled && !(fractionalDe >= (raw.deltaE2000 as number))) throw new Error(`${file}: "deltaE2000FractionalEdge" must be at least deltaE2000`);
+  // ruling R125: a scaled-only key for raster pictures resampled at a fractional scale, its own floor
+  const resampled = raw.ssimResampledPicture as number, resampledDe = raw.deltaE2000ResampledPicture as number;
+  if (!scaled && !(resampled >= elementSsim && resampled <= 1)) throw new Error(`${file}: "ssimResampledPicture" must lie between ssimElement and 1 (off): only "scaled" may lower it`);
+  if (scaled && !(resampled >= RESAMPLED_PICTURE_FLOOR && resampled <= 1)) throw new Error(`${file}: "ssimResampledPicture" must lie between ${RESAMPLED_PICTURE_FLOOR} and 1`);
+  if (!scaled && resampledDe !== (raw.deltaE2000 as number)) throw new Error(`${file}: "deltaE2000ResampledPicture" must equal deltaE2000 (off): only "scaled" may raise it`);
+  if (scaled && !(resampledDe >= (raw.deltaE2000 as number))) throw new Error(`${file}: "deltaE2000ResampledPicture" must be at least deltaE2000`);
+  // ruling R126: the scaled class's small-text ink colour limit has a cap
+  if (scaled && (raw.textInkDeltaEFirstSmall as number) > SCALED_SMALL_INK_CAP) throw new Error(`${file}: "textInkDeltaEFirstSmall" may not exceed ${SCALED_SMALL_INK_CAP}`);
   return {
     ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater" | "textInkBandSmall" | "scaled">),
     textInkBandSmall: [bandSmall[0], bandSmall[1]],
@@ -275,6 +310,7 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
   const own = Object.fromEntries(Object.entries(raw.scaled).filter(([k]) => !k.startsWith("$")));
   for (const k of Object.keys(own)) {
     if (GEOMETRY_KEYS.has(k)) throw new Error(`${file}: "scaled" cannot change "${k}": boxes and baselines stay within the same device px limit at every viewport`);
+    if (k === "deltaE2000Ring") throw new Error(`${file}: "scaled" cannot change "deltaE2000Ring": every edge-band relaxation needs a border's colour within the file's own (ruling R130)`);
     if (!(k in base) || k === "scaled") throw new Error(`${file}: "scaled" has an unknown threshold key "${k}"`);
   }
   const merged = checkThresholds({ ...raw, ...own }, `${file} (scaled)`, true);
@@ -296,6 +332,8 @@ export function relaxedSsimLimit(t: Thresholds, areaPx2: number, picture: boolea
   const small = t.ssimElementSmall.find(([area]) => areaPx2 < area);
   const options = [
     ...(picture ? [{ limit: t.ssimPicture, why: "a raster picture drawn scaled" }] : []),
+    // off (ssimElement) outside the scaled block
+    ...(picture ? [{ limit: t.ssimResampledPicture, why: "a raster picture resampled at a scaled viewport (ruling R125)" }] : []),
     ...(rotated ? [{ limit: t.ssimRotated, why: "an element an animation sample shows rotated off the axes" }] : []),
     ...(small ? [{ limit: small[1], why: `an element under ${small[0]} device px²` }] : []),
   ].filter((o) => o.limit < t.ssimElement);
@@ -370,6 +408,16 @@ export interface ElementRow {
   edge: number | null;
   /** Largest ring colour sample ΔE2000 of a round element without text (the middle of each border side; `deltaE2000Ring`). */
   ring?: number | null;
+  /**
+   * The largest difference (device px) between the design's and Unity's drawn width of a round element's ring without text,
+   * over the middle of its sides and its corners' diagonals (`RING_WIDTH_PX`, ruling R127; static captures).
+   */
+  ringWidth?: number | null;
+  /**
+   * The evidence of the last edge-band relaxation the element was offered (rulings R129, R130): the lowest SSIM block and the
+   * largest pixel ΔE2000 outside the band, the largest border centre ΔE2000 and border width difference (null: no border).
+   */
+  bandEvidence?: { minBlock: number; maxDe: number; ring: number | null; width: number | null };
   /** Shadow band ΔE2000. */
   band: number | null;
   /** Largest text ink colour ΔE2000 over the lines. */
@@ -862,6 +910,171 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     /** Whether pixel (x, y) shares area with one of the rects. */
     const touches = (rs: readonly Rect[], x: number, y: number) => rs.some((r) => r.x < x + 1 && r.x + r.w > x && r.y < y + 1 && r.y + r.h > y);
 
+    // the edge band of the element's own round shapes and its descendants' (outer curve and the border's inner curve, both
+    // sides, in the element's region), where the scaled class's anti-aliasing ramp differs: masked on top of the element's
+    // own mask for `ssimRoundEdge`; another element's curves (a sibling drawn over it) are that element's
+    const within = (id: string, anc: string) => {
+      for (let x: string | undefined = id; x !== undefined; x = ctx.parent?.get(x)) if (x === anc) return true;
+      return false;
+    };
+    /** The repeat containers around an element, outermost first. */
+    const containersOf = (id: string): string[] => {
+      const out: string[] = [];
+      for (let x = ctx.parent?.get(id); x !== undefined; x = ctx.parent?.get(x)) if (ctx.repeats?.has(x)) out.unshift(x);
+      return out;
+    };
+    type ItemBox = Rect & { visible: boolean };
+    /**
+     * The later written-out repeat items' copies (boxes `items`, both sides shown) of the elements inside `owner`: a copy in a
+     * later item of a repeat lies inside `owner` only when `owner` is that repeat's container or outside it (an element inside
+     * the first item holds that item's elements only). Their key's suffix names the item of each repeat, innermost first.
+     */
+    const itemsWithin = (owner: string): { key: string; id: string; g: ItemBox; u: ItemBox }[] => {
+      const out: { key: string; id: string; g: ItemBox; u: ItemBox }[] = [];
+      for (const [key, gb] of Object.entries(g.items ?? {})) {
+        const ub = u.items?.[key];
+        if (!ub || !gb.visible || !ub.visible) continue;
+        const [id, ...parts] = key.split("#");
+        if (!within(id, owner)) continue;
+        const cs = containersOf(id), path = cs.map(() => 0);
+        parts.forEach((k, j) => { const level = cs.length - 1 - j; if (level >= 0) path[level] = Number(k); });
+        if (cs.some((c, j) => path[j] !== 0 && c !== owner && within(owner, c))) continue;
+        out.push({ key, id, g: gb, u: ub });
+      }
+      return out;
+    };
+    /** A border an edge band masks (an element's own, a descendant's or a later repeat item's), where each renderer draws it. */
+    interface BandBorder { id: string; label: string; g: Rect; u: Rect; widths: readonly number[]; radii?: readonly number[] }
+    interface Band { mask: Uint8Array; moved: boolean; fractional: boolean; borders: BandBorder[] }
+    /**
+     * The element's own mask with the edge band of its own and its descendants' round shapes in `region` added, and the
+     * band of their straight edges where `straight` says so: an edge an animation sample moves to a fractional device offset
+     * (Chromium draws it from its resampled layer, UI Toolkit on whole pixels) and, with `statics`, an edge that lies between
+     * two device pixels in a static capture at a scaled viewport (the box's edge and its border's inner edge, where Chromium
+     * covers the pixel partly), also of the later items of a repeat inside it (ruling R124: the boxes' `items`). A straight
+     * edge's band is every pixel whose centre lies within ROUND_EDGE_BAND of that edge in the design and in Unity: an edge
+     * Unity draws a device pixel away from the design's is not in it. `moved` and `fractional`: whether such edges were
+     * added; `borders`: the borders whose band it masks (their colour and width are the relaxation's evidence, R129, R130).
+     */
+    const bandOf = (owner: string, base: Uint8Array, region: Rect, statics = false): Band => {
+      const out = base.slice();
+      let moved = false, fractional = false;
+      const borders: BandBorder[] = [];
+      const addBorder = (id: string, label: string, gb: Rect, ub: Rect) => {
+        const bw = ctx.borders?.[id];
+        if (bw && !borders.some((b) => b.label === label)) borders.push({ id, label, g: gb, u: ub, widths: bw, radii: ctx.radii?.[id] });
+      };
+      // the band reaches as far as the SSIM blocks over the region do (a moved edge's spill past the box lies in its last block)
+      const rx0 = Math.max(0, Math.floor(region.x / 8) * 8), rx1 = Math.min(w, Math.ceil((region.x + region.w) / 8) * 8);
+      const ry0 = Math.max(0, Math.floor(region.y / 8) * 8), ry1 = Math.min(h, Math.ceil((region.y + region.h) / 8) * 8);
+      const r = { x0: rx0, x1: rx1, y0: ry0, y1: ry1 };
+      for (const id of compared) {
+        if (!within(id, owner)) continue;
+        const isMoved = movedAtFraction(id);
+        if (!isMoved && !(statics && paints(id))) continue;
+        // a moved edge lies where the sample's transform puts the box; a static one where Chromium paints it (whole CSS px)
+        const gb = isMoved ? g.elements[id] : paintedRect(g.elements[id], g.scale), ub = u.elements[id];
+        if (!ub?.visible) continue;
+        const added = markBoxEdges(out, w, h, gb, ub, ctx.borders?.[id], r);
+        if (added && isMoved) moved = true;
+        else if (added) fractional = true;
+        addBorder(id, id, gb, ub);
+      }
+      const items = itemsWithin(owner);
+      if (statics) for (const it of items) {
+        if (!paints(it.id)) continue;
+        const gb = paintedRect(it.g, g.scale);
+        if (markBoxEdges(out, w, h, gb, it.u, ctx.borders?.[it.id], r)) fractional = true;
+        addBorder(it.id, it.key, gb, it.u);
+      }
+      // a curve where the design draws it: where the sample's transform puts a moved box, else where Chromium paints it
+      const curves = (id: string, label: string, gbox: Rect | null, ubox: Rect | null, isMoved = false) => {
+        const radii = ctx.radii?.[id];
+        if (!radii) return;
+        const placed = gbox ? (isMoved ? gbox : paintedRect(gbox, g.scale)) : null;
+        for (const b of [placed, ubox]) {
+          if (!b) continue;
+          const x0 = Math.max(rx0, Math.floor(b.x) - 2), x1 = Math.min(rx1, Math.ceil(b.x + b.w) + 2);
+          const y0 = Math.max(ry0, Math.floor(b.y) - 2), y1 = Math.min(ry1, Math.ceil(b.y + b.h) + 2);
+          for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (nearCurve(b, ctx.borders?.[id], radii, x, y, ROUND_EDGE_BAND)) out[y * w + x] = 1;
+        }
+        if (placed && ubox) addBorder(id, label, placed, ubox);
+      };
+      for (const id of compared) if (within(id, owner)) curves(id, id, g.elements[id]?.visible ? g.elements[id] : null, u.elements[id]?.visible ? u.elements[id] : null, movedAtFraction(id));
+      for (const it of items) curves(it.id, it.key, it.g, it.u);
+      return { mask: out, moved, fractional, borders };
+    };
+
+    /**
+     * The largest colour difference outside a band, as the element's colour limit measures it (ruling R129): the ΔE2000 of
+     * the design's 3×3 mean at every pixel of `region` whose window lies wholly outside `m`, against Unity's closest 3×3 mean
+     * within 1 px (bestDeltaE). Every window counts, not a mean over the element.
+     */
+    const maxWindowDe = (m: Uint8Array, region: Rect): { de: number; x: number; y: number } => {
+      const x0 = Math.max(1, Math.floor(region.x)), x1 = Math.min(w - 1, Math.ceil(region.x + region.w));
+      const y0 = Math.max(1, Math.floor(region.y)), y1 = Math.min(h - 1, Math.ceil(region.y + region.h));
+      const gd = gp.data, ud = up.data;
+      let best = { de: 0, x: -1, y: -1 };
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+        let clear = true, same = true;
+        for (let yy = y - 1; yy <= y + 1 && clear; yy++) for (let xx = x - 1; xx <= x + 1; xx++) {
+          const p = yy * w + xx;
+          if (m[p]) { clear = false; break; }
+          const o = p * 4;
+          if (same && (gd[o] !== ud[o] || gd[o + 1] !== ud[o + 1] || gd[o + 2] !== ud[o + 2])) same = false;
+        }
+        if (!clear || same) continue;
+        const r = bestDeltaE(gp, x, y, up, x, y, 3);
+        if (r.de > best.de) best = { de: r.de, x, y };
+      }
+      return best;
+    };
+    /** What a relaxation's band leaves to show that the difference lies in it, and why not when it does not (rulings R129, R130). */
+    interface Evidence { ok: boolean; why: string; minBlock: number; maxDe: number; ring: number | null; width: number | null }
+    /**
+     * The evidence an edge-band relaxation needs, at every viewport: outside the band, every SSIM block of the region (each
+     * at its best offset of up to 1 px) meets ssimElement and every 3×3 window is within deltaE2000 of Unity's closest within
+     * 1 px (pixel level, not the region's mean); every border the band masks has its centre pixel (each side of
+     * BORDER_SAMPLE_PX or more) within the file's deltaE2000Ring, a side under that width giving no evidence, and its drawn
+     * width within RING_WIDTH_PX of the design's. The centre colour is sampled as deltaE2000Ring samples it, in static
+     * captures; in an animation sample the width and the windows still hold.
+     */
+    const evidenceOf = (band: Band, region: Rect): Evidence => {
+      const blocks = regionSsimShiftedBlocks(gp, up, band.mask, region, 1);
+      const px = maxWindowDe(band.mask, region);
+      let ring: { de: number; where: string; a: number[]; b: number[] } | null = null;
+      let width: { d: number; where: string; design: number; unity: number } | null = null;
+      let none = "";
+      for (const b of band.borders) {
+        const cover = covering(b.id);
+        // the centre colour as deltaE2000Ring samples it: in static captures (an animation sample shows a moving element
+        // from Chromium's resampled layer, whose border's centre pixel blends; its colour is judged in the static captures)
+        const full = ctx.anim ? [0, 0, 0, 0] : b.widths.map((v) => (v >= BORDER_SAMPLE_PX ? v : 0));
+        let any = !!ctx.anim;
+        for (const p of full.some((v) => v > 0) ? ringPoints(b.g, b.u, full, ["border"], b.radii) : []) {
+          if (!usable(p, cover)) continue;
+          any = true;
+          const r = bestDeltaE(gp, p.gx, p.gy, up, p.ux, p.uy, p.win);
+          if (!ring || r.de > ring.de) ring = { de: r.de, where: `${b.label} ${p.where}`, a: r.a, b: r.b };
+        }
+        if (!none && !ctx.anim && (b.widths.some((v) => v > 0 && v < BORDER_SAMPLE_PX) || !any))
+          none = `the border of ${b.label} (a side under ${BORDER_SAMPLE_PX} device px, or no usable point on it) gives no evidence of its colour`;
+        const skip = (x: number, y: number) => onText(x, y) || cover.some((c) => inside(c, x, y));
+        for (const wp of borderWidths(gp, b.g, up, b.u, b.widths, b.radii, BORDER_SAMPLE_PX, skip)) {
+          const d = Math.abs(wp.design - wp.unity);
+          if (!width || d > width.d) width = { d, where: `${b.label} ${wp.where}`, design: wp.design, unity: wp.unity };
+        }
+      }
+      const ev = { minBlock: blocks.min, maxDe: px.de, ring: ring ? (ring as { de: number }).de : null, width: width ? (width as { d: number }).d : null };
+      const why = blocks.min < t.ssimElement - EPS ? `an SSIM block outside the band, the 8 px block at (${blocks.minAt[0]}, ${blocks.minAt[1]}), is ${blocks.min.toFixed(5)} (below ${t.ssimElement}: not confined to it)`
+        : px.de > t.deltaE2000 + EPS ? `outside the band, (${px.x}, ${px.y}) differs by ΔE2000 ${px.de.toFixed(2)} (a 3×3 mean; limit ${t.deltaE2000}: not confined to it)`
+        : none ? none
+        : ring && ring.de > t.deltaE2000Ring + EPS ? `the centre of ${ring.where} differs by ΔE2000 ${ring.de.toFixed(2)} (design ${hex(ring.a)}, Unity ${hex(ring.b)}; limit ${t.deltaE2000Ring}): the border in that band is not the design's`
+        : width && width.d > RING_WIDTH_PX + EPS ? `${width.where} is drawn ${width.unity.toFixed(2)} device px wide, the design's ${width.design.toFixed(2)} (limit ±${RING_WIDTH_PX}): the border in that band is not the design's`
+        : "";
+      return { ok: !why, why, ...ev };
+    };
+
     /** Elements below ssimElement, judged after every other check (a measured lower limit needs those to pass). */
     const lowSsim: { id: string; s0: number; best: number; region: Rect; carriesText: boolean; shadow: boolean }[] = [];
     // ssimRoundEdge: at a scaled viewport any element with round shapes in its region (the layout scale's ramp); at every
@@ -874,7 +1087,6 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const movedAtFraction = (id: string) => !!ctx.anim && !!ctx.moving?.has(id) && !!g.elements[id] && fractionalBox(g.elements[id]);
     const roundWithoutText = (id: string) => !!ctx.radii?.[id] && !(g.elements[id]?.text && g.elements[id].lines.length > 0);
     const edgeScope = (id: string) => edgeLimit && (scaledClass ? roundEdge || movedAtFraction(id) : roundWithoutText(id) || movedAtFraction(id));
-    const ringEvidence = new Map<string, { de: number; p: RingPoint | null; a: number[]; b: number[] }>();
     for (const id of compared) {
       const ge = g.elements[id], ue = u.elements[id], row = rowOf.get(id)!;
       if (external.has(id)) continue;
@@ -950,8 +1162,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         if (!use.length) use = ringPoints(gPaint, ue, ctx.borders?.[id], ["edge"], ctx.radii?.[id]).filter((p) => usable(p, cover));
       }
       // a round element without text: the middle of each border side of 2 device px or more (its centre pixel covered on
-      // both renderers), the evidence ssimRoundEdge needs: its ring lies in the edge band that limit masks, so a missing
-      // or wrong-colour ring shows only here (an element that carries text samples its border with its ring below)
+      // both renderers): its ring lies in the edge band an edge-band relaxation masks, so a missing or wrong-colour ring
+      // shows here (an element that carries text samples its border with its ring below), and its drawn width across the
+      // middle of each side and each round corner's diagonal (ruling R127; a ring a pixel thinner keeps its colour sample)
       const sides = ctx.borders?.[id];
       if (!carriesText && ctx.radii?.[id] && paints(id) && sides && sides.some((v) => v > 0)) {
         let worst: { de: number; p: RingPoint; a: number[]; b: number[] } | null = null;
@@ -971,7 +1184,19 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
               { x: worst.p.gx - 1, y: worst.p.gy - 1, w: 3, h: 3 });
           }
         }
-        if (edgeLimit) ringEvidence.set(id, worst ?? { de: NaN, p: null, a: [], b: [] });
+        let thick: { d: number; where: string; design: number; unity: number } | null = null;
+        const skip = (x: number, y: number) => onText(x, y) || cover.some((c) => inside(c, x, y));
+        for (const wp of borderWidths(gp, gPaint, up, ue, sides, ctx.radii[id], BORDER_SAMPLE_PX, skip)) {
+          const d = Math.abs(wp.design - wp.unity);
+          if (!thick || d > thick.d) thick = { d, where: wp.where, design: wp.design, unity: wp.unity };
+        }
+        if (thick) {
+          row.ringWidth = r6(thick.d);
+          // static captures only: Chromium draws a moving element from its resampled layer
+          if (!ctx.anim && thick.d > RING_WIDTH_PX + EPS) {
+            issue(id, "edge", `ring ${thick.where}: drawn ${thick.unity.toFixed(2)} device px wide, the design's ${thick.design.toFixed(2)} (limit ±${RING_WIDTH_PX}): the ring's width differs`, ge);
+          }
+        }
       }
       if (use) {
         row.samples = use.length;
@@ -984,8 +1209,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         if (bestS) {
           row.deltaE = r6(bestS.de);
           if (!maxDE || bestS.de > maxDE.deltaE) maxDE = { id, deltaE: r6(bestS.de) };
-          if (bestS.de > t.deltaE2000 + EPS) {
-            issue(id, "color", `ΔE2000 ${bestS.de.toFixed(2)} at ${bestS.p.where}: design ${hex(bestS.a)}, Unity ${hex(bestS.b)} (limit ${t.deltaE2000})`,
+          // a raster picture resampled at a scaled viewport (ruling R125; off elsewhere)
+          const limit = ctx.pictures?.has(id) ? Math.max(t.deltaE2000, t.deltaE2000ResampledPicture) : t.deltaE2000;
+          if (bestS.de > limit + EPS) {
+            issue(id, "color", `ΔE2000 ${bestS.de.toFixed(2)} at ${bestS.p.where}: design ${hex(bestS.a)}, Unity ${hex(bestS.b)} (limit ${limit}${limit > t.deltaE2000 ? " for a raster picture resampled at a scaled viewport" : ""})`,
               { x: bestS.p.gx - 1, y: bestS.p.gy - 1, w: 3, h: 3 });
           }
         }
@@ -1028,19 +1255,32 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           const outside = (x: number, y: number, design: boolean) => !m[y * w + x] && !nearCurve(design ? gPaint : ue, border, radii, x, y, ROUND_EDGE_BAND);
           return bestDeltaEKept(gp, p.gx, p.gy, up, p.ux, p.uy, p.win, outside, ROUND_EDGE_KEPT).de <= t.deltaE2000 + EPS;
         };
-        let bestR: { de: number; p: RingPoint; a: number[]; b: number[]; limit: number } | null = null;
+        const samples: { de: number; p: RingPoint; a: number[]; b: number[]; limit: number }[] = [];
         let maxRing = -1;
         for (const p of ringPoints(gPaint, ue, ctx.borders?.[id], ["edge", "border", "corner"], ctx.radii?.[id])) {
           if (!usable(p, cover)) continue;
           const r = bestDeltaE(gp, p.gx, p.gy, up, p.ux, p.uy, p.win);
           const limit = roundBand(p) ? t.deltaE2000RoundEdge : fractionalBand(p) ? t.deltaE2000FractionalEdge : t.deltaE2000;
           maxRing = Math.max(maxRing, r.de);
-          if (!bestR || r.de - limit > bestR.de - bestR.limit) bestR = { de: r.de, p, a: r.a, b: r.b, limit };
+          samples.push({ de: r.de, p, a: r.a, b: r.b, limit });
         }
+        // a corner that needs its relaxed limit needs the element's evidence too (rulings R129, R130): its pixels outside the
+        // edge bands of its class (round shapes; straight edges between device pixels at a scaled viewport, moved edges in an
+        // animation sample), its border's centre colour and width
+        let cornerWhy = "";
+        if (samples.some((x) => x.limit > t.deltaE2000 && x.de > t.deltaE2000 + EPS)) {
+          const region = shadow ? unionRect(ge, shadow) : ge;
+          const ev = evidenceOf(bandOf(id, lineMask, region, scaledClass), region);
+          row.bandEvidence = { minBlock: r6(ev.minBlock), maxDe: r6(ev.maxDe), ring: ev.ring === null ? null : r6(ev.ring), width: ev.width === null ? null : r6(ev.width) };
+          if (!ev.ok) { cornerWhy = ev.why; for (const x of samples) x.limit = t.deltaE2000; }
+        }
+        let bestR: (typeof samples)[number] | null = null;
+        for (const x of samples) if (!bestR || x.de - x.limit > bestR.de - bestR.limit) bestR = x;
         if (bestR) {
           row.edge = r6(maxRing);
           if (bestR.de > bestR.limit + EPS) {
-            const band = bestR.limit === t.deltaE2000 ? "" : bestR.limit === t.deltaE2000RoundEdge ? ` for a corner in the edge band of round shapes`
+            const band = bestR.limit === t.deltaE2000 ? (cornerWhy ? `; the corner limits of edge bands need the evidence: ${cornerWhy}` : "")
+              : bestR.limit === t.deltaE2000RoundEdge ? ` for a corner in the edge band of round shapes`
               : ` for a corner in the band of straight edges between device pixels`;
             issue(id, "edge", `${bestR.p.where}: ΔE2000 ${bestR.de.toFixed(2)}, design ${hex(bestR.a)}, Unity ${hex(bestR.b)} (limit ${bestR.limit}${band}): background, border or corner shape differs`,
               { x: bestR.p.gx - 2, y: bestR.p.gy - 2, w: 5, h: 5 });
@@ -1148,51 +1388,6 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       }
     }
 
-    // the edge band of the element's own round shapes and its descendants' (outer curve and the border's inner curve, both
-    // sides, in the element's region), where the scaled class's anti-aliasing ramp differs: masked on top of the element's
-    // own mask for `ssimRoundEdge`; another element's curves (a sibling drawn over it) are that element's
-    const within = (id: string, anc: string) => {
-      for (let x: string | undefined = id; x !== undefined; x = ctx.parent?.get(x)) if (x === anc) return true;
-      return false;
-    };
-    /**
-     * The element's own mask with the edge band of its own and its descendants' round shapes in `region` added, and the
-     * band of their straight edges where `straight` says so: an edge an animation sample moves to a fractional device offset
-     * (Chromium draws it from its resampled layer, UI Toolkit on whole pixels) and, with `statics`, an edge that lies between
-     * two device pixels in a static capture at a scaled viewport (the box's edge and its border's inner edge, where Chromium
-     * covers the pixel partly). A straight edge's band is every pixel whose centre lies within ROUND_EDGE_BAND of that edge
-     * in the design and in Unity: an edge Unity draws a device pixel away from the design's is not in it. `moved` and
-     * `fractional`: whether such edges were added.
-     */
-    const roundMasked = (owner: string, base: Uint8Array, region: Rect, statics = false): { mask: Uint8Array; moved: boolean; fractional: boolean } => {
-      const out = base.slice();
-      let moved = false, fractional = false;
-      const rx0 = Math.max(0, Math.floor(region.x)), rx1 = Math.min(w, Math.ceil(region.x + region.w));
-      const ry0 = Math.max(0, Math.floor(region.y)), ry1 = Math.min(h, Math.ceil(region.y + region.h));
-      for (const id of compared) {
-        if (!within(id, owner)) continue;
-        const isMoved = movedAtFraction(id);
-        if (!isMoved && !(statics && (!ctx.painters || ctx.painters.has(id)))) continue;
-        // a moved edge lies where the sample's transform puts the box; a static one where Chromium paints it (whole CSS px)
-        const gb = isMoved ? g.elements[id] : paintedRect(g.elements[id], g.scale), ub = u.elements[id];
-        if (!ub?.visible) continue;
-        const added = markBoxEdges(out, w, h, gb, ub, ctx.borders?.[id], { x0: rx0, x1: rx1, y0: ry0, y1: ry1 });
-        if (added && isMoved) moved = true;
-        else if (added) fractional = true;
-      }
-      for (const id of compared) {
-        const radii = ctx.radii?.[id];
-        if (!radii || !within(id, owner)) continue;
-        for (const b of [g.elements[id]?.visible ? paintedRect(g.elements[id], g.scale) : null, u.elements[id]?.visible ? u.elements[id] : null]) {
-          if (!b) continue;
-          const x0 = Math.max(0, Math.floor(Math.max(b.x, region.x)) - 2), x1 = Math.min(w, Math.ceil(Math.min(b.x + b.w, region.x + region.w)) + 2);
-          const y0 = Math.max(0, Math.floor(Math.max(b.y, region.y)) - 2), y1 = Math.min(h, Math.ceil(Math.min(b.y + b.h, region.y + region.h)) + 2);
-          for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (nearCurve(b, ctx.borders?.[id], radii, x, y, ROUND_EDGE_BAND)) out[y * w + x] = 1;
-        }
-      }
-      return { mask: out, moved, fractional };
-    };
-
     // element SSIM below ssimElement: a measured lower limit when the element's every other check passed
     const otherIssue = new Set(issues.filter((i) => i.kind !== "ssim").map((i) => i.id));
     for (const l of lowSsim) {
@@ -1200,47 +1395,58 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const relaxed = relaxedSsimLimit(t, l.region.w * l.region.h, !!ctx.pictures?.has(l.id), !!ctx.rotated?.has(l.id));
       if (relaxed && !otherIssue.has(l.id) && l.best >= relaxed.limit - EPS) { row.ssimLimit = relaxed.limit; continue; }
       let roundWhy = "", fractionalWhy = "";
-      // the ring the band hides must be there: its border sides within the round-edge colour limit where the class has one
-      // (scaled), else the ring's (deltaE2000Ring); not in an animation sample, where Chromium resamples the moving layer so a
-      // border's centre pixel blends (the ring's colour is judged in the static captures, and the band leaves the middle of a
-      // moved straight border compared)
-      const ring = ringEvidence.get(l.id);
-      const ringLimit = t.deltaE2000RoundEdge > t.deltaE2000 ? t.deltaE2000RoundEdge : t.deltaE2000Ring;
-      const ringOff = !ctx.anim && ring && ring.p && ring.de > ringLimit + EPS ? ring : null;
-      const noEvidence = !!ring && !ring.p;
-      const evidence = ringOff ? `, but its ${ringOff.p!.where} differs by ΔE2000 ${ringOff.de.toFixed(2)} (design ${hex(ringOff.a)}, Unity ${hex(ringOff.b)}; limit ${ringLimit}): the ring in that band is not the design's`
-        : noEvidence ? `, but its ring (a border under ${BORDER_SAMPLE_PX} device px, or no usable point on it) gives no evidence: held to ${t.ssimElement}` : "";
+      const base = l.carriesText ? lineMask : mask;
+      /** A band's relaxation: its evidence (rulings R129, R130), recorded on the row; null when it holds. */
+      const withEvidence = (band: Band): string | null => {
+        const ev = evidenceOf(band, l.region);
+        row.bandEvidence = { minBlock: r6(ev.minBlock), maxDe: r6(ev.maxDe), ring: ev.ring === null ? null : r6(ev.ring), width: ev.width === null ? null : r6(ev.width) };
+        return ev.ok ? null : ev.why;
+      };
       if (edgeScope(l.id)) {
-        const band = roundMasked(l.id, l.carriesText ? lineMask : mask, l.region);
+        const band = bandOf(l.id, base, l.region);
         const banded = regionSsimShifted(gp, up, band.mask, l.region, 1);
         row.ssimRoundEdgeMasked = r6(banded);
         const confined = banded >= t.ssimElement - EPS;
-        if (confined && !evidence && !otherIssue.has(l.id) && l.best >= t.ssimRoundEdge - EPS) { row.ssimLimit = t.ssimRoundEdge; continue; }
+        let failed: string | null = null;
+        if (confined && !otherIssue.has(l.id) && l.best >= t.ssimRoundEdge - EPS) {
+          failed = withEvidence(band);
+          if (failed === null) { row.ssimLimit = t.ssimRoundEdge; continue; }
+        }
         roundWhy = `; ${banded.toFixed(5)} with the edge band of round shapes${band.moved ? " and moved edges" : ""} masked` + (!confined ? ` (below ${t.ssimElement}: not confined to that band)`
-          : evidence || (otherIssue.has(l.id) ? `, the limit ${t.ssimRoundEdge} for it needs its other checks to pass` : `, below ${t.ssimRoundEdge} unmasked`));
+          : failed !== null ? `, but ${failed}` : otherIssue.has(l.id) ? `, the limit ${t.ssimRoundEdge} for it needs its other checks to pass` : `, below ${t.ssimRoundEdge} unmasked`);
       }
       // at a scaled viewport: the straight edges that lie between two device pixels as well (ssimFractionalEdge)
-      if (scaledClass && t.ssimFractionalEdge < t.ssimElement - EPS && !evidence) {
-        const wide = roundMasked(l.id, l.carriesText ? lineMask : mask, l.region, true);
+      if (scaledClass && t.ssimFractionalEdge < t.ssimElement - EPS) {
+        const wide = bandOf(l.id, base, l.region, true);
         if (wide.fractional) {
           const fs = regionSsimShifted(gp, up, wide.mask, l.region, 1);
           row.ssimFractionalEdgeMasked = r6(fs);
-          if (fs >= t.ssimElement - EPS && !otherIssue.has(l.id) && l.best >= t.ssimFractionalEdge - EPS) { row.ssimLimit = t.ssimFractionalEdge; continue; }
+          let failed: string | null = null;
+          if (fs >= t.ssimElement - EPS && !otherIssue.has(l.id) && l.best >= t.ssimFractionalEdge - EPS) {
+            failed = withEvidence(wide);
+            if (failed === null) { row.ssimLimit = t.ssimFractionalEdge; continue; }
+          }
           fractionalWhy = `; ${fs.toFixed(5)} with the straight edges between device pixels masked as well` + (fs < t.ssimElement - EPS ? ` (below ${t.ssimElement}: not confined to them)`
-            : otherIssue.has(l.id) ? `, the limit ${t.ssimFractionalEdge} for it needs its other checks to pass` : `, below ${t.ssimFractionalEdge} unmasked`);
+            : failed !== null ? `, but ${failed}` : otherIssue.has(l.id) ? `, the limit ${t.ssimFractionalEdge} for it needs its other checks to pass` : `, below ${t.ssimFractionalEdge} unmasked`);
         }
       }
       // at a scaled viewport: a vector picture's drawn edges (ssimVectorEdge)
       let vectorWhy = "";
       if (scaledClass && t.ssimVectorEdge < t.ssimElement - EPS && ctx.vectors?.has(l.id)) {
-        const vmask = (l.carriesText ? lineMask : mask).slice();
+        const vmask = base.slice();
         const kept = markVectorEdges(vmask, gp, l.region);
         if (kept.kept >= VECTOR_KEPT * kept.all) {
           const vs = regionSsimShifted(gp, up, vmask, l.region, 1);
           row.ssimVectorEdgeMasked = r6(vs);
-          if (vs >= t.ssimElement - EPS && !otherIssue.has(l.id) && l.best >= t.ssimVectorEdge - EPS) { row.ssimLimit = t.ssimVectorEdge; continue; }
+          let failed: string | null = null;
+          if (vs >= t.ssimElement - EPS && !otherIssue.has(l.id) && l.best >= t.ssimVectorEdge - EPS) {
+            const bw = ctx.borders?.[l.id];
+            failed = withEvidence({ mask: vmask, moved: false, fractional: false,
+              borders: bw ? [{ id: l.id, label: l.id, g: paintedRect(g.elements[l.id], g.scale), u: u.elements[l.id], widths: bw, radii: ctx.radii?.[l.id] }] : [] });
+            if (failed === null) { row.ssimLimit = t.ssimVectorEdge; continue; }
+          }
           vectorWhy = `; ${vs.toFixed(5)} with the vector's edge band masked` + (vs < t.ssimElement - EPS ? ` (below ${t.ssimElement}: not confined to it)`
-            : otherIssue.has(l.id) ? `, the limit ${t.ssimVectorEdge} for it needs its other checks to pass` : `, below ${t.ssimVectorEdge} unmasked`);
+            : failed !== null ? `, but ${failed}` : otherIssue.has(l.id) ? `, the limit ${t.ssimVectorEdge} for it needs its other checks to pass` : `, below ${t.ssimVectorEdge} unmasked`);
         } else vectorWhy = `; its edge band leaves ${kept.kept} of ${kept.all} pixels compared (under half): no evidence for ${t.ssimVectorEdge}`;
       }
       const why = relaxed ? (otherIssue.has(l.id) ? `; the limit ${relaxed.limit} for ${relaxed.why} needs its other checks to pass` : `; ${relaxed.limit} for ${relaxed.why}`) : "";

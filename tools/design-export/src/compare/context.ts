@@ -63,6 +63,11 @@ export interface CaptureContext {
   vectors?: ReadonlySet<string>;
   /** The capture's viewport class (absent: exact): which elements `ssimRoundEdge` may apply to. */
   viewportClass?: "exact" | "scaled";
+  /**
+   * The containers of data-u-repeat lists (IR `repeat`): their children are the first item; the boxes' `items` hold the
+   * later written-out items' copies, whose edge bands an element around them takes with its own.
+   */
+  repeats?: ReadonlySet<string>;
 }
 
 /** The screen setup of a capture: state, viewport and what is applied (matrix.json `captures[]`); `anim` for an animation sample. */
@@ -86,6 +91,7 @@ interface LooseNode {
   shadow?: LooseShadow | null;
   shadowLayers?: Record<string, LooseShadow | null>;
   initial?: { disabled?: boolean; checked?: boolean } | null;
+  repeat?: unknown;
   children?: LooseNode[];
 }
 
@@ -183,6 +189,7 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
   const fontPx: Record<string, number> = {};
   const radii: Record<string, [number, number, number, number]> = {};
   const pictures = new Set<string>(), textShadows = new Set<string>(), rotated = new Set<string>(), opaque = new Set<string>(), vectors = new Set<string>();
+  const repeats = new Set<string>();
   const opacity = new Map<string, number>();
   const opacityOf = (id: string, holds: (key: string) => boolean): number => {
     if (opacity.has(id)) return opacity.get(id)!;
@@ -237,11 +244,12 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     }
     if (setup.anim && b && typeof b.rotation === "number" && !axisAligned(b.rotation)) rotated.add(id);
     if (n.kind === "vector") vectors.add(id);
+    if (isObj(n.repeat)) repeats.add(id);
   }
   // the elements the sample's running animations play on, and everything inside them
   const moving = new Set<string>();
   const runs = isObj(setup.anim) && Array.isArray(setup.anim.runs) ? (setup.anim.runs as unknown[]) : [];
   const runIds = new Set(runs.map((r) => (isObj(r) && typeof r.elementId === "string" ? r.elementId : null)).filter((x): x is string => x !== null));
   if (runIds.size) for (const id of ix.order) for (let x: string | undefined = id; x !== undefined; x = ix.parent.get(x)) if (runIds.has(x)) { moving.add(id); break; }
-  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
+  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
 }
