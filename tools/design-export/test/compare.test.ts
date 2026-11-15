@@ -300,20 +300,21 @@ describe("compareCapture", () => {
     // a 160 px title cut with an ellipsis: stand-in glyphs 6 px wide on an 8 px advance from x 40, then three 2×2 dots on a
     // 12 px advance; the design keeps 8 glyphs, so its ellipsis is placed at 40 + 8 × 8 = 104
     const ADV = 8, DOTS = 12, X0 = 40;
-    const title = (glyphs: number, o: { dots?: boolean; half?: boolean; dotsY?: number } = {}) => {
+    const title = (glyphs: number, o: { dots?: boolean; half?: boolean; dotsY?: number; gw?: number; space?: number } = {}) => {
       const png = canvas(320, 192, [16, 24, 32]);
-      for (let k = 0; k < glyphs; k++) fill(png, { x: X0 + k * ADV, y: o.half ? 50 : 44, w: 6, h: o.half ? 6 : 12 }, [250, 250, 250]);
-      const at = X0 + glyphs * ADV;
+      for (let k = 0; k < glyphs; k++) fill(png, { x: X0 + k * ADV, y: o.half ? 50 : 44, w: o.gw ?? 6, h: o.half ? 6 : 12 }, [250, 250, 250]);
+      // `space`: Unity kept a trailing space (a narrow grapheme) before its ellipsis
+      const at = X0 + glyphs * ADV + (o.space ?? 0);
       if (o.dots !== false) for (const dx of [1, 5, 9]) fill(png, { x: at + dx, y: o.dotsY ?? 54, w: 2, h: 2 }, [250, 250, 250]);
       return png;
     };
-    const side = (png: Rgba, ellipsis = false): { png: Rgba; boxes: CaptureBoxes } => ({
+    const side = (png: Rgba, ellipsis = false, baseline = 56): { png: Rgba; boxes: CaptureBoxes } => ({
       png,
       boxes: {
         capture: "default@320x192", viewport: [320, 192], scale: 0.625, external: [],
         elements: {
           root: el(0, 0, 320, 192),
-          title: el(X0, 40, 90, 24, { text: true, lines: [{ x: X0, y: 42, w: 200, h: 20, baseline: 56, ...(ellipsis ? { ellipsis: { at: X0 + 8 * ADV, last: ADV, next: ADV, width: DOTS } } : {}) }] }),
+          title: el(X0, 40, 90, 24, { text: true, lines: [{ x: X0, y: 42, w: 200, h: 20, baseline, ...(ellipsis ? { ellipsis: { at: X0 + 8 * ADV, last: ADV, next: ADV, width: DOTS } } : {}) }] }),
         },
       },
     });
@@ -354,6 +355,27 @@ describe("compareCapture", () => {
       }
       // a line the design does not end in an ellipsis gets no allowance
       expect(kinds(compareCapture(side(title(8)), side(title(9)), [], scaled))).toContain("title:inkExtent");
+    });
+
+    it("judges the ellipsis's height against baselines a fraction of a pixel apart (Chromium's fractional baseline, Unity's whole one)", () => {
+      // a pilot screen: the design's baseline at 785.797, Unity's at 786 with the dots on the same rows; the rows were then
+      // compared at fractional positions that held no design ink, and every ellipsized title failed the glyph check (1.00)
+      for (const b of [56.2, 55.8, 56.5]) {
+        expect(kinds(compareCapture(design, side(title(8), false, b), [], T)), `baseline ${b}, exact`).toEqual([]);
+        expect(kinds(compareCapture(design, side(title(9), false, b), [], scaled)), `baseline ${b}, one more, scaled`).toEqual([]);
+        // raised dots still fail with such a baseline
+        expect(kinds(compareCapture(design, side(title(8, { dotsY: 48 }), false, b), [], T)), `raised dots, baseline ${b}`).toContain("title:ink");
+      }
+    });
+
+    it("matches the ellipsis on its own columns when Unity kept a narrow grapheme more (the prefix's last glyph stays put)", () => {
+      // a pilot screen's title at 1600×900: Unity kept the space after "…ar" (3.4 px), its dots 3.3 px later; matched with the
+      // prefix's last glyph in the window, the dots were placed 0.7 px off and their shape failed (1.04)
+      const wide = side(title(8, { gw: 7 }), true);
+      wide.boxes.elements.title.lines[0].ellipsis!.next = 3;
+      const v = compareCapture(wide, side(title(8, { gw: 7, space: 3 })), [], scaled);
+      expect(kinds(v)).toEqual([]);
+      expect(v.elements.find((r) => r.id === "title")!.ellipsisCut).toBeCloseTo(3, 1);
     });
   });
 

@@ -387,8 +387,8 @@ function columnAt(ink: Ink, x: number): number {
  * the design's ink amount there, so a renderer's thicker or thinner strokes do not move it but a glyph does. Searched
  * within ±`range` px of `around` (the difference of the ink extents), coarse then in 0.02 px steps.
  */
-export function endShift(design: Ink, unity: Ink, from: number, to: number, around: number, range = 2): number {
-  const x0 = Math.floor(from) - 4, x1 = Math.ceil(to) + 4;
+export function endShift(design: Ink, unity: Ink, from: number, to: number, around: number, range = 2, margin = 4): number {
+  const x0 = Math.floor(from) - margin, x1 = Math.ceil(to) + margin;
   let massA = 0;
   for (let x = Math.floor(from); x < Math.ceil(to); x++) massA += columnAt(design, x + 0.5);
   const err = (s: number) => {
@@ -420,7 +420,10 @@ export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: num
   let massA = 0;
   for (let x = from; x < to; x++) massA += columnAt(design, x + 0.5);
   if (!(massA > 0)) return null;
-  const shift = endShift(design, unity, e.at, to, unity.right - design.right, 1);
+  // matched on the ellipsis alone: the margin endShift gives a line's end would reach the prefix's last glyph, which Unity
+  // places a grapheme earlier when it keeps one more (ruling R146), and pull the dots out of line (a pilot screen's title at
+  // 1600×900: shift 2.57 against the dots' 3.3, shape 1.04)
+  const shift = endShift(design, unity, e.at, to, unity.right - design.right, 1, 0);
   let massB = 0;
   for (let x = from; x < to; x++) massB += columnAt(unity, x + 0.5 + shift);
   const k = massB > 0 ? massA / massB : 0;
@@ -443,8 +446,11 @@ export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: num
     };
     const ra = profile(design, from, to), rb = profile(unity, from + shift, to + shift);
     const at = (m: Map<number, number>, y: number) => { const f = Math.floor(y - 0.5), t = y - 0.5 - f; return (m.get(f) ?? 0) * (1 - t) + (m.get(f + 1) ?? 0) * t; };
+    // the design's rows are whole: Unity's, moved by the baselines' difference, may fall between them, so the rows compared
+    // are the whole ones around both (a fractional bound compared rows that hold no design ink: rows 1.0 for dots on the
+    // same pixel rows when the baselines differ by a fraction, Chromium's 785.797 against Unity's 786)
     const ys = [...ra.keys(), ...[...rb.keys()].map((y) => y - (baselines.unity - baselines.design))];
-    const lo = Math.min(...ys) - 2, hi = Math.max(...ys) + 2;
+    const lo = Math.floor(Math.min(...ys)) - 2, hi = Math.ceil(Math.max(...ys)) + 2;
     const kr = massB > 0 ? massA / massB : 0;
     rows = Infinity;
     for (let sy = -1; sy <= 1 + 1e-9; sy += 0.25) {
