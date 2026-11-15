@@ -1073,22 +1073,32 @@ ones; every other count is the table's (3840×2160 698/89, 2560×1440 and 1920×
 No scaled-class limit was recorded in `fidelity-thresholds.json`: the colour and SSIM differences at 1600×900 come with
 geometry failures that need a ruling first, and geometry limits stay ±1 device px.
 
-## Ellipsis point at the scaled viewports (known limit, task 36)
+## Ellipsis point: the package cuts by the browser's rule (ruling R144)
 
-A pilot's verify at 1600×900 and 1366×768: an ellipsized card title kept one more character in Unity ("Bayview…")
-than in the design ("Bayvie…"), ink edge +9.79 device px; at 1920×1080 and the other exact viewports they matched.
+A pilot's verify at 1600×900 and 1366×768: an ellipsized card title kept one more character in Unity than in the design
+(ink edge +9.79 device px); at 1920×1080 and the other exact viewports they matched. Task 36 measured the cause and R144
+closes it.
 
-- **The browser's rule** (Chromium, measured by comparing the clipped render with each candidate at device scale 1,
-  0.75 and 0.5): a prefix is kept when its width plus the ellipsis's own advance fits the box; the kerning between the
-  last kept letter and the ellipsis is not counted. Inter Regular 20 px: "Bayview" 77.61 + "…" 16.39 = 94.00 css px
-  ("Bayview…" as one string is 92.52). Boxes of 88–93.64 css px show "Bayvie…", 94 shows "Bayview…".
-- **The design's box** (the golden's `card-title#0#6`): 93.00, 93.34, 93.61, 93.64 and 92.00 css px at 2560, 1920,
-  1600, 1366 and 1280: under 94 everywhere, so the design shows "Bayvie…" at every viewport.
-- **UI Toolkit**, laid out at 0.75 (1920×1080, and 1600×900 and 1366×768 through the root scale): box 93.33 css px (70
-  device px at 0.75), the ellipsis 17.33 css px (13 device px; the browser's 12.29), "Bayview…" as one string 93.33. It
-  matches the browser at 1920×1080 and keeps "Bayview" once the root scale (0.833, 0.711) draws that same layout.
-- Not isolated: UI Toolkit elides inside its text generator and exposes no elision point (`elidedText` stays empty, the
-  text handle's `textInfo` is a pooled buffer), so how the root scale changes its decision was not measured. A fix would
-  elide in the package by the browser's rule (prefix plus the ellipsis's own advance, at the layout scale) instead of UI
-  Toolkit's; it is left for a later task. The capture stays failing: no key hides a one-character difference.
-
+- **The browser's rule** (Chromium, measured by comparing the clipped render with each candidate cut at device scale 1,
+  0.75 and 0.5): a prefix is kept when its width plus the ellipsis's own advance fits the content box; the kerning between
+  the last kept letter and the ellipsis is not counted. With Inter Regular 20 px the pilot's title needed 94.00 css px for
+  its longer cut (the prefix plus 16.39 for "…"; the kerned string was 1.48 px narrower) in a box of 93.00 to 93.64 css px
+  at every viewport, so the design showed the shorter cut everywhere. A repo example: "Weekly preview" in an 84 px box,
+  "Weekly" 68.05 + "…" 16.39 = 84.44 > 84, so "Weekl…" ("Weekly…" kerned is 82.95, which UI Toolkit's own measure fits).
+- **UI Toolkit's own elision** measures the kerned string and decides inside its text generator; at the scaled viewports
+  the layout is 1920×1080's (box 84.00 css px, 63 device px at 0.75) but the root scale (0.833, 0.711) draws it, and the
+  pilot's title kept the longer cut there although 1920×1080 matched. Its elision point is not readable from code
+  (`elidedText` stays empty), so the mechanism was not isolated; R144 makes it irrelevant.
+- **R144**: `DesignOverflowLabel` (the compiler writes every line that does not wrap and ends in an ellipsis as one) cuts
+  the line itself: the longest prefix of whole grapheme clusters whose width plus the ellipsis's own width fits the
+  content box, both measured as the text fit measures (`DesignTextFit.MeasureWidth`: UI Toolkit's unrounded width at the
+  layout scale, the letter-spacing UI Toolkit leaves out after the last character added back). The cut is written as the
+  label's displayed text; the whole text stays the label's `FullText` (view setters and `DesignView.GetText` use it), and
+  the layout measures the whole text, so the box never follows the cut. It cuts again only when the text, font, size,
+  spacing, width or panel scale changes; a text written to the label is cut at the panel's next update. Measured
+  (`RootScaleTests`): "Weekly preview" in boxes of 83.69 to 84 css px shows "Weekl…" at 1600×900, 1366×768 and
+  1920×1080, "Weekly" alone stays whole, 70 px gives "Week…", 160 px the whole text.
+- **Left to UI Toolkit**: right-to-left text and text the advanced generator lays out keep UI Toolkit's own ellipsis (the
+  shaper joins and reorders glyphs, so a cut of the logical text is not the browser's visual cut), as does a line whose
+  characters the drawing face does not hold yet (measuring would add glyphs outside the draw; UI Toolkit's draw adds them
+  and the line is cut after it; the import pre-adds the ellipsis of every screen that has one).

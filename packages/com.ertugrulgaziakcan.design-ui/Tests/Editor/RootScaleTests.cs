@@ -121,7 +121,7 @@ namespace DesignUi.Editor.Tests
         /// design is 2560 px wide at every 16:9 viewport and 2114 at 1280×1024; the panel, laid out at the next exact scale up,
         /// is 2133 px wide at 1600×900, 1821 at 1366×768 and 1707 at 1280×1024.
         /// </summary>
-        string Export(Action<IrNode> edit = null)
+        string Export(Action<IrNode> edit = null, string styles = null)
         {
             var dir = Path.Combine(Path.GetTempPath(), "design-ui-rootscale-" + Guid.NewGuid().ToString("N")).Replace('\\', '/');
             Directory.CreateDirectory(dir);
@@ -141,13 +141,13 @@ namespace DesignUi.Editor.Tests
             if (root.Style.Keys.Any(k => k.StartsWith("state:", StringComparison.Ordinal)))
                 screen.States = new[] { "default" }.Concat(root.Style.Keys.Where(k => k.StartsWith("state:", StringComparison.Ordinal)).Select(k => k.Substring(6)).Distinct()).ToArray();
             File.WriteAllText(Path.Combine(dir, ScreenCompiler.IrFileName), JsonConvert.SerializeObject(screen, Formatting.Indented));
-            File.WriteAllText(Path.Combine(dir, KitTextStyles.FileName), "{ \"caption\": { \"fontSize\": 12, \"lineHeight\": 16, \"weight\": 400 } }");
+            File.WriteAllText(Path.Combine(dir, KitTextStyles.FileName), styles ?? "{ \"caption\": { \"fontSize\": 12, \"lineHeight\": 16, \"weight\": 400 } }");
             return dir;
         }
 
-        VisualTreeAsset CompileScreen(Action<IrNode> edit = null)
+        VisualTreeAsset CompileScreen(Action<IrNode> edit = null, string styles = null)
         {
-            var result = ScreenCompiler.Compile(Export(edit), Profile(), false, NoView());
+            var result = ScreenCompiler.Compile(Export(edit, styles), Profile(), false, NoView());
             Assert.IsTrue(result.Ok, string.Join("\n", result.Errors));
             return AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/RootscaleScreen/RootscaleScreen.uxml");
         }
@@ -975,6 +975,96 @@ namespace DesignUi.Editor.Tests
                 Object.DestroyImmediate(doc.gameObject);
                 yield return null;
             }
+        }
+
+        // ---- R144: the package cuts an ellipsized line by the browser's rule --------------------------------------------
+
+        const string Label2024 = "{ \"caption\": { \"fontSize\": 12, \"lineHeight\": 16, \"weight\": 400 }, \"label\": { \"fontSize\": 20, \"lineHeight\": 24, \"weight\": 400 } }";
+
+        /// <summary>A 20/24 label of the given width that does not wrap, is clipped and ends in an ellipsis (a card title).</summary>
+        static IrNode Ellipsized(string id, string text, string width, int top)
+        {
+            var family = "\"" + FontFixture.Regular.faceInfo.familyName + "\"";
+            var t = Text(id, text, ("position", "absolute"), ("left", "100px"), ("top", top + "px"), ("width", width), ("height", "24px"), ("white-space", "nowrap"),
+                ("overflow-x", "hidden"), ("overflow-y", "hidden"), ("text-overflow", "ellipsis"), ("color", "#ffffff"), ("font-size", "20px"), ("line-height", "24px"),
+                ("font-weight", "400"), ("font-family", family));
+            t.Text.Style = "label";
+            return t;
+        }
+
+        /// <summary>The text an element shows: a cut one's displayed text, else its text.</summary>
+        static string Shown(TextElement e) => e is DesignOverflowLabel o ? o.DisplayedText : e.text;
+
+        /// <summary>
+        /// Ruling R144: the browser keeps a prefix while its width plus the ellipsis's own advance fits, without the kerning
+        /// between them (Chromium, Inter Regular 20 px: "Weekly" 68.05 + "…" 16.39 = 84.44 css px, "Weekly…" kerned 82.95). In
+        /// an 84 px box it shows "Weekl…"; UI Toolkit's own elision, which measures the kerned string, kept "Weekly…" there, and
+        /// at the scaled viewports it also depended on the root scale. The package cuts the line itself at the layout scale: the
+        /// browser's "Weekl…" at the scaled viewports and at 1920×1080, the whole text kept; a text that fits stays whole.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AnEllipsizedLine_IsCutByTheBrowsersRule_AtTheScaledViewports_AndItsTextStaysWhole()
+        {
+            var widths = new[] { "84px", "83.6875px", "83.9375px" };
+            var tree = CompileScreen(root => root.Add(widths.Select((w, i) => Ellipsized("t" + i, "Weekly preview", w, 600 + 40 * i))
+                .Concat(new[] { Ellipsized("fits", "Weekly", "84px", 800) }).ToArray()), Label2024);
+            StringAssert.Contains("<" + ScreenBuilder.OverflowLabelTag + " name=\"t0\"", File.ReadAllText(Out + "/RootscaleScreen/RootscaleScreen.uxml"), "an ellipsized line is a DesignOverflowLabel");
+            foreach (var (w, h) in new[] { (1600, 900), (1366, 768), (1920, 1080) })
+            {
+                var doc = Document(w, h);
+                yield return Frames(2);
+                var instance = tree.Instantiate();
+                doc.rootVisualElement.Add(instance);
+                yield return Frames(8);
+                for (int i = 0; i < widths.Length; i++)
+                {
+                    var t = instance.Q<TextElement>("t" + i);
+                    Assert.AreEqual("Weekl\u2026", Shown(t), w + "×" + h + ", box " + widths[i]);
+                    Assert.AreEqual("Weekly preview", ((DesignOverflowLabel)t).FullText, "the whole text is kept");
+                    Assert.AreEqual("Weekly preview", DesignView.GetText(t));
+                }
+                var fits = instance.Q<TextElement>("fits");
+                Assert.AreEqual("Weekly", Shown(fits), w + "×" + h + ": a text that fits stays whole");
+                Object.DestroyImmediate(doc.gameObject);
+                yield return null;
+            }
+        }
+
+        /// <summary>A new width or text cuts the line again (and only then); right-to-left text is left to UI Toolkit.</summary>
+        [UnityTest]
+        public IEnumerator ACutLine_IsCutAgainWhenItsWidthOrTextChanges_AndRightToLeftTextIsLeftToUnity()
+        {
+            var tree = CompileScreen(root => root.Add(Ellipsized("t", "Weekly preview", "84px", 600), Ellipsized("rtl", "Weekly preview", "84px", 700)), Label2024);
+            var doc = Document(1600, 900);
+            yield return Frames(2);
+            var instance = tree.Instantiate();
+            doc.rootVisualElement.Add(instance);
+            var rtl = instance.Q<TextElement>("rtl");
+            rtl.languageDirection = LanguageDirection.RTL;
+            yield return Frames(8);
+            var t = (DesignOverflowLabel)instance.Q<TextElement>("t");
+            Assert.AreEqual("Weekl\u2026", Shown(t));
+            t.style.width = 70; // room 70.67: "Week" 52.25 + 16.39 fits, "Weekl" 56.94 + 16.39 does not
+            yield return Frames(4);
+            Assert.AreEqual("Week\u2026", Shown(t), "a narrower box cuts again");
+            t.style.width = 160; // the whole text, 146.48, fits
+            yield return Frames(4);
+            Assert.AreEqual("Weekly preview", Shown(t), "a wider box shows the whole text");
+            t.style.width = 84;
+            DesignView.SetText(t, "Season overview", null); // a view setter: "Seaso" 57.48 + 16.39 fits, "Season" 69.09 + 16.39 does not
+            yield return Frames(4);
+            Assert.AreEqual("Season overview", t.FullText);
+            Assert.AreEqual("Seaso\u2026", Shown(t), "a new text is cut");
+            t.text = "Weekly preview"; // written to the label itself (a binding): the new whole text
+            yield return Frames(4);
+            Assert.AreEqual("Weekly preview", t.FullText);
+            Assert.AreEqual("Weekl\u2026", Shown(t));
+            var cuts = t.Cuts;
+            for (int i = 0; i < 5; i++) { t.MarkDirtyRepaint(); yield return null; }
+            Assert.AreEqual(cuts, t.Cuts, "a repaint without a change cuts nothing");
+            Assert.AreEqual("Weekly preview", Shown(rtl), "right-to-left text: UI Toolkit's own ellipsis, the text untouched");
+            Object.DestroyImmediate(doc.gameObject);
+            yield return null;
         }
 
         const string LongLine = "Transfer dönemi bu gece yarısı kapanıyor, kulüpler son tekliflerini veriyor";

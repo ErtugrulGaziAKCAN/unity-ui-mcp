@@ -257,10 +257,11 @@ the root scale: game code's own inline `translate`, `rotate`, `scale` or `transf
 overwritten (move or animate a container instead). `design_ui_status`, `design_ui_verify` (captures per
 class) and `Window > Design UI > Status` show each viewport's class.
 
-Known limit at the scaled viewports: an ellipsized text whose box is within about a css pixel of the width its last
-kept character needs can keep one more character than the browser (a pilot's "Bayview…" against "Bayvie…" at 1600×900
-and 1366×768; the browser counts the ellipsis without kerning against the last letter, 94.0 css px against a 93.6 px
-box). Verify reports it; give such a title a little more room or a shorter text.
+A line that does not wrap and ends in an ellipsis is cut by the package, by the browser's rule (ruling R144): the longest
+prefix whose width plus the ellipsis's own width fits the box ("Weekly preview" in 84 px is "Weekl…", where UI Toolkit's
+own elision kept "Weekly…"), at the layout scale, so the cut is the same at every viewport. The label keeps the whole text
+(`FullText`, what the view's setters write and `DesignView.GetText` reads) and displays the cut. Right-to-left and
+advanced-generator text keep UI Toolkit's own ellipsis.
 
 Text-sized elements (a button or label whose width is its text's) lay out at the golden's width for their text: the
 golden ceils Chromium's text width to whole device pixels at the viewport's scale, UI Toolkit ceils on the grid of the

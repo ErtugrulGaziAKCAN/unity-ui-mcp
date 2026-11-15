@@ -256,14 +256,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
-- Known limit, measured and not fixed (task 36): at 1600×900 and 1366×768 an ellipsized text can keep one more character
-  than the browser when its box is within about a css pixel of the width its last kept character needs (a pilot's
-  "Bayview…" against "Bayvie…", ink edge +9.79 device px). The browser keeps a prefix when its width plus the
-  ellipsis's own advance (no kerning across the cut) fits: "Bayview" 77.61 + "…" 16.39 = 94.00 css px, against boxes of
-  93.0–93.64 css px at every viewport, so "Bayvie…" everywhere. UI Toolkit lays the scaled viewports out at the 0.75 scale
-  of 1920×1080 (box 93.33 css px, ellipsis 17.33) and matches the browser at 1920×1080, but keeps "Bayview" once the root
-  scale draws that layout at 0.833 or 0.711; its elision point is not readable from code, so the mechanism under the
-  root scale was not isolated (docs/findings/viewport-classes.md, "Ellipsis point").
+- The ellipsis point at the scaled viewports (task 36, ruling R144): a card title kept one more character in Unity than in
+  the design at 1600×900 and 1366×768 (ink edge +9.79 device px). Measured: the browser keeps a prefix when its width plus
+  the ellipsis's own advance fits (no kerning across the cut); UI Toolkit's own elision measured the kerned string and,
+  under the root scale, decided differently. Fixed under Fixed below (`docs/findings/viewport-classes.md`, "Ellipsis
+  point").
 
 - Task 35's fix round 4 fidelity run (4728 captures, 14 min 26 s): **every capture passes** at all six viewports; the
   same 180 hairline lines take the colour-direction path (at most 0.26°). The previous comparison run on the same captures
@@ -305,6 +302,14 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- An ellipsized line is cut by the package, by the browser's rule (ruling R144): the compiler writes every text that does
+  not wrap and ends in an ellipsis as a `DesignOverflowLabel`, which displays the longest prefix of whole grapheme clusters
+  whose width plus the ellipsis's own width fits its content box, measured as the text fit measures at the layout scale.
+  UI Toolkit's own elision measured the kerned string ("Weekly preview" in 84 px: "Weekly…" against the browser's
+  "Weekl…") and depended on the root scale at the scaled viewports. The label keeps the whole text (`FullText`; the view's
+  setters write it, `DesignView.GetText` reads it, a text written to the label becomes it), the layout measures the whole
+  text, and it cuts again only when the text, font, size, spacing, width or scale changes. Right-to-left and
+  advanced-generator text keep UI Toolkit's own ellipsis; the import pre-adds the ellipsis glyph.
 - A keyed inline text matched its kit text style on size and weight only, so with caption 20/28 and label 20/24 a 20/24
   label (an inline text beside an icon, or one a state shows) was exported as caption and drawn with the 28 px line box:
   1.6–4 px lower or taller, and the rows below it 4 px down (every verify failure of a pilot's screen at 2560×1440 and

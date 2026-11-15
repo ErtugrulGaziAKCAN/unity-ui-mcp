@@ -1271,24 +1271,29 @@ namespace DesignUi.Editor
             readonly HashSet<IrNode> _overflowStart = new HashSet<IrNode>();
 
             /// <summary>
-            /// A text node that does not wrap in some layer and is aligned right or centred (or at the end) in some layer: its
-            /// line can be wider than its box, which the browser then start-aligns before it clips the line or puts the ellipsis
-            /// where it is cut, where UI Toolkit aligns the cut text. Written as a <see cref="DesignUi.DesignOverflowLabel"/>,
-            /// which is left-aligned while its text is wider than its box.
+            /// A text node that does not wrap in some layer and is aligned right or centred (or at the end) in some layer, or ends
+            /// in an ellipsis there: its line can be wider than its box, which the browser then start-aligns before it clips the
+            /// line or puts the ellipsis where it is cut, where UI Toolkit aligns the cut text, and cuts by its own rule (ruling
+            /// R144). Written as a <see cref="DesignUi.DesignOverflowLabel"/>, which is left-aligned while its text is wider than
+            /// its box and cuts an ellipsized line as the browser does.
             /// </summary>
             bool OverflowStarts(IrNode node)
             {
                 if (node.Text == null || node.Children.Length > 0 || node.Field != null || node.Kind != "text") return false;
                 var keys = node.Style.Keys.Select(LayerKey.Parse).ToList();
                 if (!keys.Any(k => k.Text == Base)) keys.Add(LayerKey.Parse(Base));
-                bool aligned = false, single = false;
+                bool aligned = false, single = false, ellipsis = false;
                 foreach (var k in keys)
                 {
                     var align = Lowering.Resolve(node, k, "text-align", true);
                     if (align == "right" || align == "center" || align == "end") aligned = true;
-                    if (!Wraps(node, k)) single = true;
+                    if (!Wraps(node, k))
+                    {
+                        single = true;
+                        if (Lowering.Resolve(node, k, "text-overflow", true) == "ellipsis") ellipsis = true;
+                    }
                 }
-                return aligned && single;
+                return single && (aligned || ellipsis);
             }
 
             bool FitsTextWidth(IrNode node, IrNode parent)

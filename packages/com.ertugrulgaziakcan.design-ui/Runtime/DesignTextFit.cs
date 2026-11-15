@@ -91,6 +91,26 @@ namespace DesignUi
         /// </summary>
         internal static bool Advanced(TextElement e) => s_Advanced != null ? s_Advanced(e) : e.resolvedStyle.unityTextGenerator == TextGeneratorType.Advanced;
 
+        /// <summary>
+        /// The width of <paramref name="text"/> on one line in the element's resolved style (panel px), as the fit measures it:
+        /// UI Toolkit's measure, unrounded where the text handle holds that text's unrounded width (the standard generator), else
+        /// the measure ceiled on the panel's pixel grid. NaN when the element cannot measure.
+        /// </summary>
+        internal static float MeasureWidth(TextElement e, string text)
+        {
+            if (e?.panel == null) return float.NaN;
+            if (string.IsNullOrEmpty(text)) return 0;
+            Vector2 rounded;
+            try { rounded = e.MeasureTextSize(text, 0, VisualElement.MeasureMode.Undefined, 0, VisualElement.MeasureMode.Undefined); }
+            catch (MissingReferenceException) { return float.NaN; }
+            if (float.IsNaN(rounded.x)) return float.NaN;
+            if (!Supported || Advanced(e)) return rounded.x;
+            var handle = s_Handle.GetValue(e);
+            float width = handle != null && s_MeasuredWidth.GetValue(handle) is float w ? w : float.NaN;
+            float grid = e.panel.scaledPixelsPerPoint;
+            return float.IsNaN(width) || !(grid > 0) || Mathf.Abs(Mathf.Ceil(width * grid) / grid - rounded.x) > 1e-3f ? rounded.x : width;
+        }
+
         /// <summary>Whether this Unity version exposes the text handle's unrounded width (else elements keep UI Toolkit's own width).</summary>
         public static bool Supported => s_MeasuredWidth != null;
 
