@@ -118,6 +118,19 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void ScreenStrings_HoldTheEllipsis_WhenATextEndsInOne()
+        {
+            // UI Toolkit draws U+2026 where it cuts such a line; a twin that lacks the glyph added it while drawing and drew
+            // another glyph in its place (the fidelity suite's 2560×1440 capture showed "kala" and a curve instead of the dots)
+            var cut = Node("cut", "text", ("white-space", "nowrap"), ("overflow", "hidden"), ("text-overflow", "ellipsis"));
+            cut.Text = new IrText { Key = "k", Tr = "Bilet fiyatları", En = "Ticket prices" };
+            var plain = Node("plain", "text", ("white-space", "nowrap"), ("overflow", "hidden"), ("text-overflow", "clip"));
+            plain.Text = new IrText { Key = "p", Tr = "Kadro", En = "Squad" };
+            CollectionAssert.Contains(ScreenCompiler.ScreenStrings(Root(cut)).ToList(), "\u2026");
+            CollectionAssert.DoesNotContain(ScreenCompiler.ScreenStrings(Root(plain)).ToList(), "\u2026");
+        }
+
+        [Test]
         public void Compile_Twice_SecondWritesNothingAndFilesAreByteIdentical()
         {
             var export = ShowcaseExport();

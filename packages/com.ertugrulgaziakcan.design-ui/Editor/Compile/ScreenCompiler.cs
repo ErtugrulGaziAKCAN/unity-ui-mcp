@@ -99,7 +99,11 @@ namespace DesignUi.Editor
         public static CompileResult Compile(string exportDir, DesignUiProfile profile, bool discardManualEdits = false) =>
             Compile(exportDir, profile, discardManualEdits, null);
 
-        /// <summary>Every string the screen shows, in every locale the IR carries: texts and attribute texts.</summary>
+        /// <summary>The ellipsis UI Toolkit draws where it cuts a line (<c>text-overflow: ellipsis</c>).</summary>
+        internal const string Ellipsis = "\u2026";
+
+        /// <summary>Every string the screen shows, in every locale the IR carries: texts and attribute texts, the password mask and
+        /// the ellipsis of a line that ends in one.</summary>
         internal static IEnumerable<string> ScreenStrings(IrNode node)
         {
             if (node == null) yield break;
@@ -110,6 +114,9 @@ namespace DesignUi.Editor
                 yield return t.En;
             }
             if (node.Field != null && node.Field.Password) yield return ScreenBuilder.PasswordMask.ToString(); // drawn instead of the value
+            // UI Toolkit draws U+2026 where it cuts a line that ends in an ellipsis: a twin without the glyph adds it while
+            // drawing, and a line-box variant then drew another glyph in its place
+            if (node.Text != null && node.Style.Values.Any(l => l.TryGetValue("text-overflow", out var o) && o.Trim() == "ellipsis")) yield return Ellipsis;
             foreach (var c in node.Children ?? new IrNode[0])
                 foreach (var s in ScreenStrings(c)) yield return s;
         }
