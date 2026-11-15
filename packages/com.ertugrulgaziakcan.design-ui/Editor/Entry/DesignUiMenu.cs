@@ -31,6 +31,23 @@ namespace DesignUi.Editor
             Report("Kit Sync", DesignUiOps.KitSync(profile, kit));
         }
 
+        /// <summary>
+        /// Adds the kit's default viewports (3840×2160, 2560×1440, 1920×1080, 1280×720 exact; 1600×900, 1366×768 scaled) that the
+        /// selected profile lacks, as one Undo step, and saves that profile asset only.
+        /// </summary>
+        [MenuItem("Window/Design UI/Add Default Viewports to Profile", priority = 2012)]
+        public static void AddDefaultViewportsMenu()
+        {
+            var path = ChooseProfile();
+            if (path == null) return;
+            var added = DesignUiProfileViewports.AddDefaults(AssetDatabase.LoadAssetAtPath<DesignUiProfile>(path));
+            var message = added.Count == 0
+                ? path + " already declares every default viewport."
+                : "Added to " + path + ": " + string.Join(", ", added) + ". Edit > Undo takes them back. Run Kit Sync to write them into the kit.";
+            Debug.Log("Design UI: " + message);
+            EditorUtility.DisplayDialog(Title, message, "OK");
+        }
+
         [MenuItem("Window/Design UI/Import Screen…", priority = 2011)]
         public static void ImportMenu()
         {

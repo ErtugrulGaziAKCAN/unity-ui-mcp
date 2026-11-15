@@ -1092,6 +1092,25 @@ describe("design_ui_kit_sync", () => {
     expect(seen[30].message).toBe("Unity kit sync: running, 310 s");
   });
 
+  it("a kit that declares viewports the profile lacks: the refusal comes first with how to add them; addProfileViewports asks Unity to add them", async () => {
+    const p = tempProject({ prefer: "editor" });
+    bridge = await startStubBridge(p.dir);
+    const refusal = "kit viewports missing from the profile: kit.config.json declares 3840×2160 (exact), 1600×900 (scaled), 1366×768 (scaled), which the DesignUiProfile lacks; kit sync would drop them";
+    bridge.answer = { code: 1, log: `Kit sync failed; nothing was written into /kit and no font twin was changed.\nerror: ${refusal}`, warnings: [], errors: [refusal] };
+    const r = await call(await serverFor(p.dir), "design_ui_kit_sync");
+    expect(r.isError).toBe(true);
+    expect(summary(r)).toMatch(/^Kit sync failed \(exit 1, via editor\)\.\nUnity errors \(1\):\n- kit viewports missing from the profile: /);
+    expect(summary(r)).toContain("design_ui_kit_sync with addProfileViewports: true");
+    expect(summary(r)).toContain("Window > Design UI > Add Default Viewports to Profile");
+    expect(bridge.requests.filter((q) => q.path === "/kit-sync").map((q) => (q.body as { addProfileViewports?: boolean }).addProfileViewports)).toEqual([false]);
+
+    bridge.answer = { code: 0, log: "Kit synced into /kit: 30 files, 1 written.\nnote: added to the DesignUiProfile: 3840×2160 (exact), 1600×900 (scaled), 1366×768 (scaled)", warnings: [], errors: [] };
+    const added = await call(await serverFor(p.dir), "design_ui_kit_sync", { addProfileViewports: true });
+    expect(added.isError).toBeFalsy();
+    expect(bridge.requests.filter((q) => q.path === "/kit-sync").map((q) => (q.body as { addProfileViewports?: boolean }).addProfileViewports)).toEqual([false, true]);
+    expect(summary(added)).not.toContain("addProfileViewports: true");
+  });
+
   it("succeeds through the command route", async () => {
     const p = tempProject({ prefer: "command" });
     const r = await call(await serverFor(p.dir), "design_ui_kit_sync");

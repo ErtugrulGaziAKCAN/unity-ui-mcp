@@ -170,7 +170,7 @@ async function runEditor(cfg: DesignUiConfig, step: UnityStep, vars: Record<stri
   const route = step === "import" ? "/import" : step === "kitSync" ? "/kit-sync" : "/capture";
   const body = step === "import"
     ? { profile: vars.profile, exportDir: vars.exportDir, discardManualEdits: vars.discardManualEdits === "true" }
-    : step === "kitSync" ? { profile: vars.profile, kitDir: vars.kitDir }
+    : step === "kitSync" ? { profile: vars.profile, kitDir: vars.kitDir, addProfileViewports: vars.addProfileViewports === "true" }
     : { profile: vars.profile, exportDir: vars.exportDir, outDir: vars.outDir };
   let res: any;
   try {
@@ -294,7 +294,7 @@ async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<str
   for (const [k, v] of Object.entries(process.env)) if (!k.startsWith("DESIGN_UI_")) env[k] = v;
   // the same values as environment variables (DESIGN_UI_EXPORT_DIR, …), for runners such as an EditMode capture test
   // DESIGN_UI_IMPORT_DONE: where the import writes its done marker (the IR SHA-256 it imported), checked by design_ui_import
-  for (const k of [...PLACEHOLDERS, "discardManualEdits", "importDone"]) {
+  for (const k of [...PLACEHOLDERS, "discardManualEdits", "importDone", "addProfileViewports"]) {
     if (vars[k]) env[`DESIGN_UI_${k.replace(/[A-Z]/g, (c) => "_" + c).toUpperCase()}`] = vars[k];
   }
   const timeoutMs = cfg.unityRunner.timeoutSec * 1000;

@@ -230,7 +230,8 @@ namespace DesignUi.Editor.Tests
             var kit = Kit("{ \"x\": { \"fontSize\": 16, \"lineHeight\": 20, \"weight\": 400 } }");
             var profile = Profile();
             profile.screenMatch = 0f;
-            profile.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1000, 1440) };
+            // the kit's own three viewports stay (kit sync refuses to drop one), plus a 1000-px-wide one
+            profile.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720), new Vector2Int(1000, 1440) };
             var r = KitSync.Run(profile, kit, Resolver(profile));
             Assert.IsFalse(r.Ok);
             StringAssert.Contains("at the viewport 1000×1440 (scale 0.390625", r.Errors.Single());
@@ -292,6 +293,89 @@ namespace DesignUi.Editor.Tests
             finally { AssetDatabase.DeleteAsset(folder); }
         }
 
+        /// <summary>The six default viewports as kit.config.json writes them (the clone's kit).</summary>
+        const string SixViewports = "[[2560,1440],[1920,1080],[1280,720],[3840,2160],{\"size\":[1600,900],\"class\":\"scaled\"},{\"size\":[1366,768],\"class\":\"scaled\"}]";
+
+        string KitWithViewports(string viewports)
+        {
+            var dir = Kit();
+            File.WriteAllText(dir + "/kit.config.json", KitConfig.Replace("[[2560,1440],[1920,1080],[1280,720]]", viewports));
+            return dir;
+        }
+
+        /// <summary>A profile saved as an asset, with the three viewports of a profile saved before the six-viewport release.</summary>
+        DesignUiProfile SavedProfile(string name = "OldProfile")
+        {
+            if (!AssetDatabase.IsValidFolder(ProjectRoot)) AssetDatabase.CreateFolder("Assets", "DesignUiKitSyncTests");
+            var p = Profile();
+            AssetDatabase.CreateAsset(p, ProjectRoot + "/" + name + ".asset");
+            return p;
+        }
+
+        static readonly Vector2Int[] Three = { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720) };
+
+        [Test]
+        public void Run_AViewportTheKitDeclaresAndTheProfileLacks_IsRefused_WithHowToAddIt_AndNothingIsWritten()
+        {
+            var kit = KitWithViewports(SixViewports);
+            var before = File.ReadAllText(kit + "/kit.config.json");
+            var profile = Profile();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsFalse(r.Ok);
+            var e = r.Errors.Single();
+            StringAssert.StartsWith(KitSync.MissingViewportsPrefix, e);
+            StringAssert.Contains("3840×2160 (exact), 1600×900 (scaled), 1366×768 (scaled)", e);
+            StringAssert.Contains("Window > Design UI > Add Default Viewports to Profile", e);
+            StringAssert.Contains("addProfileViewports", e);
+            Assert.AreEqual(before, File.ReadAllText(kit + "/kit.config.json"), "nothing written into the kit");
+            Assert.IsFalse(AssetDatabase.IsValidFolder(FontFixture.TwinFolder) && Directory.GetFiles(FontFixture.TwinFolder, "*.asset").Length > 0, "no twin made");
+            CollectionAssert.AreEqual(Three, profile.viewports, "the profile is unchanged");
+            CollectionAssert.IsEmpty(profile.scaledViewports);
+        }
+
+        [Test]
+        public void Run_WithAddKitViewports_AddsTheKitsViewportsToTheProfile_Undoably_SavesIt_AndSyncs()
+        {
+            var kit = KitWithViewports(SixViewports);
+            var profile = SavedProfile();
+            var path = AssetDatabase.GetAssetPath(profile);
+            Undo.IncrementCurrentGroup();
+            var r = KitSync.Run(profile, kit, Resolver(profile), true);
+            Assert.IsTrue(r.Ok, Errors(r));
+            CollectionAssert.AreEqual(Three.Concat(new[] { new Vector2Int(3840, 2160) }).ToArray(), profile.viewports);
+            CollectionAssert.AreEqual(new[] { new Vector2Int(1600, 900), new Vector2Int(1366, 768) }, profile.scaledViewports);
+            StringAssert.Contains("added to the DesignUiProfile: 3840×2160 (exact), 1600×900 (scaled), 1366×768 (scaled)", string.Join("\n", r.Notes));
+            var text = File.ReadAllText(path);
+            StringAssert.Contains("x: 3840", text, "the profile asset was saved");
+            StringAssert.Contains("x: 1366", text);
+            Assert.IsTrue(JToken.DeepEquals(JArray.Parse(SixViewports), JObject.Parse(File.ReadAllText(kit + "/kit.config.json"))["viewports"]));
+            Undo.PerformUndo();
+            CollectionAssert.AreEqual(Three, profile.viewports, "Undo takes the added viewports back");
+            CollectionAssert.IsEmpty(profile.scaledViewports);
+        }
+
+        [Test]
+        public void AddDefaults_GivesAnOlderProfileTheDefaultViewportsItLacks_Undoably_SavingOnlyThatAsset()
+        {
+            var profile = SavedProfile();
+            var other = SavedProfile("OtherProfile");
+            var otherPath = AssetDatabase.GetAssetPath(other);
+            other.screenMatch = 0.75f; // an unsaved change of another asset
+            EditorUtility.SetDirty(other);
+            var otherBytes = File.ReadAllText(otherPath);
+            Undo.IncrementCurrentGroup();
+            var added = DesignUiProfileViewports.AddDefaults(profile);
+            CollectionAssert.AreEqual(new[] { "3840×2160 (exact)", "1600×900 (scaled)", "1366×768 (scaled)" }, added);
+            CollectionAssert.AreEqual(Three.Concat(new[] { new Vector2Int(3840, 2160) }).ToArray(), profile.viewports);
+            CollectionAssert.AreEqual(DesignUiProfile.DefaultScaledViewports, profile.scaledViewports);
+            StringAssert.Contains("x: 3840", File.ReadAllText(AssetDatabase.GetAssetPath(profile)), "saved");
+            Assert.AreEqual(otherBytes, File.ReadAllText(otherPath), "an asset-specific save: another dirty asset is not written");
+            CollectionAssert.IsEmpty(DesignUiProfileViewports.AddDefaults(profile), "a profile with every default viewport gets none");
+            Undo.PerformUndo();
+            CollectionAssert.AreEqual(Three, profile.viewports);
+            CollectionAssert.IsEmpty(profile.scaledViewports);
+        }
+
         [Test]
         public void Run_AScaledViewportIsExemptFromWholeDevicePixels_AnExactOneIsNot()
         {
@@ -302,7 +386,7 @@ namespace DesignUi.Editor.Tests
             profile.scaledViewports = new[] { new Vector2Int(1366, 768) };
             var r = KitSync.Run(profile, kit, Resolver(profile));
             Assert.IsTrue(r.Ok, Errors(r));
-            profile.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1366, 768) };
+            profile.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720), new Vector2Int(1366, 768) };
             profile.scaledViewports = new Vector2Int[0];
             r = KitSync.Run(profile, kit, Resolver(profile));
             Assert.IsFalse(r.Ok);

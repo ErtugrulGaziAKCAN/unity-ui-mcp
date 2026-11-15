@@ -74,13 +74,17 @@ namespace DesignUi.Editor
         /// <paramref name="kitDir"/> is resolved against the Unity project root, and the log says so. The result carries the
         /// sync's warnings and errors as lists too.
         /// </summary>
-        public static OpResult KitSync(string profilePath, string kitDir)
+        public static OpResult KitSync(string profilePath, string kitDir) => KitSync(profilePath, kitDir, false);
+
+        /// <param name="addProfileViewports">Add the viewports kit.config.json declares and the profile lacks to the profile first
+        /// (<see cref="DesignUiProfileViewports.Add"/>), instead of refusing to drop them.</param>
+        public static OpResult KitSync(string profilePath, string kitDir, bool addProfileViewports)
         {
             if (PlayRefusal() is string refusal) return Failed(refusal);
             var profile = string.IsNullOrEmpty(profilePath) ? null : AssetDatabase.LoadAssetAtPath<DesignUiProfile>(profilePath);
             if (profile == null) return Failed("No DesignUiProfile at '" + profilePath + "'.");
             KitSyncResult r;
-            try { r = global::DesignUi.Editor.KitSync.Run(profile, kitDir, FontMap.ResolverFor(profile)); }
+            try { r = global::DesignUi.Editor.KitSync.Run(profile, kitDir, FontMap.ResolverFor(profile), addProfileViewports); }
             catch (Exception e) when (e is FontSetupException || e is System.IO.IOException || e is UnauthorizedAccessException)
             {
                 return new OpResult(1, "Kit sync failed: " + e.Message, null, null, new[] { e.Message });

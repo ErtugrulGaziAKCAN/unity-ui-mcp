@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -24,7 +25,7 @@ namespace DesignUi.Editor.Tests
         bool m_SettingsExisted;
         string m_SettingsBackup;
         Func<string, string, bool, OpResult> m_Import;
-        Func<string, string, OpResult> m_Kit;
+        Func<string, string, bool, OpResult> m_Kit;
 
         static string Root => DesignUiBridgeSettings.ProjectRoot;
         static string BridgeJson => Path.Combine(Root, "Library", "DesignUi", "bridge.json");
@@ -167,7 +168,7 @@ namespace DesignUi.Editor.Tests
         public IEnumerator KitSync_RunsHandler()
         {
             string gotKit = null;
-            DesignUiBridge.KitSyncHandler = (p, k) => { gotKit = k; return new OpResult(0, "ok"); };
+            DesignUiBridge.KitSyncHandler = (p, k, a) => { gotKit = k; return new OpResult(0, "ok"); };
             var t = Send("POST", "/kit-sync", Token(), "{\"profile\":\"/p\",\"kitDir\":\"/k\"}");
             yield return Wait(t);
             Assert.AreEqual(200, t.Result.status);
@@ -176,9 +177,27 @@ namespace DesignUi.Editor.Tests
         }
 
         [UnityTest]
+        public IEnumerator KitSync_PassesAddProfileViewports()
+        {
+            var got = new List<bool>();
+            DesignUiBridge.KitSyncHandler = (p, k, a) => { got.Add(a); return new OpResult(0, "ok"); };
+            foreach (var body in new[] { "{\"profile\":\"/p\",\"kitDir\":\"/k\"}", "{\"profile\":\"/p\",\"kitDir\":\"/k\",\"addProfileViewports\":true}",
+                         "{\"profile\":\"/p\",\"kitDir\":\"/k\",\"addProfileViewports\":false}" })
+            {
+                var t = Send("POST", "/kit-sync", Token(), body);
+                yield return Wait(t);
+                Assert.AreEqual(200, t.Result.status);
+            }
+            CollectionAssert.AreEqual(new[] { false, true, false }, got);
+            var bad = Send("POST", "/kit-sync", Token(), "{\"profile\":\"/p\",\"kitDir\":\"/k\",\"addProfileViewports\":\"yes\"}");
+            yield return Wait(bad);
+            Assert.AreEqual(400, bad.Result.status);
+        }
+
+        [UnityTest]
         public IEnumerator Operations_AnswerTheirWarningsAndErrorsAsLists()
         {
-            DesignUiBridge.KitSyncHandler = (p, k) => new OpResult(1, "Kit sync failed.\nerror: e1\nwarning: w1", null, new[] { "w1" }, new[] { "e1" });
+            DesignUiBridge.KitSyncHandler = (p, k, a) => new OpResult(1, "Kit sync failed.\nerror: e1\nwarning: w1", null, new[] { "w1" }, new[] { "e1" });
             var sync = Send("POST", "/kit-sync", Token(), "{\"profile\":\"/p\",\"kitDir\":\"/k\"}");
             yield return Wait(sync);
             Assert.AreEqual(200, sync.Result.status);
@@ -193,14 +212,14 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.IsEmpty(import.Result.body["errors"].Values<string>().ToArray());
 
             // a handler that throws is an error in the list too
-            DesignUiBridge.KitSyncHandler = (p, k) => throw new InvalidOperationException("boom");
+            DesignUiBridge.KitSyncHandler = (p, k, a) => throw new InvalidOperationException("boom");
             LogAssert.Expect(LogType.Exception, new Regex("boom"));
             var thrown = Send("POST", "/kit-sync", Token(), "{\"profile\":\"/p\",\"kitDir\":\"/k\"}");
             yield return Wait(thrown);
             CollectionAssert.AreEqual(new[] { "Unhandled error: boom" }, thrown.Result.body["errors"].Values<string>().ToArray());
 
             // a result with a log only answers empty lists
-            DesignUiBridge.KitSyncHandler = (p, k) => new OpResult(0, "ok");
+            DesignUiBridge.KitSyncHandler = (p, k, a) => new OpResult(0, "ok");
             var plain = Send("POST", "/kit-sync", Token(), "{\"profile\":\"/p\",\"kitDir\":\"/k\"}");
             yield return Wait(plain);
             CollectionAssert.IsEmpty(plain.Result.body["warnings"].Values<string>().ToArray());
@@ -579,7 +598,7 @@ namespace DesignUi.Editor.Tests
         [UnityTest]
         public IEnumerator KitSync_AnswersItsTime_AndNeverCompiles()
         {
-            DesignUiBridge.KitSyncHandler = (p, k) => new OpResult(0, "ok");
+            DesignUiBridge.KitSyncHandler = (p, k, a) => new OpResult(0, "ok");
             var t = Send("POST", "/kit-sync", Token(), "{\"profile\":\"/p\",\"kitDir\":\"/k\"}");
             yield return Wait(t);
             Assert.GreaterOrEqual(t.Result.body.Value<long>("ms"), 0);

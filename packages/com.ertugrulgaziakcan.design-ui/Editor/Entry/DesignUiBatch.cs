@@ -16,7 +16,7 @@ namespace DesignUi.Editor
     /// Unity -batchmode -projectPath &lt;project&gt; -executeMethod DesignUi.Editor.DesignUiBatch.Import \
     ///   -designUiProfile Assets/DesignUi/DesignUiProfile.asset -designUiExport &lt;export&gt;[:&lt;export&gt;…] [-designUiDiscardManualEdits]
     /// Unity -batchmode -projectPath &lt;project&gt; -executeMethod DesignUi.Editor.DesignUiBatch.KitSync \
-    ///   -designUiProfile Assets/DesignUi/DesignUiProfile.asset -designUiKit &lt;kit folder&gt;
+    ///   -designUiProfile Assets/DesignUi/DesignUiProfile.asset -designUiKit &lt;kit folder&gt; [-designUiAddProfileViewports]
     /// </code>
     /// <c>-designUiExport</c> takes one export folder or several, separated like PATH (':' on macOS and Linux, ';' on
     /// Windows); each is imported even when an earlier one fails, and the code is 1 when any failed. Relative folders are
@@ -32,12 +32,19 @@ namespace DesignUi.Editor
         const string Kit = "-designUiKit";
         const string Export = "-designUiExport";
         const string Discard = "-designUiDiscardManualEdits";
+        const string AddViewports = "-designUiAddProfileViewports";
+
+        /// <summary>
+        /// The environment variable a command runner sets for a kit sync that adds the kit's viewports to the profile (the MCP
+        /// server's <c>addProfileViewports</c>); the same as <c>-designUiAddProfileViewports</c>.
+        /// </summary>
+        public const string AddProfileViewportsVariable = "DESIGN_UI_ADD_PROFILE_VIEWPORTS";
         const string Prefix = "-designUi";
 
         public const string Usage =
             "Usage: Unity -batchmode -projectPath <project> -executeMethod DesignUi.Editor.DesignUiBatch.<command> <options>\n" +
             "  Import   -designUiProfile <asset path> -designUiExport <dir>[<path list separator><dir>…] [-designUiDiscardManualEdits]\n" +
-            "  KitSync  -designUiProfile <asset path> -designUiKit <dir>\n" +
+            "  KitSync  -designUiProfile <asset path> -designUiKit <dir> [-designUiAddProfileViewports]\n" +
             "Exit codes: 0 ok, 1 failed, 2 usage.";
 
         /// <summary><c>-executeMethod DesignUi.Editor.DesignUiBatch.KitSync</c>: <see cref="DesignUiOps.KitSync"/>, then exits.</summary>
@@ -69,7 +76,7 @@ namespace DesignUi.Editor
         static OpResult RunUnguarded(string command, string[] args, string importDone)
         {
             var allowed = command == ImportCommand ? new[] { Profile, Export, Discard }
-                : command == KitSyncCommand ? new[] { Profile, Kit }
+                : command == KitSyncCommand ? new[] { Profile, Kit, AddViewports }
                 : null;
             if (allowed == null) return UsageError("unknown command '" + command + "' (Import or KitSync)");
 
@@ -79,17 +86,18 @@ namespace DesignUi.Editor
             {
                 var a = args[i];
                 if (a == null || !a.StartsWith(Prefix, StringComparison.Ordinal)) continue;
-                if (a != Profile && a != Kit && a != Export && a != Discard) return UsageError("unknown option " + a);
+                if (a != Profile && a != Kit && a != Export && a != Discard && a != AddViewports) return UsageError("unknown option " + a);
                 if (Array.IndexOf(allowed, a) < 0) return UsageError(a + " is not an option of " + command);
                 if (values.ContainsKey(a)) return UsageError(a + " is given twice");
-                if (a == Discard) { values[a] = "true"; continue; }
+                if (a == Discard || a == AddViewports) { values[a] = "true"; continue; }
                 if (i + 1 >= args.Length || args[i + 1] == null || args[i + 1].StartsWith("-", StringComparison.Ordinal)) return UsageError(a + " needs a value");
                 values[a] = args[++i];
             }
-            foreach (var required in allowed.Where(o => o != Discard))
+            foreach (var required in allowed.Where(o => o != Discard && o != AddViewports))
                 if (!values.ContainsKey(required)) return UsageError("missing " + required);
 
-            if (command == KitSyncCommand) return DesignUiOps.KitSync(values[Profile], values[Kit]);
+            if (command == KitSyncCommand)
+                return DesignUiOps.KitSync(values[Profile], values[Kit], values.ContainsKey(AddViewports) || Environment.GetEnvironmentVariable(AddProfileViewportsVariable) == "true");
             var exports = PathList(values[Export]);
             if (exports.Count == 0) return UsageError(Export + " needs a value");
             return ImportEach(values[Profile], exports, values.ContainsKey(Discard), null, importDone);

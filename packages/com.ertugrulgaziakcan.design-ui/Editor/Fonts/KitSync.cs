@@ -83,7 +83,12 @@ namespace DesignUi.Editor
                    File.Exists(Path.Combine(repo, "tools", "design-ui-mcp", "package.json"));
         }
 
-        public static KitSyncResult Run(DesignUiProfile profile, string kitDir, IFontResolver resolver)
+        /// <summary>How the refusal to drop a viewport the kit declares and the profile lacks starts (the MCP server adds how to add them).</summary>
+        public const string MissingViewportsPrefix = "kit viewports missing from the profile:";
+
+        public static KitSyncResult Run(DesignUiProfile profile, string kitDir, IFontResolver resolver) => Run(profile, kitDir, resolver, false);
+
+        public static KitSyncResult Run(DesignUiProfile profile, string kitDir, IFontResolver resolver, bool addKitViewports)
         {
             var errors = new List<string>();
             var warnings = new List<string>();
@@ -130,6 +135,20 @@ namespace DesignUi.Editor
                 errors.Add("every scaled viewport of the DesignUiProfile needs a positive size");
             if ((profile.scaledViewports ?? new UnityEngine.Vector2Int[0]).Contains(profile.referenceResolution))
                 errors.Add("the reference resolution " + profile.referenceResolution.x + "×" + profile.referenceResolution.y + " is scale 1, an exact viewport; remove it from the profile's scaled viewports");
+
+            // the kit's viewports the profile lacks: kit sync writes the profile's list, so it would drop them
+            var missing = KitViewports(config).Where(v => !profile.DeclaredViewports().Any(d => d.size == v.size)).ToList();
+            if (missing.Count > 0 && addKitViewports)
+            {
+                var added = DesignUiProfileViewports.Add(profile, missing);
+                notes.Add("added to the DesignUiProfile: " + string.Join(", ", added) + " (the viewports kit.config.json declares; Edit > Undo takes them back)");
+            }
+            else if (missing.Count > 0)
+                errors.Add(MissingViewportsPrefix + " " + ConfigFileName + " declares " + string.Join(", ", missing.Select(DesignUiProfileViewports.Describe)) +
+                           ", which the DesignUiProfile lacks; kit sync would drop them (it writes the profile's viewports into the kit). A profile saved before the " +
+                           "six default viewports keeps its own list. Add them to the profile: Window > Design UI > Add Default Viewports to Profile (the defaults), or " +
+                           "kit sync with addProfileViewports (the kit's: design_ui_kit_sync { addProfileViewports: true }, batchmode -designUiAddProfileViewports). " +
+                           "If the game does not ship those resolutions, remove them from " + ConfigFileName + "'s viewports instead.");
 
             var settings = FindTmpSettingsAssets();
             if (settings.Count > 1) warnings.Add("Multiple TMP Settings assets under Resources: " + string.Join(", ", settings));
@@ -537,6 +556,23 @@ namespace DesignUi.Editor
             new JArray(profile.DeclaredViewports().Select(v => v.cls == DesignViewportClass.Exact
                 ? (object)new JArray(v.size.x, v.size.y)
                 : new JObject { ["size"] = new JArray(v.size.x, v.size.y), ["class"] = "scaled" }).ToArray());
+
+        /// <summary>The viewports kit.config.json declares, with their class (<c>[w, h]</c> is exact); entries it cannot read are left out.</summary>
+        internal static List<(UnityEngine.Vector2Int size, DesignViewportClass cls)> KitViewports(JObject config)
+        {
+            var list = new List<(UnityEngine.Vector2Int, DesignViewportClass)>();
+            if (!(config?["viewports"] is JArray all)) return list;
+            UnityEngine.Vector2Int? Size(JToken t) => t is JArray a && a.Count == 2 && a[0].Type == JTokenType.Integer && a[1].Type == JTokenType.Integer
+                ? new UnityEngine.Vector2Int(a[0].Value<int>(), a[1].Value<int>()) : (UnityEngine.Vector2Int?)null;
+            foreach (var e in all)
+            {
+                var size = e is JObject o ? Size(o["size"]) : Size(e);
+                if (size == null) continue;
+                var cls = e is JObject c && (string)c["class"] == "scaled" ? DesignViewportClass.Scaled : DesignViewportClass.Exact;
+                list.Add((size.Value, cls));
+            }
+            return list;
+        }
 
         /// <summary>The panel scale of each exact viewport: where every kit value must be whole device pixels.</summary>
         internal static List<(UnityEngine.Vector2Int viewport, double scale)> ExactScales(DesignUiProfile profile) =>

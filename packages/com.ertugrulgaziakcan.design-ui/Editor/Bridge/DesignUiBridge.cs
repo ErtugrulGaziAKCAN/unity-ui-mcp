@@ -54,7 +54,7 @@ namespace DesignUi.Editor
         internal static TimeSpan CompileStartTimeout = TimeSpan.FromSeconds(60);
 
         internal static Func<string, string, bool, OpResult> ImportHandler = DesignUiOps.Import;
-        internal static Func<string, string, OpResult> KitSyncHandler = DesignUiOps.KitSync;
+        internal static Func<string, string, bool, OpResult> KitSyncHandler = DesignUiOps.KitSync;
 
         sealed class WorkItem
         {
@@ -682,7 +682,12 @@ namespace DesignUi.Editor
             string profile = json["profile"]?.Type == JTokenType.String ? json.Value<string>("profile") : null;
             string dir = json[isImport ? "exportDir" : "kitDir"]?.Type == JTokenType.String
                 ? json.Value<string>(isImport ? "exportDir" : "kitDir") : null;
-            bool discard = false;
+            bool discard = false, addProfileViewports = false;
+            if (!isImport && json["addProfileViewports"] != null)
+            {
+                if (json["addProfileViewports"].Type != JTokenType.Boolean) { Error(ctx, 400, "addProfileViewports must be true or false"); return; }
+                addProfileViewports = json.Value<bool>("addProfileViewports");
+            }
             if (isImport)
             {
                 var d = json["discardManualEdits"];
@@ -699,7 +704,7 @@ namespace DesignUi.Editor
                 var op = isImport ? "import" : "kit-sync";
                 item.Op = op;
                 item.Generation = Volatile.Read(ref s_Generation);
-                item.Run = () => isImport ? ImportHandler(profile, dir, discard) : KitSyncHandler(profile, dir);
+                item.Run = () => isImport ? ImportHandler(profile, dir, discard) : KitSyncHandler(profile, dir, addProfileViewports);
                 s_Work.Enqueue(item);
                 var result = await item.Done.Task.ConfigureAwait(false);
                 var answer = new JObject
