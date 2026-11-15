@@ -53,6 +53,16 @@ export interface CaptureContext {
   rotated?: ReadonlySet<string>;
   /** An animation sample (Chromium draws a running animation's element from its composited layer, resampled). */
   anim?: boolean;
+  /**
+   * In an animation sample, the elements its running animations play on and their descendants (they move with them); a
+   * moved edge Chromium draws from its resampled layer at a fractional device offset (`ssimRoundEdge`). Empty for static
+   * captures.
+   */
+  moving?: ReadonlySet<string>;
+  /** Elements that draw a vector picture (IR kind `vector`): their edge band is the picture's drawn edges (`ssimVectorEdge`). */
+  vectors?: ReadonlySet<string>;
+  /** The capture's viewport class (absent: exact): which elements `ssimRoundEdge` may apply to. */
+  viewportClass?: "exact" | "scaled";
 }
 
 /** The screen setup of a capture: state, viewport and what is applied (matrix.json `captures[]`); `anim` for an animation sample. */
@@ -172,7 +182,7 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
   const borders: Record<string, [number, number, number, number]> = {};
   const fontPx: Record<string, number> = {};
   const radii: Record<string, [number, number, number, number]> = {};
-  const pictures = new Set<string>(), textShadows = new Set<string>(), rotated = new Set<string>(), opaque = new Set<string>();
+  const pictures = new Set<string>(), textShadows = new Set<string>(), rotated = new Set<string>(), opaque = new Set<string>(), vectors = new Set<string>();
   const opacity = new Map<string, number>();
   const opacityOf = (id: string, holds: (key: string) => boolean): number => {
     if (opacity.has(id)) return opacity.get(id)!;
@@ -226,6 +236,12 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
       if (!own || Math.abs(golden.scale - 1) > 1e-9) pictures.add(id);
     }
     if (setup.anim && b && typeof b.rotation === "number" && !axisAligned(b.rotation)) rotated.add(id);
+    if (n.kind === "vector") vectors.add(id);
   }
-  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
+  // the elements the sample's running animations play on, and everything inside them
+  const moving = new Set<string>();
+  const runs = isObj(setup.anim) && Array.isArray(setup.anim.runs) ? (setup.anim.runs as unknown[]) : [];
+  const runIds = new Set(runs.map((r) => (isObj(r) && typeof r.elementId === "string" ? r.elementId : null)).filter((x): x is string => x !== null));
+  if (runIds.size) for (const id of ix.order) for (let x: string | undefined = id; x !== undefined; x = ix.parent.get(x)) if (runIds.has(x)) { moving.add(id); break; }
+  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
 }

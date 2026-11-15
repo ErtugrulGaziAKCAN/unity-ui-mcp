@@ -148,6 +148,30 @@ export interface Thresholds {
    */
   deltaE2000Ring: number;
   /**
+   * Element SSIM limit at a scaled viewport for an element whose difference lies in the edge band of its straight edges
+   * that fall between two device pixels (the box's edges and its border's inner edges, its own and its descendants', every
+   * pixel within ROUND_EDGE_BAND of such an edge in the design and in Unity) besides its round shapes': Chromium covers such a
+   * pixel partly, UI Toolkit under the root scale draws the edge with its own ramp a fraction of a pixel away. Only when its
+   * SSIM with that band masked meets `ssimElement` and its other checks pass. Equal to `ssimElement` (off) at exact
+   * viewports; the scaled block holds the measured value.
+   */
+  ssimFractionalEdge: number;
+  /**
+   * Element SSIM limit at a scaled viewport for a vector picture (IR kind `vector`) whose difference lies in the edge band
+   * of its drawn shapes (every pixel within a device pixel of a colour change in the design, markVectorEdges, leaving at
+   * least half of its region compared): UI Toolkit draws the vector at the layout scale's position and ramp under the root
+   * scale, Chromium at the actual scale. Only when its SSIM with that band masked meets `ssimElement` and its other checks
+   * pass. Equal to `ssimElement` (off) at exact viewports; the scaled block holds the measured value.
+   */
+  ssimVectorEdge: number;
+  /**
+   * The ΔE2000 limit at a scaled viewport of a corner sample (an element that carries text and paints) whose window reaches
+   * the band of its straight edges that lie between two device pixels (the box's edges and its border's inner edges, as for
+   * `ssimFractionalEdge`) and whose window pixels outside that band and the round-edge band meet `deltaE2000`. Equal to
+   * `deltaE2000` (off) at exact viewports; the scaled block holds the measured value.
+   */
+  deltaE2000FractionalEdge: number;
+  /**
    * Measured limits for captures at scaled viewports (fidelity-thresholds.json `scaled`), which replace the file's own
    * values there; never the geometry limits. Absent: scaled viewports use the same thresholds.
    */
@@ -158,7 +182,7 @@ export interface Thresholds {
 export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.json", import.meta.url));
 const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage",
   "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater", "textInkSmallPx", "textInkDeltaEFirstSmall", "textInkMedianToleranceSmall", "textInkShadowHigh",
-  "ssimRotated", "ssimRoundEdge", "deltaE2000RoundEdge", "deltaE2000Ring"] as const;
+  "ssimRotated", "ssimRoundEdge", "deltaE2000RoundEdge", "deltaE2000Ring", "ssimFractionalEdge", "ssimVectorEdge", "deltaE2000FractionalEdge"] as const;
 /** No measured policy may accept an element SSIM below this. */
 export const SSIM_FLOOR = 0.97;
 /**
@@ -207,17 +231,25 @@ function checkThresholds(raw: Record<string, unknown>, file: string, scaled = fa
   if ((raw.textInkDeltaEFirstSmall as number) < (raw.textInkDeltaE as number)) throw new Error(`${file}: "textInkDeltaEFirstSmall" must be at least textInkDeltaE`);
   if ((raw.textInkShadowHigh as number) < 1 + (raw.textInkCoverage as number) - 1e-9) throw new Error(`${file}: "textInkShadowHigh" must be at least 1 + textInkCoverage`);
   if (!inRange(raw.ssimRotated as number)) throw new Error(`${file}: "ssimRotated" must lie between ${SSIM_FLOOR} and ssimElement`);
-  // off at exact viewports (at or above ssimElement, equal to deltaE2000): only the scaled block may hold measured values
+  // ssimRoundEdge applies at every viewport (its scope differs per class, compare's edgeScope); the corner limit is off at
+  // exact viewports (equal to deltaE2000): only the scaled block may raise it
   const roundSsim = raw.ssimRoundEdge as number, roundDe = raw.deltaE2000RoundEdge as number;
-  if (!scaled && !(roundSsim >= elementSsim && roundSsim <= 1))
-    throw new Error(`${file}: "ssimRoundEdge" must lie between ssimElement and 1 (off): only "scaled" may lower it`);
-  if (scaled && !(roundSsim >= SSIM_FLOOR && roundSsim <= 1))
+  if (!(roundSsim >= SSIM_FLOOR && roundSsim <= 1))
     throw new Error(`${file}: "ssimRoundEdge" must lie between ${SSIM_FLOOR} and 1 (off at or above ssimElement)`);
   if (!scaled && roundDe !== (raw.deltaE2000 as number))
     throw new Error(`${file}: "deltaE2000RoundEdge" must equal deltaE2000 (off): only "scaled" may raise it`);
   if (scaled && !(roundDe >= (raw.deltaE2000 as number)))
     throw new Error(`${file}: "deltaE2000RoundEdge" must be at least deltaE2000`);
   if (!((raw.deltaE2000Ring as number) >= (raw.deltaE2000 as number))) throw new Error(`${file}: "deltaE2000Ring" must be at least deltaE2000`);
+  // the scaled class's own measured limits: off at exact viewports
+  for (const k of ["ssimFractionalEdge", "ssimVectorEdge"] as const) {
+    const v = raw[k] as number;
+    if (!scaled && !(v >= elementSsim && v <= 1)) throw new Error(`${file}: "${k}" must lie between ssimElement and 1 (off): only "scaled" may lower it`);
+    if (scaled && !(v >= SSIM_FLOOR && v <= 1)) throw new Error(`${file}: "${k}" must lie between ${SSIM_FLOOR} and 1 (off at or above ssimElement)`);
+  }
+  const fractionalDe = raw.deltaE2000FractionalEdge as number;
+  if (!scaled && fractionalDe !== (raw.deltaE2000 as number)) throw new Error(`${file}: "deltaE2000FractionalEdge" must equal deltaE2000 (off): only "scaled" may raise it`);
+  if (scaled && !(fractionalDe >= (raw.deltaE2000 as number))) throw new Error(`${file}: "deltaE2000FractionalEdge" must be at least deltaE2000`);
   return {
     ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater" | "textInkBandSmall" | "scaled">),
     textInkBandSmall: [bandSmall[0], bandSmall[1]],
@@ -323,6 +355,13 @@ export interface ElementRow {
    * an element below ssimElement where `ssimRoundEdge` applies (scaled viewports); absent elsewhere.
    */
   ssimRoundEdgeMasked?: number | null;
+  /**
+   * Element SSIM (best offset of up to 1 px) with the straight edges between device pixels masked as well
+   * (`ssimFractionalEdge`): computed only for an element below ssimElement at a scaled viewport with such edges.
+   */
+  ssimFractionalEdgeMasked?: number | null;
+  /** Element SSIM (best offset of up to 1 px) with a vector picture's edge band masked (`ssimVectorEdge`), at a scaled viewport. */
+  ssimVectorEdgeMasked?: number | null;
   /** Largest background sample ΔE2000. */
   deltaE: number | null;
   /** Background samples taken: null when the element paints no background; 0 = not sampled. */
@@ -537,6 +576,75 @@ export function offGridEdges(boxes: readonly Box[], scale: number): Rect[] {
     for (const y of edges(p.y, p.y + p.h)) out.push({ x: p.x, y, w: p.w, h: 1 });
   }
   return out;
+}
+
+/**
+ * Marks in `out` (a w × h mask) the band of a box's straight edges: its four edges and its border's inner edges, each the
+ * pixels whose centre lies within ROUND_EDGE_BAND of that edge in the design's box `gb` and in Unity's `ub` (an edge on the
+ * device grid on both sides marks nothing), inside the pixel range `r`. Returns whether it marked anything.
+ */
+function markBoxEdges(out: Uint8Array, w: number, h: number, gb: Rect, ub: Rect, border: readonly number[] | undefined,
+                      r: { x0: number; x1: number; y0: number; y1: number }): boolean {
+  const bw = border ?? [0, 0, 0, 0], band = ROUND_EDGE_BAND;
+  const x0 = Math.max(0, r.x0), x1 = Math.min(w, r.x1), y0 = Math.max(0, r.y0), y1 = Math.min(h, r.y1);
+  const line = (gv: number, uv: number, horizontal: boolean, from: number, to: number): boolean => {
+    if (!offPixel(gv) && !offPixel(uv)) return false;
+    let any = false;
+    for (let k = Math.ceil(Math.max(gv, uv) - band - 0.5); k <= Math.floor(Math.min(gv, uv) + band - 0.5); k++) {
+      if (Math.abs(k + 0.5 - gv) >= band || Math.abs(k + 0.5 - uv) >= band) continue;
+      if (horizontal ? k < y0 || k >= y1 : k < x0 || k >= x1) continue;
+      for (let o = Math.max(horizontal ? x0 : y0, from); o < Math.min(horizontal ? x1 : y1, to); o++) out[horizontal ? k * w + o : o * w + k] = 1;
+      any = true;
+    }
+    return any;
+  };
+  const xa = Math.floor(Math.min(gb.x, ub.x)), xb = Math.ceil(Math.max(gb.x + gb.w, ub.x + ub.w));
+  const ya = Math.floor(Math.min(gb.y, ub.y)), yb = Math.ceil(Math.max(gb.y + gb.h, ub.y + ub.h));
+  const rows: [number, number][] = [[gb.y, ub.y], [gb.y + gb.h, ub.y + ub.h]], cols: [number, number][] = [[gb.x, ub.x], [gb.x + gb.w, ub.x + ub.w]];
+  if (bw[0] > 0) rows.push([gb.y + bw[0], ub.y + bw[0]]);
+  if (bw[2] > 0) rows.push([gb.y + gb.h - bw[2], ub.y + ub.h - bw[2]]);
+  if (bw[3] > 0) cols.push([gb.x + bw[3], ub.x + bw[3]]);
+  if (bw[1] > 0) cols.push([gb.x + gb.w - bw[1], ub.x + ub.w - bw[1]]);
+  let any = false;
+  for (const [gv, uv] of rows) if (line(gv, uv, true, xa, xb)) any = true;
+  for (const [gv, uv] of cols) if (line(gv, uv, false, ya, yb)) any = true;
+  return any;
+}
+
+/**
+ * The edge band of a vector picture in the design: every pixel whose 3×3 window holds a colour change (a channel more than
+ * VECTOR_EDGE_STEP apart from the centre's), so within a device pixel of one of its drawn edges. Marked in `out` inside
+ * `region`; returns how many pixels of the region it left unmarked.
+ */
+function markVectorEdges(out: Uint8Array, img: Rgba, region: Rect): { kept: number; all: number } {
+  const x0 = Math.max(0, Math.floor(region.x)), x1 = Math.min(img.w, Math.ceil(region.x + region.w));
+  const y0 = Math.max(0, Math.floor(region.y)), y1 = Math.min(img.h, Math.ceil(region.y + region.h));
+  const d = img.data;
+  let kept = 0, all = 0;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const o = (y * img.w + x) * 4;
+    let edge = false;
+    for (let yy = Math.max(0, y - 1); yy <= Math.min(img.h - 1, y + 1) && !edge; yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(img.w - 1, x + 1); xx++) {
+      const q = (yy * img.w + xx) * 4;
+      if (Math.abs(d[q] - d[o]) > VECTOR_EDGE_STEP || Math.abs(d[q + 1] - d[o + 1]) > VECTOR_EDGE_STEP || Math.abs(d[q + 2] - d[o + 2]) > VECTOR_EDGE_STEP) { edge = true; break; }
+    }
+    all++;
+    if (edge) out[y * img.w + x] = 1;
+    else if (!out[y * img.w + x]) kept++;
+  }
+  return { kept, all };
+}
+
+/** A colour step (8-bit channel) that makes a pixel part of a vector picture's edge band (markVectorEdges). */
+const VECTOR_EDGE_STEP = 6;
+/** The share of a vector element's region its edge band must leave compared for ssimVectorEdge: the shape's inside and the space around it. */
+const VECTOR_KEPT = 0.5;
+
+/** A position between two device pixels (more than 0.01 px from a whole one). */
+const offPixel = (v: number) => Math.abs(v - Math.round(v)) > 0.01;
+/** Whether a box sits at a fractional device offset: one of its edges lies between two device pixels. */
+function fractionalBox(b: Rect): boolean {
+  return [b.x, b.y, b.x + b.w, b.y + b.h].some(offPixel);
 }
 
 /** Mean colour of the pixels whose centre is in `outer` but not in `inner`; null when there are none. */
@@ -756,8 +864,16 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
 
     /** Elements below ssimElement, judged after every other check (a measured lower limit needs those to pass). */
     const lowSsim: { id: string; s0: number; best: number; region: Rect; carriesText: boolean; shadow: boolean }[] = [];
-    // ssimRoundEdge applies (scaled viewports); a round element's border side samples, worst first, for its evidence
-    const roundEdge = t.ssimRoundEdge < t.ssimElement - EPS && !!ctx.radii;
+    // ssimRoundEdge: at a scaled viewport any element with round shapes in its region (the layout scale's ramp); at every
+    // viewport a round element without text (a radio, an avatar ring) and, in an animation sample, an element that moves at a
+    // fractional device offset (Chromium draws it from its resampled layer); a round element's border side samples, worst
+    // first, for its evidence
+    const edgeLimit = t.ssimRoundEdge < t.ssimElement - EPS;
+    const roundEdge = edgeLimit && !!ctx.radii;
+    const scaledClass = ctx.viewportClass === "scaled";
+    const movedAtFraction = (id: string) => !!ctx.anim && !!ctx.moving?.has(id) && !!g.elements[id] && fractionalBox(g.elements[id]);
+    const roundWithoutText = (id: string) => !!ctx.radii?.[id] && !(g.elements[id]?.text && g.elements[id].lines.length > 0);
+    const edgeScope = (id: string) => edgeLimit && (scaledClass ? roundEdge || movedAtFraction(id) : roundWithoutText(id) || movedAtFraction(id));
     const ringEvidence = new Map<string, { de: number; p: RingPoint | null; a: number[]; b: number[] }>();
     for (const id of compared) {
       const ge = g.elements[id], ue = u.elements[id], row = rowOf.get(id)!;
@@ -855,7 +971,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
               { x: worst.p.gx - 1, y: worst.p.gy - 1, w: 3, h: 3 });
           }
         }
-        if (roundEdge) ringEvidence.set(id, worst ?? { de: NaN, p: null, a: [], b: [] });
+        if (edgeLimit) ringEvidence.set(id, worst ?? { de: NaN, p: null, a: [], b: [] });
       }
       if (use) {
         row.samples = use.length;
@@ -887,19 +1003,45 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           const kept = bestDeltaEKept(gp, p.gx, p.gy, up, p.ux, p.uy, p.win, outside, ROUND_EDGE_KEPT);
           return kept.de <= t.deltaE2000 + EPS;
         };
+        // at a scaled viewport, a corner sample whose window reaches the band of the element's straight edges between two
+        // device pixels (its box's and its border's inner edges) and whose window pixels outside that band and the round-edge
+        // band (at least ROUND_EDGE_KEPT of them) meet deltaE2000: its difference lies in those bands
+        let straight: Uint8Array | null | undefined;
+        const fractionalBand = (p: RingPoint) => {
+          if (!scaledClass || p.kind !== "corner" || !(t.deltaE2000FractionalEdge > t.deltaE2000)) return false;
+          if (straight === undefined) {
+            const m = new Uint8Array(w * h);
+            const r0 = { x0: Math.floor(Math.min(gPaint.x, ue.x)) - 2, x1: Math.ceil(Math.max(gPaint.x + gPaint.w, ue.x + ue.w)) + 2,
+              y0: Math.floor(Math.min(gPaint.y, ue.y)) - 2, y1: Math.ceil(Math.max(gPaint.y + gPaint.h, ue.y + ue.h)) + 2 };
+            straight = markBoxEdges(m, w, h, gPaint, ue, ctx.borders?.[id], r0) ? m : null;
+          }
+          const m = straight;
+          if (!m) return false;
+          const r = p.win >> 1;
+          let reaches = false;
+          for (let dy = -r; dy <= r && !reaches; dy++) for (let dx = -r; dx <= r; dx++) {
+            const gx = p.gx + dx, gy = p.gy + dy, ux = p.ux + dx, uy = p.uy + dy;
+            if ((gx >= 0 && gy >= 0 && gx < w && gy < h && m[gy * w + gx]) || (ux >= 0 && uy >= 0 && ux < w && uy < h && m[uy * w + ux])) { reaches = true; break; }
+          }
+          if (!reaches) return false;
+          const radii = ctx.radii?.[id], border = ctx.borders?.[id];
+          const outside = (x: number, y: number, design: boolean) => !m[y * w + x] && !nearCurve(design ? gPaint : ue, border, radii, x, y, ROUND_EDGE_BAND);
+          return bestDeltaEKept(gp, p.gx, p.gy, up, p.ux, p.uy, p.win, outside, ROUND_EDGE_KEPT).de <= t.deltaE2000 + EPS;
+        };
         let bestR: { de: number; p: RingPoint; a: number[]; b: number[]; limit: number } | null = null;
         let maxRing = -1;
         for (const p of ringPoints(gPaint, ue, ctx.borders?.[id], ["edge", "border", "corner"], ctx.radii?.[id])) {
           if (!usable(p, cover)) continue;
           const r = bestDeltaE(gp, p.gx, p.gy, up, p.ux, p.uy, p.win);
-          const limit = roundBand(p) ? t.deltaE2000RoundEdge : t.deltaE2000;
+          const limit = roundBand(p) ? t.deltaE2000RoundEdge : fractionalBand(p) ? t.deltaE2000FractionalEdge : t.deltaE2000;
           maxRing = Math.max(maxRing, r.de);
           if (!bestR || r.de - limit > bestR.de - bestR.limit) bestR = { de: r.de, p, a: r.a, b: r.b, limit };
         }
         if (bestR) {
           row.edge = r6(maxRing);
           if (bestR.de > bestR.limit + EPS) {
-            const band = bestR.limit !== t.deltaE2000 ? ` for a corner in the edge band of round shapes` : "";
+            const band = bestR.limit === t.deltaE2000 ? "" : bestR.limit === t.deltaE2000RoundEdge ? ` for a corner in the edge band of round shapes`
+              : ` for a corner in the band of straight edges between device pixels`;
             issue(id, "edge", `${bestR.p.where}: ΔE2000 ${bestR.de.toFixed(2)}, design ${hex(bestR.a)}, Unity ${hex(bestR.b)} (limit ${bestR.limit}${band}): background, border or corner shape differs`,
               { x: bestR.p.gx - 2, y: bestR.p.gy - 2, w: 5, h: 5 });
           }
@@ -1013,9 +1155,31 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       for (let x: string | undefined = id; x !== undefined; x = ctx.parent?.get(x)) if (x === anc) return true;
       return false;
     };
-    /** The element's own mask with the edge band of its own and its descendants' round shapes in `region` added. */
-    const roundMasked = (owner: string, base: Uint8Array, region: Rect): Uint8Array => {
+    /**
+     * The element's own mask with the edge band of its own and its descendants' round shapes in `region` added, and the
+     * band of their straight edges where `straight` says so: an edge an animation sample moves to a fractional device offset
+     * (Chromium draws it from its resampled layer, UI Toolkit on whole pixels) and, with `statics`, an edge that lies between
+     * two device pixels in a static capture at a scaled viewport (the box's edge and its border's inner edge, where Chromium
+     * covers the pixel partly). A straight edge's band is every pixel whose centre lies within ROUND_EDGE_BAND of that edge
+     * in the design and in Unity: an edge Unity draws a device pixel away from the design's is not in it. `moved` and
+     * `fractional`: whether such edges were added.
+     */
+    const roundMasked = (owner: string, base: Uint8Array, region: Rect, statics = false): { mask: Uint8Array; moved: boolean; fractional: boolean } => {
       const out = base.slice();
+      let moved = false, fractional = false;
+      const rx0 = Math.max(0, Math.floor(region.x)), rx1 = Math.min(w, Math.ceil(region.x + region.w));
+      const ry0 = Math.max(0, Math.floor(region.y)), ry1 = Math.min(h, Math.ceil(region.y + region.h));
+      for (const id of compared) {
+        if (!within(id, owner)) continue;
+        const isMoved = movedAtFraction(id);
+        if (!isMoved && !(statics && (!ctx.painters || ctx.painters.has(id)))) continue;
+        // a moved edge lies where the sample's transform puts the box; a static one where Chromium paints it (whole CSS px)
+        const gb = isMoved ? g.elements[id] : paintedRect(g.elements[id], g.scale), ub = u.elements[id];
+        if (!ub?.visible) continue;
+        const added = markBoxEdges(out, w, h, gb, ub, ctx.borders?.[id], { x0: rx0, x1: rx1, y0: ry0, y1: ry1 });
+        if (added && isMoved) moved = true;
+        else if (added) fractional = true;
+      }
       for (const id of compared) {
         const radii = ctx.radii?.[id];
         if (!radii || !within(id, owner)) continue;
@@ -1026,7 +1190,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (nearCurve(b, ctx.borders?.[id], radii, x, y, ROUND_EDGE_BAND)) out[y * w + x] = 1;
         }
       }
-      return out;
+      return { mask: out, moved, fractional };
     };
 
     // element SSIM below ssimElement: a measured lower limit when the element's every other check passed
@@ -1035,23 +1199,52 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const row = rowOf.get(l.id)!;
       const relaxed = relaxedSsimLimit(t, l.region.w * l.region.h, !!ctx.pictures?.has(l.id), !!ctx.rotated?.has(l.id));
       if (relaxed && !otherIssue.has(l.id) && l.best >= relaxed.limit - EPS) { row.ssimLimit = relaxed.limit; continue; }
-      let roundWhy = "";
-      if (roundEdge) {
-        const banded = regionSsimShifted(gp, up, roundMasked(l.id, l.carriesText ? lineMask : mask, l.region), l.region, 1);
+      let roundWhy = "", fractionalWhy = "";
+      // the ring the band hides must be there: its border sides within the round-edge colour limit where the class has one
+      // (scaled), else the ring's (deltaE2000Ring); not in an animation sample, where Chromium resamples the moving layer so a
+      // border's centre pixel blends (the ring's colour is judged in the static captures, and the band leaves the middle of a
+      // moved straight border compared)
+      const ring = ringEvidence.get(l.id);
+      const ringLimit = t.deltaE2000RoundEdge > t.deltaE2000 ? t.deltaE2000RoundEdge : t.deltaE2000Ring;
+      const ringOff = !ctx.anim && ring && ring.p && ring.de > ringLimit + EPS ? ring : null;
+      const noEvidence = !!ring && !ring.p;
+      const evidence = ringOff ? `, but its ${ringOff.p!.where} differs by ΔE2000 ${ringOff.de.toFixed(2)} (design ${hex(ringOff.a)}, Unity ${hex(ringOff.b)}; limit ${ringLimit}): the ring in that band is not the design's`
+        : noEvidence ? `, but its ring (a border under ${BORDER_SAMPLE_PX} device px, or no usable point on it) gives no evidence: held to ${t.ssimElement}` : "";
+      if (edgeScope(l.id)) {
+        const band = roundMasked(l.id, l.carriesText ? lineMask : mask, l.region);
+        const banded = regionSsimShifted(gp, up, band.mask, l.region, 1);
         row.ssimRoundEdgeMasked = r6(banded);
         const confined = banded >= t.ssimElement - EPS;
-        // the ring the band hides must be there: its border sides within the band's colour limit
-        const ring = ringEvidence.get(l.id);
-        const ringOff = ring && ring.p && ring.de > t.deltaE2000RoundEdge + EPS ? ring : null;
-        const noEvidence = !!ring && !ring.p;
-        if (confined && !ringOff && !noEvidence && !otherIssue.has(l.id) && l.best >= t.ssimRoundEdge - EPS) { row.ssimLimit = t.ssimRoundEdge; continue; }
-        roundWhy = `; ${banded.toFixed(5)} with the edge band of round shapes masked` + (!confined ? ` (below ${t.ssimElement}: not confined to that band)`
-          : ringOff ? `, but its ${ringOff.p!.where} differs by ΔE2000 ${ringOff.de.toFixed(2)} (design ${hex(ringOff.a)}, Unity ${hex(ringOff.b)}; limit ${t.deltaE2000RoundEdge}): the ring in that band is not the design's`
-          : noEvidence ? `, but its ring (a border under ${BORDER_SAMPLE_PX} device px, or no usable point on it) gives no evidence: held to ${t.ssimElement}`
-          : otherIssue.has(l.id) ? `, the limit ${t.ssimRoundEdge} for it needs its other checks to pass` : `, below ${t.ssimRoundEdge} unmasked`);
+        if (confined && !evidence && !otherIssue.has(l.id) && l.best >= t.ssimRoundEdge - EPS) { row.ssimLimit = t.ssimRoundEdge; continue; }
+        roundWhy = `; ${banded.toFixed(5)} with the edge band of round shapes${band.moved ? " and moved edges" : ""} masked` + (!confined ? ` (below ${t.ssimElement}: not confined to that band)`
+          : evidence || (otherIssue.has(l.id) ? `, the limit ${t.ssimRoundEdge} for it needs its other checks to pass` : `, below ${t.ssimRoundEdge} unmasked`));
+      }
+      // at a scaled viewport: the straight edges that lie between two device pixels as well (ssimFractionalEdge)
+      if (scaledClass && t.ssimFractionalEdge < t.ssimElement - EPS && !evidence) {
+        const wide = roundMasked(l.id, l.carriesText ? lineMask : mask, l.region, true);
+        if (wide.fractional) {
+          const fs = regionSsimShifted(gp, up, wide.mask, l.region, 1);
+          row.ssimFractionalEdgeMasked = r6(fs);
+          if (fs >= t.ssimElement - EPS && !otherIssue.has(l.id) && l.best >= t.ssimFractionalEdge - EPS) { row.ssimLimit = t.ssimFractionalEdge; continue; }
+          fractionalWhy = `; ${fs.toFixed(5)} with the straight edges between device pixels masked as well` + (fs < t.ssimElement - EPS ? ` (below ${t.ssimElement}: not confined to them)`
+            : otherIssue.has(l.id) ? `, the limit ${t.ssimFractionalEdge} for it needs its other checks to pass` : `, below ${t.ssimFractionalEdge} unmasked`);
+        }
+      }
+      // at a scaled viewport: a vector picture's drawn edges (ssimVectorEdge)
+      let vectorWhy = "";
+      if (scaledClass && t.ssimVectorEdge < t.ssimElement - EPS && ctx.vectors?.has(l.id)) {
+        const vmask = (l.carriesText ? lineMask : mask).slice();
+        const kept = markVectorEdges(vmask, gp, l.region);
+        if (kept.kept >= VECTOR_KEPT * kept.all) {
+          const vs = regionSsimShifted(gp, up, vmask, l.region, 1);
+          row.ssimVectorEdgeMasked = r6(vs);
+          if (vs >= t.ssimElement - EPS && !otherIssue.has(l.id) && l.best >= t.ssimVectorEdge - EPS) { row.ssimLimit = t.ssimVectorEdge; continue; }
+          vectorWhy = `; ${vs.toFixed(5)} with the vector's edge band masked` + (vs < t.ssimElement - EPS ? ` (below ${t.ssimElement}: not confined to it)`
+            : otherIssue.has(l.id) ? `, the limit ${t.ssimVectorEdge} for it needs its other checks to pass` : `, below ${t.ssimVectorEdge} unmasked`);
+        } else vectorWhy = `; its edge band leaves ${kept.kept} of ${kept.all} pixels compared (under half): no evidence for ${t.ssimVectorEdge}`;
       }
       const why = relaxed ? (otherIssue.has(l.id) ? `; the limit ${relaxed.limit} for ${relaxed.why} needs its other checks to pass` : `; ${relaxed.limit} for ${relaxed.why}`) : "";
-      issue(l.id, "ssim", `element SSIM ${l.s0.toFixed(5)} (${row.ssimShifted!.toFixed(5)} with offsets up to 1 px) over the ${l.carriesText ? "box with its text lines copied from the design" : "box"}${l.shadow ? " and baked shadow" : ""} (limit ${t.ssimElement}${why}${roundWhy})`, l.region);
+      issue(l.id, "ssim", `element SSIM ${l.s0.toFixed(5)} (${row.ssimShifted!.toFixed(5)} with offsets up to 1 px) over the ${l.carriesText ? "box with its text lines copied from the design" : "box"}${l.shadow ? " and baked shadow" : ""} (limit ${t.ssimElement}${why}${roundWhy}${fractionalWhy}${vectorWhy})`, l.region);
     }
 
     const diff = difference(gp, up, mask, wantHeat);
@@ -1233,6 +1426,7 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
       ? captureContext(ix, entry ?? { state: name.split("@")[0], viewport: gb.viewport, apply: [] }, gb)
       : {};
     const cls = viewportClassOf(ix?.scaledViewports, entry?.viewport ?? gb.viewport);
+    ctx.viewportClass = cls;
     const { verdict, heat } = analyze({ png: gpng, boxes: gb }, { png: upng, boxes: unityBoxes[name] }, removed!, thresholdsFor(t, cls), ctx, !!opts.diffDir);
     verdict.info = entry ? {
       state: entry.state, viewport: entry.viewport, viewportClass: cls, apply: entry.apply,

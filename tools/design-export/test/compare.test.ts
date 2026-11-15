@@ -7,7 +7,7 @@ import { decodePng, type Rgba } from "../src/bake/png.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
 import type { CaptureJob } from "../src/capture/matrix.js";
 import { deltaE2000, deltaE2000Lab, isTransparentColor } from "../src/compare/color.js";
-import { classLines, compareCapture, compareScreen, cornerInRoundBand, readThresholds, summarizeIssues, WHOLE, type CaptureContext, type Thresholds } from "../src/compare/compare.js";
+import { classLines, compareCapture, compareScreen, cornerInRoundBand, readThresholds, summarizeIssues, WHOLE, type CaptureContext, type CaptureVerdict, type Thresholds } from "../src/compare/compare.js";
 import { captureContext, indexIr } from "../src/compare/context.js";
 import { flatAt, nearCurve, ringPoints, type RingPoint } from "../src/compare/samples.js";
 import { decodePngAsync, encodePng } from "../src/compare/png.js";
@@ -22,7 +22,7 @@ const T: Thresholds = {
   textInkFullPx: 14, textInkDeltaESmall: [[12, 5], [9, 10], [0, 14]], textInkMedianTolerance: 0.2, ssimElementSmall: [], ssimPicture: 0.99,
   textInkDeltaELater: [], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
   textInkSmallPx: 0, textInkDeltaEFirstSmall: 3, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.2, textInkShadowHigh: 1.15,
-  ssimRotated: 0.99, ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, deltaE2000Ring: 1.5,
+  ssimRotated: 0.99, ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, deltaE2000Ring: 1.5, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
 };
 /** The measured element SSIM limit of rotated animation samples (fidelity-thresholds.json, docs/findings/animation.md). */
 const ROTATED = 0.975;
@@ -788,6 +788,22 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(issue.detail).toMatch(/with the edge band of round shapes masked \(below 0.99: not confined to that band\)/);
     // without radii the band is empty: the limit never applies
     expect(compareCapture(g, u, [], scaled).issues).toEqual([expect.objectContaining({ id: "knob", kind: "ssim" })]);
+
+    // at an exact viewport (ruling R119) only a round element without text and a moved edge get the band: the same knob
+    // passes there, the same knob carrying a text line does not (it does at a scaled viewport)
+    expect(compareCapture(g, u, [], scaled, { ...ctx, viewportClass: "exact" }).issues).toEqual([]);
+    const withText = (s: ReturnType<typeof mk>) => ({ ...s, boxes: { ...s.boxes, elements: { ...s.boxes.elements, knob: el(100, 76, 40, 40, { text: true, lines: [{ x: 300, y: 4, w: 8, h: 8, baseline: 10 }] }) } } });
+    expect(compareCapture(withText(g), withText(u), [], scaled, { ...ctx, viewportClass: "exact" }).issues).toEqual([expect.objectContaining({ id: "knob", kind: "ssim" })]);
+    expect(compareCapture(withText(g), withText(u), [], scaled, { ...ctx, viewportClass: "scaled" }).issues.filter((i) => i.kind === "ssim")).toEqual([]);
+  });
+
+  it("the repository's thresholds: ssimRoundEdge at every viewport, the scaled class's own measured keys only in its block", () => {
+    const t = readThresholds();
+    expect(t.ssimRoundEdge).toBe(0.974); // R119: the measured floor at every viewport
+    expect(t.deltaE2000RoundEdge).toBe(t.deltaE2000);
+    for (const k of ["ssimFractionalEdge", "ssimVectorEdge"] as const) expect(t[k], k).toBe(t.ssimElement);
+    expect(t.deltaE2000FractionalEdge).toBe(t.deltaE2000);
+    expect(Object.keys(t.scaled ?? {}).sort()).toEqual(["deltaE2000FractionalEdge", "deltaE2000RoundEdge", "ssimFractionalEdge", "ssimRoundEdge", "ssimVectorEdge", "textInkSmallPx"]);
   });
 
   it("catches a missing or wrong-colour ring on a round element without text, also one of another hue at the same lightness", () => {
@@ -805,7 +821,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
       return png;
     };
     const boxes: CaptureBoxes = { capture: "c", viewport: [320, 192], scale: 0.5335, external: [], elements: { root: el(0, 0, 320, 192), avatar: el(80, 56, 80, 80) } };
-    const ctx: CaptureContext = { borders: { avatar: [2, 2, 2, 2] }, radii: { avatar: [40, 40, 40, 40] }, backgrounds: new Set(["avatar"]), painters: new Set(["avatar"]), order: ["root", "avatar"], root: "root" };
+    const ctx: CaptureContext = { borders: { avatar: [2, 2, 2, 2] }, radii: { avatar: [40, 40, 40, 40] }, backgrounds: new Set(["avatar"]), painters: new Set(["avatar"]), order: ["root", "avatar"], root: "root", viewportClass: "scaled" };
     const scaled: Thresholds = { ...T, ssimRoundEdge: 0.95, deltaE2000RoundEdge: 5.5 };
     const golden = { png: draw([150, 150, 150]), boxes };
     expect(compareCapture(golden, { png: draw([150, 150, 150]), boxes }, [], scaled, ctx).issues).toEqual([]);
@@ -840,6 +856,149 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(compareCapture(golden, { png: draw(null), boxes }, [], T, ctx).issues.map((i) => i.kind)).toEqual(["color", "ssim"]);
   });
 
+  describe("ssimRoundEdge at every viewport (ruling R119): crops of the suite's 1280×720 captures", () => {
+    // the design's and Unity's pixels around two elements of the fidelity suite at 1280×720 (scale 0.5), with their boxes
+    const crop = (name: string, side: "design" | "unity") => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r119-${name}.${side}.png`)));
+    const at = (x: number, y: number, w: number, h: number, ox: number, oy: number) => el(x - ox, y - oy, w, h);
+    // the limits of fidelity-thresholds.json at an exact viewport: a small element's 0.984, ssimRoundEdge the measured floor
+    const exact: Thresholds = { ...T, ssimElementSmall: [[32768, 0.984]], ssimRoundEdge: 0.974, deltaE2000Ring: 3.1 };
+    const off: Thresholds = { ...exact, ssimRoundEdge: 0.99 };
+    const issuesOf = (v: CaptureVerdict, id: string) => v.issues.filter((i) => i.id === id);
+
+    // controls radio-b: an unchecked 20 device px radio, a 2 device px ring (#2b6573) on #123c47, at (416, 168)
+    // (crops start on the 8 px block grid of the whole capture, so each block's SSIM is the capture's)
+    const radioBoxes = (): CaptureBoxes => ({ capture: "c", viewport: [48, 48], scale: 0.5, external: [], elements: { root: at(400, 152, 48, 48, 400, 152), radio: at(416, 168, 20, 20, 400, 152) } });
+    const radioCtx: CaptureContext = { borders: { radio: [2, 2, 2, 2] }, radii: { radio: [10, 10, 10, 10] }, backgrounds: new Set(["radio"]), painters: new Set(["radio"]), order: ["root", "radio"], root: "root", viewportClass: "exact" };
+    /** Unity's radio with its ring's inner edge a device pixel further out: the ring 1 device px thinner. */
+    const thinner = (img: Rgba): Rgba => {
+      const out = { ...img, data: img.data.slice() }, fillC = [0x12, 0x3c, 0x47];
+      for (let y = 0; y < img.h; y++) for (let x = 0; x < img.w; x++) {
+        const d = Math.hypot(x + 0.5 - 26, y + 0.5 - 26), a = Math.max(0, Math.min(1, 9 - d)); // the fill now reaches radius 9
+        const o = (y * img.w + x) * 4;
+        if (d < 10) for (let k = 0; k < 3; k++) out.data[o + k] = Math.round(fillC[k] * a + img.data[o + k] * (1 - a));
+      }
+      return out;
+    };
+
+    it("passes the radio's ring anti-aliasing (SSIM 0.98088 against 0.984): its difference lies in the edge band, its ring colour matches", () => {
+      const design = { png: crop("radio-1280", "design"), boxes: radioBoxes() }, unity = { png: crop("radio-1280", "unity"), boxes: radioBoxes() };
+      const held = compareCapture(design, unity, [], off, radioCtx);
+      expect(issuesOf(held, "radio")).toEqual([expect.objectContaining({ kind: "ssim" })]);
+      const v = compareCapture(design, unity, [], exact, radioCtx);
+      expect(issuesOf(v, "radio")).toEqual([]);
+      const row = v.elements.find((e) => e.id === "radio")!;
+      expect(Math.max(row.ssim!, row.ssimShifted!)).toBeCloseTo(0.98088, 4);
+      expect(row.ssimRoundEdgeMasked).toBeGreaterThanOrEqual(0.99);
+      expect(row.ssimLimit).toBe(0.974);
+      expect(row.ring).toBeLessThan(3.1);
+    });
+
+    it("still fails a ring 1 device px thinner: below the floor unmasked (the band holds the whole 2 px ring)", () => {
+      const design = { png: crop("radio-1280", "design"), boxes: radioBoxes() }, unity = { png: thinner(crop("radio-1280", "unity")), boxes: radioBoxes() };
+      const v = compareCapture(design, unity, [], exact, radioCtx);
+      expect(issuesOf(v, "radio")).toEqual([expect.objectContaining({ kind: "ssim", detail: expect.stringMatching(/0\.95207 with offsets up to 1 px\) .* below 0\.974 unmasked/) })]);
+    });
+
+    // transitions active-ease, sample 6: a 100×48 device px cell (2 px border, radius 8) 0.774 device px down a running
+    // translate, at (308, 153.774); Chromium draws it from its resampled layer, UI Toolkit on whole pixels
+    const cellBoxes = (dy = 0): CaptureBoxes => ({ capture: "c", viewport: [120, 64], scale: 0.5, external: [], elements: { root: at(296, 144, 120, 64, 296, 144), cell: at(308, 153.774475 + dy, 100, 48, 296, 144) } });
+    const cellCtx: CaptureContext = { borders: { cell: [2, 2, 2, 2] }, radii: { cell: [8, 8, 8, 8] }, backgrounds: new Set(["cell"]), painters: new Set(["cell"]), order: ["root", "cell"], root: "root",
+      anim: true, moving: new Set(["cell"]), viewportClass: "exact" };
+    /** Unity's pixels one device pixel lower (its box says so too). */
+    const lower = (img: Rgba): Rgba => {
+      const out = { ...img, data: img.data.slice() };
+      for (let y = img.h - 1; y >= 1; y--) out.data.copyWithin(y * img.w * 4, (y - 1) * img.w * 4, y * img.w * 4);
+      return out;
+    };
+
+    it("passes a sample whose element sits at a fractional device offset (SSIM 0.98296 against 0.984): the difference is in its moved edges' band", () => {
+      const design = { png: crop("transition-1280", "design"), boxes: cellBoxes() }, unity = { png: crop("transition-1280", "unity"), boxes: cellBoxes() };
+      expect(issuesOf(compareCapture(design, unity, [], off, cellCtx), "cell")).toEqual([expect.objectContaining({ kind: "ssim" })]);
+      const v = compareCapture(design, unity, [], exact, cellCtx);
+      expect(issuesOf(v, "cell")).toEqual([]);
+      const row = v.elements.find((e) => e.id === "cell")!;
+      expect(Math.max(row.ssim!, row.ssimShifted!)).toBeCloseTo(0.98296, 4);
+      expect(row.ssimRoundEdgeMasked).toBeGreaterThanOrEqual(0.99);
+      // a static capture, or an element the sample does not move, gets no band for its straight edges
+      expect(issuesOf(compareCapture(design, unity, [], exact, { ...cellCtx, moving: new Set() }), "cell")).toEqual([expect.objectContaining({ kind: "ssim" })]);
+    });
+
+    it("still fails the moving border a device pixel off (its box within the limit): the band is the design's and Unity's edge both", () => {
+      const design = { png: crop("transition-1280", "design"), boxes: cellBoxes() }, unity = { png: lower(crop("transition-1280", "unity")), boxes: cellBoxes(1) };
+      const v = compareCapture(design, unity, [], exact, cellCtx);
+      const ssim = issuesOf(v, "cell").find((i) => i.kind === "ssim");
+      expect(ssim?.detail).toMatch(/with the edge band of round shapes and moved edges masked \(below 0\.99: not confined to that band\)/);
+    });
+  });
+
+  describe("the scaled class's measured keys for straight edges, vectors and corners (ruling R121): crops of the suite's captures", () => {
+    const crop = (name: string, side: "design" | "unity") => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r121-${name}.${side}.png`)));
+    const boxesOf = (w: number, h: number, ox: number, oy: number, scale: number, id: string, b: Box): CaptureBoxes =>
+      ({ capture: "c", viewport: [w, h], scale, external: [], elements: { root: el(0, 0, w, h), [id]: { ...b, x: b.x - ox, y: b.y - oy, lines: b.lines.map((l) => ({ ...l, x: l.x - ox, y: l.y - oy })) } } });
+    const scaled: Thresholds = { ...T, ssimElementSmall: [[32768, 0.984]], ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, deltaE2000Ring: 3.1 };
+    const issuesOf = (v: CaptureVerdict, id: string) => v.issues.filter((i) => i.id === id);
+    /** `img` with a square of colour `c` at (x, y). */
+    const dent = (img: Rgba, x: number, y: number, n: number, c: Rgb) => fill({ ...img, data: img.data.slice() }, { x, y, w: n, h: n }, c);
+
+    // colors-gradients root__1__11 at 1366×768: a 102×68 device px box with a 4.27 device px border of four colours, its
+    // edges between device pixels; UI Toolkit draws them a fraction of a pixel away with its own ramp
+    const border = (side: "design" | "unity") => ({ png: crop("border-1366", side), boxes: boxesOf(112, 80, 1232, 48, 0.533464, "box",
+      side === "design" ? el(1237.635417, 55.480208, 102.425, 68.283333) : el(1237.635353, 55.480206, 102.425006, 68.283332)) });
+    const borderCtx: CaptureContext = { borders: { box: [4.267708, 4.267708, 4.267708, 4.267708] }, backgrounds: new Set(["box"]), painters: new Set(["box"]),
+      order: ["root", "box"], root: "root", viewportClass: "scaled" };
+
+    it("ssimFractionalEdge: a box whose difference lies on its straight edges between device pixels (SSIM 0.9735)", () => {
+      expect(issuesOf(compareCapture(border("design"), border("unity"), [], scaled, borderCtx), "box")).toEqual([expect.objectContaining({ kind: "ssim" })]);
+      const v = compareCapture(border("design"), border("unity"), [], { ...scaled, ssimFractionalEdge: 0.97 }, borderCtx);
+      expect(issuesOf(v, "box")).toEqual([]);
+      const row = v.elements.find((e) => e.id === "box")!;
+      expect(Math.max(row.ssim!, row.ssimShifted!)).toBeCloseTo(0.9735, 4);
+      expect(row.ssimFractionalEdgeMasked).toBeGreaterThanOrEqual(0.99);
+      // a difference inside the box is not on its edges; and at an exact viewport the key does not apply
+      const dented = { ...border("unity"), png: dent(crop("border-1366", "unity"), 40, 30, 6, [200, 60, 60]) };
+      expect(issuesOf(compareCapture(border("design"), dented, [], { ...scaled, ssimFractionalEdge: 0.97 }, borderCtx), "box")[0].detail)
+        .toMatch(/with the straight edges between device pixels masked as well \(below 0\.99: not confined to them\)/);
+      expect(issuesOf(compareCapture(border("design"), border("unity"), [], { ...scaled, ssimFractionalEdge: 0.97 }, { ...borderCtx, viewportClass: "exact" }), "box")).toHaveLength(1);
+    });
+
+    // icons root__2__1__0 at 1600×900: a 30 device px vector star, 0.16 device px left of the design's
+    const star = (side: "design" | "unity", png = crop("star-1600", side)) => ({ png, boxes: boxesOf(48, 40, 240, 200, 0.625, "star",
+      side === "design" ? el(248.496094, 202.5, 30, 30) : el(248.3333, 202.499962, 30, 30)) });
+    const starCtx: CaptureContext = { painters: new Set(["star"]), backgrounds: new Set(), vectors: new Set(["star"]), order: ["root", "star"], root: "root", viewportClass: "scaled" };
+
+    it("ssimVectorEdge: a vector picture whose difference lies in the band of its drawn edges (SSIM 0.98096 against 0.984)", () => {
+      expect(issuesOf(compareCapture(star("design"), star("unity"), [], scaled, starCtx), "star")).toEqual([expect.objectContaining({ kind: "ssim" })]);
+      const v = compareCapture(star("design"), star("unity"), [], { ...scaled, ssimVectorEdge: 0.975 }, starCtx);
+      expect(issuesOf(v, "star")).toEqual([]);
+      expect(v.elements.find((e) => e.id === "star")!.ssimVectorEdgeMasked).toBeGreaterThanOrEqual(0.99);
+      // another shape: the star's inside dented, or an element that is no vector
+      const dented = star("unity", dent(crop("star-1600", "unity"), 19, 11, 8, [20, 60, 70])); // a hole in its middle
+      expect(issuesOf(compareCapture(star("design"), dented, [], { ...scaled, ssimVectorEdge: 0.975 }, starCtx), "star")[0].detail).toMatch(/with the vector's edge band masked \(below 0\.99: not confined to it\)/);
+      expect(issuesOf(compareCapture(star("design"), star("unity"), [], { ...scaled, ssimVectorEdge: 0.975 }, { ...starCtx, vectors: new Set() }), "star")).toHaveLength(1);
+    });
+
+    // repeat-items notes-toggle at 1366×768, focused: a text button with a 2.13 device px focus ring, 0.28 device px left of
+    // the design's; its top-left corner sample (4 px in) reaches the ring's straight edges between device pixels
+    const focus = (side: "design" | "unity", png = crop("focus-1366", side)) => ({ png, boxes: boxesOf(80, 48, 1272, 16, 0.533464, "toggle", side === "design"
+      ? el(1282.729757, 25.60625, 57.33066, 34.141667, { text: true, lines: [{ x: 1295.532882, y: 36.275521, w: 31.674398, h: 12.803125, baseline: 46.411328 }] })
+      : el(1282.446305, 25.606249, 57.614054, 34.141666, { text: true, lines: [{ x: 1295.249407, y: 36.275583, w: 31.669744, h: 12.802997, baseline: 46.411388 }] })) });
+    const focusCtx: CaptureContext = { borders: { toggle: [2.133854, 2.133854, 2.133854, 2.133854] }, radii: { toggle: [4.267708, 4.267708, 4.267708, 4.267708] },
+      backgrounds: new Set(["toggle"]), painters: new Set(["toggle"]), order: ["root", "toggle"], root: "root", viewportClass: "scaled", fontPx: { toggle: 10.669271 } };
+
+    it("deltaE2000FractionalEdge: a corner sample whose window reaches the straight edges between device pixels (ΔE2000 4.90)", () => {
+      const edgeIssue = (t: Thresholds, png?: Rgba) => issuesOf(compareCapture(focus("design"), focus("unity", png), [], t, focusCtx), "toggle").filter((i) => i.kind === "edge");
+      expect(edgeIssue(scaled)).toEqual([expect.objectContaining({ detail: expect.stringMatching(/^top-left corner, 4 px in: ΔE2000 4\.90/) })]);
+      expect(edgeIssue({ ...scaled, deltaE2000FractionalEdge: 5.3 })).toEqual([]);
+      // a ring of another colour: its pixels outside the bands differ, the corner keeps deltaE2000
+      const recolour = (img: Rgba) => {
+        const out = { ...img, data: img.data.slice() };
+        for (let p = 0; p < img.w * img.h; p++) if (img.data[p * 4 + 2] > 150 && img.data[p * 4] < 200) { out.data[p * 4] = 200; out.data[p * 4 + 1] = 120; }
+        return out;
+      };
+      expect(edgeIssue({ ...scaled, deltaE2000FractionalEdge: 5.3 }, recolour(crop("focus-1366", "unity")))).toHaveLength(1);
+    });
+  });
+
   it("masks for ssimRoundEdge the edge band of the element's own and its descendants' round shapes, not of others", () => {
     // a square card 64 px wide with a round 40 px knob over it, drawn with a ramp of 0.5 px in the design and 2.5 in Unity
     const bg: Rgb = [30, 30, 30], cardC: Rgb = [60, 70, 80], knob: Rgb = [240, 240, 240];
@@ -856,7 +1015,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     const scaled: Thresholds = { ...T, ssimRoundEdge: 0.95 };
     const run = (parent: string) => {
       const ctx: CaptureContext = { radii: { knob: [20, 20, 20, 20] }, backgrounds: new Set(["card", "knob"]), painters: new Set(["card", "knob"]), order: ["root", "card", "knob"], root: "root",
-        parent: new Map([["card", "root"], ["knob", parent]]) };
+        parent: new Map([["card", "root"], ["knob", parent]]), viewportClass: "scaled" };
       return compareCapture({ png: draw(0.5), boxes }, { png: draw(2.5), boxes }, [], scaled, ctx);
     };
     // the knob inside the card: the card's region holds its descendant's ramp, masked
@@ -1581,8 +1740,10 @@ describe("design-export compare", () => {
       ssimElementSmall: [[32768, 0.984]], ssimPicture: 0.985, textInkDeltaELater: [[9, 4.5], [8, 6]], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
       textInkSmallPx: 12, textInkDeltaEFirstSmall: 4.5, textInkBandSmall: [0.8, 1.25], textInkMedianToleranceSmall: 0.25, textInkShadowHigh: 1.15,
       ssimRotated: ROTATED,
-      // the scaled class's round edges (docs/findings/viewport-classes.md): off at exact viewports, measured at scaled ones
-      ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, deltaE2000Ring: 3.1, scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, textInkSmallPx: 12.99 },
+      // edge bands (docs/findings/viewport-classes.md): ssimRoundEdge at every viewport (R119); the round-edge corner limit and
+      // the scaled class's own keys (R121) off at exact viewports, measured at scaled ones
+      ssimRoundEdge: 0.974, deltaE2000RoundEdge: 1, deltaE2000Ring: 3.1, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
+      scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, textInkSmallPx: 12.99, ssimFractionalEdge: 0.97, ssimVectorEdge: 0.975, deltaE2000FractionalEdge: 5.3 },
     });
     const bad = path.join(tmp(), "t.json");
     fs.writeFileSync(bad, JSON.stringify({ boxPx: 1 }));
@@ -1609,7 +1770,12 @@ describe("design-export compare", () => {
     expect(small({ ssimRotated: 0.96 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
     expect(small({ ssimRotated: 0.995 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
     // the round-edge limits are off in the file's own values (they apply at exact viewports): only "scaled" may hold measured ones
-    expect(small({ ssimRoundEdge: 0.98 })).toThrow(/"ssimRoundEdge" must lie between ssimElement and 1 \(off\): only "scaled" may lower it/);
+    // ssimRoundEdge applies at every viewport (ruling R119), never below the floor; the scaled class's own keys stay off here
+    expect(small({ ssimRoundEdge: 0.974 })()).toMatchObject({ ssimRoundEdge: 0.974 });
+    expect(small({ ssimRoundEdge: 0.96 })).toThrow(/"ssimRoundEdge" must lie between 0\.97 and 1/);
+    for (const k of ["ssimFractionalEdge", "ssimVectorEdge"])
+      expect(small({ [k]: 0.98 })).toThrow(new RegExp(`"${k}" must lie between ssimElement and 1 \\(off\\): only "scaled" may lower it`));
+    expect(small({ deltaE2000FractionalEdge: 5 })).toThrow(/"deltaE2000FractionalEdge" must equal deltaE2000 \(off\): only "scaled" may raise it/);
     expect(small({ deltaE2000RoundEdge: 2 })).toThrow(/"deltaE2000RoundEdge" must equal deltaE2000 \(off\): only "scaled" may raise it/);
     expect(small({ scaled: { ssimRoundEdge: 0.96 } })).toThrow(/\(scaled\): "ssimRoundEdge" must lie between 0.97 and 1/);
     expect(small({ scaled: { deltaE2000RoundEdge: 0.5 } })).toThrow(/\(scaled\): "deltaE2000RoundEdge" must be at least deltaE2000/);
