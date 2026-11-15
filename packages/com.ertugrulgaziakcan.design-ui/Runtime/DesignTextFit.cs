@@ -47,8 +47,10 @@ namespace DesignUi
     /// box as wide as its text must not break it when the grid takes a fraction of a pixel off. It is measured again when
     /// the text, the element's styles (a state, the locale's fonts, a text size) or its geometry change, and once more after
     /// the next draw when the face that draws the text (<see cref="DesignText.DrawingFace"/>) lacked one of its characters
-    /// or had just gained them (ruling R134). A text or font that changes without an event the fit hears (a write without a
-    /// change event, a binding, a locale's font) shows in the next repaint, which measures again (ruling R136). A text the design
+    /// or had just gained them (ruling R134). A text, font, letter-spacing, word-spacing or font size that changes without an
+    /// event the fit hears (a write without a change event, a binding, a locale's font; a style change on an element without a
+    /// custom property, which UI Toolkit tells nothing, under an exact width and height) shows in the next repaint, which
+    /// measures again (ruling R136, fix round 4 N-10). A text the design
     /// lets wrap keeps wrapping where its line does not fit. In a row the layout shows that (it holds the element narrower
     /// than its text) and the inline width and white-space come off (UI Toolkit's own layout, which wraps it: a row that a
     /// column sizes to its content does not shrink an explicit flex basis, so the browser's width cannot stay as the basis).
@@ -126,18 +128,26 @@ namespace DesignUi
             element.generateVisualContent += OnRepaint;
         }
 
-        /// <summary>The text, font, style and generator <see cref="TextWidth"/> last looked at (whatever it returned).</summary>
+        /// <summary>
+        /// The text, font, style, generator, font size and spacings <see cref="TextWidth"/> last looked at (whatever it
+        /// returned).
+        /// </summary>
         string m_SeenText;
         UnityEngine.TextCore.Text.FontAsset m_SeenFont;
         FontStyle m_SeenStyle;
         TextGeneratorType m_SeenGenerator;
+        float m_SeenSize, m_SeenLetter, m_SeenWord;
         IVisualElementScheduledItem m_Changed;
+
+        static bool Same(float a, float b) => a == b || (float.IsNaN(a) && float.IsNaN(b));
 
         /// <summary>
         /// Ruling R136: the text or the font changed since the fit last looked at them, with no event the fit hears (only a
         /// repaint follows a write without a change event): measure again at the panel's next update. So does the generator
-        /// (a locale switch to or from a script locale changes it on the screen's root). A repaint of the same text in the same
-        /// font does nothing, so nothing is measured per frame.
+        /// (a locale switch to or from a script locale changes it on the screen's root), and so do the font size, the
+        /// letter-spacing and the word-spacing (fix round 4, N-10: UI Toolkit sends a style change only to an element with a
+        /// custom property, and under an exact width and height it changes no geometry). A repaint of the same text in the same
+        /// style compares cached values and does nothing else, so nothing is measured per frame.
         /// </summary>
         void OnRepaint(MeshGenerationContext _)
         {
@@ -145,7 +155,8 @@ namespace DesignUi
             var e = m_Element;
             var rs = e.resolvedStyle;
             if (string.Equals(e.text, m_SeenText, StringComparison.Ordinal) && ReferenceEquals(rs.unityFontDefinition.fontAsset, m_SeenFont) &&
-                rs.unityFontStyleAndWeight == m_SeenStyle && rs.unityTextGenerator == m_SeenGenerator)
+                rs.unityFontStyleAndWeight == m_SeenStyle && rs.unityTextGenerator == m_SeenGenerator &&
+                Same(rs.fontSize, m_SeenSize) && Same(rs.letterSpacing, m_SeenLetter) && Same(rs.wordSpacing, m_SeenWord))
                 return;
             ChangeRequests++;
             m_Changed = e.schedule.Execute(() =>
@@ -187,6 +198,9 @@ namespace DesignUi
             m_SeenFont = font;
             m_SeenStyle = rs.unityFontStyleAndWeight;
             m_SeenGenerator = rs.unityTextGenerator;
+            m_SeenSize = rs.fontSize;
+            m_SeenLetter = rs.letterSpacing;
+            m_SeenWord = rs.wordSpacing;
             if (!Supported || e.panel == null || string.IsNullOrEmpty(text)) return float.NaN;
             if (font == null || font.atlasTexture == null) return float.NaN;
             // the advanced generator's text keeps UI Toolkit's own width (see the class summary)

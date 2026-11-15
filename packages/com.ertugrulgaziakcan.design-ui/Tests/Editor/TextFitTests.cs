@@ -439,6 +439,66 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
+        /// Fix round 4, N-10: a text-sized label whose resolved letter-spacing, word-spacing or font size changes is measured
+        /// again, also where nothing else tells the fit (no custom property, so UI Toolkit sends no CustomStyleResolvedEvent;
+        /// an exact width and height, so no geometry changes): the repaint that follows compares them with the ones last
+        /// measured. Repaints of the same style measure nothing.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ALabelsSpacingOrSize_ChangedWithoutAnyEventTheFitHears_IsMeasuredAgain()
+        {
+            var font = BodyBold();
+            var doc = Document(2560, 1440);
+            yield return Frames(2);
+            var label = new DesignLabel("Düzenle Paylaş Yenile");
+            label.style.position = Position.Absolute;
+            label.style.left = 100;
+            label.style.top = 100;
+            label.style.height = 64; // a size change moves no edge
+            label.style.fontSize = 24;
+            label.style.unityFontDefinition = font;
+            doc.rootVisualElement.Add(label);
+            yield return Frames(6);
+            void Fitted(string what)
+            {
+                var text = label.Fit.TextWidth();
+                Assert.IsFalse(float.IsNaN(text), what + ": measured");
+                Assert.AreEqual(DesignTextFit.BrowserWidth(text, label.resolvedStyle, 1, label.scaledPixelsPerPoint), label.Fit.Width, 1e-3,
+                    what + ": the browser's width for the text in its style now");
+                Assert.AreEqual(label.Fit.Width, label.layout.width, 1e-3, what + ": laid out at it");
+            }
+            Fitted("the first style");
+            int events = 0, geometry = 0;
+            label.RegisterCallback<CustomStyleResolvedEvent>(_ => events++);
+            label.RegisterCallback<GeometryChangedEvent>(_ => geometry++);
+
+            float before = label.Fit.Width;
+            label.style.letterSpacing = 4;
+            yield return Frames(4);
+            Fitted("another letter-spacing");
+            Assert.Greater(label.Fit.Width, before + 4, "the spaced text is wider");
+
+            before = label.Fit.Width;
+            label.style.wordSpacing = 40;
+            yield return Frames(4);
+            Fitted("another word-spacing");
+            Assert.Greater(label.Fit.Width, before + 4, "the text with wider spaces is wider");
+
+            before = label.Fit.Width;
+            label.style.fontSize = 28;
+            yield return Frames(4);
+            Fitted("another font size");
+            Assert.Greater(label.Fit.Width, before + 4, "the larger text is wider");
+            Assert.AreEqual(0, events, "no CustomStyleResolvedEvent told the fit (the element has no custom property)");
+
+            // the same style: nothing is measured
+            int measures = label.Fit.Measures;
+            for (int i = 0; i < 10; i++) { label.MarkDirtyRepaint(); yield return null; }
+            Assert.AreEqual(measures, label.Fit.Measures, "a repaint of the same text in the same style measures nothing");
+            Debug.Log("N-10: " + geometry + " geometry event(s) on the label while its spacing and size changed");
+        }
+
+        /// <summary>
         /// Fix round 1, I-2: a label whose text is empty repaints without asking for another measure (its font and style are
         /// recorded with its text, so a repaint of the same empty text shows nothing new), also after its font changed (at
         /// most one request for the new font).
