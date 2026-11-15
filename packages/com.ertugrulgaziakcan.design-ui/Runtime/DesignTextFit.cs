@@ -60,13 +60,34 @@ namespace DesignUi
     /// edge) and a longer line gets that width with the design's own white-space: the browser's fit-content box, as wide as
     /// its room, wrapping there (<see cref="Wrapping"/>).
     /// <para>Unity has no public unrounded text width: it is read from the text handle's last measure (an internal member,
-    /// found by reflection; <see cref="Supported"/> is false and nothing changes when a Unity version renames it).</para>
+    /// found by reflection; <see cref="Supported"/> is false and nothing changes when a Unity version renames it), and only
+    /// when it is the width of the text just measured: the rounded width UI Toolkit returned for the text is that width
+    /// ceiled on the panel's pixel grid. Text the advanced generator lays out (a script locale: the locale controller turns
+    /// it on) keeps UI Toolkit's own width: UI Toolkit keeps that generator's measure in another member, and the standard
+    /// one still holds the width of the text measured before (fix round 3, R136-ar: a calendar switched from Turkish to
+    /// Arabic kept its labels at the Turkish texts' widths).</para>
     /// </summary>
     public sealed class DesignTextFit
     {
         const BindingFlags Internal = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
         static readonly PropertyInfo s_Handle = typeof(TextElement).GetProperty("uitkTextHandle", Internal);
         static readonly PropertyInfo s_MeasuredWidth = s_Handle?.PropertyType.GetProperty("MeasuredWidth", Internal);
+        /// <summary>UI Toolkit's own test of whether the advanced generator lays an element's text out (internal), or null.</summary>
+        static readonly Func<TextElement, bool> s_Advanced = AdvancedTest();
+
+        static Func<TextElement, bool> AdvancedTest()
+        {
+            foreach (var m in typeof(TextElement).Assembly.GetType("UnityEngine.UIElements.TextUtilities")?.GetMethods(BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public) ?? new MethodInfo[0])
+                if (m.Name == "IsAdvancedTextEnabledForElement" && m.ReturnType == typeof(bool) && m.GetParameters().Length == 1)
+                    if (Delegate.CreateDelegate(typeof(Func<TextElement, bool>), m, false) is Func<TextElement, bool> test) return test;
+            return null;
+        }
+
+        /// <summary>
+        /// Whether the advanced generator lays the element's text out (UI Toolkit's own test; where this Unity version does not
+        /// have it, whether the element asks for that generator).
+        /// </summary>
+        internal static bool Advanced(TextElement e) => s_Advanced != null ? s_Advanced(e) : e.resolvedStyle.unityTextGenerator == TextGeneratorType.Advanced;
 
         /// <summary>Whether this Unity version exposes the text handle's unrounded width (else elements keep UI Toolkit's own width).</summary>
         public static bool Supported => s_MeasuredWidth != null;
@@ -105,16 +126,18 @@ namespace DesignUi
             element.generateVisualContent += OnRepaint;
         }
 
-        /// <summary>The text, font and style <see cref="TextWidth"/> last looked at (whatever it returned).</summary>
+        /// <summary>The text, font, style and generator <see cref="TextWidth"/> last looked at (whatever it returned).</summary>
         string m_SeenText;
         UnityEngine.TextCore.Text.FontAsset m_SeenFont;
         FontStyle m_SeenStyle;
+        TextGeneratorType m_SeenGenerator;
         IVisualElementScheduledItem m_Changed;
 
         /// <summary>
         /// Ruling R136: the text or the font changed since the fit last looked at them, with no event the fit hears (only a
-        /// repaint follows a write without a change event): measure again at the panel's next update. A repaint of the same
-        /// text in the same font does nothing, so nothing is measured per frame.
+        /// repaint follows a write without a change event): measure again at the panel's next update. So does the generator
+        /// (a locale switch to or from a script locale changes it on the screen's root). A repaint of the same text in the same
+        /// font does nothing, so nothing is measured per frame.
         /// </summary>
         void OnRepaint(MeshGenerationContext _)
         {
@@ -122,7 +145,7 @@ namespace DesignUi
             var e = m_Element;
             var rs = e.resolvedStyle;
             if (string.Equals(e.text, m_SeenText, StringComparison.Ordinal) && ReferenceEquals(rs.unityFontDefinition.fontAsset, m_SeenFont) &&
-                rs.unityFontStyleAndWeight == m_SeenStyle)
+                rs.unityFontStyleAndWeight == m_SeenStyle && rs.unityTextGenerator == m_SeenGenerator)
                 return;
             ChangeRequests++;
             m_Changed = e.schedule.Execute(() =>
@@ -163,8 +186,11 @@ namespace DesignUi
             m_SeenText = text;
             m_SeenFont = font;
             m_SeenStyle = rs.unityFontStyleAndWeight;
+            m_SeenGenerator = rs.unityTextGenerator;
             if (!Supported || e.panel == null || string.IsNullOrEmpty(text)) return float.NaN;
             if (font == null || font.atlasTexture == null) return float.NaN;
+            // the advanced generator's text keeps UI Toolkit's own width (see the class summary)
+            if (Advanced(e)) return float.NaN;
             // the same text in the same style at the same scale measures the same: style and geometry callbacks (an animated
             // colour, a moved parent) measure nothing
             float size = rs.fontSize, letter = rs.letterSpacing, word = rs.wordSpacing, ppp = e.scaledPixelsPerPoint;
@@ -204,6 +230,10 @@ namespace DesignUi
             if (float.IsNaN(rounded.x)) return float.NaN;
             var handle = s_Handle.GetValue(e);
             float width = handle != null && s_MeasuredWidth.GetValue(handle) is float w ? w : float.NaN;
+            // only the width of this text: UI Toolkit returned it ceiled on the panel's pixel grid (a handle that still holds
+            // an earlier text's width, as the standard member does while another generator measures, leaves UI Toolkit's own)
+            float grid = e.panel.scaledPixelsPerPoint;
+            if (float.IsNaN(width) || !(grid > 0) || Mathf.Abs(Mathf.Ceil(width * grid) / grid - rounded.x) > 1e-3f) return float.NaN;
             m_Measured = width;
             m_MeasuredRounded = rounded.x;
             m_MeasuredText = text;

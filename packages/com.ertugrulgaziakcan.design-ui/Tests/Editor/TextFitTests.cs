@@ -25,15 +25,24 @@ namespace DesignUi.Editor.Tests
         static readonly string[] Words = { "Onayla", "Vazgeç", "Kaydet", "Geri", "Sil", "Paylaş", "Yenile", "Düzenle", "Ekle", "Kapat" };
 
         readonly List<Object> _objects = new List<Object>();
+        IDisposable _advanced;
 
         [TearDown]
         public void Cleanup()
         {
-            for (int i = _objects.Count - 1; i >= 0; i--)
-                if (_objects[i] is GameObject g && g != null) Object.DestroyImmediate(g);
-            for (int i = _objects.Count - 1; i >= 0; i--)
-                if (_objects[i] != null) Object.DestroyImmediate(_objects[i]);
-            _objects.Clear();
+            try
+            {
+                for (int i = _objects.Count - 1; i >= 0; i--)
+                    if (_objects[i] is GameObject g && g != null) Object.DestroyImmediate(g);
+                for (int i = _objects.Count - 1; i >= 0; i--)
+                    if (_objects[i] != null) Object.DestroyImmediate(_objects[i]);
+                _objects.Clear();
+            }
+            finally
+            {
+                _advanced?.Dispose(); // after the panel's text is gone
+                _advanced = null;
+            }
         }
 
         static IEnumerator Frames(int n)
@@ -523,6 +532,61 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(reference.Fit.TextWidth(), label.Fit.TextWidth(), 1e-3, "the text width with the pairs");
             Assert.AreEqual(reference.Fit.Width, label.Fit.Width, 1e-3, "and its box");
             Assert.AreEqual(label.Fit.Width, label.layout.width, 1e-3, "laid out at it");
+        }
+
+        /// <summary>
+        /// Fix round 3, R136-ar (found in the game: a calendar built in Turkish and switched to Arabic kept 18 to 21 of its 32
+        /// text-sized labels at their Turkish widths). The locale controller lays a script locale's text out with the advanced
+        /// generator, and UI Toolkit keeps that generator's measure in another member of the text handle: the standard one the
+        /// fit read still held the previous text's width. A label whose text the advanced generator lays out keeps UI Toolkit's
+        /// own width, as a label built that way did, never the previous text's; back on the standard generator it gets the
+        /// browser's width for its text again.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ATextLaidOutByTheAdvancedGenerator_NeverKeepsThePreviousTextsWidth()
+        {
+            if (!ProjectAdvancedText.Available) Assert.Ignore("this Unity version has no Enable Advanced Text project setting");
+            var font = BodyBold();
+            _advanced = new ProjectAdvancedText(true); // before the panel exists
+            var doc = Document(2560, 1440);
+            yield return Frames(2);
+            // where the locale controller sets the generator
+            var screen = new VisualElement();
+            doc.rootVisualElement.Add(screen);
+            T Add<T>(T l, float top) where T : Label
+            {
+                l.style.position = Position.Absolute;
+                l.style.left = 100;
+                l.style.top = top;
+                l.style.fontSize = 24;
+                l.style.unityFontDefinition = font;
+                screen.Add(l);
+                return l;
+            }
+            var label = Add(new DesignLabel("Düzenle Paylaş"), 100);
+            var reference = Add(new Label("Ekle"), 200);
+            yield return Frames(6);
+            float previous = label.Fit.Width;
+            Assert.IsFalse(float.IsNaN(previous), "measured with the standard generator");
+            Assert.AreEqual(previous, label.layout.width, 1e-3);
+
+            // the locale switch: the screen's text laid out with the advanced generator, then the new text
+            screen.style.unityTextGenerator = TextGeneratorType.Advanced;
+            yield return Frames(4);
+            label.text = "Ekle";
+            yield return Frames(6);
+            Assert.AreEqual(TextGeneratorType.Advanced, label.resolvedStyle.unityTextGenerator);
+            Assert.Greater(reference.layout.width, 0, "the advanced generator lays the reference out");
+            Assert.AreEqual(reference.layout.width, label.layout.width, 1e-3,
+                "UI Toolkit's own width for the new text, as a label laid out by the advanced generator gets; never the previous text's (" + previous + ")");
+            Assert.IsTrue(float.IsNaN(label.Fit.Width), "no exact width");
+
+            // back on the standard generator: the browser's width for its text again
+            screen.style.unityTextGenerator = StyleKeyword.Null;
+            label.text = "Düzenle Paylaş";
+            yield return Frames(8);
+            Assert.AreEqual(previous, label.Fit.Width, 1e-3);
+            Assert.AreEqual(previous, label.layout.width, 1e-3, "laid out at it");
         }
 
         /// <summary>
