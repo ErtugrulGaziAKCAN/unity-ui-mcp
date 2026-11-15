@@ -9,26 +9,33 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 - `design-export kit upgrade <kitDir> [--from <cloneKit>] [--dry-run]`: brings a project's own kit to the clone's kit
   version (setup keeps an existing kit, so a pilot merged one by hand). It takes the clone's base stylesheet, RULES.md,
-  components, text styles and configuration keys, and keeps the project's fonts folder (fonts CSS and JSON included), the
-  tokens it changed or added, its `locales`, `referenceLocale`, `reference`, `screenMatch`, `textSizes` and paths, its own
-  keys, text styles and files, and the viewports it declared besides the clone's six. The merge is built on a staging copy
-  first (`kit build`, then `kit build --check`): a merge that does not build writes nothing. The files it changes are backed
-  up into `<kitDir>/.backup/<UTC time>/` (the newest three are kept, older ones removed and named), and it prints what it
-  kept, replaced and backed up; `--dry-run` prints only. A Node command rather than a setup flag: it runs wherever the
+  components, text styles and configuration keys, and keeps the project's fonts folder (fonts CSS and JSON included), its
+  `locales`, `referenceLocale`, `reference`, `screenMatch`, `textSizes` and paths, its own keys, text styles and files, and
+  the viewports it declared besides the clone's six. `tokens.css` is merged token by token in the clone's file: a project
+  value that equals one an earlier clone had (read from the clone's git history) takes the clone's new value and is named,
+  a value the project changed is kept and named, and the project's own tokens follow the clone's (one line each, comments
+  kept). `components.json` keeps the project's own components after the clone's, and a list key the clone ships
+  (`allowedScriptOrigins`) keeps the project's entries too. The merge is built on a staging copy first (`kit build`, then
+  `kit build --check`): a merge that does not build writes nothing. The files it replaces are backed up into
+  `<kitDir>/.backup/<UTC time>/files/`, with `kit-upgrade.json` listing the files it replaced and added (the newest three
+  backups are kept, older ones removed and named); it prints what it kept, replaced, added and backed up and the command
+  that restores the kit (copy the backup's files back, remove the added ones); `--dry-run` prints only. A Node command rather than a setup flag: it runs wherever the
   tools run (Windows without bash too) and reuses kit build. Setup prints the command when it keeps a project's kit.
 - Lint **U-CSS-047** (error): a text whose line box a box with `overflow: hidden` or `clip` (its own, as an ellipsis label,
   or an ancestor's) cuts at its top or bottom edge, the box being shorter than the text's lines. Both renderers clip the
   accents and descenders alike, so verify passed and nobody noticed. The finding names the box, its height, the line box
-  and how much is cut; the fix: make the box at least the line height. A box that ends between two lines, content that
-  runs off a taller box and content inside a scroll area are not judged. The lint snapshot records each text element's
+  and how much is cut; the fix: make the box at least the line height. It judges at the scale the transforms draw
+  the box at (a scaled container scales the box, its padding and the line box alike) and from where the text starts (a
+  padding or border above it moves its lines down). A box that ends between two lines, content that runs off a taller box
+  and content inside a scroll area are not judged. The lint snapshot records each text element's
   own lines.
 - Lint **W-TEXT-001** (warning): a word wider than its wrapping text box. The browser keeps a word without a break
   opportunity on its line and lets it overflow; UI Toolkit breaks it inside the word (the standard text generator after
   the last character that fits, the advanced one after a quotation mark or other punctuation), so the lines differ. The
   finding names the word, its width, the box's width and the marks the advanced generator breaks after.
 - `kit claude` ships the font faces the kit's text styles and font tokens reach (each family a `--font-*` token names, at
-  400, 700 and every weight a text style names, matched as the browser matches faces; italic only where a style names
-  it), with `--all-faces` for every face, and leaves out any file over the Design System's 15 MiB file cap. What it leaves
+  400, 700 and every weight a text style names, upright and italic, matched as the browser matches faces: the rules let
+  any text be italic with `font-style`, `<i>` or `<em>`), with `--all-faces` for every face, and leaves out any file over the Design System's 15 MiB file cap. What it leaves
   out is printed as a `note:` and listed in the README; `tokens.json` lists exactly the files it ships. A pilot's export
   was 35 MB (18 Inter weights, four Noto fonts) and a 17.8 MB font broke its publish.
 - Kit sync refuses to drop a viewport kit.config.json declares and the DesignUiProfile lacks (a profile saved before the
@@ -37,7 +44,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   (`DesignUiProfileViewports.AddDefaults`) adds the default viewports a profile lacks; kit sync with
   `addProfileViewports` (`design_ui_kit_sync`, the bridge's `/kit-sync`, batchmode `-designUiAddProfileViewports`,
   `DESIGN_UI_ADD_PROFILE_VIEWPORTS=true` for a command runner) adds the kit's. Both are one Undo step and save the profile
-  asset only.
+  asset only; Edit > Undo takes them out of the open profile, and saving the project writes that to disk. A
+  kit.config.json viewport kit sync cannot read (not `[w, h]` or `{ "size": [w, h], "class": "exact" | "scaled" }` in
+  whole positive numbers) is refused the same way, named as written; `[1366.0, 768]` reads as 1366×768, as the exporter
+  reads it. A viewport the kit and the profile declare in different classes takes the profile's class with a warning that
+  names both. Add Default Viewports refuses a profile whose reference resolution is not 2560×1440 (the defaults' classes
+  hold for that reference only) and says so.
 
 - A readable-text floor: no text may draw below 9 device px at any declared viewport, exact or scaled (the game-industry
   practice of a minimum readable size, instead of looser checks for tiny text; measured at 1280×720: 135 texts at 9

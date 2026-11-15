@@ -33,9 +33,11 @@ fix; a difference after import is reported, never smoothed over.
    `kitDir` at it (kit sync never writes into the clone). Setup keeps a kit that is already there; after pulling a newer
    clone, run `npx design-export kit upgrade <kitDir> --dry-run` in the clone to see what changes, then without
    `--dry-run`: the clone's base stylesheet, rules, components, text styles and configuration keys replace the old ones,
-   and the project's fonts, its own and changed tokens, locales, own keys, own text styles and files and extra viewports
-   stay. The merged kit is built (`kit build`, then `--check`) before anything is written, and the files it changes are
-   backed up into `<kitDir>/.backup/<UTC time>/` (the newest three are kept). Then run a **kit sync** (ask the AI for
+   and the project's fonts, its own and changed tokens (a value an earlier clone shipped takes the new one), own
+   components and list entries, locales, own keys, own text styles and files and extra viewports stay. The merged kit is
+   built (`kit build`, then `--check`) before anything is written; the files it replaces are backed up into
+   `<kitDir>/.backup/<UTC time>/files/` with `kit-upgrade.json` listing what it replaced and added (the newest three are
+   kept), and it prints the command that restores the kit. Then run a **kit sync** (ask the AI for
    `design_ui_kit_sync`, or `Window > Design UI > Kit Sync`): the project's font files go into the kit, the `--font-*`
    tokens get the fonts' real family names, and the text styles are checked against the fonts' real faces.
 5. **Publish the kit to Claude Design.** Ask `/unity-ui-mcp` to publish the kit, or run
@@ -62,7 +64,10 @@ fix; a difference after import is reported, never smoothed over.
    verified. Kit sync refuses to drop a viewport the kit declares and the profile lacks (a profile saved before the six
    defaults keeps its three): `Window > Design UI > Add Default Viewports to Profile` adds the defaults a profile lacks,
    and `design_ui_kit_sync { addProfileViewports: true }` (batchmode `-designUiAddProfileViewports`) adds the kit's; both
-   are one Undo step and save the profile asset only. Remove a resolution the game does not ship from kit.config.json.
+   are one Undo step and save the profile asset only (Edit > Undo takes them out of the open profile; save the project to
+   write that to disk). The defaults are a 2560×1440 reference's; a profile with another reference is refused. Kit sync
+   also refuses a kit.config.json viewport it cannot read, and warns when the kit and the profile give a viewport
+   different classes (it writes the profile's). Remove a resolution the game does not ship from kit.config.json.
 9. **Verification captures**: setup's capture command renders on a temporary copy of the project (below); it needs the
    Unity Hub install of the project's version, or `UNITY_BIN`.
 
@@ -335,8 +340,9 @@ command runs as a program with your rights; use only configs you trust.
 
 The server keeps its own files small, by itself: after a verify writes its report it deletes the run's Unity captures
 and difference images (the report keeps thumbnails of the first 24 failing captures with different issues, a later
-capture with the same issues points at them, and one crop per element, check and viewport; `verdict.json` is compact and
-lists only the element rows that did not pass), a new verify replaces the previous one's report pictures, verdict and
+capture with the same issues points at them, and one crop per element, check and viewport up to a limit, the report
+saying how many it skipped; `verdict.json` is compact, one capture per line, and lists only the element rows that did not
+pass), a new verify replaces the previous one's report pictures, verdict and
 difference images, and after every import and
 verify it keeps each screen's bookkeeping (`<designRoot>/<screen-id>/.design-ui/`: records, the latest export, the latest
 report's pictures, the newest three failed runs) within `cacheBudgetMB` of `design-ui.config.json` (default 2048): over
@@ -378,7 +384,7 @@ Profile` gives an older profile the default viewports it lacks.
 | U-CSS-038 | text without grayscale smoothing | keep the kit base stylesheet |
 | U-CSS-039 | opacity below 1 on an element with overlapping parts | the kit's disabled colours |
 | U-CSS-040 | a thin border or line off the device grid | the listed lengths |
-| U-CSS-047 | a box with `overflow: hidden` shorter than its text's line box (a 20/24 label in a 20 px box) | make the box at least the line height (24 px), or a style that fits |
+| U-CSS-047 | a box with `overflow: hidden` shorter than its text's line box (a 20/24 label in a 20 px box), judged at the drawn scale and from where the text starts | make the box at least the line height (24 px) plus any padding above the text, or a style that fits |
 | W-TEXT-001 (warning) | a word wider than its wrapping box (the browser overflows it, UI Toolkit breaks it inside) | room for the longest word, also in translations, or `white-space: nowrap` with an ellipsis |
 | U-CSS-046 | a padding, margin or gap off the device grid (10 px is 7.5 device px at 1920×1080) | the nearest lengths named, multiples of 4 px |
 | W-IMG-001 (warning) | a raster image drawn larger than its pixels at a declared viewport | export it at the size named (its CSS size × the largest viewport's scale) and give it that CSS size |

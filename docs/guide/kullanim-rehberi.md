@@ -36,9 +36,12 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
    Kurulum var olan bir kit'i olduğu gibi bırakır; klonu güncelledikten sonra klonda
    `npx design-export kit upgrade <kitDir> --dry-run` ile neyin değişeceğini gör, sonra `--dry-run` olmadan çalıştır:
    klonun temel stil dosyası, kuralları, bileşenleri, yazı stilleri ve ayar anahtarları gelir; projenin fontları, kendi ve
-   değiştirdiği token'ları, dilleri, kendi anahtarları ve ek görünümleri kalır; değişen dosyalar
-   `<kitDir>/.backup/<UTC zamanı>/` altına yedeklenir. Eski bir profilin eksik görünümlerini
-   `Window > Design UI > Add Default Viewports to Profile` ekler (kit sync onları düşürmez, söyler).
+   değiştirdiği token'ları (eski bir klonun değeri yenisini alır), kendi bileşenleri ve liste girdileri, dilleri, kendi
+   anahtarları ve ek görünümleri kalır; değiştirilen dosyalar `<kitDir>/.backup/<UTC zamanı>/files/` altına yedeklenir,
+   `kit-upgrade.json` neyin değiştirilip eklendiğini listeler ve komut kit'i geri yükleyen komutu yazar. Eski bir
+   profilin eksik görünümlerini `Window > Design UI > Add Default Viewports to Profile` ekler (yalnız 2560×1440 referanslı
+   profile; Undo açık profili geri alır, diske yazmak için projeyi kaydet). Kit sync eksik ya da okuyamadığı bir görünümü
+   düşürmez, söyler.
 5. **Kit'i Claude Design'a yayınla.** `/unity-ui-mcp`'den kit'i yayınlamasını iste ya da klonda
    `npx design-export kit claude <kitDir> <outDir>` çalıştırıp `<outDir>/project/` klasörünü Design System olarak
    yayınla. Bir şeyi değiştiren her kit senkronundan sonra tekrarla.
@@ -365,7 +368,7 @@ Unity'de: `Window > Design UI > Import Screen…` ve `Window > Design UI > Kit S
 | U-CSS-038 | gri tonlamalı yumuşatması olmayan metin | kit'in temel stil sayfasını koru |
 | U-CSS-039 | parçaları üst üste binen elemanda 1'den küçük opacity | kit'in disabled renkleri |
 | U-CSS-040 | cihaz pikseline oturmayan ince bir kenarlık ya da çizgi | listelenen uzunluklar |
-| U-CSS-047 | `overflow: hidden` olan bir kutu, metninin satır kutusundan kısa (20/24 bir etiket 20 px kutuda) | kutuyu en az satır yüksekliği kadar yap (24 px) ya da sığan bir yazı stili kullan |
+| U-CSS-047 | `overflow: hidden` olan bir kutu, metninin satır kutusundan kısa (20/24 bir etiket 20 px kutuda); çizildiği ölçekte ve metnin başladığı yerden ölçülür | kutuyu en az satır yüksekliği (24 px) artı metnin üstündeki dolgu kadar yap ya da sığan bir yazı stili kullan |
 | W-TEXT-001 (uyarı) | sarılan bir metinde kutusundan geniş bir kelime (tarayıcı taşırır, UI Toolkit kelimenin içinden böler) | en uzun kelimeye (çevirilerde de) yer aç, ya da `white-space: nowrap` ve üç nokta |
 | U-CSS-046 | cihaz pikseline oturmayan bir padding, margin ya da gap (10 px, 1920×1080'de 7,5 cihaz pikseli) | bulgunun söylediği en yakın uzunluklar, 4 px'in katları |
 | W-IMG-001 (uyarı) | bildirilen bir çözünürlükte pikselinden büyük çizilen bir raster görsel | bulgunun söylediği boyutta (CSS boyutu × en büyük çözünürlüğün ölçeği) dışa aktar ve o CSS boyutunu ver |

@@ -65,11 +65,14 @@ Guides: [usage guide](docs/guide/usage.md) · [Türkçe kullanım rehberi](docs/
 **Upgrading.** Setup keeps a project's existing kit. After you pull a newer clone, bring the project's kit to the clone's
 version with `npx design-export kit upgrade <kitDir> --dry-run` (in the clone; it prints what it would replace, keep and
 back up), then without `--dry-run`. It takes the clone's base stylesheet, rules, components, text styles and
-configuration keys and keeps the project's fonts, the tokens it changed or added, its locales, own keys, own text styles
-and files, and any viewport it declared besides the clone's; it builds the merged kit before it writes anything, backs up
-the files it changes into `<kitDir>/.backup/<UTC time>/` (the newest three are kept) and runs `kit build` and
-`kit build --check`. Then run a kit sync. A profile saved before the six default viewports keeps its own list: kit sync
-refuses to drop the kit's other viewports and says so; `Window > Design UI > Add Default Viewports to Profile` adds them.
+configuration keys and keeps the project's fonts, the tokens it changed or added (a value an earlier clone shipped takes
+the new one), its own components and list entries, its locales, own keys, own text styles and files, and any viewport it
+declared besides the clone's; it builds the merged kit before it writes anything, backs up the files it replaces into
+`<kitDir>/.backup/<UTC time>/files/` (with `kit-upgrade.json` listing what it replaced and added; the newest three are
+kept), prints the command that restores the kit and runs `kit build` and `kit build --check`. Then run a kit sync. A
+profile saved before the six default viewports keeps its own list: kit sync refuses to drop the kit's other viewports,
+or an entry it cannot read, and says so; `Window > Design UI > Add Default Viewports to Profile` adds the defaults to a
+profile with the 2560×1440 reference.
 
 ### By hand
 
@@ -397,9 +400,9 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
 | Text drawn with the advanced generator is empty | A font asset unloaded and loaded again is lost to TextCore's registry; the locale controller and scene loads repair the twins (`TextAssetRegistry`). Host code drawing twins outside a locale controller calls `TextAssetRegistry.Repair(font)`. |
 | "Exit Play mode first" from an import or kit sync | Stop Play: what an import adds to the font twins in Play would be taken back when Play stops. |
 | Empty localized labels, "Uxml object has an invalid child element" | A screen was imported before the package defined an element it uses. The package imports generated screens again after a package update (asset by asset); a screen still broken is fixed by importing its folder again. |
-| Disk use | `design_ui_status` shows the screens' bookkeeping; cleanup runs after every import and verify, within `cacheBudgetMB`, and `design_ui_clean` runs it now. A verify's output is bounded (thumbnails of the first 24 failing captures with different issues, one crop per element, check and viewport, a compact `verdict.json`) and replaces the previous verify's. A capture command of your own must remove its project copy afterwards, as `scripts/capture-on-copy.sh` does. |
-| "kit viewports missing from the profile" from kit sync | The profile was saved before the six default viewports. `Window > Design UI > Add Default Viewports to Profile` (Undo-able), or `design_ui_kit_sync { addProfileViewports: true }`; if the game does not ship a resolution, remove it from kit.config.json. |
-| `kit claude` left a font out | It ships the faces the text styles and font tokens reach (`--all-faces` for every one) and never a file over 15 MiB; the note and the README say which. |
+| Disk use | `design_ui_status` shows the screens' bookkeeping; cleanup runs after every import and verify, within `cacheBudgetMB`, and `design_ui_clean` runs it now. A verify's output is bounded (thumbnails of the first 24 failing captures with different issues, one crop per element, check and viewport up to a limit the report names when it skips any, a compact `verdict.json` with one capture per line) and replaces the previous verify's. A capture command of your own must remove its project copy afterwards, as `scripts/capture-on-copy.sh` does. |
+| "kit viewports missing from the profile" from kit sync | The profile was saved before the six default viewports. `Window > Design UI > Add Default Viewports to Profile` (2560×1440 reference; Undo restores the open profile, save the project to write that), or `design_ui_kit_sync { addProfileViewports: true }`; if the game does not ship a resolution, remove it from kit.config.json. "a viewport kit sync cannot read": write it as `[w, h]` or `{ "size": [w, h], "class": "exact" \| "scaled" }` in whole pixels. |
+| `kit claude` left a font out | It ships the faces the text styles and font tokens reach, upright and italic (`--all-faces` for every one), and never a file over 15 MiB; the note and the README say which. |
 | An old project kit (text styles, viewports) after a pull | `npx design-export kit upgrade <kitDir> --dry-run`, then without `--dry-run` (README, Upgrading). |
 | "kitDir is the unity-ui-mcp clone's own design-kit" | A config from an earlier setup: copy `design-kit` into `<designRoot>/design-kit` (without `fixtures/`) and point `kitDir` there. |
 | `could not start Chromium` | `npx playwright install chromium` in the clone. |
