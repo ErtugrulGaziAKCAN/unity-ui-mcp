@@ -66,7 +66,8 @@ Guides: [usage guide](docs/guide/usage.md) · [Türkçe kullanım rehberi](docs/
 version with `npx design-export kit upgrade <kitDir> --dry-run` (in the clone; it prints what it would replace, keep and
 back up), then without `--dry-run`. It takes the clone's base stylesheet, rules, components, text styles and
 configuration keys and keeps the project's fonts, the tokens it changed or added (a value an earlier clone shipped takes
-the new one), its own components and list entries (a list it narrowed stays narrowed), its locales, own keys, own text styles and files, and any viewport it
+the new one), its own components and list entries (a list it narrowed stays narrowed; `.kit-base.json` records the clone
+configuration it came from), its locales, own keys, own text styles and files, and any viewport it
 declared besides the clone's; it builds the merged kit before it writes anything, backs up the files it replaces into
 `<kitDir>/.backup/<UTC time>/files/` (with `kit-upgrade.json` listing what it replaced and added; the newest three are
 kept), prints the command that restores the kit and runs `kit build` and `kit build --check`. Then run a kit sync. A

@@ -34,7 +34,8 @@ fix; a difference after import is reported, never smoothed over.
    clone, run `npx design-export kit upgrade <kitDir> --dry-run` in the clone to see what changes, then without
    `--dry-run`: the clone's base stylesheet, rules, components, text styles and configuration keys replace the old ones,
    and the project's fonts, its own and changed tokens (a value an earlier clone shipped takes the new one), own
-   components and list entries (a list it narrowed stays narrowed; a components.json that does not parse stops it),
+   components and list entries (a list it narrowed stays narrowed, told by `.kit-base.json`, the clone configuration the
+   kit came from; a components.json that does not parse stops it),
    locales, own keys, own text styles and files and extra viewports stay. The merged kit is
    built (`kit build`, then `--check`) before anything is written; the files it replaces are backed up into
    `<kitDir>/.backup/<UTC time>/files/` with `kit-upgrade.json` listing what it replaced and added (the newest three are

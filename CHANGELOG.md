@@ -16,8 +16,10 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   a value the project changed is kept and named, and the project's own tokens follow the clone's (one line each, comments
   kept). `components.json` keeps the project's own components after the clone's (a project file that does not parse stops
   the upgrade before anything is written), and a list key the clone ships (`allowedScriptOrigins`) keeps the project's
-  entries too: a list that holds the clone's current or an earlier one gets the clone's new entries, a list the project
-  narrowed stays as it is, with the clone's entries it lacks named. The merge is built on a staging copy first (`kit build`, then
+  entries too. A list is told by the clone list it came from: `.kit-base.json` in the kit (the clone's kit.config.json
+  setup copied or the last upgrade took), else the newest clone list it equals; an empty list is never a base. A list
+  that holds its base takes the clone's new entries, each named; any other list stays as it is, with the clone's entries
+  it lacks named. The merge is built on a staging copy first (`kit build`, then
   `kit build --check`): a merge that does not build writes nothing. The files it replaces are backed up into
   `<kitDir>/.backup/<UTC time>/files/`, with `kit-upgrade.json` listing the files it replaced and added (the newest three
   backups are kept, older ones removed and named); it prints what it kept, replaced, added and backed up and the command
@@ -39,10 +41,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   design's end; its baseline and ink colour keep their limits and its ink amount is taken over the part both draw. Two
   graphemes off, a wrong text or a missing ellipsis still fails; the verdict row names the shift (`ellipsisCut`).
 - Comparison: the ellipsis glyph is judged at every viewport, the exact class included (ruling R147): a line the design
-  cuts with an ellipsis must end in Unity in the design's ellipsis (its column profile within a shape error of 0.45 and its
-  ink 0.8–1.6 of the design's, measured: the dots 0.07–0.34 and 1.08–1.31 at all six viewports, one band for both classes;
-  the curve a twin without U+2026 drew 0.95–1.67), else an `ink` issue says so. The verdict row records the values
-  (`ellipsisGlyph`).
+  cuts with an ellipsis must end in Unity in the design's ellipsis (its column profile within a shape error of 0.45, its
+  rows against the baseline within 0.4, and its ink 0.8–1.6 of the design's, measured: the dots 0.07–0.34, 0.04–0.29 and
+  1.08–1.31 at all six viewports, one band for both classes; the curve a twin without U+2026 drew 0.95–1.67 and
+  0.41–0.96; dots 2 device px too high 1.0), else an `ink` issue says so. The verdict row records the values
+  (`ellipsisGlyph`). The golden's record is left out (so the strict check applies) for right-to-left or bidi text, a
+  stretched face and a rotated element, and its scale is exactly 1 without a transform.
 - Lint **W-TEXT-001** (warning): a word wider than its wrapping text box. The browser keeps a word without a break
   opportunity on its line and lets it overflow; UI Toolkit breaks it inside the word (the standard text generator after
   the last character that fits, the advanced one after a quotation mark or other punctuation), so the lines differ. The
@@ -331,7 +335,7 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 - A line UI Toolkit cuts with an ellipsis drew another glyph (a curve) in place of the three dots when the screen's font
   twin lacked U+2026: UI Toolkit added the glyph while drawing, and the line-box variant drew a different one. The fidelity
   suite's text-spacing capture showed it at the exact viewports, where the ink extent check let it pass. The import now
-  adds the ellipsis to the twins of every screen with a text that ends in one.
+  adds the ellipsis to the twins of every screen with an element whose style ellipsizes, also one filled at runtime.
 - A keyed inline text matched its kit text style on size and weight only, so with caption 20/28 and label 20/24 a 20/24
   label (an inline text beside an icon, or one a state shows) was exported as caption and drawn with the 28 px line box:
   1.6–4 px lower or taller, and the rows below it 4 px down (every verify failure of a pilot's screen at 2560×1440 and

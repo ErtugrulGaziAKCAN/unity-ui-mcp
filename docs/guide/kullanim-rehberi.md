@@ -36,7 +36,8 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
    Kurulum var olan bir kit'i olduğu gibi bırakır; klonu güncelledikten sonra klonda
    `npx design-export kit upgrade <kitDir> --dry-run` ile neyin değişeceğini gör, sonra `--dry-run` olmadan çalıştır:
    klonun temel stil dosyası, kuralları, bileşenleri, yazı stilleri ve ayar anahtarları gelir; projenin fontları, kendi ve
-   değiştirdiği token'ları (eski bir klonun değeri yenisini alır), kendi bileşenleri ve liste girdileri (daralttığı bir liste dar kalır; okunamayan bir components.json yükseltmeyi durdurur), dilleri, kendi
+   değiştirdiği token'ları (eski bir klonun değeri yenisini alır), kendi bileşenleri ve liste girdileri (daralttığı bir liste dar kalır, bunu kit'in geldiği klon ayarını tutan `.kit-base.json` söyler; okunamayan bir
+   components.json yükseltmeyi durdurur), dilleri, kendi
    anahtarları ve ek görünümleri kalır; değiştirilen dosyalar `<kitDir>/.backup/<UTC zamanı>/files/` altına yedeklenir,
    `kit-upgrade.json` neyin değiştirilip eklendiğini listeler ve komut kit'i geri yükleyen komutu yazar. Eski bir
    profilin eksik görünümlerini `Window > Design UI > Add Default Viewports to Profile` ekler (yalnız 2560×1440 referanslı

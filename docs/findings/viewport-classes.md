@@ -1116,6 +1116,23 @@ cut).
   compare fixtures): the dots 0.07–0.32 and 1.08–1.26 at the exact viewports, 0.22–0.34 and 1.18–1.31 at the scaled
   ones, so one band serves both classes; the curve 0.95–1.67 at the exact viewports and 1.20–1.38 at the scaled ones.
   Tests: the dots pass at all six viewports, the curve fails at all six.
-- **Left as they are**: right-to-left text and text the advanced generator lays out get no capture record (the shaper
-  joins and reorders glyphs, so a logical cut is not the visual one) and so no allowance.
+- **Fix round 3**:
+  - *The record's scale* (N7) is exactly 1 unless an ancestor transforms; it was the drawn width over the rounded
+    `offsetWidth`, which put a fractional box near the threshold one grapheme off (a 96.4 px box: 3 "W" recorded where
+    Chromium draws 4; capture.test.ts sweeps such boxes, one with padding).
+  - *The glyph's height* (N9): the column profile alone passed dots at another height, so the ellipsis's rows, counted from
+    each side's baseline and matched within ±1 device px, must differ by at most 0.4 of its mass (`ELLIPSIS_ROWS`):
+    measured 0.04–0.09 for the dots at the exact viewports, 0.07–0.29 at the scaled ones, 0.41–0.96 for the curve, 1.0 for
+    dots 2 device px off; raised dots fail at every viewport (compare.test.ts).
+  - *Every ellipsized element* gets U+2026 in its twins (N11), also one empty in the design and filled at runtime.
+- **No record, so the strict check** (the extent within ±boxPx, no glyph check, no allowance): a line that does not end in
+  an ellipsis (no `text-overflow: ellipsis`, `overflow-x: visible`, a line that wraps or fits), an element whose
+  `direction` is right-to-left, text with a right-to-left character or a bidi control, graphemes whose x does not grow,
+  a `font-stretch` other than 100 % (the canvas measures the normal face; lint allows only 100 % today), an element drawn
+  rotated, and an element with a nested IR element.
+- **The advanced generator** is chosen on the Unity side (by locale), so the design cannot leave its text out: a line
+  that qualifies gets a record from Chromium's grapheme clusters whatever generator Unity uses. At an exact viewport it is
+  judged strictly (extent ±boxPx and the glyph); at a scaled viewport the allowance is bounded by the design's own next or
+  last grapheme advance plus boxPx, so it never admits a second grapheme wider than about a device pixel, and the glyph's
+  window reaches a pixel before Unity's ellipsis and sees such ink.
 
