@@ -463,9 +463,9 @@ namespace DesignUi.Editor.Tests
         /// <summary>
         /// Fix round 1, M-1: a label measured while its face holds the characters but not yet their kerning pairs (another
         /// label's layout added them this frame, TextCore brings their pairs through its update queue) is measured again once
-        /// the pairs are there: the same width as the same text measured on that face afterwards (before: 262.23 against
-        /// 249.41 panel px). The pairs TextCore's own add brings are not all of them (a pair whose first glyph the face held
-        /// before is missing: 248.54 with <see cref="DesignText.Prepare"/>'s complete pairs); UI Toolkit draws with the face's.
+        /// its pairs are given to the face before it is measured (<see cref="DesignText.CompleteFeatures"/>, which also gives the
+        /// pairs TextCore's own add leaves out): the same width as the same text measured on that face afterwards (before:
+        /// 262.23 panel px kept, the pairs TextCore's queue brought later giving 249.41, the complete pairs 248.54).
         /// </summary>
         [UnityTest]
         public IEnumerator ALabelMeasuredBeforeItsFacesKerningPairsArrive_IsMeasuredAgainWithThem()

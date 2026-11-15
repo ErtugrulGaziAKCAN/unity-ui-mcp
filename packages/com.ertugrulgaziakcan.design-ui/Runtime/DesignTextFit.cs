@@ -173,6 +173,15 @@ namespace DesignUi
             // count (ruling R134; a face of the weight table that never draws this text never gets its characters). A face that
             // gained characters since may have gained their kerning pairs too
             var face = DesignText.DrawingFace(font, fontStyle);
+            // glyphs UI Toolkit added to the face while it laid text out (this label's own missing characters, or another
+            // label's this frame) wait for their kerning pairs in TextCore's update queue, which runs when some text is next
+            // generated: give the face all its glyphs' pairs now, so the text is measured as it will draw (fix rounds 1 and 2,
+            // M-1; DesignText.CompleteFeatures, the compiler's path, which also gives the pairs TextCore's own add leaves out)
+            if (DesignText.FeaturesPending(face) == true && DesignText.CanCompleteFeatures)
+            {
+                DesignText.CompleteFeatures(face);
+                DesignText.ClearPairFlags(face);
+            }
             // its glyphs and their kerning pairs (fix round 1, M-1: pairs that arrive later change no character count)
             int characters = face.characterTable.Count, pairs = DesignText.PairCount(face);
             if (!float.IsNaN(m_Measured) && string.Equals(text, m_MeasuredText, StringComparison.Ordinal) && ReferenceEquals(font, m_MeasuredFont) && size == m_MeasuredSize &&
@@ -207,13 +216,10 @@ namespace DesignUi
             m_MeasuredCharacters = characters;
             m_MeasuredPairs = pairs;
             Measures++;
-            // glyphs whose kerning pairs are still in TextCore's update queue (this label's own missing characters UI Toolkit
-            // added since, or another label's layout this frame: fix round 1, M-1) were measured without them: measure once
-            // more after the next draw, again while the queue still holds them, a few times at most
-            bool pending = DesignText.FeaturesPending(face) ?? m_AfterLacking;
+            // where this Unity version does not show TextCore's queue (no CompleteFeatures): the glyphs a draw added since this
+            // label lacked them bring their pairs later, so measure once more after the next draw
+            if (m_AfterLacking && !DesignText.CanCompleteFeatures) m_Confirm = true;
             m_AfterLacking = false;
-            if (pending && m_Confirms < MaxConfirms) { m_Confirms++; m_Confirm = true; }
-            else if (!pending) m_Confirms = 0;
             return width;
         }
 
@@ -226,8 +232,8 @@ namespace DesignUi
         /// <summary>
         /// Measures once more at the panel's next update, after this frame's draw (ruling R134), when the face that draws the
         /// text lacked a character of it (UI Toolkit adds it to a dynamic face when it lays the text out or draws it, and a
-        /// line-box variant's re-link, <see cref="FontTwinLink"/>, takes back characters the variant added itself) or when the
-        /// face just gained them (their kerning pairs follow through TextCore's update queue). A face still lacking them is
+        /// line-box variant's re-link, <see cref="FontTwinLink"/>, takes back characters the variant added itself), or, on a
+        /// Unity version whose update queue the fit cannot complete, when the face just gained them. A face still lacking them is
         /// measured again only after its glyph set changed: a face that cannot add the character (a static one, or one whose
         /// file lacks it, the text drawn from a fallback) leaves the element at UI Toolkit's own width without polling.
         /// </summary>
@@ -257,10 +263,7 @@ namespace DesignUi
         string m_MeasuredText;
         UnityEngine.TextCore.Text.FontAsset m_MeasuredFont;
         FontStyle m_MeasuredStyle;
-        int m_MeasuredCharacters, m_MeasuredPairs, m_Confirms;
-
-        /// <summary>The most measures in a row that wait for kerning pairs TextCore's queue still holds (it brings them within a frame).</summary>
-        const int MaxConfirms = 4;
+        int m_MeasuredCharacters, m_MeasuredPairs;
 
         /// <summary>How many times a repaint asked for another measure (tests: a repaint that shows nothing new asks for none).</summary>
         internal int ChangeRequests { get; private set; }
