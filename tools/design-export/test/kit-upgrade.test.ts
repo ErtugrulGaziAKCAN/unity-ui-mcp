@@ -246,4 +246,45 @@ describe("kit upgrade", () => {
     expect(r.notes.join("\n")).toMatch(/--color-accent: #111111 → #16c2d5 \(an earlier clone value\)/);
   });
 
+  it("keeps a list the project narrowed and says what the clone's has besides; a list grown from an earlier clone's gets the new entries", async () => {
+    const clone = JSON.parse(fs.readFileSync(path.join(CLONE_KIT, "kit.config.json"), "utf8"));
+    const narrowed = oldProjectKit();
+    const cfgFile = path.join(narrowed, "kit.config.json");
+    fs.writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfgFile, "utf8")), allowedScriptOrigins: ["https://unpkg.com"] }));
+    const r = upgradeKit(narrowed, { from: CLONE_KIT, tmpRoot: tmp("kit-upgrade-staging-") });
+    expect(r.ok, r.errors.join("\n")).toBe(true);
+    expect(JSON.parse(fs.readFileSync(cfgFile, "utf8")).allowedScriptOrigins).toEqual(["https://unpkg.com"]);
+    expect(r.kept.join("\n")).toMatch(/allowedScriptOrigins.*the project's \["https:\/\/unpkg\.com"\].*https:\/\/cdn\.jsdelivr\.net/);
+
+    // a clone whose earlier kit.config.json allowed one origin and now two: a project list that holds the earlier one and
+    // adds its own takes the clone's new origin too
+    const repo = path.join(tmp(), "clone");
+    fs.cpSync(CLONE_KIT, path.join(repo, "design-kit"), { recursive: true, filter: (src) => !src.startsWith(path.join(CLONE_KIT, "fixtures")) });
+    const cloneCfg = path.join(repo, "design-kit", "kit.config.json");
+    const git = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.email=t@example.org", "-c", "user.name=t", ...a], { stdio: "pipe" });
+    git("init", "-q");
+    fs.writeFileSync(cloneCfg, JSON.stringify({ ...clone, allowedScriptOrigins: ["https://unpkg.com"] }));
+    git("add", "-A"); git("commit", "-q", "-m", "old");
+    fs.writeFileSync(cloneCfg, JSON.stringify(clone));
+    git("add", "-A"); git("commit", "-q", "-m", "new");
+    const grown = oldProjectKit();
+    const grownCfg = path.join(grown, "kit.config.json");
+    fs.writeFileSync(grownCfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(grownCfg, "utf8")), allowedScriptOrigins: ["https://unpkg.com", "https://example.org"] }));
+    const g = upgradeKit(grown, { from: path.join(repo, "design-kit"), tmpRoot: tmp("kit-upgrade-staging-") });
+    expect(g.ok, g.errors.join("\n")).toBe(true);
+    expect(JSON.parse(fs.readFileSync(grownCfg, "utf8")).allowedScriptOrigins).toEqual([...clone.allowedScriptOrigins, "https://example.org"]);
+  });
+
+  it("stops when the project's components.json does not parse: an error, nothing written, its components not dropped", async () => {
+    const kit = oldProjectKit();
+    const file = path.join(kit, "components", "components.json");
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/\]\s*\}\s*$/, ",\n  ]\n}\n"));
+    const before = tree(kit, "");
+    const r = upgradeKit(kit, { from: CLONE_KIT, tmpRoot: tmp("kit-upgrade-staging-") });
+    expect(r.ok).toBe(false);
+    expect(r.errors.join("\n")).toMatch(/components\/components\.json.*does not parse/);
+    expect(tree(kit, "")).toEqual(before);
+    expect(fs.existsSync(path.join(kit, ".backup"))).toBe(false);
+  });
+
 });

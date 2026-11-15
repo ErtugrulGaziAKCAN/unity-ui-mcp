@@ -108,21 +108,35 @@ function declarations(css: string): Decl[] {
  */
 function cloneTokenHistory(cloneTokens: string): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
+  for (const text of cloneHistory(cloneTokens)) {
+    for (const d of declarations(text)) {
+      if (!out.has(d.name)) out.set(d.name, new Set());
+      out.get(d.name)!.add(d.value);
+    }
+  }
+  return out;
+}
+
+/** Every earlier version of a file of the clone's kit, newest first, from its git history (empty without git or history). */
+function cloneHistory(file: string): string[] {
+  const out: string[] = [];
   const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 20_000 });
   try {
-    const dir = path.dirname(cloneTokens);
-    const root = git(dir, "rev-parse", "--show-toplevel").trim();
-    const relPath = rel(path.relative(fs.realpathSync(root), fs.realpathSync(cloneTokens)));
-    const shas = git(root, "log", "--format=%H", "-n", "500", "--", relPath).split("\n").filter(Boolean);
-    for (const sha of shas) {
-      let text: string;
-      try { text = git(root, "show", `${sha}:${relPath}`); } catch { continue; }
-      for (const d of declarations(text)) {
-        if (!out.has(d.name)) out.set(d.name, new Set());
-        out.get(d.name)!.add(d.value);
-      }
+    const root = git(path.dirname(file), "rev-parse", "--show-toplevel").trim();
+    const relPath = rel(path.relative(fs.realpathSync(root), fs.realpathSync(file)));
+    for (const sha of git(root, "log", "--format=%H", "-n", "500", "--", relPath).split("\n").filter(Boolean)) {
+      try { out.push(git(root, "show", `${sha}:${relPath}`)); } catch { /* not in that commit */ }
     }
   } catch { /* not a git checkout: no history */ }
+  return out;
+}
+
+/** The clone's earlier kit.config.json versions that parse (git history). */
+function cloneConfigHistory(file: string): Json[] {
+  const out: Json[] = [];
+  for (const text of cloneHistory(file)) {
+    try { const v = JSON.parse(text); if (v && typeof v === "object" && !Array.isArray(v)) out.push(v as Json); } catch { /* an unreadable version */ }
+  }
   return out;
 }
 
@@ -156,12 +170,23 @@ function mergeTokens(clone: string, project: string, history: Map<string, Set<st
   return out;
 }
 
-/** components/components.json: the clone's components in its order, then each component only the project registered. */
-function mergeComponents(clone: string, project: string | null, kept: string[]): string {
+/**
+ * components/components.json: the clone's components in its order, then each component only the project registered. A
+ * project file that does not parse, or has no `components` list, is an error: the upgrade writes nothing rather than drop
+ * the project's components.
+ */
+function mergeComponents(clone: string, project: string | null, kept: string[], errors: string[]): string {
   if (project === null) return clone;
   type Entry = { name?: unknown };
-  let theirs: Entry[] = [];
-  try { theirs = ((JSON.parse(project) as { components?: Entry[] }).components ?? []).filter((c) => c && typeof c === "object"); } catch { return clone; }
+  let theirs: Entry[];
+  try {
+    const list = (JSON.parse(project) as { components?: unknown }).components;
+    if (!Array.isArray(list)) throw new Error('no "components" list');
+    theirs = list.filter((c): c is Entry => !!c && typeof c === "object");
+  } catch (e) {
+    errors.push(`components/components.json in the project's kit does not parse (${(e as Error).message}): fix it, then upgrade again; nothing was written`);
+    return clone;
+  }
   const parsed = JSON.parse(clone) as Record<string, unknown> & { components?: Entry[] };
   const names = new Set((parsed.components ?? []).map((c) => String(c.name)));
   const own = theirs.filter((c) => !names.has(String(c.name)));
@@ -172,8 +197,13 @@ function mergeComponents(clone: string, project: string | null, kept: string[]):
   return `{\n  "components": [\n${all.map((e) => `    ${line(e)}`).join(",\n")}\n  ]\n}\n`;
 }
 
-/** kit.config.json: the clone's keys and order, the project's profile-written keys, own keys, paths and extra viewports. */
-function mergeConfig(clone: Json, project: Json, kept: string[], notes: string[]): Json {
+/**
+ * kit.config.json: the clone's keys and order, the project's profile-written keys, own keys, paths and extra viewports. A
+ * list the clone ships keeps the project's entries: when the project's list holds every entry of the clone's current or an
+ * earlier list (`history`, newest first), it grew from it and takes the clone's new entries too; else the project narrowed
+ * it, and its list stays as it is, with the clone's entries it lacks said.
+ */
+function mergeConfig(clone: Json, project: Json, history: Json[], kept: string[], notes: string[]): Json {
   const PROJECT_KEYS = ["locales", "referenceLocale", "reference", "screenMatch", "textSizes", "fontsCss", "tokensCss", "textStyles"];
   const out: Json = {};
   for (const [k, v] of Object.entries(clone)) out[k] = v;
@@ -192,8 +222,16 @@ function mergeConfig(clone: Json, project: Json, kept: string[], notes: string[]
     if (PROJECT_KEYS.includes(k) || k === "viewports" || project[k] === undefined || JSON.stringify(project[k]) === JSON.stringify(v)) continue;
     if (k === "filterFunctions") { notes.push(`kit.config.json: "filterFunctions" follows css-support.json (kit build writes it): ${JSON.stringify(v)}`); continue; }
     if (Array.isArray(v) && Array.isArray(project[k])) {
+      const mine = project[k] as unknown[], has = new Set(mine.map((x) => JSON.stringify(x)));
+      const grew = [v, ...history.map((h) => h[k]).filter((o): o is unknown[] => Array.isArray(o))].some((o) => o.every((x) => has.has(JSON.stringify(x))));
+      if (!grew) {
+        out[k] = mine;
+        const lacks = v.filter((x) => !has.has(JSON.stringify(x)));
+        kept.push(`kit.config.json: "${k}": the project's ${JSON.stringify(mine)}, narrower than the clone's (kept; it lacks ${lacks.map((x) => JSON.stringify(x)).join(", ")})`);
+        continue;
+      }
       const seen = new Set(v.map((x) => JSON.stringify(x)));
-      const extra = (project[k] as unknown[]).filter((x) => !seen.has(JSON.stringify(x)));
+      const extra = mine.filter((x) => !seen.has(JSON.stringify(x)));
       out[k] = [...v, ...extra];
       if (extra.length) kept.push(`kit.config.json: "${k}" keeps the project's ${extra.map((x) => JSON.stringify(x)).join(", ")} besides the clone's`);
       continue;
@@ -245,7 +283,7 @@ export function upgradeKit(kitDir: string, opts: KitUpgradeOptions = {}): KitUpg
       if (r === cloneStyles) continue;
       if (r === "components/components.json") {
         const theirs = path.join(kit, r);
-        write(r, mergeComponents(fs.readFileSync(path.join(from, r), "utf8"), fs.existsSync(theirs) ? fs.readFileSync(theirs, "utf8") : null, result.kept));
+        write(r, mergeComponents(fs.readFileSync(path.join(from, r), "utf8"), fs.existsSync(theirs) ? fs.readFileSync(theirs, "utf8") : null, result.kept, result.errors));
         continue;
       }
       write(r, fs.readFileSync(path.join(from, r)));
@@ -271,7 +309,8 @@ export function upgradeKit(kitDir: string, opts: KitUpgradeOptions = {}): KitUpg
       const pt = fs.existsSync(path.join(kit, projectTokens)) ? fs.readFileSync(path.join(kit, projectTokens), "utf8") : "";
       write(projectTokens, mergeTokens(ct, pt, cloneTokenHistory(path.join(from, cloneTokens)), result.kept, result.notes));
     }
-    write("kit.config.json", JSON.stringify(mergeConfig(cloneCfg, projectCfg, result.kept, result.notes)) + "\n");
+    write("kit.config.json", JSON.stringify(mergeConfig(cloneCfg, projectCfg, cloneConfigHistory(path.join(from, "kit.config.json")), result.kept, result.notes)) + "\n");
+    if (result.errors.length) return result; // nothing is built or written
 
     // kit build, then kit build --check, on the staging copy
     let build;
