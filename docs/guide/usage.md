@@ -159,10 +159,21 @@ its panel out at the next exact scale up and draws its root scaled (README, View
 
 - While a screen is on a panel, its PanelSettings' `scale` reads the exact scale's factor (exact / actual × the game's
   own factor), and `Instantiate` of that PanelSettings copies it. Set the game's own factor as usual: a value you write
-  becomes the base the root scale applies on top of (read it before a screen is shown, or keep your own copy). In the
-  Editor the asset's file never gets the held factor.
+  becomes the base the root scale applies on top of (read it before a screen is shown, or keep your own copy); a value
+  equal to one held earlier is yours too (only the last factor the screen wrote counts as its own).
+- Where a factor is held. In players and in Play mode on any PanelSettings: in the Editor a save writes a held asset with
+  its own factor, a build gives every held factor back first (with a warning), an Undo restores the snapshot's own
+  factor (also after a script reload), and leaving Play, a script reload and quitting give every factor back. In the
+  Editor outside Play mode only on PanelSettings no save writes (`HideFlags.DontSaveInEditor`: runtime copies such as
+  the capture's and a region's); a screen on a PanelSettings asset or a scene's own settings lays out at the actual
+  scale there with no root scale, so the Edit-mode Game view at a scaled resolution is not the game's layout (enter Play,
+  or verify).
 - Every document on the same PanelSettings lays out at the exact scale, so UI that is not a design screen on it is drawn
-  larger or smaller (20 % larger at 1600×900). Give design screens their own PanelSettings (the profile's).
+  larger: 20 % at 1600×900 (0.75 / 0.625) and 41 % at 1366×768 (0.75 / 0.5335). Give design screens their own
+  PanelSettings (the profile's).
+- The screen root's inline `translate`, `rotate`, `scale` and `transform-origin` are the design's transform composed with
+  the root scale (and the design's animations of the root): game code that writes them on a screen root is overwritten.
+  Move, scale or animate a container of the screen instead.
 - Positions in panel coordinates are in the exact scale's units outside the screen root: `RuntimePanelUtils.ScreenToPanel`,
   a container's padding and alignment around the screen. A container that centres the screen (`align-items: center`)
   centres its 2560 px layout box in a 2133 px panel at 1600×900, which moves the screen by −160 device px. Put the

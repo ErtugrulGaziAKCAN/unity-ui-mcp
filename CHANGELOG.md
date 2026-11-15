@@ -17,9 +17,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   rotate and scale of the root go through it; the compiler writes the root's transform declarations again as
   `--dui-root-*` custom properties it reads in every state). The factor is the settings' own times exact / actual while a
   screen is on the panel and is given back when the last one leaves (a factor the game writes meanwhile is kept as its
-  own; a region's sort-order copy starts with the asset's own). In the Editor the held factor never reaches a file: a save
-  guard gives a held PanelSettings asset its own factor for every save that writes it and holds it again after, and an
-  Undo of a snapshot taken while held puts the right factor back. A screen inside a screen with exact scales is scaled
+  own, also one equal to an earlier held factor: only the last factor written counts as the package's; a region's
+  sort-order copy starts with the asset's own). In the Editor outside Play mode a factor is held only on PanelSettings no
+  save writes (runtime copies); on an asset or a scene's own settings the screen lays out at the actual scale there,
+  unscaled. In Play mode a save guard gives a held PanelSettings asset its own factor for every save that writes it and
+  holds it again after, a build guard gives every held factor back before a build (with a warning), and an Undo of a
+  snapshot taken while held restores the snapshot's own factor, also after a script reload. Game code's own inline
+  transform on a screen root is overwritten (the root's transform is the design's composed with the root scale). A screen inside a screen with exact scales is scaled
   with it, never twice; screens with different exact viewports on one PanelSettings are reported. The root follows the panel's scale through `CustomStyleResolvedEvent`
   (UI Toolkit resolves every style again when a panel's scale changes, also between two 16:9 resolutions), so the
   100 ms watch is gone. Picking, pointer events, breakpoints, the gamma composite and `DesignUiPanelRegion` frames follow
@@ -29,11 +33,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   1600×900); UI Toolkit ceils on the grid of the scale it lays out at and with no tolerance (a text of 86 px measures
   86.0100 in Unity and took 87, so every button after it in a row moved a pixel). A text or button whose width is its
   content's compiles to `DesignLabel` / `DesignButton` (`DesignTextFit`), which lay out at the generator's unrounded width
-  ceiled on the design's device grid (0.012 device px forgiven: measured on the suite's 984 text-sized texts, 4 left a
-  pixel off, 8 with 0.025) plus padding and borders as the golden lays them out (letter-spaced text: its last spacing, which
+  ceiled on the design's device grid (0.012 device px forgiven, as the golden's pageTextCeil forgives it: measured on
+  the suite's 984 text-sized texts, 2 left a pixel off; a test ties the two constants) plus padding and borders as the golden lays them out (letter-spaced text: its last spacing, which
   UI Toolkit leaves out and the compiler wrote as right padding, counted once, the box rounded to whole device pixels),
   with `white-space: nowrap`. A text the design wraps keeps wrapping: in a row the width comes off where the row has no
-  room; in a column and for an absolute text a longer line gets the width of its room with the design's white-space (the
+  room and comes back only once the row grows past its width then or the text needs less (a tight row of bordered tabs
+  at 1600×900 no longer flips its widths on every layout); in a column and for an absolute text a longer line gets the width of its room with the design's white-space (the
   browser's fit-content box). A row of ten text-sized buttons starts within 0.35 device px of the golden's positions (built
   from Chromium's text widths, `Data/chromium-row-buttons.json`) at every default viewport (1 to 8.7 without). New fidelity
   fixture `text-row`.
@@ -151,8 +156,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   by its type. The design snapshot waits at most 3 s for an image (a lazy image outside the viewport never loads).
 - The comparison of the scaled class can tell the anti-aliasing ramp of round shapes from other differences: an element
   whose SSIM with the edge band of its round shapes masked meets the element limit (and whose other checks pass) may meet
-  the measured `ssimRoundEdge`, a corner sample whose window reaches that band the measured `deltaE2000RoundEdge`
-  (`fidelity-thresholds.json` `scaled`; off at exact viewports). The golden's text-sized width forgives the same 0.012
+  the measured `ssimRoundEdge`, a corner sample whose window reaches that band, with at least three window pixels
+  outside it that match, the measured `deltaE2000RoundEdge` (`fidelity-thresholds.json` `scaled`; the file's own values
+  must be off, as at exact viewports). The band holds the element's own and its descendants' round shapes, and a round element
+  without text takes `ssimRoundEdge` only while the middle of each border side of 2 device px or more is within
+  `deltaE2000RoundEdge` of the design's, so a missing or wrong-colour ring in the masked band is caught. The golden's text-sized width forgives the same 0.012
   device px as `DesignTextFit` (a text that little over a whole pixel is that pixel on both sides).
 - A radial gradient that ends transparent (the toggle switch's knob) is baked as the ellipse it paints, inside its box:
   Unity's VectorImage drew a speckled ring where the gradient's pad region starts, which failed the knob's SSIM at

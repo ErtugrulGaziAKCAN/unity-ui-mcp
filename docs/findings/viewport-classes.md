@@ -44,15 +44,27 @@ the keyframes at 0, 100, 200 and 399 ms is where the design's scale about the ce
 root by design pixels at the actual scale. Before, the player's `scale` replaced the root scale while it played and its
 end cleared it (the screen stayed 20 % too large until the next resolution change).
 
-**The held factor and the project's files.** In Edit mode the factor is held on the project's PanelSettings asset in
-memory. Unity writes an asset only through a save, and every save that writes it (an asset save, File > Save, the save
-after an Inspector edit, the save when the Editor quits) asks `AssetModificationProcessor.OnWillSaveAssets` first with the
-paths: the package's save guard gives a held asset its own factor for the write and holds the factor again from the next
-Editor update. An Undo snapshot taken while the factor was held and undone after the screen left would bring the held
-factor back: every factor written is remembered per PanelSettings and an Undo or Redo puts the right one back (held: the
-current factor; given back: the asset's own). `RootScaleTests.AHeldFactor_NeverReachesThePanelSettingsFile_…`: after a
-SerializedObject edit and `AssetDatabase.SaveAssets`, a `SaveAssetIfDirty` and an Undo after the screen left, the file has
-`m_Scale: 1` with the edits; without the guard it had `m_Scale: 1.2`.
+**The held factor and the project's files.** In the Editor outside Play mode a factor is held only on PanelSettings no
+save writes (`HideFlags.DontSaveInEditor`: runtime copies, such as the capture's and a region's sort-order copy). A
+screen on a PanelSettings asset, or on settings a scene embeds, lays out at the actual scale there with no root scale:
+no asset save, build, `.preset`, copy or scene can then see a held factor, and the Edit-mode Game view at a scaled
+resolution shows the screen unscaled (not the game's layout; Play mode and verify show it).
+`RootScaleTests.InEditMode_NoSavableSettingsHoldAFactor_…`: an asset and a scene-embedded copy keep their own factor in
+memory, in the file and in a preset made while a screen is on them (red with the earlier hold: the asset held 1.2).
+
+In Play mode (and in players) the factor is held on any PanelSettings, also on an asset in memory. Unity writes an
+asset only through a save, and every save that writes it (an asset save, File > Save, the save after an Inspector edit,
+the save when the Editor quits) asks `AssetModificationProcessor.OnWillSaveAssets` first with the paths: the package's
+save guard gives a held asset its own factor for the write and holds the factor again from the next Editor update. A
+build writes loaded objects as they are in memory: an `IPreprocessBuildWithReport` gives every held factor back before
+the build and warns. Each write keeps its (factor, own) pair, and a factor counts as the package's own write only while
+it equals the last factor written: a game's factor equal to an older held one is the game's. An Undo snapshot taken while
+held brings that snapshot's own factor back (held: the screens hold the factor of that own again; given back: the
+snapshot's own), also after a script reload, through `SessionState` records of the assets. `RootScaleTests`:
+`InPlayMode_AHeldAssetsSaves_WriteItsOwnFactor_AndABuildGivesItBack` (`m_Scale: 1` after `SaveAssets` and
+`SaveAssetIfDirty`, the build guard gives 1 factor back), `AGamesOwnFactor_EqualToAFactorHeldEarlier_IsTheGames` (red
+before: the game's 1.2 was taken for a held one) and `AnUndo_RestoresTheSnapshotsOwnFactor_AlsoAfterAScriptReload` (red
+before: an Undo of the game's 1.3 left own 1.3).
 
 **When the scale changes.** UI Toolkit resolves every style again when a panel's scale changes (`BaseVisualElementPanel.scale`
 increments the visual tree's StyleSheet version), also between two 16:9 resolutions where the panel keeps its size in panel
@@ -107,7 +119,15 @@ transforms the screen's vertices once.
 **What it does not reproduce.** Chromium lays a page out in device pixels at a fractional scale: it puts border widths
 on whole device pixels (halves up; a 4 px border is 3 device px at 1600×900, 2 at 1366×768) and keeps paddings and margins
 fractional. Under the root scale a border is drawn at its layout width times the root scale (a 4 px border 2.5 device px at
-1600×900, 2.13 at 1366×768); text-sized elements take the golden's width anyway (next section). UI Toolkit anti-aliases
+1600×900, 2.13 at 1366×768); text-sized elements take the golden's width anyway (next section). Nested bordered boxes
+add the difference up: inside each 4 px border level the content starts 0.5 device px earlier than the golden's at
+1600×900 (2.5 against 3) and 0.13 px later at 1366×768 (2.13 against 2), so the content of three nested 4 px-bordered
+boxes is 1.5 device px off at 1600×900, past the ±1 px box limit, and 0.4 at 1366×768 (`RootScaleTests.NestedBorders_…`
+measures Unity's side; the golden's border widths are Chromium's whole device pixels, as `DesignTextFit.SnapBorder`
+models them). The suite's fixtures nest at most two bordered levels; a design that nests three or more 4 px borders
+fails the box check at 1600×900. Other widths differ per level by their own rounding (UI Toolkit snaps each border to
+whole device px of the exact scale before layout, so the levels add up; at 1600×900, the golden against Unity: 1 px 1
+against 0.83, 2 px 1 against 1.67, 3 px 2 against 1.67). UI Toolkit anti-aliases
 rounded shapes with a ramp of one device pixel of the scale it lays out at, so under the root scale the ramp is 0.83
 device px at 1600×900 and 0.71 at 1366×768, and small round shapes compare below the SSIM limit there; the scaled class
 has a measured limit for exactly that (section "Round edges at scaled viewports"). Text drawn through the root scale has

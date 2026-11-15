@@ -224,10 +224,14 @@ keeps its own list and declares no scaled viewport until one is added. Each has 
 Declare every resolution the game offers, in the class it belongs to. A resolution that is not declared lays out the same
 way (at the next exact scale up, drawn scaled) but is not verified; above the largest exact viewport the screen draws
 larger than it lays out, and boxes can be off by more than a device pixel there (declare an exact viewport at that scale).
-While a screen is on a panel its PanelSettings hold the exact scale's factor (in the Editor never in a file), every
-document on that PanelSettings lays out at that scale, and panel coordinates outside the screen root are the exact
-scale's: give design screens their own PanelSettings and put a screen at its container's top-left corner (usage guide,
-"At a scaled or undeclared resolution"). `design_ui_status`, `design_ui_verify` (captures per
+While a screen is on a panel in Play mode or a player its PanelSettings hold the exact scale's factor, every document
+on that PanelSettings lays out at that scale (20 % larger at 1600×900, 41 % at 1366×768), and panel coordinates outside
+the screen root are the exact scale's: give design screens their own PanelSettings and put a screen at its container's
+top-left corner (usage guide, "At a scaled or undeclared resolution"). In the Editor outside Play mode a factor is held
+only on PanelSettings no save writes (runtime copies, such as the capture's); a screen on an asset or a scene's own
+settings lays out at the actual scale there, unscaled. The screen root's inline transform is the design's composed with
+the root scale: game code's own inline `translate`, `rotate`, `scale` or `transform-origin` on a screen root is
+overwritten (move or animate a container instead). `design_ui_status`, `design_ui_verify` (captures per
 class) and `Window > Design UI > Status` show each viewport's class.
 
 Text-sized elements (a button or label whose width is its text's) lay out at the golden's width for their text: the
@@ -247,7 +251,7 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`):
 | Colours at sampled points | ΔE2000 ≤ 1 |
 | Structure (SSIM, non-text) | ≥ 0.99 for the capture and for each element (small elements ≥ 0.984, pictures ≥ 0.985, rotated animation samples ≥ 0.975) |
 | Animation samples | at the delay and every quarter of each animation, the same limits |
-| Scaled viewports only | the same, except the anti-aliasing ramp of round shapes (drawn at the layout scale's pixel): an element whose SSIM with the 1 device px edge band of its round shapes masked meets 0.99 may meet 0.974, a focus-ring corner sample whose pixels outside that band match may differ by ΔE2000 5.5 |
+| Scaled viewports only | the same, except the anti-aliasing ramp of round shapes (drawn at the layout scale's pixel): an element whose SSIM with the 1 device px edge band of its round shapes masked meets 0.99 may meet 0.974, a rounded-corner sample of an element that carries text, whose window reaches that band and whose window pixels outside it (at least 3, at one offset) match, may differ by ΔE2000 5.5; a round element without text takes 0.974 only while the middle of each border side of 2 device px or more is within ΔE2000 5.5, so a missing or wrong-colour ring in the masked band is caught |
 
 The fidelity suite (`scripts/fidelity.sh`: 22 fidelity fixtures and the 9 kit components at the kit's six viewports,
 4728 captures, about 13 minutes) passes every capture at 3840×2160, 2560×1440 and 1920×1080 and all but one at 1280×720

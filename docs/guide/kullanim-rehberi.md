@@ -161,9 +161,20 @@ vardır:
 - Bir ekran paneldeyken PanelSettings'inin `scale` değeri tam ölçeğin çarpanını okur (tam / gerçek × oyunun kendi
   çarpanı) ve o PanelSettings'in `Instantiate` kopyası bu değeri alır. Oyunun kendi çarpanını her zamanki gibi yaz:
   yazdığın değer kök ölçeğinin üstüne uygulandığı taban olur (onu bir ekran gösterilmeden önce oku ya da kendi kopyanı
-  tut). Editor'de varlığın dosyası tutulan çarpanı hiç almaz.
+  tut). Daha önce tutulmuş bir çarpana eşit bir değer de senindir (yalnız ekranın son yazdığı çarpan onundur).
+- Çarpanın tutulduğu yer. Oyuncuda ve Play modunda her PanelSettings'te: Editor'de kayıt, tutulan bir varlığı kendi
+  çarpanıyla yazar, bir build önce her tutulan çarpanı geri verir (uyarıyla), Undo anlık görüntünün kendi çarpanını
+  geri getirir (script yeniden yüklendikten sonra da), Play'den çıkış, script yeniden yükleme ve çıkış her çarpanı geri
+  verir. Editor'de Play dışında yalnız hiçbir kaydın yazmadığı PanelSettings'te (`HideFlags.DontSaveInEditor`: yakalamanın
+  ve bir bölgenin kopyası gibi çalışma zamanı kopyaları); bir PanelSettings varlığındaki ya da sahnenin kendi
+  ayarlarındaki ekran orada kök ölçeği olmadan gerçek ölçekte yerleşir, yani ölçekli bir çözünürlükte Edit modundaki
+  Game görünümü oyunun yerleşimi değildir (Play'e gir ya da verify çalıştır).
 - Aynı PanelSettings üzerindeki her doküman tam ölçekte yerleşir; bu yüzden onun üzerindeki tasarım ekranı olmayan UI
-  daha büyük ya da küçük çizilir (1600×900'de %20 büyük). Tasarım ekranlarına kendi PanelSettings'lerini (profilinkini) ver.
+  daha büyük çizilir: 1600×900'de %20 (0,75 / 0,625), 1366×768'de %41 (0,75 / 0,5335). Tasarım ekranlarına kendi
+  PanelSettings'lerini (profilinkini) ver.
+- Ekran kökünün satır içi `translate`, `rotate`, `scale` ve `transform-origin` değerleri, kök ölçeğiyle birleşmiş
+  tasarım dönüşümüdür (ve kökün tasarım animasyonları): oyun kodunun ekran köküne yazdığı değerlerin üzerine yazılır.
+  Ekranı taşımak, ölçeklemek ya da canlandırmak için onu saran bir öğeyi kullan.
 - Ekran kökünün dışındaki panel koordinatları tam ölçeğin birimindedir: `RuntimePanelUtils.ScreenToPanel`, ekranın
   çevresindeki bir kabın padding'i ve hizalaması. Ekranı ortalayan bir kap (`align-items: center`) 1600×900'de 2560 px'lik
   yerleşim kutusunu 2133 px'lik panelde ortalar ve ekranı −160 cihaz pikseli kaydırır. Ekranı, artboard gibi, kabının

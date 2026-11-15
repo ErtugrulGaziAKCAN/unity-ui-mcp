@@ -615,8 +615,11 @@ this section are in `docs/findings/animation.md`.
     ink or SSIM may be recorded under `fidelity-thresholds.json` `scaled` (never the geometry limits). Recorded: only the
     anti-aliasing ramp of round shapes, with per-capture evidence: `ssimRoundEdge` 0.974 for an element whose SSIM with
     the edge band of its round shapes masked (1 device px either side of a corner's outer curve and its border's inner
-    curve) meets `ssimElement` and whose other checks pass, and `deltaE2000RoundEdge` 5.5 for a corner sample whose window
-    reaches that band and whose pixels outside it meet `deltaE2000` (both off at exact viewports). Verdicts, the
+    curve, of its own round shapes and its descendants') meets `ssimElement` and whose other checks pass, and
+    `deltaE2000RoundEdge` 5.5 for a corner sample of an element that carries text whose window reaches that band and whose
+    pixels outside it (at least 3 at one offset) meet `deltaE2000` (both off at exact viewports, where the file's own values
+    must be). A round element without text takes `ssimRoundEdge` only while the middle of each border side of 2 device px
+    or more is within `deltaE2000RoundEdge` (its ring lies in the masked band). Verdicts, the
     report, `design_ui_verify` and the fidelity summary count captures per class.
   - *Root scale at any other panel scale.* UI Toolkit puts font sizes, paddings, margins and border widths on whole
     device pixels before layout and ceils text sizes, so a design lays out as designed only where its lengths are whole
@@ -636,12 +639,17 @@ this section are in `docs/findings/animation.md`.
     translate `t`, rotate `R`, scale `S` about its origin `c`), unscaled only what the player plays. A screen inside a
     screen with exact scales is scaled with it, never again itself. The factor is the PanelSettings' own times exact / actual, kept per
     PanelSettings while a screen is on its panel and given back when the last one leaves; a factor the game writes
-    meanwhile is kept as its own (a factor this wrote before, which an Undo snapshot can bring back, is not); a region's
-    sort-order copy starts with the asset's own. The held factor never reaches a file: in the Editor an
+    meanwhile is kept as its own (only the last factor this wrote counts as its own: a game's factor equal to an earlier
+    held one is the game's); a region's sort-order copy starts with the asset's own. In the Editor outside Play mode a
+    factor is held only on PanelSettings no save writes (`HideFlags.DontSaveInEditor`, runtime copies such as the capture's
+    and a region's); on an asset or a scene's own settings the screen lays out at the actual scale with no root scale
+    (`DesignRootScalePanels.CanHold`), so no asset save, build, preset, copy or scene sees a held factor. In Play mode an
     `AssetModificationProcessor` gives a held PanelSettings asset its own factor for every save that writes it (an asset
     save, File > Save, the save after an Inspector edit, the save when the Editor quits) and holds it again from the next
-    Editor update; an Undo or Redo of a snapshot taken while held puts the right factor back; leaving Play, a script
-    reload and quitting give every factor back. Screens with different exact scales on one PanelSettings lay out at the
+    Editor update; an `IPreprocessBuildWithReport` gives every held factor back before a build, with a warning; each write
+    keeps its (factor, own) pair, so an Undo or Redo of a snapshot taken while held restores that snapshot's own factor,
+    also after a script reload (SessionState); leaving Play, a script reload and quitting give every factor back. Game
+    code's own inline transform on a screen root is overwritten. Screens with different exact scales on one PanelSettings lay out at the
     first's, with a warning. While a panel has no size for a moment the held root scale stays. The root re-evaluates on attach,
     on geometry changes of itself and the panel's root, and on `CustomStyleResolvedEvent` (UI Toolkit resolves every
     style again when a panel's scale changes, also from one 16:9 resolution to another), so no polling. Breakpoints hold
