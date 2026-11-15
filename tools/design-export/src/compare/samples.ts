@@ -230,6 +230,8 @@ export interface Ink {
    * from the background points the same way at any coverage; ruling R138).
    */
   dirSrgb: Rgb3;
+  /** Each ink-side pixel's column, row and weight (the weight as in `columns`): where the ink sits in two dimensions. */
+  pixels: { x: Int32Array; y: Int32Array; w: Float64Array };
 }
 
 /** Half a pixel of ink: where an ink extent starts, counted from each side. */
@@ -288,16 +290,18 @@ export function inkIn(img: Rgba, r: Rect, hidden?: (x: number, y: number) => boo
   const cols = new Float64Array(x1 - x0);
   const dists = new Float64Array(side.length);
   const dirSrgb: Rgb3 = [0, 0, 0];
+  const pixels = { x: new Int32Array(side.length), y: new Int32Array(side.length), w: new Float64Array(side.length) };
   side.forEach((k, j) => {
     const dl = (lum[k] - bgL) * sign;
     dists[j] = dl;
     const wgt = Math.min(1, dl / inkD);
     coverage += wgt;
     cols[(off[k] / 4) % img.w - x0] += wgt;
+    pixels.x[j] = (off[k] / 4) % img.w; pixels.y[j] = Math.floor(off[k] / 4 / img.w); pixels.w[j] = wgt;
     const o = off[k];
     for (let c = 0; c < 3; c++) dirSrgb[c] += d[o + c] - bg[c];
   });
-  return { bg, ink: inkC, coverage, ...extent(cols, x0), columns: cols, x0, dists, dirSrgb };
+  return { bg, ink: inkC, coverage, ...extent(cols, x0), columns: cols, x0, dists, dirSrgb, pixels };
 }
 
 /** Where the columns' ink reaches `EDGE_INK` from the left and from the right, interpolated inside the column. */
@@ -356,7 +360,7 @@ export function endShift(design: Ink, unity: Ink, from: number, to: number, arou
  * its ink amount (Unity's over the design's), and the ink amount of the part both lines draw (the prefix up to the earlier
  * of the two cuts, plus the ellipsis). Null when the design has no ellipsis ink after `e.at`.
  */
-export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: number }): { shift: number; shape: number; amount: number; common: number } | null {
+export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: number }, baselines?: { design: number; unity: number }): { shift: number; shape: number; amount: number; common: number; rows: number } | null {
   const from = Math.floor(e.at), to = Math.ceil(Math.max(design.right, e.at + 1));
   let massA = 0;
   for (let x = from; x < to; x++) massA += columnAt(design, x + 0.5);
@@ -371,7 +375,30 @@ export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: num
   const end = e.at + Math.min(0, shift);
   let preA = 0, preB = 0;
   for (let x = Math.min(design.x0, unity.x0); x < Math.floor(end); x++) { preA += columnAt(design, x + 0.5); preB += columnAt(unity, x + 0.5); }
-  return { shift, shape: diff / massA, amount: massB / massA, common: (preB + massB) / Math.max(preA + massA, 1e-9) };
+  // the ellipsis's rows against each side's baseline (fix round 3, N9): its ink at the design's height, within a pixel
+  let rows = 0;
+  if (baselines) {
+    const profile = (k: Ink, a: number, b: number) => {
+      const out = new Map<number, number>();
+      for (let j = 0; j < k.pixels.w.length; j++) {
+        const cx = k.pixels.x[j] + 0.5;
+        if (cx >= a && cx < b) out.set(k.pixels.y[j], (out.get(k.pixels.y[j]) ?? 0) + k.pixels.w[j]);
+      }
+      return out;
+    };
+    const ra = profile(design, from, to), rb = profile(unity, from + shift, to + shift);
+    const at = (m: Map<number, number>, y: number) => { const f = Math.floor(y - 0.5), t = y - 0.5 - f; return (m.get(f) ?? 0) * (1 - t) + (m.get(f + 1) ?? 0) * t; };
+    const ys = [...ra.keys(), ...[...rb.keys()].map((y) => y - (baselines.unity - baselines.design))];
+    const lo = Math.min(...ys) - 2, hi = Math.max(...ys) + 2;
+    const kr = massB > 0 ? massA / massB : 0;
+    rows = Infinity;
+    for (let sy = -1; sy <= 1 + 1e-9; sy += 0.25) {
+      let d = 0;
+      for (let y = lo; y <= hi; y++) d += Math.abs((ra.get(y) ?? 0) - kr * at(rb, y + 0.5 + (baselines.unity - baselines.design) + sy));
+      rows = Math.min(rows, d / massA);
+    }
+  }
+  return { shift, shape: diff / massA, amount: massB / massA, common: (preB + massB) / Math.max(preA + massA, 1e-9), rows };
 }
 
 /** The colour of an image at a point between pixel centres (a pixel's centre is at x + 0.5), bilinear, clamped to the image. */

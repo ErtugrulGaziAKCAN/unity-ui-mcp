@@ -280,6 +280,13 @@ export const HAIRLINE_INK_BAND: readonly [number, number] = [0.5, 2];
  * a twin without U+2026 drew (a curve) 0.89–1.67. Limits: shape 0.45, amount 0.8–1.6.
  */
 export const ELLIPSIS_SHAPE = 0.45;
+/**
+ * The most the ellipsis's row profile may differ from the design's, each side's rows counted from its line's baseline and
+ * matched within ±1 device px, over the design's ellipsis mass (fix round 3, N9: the column profile alone passed dots at
+ * another height). Measured on the same crops: the dots 0.04–0.09 at the exact viewports, 0.07–0.29 at the scaled ones (one
+ * band for both); the curve 0.41–0.96; dots 2 device px off 1.0, 4 px or more 2.0 (1 px off is within the match). Limit 0.4.
+ */
+export const ELLIPSIS_ROWS = 0.4;
 export const ELLIPSIS_AMOUNT: readonly [number, number] = [0.8, 1.6];
 
 /** The angle in degrees between two colour directions. */
@@ -520,7 +527,7 @@ export interface ElementRow {
    * The ellipsis Unity ends the element's ellipsized line in, against the design's (ruling R147): the column profile's shape
    * error and the ink amount ratio of the line with the largest shape error; absent when the design cuts no line.
    */
-  ellipsisGlyph?: { shape: number; amount: number };
+  ellipsisGlyph?: { shape: number; rows: number; amount: number };
   /** `<design>/<Unity>` line counts; "not compared" for text without DOM lines. */
   lines: string | null;
 }
@@ -1310,11 +1317,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           let worst = Math.max(Math.abs(dl), Math.abs(dr), Math.abs(dw));
           // ruling R147 (every viewport): a line the design ends in an ellipsis ends in the design's ellipsis glyph in Unity,
           // its column profile and ink amount found next to the end of Unity's ink (a wrong glyph is a visible defect at any size)
-          const cut = gl.ellipsis ? ellipsisCut(a, b, gl.ellipsis) : null;
-          const glyph = !!cut && cut.shape <= ELLIPSIS_SHAPE + EPS && cut.amount >= ELLIPSIS_AMOUNT[0] - EPS && cut.amount <= ELLIPSIS_AMOUNT[1] + EPS;
+          const cut = gl.ellipsis ? ellipsisCut(a, b, gl.ellipsis, { design: gl.baseline, unity: ue.lines[i].baseline }) : null;
+          const glyph = !!cut && cut.shape <= ELLIPSIS_SHAPE + EPS && cut.rows <= ELLIPSIS_ROWS + EPS && cut.amount >= ELLIPSIS_AMOUNT[0] - EPS && cut.amount <= ELLIPSIS_AMOUNT[1] + EPS;
           if (cut) {
-            if (!row.ellipsisGlyph || cut.shape > row.ellipsisGlyph.shape) row.ellipsisGlyph = { shape: r6(cut.shape), amount: r6(cut.amount) };
-            if (!glyph) issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: the line does not end in the design's ellipsis: its shape differs by ${cut.shape.toFixed(2)} (limit ${ELLIPSIS_SHAPE}), its ink is ${cut.amount.toFixed(2)}× the design's (expected ${ELLIPSIS_AMOUNT[0]}–${ELLIPSIS_AMOUNT[1]}×): another glyph or none`, gl);
+            if (!row.ellipsisGlyph || cut.shape + cut.rows > row.ellipsisGlyph.shape + row.ellipsisGlyph.rows) row.ellipsisGlyph = { shape: r6(cut.shape), rows: r6(cut.rows), amount: r6(cut.amount) };
+            if (!glyph) issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: the line does not end in the design's ellipsis: its shape differs by ${cut.shape.toFixed(2)} across (limit ${ELLIPSIS_SHAPE}) and ${cut.rows.toFixed(2)} up and down against the baseline (limit ${ELLIPSIS_ROWS}), its ink is ${cut.amount.toFixed(2)}× the design's (expected ${ELLIPSIS_AMOUNT[0]}–${ELLIPSIS_AMOUNT[1]}×): another glyph, another height or none`, gl);
           }
           // ruling R146 (scaled viewports): Unity keeps one grapheme more or fewer before the design's ellipsis; its start is
           // judged as before, its ellipsis is the design's glyph (above), and its end may move by that grapheme's advance

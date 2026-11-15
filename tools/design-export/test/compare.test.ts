@@ -197,11 +197,11 @@ describe("compareCapture", () => {
     // a 160 px title cut with an ellipsis: stand-in glyphs 6 px wide on an 8 px advance from x 40, then three 2×2 dots on a
     // 12 px advance; the design keeps 8 glyphs, so its ellipsis is placed at 40 + 8 × 8 = 104
     const ADV = 8, DOTS = 12, X0 = 40;
-    const title = (glyphs: number, o: { dots?: boolean; half?: boolean } = {}) => {
+    const title = (glyphs: number, o: { dots?: boolean; half?: boolean; dotsY?: number } = {}) => {
       const png = canvas(320, 192, [16, 24, 32]);
       for (let k = 0; k < glyphs; k++) fill(png, { x: X0 + k * ADV, y: o.half ? 50 : 44, w: 6, h: o.half ? 6 : 12 }, [250, 250, 250]);
       const at = X0 + glyphs * ADV;
-      if (o.dots !== false) for (const dx of [1, 5, 9]) fill(png, { x: at + dx, y: 54, w: 2, h: 2 }, [250, 250, 250]);
+      if (o.dots !== false) for (const dx of [1, 5, 9]) fill(png, { x: at + dx, y: o.dotsY ?? 54, w: 2, h: 2 }, [250, 250, 250]);
       return png;
     };
     const side = (png: Rgba, ellipsis = false): { png: Rgba; boxes: CaptureBoxes } => ({
@@ -238,6 +238,16 @@ describe("compareCapture", () => {
         const v = compareCapture(design, side(title(n, { dots: false })), [], scaled);
         expect(v.pass, `${n} glyphs, no ellipsis`).toBe(false);
         expect(v.elements.find((r) => r.id === "title")!.ellipsisCut, `${n} glyphs, no ellipsis`).toBeUndefined();
+      }
+      // dots at another height (raised, or at the middle of the line) are not the design's ellipsis, at any viewport (fix
+      // round 3, N9): the glyph's rows are judged against the baseline too
+      for (const y of [44, 48]) {
+        for (const n of [8, 9]) {
+          const v = compareCapture(design, side(title(n, { dotsY: y })), [], scaled);
+          expect(v.issues.filter((i) => i.kind === "ink" && /ellipsis/.test(i.detail)), `dots at y ${y}, ${n} glyphs, scaled`).toHaveLength(1);
+          expect(v.elements.find((r) => r.id === "title")!.ellipsisCut, `dots at y ${y}, ${n} glyphs`).toBeUndefined();
+        }
+        expect(kinds(compareCapture(design, side(title(8, { dotsY: y })), [], T)), `dots at y ${y}, exact`).toContain("title:ink");
       }
       // a line the design does not end in an ellipsis gets no allowance
       expect(kinds(compareCapture(side(title(8)), side(title(9)), [], scaled))).toContain("title:inkExtent");
