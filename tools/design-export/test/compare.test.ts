@@ -1030,7 +1030,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
       return png;
     };
 
-    it("R129, R127: an avatar whose ring Unity draws 3 CSS px wide instead of 4 fails wherever that is more than 0.5 device px", () => {
+    it("R129, R127, R135: an avatar whose ring Unity draws 3 CSS px wide instead of 4 fails wherever that is 0.75 device px or more", () => {
       // the re-review's probe (N4-1): a text-less avatar of 80 or 160 CSS px with a 4 CSS px ring at each exact scale, drawn
       // the same way on both sides but the ring's width; repository thresholds
       const ringC: Rgb = [22, 194, 213], fillC: Rgb = [60, 70, 80], bgC: Rgb = [11, 31, 38];
@@ -1053,11 +1053,13 @@ describe("compareCapture: edge, colour and ink checks", () => {
         const own = issuesOf(v, "avatar");
         at.push(`${css}@${scale}:${own.length ? own.map((i) => i.kind).join("+") : "pass"}`);
       }
-      // a ring a device pixel or more too thin fails its width (R127) and, with it, every relaxation (R129); at 1280×720 the
-      // ring is 0.5 device px thinner, R127's own limit: the 160 px avatar passes there (its SSIM passes too), the 80 px
-      // one fails on SSIM below the floor as before
+      // a ring 0.75 device px or more too thin fails its width (R127) and, with it, every relaxation (R129). At 1280×720 the
+      // ring is 0.5 device px thinner: the width check decides reliably from 0.75 device px only (ruling R135: its limit
+      // stays "more than 0.5"; a correct ring can read up to 0.506 and a 0.5 px thinner one 0.498 to 0.635 by its grid
+      // position), so a ring 1 CSS px thinner at 1280×720 can pass. The 160 px avatar does here (0.498 at this position;
+      // its SSIM passes too), a documented limit, not part of this red test; the 80 px one fails on SSIM below the floor
       expect(at).toEqual(["80@0.5:ssim", "80@0.75:edge+ssim", "80@1:edge+ssim", "80@1.5:edge+ssim",
-        "160@0.5:pass", "160@0.75:edge+ssim", "160@1:edge+ssim", "160@1.5:edge+ssim"]);
+        expect.stringMatching(/^160@0\.5:(pass|edge\+ssim|edge)$/), "160@0.75:edge+ssim", "160@1:edge+ssim", "160@1.5:edge+ssim"]);
     });
 
     it("R129: a relaxation needs every SSIM block and every 3×3 window outside its band to match, and its borders' widths", () => {

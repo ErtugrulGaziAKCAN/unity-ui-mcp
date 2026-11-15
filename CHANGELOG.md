@@ -155,6 +155,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   suite's largest difference is 0.44).
 - The captures record the boxes of a repeat's later items (boxes `items`, both sides), and the band of straight edges
   between device pixels takes their edges (ruling R124).
+- The text of a repeat's later items is checked (ruling R133): both captures record each later item's copy of a text with
+  its own line boxes (boxes `items`: `text` and `lines`, as for elements; schema and shared contract sample), the golden
+  rounds a copy's text-sized width as the item template's `DesignLabel` lays it out, and the comparison masks the copies'
+  text as it masks the IR elements' (whole-capture and element SSIM, edge-band evidence, colour samples) and gives each copy
+  the same text checks: present and visible as in the design, line count, baselines, ink colour, ink amount (in the
+  capture's medians) and where each line's glyphs sit, reported under the copy's name (`row#3`). Before, a later row's
+  text was neither masked nor checked: a wrong colour passed, and the dividers' band evidence failed on its glyphs.
 - Two scaled-only measured keys: a raster picture drawn at another size than its own may meet SSIM 0.95 and its colour
   samples ΔE2000 5.89 (`ssimResampledPicture`, `deltaE2000ResampledPicture`; ruling R125: resampling, measured lowest
   0.95284 and highest 5.49), and text under 13 device px takes the ink colour limit 5.89 (`scaled.textInkDeltaEFirstSmall`,
@@ -162,6 +169,15 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Changed
 
+- An element counts as moving in an animation sample only when an animation of its geometry runs on it or an ancestor
+  (ruling R132: the IR's animated properties, the transform and its parts, position, size and box-model lengths; not a
+  colour, an opacity, a filter or a shadow). Every other element of a sample gets the static checks, its ring's colour and
+  width and an edge-band relaxation's border centre colour among them (a colour-only animation let a wrong 2.13 device px
+  border pass in a sample).
+- An edge-band relaxation that fails names every condition that does not hold (a block, a window, a border's colour
+  evidence, its centre, its width), not only the first.
+- The ring width check keeps its limit (more than 0.5 device px fails) and decides reliably from 0.75 device px (ruling
+  R135): a ring 1 CSS px thinner at 1280×720 (0.5 device px) can pass; README and the findings say so.
 - The scaled viewports' font twins (`<face> UITK <box>x<scale>.asset`, `DesignFonts.uss` `.vs-<scale>` blocks, the screen
   root's `viewport-scales` and its 100 ms watch) are removed: under the root scale text is set at the exact scale's whole
   size and drawn scaled. Kit sync and pruning remove such twins an earlier version made.
@@ -186,6 +202,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
+- Task 35's fidelity suite (4728 captures, 14 min 3 s, four full runs with the same result): every capture passes at
+  3840×2160, 2560×1440, 1920×1080 and 1600×900; 728 of 788 at 1280×720 and at 1366×768. The 18 divider captures of round 5
+  and the letter-spaced label pass in every run. The 120 left are new checks finding what they look for: the text of two
+  repeat items' copies in `repeat-items`, one glyph of one stroke on a baseline between device pixels (an em dash at 10
+  device px, ink colour ΔE2000 6.06 against 4.5; a "1" at 10.67, 6.65 against 5.89), which Chromium and UI Toolkit cover
+  differently; measured, left for a decision, no limit changed (`docs/findings/viewport-classes.md`, "Repeat items' text,
+  the face that draws, what moves").
 - Round 5 of the fidelity suite (4728 captures, 13 min 33 s): every capture passes at the four exact viewports; 787 of 788
   at 1600×900 and 770 at 1366×768. The 19 left: 17 `controls` and 1 `scroll-area` captures whose dividers' band the repeat
   items' boxes now place, failing on the glyphs of the later rows' text outside it (12.8 and 12.5 device px), and the
@@ -212,6 +235,20 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- A text-sized label or button kept its earlier text's width when its text was written without a change event (a data
+  binding, a list rebinding an item, `SetValueWithoutNotify`): a language switched while a screen was open left labels at
+  their earlier text's widths (ruling R136). The fit now also measures again when a repaint shows a text, font or style other
+  than the one it last measured; a repaint of the same text measures nothing.
+- A text-sized label or button could keep UI Toolkit's own width for good (ruling R134; the letter-spacing fixture's caps
+  label in some full runs): the text fit measured only text whose every weight-table face held its characters, and a face
+  that never draws the text (the bold face under a normal text, an italic face) never gets them. It now checks only the
+  face UI Toolkit draws the resolved style with (`DesignText.DrawingFace`), and when that face lacks a character it
+  measures once more after the next draw, which adds it, and once more after that for the kerning pairs TextCore's queue
+  brings; a face whose glyph set stops changing is not polled.
+- U-FONT-004 counted a scale that a later or more specific rule of no state overrides whenever a state rule set the same
+  property (`.box{transform:scale(0.5)} .box.wide{transform:none} .box:hover{transform:scale(1.1)}`: an import-blocking
+  error for a box never drawn at 0.5). Only the cascade's winner among the rules of no state counts, and only while a state
+  rule that sets the property holds now (ruling R131).
 - U-FONT-004 treats a rule whose animation keeps its end (fill forwards or both) and ends visible as showing the element at
   its last keyframe's scale, judges a closed scale under `:not(.is-open)` only where it can apply with a rule that shows the
   element, takes a reveal split over two rules of one state as one, and judges a rule of no state that a state rule
