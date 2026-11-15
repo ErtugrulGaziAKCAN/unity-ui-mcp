@@ -170,7 +170,6 @@ namespace DesignUi
         {
             switch (element)
             {
-                case DesignOverflowLabel t: return t.FullText; // the whole text, not its displayed cut (ruling R144)
                 case TextElement t: return t.text;
                 case Toggle t: return t.text;
                 case TextField f: return f.value;

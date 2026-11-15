@@ -40,8 +40,7 @@ namespace DesignUi
         {
             if (element == null) throw new ArgumentNullException(nameof(element));
             Prepare(element, text, fonts);
-            if (element is DesignOverflowLabel cut) cut.FullText = text; // the label displays its cut (ruling R144)
-            else element.text = text;
+            element.text = text;
         }
 
         /// <summary>
