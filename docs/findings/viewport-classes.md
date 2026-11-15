@@ -716,15 +716,27 @@ amount measure how the stroke falls on the pixel grid, not the text's colour, an
 device pixels differently. Such a line is judged by its ink's colour direction from the background instead (pixelmatch and
 Playwright do not colour-judge anti-aliased pixels either):
 
-- **Which text can be one (ruling R141).** Text of at most 12 device px (`HAIRLINE_MAX_PX`; the suite's hairline lines are
-  10 and 10.67), drawn at opacity 1 (its own times its ancestors', an animation sample's running value included) in the
-  colour the capture recorded for it, with no later layer that paints over its line. The golden records each text's computed
-  colour and drawn opacity (boxes `color` and `opacity`, design side only), a repeat copy its own (a copy whose class mutes
-  it is judged against its muted colour). R138's first rule took the colour from the IR's static style and had no size,
+- **Which text can be one (ruling R141, fix round 3).** Text of at most 12 device px (`HAIRLINE_MAX_PX`; the suite's
+  hairline lines are 10 and 10.67), drawn at opacity 1 (its own times its ancestors', an animation sample's running value
+  included) in the colour the capture recorded for it, all of the line in it, and with nothing painted later over its line.
+  The golden records each text's computed colour and drawn opacity (boxes `color` and `opacity`, design side only), a repeat
+  copy its own (a copy whose class mutes it is judged against its muted colour), and marks a line with a run of another
+  colour or opacity, a rich inline span (line `mixed`; N-6). Painted later: every IR element and every written-out repeat
+  copy after the text in paint order that paints something, on either side, and the outer shadow each casts (`shadows`,
+  a copy's placed by its own box; N-5); a later item of a repeat paints after an earlier one, inside an item the IR's order
+  holds. Without a paint order no line is a hairline line. R138's first rule took the colour from the IR's static style and had no size,
   opacity or cover bound: any text whose design ink sat on that colour's ray nearer the background counted, and the fix
   round 1 re-review's probes passed at 16 px with Unity wrong: a label sampled mid-fade (design at opacity 0.6, Unity 0.8 or
   missing glyphs), text under a 30 % veil (Unity at 0.7 or missing glyphs), a muted copy drawn lighter or missing glyphs.
-  They fail now, and so do their 10 px versions (`compare.test.ts`, "R141").
+  They fail now, and so do their 10 px versions (`compare.test.ts`, "R141"). The fix round 2 re-review found three more
+  ways in: a later element's outer shadow (the kit's are black at up to 0.4, which dims a line along nearly its colour's ray
+  from surfaces 900 and 800; R141 took later elements' boxes only), another repeat item's copy over the line (only the same
+  item's copies counted), and a rich span (`<p class="secondary"><span class="muted">…`: on surface-700 the muted run lies
+  1.37° off the secondary ray at 0.72 of its contrast). With Unity at 0.7 or two middle glyphs missing, 40 of 54 kit shadow
+  cases (surfaces 900, 800, 700; primary, secondary, muted text; shadow 0.15, 0.25, 0.4), the copy and the span passed; all
+  fail now (`compare.test.ts`, "fix round 3"). The suite's repeat-items goldens keep the same 180 hairline lines (compared
+  with themselves, before and after). U-FONT-004 keeps kit text at 18 CSS px or more, so only 1600×900, 1366×768 and
+  1280×720 draw text of 12 device px or less: a defect that shows at every viewport is caught at the others.
 - **Fully covered.** A pixel whose luma distance from the line's background is at least 0.85 (`HAIRLINE_FULL`) of the text
   colour's (the recorded one, over that background). A line is a hairline line when its design shows fewer than 3 such
   pixels (`HAIRLINE_PIXELS`, the fewest the ink colour takes its median of), its design ink points the text colour's way
@@ -811,10 +823,29 @@ test: the binding there writes through `text`, which sends the event; it stays a
 red test. The pilot's write path is not reproduced in Edit mode;
 whatever it is, the label repaints with the new text, which the repaint check covers.
 
-**Fix rounds 1 and 2 on the fit (I-2, M-1).** The repaint check recorded the font and style it compares only for a
+**The advanced generator's text (fix round 3, R136-ar).** On 851cf10 the pilot switched an open calendar from Turkish to
+Arabic again: 18 to 21 of its 32 text-sized labels kept their Turkish widths, while Latin switches (Turkish to German and
+back, Arabic to Turkish) left none. The fit did measure again (its count rose by 2), but the width it applied was the text
+handle's `MeasuredWidth`, still the Turkish one (249.75 and 79.2 panel px), where UI Toolkit's own measure gave the Arabic
+widths (169.33 and 106.67). The locale controller lays a script locale's text out with the advanced generator, and UI
+Toolkit keeps that generator's measure in another member of the handle (`ATGMeasuredWidth`, with its own rounded width;
+`TextUtilities.PostProcessMeasuredSize` writes one or the other, by `IsAdvancedTextEnabledForElement`): the standard member
+keeps whatever the standard generator measured last. On a label the advanced generator measured first that member is empty,
+and the fit left UI Toolkit's own width: Arabic built fresh was right. Now text the advanced generator lays out (UI Toolkit's own test, by reflection; where it is missing,
+the element's `-unity-text-generator`) keeps UI Toolkit's own width, as a label built that way did: its width against
+Chromium's is not measured. The standard width is used only when it is the width of the text just measured (UI Toolkit's
+rounded result is that width ceiled on the panel's pixel grid), and a repaint whose generator changed measures again (the
+controller sets the generator on the screen's root). Red test
+`TextFitTests.ATextLaidOutByTheAdvancedGenerator_NeverKeepsThePreviousTextsWidth` (Enable Advanced Text on, a label at
+"Düzenle Paylaş", its screen switched to the advanced generator, then its text set to "Ekle"): on 933c558 it kept 176 panel
+px, the previous text's, where UI Toolkit's own width is 49; now it has UI Toolkit's own width, and back on the standard
+generator the browser's width for its text again. The pilot is to confirm it in the game.
+
+**Fix rounds 1 to 3 on the fit (I-2, M-1, N-7).** The repaint check recorded the font and style it compares only for a
 non-empty text, so an empty label with a font found its font changed on every repaint and asked the Editor for another
 update forever in Edit mode (16 requests in ten repaints); text, font and style are now recorded together, and a font change
-while the text stays empty asks once (`TextFitTests.AnEmptyLabel_RepaintsWithoutAskingForAnotherMeasure`). A label measured
+while the text stays empty asks at most once (none when a layout callback looked at the new font before the repaint:
+`TextFitTests.AnEmptyLabel_RepaintsWithoutAskingForAnotherMeasure`). A label measured
 while its face's new glyphs still waited for their kerning pairs in TextCore's update queue (another label's layout added
 them that frame: 8 glyphs waiting when its text was set) kept that width, 262.23 panel px
 (`TextFitTests.ALabelMeasuredBeforeItsFacesKerningPairsArrive_IsMeasuredAgainWithThem`). Fix round 1 measured again after the
@@ -824,6 +855,13 @@ fix round 2 the fit gives the face all its glyphs' kerning pairs itself before i
 list holds glyphs (`DesignText.CompleteFeatures` and `ClearPairFlags`, the compiler's path), so the measure is kerned at
 once and nothing polls; the pairs are then the complete ones (248.54, where TextCore's queue alone gives a new glyph's pairs
 as the first glyph only: 249.41), and UI Toolkit draws with them too. Its cache keys on the face's pair count as well.
+Fix round 2's completion also took out every pair with a glyph the face does not hold (`DesignText.CompleteFeatures`, the
+import's way of keeping a twin's file small). A line-box variant shares its twin's feature table (`FontTwinLink`), and the
+twin and each variant can hold glyphs the other added at runtime: a measure on the variant removed the pairs of the twin's
+runtime glyphs, one on the twin those of the variant's, so kerning depended on which label measured first (fix round 3,
+N-7; `TextFitTests.AMeasureOnALinkedVariantOrItsTwin_KeepsThePairsTheOtherAddedAtRuntime`: 8 of 8 pairs lost in either
+order). Since fix round 3 the fit only adds the missing records (`DesignText.AddFeatures`, as TextCore's own queue adds them,
+against every glyph of the font file); an import still prunes a twin's file.
 
 **Rebuilt twins' lookup (ruling R139).** The generator rebuilds a twin in place (a line-box variant with glyphs of its own,
 a twin whose source font or atlas settings changed) by copying a fresh asset's serialized fields over it. That replaces the
@@ -848,11 +886,10 @@ Suite: in each of five full runs (three with ruling R134's fit, one with R136's 
 ## Suite at six viewports
 
 **Task 35 (2026-11-15, latest).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
-animation samples), the final run on every change of Task 35 (rulings R131 to R141 and its fix rounds 1 and 2), 15 min 10 s
-(setup 15 s, exports 213 s, import 34 s, capture 223 s, comparisons 405 s, cleanup 15 s; the comparisons take about 40 s
-more than round 5's with the 30924 copies' texts checked, while the pilot's Unity window ran on the same machine; fix round
-1's run on the same comparison less R141 took 14 min 12 s): **4728 PASS, 0 FAIL**, nothing incomplete; animation samples
-2400 / 0.
+animation samples), the final run on every change of Task 35 (rulings R131 to R141 and its fix rounds 1 to 3), 14 min 9 s
+(setup 15 s, exports 198 s, import 32 s, capture 205 s, comparisons 381 s, cleanup 15 s; the comparisons take about 17 s
+more than round 5's with the 30924 copies' texts checked; fix round 2's run took 15 min 10 s while the pilot's Unity window
+ran on the same machine): **4728 PASS, 0 FAIL**, nothing incomplete; animation samples 2400 / 0.
 
 | Viewport | Class | PASS | FAIL |
 |---|---|---|---|
@@ -866,9 +903,9 @@ more than round 5's with the 30924 copies' texts checked, while the pilot's Unit
 Before ruling R138 four full runs gave 4608 / 120 each (the hairline copies of `repeat-items`, 60 at 1280×720 and 60 at
 1366×768; section "Repeat items' text, the face that draws, what moves"); the 18 divider captures of round 5 and the
 letter-spaced label passed in all of them and pass here. What the keys admit in this run (the same elements and values as
-fix round 1's run): the hairline path (rulings R138, R141) 180 lines (`row-time#2` at 1280×720 and 1366×768, `day-number#1`
-at 1366×768: 10 and 10.67 device px, opacity 1, their recorded colour, nothing over them), colour direction at most 0.26°
-against 0.66°, ink amount 0.86–1.01 against 0.5–2; `ssimRoundEdge` 17 elements at 1280×720 (lowest 0.98088) and 148 at the scaled viewports (lowest 0.97664);
+fix rounds 1 and 2's runs): the hairline path (rulings R138, R141, fix round 3) 180 lines (`row-time#2` at 1280×720 and 1366×768, `day-number#1`
+at 1366×768: 10 and 10.67 device px, opacity 1, all in their recorded colour, nothing painted later over them), colour
+direction at most 0.26° against 0.66°, ink amount 0.86–1.01 against 0.5–2 (fix round 2's run); `ssimRoundEdge` 17 elements at 1280×720 (lowest 0.98088) and 148 at the scaled viewports (lowest 0.97664);
 `ssimFractionalEdge` 4 (lowest 0.9735); `ssimVectorEdge` 10 (lowest 0.97875); the corner limits 20 samples at the scaled
 viewports (ΔE2000 1.02–5.10); `ssimResampledPicture` 6 picture elements (lowest 0.95284) and `deltaE2000ResampledPicture` 3
 colour samples (highest 5.49); the scaled small-text ink limit one line above 4.5 (`stacked-text` value-12, 5.49);

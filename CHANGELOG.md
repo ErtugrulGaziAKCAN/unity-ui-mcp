@@ -175,16 +175,19 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   colour, an opacity, a filter or a shadow). Every other element of a sample gets the static checks, its ring's colour and
   width and an edge-band relaxation's border centre colour among them (a colour-only animation let a wrong 2.13 device px
   border pass in a sample).
-- A hairline text line is judged by its ink's colour direction (rulings R138, R141): text of at most 12 device px, drawn
-  at opacity 1 in the colour the capture recorded for it (boxes `color` and `opacity`, design side only; a repeat copy's
-  own) with no later layer over it, whose design has fewer than 3 fully covered pixels (at least 0.85 of that colour's
+- A hairline text line is judged by its ink's colour direction (rulings R138, R141, fix round 3): text of at most 12
+  device px, drawn at opacity 1 in the colour the capture recorded for it (boxes `color` and `opacity`, design side only;
+  a repeat copy's own), all of the line in it (a line with a rich span of another colour or opacity is marked `mixed` and
+  keeps the usual checks), with no later element, written-out repeat copy or outer shadow over it, whose design has fewer
+  than 3 fully covered pixels (at least 0.85 of that colour's
   distance from the background; an em dash or a "1" whose one stroke lies between two device pixels), has an ink colour
   and amount that measure coverage, which the renderers lay differently. Such a line is judged by the angle between the
   design's and Unity's ink directions from the background in sRGB (`textInkDirection` 0.66°: the suite's highest 0.26° plus
   0.4) and by an ink amount within 0.5–2 times the design's (both measured against the text colour). On such a line a
   lightness-only error within that amount is not caught; a dash in another hue fails (36° and 38° for the warning and accent
-  colours), and so does a faded, veiled or muted larger text drawn lighter or missing glyphs. The 120 `repeat-items`
-  captures this concerned pass.
+  colours), and so does a faded, veiled or muted larger text drawn lighter or missing glyphs, a small one under a later
+  card's shadow or another item's layer, or in a span of another colour. The 120 `repeat-items` captures this concerned
+  pass.
 - An edge-band relaxation that fails names every condition that does not hold (a block, a window, a border's colour
   evidence, its centre, its width), not only the first.
 - The ring width check keeps its limit (more than 0.5 device px fails) and decides reliably from 0.75 device px (ruling
@@ -213,9 +216,10 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
-- Task 35's final fidelity run (4728 captures, 15 min 10 s, after fix round 2): **every capture passes** at all six
-  viewports; 180 hairline lines of `repeat-items` pass through rulings R138 and R141 (colour direction at most 0.26° against
-  0.66°, ink amount 0.86–1.01 against 0.5–2). Fix round 1's run (14 min 12 s) passed every capture as well.
+- Task 35's final fidelity run (4728 captures, 14 min 9 s, after fix round 3): **every capture passes** at all six
+  viewports; the same 180 hairline lines of `repeat-items` pass through rulings R138 and R141 (colour direction at most 0.26°
+  against 0.66°; ink amount 0.86–1.01 against 0.5–2 in fix round 2's run). Fix rounds 1 and 2's runs (14 min 12 s, 15 min
+  10 s) passed every capture as well.
 - Task 35's earlier fidelity runs (4728 captures, 14 min 3 s, four full runs with the same result): every capture passes at
   3840×2160, 2560×1440, 1920×1080 and 1600×900; 728 of 788 at 1280×720 and at 1366×768. The 18 divider captures of round 5
   and the letter-spaced label pass in every run. The 120 left are new checks finding what they look for: the text of two
@@ -256,7 +260,16 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   recorded only for non-empty text); and a label measured while its face's new glyphs still waited for their kerning pairs
   in TextCore's queue (another label's layout added them that frame) kept the unkerned width (262.23 against 248.54 panel
   px). The fit records text, font and style together, gives the face all its glyphs' kerning pairs before it measures while
-  TextCore's queue holds some (its own complete-pairs path, so nothing polls), and keys its cache on the face's pair count.
+  TextCore's queue holds some (nothing polls), and keys its cache on the face's pair count.
+- The fit's kerning completion took out every pair of a glyph the face does not hold; a line-box variant shares its twin's
+  feature table, so a measure on one removed the pairs of glyphs the other added at runtime, and kerning depended on which
+  label measured first (fix round 3, N-7). It now only adds the missing pairs (`DesignText.AddFeatures`); an import still
+  prunes a twin's file.
+- A text-sized label switched to a script locale kept the previous text's width (fix round 3, found in the game: a calendar
+  switched from Turkish to Arabic kept 18 to 21 of its 32 labels at their Turkish widths). UI Toolkit keeps the advanced
+  generator's measure in another member of the text handle than the standard width the fit read. Text the advanced
+  generator lays out now keeps UI Toolkit's own width, as a label built that way did; the standard width is used only when it
+  is the one just measured, and a repaint whose generator changed measures again.
 - A text-sized label or button kept its earlier text's width when its text was written without a change event (a data
   binding, a list rebinding an item, `SetValueWithoutNotify`): a language switched while a screen was open left labels at
   their earlier text's widths (ruling R136). The fit now also measures again when a repaint shows a text, font or style other
