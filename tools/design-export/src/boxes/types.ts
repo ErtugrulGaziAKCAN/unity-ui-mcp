@@ -2,7 +2,13 @@ import type { BoxRect } from "../ir/types.js";
 export type { BoxRect };
 /** All rects in device pixels. The box, `visible` and `lines` rules are in schema.json (descriptions); both capture sides follow them. */
 /** A text line's box and baseline; `mixed`: design side only (schema.json). */
-export type TextLine = BoxRect & { baseline: number; mixed?: boolean };
+export type TextLine = BoxRect & { baseline: number; mixed?: boolean; ellipsis?: LineEllipsis };
+/**
+ * Design side only: where Chromium places the ellipsis of a line it cuts (ruling R146), device px: `at` the x where the kept
+ * prefix ends inside the whole line, `last` and `next` the in-line advances of the last kept and the first dropped grapheme,
+ * `width` the ellipsis's own advance.
+ */
+export interface LineEllipsis { at: number; last: number; next: number; width: number }
 
 export interface CaptureBoxes {
   capture: string; viewport: [number, number]; scale: number;

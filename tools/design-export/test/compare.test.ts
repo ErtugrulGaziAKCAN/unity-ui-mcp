@@ -25,7 +25,7 @@ const T: Thresholds = {
   textInkDeltaELater: [], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
   textInkSmallPx: 0, textInkDeltaEFirstSmall: 3, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.2, textInkShadowHigh: 1.15,
   ssimRotated: 0.99, ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, deltaE2000Ring: 1.5, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
-  ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1, textInkDirection: 0.66,
+  ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1, textInkDirection: 0.66, ellipsisGraphemes: 0,
 };
 /** The measured element SSIM limit of rotated animation samples (fidelity-thresholds.json, docs/findings/animation.md). */
 const ROTATED = 0.975;
@@ -191,6 +191,57 @@ describe("compareCapture", () => {
     expect(narrow.issues[0].detail).toBe("line 1 of 1: text ink left Δ +0.00 px, right Δ -4.00 px, width Δ -4.00 px (limit ±1 px)");
     expect(off.elements.find((r) => r.id === "label")?.inkExtent).toBe(2);
     expect(compareCapture(g, g, [], T).elements.find((r) => r.id === "label")?.inkExtent).toBe(0);
+  });
+
+  describe("an ellipsized line at a scaled viewport (ruling R146: ellipsisGraphemes)", () => {
+    // a 160 px title cut with an ellipsis: stand-in glyphs 6 px wide on an 8 px advance from x 40, then three 2×2 dots on a
+    // 12 px advance; the design keeps 8 glyphs, so its ellipsis is placed at 40 + 8 × 8 = 104
+    const ADV = 8, DOTS = 12, X0 = 40;
+    const title = (glyphs: number, o: { dots?: boolean; half?: boolean } = {}) => {
+      const png = canvas(320, 192, [16, 24, 32]);
+      for (let k = 0; k < glyphs; k++) fill(png, { x: X0 + k * ADV, y: o.half ? 50 : 44, w: 6, h: o.half ? 6 : 12 }, [250, 250, 250]);
+      const at = X0 + glyphs * ADV;
+      if (o.dots !== false) for (const dx of [1, 5, 9]) fill(png, { x: at + dx, y: 54, w: 2, h: 2 }, [250, 250, 250]);
+      return png;
+    };
+    const side = (png: Rgba, ellipsis = false): { png: Rgba; boxes: CaptureBoxes } => ({
+      png,
+      boxes: {
+        capture: "default@320x192", viewport: [320, 192], scale: 0.625, external: [],
+        elements: {
+          root: el(0, 0, 320, 192),
+          title: el(X0, 40, 90, 24, { text: true, lines: [{ x: X0, y: 42, w: 200, h: 20, baseline: 56, ...(ellipsis ? { ellipsis: { at: X0 + 8 * ADV, last: ADV, next: ADV, width: DOTS } } : {}) }] }),
+        },
+      },
+    });
+    const design = side(title(8), true);
+    const scaled = { ...T, ellipsisGraphemes: 1 };
+    const kinds = (v: ReturnType<typeof compareCapture>) => v.issues.map((i) => `${i.id}:${i.kind}`);
+
+    it("passes when Unity keeps one more or one fewer grapheme than the design, at a scaled viewport only", () => {
+      expect(compareCapture(design, side(title(8)), [], scaled)).toMatchObject({ pass: true, issues: [] });
+      for (const n of [9, 7]) {
+        const v = compareCapture(design, side(title(n)), [], scaled);
+        expect(kinds(v), `${n} glyphs`).toEqual([]);
+        expect(v.elements.find((r) => r.id === "title")!.ellipsisCut).toBe((n - 8) * ADV);
+        // the exact class keeps its limit: the same capture fails there
+        expect(kinds(compareCapture(design, side(title(n)), [], T)), `${n} glyphs, exact`).toContain("title:inkExtent");
+      }
+    });
+
+    it("fails a cut two graphemes off, a wrong text and a missing ellipsis", () => {
+      for (const n of [10, 6]) expect(kinds(compareCapture(design, side(title(n)), [], scaled)), `${n} glyphs`).toContain("title:inkExtent");
+      // the prefix both draw is judged: other glyphs (half the ink) fail the ink amount
+      expect(kinds(compareCapture(design, side(title(9, { half: true })), [], scaled))).toContain("title:inkCoverage");
+      // no ellipsis: Unity's line ends in a glyph where the design's ends in the dots; no allowance is given
+      for (const n of [8, 9, 10]) {
+        const v = compareCapture(design, side(title(n, { dots: false })), [], scaled);
+        expect(v.pass, `${n} glyphs, no ellipsis`).toBe(false);
+        expect(v.elements.find((r) => r.id === "title")!.ellipsisCut, `${n} glyphs, no ellipsis`).toBeUndefined();
+      }
+      // a line the design does not end in an ellipsis gets no allowance
+      expect(kinds(compareCapture(side(title(8)), side(title(9)), [], scaled))).toContain("title:inkExtent");
+    });
   });
 
   it("measures where a line's glyphs sit, not how thick a renderer draws their strokes", () => {
@@ -806,8 +857,11 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(t.deltaE2000RoundEdge).toBe(t.deltaE2000);
     for (const k of ["ssimFractionalEdge", "ssimVectorEdge"] as const) expect(t[k], k).toBe(t.ssimElement);
     expect(t.deltaE2000FractionalEdge).toBe(t.deltaE2000);
-    expect(Object.keys(t.scaled ?? {}).sort()).toEqual(["deltaE2000FractionalEdge", "deltaE2000ResampledPicture", "deltaE2000RoundEdge", "ssimFractionalEdge", "ssimResampledPicture", "ssimRoundEdge",
+    expect(Object.keys(t.scaled ?? {}).sort()).toEqual(["deltaE2000FractionalEdge", "deltaE2000ResampledPicture", "deltaE2000RoundEdge", "ellipsisGraphemes", "ssimFractionalEdge", "ssimResampledPicture", "ssimRoundEdge",
       "ssimVectorEdge", "textInkDeltaEFirstSmall", "textInkSmallPx"]);
+    // ruling R146: an ellipsized line's cut one grapheme off only at scaled viewports
+    expect(t.ellipsisGraphemes).toBe(0);
+    expect(t.scaled?.ellipsisGraphemes).toBe(1);
     expect(t.ssimResampledPicture).toBe(t.ssimElement);
     expect(t.deltaE2000ResampledPicture).toBe(t.deltaE2000);
   });
@@ -2441,10 +2495,17 @@ describe("design-export compare", () => {
       // the scaled class's own keys (R121) off at exact viewports, measured at scaled ones
       ssimRoundEdge: 0.974, deltaE2000RoundEdge: 1, deltaE2000Ring: 3.1, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
       ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1,
-      // the scaled class: R109, R115, R121, and R125 (resampled pictures), R126 (small text ink, at most 6.5)
+      // the scaled class: R109, R115, R121, and R125 (resampled pictures), R126 (small text ink, at most 6.5), R146 (an
+      // ellipsized line's cut one grapheme off)
       scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, textInkSmallPx: 12.99, ssimFractionalEdge: 0.97, ssimVectorEdge: 0.975, deltaE2000FractionalEdge: 5.3,
-        ssimResampledPicture: 0.95, deltaE2000ResampledPicture: 5.89, textInkDeltaEFirstSmall: 5.89 },
+        ssimResampledPicture: 0.95, deltaE2000ResampledPicture: 5.89, textInkDeltaEFirstSmall: 5.89, ellipsisGraphemes: 1 },
     });
+    // ruling R146: the exact class keeps the design's cut; the scaled block may allow one grapheme, no more
+    for (const [v, where, msg] of [[1, "", /"ellipsisGraphemes" must be 0 \(off\)/], [2, "scaled", /"ellipsisGraphemes" must be 0 or 1/]] as const) {
+      const f = path.join(tmp(), "e.json");
+      fs.writeFileSync(f, JSON.stringify(where ? { ...T, scaled: { ellipsisGraphemes: v } } : { ...T, ellipsisGraphemes: v }));
+      expect(() => readThresholds(f)).toThrow(msg);
+    }
     const bad = path.join(tmp(), "t.json");
     fs.writeFileSync(bad, JSON.stringify({ boxPx: 1 }));
     expect(() => readThresholds(bad)).toThrow(/"baselinePx" must be a number/);

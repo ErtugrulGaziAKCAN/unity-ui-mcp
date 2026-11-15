@@ -485,7 +485,8 @@ describe("captures", () => {
       const s = logicalViewport(vp, [2560, 1440], 0.5).scale;
       const d = await openDesign(fx("text.html"), kit, vp, browser);
       let b: CaptureBoxes;
-      try { b = await runCapture(d, text.ir, job({ viewport: vp }), tmp(), text.elements); } finally { await d.close(); }
+      const dir = tmp();
+      try { b = await runCapture(d, text.ir, job({ viewport: vp }), dir, text.elements); } finally { await d.close(); }
       // one word per line at 32px with line-height 0.7, 0.8, 0.9: neighbouring text boxes overlap, still 4 lines one line-height apart
       for (const [id, lh] of [["lh7", 0.7], ["lh8", 0.8], ["lh9", 0.9]] as const) {
         const lines = b.elements[id].lines;
@@ -497,6 +498,35 @@ describe("captures", () => {
       // an ellipsis line is one line, with the laid-out width of the whole text
       expect(b.elements.ellipsis.lines).toHaveLength(1);
       expect(b.elements.ellipsis.lines[0].w).toBeGreaterThan(b.elements.ellipsis.w);
+      // where Chromium put the ellipsis (ruling R146): the line's ink ends within the ellipsis's advance after `at`, so the
+      // recorded cut is the drawn one, also where the kept prefix's advance includes the kerning with the dropped "o"
+      // ("Weekly T…", where the prefix measured alone would not fit), with letter-spacing (none on the ellipsis: "Weekl…")
+      // and in a box narrower than one letter (the first letter stays: "W" and no ellipsis drawn past it)
+      const png = decodePng(fs.readFileSync(path.join(dir, `${b.capture}.png`)));
+      const inkRight = (id: string) => {
+        const e = b.elements[id], l = e.lines[0];
+        let right = -1;
+        for (let y = Math.floor(l.y); y < Math.ceil(l.y + l.h); y++) for (let x = Math.floor(e.x); x < Math.ceil(e.x + e.w); x++)
+          if (Math.max(...png.px(x, y).map((v, k) => Math.abs(v - [0x0b, 0x1f, 0x26][k]))) > 40) right = Math.max(right, x + 1);
+        return right;
+      };
+      for (const id of ["ellipsis", "cut-kern", "cut-spaced"]) {
+        const cut = b.elements[id].lines[0].ellipsis;
+        expect(cut, `${id} at ${vp[0]}`).toBeDefined();
+        const right = inkRight(id);
+        expect(right, `${id} at ${vp[0]}: ink ends after the ellipsis starts`).toBeGreaterThan(cut!.at + cut!.width * 0.4);
+        expect(right, `${id} at ${vp[0]}: ink ends within the ellipsis's advance`).toBeLessThanOrEqual(cut!.at + cut!.width + 1);
+        expect(cut!.next).toBeGreaterThan(0);
+        expect(cut!.last).toBeGreaterThan(0);
+      }
+      const kern = b.elements["cut-kern"], spaced = b.elements["cut-spaced"];
+      expect(kern.lines[0].ellipsis!.at - kern.x, "Weekly T").toBeGreaterThan(80 * s);
+      expect(spaced.lines[0].ellipsis!.at - spaced.x, "Weekl + its spacing").toBeGreaterThan(70 * s);
+      const narrow = b.elements["cut-narrow"].lines[0].ellipsis;
+      expect(narrow, "a box narrower than its first letter keeps it").toBeDefined();
+      expect(narrow!.at - b.elements["cut-narrow"].x).toBeCloseTo(narrow!.last, 5);
+      // a line that fits, wraps or is clipped without an ellipsis records none
+      for (const id of ["lh7", "clamp", "mixed", "glow"]) for (const l of b.elements[id].lines) expect(l.ellipsis, id).toBeUndefined();
       // regular, bold and a larger span share the first line's baseline
       const mixed = b.elements.mixed.lines;
       expect(mixed).toHaveLength(2);

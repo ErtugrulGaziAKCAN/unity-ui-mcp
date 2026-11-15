@@ -331,7 +331,7 @@ export function itemSuffix(item: readonly number[]): string {
   return out;
 }
 
-type LineBox = { x: number; y: number; w: number; h: number; baseline: number; mixed?: boolean };
+type LineBox = { x: number; y: number; w: number; h: number; baseline: number; mixed?: boolean; ellipsis?: { at: number; last: number; next: number; width: number } };
 type ElBox = { x: number; y: number; w: number; h: number; visible: boolean; text: boolean; rotation?: number; lines: LineBox[]; color?: [number, number, number, number]; opacity?: number;
   paints?: boolean; shadow?: { x: number; y: number; w: number; h: number } };
 /**
@@ -451,6 +451,47 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
     for (const s of shadowsOf(cs.textShadow)) if (s.alpha > 0) cast(s, 0);
     return { paints, reach };
   };
+  /**
+   * Where Chromium places the ellipsis of a text element whose one line it cuts (ruling R146), in CSS px of the viewport: `at`
+   * the end of the kept prefix (its advance inside the whole line, so the kerning with the first dropped grapheme counts),
+   * `last` and `next` the in-line advances of the last kept and the first dropped grapheme, `width` the ellipsis's own
+   * advance (no letter-spacing). Chromium keeps the longest prefix of whole graphemes whose in-line end plus that width fits
+   * the content box, at least the first grapheme (CSS Overflow: the first character of a line is clipped, not ellipsed).
+   * Null when the element does not cut its line: no `text-overflow: ellipsis`, a visible overflow, a line that wraps or fits,
+   * right-to-left text, or text with a nested IR element.
+   */
+  const ellipsisOf = (el: Element, texts: Text[]) => {
+    const cs = getComputedStyle(el);
+    if (cs.textOverflow !== "ellipsis" || cs.overflowX === "visible" || cs.direction !== "ltr" || !texts.length) return null;
+    const clusters: { l: number; r: number }[] = [];
+    const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    const range = document.createRange();
+    for (const n of texts) {
+      for (const g of seg.segment(n.data)) {
+        range.setStart(n, g.index);
+        range.setEnd(n, g.index + g.segment.length);
+        const rs = Array.from(range.getClientRects()).filter((r) => r.width > 0);
+        if (!rs.length) continue; // collapsed white space
+        clusters.push({ l: Math.min(...rs.map((r) => r.left)), r: Math.max(...rs.map((r) => r.right)) });
+      }
+    }
+    if (clusters.length < 2) return null;
+    const b = el.getBoundingClientRect(), own = (el as HTMLElement).offsetWidth;
+    const k = own > 0 ? b.width / own : 1; // a transform's scale: the rects are drawn, the styles are layout px
+    const right = b.right - (parseFloat(cs.borderRightWidth) + parseFloat(cs.paddingRight)) * k;
+    if (clusters[clusters.length - 1].r <= right + 1e-3) return null; // it fits: no ellipsis
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx) return null;
+    // the canvas shorthand takes no percentage stretch: style, weight, size and family (a stretched face is out of scope)
+    ctx.font = "1px monospace";
+    ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    if (ctx.font === "1px monospace") return null; // the font did not parse
+    const width = ctx.measureText("\u2026").width * k;
+    let kept = 1;
+    while (kept < clusters.length && clusters[kept].r + width <= right + 1e-3) kept++;
+    const last = clusters[kept - 1], next = clusters[kept];
+    return { at: last.r, last: last.r - last.l, next: next.r - next.l, width };
+  };
   const out: [string, ElBox][] = [];
   for (const [id, i, isText] of arg.items) {
     const el = els[i];
@@ -486,7 +527,10 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
           return NodeFilter.FILTER_ACCEPT;
         },
       });
+      const texts: Text[] = [];
+      let nested = false;
       for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        texts.push(n as Text);
         const range = document.createRange();
         range.selectNodeContents(n);
         const pe = n.parentElement!, cs = getComputedStyle(pe);
@@ -504,6 +548,10 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
         else lines.push({ ...f });
       }
       box.lines = lines.sort((p, q) => p.base - q.base).map((x) => ({ x: dev(x.l), y: dev(x.t), w: dev(x.r - x.l), h: dev(x.b - x.t), baseline: dev(x.base), ...(x.mixed ? { mixed: true } : {}) }));
+      // a cut line's ellipsis (ruling R146): only for one line of the element's own text
+      for (const x of Array.from(el.querySelectorAll("*"))) if (irEls.has(x)) nested = true;
+      const cut = box.lines.length === 1 && !nested ? ellipsisOf(el, texts) : null;
+      if (cut) box.lines[0].ellipsis = { at: dev(cut.at), last: dev(cut.last), next: dev(cut.next), width: dev(cut.width) };
     }
     out.push([id, box]);
   }

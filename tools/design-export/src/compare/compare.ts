@@ -63,14 +63,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Rgba } from "../bake/png.js";
-import type { CaptureBoxes } from "../boxes/types.js";
+import type { CaptureBoxes, LineEllipsis } from "../boxes/types.js";
 import { validateBoxes } from "../boxes/validate.js";
 import type { CaptureApply, CaptureJob } from "../capture/matrix.js";
 import { viewportClassOf, type ViewportClass } from "../viewport.js";
 import { deltaE2000, hex } from "./color.js";
 import { captureContext, indexIr, type CaptureContext, type IrIndex } from "./context.js";
 import { decodePngAsync, encodePngAsync } from "./png.js";
-import { bestDeltaE, bestDeltaEKept, borderWidths, endShift, flatAt, inkIn, nearCurve, paintedRect, ringPoints, type Ink, type RingPoint } from "./samples.js";
+import { bestDeltaE, bestDeltaEKept, borderWidths, ellipsisCut, endShift, flatAt, inkIn, nearCurve, paintedRect, ringPoints, type Ink, type RingPoint } from "./samples.js";
 import { blockSsimMap, maskRects, regionSsim, regionSsimShifted, regionSsimShiftedBlocks, unionRect, wholeSsim, type Rect } from "./ssim.js";
 
 export type { CaptureContext } from "./context.js";
@@ -201,6 +201,17 @@ export interface Thresholds {
    */
   textInkDirection: number;
   /**
+   * How many graphemes an ellipsized line's kept prefix may differ by from the design's (ruling R146): 0 (off) at exact
+   * viewports, where UI Toolkit's own elision cuts where Chromium does; the scaled block holds 1, where UI Toolkit decides the
+   * cut under the root scale and keeps one grapheme more or fewer within about an advance of the threshold. Only on a line
+   * the design cuts with an ellipsis (boxes `ellipsis`) and Unity ends in the design's ellipsis glyph (its column profile
+   * within ELLIPSIS_SHAPE and its ink amount within the line's band): the line's ink end may then lie up to the advance of the
+   * design's first dropped grapheme (one more) or last kept one (one fewer) plus `boxPx` from the design's; its start,
+   * baseline and ink colour keep their limits, and its ink amount is measured over the part both draw (the prefix up to the
+   * earlier cut, and the ellipsis).
+   */
+  ellipsisGraphemes: number;
+  /**
    * Measured limits for captures at scaled viewports (fidelity-thresholds.json `scaled`), which replace the file's own
    * values there; never the geometry limits. Absent: scaled viewports use the same thresholds.
    */
@@ -212,7 +223,7 @@ export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.
 const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage",
   "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater", "textInkSmallPx", "textInkDeltaEFirstSmall", "textInkMedianToleranceSmall", "textInkShadowHigh",
   "ssimRotated", "ssimRoundEdge", "deltaE2000RoundEdge", "deltaE2000Ring", "ssimFractionalEdge", "ssimVectorEdge", "deltaE2000FractionalEdge",
-  "ssimResampledPicture", "deltaE2000ResampledPicture", "textInkDirection"] as const;
+  "ssimResampledPicture", "deltaE2000ResampledPicture", "textInkDirection", "ellipsisGraphemes"] as const;
 /** No measured policy may accept an element SSIM below this. */
 export const SSIM_FLOOR = 0.97;
 /**
@@ -260,6 +271,16 @@ export const HAIRLINE_PEAK = 0.5;
  */
 export const HAIRLINE_MAX_PX = 12;
 export const HAIRLINE_INK_BAND: readonly [number, number] = [0.5, 2];
+/**
+ * How far an ellipsized line's ellipsis may differ from the design's for the one-grapheme allowance of ruling R146 to apply
+ * (Unity must end the line in the design's ellipsis glyph): the shape, as the L1 difference of the column profiles over the
+ * design's ellipsis mass, each scaled to the design's mass (ellipsisCut), and the ink amount, Unity's over the design's.
+ * Measured on the fidelity suite's two ellipsized lines at all six viewports with the dots drawn right: shape 0.07–0.34,
+ * amount 1.07–1.30 (Unity's dots are a little heavier); a letter where the dots are 0.65–1.30 and 3.5–4.1, the wrong glyph
+ * a twin without U+2026 drew (a curve) 0.89–1.67. Limits: shape 0.45, amount 0.8–1.6.
+ */
+export const ELLIPSIS_SHAPE = 0.45;
+export const ELLIPSIS_AMOUNT: readonly [number, number] = [0.8, 1.6];
 
 /** The angle in degrees between two colour directions. */
 function angleBetween(p: readonly number[], q: readonly number[]): number {
@@ -337,6 +358,10 @@ function checkThresholds(raw: Record<string, unknown>, file: string, scaled = fa
   if (scaled && !(resampledDe >= (raw.deltaE2000 as number))) throw new Error(`${file}: "deltaE2000ResampledPicture" must be at least deltaE2000`);
   // ruling R138: a hairline line's colour direction, in degrees
   if (!((raw.textInkDirection as number) > 0 && (raw.textInkDirection as number) <= 10)) throw new Error(`${file}: "textInkDirection" must lie above 0 and at most 10 (degrees)`);
+  // ruling R146: an ellipsized line's cut may differ by one grapheme at scaled viewports only
+  const graphemes = raw.ellipsisGraphemes as number;
+  if (!scaled && graphemes !== 0) throw new Error(`${file}: "ellipsisGraphemes" must be 0 (off): only "scaled" may allow a cut one grapheme off`);
+  if (scaled && graphemes !== 0 && graphemes !== 1) throw new Error(`${file}: "ellipsisGraphemes" must be 0 or 1`);
   // ruling R126: the scaled class's small-text ink colour limit has a cap
   if (scaled && (raw.textInkDeltaEFirstSmall as number) > SCALED_SMALL_INK_CAP) throw new Error(`${file}: "textInkDeltaEFirstSmall" may not exceed ${SCALED_SMALL_INK_CAP}`);
   return {
@@ -486,6 +511,11 @@ export interface ElementRow {
   inkDirection?: number | null;
   /** Largest move of a text line's ink extent over the lines (left edge, right edge or width), device px. */
   inkExtent: number | null;
+  /**
+   * The shift of Unity's ellipsis against the design's (device px, +: Unity keeps more) on an ellipsized line whose kept
+   * prefix differs by one grapheme at a scaled viewport (ruling R146); absent when no line took that allowance.
+   */
+  ellipsisCut?: number;
   /** `<design>/<Unity>` line counts; "not compared" for text without DOM lines. */
   lines: string | null;
 }
@@ -825,7 +855,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   const rowOf = new Map<string, ElementRow>();
   let maxBox: { id: string; px: number } | null = null;
   const compared: string[] = [];
-  type TextBox = { lines: readonly (Rect & { baseline: number; mixed?: boolean })[] };
+  type TextBox = { lines: readonly (Rect & { baseline: number; mixed?: boolean; ellipsis?: LineEllipsis })[] };
   /** A text's line count and baselines (an IR element's, or its copy's in a later repeat item, `key` naming it). */
   const lineCheck = (key: string, ge: TextBox & Rect, ue: TextBox, row: ElementRow) => {
     if (!ge.lines.length) { row.lines = "not compared"; linesNotCompared.push(key); return; }
@@ -1265,12 +1295,23 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         const b = inkIn(up, win, hidden ?? undefined);
         // the ink's horizontal extent: spacing, kerning or alignment moves it inside a box of the right size (geometry:
         // the box limit, whatever the text size)
+        let common: number | null = null;
         if (b) {
           // where Unity's first and last glyphs sit against the design's: the ink profile near each end (an em, or half
           // the line) matched to the design's, so stroke thickness and anti-aliasing (renderer differences) do not count
           const em = Math.max(1, Math.min(gl.h, (a.right - a.left) / 2));
           const dl = endShift(a, b, a.left, a.left + em, b.left - a.left), dr = endShift(a, b, a.right - em, a.right, b.right - a.right);
-          const dw = dr - dl, worst = Math.max(Math.abs(dl), Math.abs(dr), Math.abs(dw));
+          const dw = dr - dl;
+          let worst = Math.max(Math.abs(dl), Math.abs(dr), Math.abs(dw));
+          // ruling R146 (scaled viewports): Unity keeps one grapheme more or fewer before the design's ellipsis; its start is
+          // judged as before, its ellipsis must be the design's glyph, and its end may move by that grapheme's advance
+          const cut = gl.ellipsis && t.ellipsisGraphemes >= 1 && worst > t.boxPx + GEOMETRY_EPS && Math.abs(dl) <= t.boxPx + GEOMETRY_EPS ? ellipsisCut(a, b, gl.ellipsis) : null;
+          if (cut && cut.shape <= ELLIPSIS_SHAPE + EPS && cut.amount >= ELLIPSIS_AMOUNT[0] - EPS && cut.amount <= ELLIPSIS_AMOUNT[1] + EPS &&
+              cut.shift <= gl.ellipsis!.next + t.boxPx + GEOMETRY_EPS && cut.shift >= -(gl.ellipsis!.last + t.boxPx) - GEOMETRY_EPS) {
+            worst = Math.abs(dl);
+            common = cut.common;
+            row.ellipsisCut = r6(cut.shift);
+          }
           if (!wX || worst > wX.worst) wX = { i, dl, dr, dw, worst };
         }
         // a hairline line (rulings R138, R141): its lightness measures coverage; its ink's colour direction is judged, and its
@@ -1287,7 +1328,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           if (off > EPS && (!wAmount || off > Math.max(HAIRLINE_INK_BAND[0] - wAmount.ratio, wAmount.ratio - HAIRLINE_INK_BAND[1]))) wAmount = { ratio, i };
           return;
         }
-        inkLines.push({ id: key, i, n: ge.lines.length, ratio: b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null, at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow: !!ctx.textShadows?.has(id) });
+        inkLines.push({ id: key, i, n: ge.lines.length, ratio: common ?? (b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null), at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow: !!ctx.textShadows?.has(id) });
         if (b) {
           const de = deltaE2000(a.ink, b.ink), limit = inkColourLimit(t, px, i);
           maxDe = Math.max(maxDe, de);
@@ -1299,6 +1340,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         const x = wX as { i: number; dl: number; dr: number; dw: number; worst: number };
         row.inkExtent = r6(x.worst);
         if (x.worst > t.boxPx + GEOMETRY_EPS) {
+          // a line that took no allowance: its whole extent is judged
           issue(key, "inkExtent", `line ${x.i + 1} of ${ge.lines.length}: text ink left Δ ${fmt(x.dl)} px, right Δ ${fmt(x.dr)} px, width Δ ${fmt(x.dw)} px (limit ±${t.boxPx} px)`, ge.lines[x.i]);
         }
       }

@@ -347,6 +347,33 @@ export function endShift(design: Ink, unity: Ink, from: number, to: number, arou
   return best;
 }
 
+/**
+ * An ellipsized line whose cut may differ by one grapheme (ruling R146): where Unity's ellipsis sits against the design's
+ * and whether it is the design's ellipsis. `e` is the design's cut (boxes `ellipsis`, device px). Unity's ellipsis is found
+ * by matching the column profile of the design's ellipsis ink (from `e.at` to the end of the line's ink) to Unity's near the
+ * end of its ink (endShift, ±1 px around the ink extents' difference). Returns that shift (+: Unity keeps more), the
+ * ellipsis's shape error (the profiles' L1 difference over the design's ellipsis mass, each scaled to the design's mass) and
+ * its ink amount (Unity's over the design's), and the ink amount of the part both lines draw (the prefix up to the earlier
+ * of the two cuts, plus the ellipsis). Null when the design has no ellipsis ink after `e.at`.
+ */
+export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: number }): { shift: number; shape: number; amount: number; common: number } | null {
+  const from = Math.floor(e.at), to = Math.ceil(Math.max(design.right, e.at + 1));
+  let massA = 0;
+  for (let x = from; x < to; x++) massA += columnAt(design, x + 0.5);
+  if (!(massA > 0)) return null;
+  const shift = endShift(design, unity, e.at, to, unity.right - design.right, 1);
+  let massB = 0;
+  for (let x = from; x < to; x++) massB += columnAt(unity, x + 0.5 + shift);
+  const k = massB > 0 ? massA / massB : 0;
+  let diff = 0;
+  for (let x = from - 1; x < to + 1; x++) diff += Math.abs(columnAt(design, x + 0.5) - k * columnAt(unity, x + 0.5 + shift));
+  // the prefix both draw: up to the earlier cut, at the same place on both sides
+  const end = e.at + Math.min(0, shift);
+  let preA = 0, preB = 0;
+  for (let x = Math.min(design.x0, unity.x0); x < Math.floor(end); x++) { preA += columnAt(design, x + 0.5); preB += columnAt(unity, x + 0.5); }
+  return { shift, shape: diff / massA, amount: massB / massA, common: (preB + massB) / Math.max(preA + massA, 1e-9) };
+}
+
 /** The colour of an image at a point between pixel centres (a pixel's centre is at x + 0.5), bilinear, clamped to the image. */
 function bilinear(img: Rgba, x: number, y: number): Rgb3 {
   const fx = x - 0.5, fy = y - 0.5, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
