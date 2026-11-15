@@ -11,7 +11,7 @@ import type { CaptureJob } from "../src/capture/matrix.js";
 import { deltaE2000, deltaE2000Lab, isTransparentColor } from "../src/compare/color.js";
 import { classLines, compareCapture, compareScreen, cornerInRoundBand, inkColourLimit, readThresholds, summarizeIssues, thresholdsFor, WHOLE, type CaptureContext, type CaptureVerdict, type Thresholds } from "../src/compare/compare.js";
 import { captureContext, indexIr } from "../src/compare/context.js";
-import { flatAt, nearCurve, ringPoints, type RingPoint } from "../src/compare/samples.js";
+import { flatAt, inkIn, nearCurve, ringPoints, type RingPoint } from "../src/compare/samples.js";
 import { decodePngAsync, encodePng } from "../src/compare/png.js";
 import { writeReport, writeVerdict } from "../src/compare/report.js";
 import { MAX_THUMB_CAPTURES, writeReportPictures } from "../src/compare/pictures.js";
@@ -191,6 +191,21 @@ describe("compareCapture", () => {
     expect(narrow.issues[0].detail).toBe("line 1 of 1: text ink left Δ +0.00 px, right Δ -4.00 px, width Δ -4.00 px (limit ±1 px)");
     expect(off.elements.find((r) => r.id === "label")?.inkExtent).toBe(2);
     expect(compareCapture(g, g, [], T).elements.find((r) => r.id === "label")?.inkExtent).toBe(0);
+  });
+
+  it("weighs a line's ink against its background where it is: the same text at either end of a gradient has the same ink (review finding 4)", () => {
+    // low-contrast stripes 40 levels above a horizontal 60-level gradient: on the plane each stripe is equally far from its
+    // background, so its weight must not depend on where it sits against the window's median
+    const at = (x: number) => {
+      const png = canvas(300, 40, [0, 0, 0]);
+      for (let xx = 0; xx < 300; xx++) { const v = Math.round(40 + 60 * xx / 299); fill(png, { x: xx, y: 0, w: 1, h: 40 }, [v, v, v]); }
+      for (let xx = x; xx < x + 40; xx += 2) { const v = Math.round(40 + 60 * xx / 299) + 40; fill(png, { x: xx, y: 10, w: 1, h: 20 }, [v, v, v]); }
+      return inkIn(png, { x: 0, y: 0, w: 300, h: 40 })!;
+    };
+    const left = at(10), right = at(250);
+    expect(right.coverage / left.coverage).toBeCloseTo(1, 1);
+    // the colour direction from the background is the ink's own, wherever it sits
+    expect(Math.abs(left.dirSrgb[0] / left.coverage - right.dirSrgb[0] / right.coverage)).toBeLessThan(2);
   });
 
   it("measures a line's ink against its background where it is: a later element's shadow over the line is no ink; a shorter text still fails", () => {

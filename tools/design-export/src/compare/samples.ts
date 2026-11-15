@@ -341,7 +341,13 @@ export function inkIn(img: Rgba, r: Rect, hidden?: (x: number, y: number) => boo
   const ink = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
   for (const k of top) { const o = off[k]; ink[0][d[o]]++; ink[1][d[o + 1]]++; ink[2][d[o + 2]]++; }
   const inkC: Rgb3 = [medianOf(ink[0], top.length), medianOf(ink[1], top.length), medianOf(ink[2], top.length)];
-  const inkD = Math.max(1, Math.abs(0.299 * inkC[0] + 0.587 * inkC[1] + 0.114 * inkC[2] - bgL));
+  // the ink's distance from the background: against the plane where it varies (review finding 4: each pixel's weight is its
+  // distance over this, so both must be measured from the same background), against the median where it is flat
+  const topD = plane ? top.map((k) => Math.abs(dlOf(k))).sort((p, q) => p - q) : null;
+  const inkD = Math.max(1, topD ? topD[topD.length >> 1] : Math.abs(0.299 * inkC[0] + 0.587 * inkC[1] + 0.114 * inkC[2] - bgL));
+  // each pixel's background colour: the median colour moved by the plane's luma there (a flat background: the median)
+  const bgLuma = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2];
+  const bgShift = plane ? (k: number) => plane(k) - bgLuma : () => 0;
   let coverage = 0;
   const cols = new Float64Array(x1 - x0);
   const dists = new Float64Array(side.length);
@@ -355,7 +361,8 @@ export function inkIn(img: Rgba, r: Rect, hidden?: (x: number, y: number) => boo
     cols[(off[k] / 4) % img.w - x0] += wgt;
     pixels.x[j] = (off[k] / 4) % img.w; pixels.y[j] = Math.floor(off[k] / 4 / img.w); pixels.w[j] = wgt;
     const o = off[k];
-    for (let c = 0; c < 3; c++) dirSrgb[c] += d[o + c] - bg[c];
+    const sh = bgShift(k);
+    for (let c = 0; c < 3; c++) dirSrgb[c] += d[o + c] - (bg[c] + sh);
   });
   return { bg, ink: inkC, coverage, ...extent(cols, x0), columns: cols, x0, dists, dirSrgb, pixels };
 }
