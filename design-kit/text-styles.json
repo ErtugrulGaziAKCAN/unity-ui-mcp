@@ -1,8 +1,8 @@
 {
-  "caption": { "fontSize": 12, "lineHeight": 16, "weight": 400 },
-  "caption-bold": { "fontSize": 12, "lineHeight": 16, "weight": 700 },
-  "label": { "fontSize": 16, "lineHeight": 20, "weight": 400 },
-  "label-bold": { "fontSize": 16, "lineHeight": 20, "weight": 700 },
+  "caption": { "fontSize": 20, "lineHeight": 28, "weight": 400 },
+  "caption-bold": { "fontSize": 20, "lineHeight": 28, "weight": 700 },
+  "label": { "fontSize": 20, "lineHeight": 24, "weight": 400 },
+  "label-bold": { "fontSize": 20, "lineHeight": 24, "weight": 700 },
   "body": { "fontSize": 24, "lineHeight": 32, "weight": 400 },
   "body-bold": { "fontSize": 24, "lineHeight": 32, "weight": 700 },
   "subtitle": { "fontSize": 32, "lineHeight": 40, "weight": 400 },

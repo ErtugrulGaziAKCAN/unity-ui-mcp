@@ -239,7 +239,9 @@ sync warn once about the kit's text styles under 10 device px at the smallest vi
 caption, 12 px → 6 device px, and label, 16 px → 8), naming each style, its device size and the smallest style that stays
 readable, and RULES.md notes them under the text styles. It is a prompt to keep such styles for secondary text, never an
 error. A first version warned per design (lint W-TXT-001): the kit's own label is under the line, so it fired on nearly
-every screen and taught users to ignore warnings; it is no longer a lint rule.
+every screen and taught users to ignore warnings; it is no longer a lint rule. Replaced (section 9, decision): no text
+may draw below 9 device px at a declared viewport; kit build refuses a style below it and lint U-FONT-004 names each text
+below it, and the kit's smallest styles are 20 px.
 
 ## 8. Text with a blurred shadow
 
@@ -305,6 +307,30 @@ device px at the smallest viewport), the limits stay, and the fidelity fixtures 
 device px or more (`half-pixel-frame`). What remains is a design decision: no text under 9 device px at an exact
 viewport (the 16 px label is 8 at 1280×720: a larger style there), a measured 8 px colour limit (later lines already
 take 6 at 8 px), or 1280×720 without a pixel verdict for such text.
+
+**Decision (2026-11-15): a readable-text floor.** The game-industry practice: no text draws below a readable minimum,
+instead of looser checks for tiny text. No text may draw below 9 device px at any declared viewport, exact or scaled.
+
+- *Measured first, at 1280×720.* A kit copy with the caption and label styles at 18 px (9 device px there; 2560×1440 and
+  1280×720 only, the 18 px size being whole device px at both), 8 fixtures and 6 components through the suite (362
+  captures): 135 text elements drawn at 9 device px, ink colour ΔE2000 median 1.53, p90 2.91, max 4.29 against the
+  exact-class limit 4.5 (first lines of text under 12 device px), ink amount 0.931–1.384 (median 0.977); the only ink
+  issues were one pre-wrap line of `text-spacing` whose wrapping the 18/22 copy changed, failing at 2560×1440 as well. At
+  12 device px (body) the max was 2.28. So 9 device px meets the existing limits and the floor stays at 9 (the limits
+  stay as they are).
+- *The floor in design pixels* is 9 over the smallest declared viewport's scale: 18 px with the default viewports (9
+  device px at 1280×720, 9.6 at 1366×768). The kit's sizes are whole device px at every exact viewport (multiples of 4
+  with 0.75), so the kit's smallest styles are 20 px: caption 20/28 and label 20/24, each with the multiple of 4 nearest
+  its own line-height ratio (4:3 → 7:5, 5:4 → 6:5); every other style is unchanged.
+- *Lint U-FONT-004* (error) names each text whose font size times the scale its transforms keep it at (now and in a
+  state; not an animation's passing frames) times a declared viewport's scale is below 9 device px: the element, its
+  text style, the viewports, the drawn size and the minimum design size. It replaces the kit's readability warning (kit
+  build and kit sync no longer warn). *Kit build* (and `kit build --check`, and the Claude export) refuses a kit text
+  style below the floor at any declared viewport; RULES.md and the published Design System state the minimum.
+- The fidelity fixtures' text rose with the kit (the 8 px `stacked-text` case at 1280×720 and the 8.54 / 6.4 px label and
+  caption text at 1366×768 are gone; the calendar cards of `repeat-items` grew to 56 px for their two lines). The ink
+  scatter of 12.8 px body text at 1366×768 is a separate case and stays reported as it is
+  (docs/findings/viewport-classes.md, "Text ink at 1366×768").
 
 ## Reproduction
 

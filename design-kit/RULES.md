@@ -35,7 +35,7 @@ When a screen is drawn in Claude Design, the kit is attached as a Design System 
 *, *::before, *::after { box-sizing: border-box; }
 body { margin: 0; }
 body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, a, label, section, header, footer, nav, main, aside, article, button, input, textarea, select, img, svg { margin: 0; padding: 0; border: 0; }
-body { font-family: var(--font-ui); font-size: 16px; line-height: 20px; font-weight: 400; color: var(--color-text-primary); }
+body { font-family: var(--font-ui); font-size: 20px; line-height: 24px; font-weight: 400; color: var(--color-text-primary); }
 h1, h2, h3, h4, h5, h6 { font-size: inherit; line-height: inherit; font-weight: inherit; }
 b, strong { font-weight: 700; }
 ul, ol { list-style: none; }
@@ -43,10 +43,10 @@ a { color: inherit; text-decoration: none; }
 button, input, textarea, select { appearance: none; background-color: transparent; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; word-spacing: inherit; text-align: inherit; }
 textarea { resize: none; }
 ::placeholder { color: var(--color-text-muted); }
-.text-caption { font-size: 12px; line-height: 16px; font-weight: 400; }
-.text-caption-bold { font-size: 12px; line-height: 16px; font-weight: 700; }
-.text-label { font-size: 16px; line-height: 20px; font-weight: 400; }
-.text-label-bold { font-size: 16px; line-height: 20px; font-weight: 700; }
+.text-caption { font-size: 20px; line-height: 28px; font-weight: 400; }
+.text-caption-bold { font-size: 20px; line-height: 28px; font-weight: 700; }
+.text-label { font-size: 20px; line-height: 24px; font-weight: 400; }
+.text-label-bold { font-size: 20px; line-height: 24px; font-weight: 700; }
 .text-body { font-size: 24px; line-height: 32px; font-weight: 400; }
 .text-body-bold { font-size: 24px; line-height: 32px; font-weight: 700; }
 .text-subtitle { font-size: 32px; line-height: 40px; font-weight: 400; }
@@ -87,10 +87,10 @@ Every text uses exactly one of these size / line-height / weight combinations (U
 
 | Style | Class | font-size (px) | line-height (px) | font-weight |
 |---|---|---|---|---|
-| caption | `.text-caption` | 12 | 16 | 400 |
-| caption-bold | `.text-caption-bold` | 12 | 16 | 700 |
-| label | `.text-label` | 16 | 20 | 400 |
-| label-bold | `.text-label-bold` | 16 | 20 | 700 |
+| caption | `.text-caption` | 20 | 28 | 400 |
+| caption-bold | `.text-caption-bold` | 20 | 28 | 700 |
+| label | `.text-label` | 20 | 24 | 400 |
+| label-bold | `.text-label-bold` | 20 | 24 | 700 |
 | body | `.text-body` | 24 | 32 | 400 |
 | body-bold | `.text-body-bold` | 24 | 32 | 700 |
 | subtitle | `.text-subtitle` | 32 | 40 | 400 |
@@ -104,7 +104,7 @@ Every text uses exactly one of these size / line-height / weight combinations (U
 
 UI Toolkit cannot set a line height, so the kit's Unity font twins carry each style's CSS line box (whole pixels at every exact viewport): a text block is exactly lines × line height tall on both sides. Weights are 400 and 700 only, each with a real face in the reference locale's font (U-FONT-001); no italic unless the kit font has an italic face. Inside one line of text, `<b>`/`<strong>` and `<span>` with another colour or kit size are rich text; `<br>` breaks the line. The table is `text-styles.json`; every listing of it (this table, the base stylesheet's classes, the design system's type styles) is generated from that file.
 
-Readability: caption and label are under 10 device px at 1280×720: keep them for secondary text (kit build and kit sync warn once).
+Readable-text floor: no text draws below 9 device px at any declared viewport, exact or scaled. The smallest is 1280×720 (scale 0.5), so design text is at least 18px (20px is the smallest size that is whole device px at every exact viewport), also after a transform that scales it down. Lint U-FONT-004 rejects smaller text; kit build rejects a smaller text style.
 
 ## Fonts
 
@@ -418,6 +418,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-FONT-001 | error | a weight or italic without a real face in the reference locale's font | weight 400 or 700 (or add the real face in Unity and kit sync) |
 | U-FONT-002 | error | `@font-face` or FontFace not from the kit | remove it; use the kit fonts |
 | U-FONT-003 | error | glyphs drawn by a platform or non-kit font (character missing in the kit font) | characters the kit font covers |
+| U-FONT-004 | error | text drawn below the readable-text floor (9 device px) at a declared viewport, exact or scaled: its font size times the scale its transforms keep it at times the viewport's scale | a text style of at least the minimum design size (18px with the default viewports), not scaled below it |
 | U-MRK-001 | error | not exactly one `data-u-screen` | one screen root with `data-u-screen` |
 | U-MRK-002 | error | duplicate `data-u-id` | unique ids (each repeat item is its own scope) |
 | U-MRK-003 | error | interactive, bound or action elements, or an element some written-out repeat items hide by markup and others show, without `data-u-id` | add `data-u-id` |

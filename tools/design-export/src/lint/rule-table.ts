@@ -88,6 +88,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-FONT-001": { when: "a weight or italic without a real face in the reference locale's font", fix: "weight 400 or 700 (or add the real face in Unity and kit sync)" },
   "U-FONT-002": { when: "`@font-face` or FontFace not from the kit", fix: "remove it; use the kit fonts" },
   "U-FONT-003": { when: "glyphs drawn by a platform or non-kit font (character missing in the kit font)", fix: "characters the kit font covers" },
+  "U-FONT-004": { when: "text drawn below the readable-text floor (9 device px) at a declared viewport, exact or scaled: its font size times the scale its transforms keep it at times the viewport's scale", fix: "a text style of at least the minimum design size (18px with the default viewports), not scaled below it" },
   "U-MRK-001": { when: "not exactly one `data-u-screen`", fix: "one screen root with `data-u-screen`" },
   "U-MRK-002": { when: "duplicate `data-u-id`", fix: "unique ids (each repeat item is its own scope)" },
   "U-MRK-003": { when: "interactive, bound or action elements, or an element some written-out repeat items hide by markup and others show, without `data-u-id`", fix: "add `data-u-id`" },

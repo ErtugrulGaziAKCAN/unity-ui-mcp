@@ -180,12 +180,16 @@ If the generated view lives under an assembly definition, add `DesignUi.Runtime`
 
 The kit's [RULES.md](design-kit/RULES.md) is the contract (`design_ui_rules` serves it to any AI). In brief:
 
-- **Text styles only.** UI Toolkit has no `line-height`, so every text uses one of the kit text styles (caption 12/16
+- **Text styles only.** UI Toolkit has no `line-height`, so every text uses one of the kit text styles (caption 20/28
   to display 64/80 px, 400 or 700). Their sizes and line heights are multiples of 4 px, whole device pixels at every
   exact viewport, and the font twins carry each style's CSS line box: a text block is exactly lines × line height on
   both sides. A text that does not wrap (`white-space: nowrap`, its lines its `<br>`s, kept by every translation) gets
   exactly that height, so it adds no text-height drift to the labels stacked below it; a bound text or one with
   arguments keeps its measured height. Translations of such a text must keep its line count.
+- **A readable minimum.** No text draws below 9 device px at any declared viewport, exact or scaled (the game-industry
+  practice of a minimum readable size, instead of looser checks for tiny text): with the default viewports design text
+  is at least 18 px (9 device px at 1280×720, 9.6 at 1366×768), and the kit's smallest styles are 20 px. Lint U-FONT-004
+  rejects a text below it (with the scale its transforms keep it at); kit build rejects a text style below it.
 - **Grayscale font smoothing** on the root (the base stylesheet sets it): browsers on macOS otherwise draw thicker
   stems than UI Toolkit.
 - **Borders and lines on the device grid.** A border, hard shadow edge or line under 8 px must stay whole at every

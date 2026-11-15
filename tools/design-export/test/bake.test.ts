@@ -420,7 +420,7 @@ const byId = (root: IrNode, id: string) => flat(root).find((x) => x.id === id)!;
 /** A one-screen design page with the kit's base text style and the given CSS and body. */
 const page = (css: string, body: string) => {
   const f = path.join(tmp(), "probe.html");
-  fs.writeFileSync(f, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0}.screen{display:flex;flex-direction:column;width:2560px;height:1440px;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}p{margin:0}${css}</style></head>` +
+  fs.writeFileSync(f, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0}.screen{display:flex;flex-direction:column;width:2560px;height:1440px;font-family:"Inter UI";font-size:18px;line-height:22px;color:#ffffff;background-color:#0b1f26}p{margin:0}${css}</style></head>` +
     `<body><div class="screen" data-u-screen="probe"><p data-l10n="probe.t" data-en="T">Başlık</p>${body}</div></body></html>`);
   return f;
 };

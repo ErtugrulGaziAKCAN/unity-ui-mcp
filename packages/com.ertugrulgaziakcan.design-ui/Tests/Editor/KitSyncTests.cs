@@ -322,33 +322,17 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(KitConfig, File.ReadAllText(kit + "/kit.config.json"), "nothing written");
         }
 
+        /// <summary>
+        /// The readable-text floor is the exporter's (its kit build refuses a style below it, its lint names each text below
+        /// it): kit sync syncs a table with a style under 9 device px at the smallest viewport without a warning of its own.
+        /// </summary>
         [Test]
-        public void Run_ReadabilityIsJudgedAtTheSmallestViewportOfEitherClass()
-        {
-            var profile = Profile();
-            profile.screenMatch = 0.5f;
-            profile.viewports = new[] { new Vector2Int(2560, 1440) };
-            profile.scaledViewports = new[] { new Vector2Int(1366, 768) };
-            var r = KitSync.Run(profile, Kit(), Resolver(profile));
-            Assert.IsTrue(r.Ok, Errors(r));
-            var small = r.Warnings.Where(w => w.StartsWith("text styles under 10 device px", StringComparison.Ordinal)).ToList();
-            Assert.AreEqual(1, small.Count, string.Join("\n", r.Warnings));
-            StringAssert.StartsWith("text styles under 10 device px at 1366×768", small[0]);
-        }
-
-        [Test]
-        public void Run_WarnsOnceAboutTheTextStylesUnder10DevicePxAtTheSmallestViewport()
+        public void Run_LeavesTheReadableTextFloorToTheExporter()
         {
             var profile = Profile();
             var r = KitSync.Run(profile, Kit(), Resolver(profile));
             Assert.IsTrue(r.Ok, Errors(r));
-            var small = r.Warnings.Where(w => w.StartsWith("text styles under 10 device px", StringComparison.Ordinal)).ToList();
-            Assert.AreEqual(1, small.Count, string.Join("\n", r.Warnings));
-            StringAssert.StartsWith("text styles under 10 device px at 1280×720 (scale 0.5): caption (12px: 6 device px), label-bold (16px: 8 device px). ", small[0]);
-            StringAssert.Contains("use body (24px) or larger", small[0]);
-            // a profile whose smallest viewport keeps every style readable
-            profile.viewports = new[] { new Vector2Int(2560, 1440) };
-            Assert.IsFalse(KitSync.Run(profile, Kit(), Resolver(profile)).Warnings.Any(w => w.StartsWith("text styles under", StringComparison.Ordinal)));
+            Assert.IsFalse(r.Warnings.Any(w => w.Contains("device px at 1280×720") || w.StartsWith("text styles under", StringComparison.Ordinal)), string.Join("\n", r.Warnings));
         }
 
         [Test]
@@ -644,7 +628,6 @@ namespace DesignUi.Editor.Tests
             var ok = DesignUiOps.KitSync(path, kit);
             Assert.AreEqual(0, ok.Code, ok.Log);
             Assert.IsTrue(ok.Warnings.Any(w => w.Contains("Old.ttf")), string.Join("\n", ok.Warnings));
-            Assert.IsTrue(ok.Warnings.Any(w => w.StartsWith("text styles under 10 device px", StringComparison.Ordinal)), string.Join("\n", ok.Warnings));
             CollectionAssert.IsEmpty(ok.Errors);
 
             profile.locales = new[] { "tr", "ja" };

@@ -13,7 +13,9 @@ With the 2560×1440 reference and match 0.5 (Unity's linear blend), the panel sc
 and 0.5. The kit's values are multiples of 4 px, so they are whole device pixels at 1.5, 1, 0.75 and 0.5 (a 0.25 step):
 those are **exact** viewports, held to the kit build, kit sync and lint rules as before (`kit build --check` passes
 with 3840×2160 added). At 0.625 a 4 px border is 2.5 device px and a 12 px font 7.5; at 0.53346 no kit value is whole.
-Those are **scaled** viewports: exempt from the whole-pixel rules, verified with the same limits. Since 2026-11-15 a
+Those are **scaled** viewports: exempt from the whole-pixel rules, verified with the same limits. Both classes hold the
+readable-text floor: no text draws below 9 device px at any declared viewport, 18 px design text with these viewports
+(9 device px at 1280×720 and 9.6 at 1366×768; the kit's smallest styles are 20 px; `text-ink.md` section 9). Since 2026-11-15 a
 screen lays out at an exact scale there and draws scaled (next section); the sections after it record what UI Toolkit does
 when a panel lays a design out at such a scale itself.
 
@@ -223,7 +225,9 @@ the ring's own rows, the not-confined text field's and table's are glyphs.
 
 The scaled class's text-ink failures are at 1366×768: body text (24 px) is 12.8 device px there, ink colour ΔE2000 2.1 to
 3.5 against the limit 2 (text of more than 12 device px), and label text (16 px) 8.54 device px, up to 4.84 against 4.5 (the
-small-text limit; pending a decision on text of about 8 device px, with the 1280×720 8 px case). Measured on five failing
+small-text limit). The label case is gone with the readable-text floor (decision of 2026-11-15, `text-ink.md` section 9):
+no text draws below 9 device px at a declared viewport, the kit's smallest styles are 20 px (10.67 device px here), and
+the 12.8 px body text below stays reported as it is. Measured on five failing
 lines of body text (`card`, `controls`, `half-pixel-frame`, `text-styles`, `text-row`), each at 1280×720 (12 px, exact),
 1920×1080 (18 px, exact) and 1366×768, laid out at 0.5 (drawn ×1.067) and, after the base change, at 0.75 (drawn ×0.711);
 ink colour as the comparison measures it (the median of a line's most inked tenth), edge ramp as the mean run of pixels

@@ -66,8 +66,11 @@ Kit'in Design System'ini canvas'a ekle. Sonra:
   `var(--color-surface-700)`, `var(--space-4)`, `var(--radius-md)`.
 - **Yerleşim yalnız flex ile.** Grid, `calc()`, `vw`/`vh`, float ya da `position: fixed` yok. `gap` yalnız satır
   kaydırmayan kapsayıcılarda. İçeriği küçülmemesi gereken flex elemanlarına açık bir boyut ya da `flex-shrink: 0` ver.
-- **Her metin kit'teki bir yazı stili sınıfını kullanır** (`.text-body`, `.text-title-bold`, …): 12 ile 64 px arası
-  boyutlar, 400 ve 700 kalınlık. Metin kendi elemanında durur. Satırlarında kalması gereken bir etiket
+- **Her metin kit'teki bir yazı stili sınıfını kullanır** (`.text-body`, `.text-title-bold`, …): 20 ile 64 px arası
+  boyutlar, 400 ve 700 kalınlık. **Okunabilir en küçük boyutun altında metin yok:** hiçbir metin, bildirilen hiçbir
+  görünümde 9 cihaz pikselinin altında çizilemez; varsayılan görünümlerle tasarım metni en az 18 px'tir (1280×720'de 9,
+  1366×768'de 9,6 cihaz pikseli) ve kit'in en küçük stilleri (caption 20/28, label 20/24) kit'in 4 px ızgarasında bu
+  sınırdadır. Metni bir dönüşümle de bunun altına küçültme. Lint U-FONT-004 böyle bir metni reddeder. Metin kendi elemanında durur. Satırlarında kalması gereken bir etiket
   `white-space: nowrap` kullanır (satırları `<br>`'leridir); her çeviride aynı satır sayısını koru ki Unity'de tam
   yüksekliğini alsın.
 - **Görünen her metnin bir anahtarı vardır.** Metni referans dilde (kit'te Türkçe) yaz; `data-l10n="club.overview.title"`
@@ -105,7 +108,7 @@ Kit'in Design System'ini canvas'a ekle. Sonra:
 
 > Ekli design system'i kullan ve README'sindeki kurallara uy. Ekran kimliği `club.overview`, tek bir 2560×1440 artboard.
 > Görünen metinleri Türkçe yaz; her metne İngilizce `data-l10n` anahtarı ve `data-en` İngilizce metni ekle. Her butona
-> `data-u-id` ve `data-u-action` ver. Yalnız kit'in yazı stili sınıflarını ve token'larını kullan, yalnız flex yerleşim,
+> `data-u-id` ve `data-u-action` ver. Yalnız kit'in yazı stili sınıflarını (caption'dan küçüğü yok) ve token'larını kullan, yalnız flex yerleşim,
 > grid ya da calc yok. Oyuncu listesini beş örnek satır olarak yaz, ilkine `data-u-repeat="player"` koy. Mevcut üst
 > barı `data-u-external` ile işaretle.
 
@@ -343,6 +346,7 @@ Unity'de: `Window > Design UI > Import Screen…` ve `Window > Design UI > Kit S
 | U-CSS-010 | kit'e ait olmayan bir font | `var(--font-ui)`; kit senkronundan sonra token'ın yeni ailesi |
 | U-CSS-011 | satır kaydıran kapsayıcıda `gap` | öğelere margin |
 | U-CSS-016 | kit yazı stili olmayan bir boyut, satır yüksekliği ya da kalınlık | bir `.text-<stil>` sınıfı |
+| U-FONT-004 | bildirilen bir görünümde (dönüşümleriyle) 9 cihaz pikselinin altında çizilen metin | en az 18 px'lik bir yazı stili (kit'in caption ya da label'ı), küçültülmeden |
 | U-CSS-019 | içeriğinin altına küçülen bir öğe | `flex-shrink: 0` ya da açık bir boyut |
 | U-CSS-038 | gri tonlamalı yumuşatması olmayan metin | kit'in temel stil sayfasını koru |
 | U-CSS-039 | parçaları üst üste binen elemanda 1'den küçük opacity | kit'in disabled renkleri |

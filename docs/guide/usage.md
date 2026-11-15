@@ -67,8 +67,11 @@ Attach the kit's Design System to the canvas. Then:
   `var(--color-surface-700)`, `var(--space-4)`, `var(--radius-md)`.
 - **Layout with flex only.** No grid, `calc()`, `vw`/`vh`, floats or `position: fixed`. `gap` only where items do not
   wrap. Give flex items an explicit size or `flex-shrink: 0` where their content must not shrink.
-- **Text uses a kit text style class** (`.text-body`, `.text-title-bold`, …): sizes from 12 to 64 px, weights 400 and
-  700. Text sits in its own element. A label that must stay on its lines uses `white-space: nowrap` (its lines are its
+- **Text uses a kit text style class** (`.text-body`, `.text-title-bold`, …): sizes from 20 to 64 px, weights 400 and
+  700. **No text below the readable minimum:** nothing may draw below 9 device px at any declared viewport, so with the
+  default viewports design text is at least 18 px (9 device px at 1280×720, 9.6 at 1366×768), and the kit's smallest
+  styles (caption 20/28, label 20/24) sit at that minimum on the kit's 4 px grid. Do not scale text below it with a
+  transform either. Lint U-FONT-004 rejects such text. Text sits in its own element. A label that must stay on its lines uses `white-space: nowrap` (its lines are its
   `<br>`s); keep that line count in every translation, so it gets an exact height in Unity.
 - **Every visible text has a key.** Write the text in the reference locale (Turkish in the kit) and add
   `data-l10n="club.overview.title"` (a meaningful English key) and `data-en="Overview"`. A value inside a sentence is
@@ -105,7 +108,7 @@ A prompt that works well:
 
 > Use the attached design system and follow its README rules. Screen id `club.overview`, one 2560×1440 artboard.
 > Write visible text in Turkish with a `data-l10n` English key and `data-en` English text on every text. Give every
-> button `data-u-id` and `data-u-action`. Use only the kit's text style classes and tokens, flex layout only, no grid
+> button `data-u-id` and `data-u-action`. Use only the kit's text style classes (none smaller than caption) and tokens, flex layout only, no grid
 > or calc. Write the player list out as five sample rows with `data-u-repeat="player"` on the first. Mark the existing
 > top bar `data-u-external`.
 
@@ -341,6 +344,7 @@ In Unity: `Window > Design UI > Import Screen…` and `Window > Design UI > Kit 
 | U-CSS-010 | a font that is not the kit's | `var(--font-ui)`; after a kit sync, the token's new family |
 | U-CSS-011 | `gap` on a wrapping container | margins on the items |
 | U-CSS-016 | a size, line height or weight that is not a kit text style | a `.text-<style>` class |
+| U-FONT-004 | text that draws below 9 device px at a declared viewport (with its transforms) | a text style of at least 18 px (the kit's caption or label), not scaled down |
 | U-CSS-019 | an item that shrinks below its content | `flex-shrink: 0` or an explicit size |
 | U-CSS-038 | text without grayscale smoothing | keep the kit base stylesheet |
 | U-CSS-039 | opacity below 1 on an element with overlapping parts | the kit's disabled colours |

@@ -191,12 +191,15 @@ controls are styled by the compiled kit components.
 `P = fontSize × faceInfo.lineHeight / faceInfo.pointSize` of the font twin, while Chromium makes it `n × line-height`.
 Unity 6000.3 also rounds font sizes to whole device pixels and ceils each text element's height to whole device pixels.
 The font twins therefore carry CSS's line box: `faceInfo.lineHeight = r × pointSize` with the half-leading folded into
-ascent and descent, for two kit ratios, `r = 1.25` (label 16/20, subtitle 32/40, headline 48/60, display 64/80 px, font
-size / line height) and `r = 4/3` (caption 12/16, body 24/32, title 36/48 px). Font sizes and line heights are
+ascent and descent, for the kit's ratios, `r = 1.25` (subtitle 32/40, headline 48/60, display 64/80 px, font size / line
+height), `r = 4/3` (body 24/32, title 36/48 px), and at the readable-text floor's smallest size `r = 1.2` (label 20/24) and
+`r = 1.4` (caption 20/28), each the multiple of 4 nearest the role's own ratio. Font sizes and line heights are
 multiples of 4 px, so both stay whole device pixels at the 0.75 and 0.5 viewport scales too: `P = L`, a text block is
 exactly `n × L` tall with baselines within 0.5 px, and texts stacked in a column add up without drift (a fractional line
-height would be ceiled per text). The kit ships Inter Regular and Bold in these seven sizes; the table is generated from
-the two ratios by `tools/design-export/src/kit/textStyles.ts`. `design-export kit build` and kit sync refuse a table
+height would be ceiled per text). The kit ships Inter Regular and Bold in these six sizes (seven roles); the table is generated from
+the ratios by `tools/design-export/src/kit/textStyles.ts`. No text may draw below 9 device px at a declared viewport
+(the readable-text floor, `TEXT_FLOOR_PX`: 18 px design text with the default viewports): kit build refuses a text style
+below it and lint U-FONT-004 names each text below it, with the scale its transforms keep it at. `design-export kit build` and kit sync refuse a table
 whose font size or line height is not a whole number of device pixels at the scale of any exact viewport (scaled
 viewports, §12, are exempt: the screen lays out at an exact scale there), and kit
 sync builds the twins with the same line box. Lint matches the numbers (U-CSS-016). Every listing of the table (RULES.md,

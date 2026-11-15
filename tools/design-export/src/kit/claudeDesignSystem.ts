@@ -5,7 +5,7 @@ import { readTextStyles, type TextStyle } from "../lint/text-styles.js";
 import { readKitComponents, type KitComponent } from "./components.js";
 import { LICENCE_FILE, readKitFontFiles, type KitFontFile } from "./kitFonts.js";
 import { DEFAULT_TITLE, kitStylesheetFrom, renderRules, tokensCssBlock } from "./rulesDoc.js";
-import { assertWholeDevicePixels } from "./textStyles.js";
+import { assertTextFloor, assertWholeDevicePixels } from "./textStyles.js";
 import { readKitTokens, type KitToken } from "./tokens.js";
 
 /**
@@ -240,6 +240,7 @@ export function writeClaudeDesignSystem(kitDir: string, outDir: string, opts: Cl
   const tokens = readKitTokens(kit);
   const styles = readTextStyles(kit);
   assertWholeDevicePixels(styles, kit);
+  assertTextFloor(styles, kit);
   const components = readKitComponents(kit.dir);
 
   // everything is read and rendered before anything is written

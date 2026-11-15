@@ -6,14 +6,16 @@ import { readTextStyles } from "../lint/text-styles.js";
 import { renderBaseCss, withBaseBlock } from "./baseCss.js";
 import { fontTokenErrors } from "./kitFonts.js";
 import { renderRules } from "./rulesDoc.js";
-import { assertWholeDevicePixels, readabilityWarning } from "./textStyles.js";
+import { assertTextFloor, assertWholeDevicePixels } from "./textStyles.js";
 
 /**
  * Kit build: regenerates what the kit derives from its sources and the lint's data, so nothing drifts:
  * `base.css` (from text-styles.json), `RULES.md` (from the tokens, text styles, components, css-support.json and the
  * rule table) and the kit base block in every component and fixture page. `check` writes nothing and only reports.
- * `warnings` holds what the kit should know once (text styles too small to read at the smallest viewport); `errors` what
- * the build cannot fix and makes the kit unusable (a `--font-*` token naming a family the fonts CSS does not declare).
+ * A text style below the readable-text floor (TEXT_FLOOR_PX device px at a declared viewport) or not whole device px at
+ * an exact viewport throws: the kit is refused. `warnings` holds what the kit should know once (none at present);
+ * `errors` what the build cannot fix and makes the kit unusable (a `--font-*` token naming a family the fonts CSS does
+ * not declare).
  */
 export interface KitBuildResult { changed: string[]; warnings: string[]; errors: string[] }
 
@@ -31,6 +33,7 @@ export function buildKit(kitDir: string, opts: { check?: boolean } = {}): KitBui
   const kit = readKit(kitDir);
   const styles = readTextStyles(kit);
   assertWholeDevicePixels(styles, kit);
+  assertTextFloor(styles, kit);
   const base = renderBaseCss(styles);
   const outputs: [string, string][] = [
     ["base.css", base],
@@ -54,6 +57,5 @@ export function buildKit(kitDir: string, opts: { check?: boolean } = {}): KitBui
     changed.push(rel);
     if (!opts.check) fs.writeFileSync(file, text);
   }
-  const readability = readabilityWarning(styles, kit);
-  return { changed: changed.sort(), warnings: readability ? [readability] : [], errors: fontTokenErrors(kit) };
+  return { changed: changed.sort(), warnings: [], errors: fontTokenErrors(kit) };
 }

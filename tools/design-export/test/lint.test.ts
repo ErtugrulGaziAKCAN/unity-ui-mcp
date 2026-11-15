@@ -102,7 +102,7 @@ describe("lint engine", () => {
   const write = (dir: string, body: string, css = "") => {
     const p = path.join(dir, "s.html");
     fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
-      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff}
+      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;font-family:"Inter UI";font-size:18px;line-height:22px;color:#ffffff}
       p{margin:0}${css}</style></head><body><div class="screen" data-u-screen="s">${body}</div></body></html>`);
     return p;
   };
@@ -322,7 +322,7 @@ describe("device grid, group opacity and stacking rules", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lint-grid-"));
     const p = path.join(dir, "s.html");
     fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
-      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+      .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:18px;line-height:22px;color:#ffffff;background-color:#0b1f26}
       p{margin:0}${css}</style></head><body><div class="screen" data-u-screen="s">${body}</div></body></html>`);
     return { p, done: () => fs.rmSync(dir, { recursive: true }) };
   };
@@ -427,7 +427,7 @@ describe("device grid, group opacity and stacking rules", () => {
     const css = `.b{width:200px;height:80px;flex-shrink:0;background-color:#123c47;animation:a 1s linear infinite} .b.is-still{animation:none} @keyframes a{from{translate:0 0}to{translate:0 4px}}`;
     const page = (await (async () => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lint-none-")); const p = path.join(dir, "s.html");
       fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
-        .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+        .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:18px;line-height:22px;color:#ffffff;background-color:#0b1f26}
         ${css}</style></head><body><div class="screen" data-u-screen="s"><div class="b" data-u-id="b"></div></div></body></html>`);
       return p; })());
     expect(show((await lintFile(page)).filter((f) => f.severity === "error"))).toEqual([]);
@@ -499,6 +499,37 @@ describe("device grid, group opacity and stacking rules", () => {
   });
 });
 
+describe("U-FONT-004: the readable-text floor", () => {
+  it("names the element, its text style, the viewports it draws below 9 device px at and the minimum design size", async () => {
+    const f = (await lintFile(fx("U-FONT-004.fail.html"))).filter((x) => x.ruleId === "U-FONT-004");
+    expect(f.map((x) => `${x.path}: ${x.detail}`)).toEqual([
+      "[data-u-screen=lint.sample] > p:1: text style caption (12px) draws 6 device px at 1280×720: below the readable-text floor of 9 device px; the minimum design size here is 18px",
+    ]);
+    expect(f[0].fix).toMatch(/No text may draw below 9 device px at any declared viewport \(the smallest is 1280×720, scale 0\.5\): use a text style of at least 18px, such as label \(18px \/ 22px, 400\)/);
+  });
+
+  it("counts the scale a transform keeps the text at, also in a state, not in an animation", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "floor-"));
+    const page = (css: string) => {
+      const file = path.join(dir, `p${Math.random().toString(36).slice(2)}.html`);
+      fs.writeFileSync(file, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0}
+        .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:24px;line-height:30px;color:#ffffff;background-color:#0b1f26}
+        p{margin:0} .box{display:flex;flex-direction:column;flex-shrink:0;transform-origin:0 0} ${css}</style></head>
+        <body><div class="screen" data-u-screen="lint.sample"><div class="box" data-u-id="box"><p data-l10n="lint.sample.t" data-en="T">Metin</p></div></div></body></html>`);
+      return file;
+    };
+    const floor = async (css: string) => (await lintFile(page(css))).filter((x) => x.ruleId === "U-FONT-004").map((x) => x.detail);
+    try {
+      // 24 px × 0.5 × 0.5 = 6 device px: the minimum is 36 px under that transform
+      expect(await floor(".box{transform:scale(0.5)}")).toEqual([expect.stringMatching(/^text style body \(24px\), scaled ×0\.5 by its transforms, draws 6 device px at 1280×720: .* the minimum design size here is 36px$/)]);
+      expect(await floor(".box{scale:0.75}")).toEqual([]);
+      // a hover state that shrinks it counts; an animation passing through a small scale does not
+      expect(await floor(".box:hover{scale:0.5}")).toHaveLength(1);
+      expect(await floor("@keyframes pop{from{scale:0.2}to{scale:1}} .box{animation:pop 200ms linear}")).toEqual([]);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
 describe("collectSnapshot", () => {
   it("records paths, matched kit text styles and fonts, and leaves the page as it was", async () => {
     const d = await openDesign(fx("U-CSS-019.fail.html"), kit, [2560, 1440], browser);
@@ -509,7 +540,7 @@ describe("collectSnapshot", () => {
       const title = s.elements.find((e) => e.attrs["data-l10n"] === "lint.sample.title")!;
       expect(title.path).toBe("[data-u-screen=lint.sample] > p:0");
       expect(title.textStyle).toBe("label");
-      expect(title.computed["font-size"]).toBe("16px");
+      expect(title.computed["font-size"]).toBe("18px");
       expect(title.textFonts[0]!.every((f) => f.isCustomFont)).toBe(true);
       const long = s.elements.find((e) => e.attrs["data-l10n"] === "lint.sample.long")!;
       expect(long.minAuto!.axis).toBe("row");
@@ -528,7 +559,7 @@ describe("collectSnapshot", () => {
         `<p data-l10n="big.role" data-en="Role">Rol</p><div class="dot"></div></div>`).join("\n");
       const p = path.join(dir, "big.html");
       fs.writeFileSync(p, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0} *,*::before,*::after{box-sizing:border-box}
-        .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+        .screen{display:flex;flex-direction:column;width:2560px;height:1440px;overflow:hidden;font-family:"Inter UI";font-size:18px;line-height:22px;color:#ffffff;background-color:#0b1f26}
         .list{display:flex;flex-direction:column;flex-shrink:0} .row{display:flex;flex-direction:row;height:24px;flex-shrink:0;border-bottom:4px solid #16c2d5}
         .row:hover{background-color:#123c47} p{margin:0;flex-shrink:0} .dot{width:8px;height:8px;border-radius:4px;background-color:#16c2d5}
         @media (max-width: 1919px){.row{height:20px}}</style></head>

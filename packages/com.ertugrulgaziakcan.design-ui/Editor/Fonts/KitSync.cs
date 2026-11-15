@@ -146,11 +146,10 @@ namespace DesignUi.Editor
 
             // ---- every check before any write: faces and files, text styles against the twins' face metrics -------------
             var faces = Faces(plan, errors);
-            // whole device pixels are required at the exact viewports only; readability is judged at the smallest of all
+            // whole device pixels are required at the exact viewports only (the readable-text floor is the exporter's: its
+            // kit build refuses a style below it and its lint U-FONT-004 names each text below it)
             var scales = ExactScales(profile);
             errors.AddRange(ValidateTextStyles(kitDir + "/" + textStyles, plan.Fonts[plan.ReferenceLocale].Primary, scales));
-            var readability = errors.Count == 0 ? ReadabilityWarning(kitDir + "/" + textStyles, AllScales(profile)) : null;
-            if (readability != null) warnings.Add(readability);
             // every line box of the table and of its text-size steps: the twins an import makes (and keeps)
             if (errors.Count == 0) plan.LineBoxes = ScreenCompiler.ScaledLineBoxes(KitTextStyles.LineBoxesOf(kitDir + "/" + textStyles), profile.textSizes);
             // twins only for the faces the text styles and the compiled screens use (an import adds a new design's own)
@@ -329,38 +328,6 @@ namespace DesignUi.Editor
                 }
             }
             return errors;
-        }
-
-        /// <summary>Text under this many device px at the smallest viewport is hard to read, and the renderers differ most there.</summary>
-        public const double MinReadableDevicePx = 10;
-
-        /// <summary>
-        /// One warning naming every kit text style under <see cref="MinReadableDevicePx"/> device px at the profile's smallest
-        /// viewport (by panel scale), grouped by font size; null when there is none or the table cannot be read. Kit sync (and
-        /// the exporter's kit build, with the same text) says it once for the kit; designs are not linted for it.
-        /// </summary>
-        internal static string ReadabilityWarning(string path, IReadOnlyList<(UnityEngine.Vector2Int viewport, double scale)> scales)
-        {
-            if (scales == null || scales.Count == 0) return null;
-            JObject styles;
-            try { styles = JObject.Parse(File.ReadAllText(path)); }
-            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is JsonException) { return null; }
-            var smallest = scales.OrderBy(s => s.scale).First();
-            var sizes = new List<(string name, double size)>();
-            foreach (var p in styles.Properties())
-            {
-                var t = (p.Value as JObject)?["fontSize"];
-                if (t != null && (t.Type == JTokenType.Integer || t.Type == JTokenType.Float)) sizes.Add((p.Name, t.Value<double>()));
-            }
-            var small = sizes.Where(s => s.size * smallest.scale < MinReadableDevicePx - 1e-9).ToList();
-            if (small.Count == 0) return null;
-            var larger = sizes.Where(s => s.size * smallest.scale >= MinReadableDevicePx - 1e-9).OrderBy(s => s.size).ToList();
-            var groups = small.Select(s => s.size).Distinct().OrderBy(v => v)
-                .Select(f => string.Join(", ", small.Where(s => s.size == f).Select(s => s.name)) + " (" + Fmt(f) + "px: " + Fmt(f * smallest.scale) + " device px)");
-            return "text styles under " + Fmt(MinReadableDevicePx) + " device px at " + smallest.viewport.x + "×" + smallest.viewport.y + " (scale " + Fmt(smallest.scale) + "): " +
-                   string.Join(", ", groups) + ". Such text is hard to read and the renderers differ most there (the fidelity check holds it to wider measured ink limits); " +
-                   "keep it for secondary text and use " + (larger.Count > 0 ? larger[0].name + " (" + Fmt(larger[0].size) + "px) or larger" : "larger styles") +
-                   " where the design allows it.";
         }
 
         static TMP_FontAsset RealFace(TMP_FontAsset font, int weight)
@@ -560,11 +527,6 @@ namespace DesignUi.Editor
         /// <summary>The panel scale of each exact viewport: where every kit value must be whole device pixels.</summary>
         internal static List<(UnityEngine.Vector2Int viewport, double scale)> ExactScales(DesignUiProfile profile) =>
             profile.DeclaredViewports().Where(v => v.cls == DesignViewportClass.Exact && v.size.x > 0 && v.size.y > 0)
-                .Select(v => (v.size, BoxesWriter.Scale(v.size, profile.referenceResolution, profile.screenMatch))).ToList();
-
-        /// <summary>The panel scale of every declared viewport, both classes.</summary>
-        internal static List<(UnityEngine.Vector2Int viewport, double scale)> AllScales(DesignUiProfile profile) =>
-            profile.DeclaredViewports().Where(v => v.size.x > 0 && v.size.y > 0)
                 .Select(v => (v.size, BoxesWriter.Scale(v.size, profile.referenceResolution, profile.screenMatch))).ToList();
 
         static string KitRelative(JObject config, string key, string fallback, List<string> errors)

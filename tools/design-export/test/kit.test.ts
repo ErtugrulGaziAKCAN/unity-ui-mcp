@@ -88,19 +88,19 @@ describe("text-style listings come only from text-styles.json", () => {
     const dir = kitCopy({ fonts: true });
     const file = path.join(dir, "text-styles.json");
     const table = JSON.parse(fs.readFileSync(file, "utf8"));
-    table.label = { fontSize: 16, lineHeight: 24, weight: 400 };
-    table["label-bold"] = { fontSize: 16, lineHeight: 24, weight: 700 };
+    table.label = { fontSize: 20, lineHeight: 28, weight: 400 };
+    table["label-bold"] = { fontSize: 20, lineHeight: 28, weight: 700 };
     fs.writeFileSync(file, JSON.stringify(table, null, 2));
     expect(buildKit(dir).changed).toEqual(expect.arrayContaining(["RULES.md", "base.css", "components/button.html"]));
-    expect(fs.readFileSync(path.join(dir, "base.css"), "utf8")).toContain(".text-label { font-size: 16px; line-height: 24px; font-weight: 400; }");
-    expect(fs.readFileSync(path.join(dir, "base.css"), "utf8")).toContain("body { font-family: var(--font-ui); font-size: 16px; line-height: 24px;");
-    expect(fs.readFileSync(path.join(dir, "RULES.md"), "utf8")).toContain("| label | `.text-label` | 16 | 24 | 400 |");
+    expect(fs.readFileSync(path.join(dir, "base.css"), "utf8")).toContain(".text-label { font-size: 20px; line-height: 28px; font-weight: 400; }");
+    expect(fs.readFileSync(path.join(dir, "base.css"), "utf8")).toContain("body { font-family: var(--font-ui); font-size: 20px; line-height: 28px;");
+    expect(fs.readFileSync(path.join(dir, "RULES.md"), "utf8")).toContain("| label | `.text-label` | 20 | 28 | 400 |");
     const out = tmp("claude-ds-");
     writeClaudeDesignSystem(dir, out, { now: new Date(0) });
-    expect(fs.readFileSync(path.join(out, "project", "README.md"), "utf8")).toContain("| label-bold | `.text-label-bold` | 16 | 24 | 700 |");
+    expect(fs.readFileSync(path.join(out, "project", "README.md"), "utf8")).toContain("| label-bold | `.text-label-bold` | 20 | 28 | 700 |");
     const tokens = JSON.parse(fs.readFileSync(path.join(out, "project", "tokens.json"), "utf8"));
     const styles = tokens.type.groups.flatMap((g: { styles: unknown[] }) => g.styles);
-    expect(styles).toContainEqual({ name: "label", fontSize: "16px", lineHeight: "24px", fontWeight: 400, usage: "Class .text-label." });
+    expect(styles).toContainEqual({ name: "label", fontSize: "20px", lineHeight: "28px", fontWeight: 400, usage: "Class .text-label." });
   });
 
   it("the text-styles fixture shows every style of the table at 1, 2 and 5 lines, through its class", () => {
@@ -138,7 +138,7 @@ describe("kit build", () => {
     const dir = kitCopy({ fonts: true });
     const file = path.join(dir, "text-styles.json");
     const table = JSON.parse(fs.readFileSync(file, "utf8"));
-    table.label = { fontSize: 16, lineHeight: 22, weight: 400 };
+    table.label = { fontSize: 20, lineHeight: 22, weight: 400 };
     fs.writeFileSync(file, JSON.stringify(table));
     expect(() => buildKit(dir, { check: true })).toThrow(/label: line height 22 px is 16\.5 device px at 1920×1080/);
     expect(() => writeClaudeDesignSystem(dir, tmp("claude-ds-"), { now: new Date(0) })).toThrow(/whole device px/);
@@ -158,17 +158,33 @@ describe("kit build", () => {
     expect(buildKit(KIT_DIR, { check: true }).changed).not.toContain("kit.config.json");
   });
 
-  it("warns once about the kit text styles under 10 device px at the smallest viewport (not per design)", async () => {
-    const w = buildKit(KIT_DIR, { check: true }).warnings;
-    expect(w).toEqual([expect.stringMatching(/^text styles under 10 device px at 1280×720 \(scale 0\.5\): caption, caption-bold \(12px: 6 device px\), label, label-bold \(16px: 8 device px\)/)]);
-    const r = io();
-    expect(await runCli(["kit", "build", KIT_DIR, "--check"], r.io)).toBe(0);
-    expect(r.out.join("").match(/^warning: text styles under 10 device px/gm)).toHaveLength(1);
-    // a kit whose smallest viewport keeps every style readable
-    const dir = kitCopy();
-    const file = path.join(dir, "kit.config.json");
-    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, "utf8")), viewports: [[2560, 1440]] }));
-    expect(buildKit(dir, { check: true }).warnings).toEqual([]);
+  it("refuses a text style below the readable-text floor at any declared viewport, exact or scaled (CLI exit 2)", async () => {
+    // the repo kit holds it: no warning, no error
+    expect(buildKit(KIT_DIR, { check: true })).toMatchObject({ warnings: [], errors: [] });
+    const r0 = io();
+    expect(await runCli(["kit", "build", KIT_DIR, "--check"], r0.io)).toBe(0);
+    // the previous table's 16 px label: 8 device px at 1280×720
+    const dir = kitCopy({ fonts: true });
+    const file = path.join(dir, "text-styles.json");
+    const table = JSON.parse(fs.readFileSync(file, "utf8"));
+    table.label = { fontSize: 16, lineHeight: 20, weight: 400 };
+    fs.writeFileSync(file, JSON.stringify(table));
+    const floor = /no text may draw below 9 device px at a declared viewport \(the readable-text floor\): label: 16px draws 8 device px at 1280×720 \(scale 0\.5\); the minimum is 18px\. Raise these styles to at least 18px, at a size that is whole device px at every exact viewport \(20px with these viewports\)/;
+    expect(() => buildKit(dir, { check: true })).toThrow(floor);
+    expect(() => buildKit(dir)).toThrow(floor);
+    expect(() => writeClaudeDesignSystem(dir, tmp("claude-ds-"), { now: new Date(0) })).toThrow(/readable-text floor/);
+    for (const args of [["kit", "build", dir], ["kit", "build", dir, "--check"]]) {
+      const r = io();
+      expect(await runCli(args, r.io)).toBe(2);
+      expect(r.err.join("")).toMatch(/label: 16px draws 8 device px at 1280×720/);
+    }
+    // a scaled viewport counts: without 1280×720 the smallest is 1366×768, where 16 px draws 8.54 device px
+    const cfg = path.join(dir, "kit.config.json");
+    fs.writeFileSync(cfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfg, "utf8")), viewports: [[2560, 1440], [1920, 1080], { size: [1366, 768], class: "scaled" }] }));
+    expect(() => buildKit(dir, { check: true })).toThrow(/label: 16px draws 8\.54 device px at 1366×768/);
+    // a kit whose smallest viewport keeps the style at the floor or above
+    fs.writeFileSync(cfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfg, "utf8")), viewports: [[2560, 1440], [1920, 1080]] }));
+    expect(() => buildKit(dir, { check: true })).not.toThrow();
   });
 
   it("fails when a --font-* token names a family fonts.css does not declare (both modes; letter case as lint compares it)", async () => {
@@ -239,7 +255,7 @@ describe("RULES.md", () => {
     expect(md).toContain(fs.readFileSync(path.join(KIT_DIR, "base.css"), "utf8").trim());
     expect(md).toContain("2560×1440");
     expect(md).toContain("grayscale font smoothing on the root");
-    expect(md).toMatch(/Readability: caption and label are under 10 device px at 1280×720/);
+    expect(md).toMatch(/Readable-text floor: no text draws below 9 device px at any declared viewport, exact or scaled\. The smallest is 1280×720 \(scale 0\.5\), so design text is at least 18px \(20px is the smallest size/);
   });
 });
 

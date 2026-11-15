@@ -151,8 +151,8 @@ describe("css values", () => {
 describe("kit data", () => {
   it("matches text styles by whole-pixel size, line height and weight", () => {
     const styles = readTextStyles(kit);
-    expect(matchTextStyle(styles, 16, 20, 400)?.name).toBe("label");
-    expect(matchTextStyle(styles, 16, 20, 700)?.name).toBe("label-bold");
+    expect(matchTextStyle(styles, 18, 22, 400)?.name).toBe("label");
+    expect(matchTextStyle(styles, 18, 22, 700)?.name).toBe("label-bold");
     for (const [size, lh, name] of [[12, 15, "caption"], [24, 30, "body"], [28, 35, "subtitle"], [32, 36, "title"], [48, 54, "headline"], [56, 63, "display"]] as const)
       expect(matchTextStyle(styles, size, lh, 400)?.name).toBe(name);
     expect(matchTextStyle(styles, 16, 19.359375, 400)).toBeNull();

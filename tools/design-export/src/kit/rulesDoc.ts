@@ -7,7 +7,7 @@ import { readTextStyles, type TextStyle } from "../lint/text-styles.js";
 import { renderBaseCss } from "./baseCss.js";
 import { readKitComponents, type KitComponent } from "./components.js";
 import { readKitFontFiles } from "./kitFonts.js";
-import { MIN_READABLE_DEVICE_PX, smallTextStyles } from "./textStyles.js";
+import { minimumKitTextPx, minimumTextPx, smallestViewport, TEXT_FLOOR_PX } from "./textStyles.js";
 import { readKitTokens, type KitToken, type TokenFamily } from "./tokens.js";
 
 /**
@@ -103,9 +103,7 @@ function tokensMarkdown(tokens: readonly KitToken[]): string {
 
 function textStylesMarkdown(styles: readonly TextStyle[], kit: KitConfig): string {
   const weights = Array.from(new Set(styles.map((s) => s.weight))).sort((a, b) => a - b);
-  const small = smallTextStyles(styles, kit);
-  const roles = Array.from(new Set(small.styles.map((s) => s.name.replace(/-bold$/, ""))));
-  const join = (l: string[]) => (l.length > 1 ? `${l.slice(0, -1).join(", ")} and ${l[l.length - 1]}` : l[0] ?? "");
+  const smallest = smallestViewport(kit);
   return [
     "Every text uses exactly one of these size / line-height / weight combinations (U-CSS-016). Use the class: it sets all three.",
     "",
@@ -118,8 +116,11 @@ function textStylesMarkdown(styles: readonly TextStyle[], kit: KitConfig): strin
     "each with a real face in the reference locale's font (U-FONT-001); no italic unless the kit font has an italic face. Inside one line of text, " +
     "`<b>`/`<strong>` and `<span>` with another colour or kit size are rich text; `<br>` breaks the line. The table is `text-styles.json`; " +
     "every listing of it (this table, the base stylesheet's classes, the design system's type styles) is generated from that file.",
-    ...(roles.length ? ["", `Readability: ${join(roles)} ${roles.length > 1 ? "are" : "is"} under ${MIN_READABLE_DEVICE_PX} device px at ${small.viewport[0]}×${small.viewport[1]}: ` +
-      "keep them for secondary text (kit build and kit sync warn once)."] : []),
+    "",
+    `Readable-text floor: no text draws below ${TEXT_FLOOR_PX} device px at any declared viewport, exact or scaled. The smallest is ` +
+    `${smallest.viewport[0]}×${smallest.viewport[1]} (scale ${smallest.scale}), so design text is at least ${minimumTextPx(kit)}px ` +
+    `(${minimumKitTextPx(kit)}px is the smallest size that is whole device px at every exact viewport), also after a transform ` +
+    "that scales it down. Lint U-FONT-004 rejects smaller text; kit build rejects a smaller text style.",
   ].join("\n");
 }
 

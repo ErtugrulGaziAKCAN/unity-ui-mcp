@@ -311,14 +311,14 @@ describe("captures", () => {
       const wrap = boxes.elements.wrap;
       expect(wrap.text).toBe(true);
       expect(wrap.lines).toHaveLength(3);
-      // Inter at 16px: line pitch 20 (the exact UI Toolkit pitch); the glyph box is the font's rounded ascent + descent
+      // Inter at 18px: line pitch 22 (the exact UI Toolkit pitch); the glyph box is the font's rounded ascent + descent
       wrap.lines.forEach((l, k) => {
-        expect(l.y - wrap.lines[0].y).toBeCloseTo(20 * k * s, 5);
+        expect(l.y - wrap.lines[0].y).toBeCloseTo(22 * k * s, 5);
         if (k === 0) expect(Math.abs(l.y - wrap.y)).toBeLessThanOrEqual(1);
-        expect(l.h).toBeGreaterThanOrEqual(20 * s - 1);
-        expect(l.h).toBeLessThanOrEqual(20 * s + 1);
-        expect(l.baseline - l.y).toBeGreaterThanOrEqual(15 * s);
-        expect(l.baseline - l.y).toBeLessThanOrEqual(16 * s + 0.5);
+        expect(l.h).toBeGreaterThanOrEqual(22 * s - 1);
+        expect(l.h).toBeLessThanOrEqual(22 * s + 1);
+        expect(l.baseline - l.y).toBeGreaterThanOrEqual(16.875 * s);
+        expect(l.baseline - l.y).toBeLessThanOrEqual(18 * s + 0.5);
         expect(l.x).toBeCloseTo(wrap.x, 5);
         expect(l.w).toBeLessThanOrEqual(wrap.w + 1e-6);
       });

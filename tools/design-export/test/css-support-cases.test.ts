@@ -35,7 +35,7 @@ const contract: CasesFile = JSON.parse(fs.readFileSync(FILE, "utf8"));
 const page = (cx: Context, decl: string) => `<!doctype html><html><head><meta charset="utf-8"><style>
 :root{-webkit-font-smoothing:antialiased}
 *,*::before,*::after{box-sizing:border-box} body{margin:0}
-.screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:16px;line-height:20px;color:#ffffff;background-color:#0b1f26}
+.screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:18px;line-height:22px;color:#ffffff;background-color:#0b1f26}
 p{margin:0}
 ${cx.css.replaceAll("{decl}", decl)}
 </style></head><body><div class="screen" data-u-screen="cases">${cx.html}</div></body></html>

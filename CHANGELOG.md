@@ -7,6 +7,16 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Added
 
+- A readable-text floor: no text may draw below 9 device px at any declared viewport, exact or scaled (the game-industry
+  practice of a minimum readable size, instead of looser checks for tiny text; measured at 1280×720: 135 texts at 9
+  device px meet the exact-class ink limits, max ΔE2000 4.29 against 4.5). Lint **U-FONT-004** (error) names each text
+  below it (its font size times the scale its transforms keep it at, now or in a state), with its text style, the
+  viewports, the drawn size and the minimum design size, 18 px with the default viewports. `kit build` and
+  `kit build --check` (and the Claude export) refuse a kit text style below it. The default kit's caption and label are
+  20 px (caption 20/28, label 20/24; 12/16 and 16/20 before), the smallest size that is whole device px at every exact
+  viewport; RULES.md and the published Design System state the minimum. The kit's readability warning (kit build and
+  kit sync) is gone. The fidelity fixtures' small text rose with the kit, and the 8 px case at 1280×720 is gone; the
+  verify thresholds are unchanged.
 - Scaled viewports lay out at an exact scale. UI Toolkit puts font sizes, paddings, margins and border widths on whole
   device pixels before layout, so a design only lays out as designed at an exact viewport's scale. The compiler writes the
   exact viewports' panel scales on the screen root (`DesignScreen`, `exact-scales`); on a runtime panel whose scale is none
@@ -138,7 +148,8 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 - Text at 8 device px (the 16 px label at 1280×720) measured over the suite: Unity draws about 5 % less ink there than at
   other sizes, and the ink colour is off in both directions (more so where the design puts a line at a half device
   pixel). No generic weight or sharpness adjustment fits both, and UI Toolkit 6000.3 gives runtime panels no SDF
-  sharpness; the limits and the kit's readability warning stay (`docs/findings/text-ink.md` section 9).
+  sharpness; the limits stay, and the readable-text floor (above) puts text at 9 device px or more instead of the kit's
+  readability warning (`docs/findings/text-ink.md` section 9).
 - The fidelity suite (22 fixtures, 9 components, 4728 captures at six viewports, 13 min 5 s) passes every capture at
   3840×2160, 2560×1440 and 1920×1080 and all but the known 8 px ink case at 1280×720; at the scaled viewports 772
   (1600×900) and 678 (1366×768) of 788 pass (before the review's fixes: 712 and 633; before the root scale: 431 and 17).
