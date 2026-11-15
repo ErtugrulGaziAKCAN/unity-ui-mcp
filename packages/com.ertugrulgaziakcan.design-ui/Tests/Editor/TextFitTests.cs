@@ -116,6 +116,7 @@ namespace DesignUi.Editor.Tests
         UIDocument Document(int w, int h)
         {
             var settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+            settings.hideFlags = HideFlags.DontSave; // a copy no save writes: the Editor holds the exact scale's factor only there
             _objects.Add(settings);
             settings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
             settings.referenceResolution = Reference;

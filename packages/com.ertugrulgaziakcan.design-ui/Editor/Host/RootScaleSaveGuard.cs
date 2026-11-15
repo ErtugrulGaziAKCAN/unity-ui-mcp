@@ -6,12 +6,11 @@ using UnityEngine.UIElements;
 namespace DesignUi.Editor
 {
     /// <summary>
-    /// Keeps the root scale's held PanelSettings factor out of every file (docs/findings/viewport-classes.md): a design screen
-    /// on a runtime panel at a scaled viewport writes its PanelSettings' <c>scale</c> in memory, also in Edit mode, where
-    /// that object is the project's asset. Unity writes assets only through a save, and every save (an asset save, the
-    /// Editor's File > Save, a save after an Inspector edit, the save when the Editor quits) asks
+    /// Keeps a factor the root scale holds in Play mode out of a file saved during Play (DesignRootScalePanels): in Play mode a
+    /// design screen at a scaled viewport writes its PanelSettings' <c>scale</c> in memory, and that object is the project's
+    /// asset. Unity writes assets only through a save, and every save that writes it asks
     /// <see cref="AssetModificationProcessor"/> first with the paths it writes: a held PanelSettings among them gets its own
-    /// factor for the write and is held again from the Editor's next update. A scene file only references the asset.
+    /// factor for the write and is held again from the Editor's next update. Outside Play mode nothing a save writes is held.
     /// </summary>
     internal static class RootScaleSaveGuard
     {

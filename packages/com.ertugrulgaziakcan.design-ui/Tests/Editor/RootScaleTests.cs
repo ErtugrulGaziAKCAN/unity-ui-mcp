@@ -38,6 +38,7 @@ namespace DesignUi.Editor.Tests
         public void KeepRule()
         {
             _rule = DesignViewportScales.Rule;
+            DesignRootScalePanels.Playing = () => Application.isPlaying;
             // a test that failed half-way leaves no held factor behind for the next
             DesignRootScalePanels.RestoreAll();
             DesignRootScalePanels.ForgetReleased();
@@ -47,6 +48,7 @@ namespace DesignUi.Editor.Tests
         public void Cleanup()
         {
             DesignViewportScales.Rule = _rule;
+            DesignRootScalePanels.Playing = () => Application.isPlaying;
             DesignRootScalePanels.RestoreAll();
             DesignRootScalePanels.ForgetReleased();
             for (int i = _objects.Count - 1; i >= 0; i--)
@@ -167,6 +169,8 @@ namespace DesignUi.Editor.Tests
         UIDocument Document(int w, int h)
         {
             _settings = Track(Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings()));
+            // a copy no save writes, as a capture's or a region's: the Editor holds a factor only there outside Play mode
+            _settings.hideFlags = HideFlags.DontSave;
             _settings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
             _settings.referenceResolution = Reference;
             _settings.screenMatchMode = PanelScreenMatchMode.MatchWidthOrHeight;
@@ -304,6 +308,7 @@ namespace DesignUi.Editor.Tests
                 frame.offsetMax = Vector2.zero;
 
                 var settings = Track(Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings()));
+                settings.hideFlags = HideFlags.DontSave;
                 settings.scale = 1f;
                 settings.sortingOrder = 0;
                 composite = Track(new GameObject("RootScaleTests composite")).AddComponent<DesignUiGammaComposite>();
@@ -522,19 +527,12 @@ namespace DesignUi.Editor.Tests
             return null;
         }
 
-        /// <summary>
-        /// In Edit mode the root scale holds the project's PanelSettings asset (its <c>scale</c> in memory: 0.75 / 0.625 = 1.2
-        /// at 1600×900). Its file never gets the held factor: a save after an Inspector edit (AssetDatabase.SaveAssets, which
-        /// the Editor's File > Save runs too), a save of that asset alone (SaveAssetIfDirty) and a save after an Undo that brought
-        /// a snapshot taken while it was held all write the asset's own factor 1 with the edit, and the factor is held again
-        /// after each save while the screen stays.
-        /// </summary>
-        [UnityTest]
-        public IEnumerator AHeldFactor_NeverReachesThePanelSettingsFile_ThroughASave_OrAnUndo()
+        /// <summary>A PanelSettings asset (a scale-with-screen-size copy of the package's) with a 1600×900 target texture asset, in the test folder.</summary>
+        PanelSettings SettingsAsset(string name = "Held")
         {
             if (!AssetDatabase.IsValidFolder(Out)) AssetDatabase.CreateFolder("Assets", Out.Substring("Assets/".Length));
             var rt = new RenderTexture(1600, 900, 24);
-            AssetDatabase.CreateAsset(rt, Out + "/Target.renderTexture");
+            AssetDatabase.CreateAsset(rt, Out + "/" + name + "Target.renderTexture");
             var asset = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
             asset.scaleMode = PanelScaleMode.ScaleWithScreenSize;
             asset.referenceResolution = Reference;
@@ -542,60 +540,176 @@ namespace DesignUi.Editor.Tests
             asset.match = 0.5f;
             asset.scale = 1f;
             asset.targetTexture = rt;
+            AssetDatabase.CreateAsset(asset, Out + "/" + name + ".asset");
+            AssetDatabase.SaveAssets();
+            return asset;
+        }
+
+        DesignScreen ShowOn(PanelSettings settings, out UIDocument doc)
+        {
+            doc = Track(new GameObject("RootScaleTests document")).AddComponent<UIDocument>();
+            doc.panelSettings = settings;
+            var screen = PlainScreen("root");
+            doc.rootVisualElement.Add(screen);
+            return screen;
+        }
+
+        static string PresetScale(PanelSettings settings)
+        {
+            var preset = new UnityEditor.Presets.Preset(settings);
+            try
+            {
+                foreach (var m in preset.PropertyModifications) if (m.propertyPath == "m_Scale") return m.value;
+                return null;
+            }
+            finally { Object.DestroyImmediate(preset); }
+        }
+
+        /// <summary>
+        /// In Edit mode the root scale writes no PanelSettings a save could write: neither an asset nor settings a scene could
+        /// save (not <c>DontSave</c>). A screen on them at 1600×900 lays out at the actual scale itself (root scale 1, design
+        /// scale 0.625); the asset's object, its file, a preset made of it and the scene-savable settings keep 1, so no save,
+        /// build, preset, copy or Undo snapshot in Edit mode can carry a held factor.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator InEditMode_NoSavableSettingsHoldAFactor_TheScreenLaysOutAtTheActualScale()
+        {
+            var asset = SettingsAsset();
             var path = Out + "/Held.asset";
-            AssetDatabase.CreateAsset(asset, path);
+            var screen = ShowOn(asset, out var doc);
+            yield return Frames(6);
+            Assert.AreEqual(1f, asset.scale, "the asset's object is never written");
+            Assert.AreEqual(1f, screen.RootScale, "laid out at the actual scale, unscaled");
+            Assert.AreEqual(ScaleOf(1600, 900), screen.DesignScale ?? double.NaN, 1e-4, "the design's scale");
+            Assert.AreEqual(ScaleOf(1600, 900), screen.panel.scaledPixelsPerPoint, 1e-4);
+            Assert.AreEqual(0, DesignRootScalePanels.Count);
+            Assert.AreEqual("1", PresetScale(asset), "a preset made now");
+            EditorUtility.SetDirty(asset);
             AssetDatabase.SaveAssets();
             Assert.AreEqual("1", ScaleInFile(path));
+            Object.DestroyImmediate(doc.gameObject);
 
-            var doc = Track(new GameObject("RootScaleTests held")).AddComponent<UIDocument>();
-            doc.panelSettings = asset;
-            yield return Frames(2);
-            var screen = new DesignScreen { name = "root", ExactScales = DesignViewportScales.Encode(Exact) };
-            screen.style.width = 2560;
-            screen.style.height = 1440;
-            doc.rootVisualElement.Add(screen);
+            // settings a scene could save (in memory, not DontSave)
+            var embedded = Track(Object.Instantiate(asset));
+            embedded.targetTexture = Texture(1600, 900);
+            var screen2 = ShowOn(embedded, out var doc2);
+            yield return Frames(6);
+            Assert.AreEqual(1f, embedded.scale, "settings a scene could save are never written either");
+            Assert.AreEqual(1f, screen2.RootScale);
+            Object.DestroyImmediate(doc2.gameObject);
+        }
+
+        /// <summary>
+        /// In Play mode (simulated: <c>DesignRootScalePanels.Playing</c>) a screen holds the asset's factor in memory: a save
+        /// after an Inspector edit (<c>AssetDatabase.SaveAssets</c>, which File > Save runs too) and a save of that asset alone
+        /// write its own factor 1 with the edit, and the factor is held again after each save; a build gives it back first
+        /// and says so.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator InPlayMode_AHeldAssetsSaves_WriteItsOwnFactor_AndABuildGivesItBack()
+        {
+            DesignRootScalePanels.Playing = () => true;
+            var asset = SettingsAsset();
+            var path = Out + "/Held.asset";
+            var screen = ShowOn(asset, out var doc);
             yield return Frames(6);
             Assert.AreEqual(1.2f, asset.scale, 1e-4, "held: the panel lays out at 0.75");
-            Assert.AreEqual(0.75, screen.panel.scaledPixelsPerPoint, 1e-4);
-
-            // an Inspector edit (a SerializedObject change marks the asset dirty), then the project save
             using (var so = new SerializedObject(asset))
             {
                 so.FindProperty("m_SortingOrder").floatValue = 7;
                 so.ApplyModifiedProperties();
             }
-            Assert.IsTrue(EditorUtility.IsDirty(asset));
             AssetDatabase.SaveAssets();
             Assert.AreEqual("1", ScaleInFile(path), "the save wrote the asset's own factor");
             Assert.AreEqual("7", SortingOrderInFile(path), "and the edit");
             yield return Frames(2);
             Assert.AreEqual(1.2f, asset.scale, 1e-4, "held again after the save");
-            yield return Frames(4);
-            Assert.AreEqual(0.75, screen.panel.scaledPixelsPerPoint, 1e-4, "the panel still lays out at the exact scale");
-
-            // a save of that asset alone
             asset.sortingOrder = 8;
             EditorUtility.SetDirty(asset);
             AssetDatabase.SaveAssetIfDirty(asset);
             Assert.AreEqual("1", ScaleInFile(path));
-            Assert.AreEqual("8", SortingOrderInFile(path));
             yield return Frames(2);
             Assert.AreEqual(1.2f, asset.scale, 1e-4);
 
-            // an Undo snapshot taken while held, undone after the screen left (the factor was given back meanwhile)
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("a build started while 1 PanelSettings held"));
+            Assert.AreEqual(1, RootScaleBuildGuard.BeforeBuild());
+            Assert.AreEqual(1f, asset.scale, "a build sees the asset's own factor");
+            Assert.AreEqual(0, DesignRootScalePanels.Count);
+            Object.DestroyImmediate(doc.gameObject);
+        }
+
+        /// <summary>
+        /// Only the factor last written counts as the root scale's own (in players too): a game that sets its own UI scale to a
+        /// value the panel once held (1.2, held at 1600×900 before the resolution changed to 1920×1080) keeps it, the exact
+        /// scale is applied on top, and it is the settings' factor after the screen leaves.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AGamesOwnFactor_EqualToAFactorHeldEarlier_IsTheGames()
+        {
+            var doc = Document(1600, 900);
+            yield return Frames(2);
+            var screen = PlainScreen("root");
+            doc.rootVisualElement.Add(screen);
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, _settings.scale, 1e-4, "held at 1600×900");
+            _settings.targetTexture = Texture(1920, 1080);
+            yield return Frames(6);
+            Assert.AreEqual(1f, _settings.scale, 1e-6, "exact at 1920×1080: the own factor");
+            _settings.scale = 1.2f; // the game's "120 %"
+            screen.panel.visualTree.MarkDirtyRepaint();
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, DesignRootScalePanels.OwnScale(_settings) ?? float.NaN, 1e-6, "the game's factor is the own one");
+            Assert.AreEqual(0.9, screen.DesignScale ?? double.NaN, 1e-4, "0.75 × 1.2");
+            screen.RemoveFromHierarchy();
+            Assert.AreEqual(1.2f, _settings.scale, 1e-6, "and it stays when the screen leaves");
+        }
+
+        /// <summary>
+        /// An Undo of an edit of the factor while a screen held it gives back the factor of the snapshot's own (a factor/own pair):
+        /// held at 1600×900 (own 1, factor 1.2), the own factor set to 1.3 (factor 1.56), Undo: own 1 and factor 1.2 again. An
+        /// Undo after the screen left and a script reload (the statics forgotten, the session's record kept) still gives the
+        /// asset its own factor.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AnUndo_RestoresTheSnapshotsOwnFactor_AlsoAfterAScriptReload()
+        {
+            // in Play mode (simulated), on settings the Undo system records (not DontSave)
+            DesignRootScalePanels.Playing = () => true;
+            var doc = Document(1600, 900);
+            _settings.hideFlags = HideFlags.None;
+            yield return Frames(2);
+            var screen = PlainScreen("root");
+            doc.rootVisualElement.Add(screen);
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, _settings.scale, 1e-4);
+            Undo.IncrementCurrentGroup();
+            Undo.RecordObject(_settings, "scale");
+            _settings.scale = 1.3f;
+            screen.panel.visualTree.MarkDirtyRepaint();
+            yield return Frames(6);
+            Assert.AreEqual(1.3f, DesignRootScalePanels.OwnScale(_settings) ?? float.NaN, 1e-6);
+            // (1.3 × 0.625 = 0.8125 lays out at the next exact scale up, 1)
+            Assert.AreEqual(1.6f, _settings.scale, 1e-4);
+            Undo.PerformUndo();
+            yield return Frames(6);
+            Assert.AreEqual(1f, DesignRootScalePanels.OwnScale(_settings) ?? float.NaN, 1e-6, "the snapshot's own factor");
+            Assert.AreEqual(1.2f, _settings.scale, 1e-4, "and its exact scale's factor");
+            Object.DestroyImmediate(doc.gameObject);
+
+            // an asset held in Play mode, an Undo snapshot taken while held, the screen gone, a script reload
+            var asset = SettingsAsset("Reload");
+            var screen2 = ShowOn(asset, out var doc2);
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, asset.scale, 1e-4);
             Undo.IncrementCurrentGroup();
             Undo.RecordObject(asset, "sorting order");
             asset.sortingOrder = 9;
-            screen.RemoveFromHierarchy();
-            Assert.AreEqual(1f, asset.scale, "given back when the screen left");
+            screen2.RemoveFromHierarchy();
+            Assert.AreEqual(1f, asset.scale);
+            DesignRootScalePanels.ForgetStatics(); // what a script reload empties
             Undo.PerformUndo();
-            Assert.AreEqual(8, asset.sortingOrder, "the undo applied");
             Assert.AreEqual(1f, asset.scale, "not the snapshot's held factor");
-            EditorUtility.SetDirty(asset);
-            AssetDatabase.SaveAssets();
-            Assert.AreEqual("1", ScaleInFile(path));
-            Object.DestroyImmediate(doc.gameObject);
-            yield return null;
+            Object.DestroyImmediate(doc2.gameObject);
         }
 
         // ---- the design's own transform of the root ------------------------------------------------------------------------

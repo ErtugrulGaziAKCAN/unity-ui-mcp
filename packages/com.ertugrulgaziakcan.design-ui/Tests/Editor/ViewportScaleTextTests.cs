@@ -118,6 +118,7 @@ namespace DesignUi.Editor.Tests
                         double layoutScale = DesignViewportScales.LayoutScale(exact, scale);
                         if (!done.Add((scale, layoutScale))) continue;
                         _settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+                        _settings.hideFlags = HideFlags.DontSave; // a runtime copy: the editor holds factors only on settings no save writes
                         _settings.scaleMode = PanelScaleMode.ConstantPixelSize;
                         _settings.scale = (float)scale;
                         _settings.targetTexture = Texture(1600, 1600);
@@ -194,6 +195,7 @@ namespace DesignUi.Editor.Tests
             foreach (var (what, scale, rooted) in new[] { ("scale 1", 1.0, false), ("0.625 through the root scale", 0.625, true), ("0.625 without it", 0.625, false) })
             {
                 _settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+                _settings.hideFlags = HideFlags.DontSave; // a runtime copy: the editor holds factors only on settings no save writes
                 _settings.scaleMode = PanelScaleMode.ConstantPixelSize;
                 _settings.scale = (float)scale;
                 _settings.clearColor = true;
@@ -258,6 +260,7 @@ namespace DesignUi.Editor.Tests
         {
             const double scale = 0.75;
             _settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+            _settings.hideFlags = HideFlags.DontSave; // a runtime copy: the editor holds factors only on settings no save writes
             _settings.scaleMode = PanelScaleMode.ConstantPixelSize;
             _settings.scale = (float)scale;
             _settings.targetTexture = Texture(800, 600);
@@ -327,6 +330,7 @@ namespace DesignUi.Editor.Tests
             foreach (var scale in new[] { 0.625, Scale1366 })
             {
                 _settings = Object.Instantiate(DesignUiProfile.LoadDefaultPanelSettings());
+                _settings.hideFlags = HideFlags.DontSave; // a runtime copy: the editor holds factors only on settings no save writes
                 _settings.scaleMode = PanelScaleMode.ConstantPixelSize;
                 _settings.scale = (float)scale;
                 _settings.targetTexture = Texture(800, 600);
