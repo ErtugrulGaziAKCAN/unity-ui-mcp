@@ -1386,6 +1386,61 @@ describe("compareCapture: edge, colour and ink checks", () => {
       });
     });
 
+    describe("fix round 3: what paints over a hairline line", () => {
+      // the kit's surfaces and text colours; the kit's shadows are black (--shadow-card: 0 8px 24px rgba(0, 0, 0, 0.4))
+      const surfaces: Record<string, Rgb> = { "surface-900": [11, 31, 38], "surface-800": [15, 42, 51], "surface-700": [18, 60, 71] };
+      const colours: Record<string, Rgb> = { primary: [255, 255, 255], secondary: [185, 208, 214], muted: [134, 167, 176] };
+      const exactT = thresholdsFor(readThresholds(), "exact");
+      /** Stems 2 device px wide in `c` (five, or those `drawn`), `k` of it over `bg`, under black at `shade` (a shadow). */
+      const stems = (bg: Rgb, c: Rgb, k = 1, shade = 0, drawn = [0, 1, 2, 3, 4]) => {
+        const png = canvas(48, 40, bg);
+        for (const s2 of drawn) fill(png, { x: 8 + 6 * s2, y: 5, w: 2, h: 12 }, [0, 1, 2].map((j) => Math.round(bg[j] + k * (c[j] - bg[j]))) as Rgb);
+        if (shade) for (let p = 0; p < 48 * 40; p++) { const o = p * 4; for (let j = 0; j < 3; j++) png.data[o + j] = Math.round((1 - shade) * png.data[o + j]); }
+        return png;
+      };
+      const line = { x: 7, y: 3, w: 30, h: 16, baseline: 15 };
+      // two middle glyphs missing: the ends stay, so the extent check does not decide
+      const missing = [0, 2, 4];
+      const own = (c: Rgb, more: Partial<Box> = {}) => ({ color: [...c, 1] as [number, number, number, number], opacity: 1, ...more });
+      const kinds = (gp: Rgba, gb: CaptureBoxes, up: Rgba, c: CaptureContext, id = "t") =>
+        compareCapture({ png: gp, boxes: gb }, { png: up, boxes: gb }, [], exactT, c).issues.filter((i) => i.id === id).map((i) => i.kind).sort();
+
+      it("N-5: a 10 px line under a later card's black shadow at 0.15 to 0.4, Unity at 0.7 or missing glyphs, fails", () => {
+        // the card is painted after the text, its box below the line, its outer shadow over it
+        const card = el(0, 26, 48, 14);
+        const boxes = (c: Rgb): CaptureBoxes => ({ capture: "c", viewport: [48, 40], scale: 0.5, external: [],
+          elements: { root: el(0, 0, 48, 40), t: el(7, 3, 30, 16, { text: true, lines: [line], ...own(c) }), card } });
+        const ctx: CaptureContext = { fontPx: { t: 10 }, backgrounds: new Set(["card"]), painters: new Set(["card"]), order: ["root", "t", "card"], root: "root",
+          viewportClass: "exact", shadows: { card: { x: -12, y: 0, w: 72, h: 52 } } };
+        const passed: string[] = [];
+        for (const [sn, bg] of Object.entries(surfaces)) for (const [cn, c] of Object.entries(colours)) for (const shade of [0.15, 0.25, 0.4]) {
+          const design = stems(bg, c, 1, shade);
+          if (!kinds(design, boxes(c), stems(bg, c, 0.7, shade), ctx).length) passed.push(`${sn} ${cn} ${shade}: lighter`);
+          if (!kinds(design, boxes(c), stems(bg, c, 1, shade, missing), ctx).length) passed.push(`${sn} ${cn} ${shade}: missing glyphs`);
+          expect(kinds(design, boxes(c), stems(bg, c, 1, shade), ctx), `${sn} ${cn} ${shade}: the same text`).toEqual([]);
+        }
+        expect(passed).toEqual([]);
+      });
+
+      it("N-5: a later repeat item's copy over the line counts as a later layer, the line's own row does not", () => {
+        // the list's rows overlap: row #1's veil (a 30 % layer) lies over the first row's text
+        const bg = surfaces["surface-700"], c = colours.secondary, veilC: Rgb = [11, 31, 38];
+        const veiled = (k: number, drawn?: number[]) => {
+          const png = stems(bg, c, k, 0, drawn);
+          for (let y = 0; y < 22; y++) for (let x = 0; x < 48; x++) { const o = (y * 48 + x) * 4; for (let j = 0; j < 3; j++) png.data[o + j] = Math.round(0.7 * png.data[o + j] + 0.3 * veilC[j]); }
+          return png;
+        };
+        const boxes: CaptureBoxes = { capture: "c", viewport: [48, 40], scale: 0.5, external: [],
+          elements: { root: el(0, 0, 48, 40), list: el(0, 0, 48, 40), row: el(0, 0, 48, 22), t: el(7, 3, 30, 16, { text: true, lines: [line], ...own(c) }), veil: el(0, 40, 48, 0, { visible: false }) },
+          items: { "row#1": el(0, 0, 48, 22), "t#1": el(7, 30, 30, 8, { visible: false }), "veil#1": el(0, 0, 48, 22) } };
+        const ctx: CaptureContext = { fontPx: { t: 10 }, backgrounds: new Set(["veil"]), painters: new Set(["veil"]), order: ["root", "list", "row", "t", "veil"], root: "root",
+          parent: new Map([["list", "root"], ["row", "list"], ["t", "row"], ["veil", "row"]]), repeats: new Set(["list"]), viewportClass: "exact" };
+        expect(kinds(veiled(1), boxes, veiled(0.7), ctx), "lighter").toContain("ink");
+        expect(kinds(veiled(1), boxes, veiled(1, missing), ctx), "missing glyphs").toContain("inkCoverage");
+        expect(kinds(veiled(1), boxes, veiled(1), ctx), "the same text").toEqual([]);
+      });
+    });
+
     it("R133: the evidence names every condition that does not hold, not only the first", () => {
       // the R129 avatar in an animation sample that moves it: a dent outside the band and a ring 1.5 device px thinner
       const ringC: Rgb = [240, 240, 240], fillC: Rgb = [20, 24, 28], bgC: Rgb = [0, 0, 0], outer = 240, W = 272, x0 = 16.4;

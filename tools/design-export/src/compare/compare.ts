@@ -1181,6 +1181,44 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return { ok: !why, why, ...ev };
     };
 
+    /** A key's repeat containers (outermost first) and its item in each (its suffix names them innermost first; ruling R133). */
+    const placeOf = (id: string, key: string): { cs: string[]; path: number[] } => {
+      const cs = containersOf(id), path = cs.map(() => 0);
+      key.slice(id.length).split("#").slice(1).forEach((k, j) => { const level = cs.length - 1 - j; if (level >= 0) path[level] = Number(k); });
+      return { cs, path };
+    };
+    /**
+     * What paints after the text `key` of element `id` and may lie over its lines (ruling R141, fix round 3 N-5): every IR
+     * element and every written-out repeat copy later in paint order that paints something, on both sides, and the outer
+     * shadow each casts (`shadows`; a copy's placed by its own box). A later item of a repeat paints after an earlier one;
+     * inside one item the IR's paint order holds. Null when the paint order is unknown.
+     */
+    const laterLayers = (id: string, key: string): Rect[] | null => {
+      if (!paintIndex.has(id)) return null;
+      const me = placeOf(id, key), at = paintIndex.get(id)!;
+      const after = (x: string, k: string) => {
+        if (!paintIndex.has(x)) return false;
+        const o = placeOf(x, k);
+        for (let j = 0; j < Math.min(me.cs.length, o.cs.length) && me.cs[j] === o.cs[j]; j++) if (me.path[j] !== o.path[j]) return o.path[j] > me.path[j];
+        return paintIndex.get(x)! > at;
+      };
+      const out: Rect[] = [];
+      const add = (x: string, sides: (Box | undefined)[]) => {
+        const sh = ctx.shadows?.[x], ir = g.elements[x];
+        for (const b of sides) {
+          if (!b || !b.visible) continue;
+          if (b.w > 0 && b.h > 0) out.push(b);
+          if (sh && ir) out.push({ x: b.x + sh.x - ir.x, y: b.y + sh.y - ir.y, w: b.w + sh.w - ir.w, h: b.h + sh.h - ir.h });
+        }
+      };
+      for (const x of order) if (paints(x) && after(x, x)) add(x, [g.elements[x], u.elements[x]]);
+      for (const k of new Set([...Object.keys(g.items ?? {}), ...Object.keys(u.items ?? {})])) {
+        const x = k.slice(0, k.indexOf("#"));
+        if (k !== key && paints(x) && after(x, k)) add(x, [g.items?.[k], u.items?.[k]]);
+      }
+      return out;
+    };
+
     /**
      * A text's ink per line (an IR element's, or its copy's in a later repeat item, `key` naming it; ruling R133): colour
      * and extent now, the amount after every line of the capture is measured. `id`: the IR element (its font size, its
@@ -1193,14 +1231,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       let wX: { i: number; dl: number; dr: number; dw: number; worst: number } | null = null;
       let wDir: { dir: number; i: number; a: number[]; b: number[] } | null = null, wAmount: { ratio: number; i: number } | null = null;
       // ruling R141: a hairline line is small text drawn in its own colour (the one the capture recorded for this element or
-      // this copy) at full opacity (its own and its ancestors', an animation sample's running value included), and no later
-      // layer covers it; then R138's conditions (isHairline)
+      // this copy) at full opacity (its own and its ancestors', an animation sample's running value included), and nothing
+      // painted later lies over it (a later element or copy, or the shadow it casts: fix round 3, N-5); then R138's
+      // conditions (isHairline)
       const own = key === id ? g.elements[id] : g.items?.[key];
       const declared = own?.color && own.opacity !== undefined ? { rgb: own.color.slice(0, 3), alpha: own.color[3] * own.opacity } : undefined;
-      const mayBeHairline = !!declared && px <= HAIRLINE_MAX_PX && declared.alpha >= 1 - 1e-6;
-      const suffix = key.slice(id.length);
-      const later: Rect[] = mayBeHairline ? coveringIds(id).flatMap((x): (Rect & { visible: boolean } | undefined)[] => [g.elements[x], u.elements[x], g.items?.[x + suffix], u.items?.[x + suffix]])
-        .filter((e): e is Rect & { visible: boolean } => !!e && e.visible && e.w > 0 && e.h > 0) : [];
+      const later = declared && px <= HAIRLINE_MAX_PX && declared.alpha >= 1 - 1e-6 ? laterLayers(id, key) : null;
+      const mayBeHairline = !!later;
       const hidden = hiddenBy(id);
       let covered = 0;
       ge.lines.forEach((gl, i) => {
@@ -1221,7 +1258,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
         // a hairline line (rulings R138, R141): its lightness measures coverage; its ink's colour direction is judged, and its
         // ink amount only within HAIRLINE_INK_BAND (a stroke drawn a row off scatters, a missing or added glyph does not)
-        if (b && mayBeHairline && !later.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y) &&
+        if (b && mayBeHairline && !later!.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y) &&
             isHairline(a, declared!)) {
           const dir = angleBetween(a.dirSrgb, b.dirSrgb);
           if (!wDir || dir > wDir.dir) wDir = { dir, i, a: a.ink, b: b.ink };
