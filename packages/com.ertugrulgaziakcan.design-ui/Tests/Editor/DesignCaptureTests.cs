@@ -55,6 +55,9 @@ namespace DesignUi.Editor.Tests
             Assert.IsNotNull(outDir, "DESIGN_UI_OUT names the folder the captures are written to");
             var profile = DesignCapture.LoadProfile(Env("DESIGN_UI_PROFILE"));
             var exports = DesignUiBatch.PathList(export);
+            // measurement only (docs/findings/viewport-classes.md): the exact scale a scaled viewport lays out at
+            var rule = Env("DESIGN_UI_ROOT_SCALE_RULE");
+            if (rule != null) DesignViewportScales.Rule = (DesignViewportScales.BaseRule)Enum.Parse(typeof(DesignViewportScales.BaseRule), rule, true);
             // the test's own limit follows the job count (a large screen captures hundreds of jobs)
             var jobs = exports.Sum(e => DesignCapture.JobCount(e));
             var timeout = DesignCapture.TestTimeoutMs(jobs);
@@ -147,6 +150,11 @@ namespace DesignUi.Editor.Tests
             return dir;
         }
 
+        /// <summary>
+        /// A profile whose exact viewports are every viewport these tests capture at (the reference's and 160×90, 240×180,
+        /// 400×180, 1280×720, 1920×1080 and 2560×1440), so their screens lay out at the panel's own scale; RootScaleCapture
+        /// tests a viewport the profile does not declare.
+        /// </summary>
         DesignUiProfile Profile(Vector2Int reference, float match)
         {
             var p = ScriptableObject.CreateInstance<DesignUiProfile>();
@@ -154,6 +162,9 @@ namespace DesignUi.Editor.Tests
             p.outputFolder = Out;
             p.referenceResolution = reference;
             p.screenMatch = match;
+            p.viewports = new[] { reference, new Vector2Int(160, 90), new Vector2Int(240, 180), new Vector2Int(400, 180), new Vector2Int(1280, 720),
+                new Vector2Int(1920, 1080), new Vector2Int(2560, 1440) };
+            p.scaledViewports = new Vector2Int[0];
             FontFixture.Use(p);
             return p;
         }
@@ -1234,6 +1245,42 @@ namespace DesignUi.Editor.Tests
             Assert.IsNotEmpty(orange);
             Assert.AreEqual((double)box["x"], orange.First(), 1.0, "the box starts where the PNG shows the element");
             Assert.AreEqual((double)box["x"] + (double)box["w"], orange.Last() + 1, 1.0, "and ends there");
+        }
+
+        /// <summary>
+        /// A viewport the profile does not declare (200×113 against the 320×180 reference, scale ≈ 0.6264; the profile's only
+        /// exact viewport is the reference's): the screen lays out at scale 1 and its root draws at 0.6264, as in the game. The
+        /// boxes are device pixels at the design's scale (the panel's scale written is the one it lays out at), and the PNG
+        /// shows the element where they say.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RootScaleCapture_AtAnUndeclaredViewport_BoxesAreTheDesignAtTheActualScale_AndMatchThePng()
+        {
+            var mark = Node("mark", "container", ("position", "absolute"), ("left", "180px"), ("top", "40px"), ("width", "100px"), ("height", "40px"),
+                ("background-color", "#ff8800"));
+            var root = Node("root", "container", ("position", "relative"), ("width", "320px"), ("height", "180px"), ("background-color", "#000000")).Add(mark);
+            var export = Export(Small(root));
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            profile.viewports = new[] { new Vector2Int(320, 180) };
+            var screen = Compile(export, profile);
+            var req = Request(export, screen, "default@200x113", 200, 113);
+            yield return DesignCapture.Run(req, profile);
+
+            double actual = BoxesWriter.Scale(new Vector2Int(200, 113), new Vector2Int(320, 180), 0.5f);
+            var boxes = Boxes(req);
+            Assert.AreEqual(1, (double)boxes["scale"], 1e-6, "the panel lays out at the exact scale");
+            var box = (JObject)boxes["elements"]["mark"];
+            Assert.AreEqual(180 * actual, (double)box["x"], 0.5 * actual + 1e-3, "180 px at the design's scale (layout puts the edge on scale 1's grid)");
+            Assert.AreEqual(40 * actual, (double)box["y"], 0.5 * actual + 1e-3);
+            Assert.AreEqual(100 * actual, (double)box["w"], actual + 1e-3);
+            var tex = Png(req);
+            var y = (int)((double)box["y"] + (double)box["h"] / 2);
+            var orange = Enumerable.Range(0, tex.width).Where(x => Hex(Pixel(tex, x, y)) == "#ff8800").ToList();
+            Assert.IsNotEmpty(orange);
+            Assert.AreEqual((double)box["x"], orange.First(), 1.0, "the box starts where the PNG shows the element");
+            Assert.AreEqual((double)box["x"] + (double)box["w"], orange.Last() + 1, 1.0, "and ends there");
+            // 320 × 0.6264 = 200.4 by 112.8: the last row is three quarters covered (UI Toolkit blends a fractional edge)
+            Assert.AreEqual("#000000", Hex(Pixel(tex, 199, 111)), "the root covers the viewport");
         }
 
         static string AnimJob(string name, string state, int w, int h, string apply, string sampled, string runs, string from, int sample, double time) =>

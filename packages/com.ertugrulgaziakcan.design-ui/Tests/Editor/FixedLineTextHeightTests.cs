@@ -274,16 +274,18 @@ namespace DesignUi.Editor.Tests
             var p = ScriptableObject.CreateInstance<DesignUiProfile>();
             _objects.Add(p);
             p.outputFolder = Out;
-            p.viewports = new[] { new Vector2Int(2560, 1440) };
+            // the exact viewports at whose scales the panel tests lay out (a screen root lays any other scale out at one of them)
+            p.viewports = new[] { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720), new Vector2Int(3840, 2160) };
             p.scaledViewports = new[] { new Vector2Int(1600, 900), new Vector2Int(1366, 768) };
             FontFixture.Use(p);
             return p;
         }
 
         /// <summary>
-        /// A column of 14 single-line labels (16/20) beside a column of the same labels that may wrap, at the panel scales of
-        /// 1600×900 (0.625: a 12.5 device px line box) and 1366×768 (≈ 0.5335: 10.67): the fixed column ends where 14 line
-        /// boxes end (within a device pixel), the wrapping one drifts by up to a pixel per label.
+        /// A column of 14 single-line labels (16/20) beside a column of the same labels that may wrap, on panels at 0.625 (a
+        /// 12.5 device px line box) and ≈ 0.5335 (10.67), the screen root not laying them out at an exact scale (a line box a
+        /// text-size step makes fractional at an exact viewport is the same case): the fixed column ends where 14 line boxes
+        /// end (within a device pixel), the wrapping one drifts by up to a pixel per label.
         /// </summary>
         [UnityTest]
         public IEnumerator FourteenSingleLineLabels_StackWithoutDrift_AtScaledPanels()
@@ -319,10 +321,11 @@ namespace DesignUi.Editor.Tests
                 doc.panelSettings = _settings;
                 for (int f = 0; f < 2; f++) yield return null;
                 var tree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Out + "/FixedLines/FixedLines.uxml").Instantiate();
+                // the panel itself at the fractional line box: the root does not lay it out at an exact scale here (RootScaleTests)
+                var screenRoot = tree.Q<DesignScreen>("root");
+                if (screenRoot != null) screenRoot.ExactScales = null;
                 doc.rootVisualElement.Add(tree);
-                for (int f = 0; f < 6; f++) yield return null;
-                (tree.Q<DesignScreen>("root"))?.ApplyViewportScale();
-                for (int f = 0; f < 4; f++) yield return null;
+                for (int f = 0; f < 10; f++) yield return null;
                 double Bottom(string name) { var e = tree.Q(name); return (e.worldBound.yMax) * scale; }
                 double exact = 14 * 20 * scale;
                 double fixedDrift = Bottom("f13") - exact, autoDrift = Bottom("a13") - exact;

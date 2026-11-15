@@ -38,7 +38,7 @@ namespace DesignUi.Editor
         public Vector2Int referenceResolution = new Vector2Int(2560, 1440);
         [Tooltip("Exact viewports: every kit value (text sizes, line heights, borders, thin lines) is a whole number of device pixels there; kit sync, lint and verify hold designs to that. Declare the resolutions whose panel scale keeps the kit's grid whole (with the 2560×1440 reference: 1280×720, 1920×1080, 2560×1440, 3840×2160).")]
         public Vector2Int[] viewports = { new Vector2Int(2560, 1440), new Vector2Int(1920, 1080), new Vector2Int(1280, 720), new Vector2Int(3840, 2160) };
-        [Tooltip("Scaled viewports: resolutions the game supports where no design value can be whole device pixels (1366×768 is scale 0.5335). They are laid out and verified within ±1 device px and exempt from the whole-pixel rules; text there renders through font twins made for that scale. A new profile starts with 1600×900 and 1366×768; a profile saved before this field existed has none.")]
+        [Tooltip("Scaled viewports: resolutions the game supports where no design value can be whole device pixels (1366×768 is scale 0.5335). They are laid out and verified within ±1 device px and exempt from the whole-pixel rules; there a screen lays out at the nearest exact viewport's scale and draws scaled to the actual one. A new profile starts with 1600×900 and 1366×768; a profile saved before this field existed has none.")]
         public Vector2Int[] scaledViewports = new Vector2Int[0];
 
         /// <summary>

@@ -95,7 +95,7 @@ namespace DesignUi.Editor
             var tokensCss = Path.Combine(kitDir, Rel("tokensCss", "tokens.css"));
             var styles = Path.Combine(kitDir, Rel("textStyles", "text-styles.json"));
             stylesPath = styles;
-            try { if (File.Exists(styles)) boxes = FontMap.ProfileLineBoxes(KitTextStyles.LineBoxesOf(styles), profile); }
+            try { if (File.Exists(styles)) boxes = KitTextStyles.LineBoxesOf(styles); }
             catch (Exception e) when (e is IOException || e is JsonException) { }
 
             var stale = new List<string>();

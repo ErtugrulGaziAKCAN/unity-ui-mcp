@@ -236,15 +236,13 @@ namespace DesignUi.Editor
 
         /// <summary>
         /// DesignFonts.uss: per resolved locale, every family's variable points at the locale's twin, and its line-box
-        /// variables (<c>--font-&lt;family&gt;-&lt;key&gt;</c>) at the twin's variants; under each scaled viewport's root class
-        /// (<c>.locale-&lt;code&gt;.vs-&lt;scale&gt;</c>) the line-box variables point at the variants made for that scale.
+        /// variables (<c>--font-&lt;family&gt;-&lt;key&gt;</c>) at the twin's variants.
         /// </summary>
         internal static string WriteUss(FontsPlan plan)
         {
             var sb = new StringBuilder();
             sb.Append(UssWriter.Header).Append('\n');
-            var own = plan.LineBoxes.Where(b => !b.DeviceScale.HasValue).OrderBy(b => b.Key, StringComparer.Ordinal).ToList();
-            var scaled = plan.LineBoxes.Where(b => b.DeviceScale.HasValue).GroupBy(b => b.DeviceScale.Value).OrderByDescending(g => g.Key).ToList();
+            var own = plan.LineBoxes.OrderBy(b => b.Key, StringComparer.Ordinal).ToList();
             foreach (var locale in plan.Locales)
             {
                 if (!plan.Fonts.TryGetValue(locale, out var font)) continue;
@@ -258,32 +256,9 @@ namespace DesignUi.Editor
                           .Append(Url(FontTwinGenerator.TwinPath(font.Primary, plan.TwinFolder, box))).Append(";\n");
                 }
                 sb.Append("}\n");
-                // at a scaled viewport's panel scale (the screen root's vs-* class) the line-box variables name the twins made
-                // for that scale, whose face keeps the design's size where Unity would round it to whole device pixels
-                foreach (var group in scaled)
-                {
-                    sb.Append("\n.").Append(LocaleClass(locale)).Append('.').Append(DesignUi.DesignViewportScales.ClassOf(group.Key)).Append(" {\n");
-                    foreach (var slug in plan.Families.Keys)
-                        foreach (var box in group.OrderBy(b => b.BaseKey, StringComparer.Ordinal))
-                            sb.Append("    --font-").Append(slug).Append('-').Append(box.BaseKey).Append(": ")
-                              .Append(Url(FontTwinGenerator.TwinPath(font.Primary, plan.TwinFolder, box))).Append(";\n");
-                    sb.Append("}\n");
-                }
             }
             return sb.ToString();
         }
-
-        /// <summary>The panel scale of each of the profile's scaled viewports (distinct, in the profile's order).</summary>
-        internal static List<double> ScaledViewportScales(DesignUiProfile profile) =>
-            (profile?.ScaledOnly ?? Enumerable.Empty<UnityEngine.Vector2Int>()).Where(v => v.x > 0 && v.y > 0)
-                .Select(v => BoxesWriter.Scale(v, profile.referenceResolution, profile.screenMatch)).Distinct().ToList();
-
-        /// <summary>
-        /// The line boxes a profile's twins are made for: <paramref name="boxes"/> and, at each of its scaled viewports' panel
-        /// scales, the variant of each whose font size is not whole device pixels there (<see cref="FontTwinGenerator.LineBox.AtDeviceScale"/>).
-        /// </summary>
-        internal static IReadOnlyList<FontTwinGenerator.LineBox> ProfileLineBoxes(IEnumerable<FontTwinGenerator.LineBox> boxes, DesignUiProfile profile) =>
-            FontTwinGenerator.LineBox.WithDeviceScales(boxes, ScaledViewportScales(profile));
 
         /// <summary>
         /// Adds every character of <paramref name="strings"/> (the screen's texts in every locale) to each resolved locale's

@@ -862,15 +862,17 @@ namespace DesignUi.Editor
                 var applies = Root is DesignScreen ds && !string.IsNullOrEmpty(ds.Breakpoints);
                 if (!applies) foreach (var name in breakpoints) Root.AddToClassList(ScreenBuilder.BreakpointClassPrefix + name);
                 for (int i = 0; i < MountFrames; i++) yield return null;
-                // a scaled viewport's fonts (DesignFonts.uss under the root's vs-* class): the root applies its panel's scale on
-                // attach and on geometry changes; a class it still had to change re-lays the text out first
-                if (Root is DesignScreen scaledRoot && !string.IsNullOrEmpty(scaledRoot.ViewportScales))
-                {
-                    var before = string.Join(" ", scaledRoot.GetClasses().Where(c => c.StartsWith(DesignViewportScales.ClassPrefix, StringComparison.Ordinal)));
-                    scaledRoot.ApplyViewportScale();
-                    if (before != string.Join(" ", scaledRoot.GetClasses().Where(c => c.StartsWith(DesignViewportScales.ClassPrefix, StringComparison.Ordinal))))
+                // a panel scale none of the exact viewports has: the screen root lays its panel out at the nearest exact scale
+                // and draws scaled (DesignScreen.ApplyRootScale, on attach and when the panel's scale changes); it settles once
+                // the panel applied that scale
+                if (Root is DesignScreen scaledRoot && !string.IsNullOrEmpty(scaledRoot.ExactScales))
+                    for (int settle = 0; settle < 4; settle++)
+                    {
+                        float before = scaledRoot.RootScale, ppp = Mount.Panel.scaledPixelsPerPoint;
+                        scaledRoot.ApplyRootScale();
+                        if (scaledRoot.RootScale == before && Mount.Panel.scaledPixelsPerPoint == ppp) break;
                         for (int i = 0; i < MountFrames; i++) yield return null;
-                }
+                    }
                 if (applies)
                 {
                     var applied = Root.GetClasses().Where(c => c.StartsWith(ScreenBuilder.BreakpointClassPrefix, StringComparison.Ordinal))

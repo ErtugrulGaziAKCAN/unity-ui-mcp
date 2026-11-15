@@ -43,6 +43,12 @@ namespace DesignUi.Editor
 
         /// <summary>The UXML tag of a compiled screen root (a container): <see cref="DesignUi.DesignScreen"/>, which carries the font set reference.</summary>
         public const string ScreenTag = "dui:DesignScreen";
+        /// <summary>
+        /// A custom property every compiled screen root carries (a rule on the <c>DesignScreen</c> type): UI Toolkit sends a
+        /// CustomStyleResolvedEvent only to elements with custom properties, and that event is how the root learns that its
+        /// panel's scale changed (<see cref="DesignUi.DesignScreen.ApplyRootScale"/>).
+        /// </summary>
+        public const string ScaleWatchProperty = "--design-screen";
 
         /// <summary>The UXML namespace prefix of the package's runtime elements (<c>xmlns:dui="DesignUi"</c>).</summary>
         public const string RuntimeNamespace = "DesignUi";
@@ -1336,9 +1342,14 @@ namespace DesignUi.Editor
                 // the design's @media breakpoints: the screen root applies their bp-* classes from the panel's size at runtime
                 if (compiledRoot.Tag == ScreenTag && ir.Breakpoints != null && ir.Breakpoints.Length > 0)
                     compiledRoot.Attributes.Add(new KeyValuePair<string, string>("breakpoints", DesignUi.DesignBreakpoints.Encode(BreakpointsOf(ir))));
-                // the scaled viewports' panel scales: the root carries the class of the one it renders at (DesignFonts.uss)
-                if (compiledRoot.Tag == ScreenTag && _options.ViewportScales != null && _options.ViewportScales.Count > 0)
-                    compiledRoot.Attributes.Add(new KeyValuePair<string, string>("viewport-scales", DesignUi.DesignViewportScales.Encode(_options.ViewportScales)));
+                // the exact viewports' panel scales: at any other panel scale the screen lays out at the nearest of them and
+                // draws scaled; a custom property on the root makes UI Toolkit tell it (CustomStyleResolvedEvent) when the
+                // panel's scale changes
+                if (compiledRoot.Tag == ScreenTag && _options.ExactScales != null && _options.ExactScales.Count > 0)
+                {
+                    compiledRoot.Attributes.Add(new KeyValuePair<string, string>("exact-scales", DesignUi.DesignViewportScales.Encode(_options.ExactScales)));
+                    _rules.Insert(0, new UssRule(nameof(DesignUi.DesignScreen), new List<UssDeclaration> { new UssDeclaration(ScaleWatchProperty, "1") }));
+                }
                 var names = new Dictionary<string, CompiledElement>(StringComparer.Ordinal);
                 foreach (var e in compiledRoot.DescendantsAndSelf().Concat(_repeats.SelectMany(r => r.Items.SelectMany(i => i.DescendantsAndSelf()))))
                 {

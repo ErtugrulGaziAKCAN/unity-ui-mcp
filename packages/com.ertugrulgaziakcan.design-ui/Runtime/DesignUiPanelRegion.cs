@@ -480,6 +480,8 @@ namespace DesignUi
                 copy.name = source.name + " (sort order " + order.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")";
                 copy.hideFlags = HideFlags.DontSave;
                 copy.sortingOrder = order;
+                // a design screen on the source's panel may hold its scale factor (an exact scale): the copy starts with the asset's own
+                DesignRootScalePanels.CopyMade(source, copy);
                 s_Entries.Add(new Entry { Source = source, Copy = copy, Order = order, Users = 1 });
                 // a gamma composite that renders the source renders the copy too (made before or after it attaches)
                 DesignUiGammaComposite.CopyMade(source, copy);

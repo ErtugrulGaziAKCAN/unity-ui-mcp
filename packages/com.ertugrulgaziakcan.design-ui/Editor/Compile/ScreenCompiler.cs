@@ -165,7 +165,7 @@ namespace DesignUi.Editor
                     RtlAlignment = (profile.localeRules ?? new DesignUi.DesignLocaleRules()).rtlAlignment,
                     Viewports = (profile.viewports ?? new UnityEngine.Vector2Int[0])
                         .Select(v => (v, BoxesWriter.Scale(v, profile.referenceResolution, profile.screenMatch))).ToList(),
-                    ViewportScales = FontMap.ScaledViewportScales(profile),
+                    ExactScales = ExactViewportScales(profile),
                     Translations = Translations(profile, ir.Screen, hooks?.Tables ?? DesignStringTables.Current),
                     // the screen root's own reference to the locales' twins (DesignFonts.asset next to DesignFonts.uss, project only)
                     FontSet = FontSetFolder(outFolder) != null ? "../" + DesignUi.DesignFontSet.FileName : null,
@@ -186,10 +186,10 @@ namespace DesignUi.Editor
                 }
 
                 // fonts per locale: element rules keep var(--font-…); DesignFonts.uss defines them per .locale-<code>; every kit
-                // line box has a twin variant, and so has each of them scaled by a text-size step, and each at a scaled viewport's scale
+                // line box has a twin variant, and so has each of them scaled by a text-size step
                 resolver = hooks?.Fonts ?? FontMap.ResolverFor(profile);
                 fonts = FontMap.Plan(profile, resolver);
-                fonts.LineBoxes = FontMap.ProfileLineBoxes(ScaledLineBoxes(kitBoxes, profile.textSizes), profile);
+                fonts.LineBoxes = ScaledLineBoxes(kitBoxes, profile.textSizes);
                 // twins for the faces the kit's text styles, the other compiled screens and this screen use, not every face of a
                 // family; a face this screen needs that the reference locale's font has not is an error (never synthesized)
                 fonts.Faces = FontMap.ProfileFaces(profile, stylesPath, screenDir);
@@ -331,7 +331,7 @@ namespace DesignUi.Editor
                 files = files,
                 removedElements = compiled.RemovedElements.ToArray(),
                 faces = screenFaces.Select(f => f.Face).Distinct().OrderBy(f => f).Select(FontMap.FaceName).ToArray(),
-                lineBoxes = (fonts?.LineBoxes ?? new FontTwinGenerator.LineBox[0]).Where(b => !b.DeviceScale.HasValue).Select(TwinPrune.LineBoxName).ToArray(),
+                lineBoxes = (fonts?.LineBoxes ?? new FontTwinGenerator.LineBox[0]).Select(TwinPrune.LineBoxName).ToArray(),
                 root = compiled.Root.Name,
                 view = viewFile,
                 clickable = compiled.AllElements().Where(e => e.Clickable).Select(e => e.Name).ToArray(),
@@ -580,6 +580,12 @@ namespace DesignUi.Editor
         }
 
         /// <summary>The kit's line boxes and each of them scaled by every text-size step (each key once).</summary>
+        /// <summary>The panel scale of each of the profile's exact viewports (distinct, in the profile's order): the screen root's <c>exact-scales</c>.</summary>
+        internal static List<double> ExactViewportScales(DesignUiProfile profile) =>
+            (profile?.DeclaredViewports() ?? new List<(UnityEngine.Vector2Int, DesignViewportClass)>())
+                .Where(v => v.cls == DesignViewportClass.Exact && v.size.x > 0 && v.size.y > 0)
+                .Select(v => BoxesWriter.Scale(v.size, profile.referenceResolution, profile.screenMatch)).Distinct().ToList();
+
         internal static IReadOnlyList<FontTwinGenerator.LineBox> ScaledLineBoxes(IReadOnlyList<FontTwinGenerator.LineBox> kit, IEnumerable<DesignUi.DesignTextSize> steps)
         {
             var sizes = kit.Select(b => (b.FontSize, b.LineHeight)).ToList();

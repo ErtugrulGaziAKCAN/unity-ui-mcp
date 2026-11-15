@@ -151,8 +151,8 @@ namespace DesignUi.Editor
         public DesignUi.RtlTextAlignment? RtlAlignment;
         /// <summary>The exact viewports and their panel scales: text-size steps are checked at each (scaled viewports are exempt).</summary>
         public IReadOnlyList<(Vector2Int viewport, double scale)> Viewports;
-        /// <summary>The panel scales of the profile's scaled viewports: the screen root's <c>viewport-scales</c> (DesignScreen).</summary>
-        public IReadOnlyList<double> ViewportScales;
+        /// <summary>The panel scales of the profile's exact viewports: the screen root's <c>exact-scales</c> (DesignScreen).</summary>
+        public IReadOnlyList<double> ExactScales;
         /// <summary>
         /// Every locale's text of a String Table key of the screen (the compiler reads the tables before it builds), or null
         /// without localization: a text gets a fixed line count only when each of them keeps it.

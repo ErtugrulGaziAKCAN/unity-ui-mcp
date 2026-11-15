@@ -50,7 +50,7 @@ namespace DesignUi.Editor
                 if (styles != null && File.Exists(styles))
                 {
                     var boxes = plan.LineBoxes;
-                    plan.LineBoxes = FontMap.ProfileLineBoxes(ScreenCompiler.ScaledLineBoxes(KitTextStyles.LineBoxesOf(styles), profile.textSizes), profile);
+                    plan.LineBoxes = ScreenCompiler.ScaledLineBoxes(KitTextStyles.LineBoxesOf(styles), profile.textSizes);
                     try { keep.UnionWith(Paths(plan)); }
                     finally { plan.LineBoxes = boxes; }
                 }
@@ -59,7 +59,7 @@ namespace DesignUi.Editor
                 if (screenBoxes.Count > 0)
                 {
                     var boxes = plan.LineBoxes;
-                    plan.LineBoxes = FontMap.ProfileLineBoxes(screenBoxes, profile);
+                    plan.LineBoxes = screenBoxes;
                     try { keep.UnionWith(Paths(plan)); }
                     finally { plan.LineBoxes = boxes; }
                 }
@@ -89,6 +89,7 @@ namespace DesignUi.Editor
             return result;
         }
 
+        // the x… suffix: a scaled-viewport variant earlier versions made (no longer kept, so pruned)
         static bool IsVariant(string path) => System.Text.RegularExpressions.Regex.IsMatch(path, @" r\d+s\d+(p\d+)?(x\d+(p\d+)?)?\.asset$");
 
         static string Folder(string f)
@@ -110,8 +111,8 @@ namespace DesignUi.Editor
             if (plan.Errors.Count > 0) { why = plan.Errors[0]; return null; }
             var styles = !string.IsNullOrEmpty(profile.kitDir) ? Path.Combine(profile.kitDir, KitTextStyles.FileName) : null;
             var kitBoxes = styles != null && File.Exists(styles) ? KitTextStyles.LineBoxesOf(styles) : new FontTwinGenerator.LineBox[0];
-            plan.LineBoxes = FontMap.ProfileLineBoxes(ScreenCompiler.ScaledLineBoxes(kitBoxes, profile.textSizes).Concat(ScreenLineBoxes(profile))
-                .GroupBy(b => b.Key).Select(g => g.First()), profile);
+            plan.LineBoxes = ScreenCompiler.ScaledLineBoxes(kitBoxes, profile.textSizes).Concat(ScreenLineBoxes(profile))
+                .GroupBy(b => b.Key).Select(g => g.First()).ToList();
             plan.Faces = FontMap.ProfileFaces(profile, styles);
             return Paths(plan);
         }

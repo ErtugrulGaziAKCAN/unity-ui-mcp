@@ -57,7 +57,7 @@ export function textStylesJson(rows: TextStyleRow[]): Record<string, { fontSize:
 /**
  * Sizes and line heights that are not whole device pixels at an exact viewport's panel scale (Unity rounds font sizes
  * to whole device pixels and ceils text heights): one message per style, value and viewport; [] when all hold. Scaled
- * viewports are exempt (no value is whole there; the font twins and the compiler handle them).
+ * viewports are exempt (no value is whole there; the screen lays out at an exact scale and draws scaled).
  */
 export function textStyleScaleProblems(styles: readonly TextStyle[], kit: Pick<KitConfig, "reference" | "viewports" | "scaledViewports" | "screenMatch">): string[] {
   const out: string[] = [];
