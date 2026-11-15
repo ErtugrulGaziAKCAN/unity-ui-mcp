@@ -19,8 +19,10 @@ Commands:
                                                  Compare Unity captures with the goldens; write the report and verdict.json
   kit build <kitDir> [--check]                   Regenerate base.css, RULES.md and the base block of kit pages;
                                                  check that the font tokens name families fonts.css declares
-  kit claude <kitDir> <outDir> [--title <name>] [--force]
-                                                 Write the kit as a Claude Design System folder (<outDir>/project)
+  kit claude <kitDir> <outDir> [--title <name>] [--force] [--all-faces]
+                                                 Write the kit as a Claude Design System folder (<outDir>/project): the
+                                                 font faces the text styles and font tokens reach (--all-faces: every
+                                                 face), no file over the Design System's 15 MiB cap
 
 Exit codes: 0 ok (compare: every capture passes), 1 lint errors (compare: a capture fails or is not run;
 kit build --check: generated files are stale; kit build: a --font-* token names a family fonts.css does not
@@ -109,11 +111,13 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   kitCmd.command("claude").allowExcessArguments(false).argument("<kitDir>").argument("<outDir>")
     .option("--title <title>", "design system name", DEFAULT_TITLE).option("--by <name>", "lastChange.by of the index", "design-export")
     .option("--force", "replace an existing <outDir>/project").option("--now <iso>", "the index's createdOnFiles.at and lastChange.at (default: now)")
+    .option("--all-faces", "ship every face of the kit's fonts, not only those its text styles and font tokens reach")
     .description("Write the kit as a Claude Design System artifact folder (<outDir>/project)")
-    .action(guard(async (kitDir: string, outDir: string, o: { title: string; by: string; force?: boolean; now?: string }) => {
+    .action(guard(async (kitDir: string, outDir: string, o: { title: string; by: string; force?: boolean; now?: string; allFaces?: boolean }) => {
       const now = o.now === undefined ? undefined : new Date(o.now);
       if (now && Number.isNaN(now.getTime())) throw new Error(`--now ${o.now} is not an ISO date`);
-      const r = writeClaudeDesignSystem(path.resolve(kitDir), path.resolve(outDir), { title: o.title, by: o.by, force: o.force, now });
+      const r = writeClaudeDesignSystem(path.resolve(kitDir), path.resolve(outDir), { title: o.title, by: o.by, force: o.force, now, allFaces: o.allFaces });
+      for (const n of r.notes) io.out(`note: ${n}\n`);
       io.out(`wrote ${r.files.length} files to ${r.projectDir} (design-system.json last)\n`);
       return 0;
     }) as never);

@@ -3,7 +3,7 @@ import path from "node:path";
 import { readKit, type KitConfig } from "../kit.js";
 import { readTextStyles, type TextStyle } from "../lint/text-styles.js";
 import { readKitComponents, type KitComponent } from "./components.js";
-import { LICENCE_FILE, readKitFontFiles, type KitFontFile } from "./kitFonts.js";
+import { dsFontNotes, LICENCE_FILE, readKitFontFiles, selectDsFonts, type KitFontFile } from "./kitFonts.js";
 import { DEFAULT_TITLE, kitStylesheetFrom, renderRules, tokensCssBlock } from "./rulesDoc.js";
 import { assertTextFloor, assertWholeDevicePixels } from "./textStyles.js";
 import { readKitTokens, type KitToken } from "./tokens.js";
@@ -15,14 +15,16 @@ import { readKitTokens, type KitToken } from "./tokens.js";
  *   markup attributes, text styles, fonts, tokens, allowed CSS, every lint rule with its fix, the component cards.
  * - `tokens.json` in the Design System's list shape: colours in one theme, type (font files, the family, the kit text
  *   styles as groups), spacing, radius and shadow, all with the kit's names, so `var(--name)` means the same everywhere.
- * - `fonts/<file>` (the font files kit sync copied from the Unity project) and their licences under `licenses/`.
+ * - `fonts/<file>` (the font files kit sync copied from the Unity project) and their licences under `licenses/`: by default
+ *   only the faces the kit's text styles and font tokens reach (`allFaces`: every face), never a file over the Design
+ *   System's 15 MiB file cap; what is left out is in `notes` and in the README.
  * - `components/<Name>/README.md` (guidelines) and `preview.html` (line 1 `<!-- @dsCard … -->`, then the component's
  *   lint-clean screen with the kit tokens inlined) for each kit component, and a bare `components/Cover/preview.html`.
  * - `design-system.json`: the index of a new system (`createdOnFiles`), written last. When the system already exists,
  *   the publisher keeps the live index's keys and changes only `lastChange` and the title.
  */
-export interface ClaudeDsOptions { title?: string; by?: string; now?: Date; force?: boolean }
-export interface ClaudeDsResult { projectDir: string; files: string[] }
+export interface ClaudeDsOptions { title?: string; by?: string; now?: Date; force?: boolean; allFaces?: boolean }
+export interface ClaudeDsResult { projectDir: string; files: string[]; notes: string[] }
 
 /** Token and type style names the Design System page reads. */
 export const CLAUDE_TOKEN_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
@@ -235,8 +237,11 @@ export function writeClaudeDesignSystem(kitDir: string, outDir: string, opts: Cl
   const kit = readKit(kitDir);
   const title = opts.title ?? DEFAULT_TITLE;
   const at = (opts.now ?? new Date()).toISOString();
-  const faces = readKitFontFiles(kit);
-  if (!faces || faces.length === 0) throw new Error(`the kit at ${kit.dir} has no synced fonts (${kit.fontsCss}): run kit sync in the Unity project first, so the design system carries the font files Unity renders with`);
+  const synced = readKitFontFiles(kit);
+  if (!synced || synced.length === 0) throw new Error(`the kit at ${kit.dir} has no synced fonts (${kit.fontsCss}): run kit sync in the Unity project first, so the design system carries the font files Unity renders with`);
+  const selection = selectDsFonts(kit, { allFaces: opts.allFaces });
+  const faces = selection.shipped;
+  const notes = dsFontNotes(selection);
   const tokens = readKitTokens(kit);
   const styles = readTextStyles(kit);
   assertWholeDevicePixels(styles, kit);
@@ -245,7 +250,7 @@ export function writeClaudeDesignSystem(kitDir: string, outDir: string, opts: Cl
 
   // everything is read and rendered before anything is written
   const files: [string, string | Buffer][] = [];
-  files.push(["README.md", renderRules(kit, "claude", { title })]);
+  files.push(["README.md", renderRules(kit, "claude", { title, allFaces: opts.allFaces })]);
   const tokensJson = buildTokensJson(title, tokens, styles, faces);
   const problems = validateTokensJson(tokensJson);
   if (problems.length) throw new Error(`tokens.json would lose entries in the Design System: ${problems.join("; ")}`);
@@ -291,5 +296,5 @@ export function writeClaudeDesignSystem(kitDir: string, outDir: string, opts: Cl
   };
   for (const [rel, data] of files) write(rel, data);
   write("design-system.json", JSON.stringify(index, null, 2) + "\n"); // the index goes last
-  return { projectDir, files: written };
+  return { projectDir, files: written, notes };
 }

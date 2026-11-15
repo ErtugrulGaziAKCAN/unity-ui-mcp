@@ -6,7 +6,7 @@ import { RULE_SUMMARIES } from "../lint/rule-table.js";
 import { readTextStyles, type TextStyle } from "../lint/text-styles.js";
 import { renderBaseCss } from "./baseCss.js";
 import { readKitComponents, type KitComponent } from "./components.js";
-import { readKitFontFiles } from "./kitFonts.js";
+import { dsFontNotes, selectDsFonts } from "./kitFonts.js";
 import { minimumKitTextPx, minimumTextPx, smallestViewport, TEXT_FLOOR_PX } from "./textStyles.js";
 import { readKitTokens, type KitToken, type TokenFamily } from "./tokens.js";
 
@@ -17,7 +17,8 @@ import { readKitTokens, type KitToken, type TokenFamily } from "./tokens.js";
  * component cards.
  */
 export type RulesAudience = "kit" | "claude";
-export interface RulesOptions { title?: string }
+/** `allFaces`: the Claude export ships every face of the kit fonts (kit claude --all-faces). */
+export interface RulesOptions { title?: string; allFaces?: boolean }
 
 export const DEFAULT_TITLE = "Unity UI Kit";
 
@@ -285,12 +286,15 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
 
   h("Fonts");
   if (claude) {
-    const faces = readKitFontFiles(kit) ?? [];
+    const selection = selectDsFonts(kit, { allFaces: opts.allFaces });
+    const faces = selection.shipped;
     const fams = Array.from(new Set(faces.map((f) => f.family)));
+    const left = dsFontNotes(selection);
     L.push(`The fonts come from the Unity project (kit sync copies the font files Unity renders with), so the design renders with the same glyphs as Unity. Use \`font-family: ${fontVar}\` (the base stylesheet sets it on the page); never declare \`@font-face\` (U-FONT-002) and never name another family (U-CSS-010).`,
       "", "| Family | Weight | Style | File |", "|---|---|---|---|",
       ...faces.map((f) => `| ${f.family} | ${f.weight} | ${f.style} | \`${f.file.replace(/^.*\//, "fonts/")}\` |`), "",
-      `Families: ${fams.map((f) => `"${f}"`).join(", ") || "none"}. A character the kit font lacks fails lint (U-FONT-003) instead of falling back to another font.`);
+      `Families: ${fams.map((f) => `"${f}"`).join(", ") || "none"}. A character the kit font lacks fails lint (U-FONT-003) instead of falling back to another font.`,
+      ...(left.length ? ["", "Not in this design system (the project's kit and Unity keep them; lint and export use the kit's own files):", ...left.map((l) => `- ${l[0].toUpperCase()}${l.slice(1)}.`)] : []));
   } else {
     L.push(`The fonts come from the Unity project: kit sync copies the font files the project's TMP setup renders each locale with into \`fonts/\` and writes \`fonts/fonts.css\` and \`fonts/fonts.json\`. The exporter loads only those. Use \`font-family: ${fontVar}\` (the base stylesheet sets it on the page); never declare \`@font-face\` (U-FONT-002) and never name another family (U-CSS-010). A character the kit font lacks fails lint (U-FONT-003) instead of falling back to another font.`);
   }

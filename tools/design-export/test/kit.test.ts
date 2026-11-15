@@ -399,7 +399,8 @@ describe("Claude design system export (kit claude)", () => {
     fs.mkdirSync(path.join(kitDir, "fonts", "b"));
     fs.copyFileSync(path.join(kitDir, "fonts", "Inter_18pt-Bold.ttf"), path.join(kitDir, "fonts", "b", "Inter_18pt-Regular.ttf"));
     fs.appendFileSync(path.join(kitDir, "fonts", "fonts.css"), '@font-face { font-family: "Inter UI"; font-weight: 700; font-style: italic; src: url("b/Inter_18pt-Regular.ttf") format("truetype"); }\n');
-    expect(() => writeClaudeDesignSystem(kitDir, tmp("claude-ds-"), { now })).toThrow(/share the name Inter_18pt-Regular\.ttf/);
+    // a 700 italic face no text style reaches is not shipped by default; with every face the two names clash
+    expect(() => writeClaudeDesignSystem(kitDir, tmp("claude-ds-"), { now, allFaces: true })).toThrow(/share the name Inter_18pt-Regular\.ttf/);
   });
 
   it("refuses a kit without synced fonts, and an existing project folder unless forced", async () => {
@@ -426,4 +427,62 @@ describe("Claude design system export (kit claude)", () => {
     expect(c.err.join("")).toMatch(/was not written by design-export kit claude/);
     expect(fs.readFileSync(path.join(other, "project", "notes.md"), "utf8")).toBe("mine");
   });
+
+  /** A kit whose fonts.css lists more faces than its text styles and font tokens reach (a game's whole TMP weight table). */
+  function wideFontKit(): string {
+    const kitDir = kitCopy({ fonts: true });
+    const f = (n: string) => path.join(kitDir, "fonts", n);
+    // the repo kit's fonts.css has Inter UI 400, 400 italic and 700
+    for (const [to, from] of [["Inter_18pt-Light.ttf", "Inter_18pt-Regular.ttf"], ["Inter_18pt-Black.ttf", "Inter_18pt-Bold.ttf"],
+      ["NotoSansTest-Regular.ttf", "Inter_18pt-Regular.ttf"]]) fs.copyFileSync(f(from), f(to));
+    fs.appendFileSync(f("fonts.css"),
+      '@font-face { font-family: "Inter UI"; font-weight: 300; src: url("Inter_18pt-Light.ttf") format("truetype"); }\n' +
+      '@font-face { font-family: "Inter UI"; font-weight: 900; src: url("Inter_18pt-Black.ttf") format("truetype"); }\n' +
+      '@font-face { font-family: "Noto Sans Test"; font-weight: 400; src: url("NotoSansTest-Regular.ttf") format("truetype"); }\n');
+    fs.writeFileSync(f("fonts.json"), JSON.stringify({ tr: ["Inter UI"], ja: ["Noto Sans Test"] }));
+    return kitDir;
+  }
+  const shipped = (out: string) => fs.readdirSync(path.join(out, "project", "fonts")).sort();
+
+  it("ships only the faces the kit's text styles and font tokens reach; --all-faces ships every face", async () => {
+    const kitDir = wideFontKit();
+    const out = tmp("claude-ds-");
+    const a = io();
+    expect(await runCli(["kit", "claude", kitDir, out, "--now", "2026-11-13T12:00:00Z"], a.io)).toBe(0);
+    expect(shipped(out)).toEqual(["Inter_18pt-Bold.ttf", "Inter_18pt-Regular.ttf"]);
+    const tokens = JSON.parse(fs.readFileSync(path.join(out, "project", "tokens.json"), "utf8"));
+    expect(tokens.type.fonts.map((x: { file: string }) => x.file).sort()).toEqual(["fonts/Inter_18pt-Bold.ttf", "fonts/Inter_18pt-Regular.ttf"]);
+    expect(validateTokensJson(tokens)).toEqual([]);
+    const md = fs.readFileSync(path.join(out, "project", "README.md"), "utf8");
+    expect(md).not.toContain("Inter_18pt-Light.ttf");
+    expect(md).toMatch(/4 faces? no text style or font token reaches .*--all-faces/);
+    expect(a.out.join("")).toMatch(/left out 4 faces? no text style or font token reaches/);
+
+    const all = tmp("claude-ds-");
+    expect(await runCli(["kit", "claude", kitDir, all, "--all-faces", "--now", "2026-11-13T12:00:00Z"], io().io)).toBe(0);
+    expect(shipped(all)).toEqual(["Inter_18pt-Black.ttf", "Inter_18pt-Bold.ttf", "Inter_18pt-Italic.ttf", "Inter_18pt-Light.ttf", "Inter_18pt-Regular.ttf", "NotoSansTest-Regular.ttf"]);
+    const allTokens = JSON.parse(fs.readFileSync(path.join(all, "project", "tokens.json"), "utf8"));
+    expect(allTokens.type.fonts).toHaveLength(6);
+  });
+
+  it("leaves out a file over the Design System's 15 MiB cap with a printed note and a README line; tokens.json does not list it", async () => {
+    const kitDir = kitCopy({ fonts: true });
+    const big = path.join(kitDir, "fonts", "Inter_18pt-Bold.ttf");
+    fs.writeFileSync(big, Buffer.alloc(15 * 1024 * 1024 + 1));
+    const out = tmp("claude-ds-");
+    const a = io();
+    expect(await runCli(["kit", "claude", kitDir, out, "--now", "2026-11-13T12:00:00Z"], a.io)).toBe(0);
+    expect(shipped(out)).toEqual(["Inter_18pt-Regular.ttf"]);
+    const tokens = JSON.parse(fs.readFileSync(path.join(out, "project", "tokens.json"), "utf8"));
+    expect(tokens.type.fonts.map((x: { file: string }) => x.file)).toEqual(["fonts/Inter_18pt-Regular.ttf"]);
+    expect(a.out.join("")).toMatch(/note: left out fonts\/Inter_18pt-Bold\.ttf \(15\.0 MiB\): over the Design System's 15 MiB file cap/);
+    const md = fs.readFileSync(path.join(out, "project", "README.md"), "utf8");
+    expect(md).toMatch(/Inter_18pt-Bold\.ttf.*15 MiB/);
+    // exactly at the cap ships
+    fs.writeFileSync(big, Buffer.alloc(15 * 1024 * 1024));
+    const at = tmp("claude-ds-");
+    expect(await runCli(["kit", "claude", kitDir, at], io().io)).toBe(0);
+    expect(shipped(at)).toEqual(["Inter_18pt-Bold.ttf", "Inter_18pt-Regular.ttf"]);
+  });
+
 });
