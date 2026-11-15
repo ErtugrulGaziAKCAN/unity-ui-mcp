@@ -120,6 +120,8 @@ describe("scripts/setup.sh", () => {
     });
     const kit = path.join(e.project, "Designs", "design-kit");
     expect(read(path.join(kit, "kit.config.json"))).toBe(read(path.join(REPO, "design-kit", "kit.config.json")));
+    // the clone's configuration the kit was copied from: kit upgrade's base for the lists the project narrows or grows
+    expect(read(path.join(kit, ".kit-base.json"))).toBe(read(path.join(REPO, "design-kit", "kit.config.json")));
     expect(fs.existsSync(path.join(kit, "RULES.md"))).toBe(true);
     expect(fs.existsSync(path.join(kit, "fixtures")), "the repository's fidelity fixtures stay in the clone").toBe(false);
     // the project's manifest never lists the package's tests

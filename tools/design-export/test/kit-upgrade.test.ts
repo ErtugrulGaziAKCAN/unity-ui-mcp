@@ -256,23 +256,70 @@ describe("kit upgrade", () => {
     expect(JSON.parse(fs.readFileSync(cfgFile, "utf8")).allowedScriptOrigins).toEqual(["https://unpkg.com"]);
     expect(r.kept.join("\n")).toMatch(/allowedScriptOrigins.*the project's \["https:\/\/unpkg\.com"\].*https:\/\/cdn\.jsdelivr\.net/);
 
-    // a clone whose earlier kit.config.json allowed one origin and now two: a project list that holds the earlier one and
-    // adds its own takes the clone's new origin too
+  });
+
+  /** A clone repository whose kit.config.json had each of `lists` as allowedScriptOrigins, in order, then its current one. */
+  const cloneWithHistory = (...lists: string[][]) => {
+    const clone = JSON.parse(fs.readFileSync(path.join(CLONE_KIT, "kit.config.json"), "utf8"));
     const repo = path.join(tmp(), "clone");
     fs.cpSync(CLONE_KIT, path.join(repo, "design-kit"), { recursive: true, filter: (src) => !src.startsWith(path.join(CLONE_KIT, "fixtures")) });
     const cloneCfg = path.join(repo, "design-kit", "kit.config.json");
     const git = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.email=t@example.org", "-c", "user.name=t", ...a], { stdio: "pipe" });
     git("init", "-q");
-    fs.writeFileSync(cloneCfg, JSON.stringify({ ...clone, allowedScriptOrigins: ["https://unpkg.com"] }));
-    git("add", "-A"); git("commit", "-q", "-m", "old");
+    for (const l of lists) { fs.writeFileSync(cloneCfg, JSON.stringify({ ...clone, allowedScriptOrigins: l })); git("add", "-A"); git("commit", "-q", "-m", "old"); }
     fs.writeFileSync(cloneCfg, JSON.stringify(clone));
     git("add", "-A"); git("commit", "-q", "-m", "new");
-    const grown = oldProjectKit();
-    const grownCfg = path.join(grown, "kit.config.json");
-    fs.writeFileSync(grownCfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(grownCfg, "utf8")), allowedScriptOrigins: ["https://unpkg.com", "https://example.org"] }));
-    const g = upgradeKit(grown, { from: path.join(repo, "design-kit"), tmpRoot: tmp("kit-upgrade-staging-") });
+    return { from: path.join(repo, "design-kit"), current: clone.allowedScriptOrigins as string[] };
+  };
+  const withOrigins = (kit: string, origins: string[]) => {
+    const f = path.join(kit, "kit.config.json");
+    fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, "utf8")), allowedScriptOrigins: origins }));
+  };
+  const originsOf = (kit: string) => JSON.parse(fs.readFileSync(path.join(kit, "kit.config.json"), "utf8")).allowedScriptOrigins;
+  const UNPKG = "https://unpkg.com", JSDELIVR = "https://cdn.jsdelivr.net", OWN = "https://example.org";
+
+  it("records the clone's configuration it upgraded from; a list grown from that base takes the clone's new entries, said", async () => {
+    // the first upgrade from a clone that allowed one origin records it; the project adds its own; the next clone allows two
+    const old = cloneWithHistory();
+    const oldCfg = path.join(old.from, "kit.config.json");
+    fs.writeFileSync(oldCfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(oldCfg, "utf8")), allowedScriptOrigins: [UNPKG] }));
+    const kit = oldProjectKit();
+    withOrigins(kit, [UNPKG]);
+    expect(upgradeKit(kit, { from: old.from, tmpRoot: tmp("kit-upgrade-staging-") }).ok).toBe(true);
+    expect(JSON.parse(fs.readFileSync(path.join(kit, ".kit-base.json"), "utf8")).allowedScriptOrigins).toEqual([UNPKG]);
+    withOrigins(kit, [UNPKG, OWN]);
+    const r = upgradeKit(kit, { from: CLONE_KIT, tmpRoot: tmp("kit-upgrade-staging-") });
+    expect(r.ok, r.errors.join("\n")).toBe(true);
+    expect(originsOf(kit)).toEqual([UNPKG, JSDELIVR, OWN]);
+    expect(r.notes.join("\n")).toMatch(/allowedScriptOrigins.*takes the clone's "https:\/\/cdn\.jsdelivr\.net" too/);
+  });
+
+  it("keeps a list narrowed after the recorded base, also when the clone's history once had that smaller list", async () => {
+    const clone = cloneWithHistory([UNPKG]);
+    const kit = oldProjectKit();
+    expect(upgradeKit(kit, { from: clone.from, tmpRoot: tmp("kit-upgrade-staging-") }).ok).toBe(true);
+    withOrigins(kit, [UNPKG]);
+    const r = upgradeKit(kit, { from: clone.from, tmpRoot: tmp("kit-upgrade-staging-") });
+    expect(r.ok, r.errors.join("\n")).toBe(true);
+    expect(originsOf(kit)).toEqual([UNPKG]);
+    expect(r.kept.join("\n")).toMatch(/allowedScriptOrigins.*\["https:\/\/unpkg\.com"\].*https:\/\/cdn\.jsdelivr\.net/);
+  });
+
+  it("without a record: an empty earlier list is never a base; a list equal to an earlier clone list takes the new entries, said", async () => {
+    const empty = cloneWithHistory([]);
+    const narrowed = oldProjectKit();
+    withOrigins(narrowed, [UNPKG]);
+    const r = upgradeKit(narrowed, { from: empty.from, tmpRoot: tmp("kit-upgrade-staging-") });
+    expect(r.ok, r.errors.join("\n")).toBe(true);
+    expect(originsOf(narrowed)).toEqual([UNPKG]);
+
+    const smaller = cloneWithHistory([UNPKG]);
+    const copied = oldProjectKit();
+    withOrigins(copied, [UNPKG]);
+    const g = upgradeKit(copied, { from: smaller.from, tmpRoot: tmp("kit-upgrade-staging-") });
     expect(g.ok, g.errors.join("\n")).toBe(true);
-    expect(JSON.parse(fs.readFileSync(grownCfg, "utf8")).allowedScriptOrigins).toEqual([...clone.allowedScriptOrigins, "https://example.org"]);
+    expect(originsOf(copied)).toEqual(smaller.current);
+    expect(g.notes.join("\n")).toMatch(/allowedScriptOrigins.*takes the clone's "https:\/\/cdn\.jsdelivr\.net" too/);
   });
 
   it("stops when the project's components.json does not parse: an error, nothing written, its components not dropped", async () => {

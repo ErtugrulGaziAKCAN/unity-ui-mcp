@@ -327,6 +327,8 @@ else
       mkdir -p "$(dirname "$KIT_ABS")"
       KIT_TMP="$(mktemp -d "$(dirname "$KIT_ABS")/.design-kit.XXXXXX")"
       (cd "$REPO/design-kit" && tar cf - --exclude ./fixtures .) | (cd "$KIT_TMP" && tar xf -)
+      # the clone's configuration the kit was copied from: kit upgrade tells a list the project narrowed or grew by it
+      cp "$REPO/design-kit/kit.config.json" "$KIT_TMP/.kit-base.json"
       mv "$KIT_TMP" "$KIT_ABS"
     fi
   fi

@@ -55,6 +55,12 @@ export interface KitUpgradeResult {
 
 export const KEEP_BACKUPS = 3;
 export const BACKUP_DIR = ".backup";
+/**
+ * The clone's kit.config.json the kit was copied from or last upgraded to, verbatim (setup writes it with the copy, every
+ * upgrade replaces it): the base a list the project narrowed or grew is told from. Dot files are not read by Unity, kit
+ * build or the Design System export.
+ */
+export const BASE_FILE = ".kit-base.json";
 /** Inside a backup: the old files (at their kit paths) and the manifest naming what the upgrade replaced and added. */
 export const BACKUP_FILES = "files", BACKUP_MANIFEST = "kit-upgrade.json";
 
@@ -199,11 +205,12 @@ function mergeComponents(clone: string, project: string | null, kept: string[], 
 
 /**
  * kit.config.json: the clone's keys and order, the project's profile-written keys, own keys, paths and extra viewports. A
- * list the clone ships keeps the project's entries: when the project's list holds every entry of the clone's current or an
- * earlier list (`history`, newest first), it grew from it and takes the clone's new entries too; else the project narrowed
- * it, and its list stays as it is, with the clone's entries it lacks said.
+ * list the clone ships is told by the clone list the project's list came from: the recorded base (`base`, BASE_FILE), else
+ * the newest clone list (current or in `history`, newest first) the project's list equals; an empty list is never a base.
+ * A project list that holds every entry of its non-empty base grew from it: it takes the clone's current entries too, each
+ * one it lacked said. Any other list (narrowed, or with no base) stays as it is, with the clone's entries it lacks said.
  */
-function mergeConfig(clone: Json, project: Json, history: Json[], kept: string[], notes: string[]): Json {
+function mergeConfig(clone: Json, project: Json, history: Json[], base: Json | null, kept: string[], notes: string[]): Json {
   const PROJECT_KEYS = ["locales", "referenceLocale", "reference", "screenMatch", "textSizes", "fontsCss", "tokensCss", "textStyles"];
   const out: Json = {};
   for (const [k, v] of Object.entries(clone)) out[k] = v;
@@ -222,18 +229,23 @@ function mergeConfig(clone: Json, project: Json, history: Json[], kept: string[]
     if (PROJECT_KEYS.includes(k) || k === "viewports" || project[k] === undefined || JSON.stringify(project[k]) === JSON.stringify(v)) continue;
     if (k === "filterFunctions") { notes.push(`kit.config.json: "filterFunctions" follows css-support.json (kit build writes it): ${JSON.stringify(v)}`); continue; }
     if (Array.isArray(v) && Array.isArray(project[k])) {
-      const mine = project[k] as unknown[], has = new Set(mine.map((x) => JSON.stringify(x)));
-      const grew = [v, ...history.map((h) => h[k]).filter((o): o is unknown[] => Array.isArray(o))].some((o) => o.every((x) => has.has(JSON.stringify(x))));
-      if (!grew) {
+      const j = (x: unknown) => JSON.stringify(x);
+      const mine = project[k] as unknown[], has = new Set(mine.map(j));
+      const same = (o: unknown[]) => o.length === mine.length && o.every((x) => has.has(j(x)));
+      const from = base && Array.isArray(base[k]) ? (base[k] as unknown[])
+        : [v, ...history.map((h) => h[k])].find((o): o is unknown[] => Array.isArray(o) && o.length > 0 && same(o)) ?? null;
+      const lacks = v.filter((x) => !has.has(j(x)));
+      if (!from || from.length === 0 || !from.every((x) => has.has(j(x)))) {
         out[k] = mine;
-        const lacks = v.filter((x) => !has.has(JSON.stringify(x)));
-        kept.push(`kit.config.json: "${k}": the project's ${JSON.stringify(mine)}, narrower than the clone's (kept; it lacks ${lacks.map((x) => JSON.stringify(x)).join(", ")})`);
+        if (lacks.length) kept.push(`kit.config.json: "${k}": the project's ${j(mine)}, narrower than the clone's (kept; it lacks ${lacks.map(j).join(", ")})`);
+        else kept.push(`kit.config.json: "${k}": the project's ${j(mine)} (kept)`);
         continue;
       }
-      const seen = new Set(v.map((x) => JSON.stringify(x)));
-      const extra = mine.filter((x) => !seen.has(JSON.stringify(x)));
+      const seen = new Set(v.map(j));
+      const extra = mine.filter((x) => !seen.has(j(x)));
       out[k] = [...v, ...extra];
-      if (extra.length) kept.push(`kit.config.json: "${k}" keeps the project's ${extra.map((x) => JSON.stringify(x)).join(", ")} besides the clone's`);
+      if (extra.length) kept.push(`kit.config.json: "${k}" keeps the project's ${extra.map(j).join(", ")} besides the clone's`);
+      if (lacks.length) notes.push(`kit.config.json: "${k}" takes the clone's ${lacks.map(j).join(", ")} too (the project's list holds the clone list it came from${base ? ", recorded in " + BASE_FILE : ""})`);
       continue;
     }
     notes.push(`kit.config.json: "${k}" takes the clone's ${JSON.stringify(v)} (the project had ${JSON.stringify(project[k])})`);
@@ -309,7 +321,11 @@ export function upgradeKit(kitDir: string, opts: KitUpgradeOptions = {}): KitUpg
       const pt = fs.existsSync(path.join(kit, projectTokens)) ? fs.readFileSync(path.join(kit, projectTokens), "utf8") : "";
       write(projectTokens, mergeTokens(ct, pt, cloneTokenHistory(path.join(from, cloneTokens)), result.kept, result.notes));
     }
-    write("kit.config.json", JSON.stringify(mergeConfig(cloneCfg, projectCfg, cloneConfigHistory(path.join(from, "kit.config.json")), result.kept, result.notes)) + "\n");
+    let base: Json | null = null;
+    try { if (fs.existsSync(path.join(kit, BASE_FILE))) base = readJson(path.join(kit, BASE_FILE)); }
+    catch { result.notes.push(`${BASE_FILE} does not parse: the lists are told from the clone's history instead`); }
+    write("kit.config.json", JSON.stringify(mergeConfig(cloneCfg, projectCfg, cloneConfigHistory(path.join(from, "kit.config.json")), base, result.kept, result.notes)) + "\n");
+    write(BASE_FILE, fs.readFileSync(path.join(from, "kit.config.json"))); // the base of the next upgrade
     if (result.errors.length) return result; // nothing is built or written
 
     // kit build, then kit build --check, on the staging copy
@@ -331,7 +347,7 @@ export function upgradeKit(kitDir: string, opts: KitUpgradeOptions = {}): KitUpg
     }
     for (const r of projectFiles) {
       if (inFonts(r, projectFonts) || r === projectTokens || r === "kit.config.json") continue;
-      if (!fs.existsSync(path.join(from, r)) && !(r === projectStyles)) result.kept.push(`${r} (not in the clone's kit)`);
+      if (!fs.existsSync(path.join(from, r)) && r !== projectStyles && r !== BASE_FILE) result.kept.push(`${r} (not in the clone's kit)`);
     }
     result.ok = true;
     if (opts.dryRun || result.replaced.length + result.added.length === 0) return result;
