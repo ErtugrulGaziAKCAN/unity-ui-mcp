@@ -359,6 +359,75 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
+        /// Ruling R136 (a language switched while a screen is open kept its labels at their earlier text's width): a
+        /// text-sized label measures its text again whenever the text changes after its first layout, however it is written
+        /// (a <c>text</c> write, which sends a change event, and a write without one, as a binding or a list makes it), and
+        /// when its font changes with it (a locale switch brings the locale's font and its text in one frame); nothing is
+        /// measured on frames where neither changed.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AText_ChangedAfterItsFirstLayout_IsMeasuredAgain_HoweverItIsWritten()
+        {
+            var bold = BodyBold();
+            var regular = FontFixture.Kept(FontFixture.RegularTtf, "Kept R136 Regular");
+            var regularTwin = FontTwinGenerator.GetOrCreateTwin(regular, FontFixture.KeptFolder + "/FitTwins", FontTwinGenerator.LineBox.For(24, 32));
+            DesignText.Prepare(regularTwin, string.Concat(Words) + " ");
+            var doc = Document(2560, 1440);
+            yield return Frames(2);
+            var label = new DesignLabel("Düzenle Paylaş Yenile");
+            label.style.position = Position.Absolute;
+            label.style.left = 100;
+            label.style.top = 100;
+            label.style.fontSize = 24;
+            label.style.unityFontDefinition = bold;
+            doc.rootVisualElement.Add(label);
+            yield return Frames(6);
+            void Laid(string what)
+            {
+                var text = label.Fit.TextWidth();
+                Assert.IsFalse(float.IsNaN(text), what + ": measured");
+                Assert.AreEqual(DesignTextFit.Snap(text, 1), label.Fit.Width, 1e-3, what + ": the browser's width for " + label.text);
+                Assert.AreEqual(label.Fit.Width, label.layout.width, 1e-3, what + ": laid out at it");
+            }
+            Laid("the first text");
+            float first = label.Fit.Width;
+
+            label.text = "Sil";
+            yield return Frames(6);
+            Laid("a much shorter text");
+            Assert.Less(label.Fit.Width, first / 3);
+            label.text = "Düzenle Paylaş Yenile Kaydet Onayla Vazgeç";
+            yield return Frames(6);
+            Laid("a much longer text");
+            Assert.Greater(label.Fit.Width, first * 1.5f);
+
+            // written without a change event (a binding, a list rebinding an item)
+            ((INotifyValueChanged<string>)label).SetValueWithoutNotify("Geri");
+            yield return Frames(6);
+            Laid("a much shorter text written without a change event");
+            ((INotifyValueChanged<string>)label).SetValueWithoutNotify("Kaydet Onayla Vazgeç Paylaş Düzenle");
+            yield return Frames(6);
+            Laid("a much longer text written without a change event");
+
+            // a locale switch: another font and another text in one frame
+            float boldWidth = label.Fit.Width;
+            label.style.unityFontDefinition = FontDefinition.FromSDFFont(regularTwin);
+            ((INotifyValueChanged<string>)label).SetValueWithoutNotify("Kaydet Onayla Vazgeç Paylaş Düzenle");
+            yield return Frames(6);
+            Laid("the same text in another font");
+            Assert.Less(label.Fit.Width, boldWidth - 4, "the regular face is narrower than the bold one");
+            label.style.unityFontDefinition = bold;
+            ((INotifyValueChanged<string>)label).SetValueWithoutNotify("Ekle");
+            yield return Frames(6);
+            Laid("another font and another text in one frame");
+
+            // nothing changes: nothing is measured
+            int measures = label.Fit.Measures;
+            for (int i = 0; i < 10; i++) { label.MarkDirtyRepaint(); yield return null; }
+            Assert.AreEqual(measures, label.Fit.Measures, "a repaint of the same text in the same font measures nothing");
+        }
+
+        /// <summary>
         /// A row of bordered tabs at 1600×900 just too short for the golden's widths: the golden's box of each (Chromium's
         /// border on whole device pixels, 4.8 panel px a side, the text ceiled on the 0.625 grid) is wider than UI Toolkit's own
         /// (borders 4, the text on the 0.75 grid), and the row's width lies between the two sums. The row takes the exact

@@ -47,7 +47,8 @@ namespace DesignUi
     /// box as wide as its text must not break it when the grid takes a fraction of a pixel off. It is measured again when
     /// the text, the element's styles (a state, the locale's fonts, a text size) or its geometry change, and once more after
     /// the next draw when the face that draws the text (<see cref="DesignText.DrawingFace"/>) lacked one of its characters
-    /// or had just gained them (ruling R134). A text the design
+    /// or had just gained them (ruling R134). A text or font that changes without an event the fit hears (a write without a
+    /// change event, a binding, a locale's font) shows in the next repaint, which measures again (ruling R136). A text the design
     /// lets wrap keeps wrapping where its line does not fit. In a row the layout shows that (it holds the element narrower
     /// than its text) and the inline width and white-space come off (UI Toolkit's own layout, which wraps it: a row that a
     /// column sizes to its content does not shrink an explicit flex basis, so the browser's width cannot stay as the basis).
@@ -98,6 +99,39 @@ namespace DesignUi
                 Update();
             });
             element.RegisterCallback<ChangeEvent<string>>(e => { if (e.target == element) Update(); });
+            // a text or font that changes without any of those events (a write without a change event, as a binding or a
+            // list makes it; a font a locale switch brings with the text): the element repaints, and a repaint whose text or
+            // font is not the one the fit last looked at measures again at the next update (ruling R136)
+            element.generateVisualContent += OnRepaint;
+        }
+
+        /// <summary>The text, font and style <see cref="TextWidth"/> last looked at (whatever it returned).</summary>
+        string m_SeenText;
+        UnityEngine.TextCore.Text.FontAsset m_SeenFont;
+        FontStyle m_SeenStyle;
+        IVisualElementScheduledItem m_Changed;
+
+        /// <summary>
+        /// Ruling R136: the text or the font changed since the fit last looked at them, with no event the fit hears (only a
+        /// repaint follows a write without a change event): measure again at the panel's next update. A repaint of the same
+        /// text in the same font does nothing, so nothing is measured per frame.
+        /// </summary>
+        void OnRepaint(MeshGenerationContext _)
+        {
+            if (m_Changed != null) return;
+            var e = m_Element;
+            var rs = e.resolvedStyle;
+            if (string.Equals(e.text, m_SeenText, StringComparison.Ordinal) && ReferenceEquals(rs.unityFontDefinition.fontAsset, m_SeenFont) &&
+                rs.unityFontStyleAndWeight == m_SeenStyle)
+                return;
+            m_Changed = e.schedule.Execute(() =>
+            {
+                m_Changed = null;
+                Update();
+            });
+            // a runtime panel in Edit mode updates only when something on it changed (marked from the Editor's next update:
+            // nothing may change render data while it repaints)
+            DesignRootScalePanels.RequestUpdate(e);
         }
 
         readonly EventCallback<GeometryChangedEvent> m_OnParentGeometry;
@@ -122,9 +156,12 @@ namespace DesignUi
             var e = m_Element;
             var text = e.text;
             m_Lacking = null;
+            m_SeenText = text;
             if (!Supported || e.panel == null || string.IsNullOrEmpty(text)) return float.NaN;
             var rs = e.resolvedStyle;
             var font = rs.unityFontDefinition.fontAsset;
+            m_SeenFont = font;
+            m_SeenStyle = rs.unityFontStyleAndWeight;
             if (font == null || font.atlasTexture == null) return float.NaN;
             // the same text in the same style at the same scale measures the same: style and geometry callbacks (an animated
             // colour, a moved parent) measure nothing

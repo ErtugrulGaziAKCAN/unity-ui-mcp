@@ -244,6 +244,45 @@ namespace DesignUi.Localization.Tests
             Assert.AreSame(title, tree.Q<Label>("title"), "the same elements: nothing reopened");
         }
 
+        /// <summary>
+        /// Ruling R136 (the pilot: a language switched while a screen is open kept its text-sized labels at their earlier
+        /// text's width): the screen's text-sized title follows a locale switch, which brings its text and its font in one
+        /// frame through the String Table binding and the locale controller, to the new text's width, and back.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ATextSizedTitle_FollowsALocaleSwitch_ToItsNewTextsWidth()
+        {
+            var set = Compile(DesignArgumentFormat.SmartString, out _);
+            Translate("de", "loc.clubTitle", "Größe des Vereins und seiner Mannschaft", false);
+            var (_, tree, _, _) = Open(set, "tr");
+            var title = tree.Q<DesignLabel>("title");
+            Assert.IsNotNull(title, "the text-sized title compiles to a DesignLabel");
+            yield return Frames(5);
+            void Fitted(string what)
+            {
+                var text = title.Fit.TextWidth();
+                Assert.IsFalse(float.IsNaN(text), what + ": measured");
+                Assert.AreEqual(DesignTextFit.Snap(text, title.panel.scaledPixelsPerPoint), title.Fit.Width, 1e-3, what + ": the browser's width for '" + title.text + "'");
+                Assert.AreEqual(title.Fit.Width, title.layout.width, 1e-3, what + ": laid out at it");
+            }
+            Assert.AreEqual("Kulüp", title.text);
+            Fitted("Turkish");
+            float turkish = title.Fit.Width;
+
+            LocalizationSettings.SelectedLocale = _fixture.Locales["de"];
+            yield return Frames(5);
+            Assert.AreEqual("Größe des Vereins und seiner Mannschaft", title.text);
+            Assert.AreSame(set.FontsFor("de")[0], title.resolvedStyle.unityFontDefinition.fontAsset, "the German font");
+            Fitted("German, a much longer text in another font");
+            Assert.Greater(title.Fit.Width, turkish * 3);
+
+            LocalizationSettings.SelectedLocale = _fixture.Locales["tr"];
+            yield return Frames(5);
+            Assert.AreEqual("Kulüp", title.text);
+            Fitted("Turkish again, a much shorter text");
+            Assert.AreEqual(turkish, title.Fit.Width, 1e-3);
+        }
+
         [UnityTest]
         public IEnumerator IndexedFormat_FillsPositionalPlaceholders()
         {
