@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
 import { runCli } from "../src/commands.js";
-import { exportScreen, designHash, MARKER_FILE } from "../src/export.js";
+import { exportScreen, designHash, MARKER_FILE, toolHashInputs } from "../src/export.js";
+import crypto from "node:crypto";
 import { validateBoxes } from "../src/boxes/validate.js";
 import { validateIr } from "../src/ir/validate.js";
 
@@ -259,6 +260,15 @@ describe("skip hash", () => {
     fs.writeFileSync(path.join(out, "export-report.json"), JSON.stringify({ ...rep, toolSha: "0".repeat(64) }));
     expect(await again()).toBe(false);
   }, 300_000);
+
+  it("the tool hash covers what the goldens record: their schema and the extraction revision (an older export is made again)", () => {
+    // an export of an extractor whose goldens lack a record (the ellipsis cut of rulings R146/R147, added to the boxes after
+    // revision 2) must not be reused: the comparison cannot apply what the record decides
+    const schema = fs.readFileSync(path.join(here, "..", "src", "boxes", "schema.json"));
+    const inputs = toolHashInputs();
+    expect(inputs).toContain(`boxes ${crypto.createHash("sha256").update(schema).digest("hex")}`);
+    expect(inputs).toContain("extract 3");
+  });
 
   it("a lone html file hashes its references, not the folder; a symlinked asset is followed", () => {
     const d = path.join(tmp(), "design");

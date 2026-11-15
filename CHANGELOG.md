@@ -338,6 +338,11 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- Export: an export made by an extractor whose goldens lack the ellipsis cut record (boxes `ellipsis`, rulings R146 and
+  R147) was reused, because the extraction revision stayed at 2 when the record was added; a project exported before
+  then had its ellipsized lines judged without the glyph check and without the scaled-class allowance. The extraction
+  revision is 3, and the tool hash also covers the goldens' record schema (`boxes/schema.json`), so a new record field
+  makes every older export again by itself.
 - A line UI Toolkit cuts with an ellipsis drew another glyph (a curve) in place of the three dots when the screen's font
   twin lacked U+2026: UI Toolkit added the glyph while drawing, and the line-box variant drew a different one. The fidelity
   suite's text-spacing capture showed it at the exact viewports, where the ink extent check let it pass. The import now
