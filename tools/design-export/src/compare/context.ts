@@ -76,7 +76,18 @@ export interface CaptureContext {
    * later written-out items' copies, whose edge bands an element around them takes with its own.
    */
   repeats?: ReadonlySet<string>;
+  /**
+   * Per text element, the elements whose overflow clips its text in this capture, outermost first: its ancestors and itself
+   * (an ellipsized title's line rect runs on to the whole text's width, past its box). An overflow that is not `visible` on
+   * an axis (`x`, `y`; `visible` beside `hidden`, `auto` or `scroll` computes to `auto`, as CSS has it) clips at the
+   * element's padding box (its box less `inset`, its border widths in device px, transparent ones too). Both renderers draw
+   * nothing of the text outside it; the comparison judges a line's ink on what both show (absent: nothing clips it).
+   */
+  clips?: Record<string, ClipAncestor[]>;
 }
+
+/** An ancestor whose overflow clips a text: the axes it clips and its border widths (top, right, bottom, left, device px). */
+export interface ClipAncestor { id: string; x: boolean; y: boolean; inset: [number, number, number, number] }
 
 /** The screen setup of a capture: state, viewport and what is applied (matrix.json `captures[]`); `anim` for an animation sample. */
 export interface CaptureSetup { state: string; viewport: [number, number]; apply: CaptureApply[]; anim?: unknown }
@@ -306,6 +317,30 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     if (n.kind === "vector") vectors.add(id);
     if (isObj(n.repeat)) repeats.add(id);
   }
+  // the overflow clips around each text: the ancestors whose overflow is not visible on an axis (pre-order: a parent first)
+  const ownClip = new Map<string, ClipAncestor>(), around = new Map<string, ClipAncestor[]>();
+  const clips: Record<string, ClipAncestor[]> = {};
+  const scrolls = (v: string) => v === "hidden" || v === "auto" || v === "scroll";
+  for (const id of ix.order) {
+    const n = ix.nodes.get(id)!;
+    const holds = (key: string) => key.split("+").every((d) => test(d, id));
+    const ox = (styleValue(n, "overflow-x", holds) ?? "visible").trim(), oy = (styleValue(n, "overflow-y", holds) ?? "visible").trim();
+    const x = ox !== "visible" || scrolls(oy), y = oy !== "visible" || scrolls(ox);
+    if (x || y) {
+      const inset = (["top", "right", "bottom", "left"] as const).map((side) => {
+        const style = (styleValue(n, `border-${side}-style`, holds) ?? "none").trim();
+        const px = parseFloat(styleValue(n, `border-${side}-width`, holds) ?? "0");
+        return style === "none" || style === "hidden" || !Number.isFinite(px) ? 0 : px * golden.scale;
+      }) as [number, number, number, number];
+      ownClip.set(id, { id, x, y, inset });
+    }
+    const p = ix.parent.get(id);
+    const outer = p === undefined ? [] : [...(around.get(p) ?? []), ...(ownClip.has(p) ? [ownClip.get(p)!] : [])];
+    around.set(id, outer);
+    // a text's own overflow clips its own text too (an ellipsized title's line runs on past its box, to the whole text's width)
+    const all = ownClip.has(id) ? [...outer, ownClip.get(id)!] : outer;
+    if ((n.kind === "text" || n.text) && all.length) clips[id] = all;
+  }
   // the elements the sample's running animations move (an animation of geometry), and everything inside them
   const moving = new Set<string>();
   const runs = isObj(setup.anim) && Array.isArray(setup.anim.runs) ? (setup.anim.runs as unknown[]) : [];
@@ -315,5 +350,5 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     return movesBox(Array.isArray(anims) && typeof r.index === "number" ? anims[r.index] : undefined) ? r.elementId : null;
   }).filter((x): x is string => x !== null));
   if (runIds.size) for (const id of ix.order) for (let x: string | undefined = id; x !== undefined; x = ix.parent.get(x)) if (runIds.has(x)) { moving.add(id); break; }
-  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
+  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated, clips };
 }

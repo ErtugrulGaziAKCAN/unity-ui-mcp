@@ -560,6 +560,11 @@ export interface CaptureVerdict {
   linesNotCompared: string[];
   /** Text lines an opaque later element covers entirely (an open dialog over the screen): their ink is not judged. */
   linesCovered: string[];
+  /**
+   * Text lines an ancestor's overflow clip hides in both renders (a scroll area's rows below its bottom): their ink is not
+   * judged; a line it cuts is judged on what both renders show (CaptureContext.clips).
+   */
+  linesClipped?: string[];
   /** Elements that paint a background but had no colour sample left (every point covered or on text). */
   notSampled: string[];
   /** Unity pixels with alpha below 255 (compared premultiplied). */
@@ -849,6 +854,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   const linesNotCompared: string[] = [], notSampled: string[] = [];
   /** Text lines an opaque later element covers entirely: their ink is not judged (`<id>: line <k> of <n>`). */
   const linesCovered: string[] = [];
+  /** Text lines an ancestor's overflow clips away in both renders: their ink is not judged (`<key>: line <k> of <n>`). */
+  const linesClipped: string[] = [];
   const removedSet = new Set(removed);
   const issue = (id: string, kind: IssueKind, detail: string, at?: Rect) => issues.push(at ? { id, kind, detail, at } : { id, kind, detail });
   const newRow = (id: string, status: ElementRow["status"] = "ok"): ElementRow =>
@@ -1279,9 +1286,39 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     };
 
     /**
+     * Where the overflow clips around a text (CaptureContext.clips) let it show on one side: the intersection of the clipping
+     * elements' padding boxes on the clipped axes, each element's box from that side's boxes (for a copy in a later repeat
+     * item, the element's copy in the same item when it lies inside the repeat), rounded inwards to whole device pixels. Null
+     * when nothing clips it.
+     */
+    const clipOf = (side: CaptureBoxes, id: string, key: string): Rect | null => {
+      const cl = ctx.clips?.[id];
+      if (!cl?.length) return null;
+      const me = placeOf(id, key);
+      let x0 = -Infinity, y0 = -Infinity, x1 = Infinity, y1 = Infinity;
+      for (const c of cl) {
+        const levels = containersOf(c.id).length, path = me.path.slice(0, levels);
+        const box = path.some((k) => k !== 0) ? side.items?.[`${c.id}#${[...path].reverse().join("#")}`] : side.elements[c.id];
+        if (!box || !box.visible) continue;
+        if (c.x) { x0 = Math.max(x0, box.x + c.inset[3]); x1 = Math.min(x1, box.x + box.w - c.inset[1]); }
+        if (c.y) { y0 = Math.max(y0, box.y + c.inset[0]); y1 = Math.min(y1, box.y + box.h - c.inset[2]); }
+      }
+      // whole pixels only: a clip edge between two device pixels is rounded its own way by each renderer (Chromium drew the
+      // row a scroll area's bottom at y 807.5 crosses, UI Toolkit did not: a pilot screen's half-clipped label at 0.73× the ink)
+      x0 = Math.ceil(x0); y0 = Math.ceil(y0); x1 = Math.floor(x1); y1 = Math.floor(y1);
+      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    };
+    const intersect = (a: Rect, b: Rect | null): Rect => {
+      if (!b) return a;
+      const x0 = Math.max(a.x, b.x), y0 = Math.max(a.y, b.y), x1 = Math.min(a.x + a.w, b.x + b.w), y1 = Math.min(a.y + a.h, b.y + b.h);
+      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    };
+
+    /**
      * A text's ink per line (an IR element's, or its copy's in a later repeat item, `key` naming it; ruling R133): colour
      * and extent now, the amount after every line of the capture is measured. `id`: the IR element (its font size, its
-     * text shadow and what is painted over it).
+     * text shadow and what is painted over it). A line is measured in the window both renders show it in: its line rects
+     * and inside the overflow clips around it on both sides; a line they clip away entirely is not judged.
      */
     const inkCheck = (id: string, key: string, ge: TextBox, ue: TextBox, row: ElementRow) => {
       // the font size in device px: the IR's, else the line box over the kit's largest ratio (4/3), never more than the real size
@@ -1298,9 +1335,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const later = declared && px <= HAIRLINE_MAX_PX && declared.alpha >= 1 - 1e-6 ? laterLayers(id, key) : null;
       const mayBeHairline = !!later;
       const hidden = hiddenBy(id);
-      let covered = 0;
+      const clipG = clipOf(g, id, key), clipU = clipOf(u, id, key);
+      let covered = 0, clipped = 0;
       ge.lines.forEach((gl, i) => {
-        const win = grow(unionRect(gl, ue.lines[i]), 1);
+        const win = intersect(intersect(grow(unionRect(gl, ue.lines[i]), 1), clipG), clipU);
+        if (win.w < 1 || win.h < 1) { clipped++; linesClipped.push(`${key}: line ${i + 1} of ${ge.lines.length}`); return; }
         if (hidden && everyPixel(win, w, h, hidden)) { covered++; linesCovered.push(`${key}: line ${i + 1} of ${ge.lines.length}`); return; }
         const a = inkIn(gp, win, hidden ?? undefined);
         if (!a) return;
@@ -1355,6 +1394,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
       });
       if (covered) row.lines = `${row.lines}, ${covered} not judged (covered)`;
+      if (clipped) row.lines = `${row.lines}, ${clipped} not judged (clipped)`;
       if (wX) {
         const x = wX as { i: number; dl: number; dr: number; dw: number; worst: number };
         row.inkExtent = r6(x.worst);
@@ -1729,7 +1769,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   return {
     verdict: {
       capture: g.capture, pass: issues.length === 0, ssim: ssim === null ? null : r6(ssim), issues, size: [gp.w, gp.h],
-      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, linesCovered, notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
+      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, linesCovered, ...(linesClipped.length ? { linesClipped } : {}), notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
     },
     heat,
   };

@@ -219,6 +219,83 @@ describe("compareCapture", () => {
     expect(short.issues[0].detail).toMatch(/right Δ -8\.\d\d px/);
   });
 
+  describe("text an ancestor's overflow clips: only what both renders show is compared (scroll areas, clipped boxes)", () => {
+    // a panel (y 0–100) holds a scroll area (y 20–80, overflow-y auto) with three rows; below the panel lies the game shell's
+    // placeholder (an external element), which the design paints and Unity leaves to the capture's magenta backdrop (a pilot
+    // screen's day panel: rows below its scroll area, across the frame's bottom). `edge`: the scroll area's bottom in this
+    // side's boxes (Unity may lay it out a pixel off within the box limit)
+    const page: Rgb = [18, 60, 71], panel: Rgb = [11, 31, 38], ink: Rgb = [185, 208, 214];
+    const clipped = (unity: boolean, edge = 80, box = edge, top = 74) => {
+      const png = canvas(320, 192, unity ? [255, 0, 255] : page);
+      fill(png, { x: 0, y: 0, w: 320, h: 100 }, panel);
+      // row a: whole; row b: crosses the scroll's bottom (only its top rows show, down to `edge`); row c: below the scroll and
+      // the panel. `box`: the scroll area's bottom in this side's boxes
+      glyphs(png, { x: 40, y: 34, w: 60, h: 12 }, ink);
+      glyphs(png, { x: 40, y: top, w: 60, h: Math.max(0, edge - top) }, ink);
+      const line = (y: number) => [{ x: 38, y, w: 70, h: 16, baseline: y + 13 }];
+      return {
+        png,
+        boxes: { capture: "default@320x192", viewport: [320, 192], scale: 1, external: ["shell"],
+          elements: {
+            root: el(0, 0, 320, 192), panel: el(0, 0, 320, 100), shell: el(0, 100, 320, 92), scroll: el(20, 20, 280, box - 20),
+            a: el(38, 32, 70, 16, { text: true, lines: line(32) }),
+            b: el(38, 72, 70, 16, { text: true, lines: line(72) }),
+          },
+          items: { "b#1": { ...el(38, 92, 70, 16, { text: true, lines: line(92) }) } },
+        } as CaptureBoxes,
+      };
+    };
+    const ctx: CaptureContext = {
+      order: ["root", "panel", "scroll", "a", "b", "shell"], parent: new Map([["panel", "root"], ["scroll", "panel"], ["a", "scroll"], ["b", "scroll"], ["shell", "root"]]),
+      painters: new Set(["panel"]), backgrounds: new Set(["panel"]),
+      clips: { a: [{ id: "scroll", x: true, y: true, inset: [0, 0, 0, 0] }], b: [{ id: "scroll", x: true, y: true, inset: [0, 0, 0, 0] }] },
+    };
+    const kinds = (v: CaptureVerdict) => v.issues.map((i) => `${i.id}:${i.kind}`).sort();
+
+    it("does not judge a line the clip hides in both renders (the copy below the scroll area, across the page's edge)", () => {
+      const v = compareCapture(clipped(false), clipped(true), [], T, ctx);
+      expect(kinds(v)).toEqual([]);
+      expect(v.linesClipped).toEqual(["b#1: line 1 of 1"]);
+      expect(v.elements.find((r) => r.id === "b#1")?.lines).toBe("1/1, 1 not judged (clipped)");
+      // without the clip the copy's line is judged on what lies outside the scroll area: the page against the backdrop
+      const bare = compareCapture(clipped(false), clipped(true), [], T, { ...ctx, clips: undefined });
+      expect(kinds(bare)).toContain("b#1:ink");
+    });
+
+    it("ends an ellipsized title's window at its own box: a neighbour's paint past it is not the title's ink", () => {
+      // the title's line rect runs on to the whole text's width (200 px) past its 90 px box (overflow hidden, text-overflow
+      // ellipsis); a neighbour's 4 px accent bar lies there, 2 px further right in Unity (its own box check judges that). A
+      // pilot screen's card titles took a neighbouring cell's cyan bar into their ink (ΔE2000 2.98 at 1920×1080)
+      const titled = (bar: number) => {
+        const png = canvas(320, 120, [18, 60, 71]);
+        glyphs(png, { x: 42, y: 44, w: 80, h: 12 }, [255, 255, 255]);
+        fill(png, { x: bar, y: 30, w: 4, h: 60 }, [22, 194, 213]);
+        return {
+          png,
+          boxes: { capture: "default@320x120", viewport: [320, 120], scale: 1, external: [],
+            elements: { root: el(0, 0, 320, 120), title: el(40, 40, 90, 20, { text: true, lines: [{ x: 40, y: 41, w: 200, h: 18, baseline: 55 }] }), bar: el(bar, 30, 4, 60) } } as CaptureBoxes,
+        };
+      };
+      const own: CaptureContext = { order: ["root", "title", "bar"], parent: new Map([["title", "root"], ["bar", "root"]]), clips: { title: [{ id: "title", x: true, y: true, inset: [0, 0, 0, 0] }] } };
+      const title = (v: CaptureVerdict) => kinds(v).filter((k) => k.startsWith("title:"));
+      expect(title(compareCapture(titled(200), titled(202), [], T, own))).toEqual([]);
+      expect(title(compareCapture(titled(200), titled(202), [], T, { ...own, clips: undefined }))).toEqual(["title:inkExtent"]);
+    });
+
+    it("compares a line the clip cuts on the rows both renders show, and still fails a wrong line there", () => {
+      // Unity's scroll area a pixel taller (within the box limit) shows a fourth row of row b's glyphs
+      expect(kinds(compareCapture(clipped(false), clipped(true, 81), [], T, ctx))).toEqual([]);
+      expect(kinds(compareCapture(clipped(false), clipped(true, 81), [], T, { ...ctx, clips: undefined }))).toContain("b:inkCoverage");
+      // a clip edge between two pixels (y 79.5): Chromium draws the row it crosses, UI Toolkit does not; only whole rows inside
+      // both clips count (a pilot screen's section label half under its scroll area's bottom: 0.73× the ink at 1600×900)
+      expect(kinds(compareCapture(clipped(false, 80, 79.5, 78), clipped(true, 79, 79.5, 78), [], T, ctx))).toEqual([]);
+      // a line whose visible part Unity draws in another colour still fails
+      const wrong = clipped(true);
+      glyphs(wrong.png, { x: 40, y: 74, w: 60, h: 6 }, [240, 120, 60]);
+      expect(kinds(compareCapture(clipped(false), wrong, [], T, ctx))).toContain("b:ink");
+    });
+  });
+
   describe("an ellipsized line at a scaled viewport (ruling R146: ellipsisGraphemes)", () => {
     // a 160 px title cut with an ellipsis: stand-in glyphs 6 px wide on an 8 px advance from x 40, then three 2×2 dots on a
     // 12 px advance; the design keeps 8 glyphs, so its ellipsis is placed at 40 + 8 × 8 = 104
@@ -1937,6 +2014,26 @@ describe("IR context", () => {
     // a pointer in a later written-out repeat item is not on the IR's own elements, whose boxes the capture measures
     const later = captureContext(ix, { state: "default", viewport: [1280, 720], apply: [{ kind: "pseudo", pseudo: "hover", elementId: "btn", item: [2] }] }, boxes);
     expect(later.shadows).toEqual(base.shadows);
+  });
+
+  it("knows the overflow clips around each text: the ancestors whose overflow is not visible, by axis, with their borders", () => {
+    const clip = indexIr({ ...ir, root: { ...ir.root, children: [
+      { id: "scroll", kind: "scroll", style: { base: { "overflow-y": "auto", "border-top-width": "2px", "border-top-style": "solid", "border-left-width": "4px", "border-left-style": "solid", "border-left-color": "transparent" } }, children: [
+        { id: "row", kind: "container", style: { base: { "overflow-x": "clip" }, hover: { "overflow-x": "visible" } }, children: [
+          { id: "label", kind: "text", text: { en: "x" }, style: { base: { "font-size": "20px" } }, children: [] },
+        ] },
+      ] },
+      { id: "free", kind: "text", text: { en: "y" }, style: { base: { "overflow-x": "hidden" } }, children: [] },
+    ] } });
+    const ctx = captureContext(clip, { state: "default", viewport: [1280, 720], apply: [] }, boxes);
+    // a scroll area clips both axes (overflow-x: visible computes to auto beside auto); clip leaves the other axis visible;
+    // the padding box is inside every border, a transparent one too; a text's own overflow clips its own text (an ellipsized
+    // line's rect runs on past its box)
+    expect(ctx.clips?.label).toEqual([{ id: "scroll", x: true, y: true, inset: [1, 0, 0, 2] }, { id: "row", x: true, y: false, inset: [0, 0, 0, 0] }]);
+    expect(ctx.clips?.free).toEqual([{ id: "free", x: true, y: true, inset: [0, 0, 0, 0] }]);
+    // a layer that holds in the capture decides
+    const hovered = captureContext(clip, { state: "default", viewport: [1280, 720], apply: [{ kind: "pseudo", pseudo: "hover", elementId: "row" }] }, boxes);
+    expect(hovered.clips?.label).toEqual([{ id: "scroll", x: true, y: true, inset: [1, 0, 0, 2] }]);
   });
 
   it("knows which elements draw a raster picture at another size than its own", () => {
