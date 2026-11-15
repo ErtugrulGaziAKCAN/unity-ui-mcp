@@ -100,10 +100,10 @@ function matchFace(faces: KitFontFile[], weight: number, italic: boolean): KitFo
 }
 
 /**
- * The faces a Claude Design System export ships: by default those the kit's text styles and font tokens can reach (each
- * family a `--font-*` token names, at 400 and 700 and every weight a text style names, italic only where a style names
- * `"fontStyle": "italic"`: what UI Toolkit's twins render too), or every face with `allFaces`; never a file over the
- * Design System's 15 MiB cap.
+ * The faces a Claude Design System export ships: by default those a design can reach with the kit's text styles and font
+ * tokens (each family a `--font-*` token names, at 400, 700 and every weight a text style names, upright and italic: the
+ * rules allow `font-style: italic`, `<i>` and `<em>` wherever the font has an italic face), or every face with `allFaces`;
+ * never a file over the Design System's 15 MiB cap.
  */
 export function selectDsFonts(kit: KitConfig, opts: { allFaces?: boolean } = {}): DsFontSelection {
   const faces = readKitFontFiles(kit) ?? [];
@@ -120,6 +120,9 @@ export function selectDsFonts(kit: KitConfig, opts: { allFaces?: boolean } = {})
         wants.set(`${w} ${it ? "i" : "n"}`, [w, it]);
       }
     } catch { /* reported by kit build */ }
+    // the rules let any text be italic (`font-style: italic`, <i>, <em>) where the font has an italic face: every reachable
+    // weight in italic too (a family without an italic face matches its upright face again, which is shipped already)
+    for (const [w] of Array.from(wants.values())) wants.set(`${w} i`, [w, true]);
     const byFamily = new Map<string, KitFontFile[]>();
     for (const f of faces) if (named.has(f.family.toLowerCase())) byFamily.set(f.family, [...(byFamily.get(f.family) ?? []), f]);
     const picked = new Set<KitFontFile>();

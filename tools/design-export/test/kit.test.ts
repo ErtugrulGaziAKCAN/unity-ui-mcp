@@ -449,14 +449,15 @@ describe("Claude design system export (kit claude)", () => {
     const out = tmp("claude-ds-");
     const a = io();
     expect(await runCli(["kit", "claude", kitDir, out, "--now", "2026-11-13T12:00:00Z"], a.io)).toBe(0);
-    expect(shipped(out)).toEqual(["Inter_18pt-Bold.ttf", "Inter_18pt-Regular.ttf"]);
+    // italic is reachable wherever the font has an italic face (`font-style: italic`, <i>, <em>): its 400 italic ships
+    expect(shipped(out)).toEqual(["Inter_18pt-Bold.ttf", "Inter_18pt-Italic.ttf", "Inter_18pt-Regular.ttf"]);
     const tokens = JSON.parse(fs.readFileSync(path.join(out, "project", "tokens.json"), "utf8"));
-    expect(tokens.type.fonts.map((x: { file: string }) => x.file).sort()).toEqual(["fonts/Inter_18pt-Bold.ttf", "fonts/Inter_18pt-Regular.ttf"]);
+    expect(tokens.type.fonts.map((x: { file: string }) => x.file).sort()).toEqual(["fonts/Inter_18pt-Bold.ttf", "fonts/Inter_18pt-Italic.ttf", "fonts/Inter_18pt-Regular.ttf"]);
     expect(validateTokensJson(tokens)).toEqual([]);
     const md = fs.readFileSync(path.join(out, "project", "README.md"), "utf8");
     expect(md).not.toContain("Inter_18pt-Light.ttf");
-    expect(md).toMatch(/4 faces? no text style or font token reaches .*--all-faces/);
-    expect(a.out.join("")).toMatch(/left out 4 faces? no text style or font token reaches/);
+    expect(md).toMatch(/3 faces? no text style or font token reaches .*--all-faces/);
+    expect(a.out.join("")).toMatch(/left out 3 faces? no text style or font token reaches/);
 
     const all = tmp("claude-ds-");
     expect(await runCli(["kit", "claude", kitDir, all, "--all-faces", "--now", "2026-11-13T12:00:00Z"], io().io)).toBe(0);
@@ -472,9 +473,9 @@ describe("Claude design system export (kit claude)", () => {
     const out = tmp("claude-ds-");
     const a = io();
     expect(await runCli(["kit", "claude", kitDir, out, "--now", "2026-11-13T12:00:00Z"], a.io)).toBe(0);
-    expect(shipped(out)).toEqual(["Inter_18pt-Regular.ttf"]);
+    expect(shipped(out)).toEqual(["Inter_18pt-Italic.ttf", "Inter_18pt-Regular.ttf"]);
     const tokens = JSON.parse(fs.readFileSync(path.join(out, "project", "tokens.json"), "utf8"));
-    expect(tokens.type.fonts.map((x: { file: string }) => x.file)).toEqual(["fonts/Inter_18pt-Regular.ttf"]);
+    expect(tokens.type.fonts.map((x: { file: string }) => x.file).sort()).toEqual(["fonts/Inter_18pt-Italic.ttf", "fonts/Inter_18pt-Regular.ttf"]);
     expect(a.out.join("")).toMatch(/note: left out fonts\/Inter_18pt-Bold\.ttf \(15\.0 MiB\): over the Design System's 15 MiB file cap/);
     const md = fs.readFileSync(path.join(out, "project", "README.md"), "utf8");
     expect(md).toMatch(/Inter_18pt-Bold\.ttf.*15 MiB/);
@@ -482,7 +483,7 @@ describe("Claude design system export (kit claude)", () => {
     fs.writeFileSync(big, Buffer.alloc(15 * 1024 * 1024));
     const at = tmp("claude-ds-");
     expect(await runCli(["kit", "claude", kitDir, at], io().io)).toBe(0);
-    expect(shipped(at)).toEqual(["Inter_18pt-Bold.ttf", "Inter_18pt-Regular.ttf"]);
+    expect(shipped(at)).toEqual(["Inter_18pt-Bold.ttf", "Inter_18pt-Italic.ttf", "Inter_18pt-Regular.ttf"]);
   });
 
 });
