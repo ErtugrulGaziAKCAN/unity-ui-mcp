@@ -415,7 +415,52 @@ export function endShift(design: Ink, unity: Ink, from: number, to: number, arou
  * its ink amount (Unity's over the design's), and the ink amount of the part both lines draw (the prefix up to the earlier
  * of the two cuts, plus the ellipsis). Null when the design has no ellipsis ink after `e.at`.
  */
-export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: number }, baselines?: { design: number; unity: number }): { shift: number; shape: number; amount: number; common: number; rows: number } | null {
+/**
+ * The centres of the ink blobs an ink's column profile resolves into over [a, b) (image px): its local maxima of at least
+ * 0.2 of the highest column, a maximum at the range's edge only when it is higher than the column outside (the tail of
+ * the glyph before is no blob), two maxima one blob unless the profile between them falls to half the lower of them; each
+ * blob's centre is the mean column of its ink between the valleys (ruling R148: an ellipsis is three dots).
+ */
+export function inkBlobs(ink: Ink, a: number, b: number): number[] {
+  const x0 = Math.floor(a), x1 = Math.ceil(b), p: number[] = [];
+  for (let x = x0; x < x1; x++) p.push(Math.max(0, columnAt(ink, x + 0.5)));
+  const max = Math.max(0, ...p);
+  if (!(max > 0)) return [];
+  const before = Math.max(0, columnAt(ink, x0 - 0.5)), after = Math.max(0, columnAt(ink, x1 + 0.5));
+  const peaks: number[] = [];
+  for (let i = 0; i < p.length; i++) if (p[i] >= 0.2 * max && p[i] > (i === 0 ? before : p[i - 1]) && p[i] >= (i === p.length - 1 ? after : p[i + 1])) peaks.push(i);
+  for (let merged = true; merged && peaks.length > 1;) {
+    merged = false;
+    for (let j = 0; j + 1 < peaks.length; j++) {
+      let v = Infinity;
+      for (let i = peaks[j]; i <= peaks[j + 1]; i++) v = Math.min(v, p[i]);
+      if (v > 0.5 * Math.min(p[peaks[j]], p[peaks[j + 1]])) { peaks.splice(p[peaks[j]] >= p[peaks[j + 1]] ? j + 1 : j, 1); merged = true; break; }
+    }
+  }
+  const cuts = [0];
+  for (let j = 0; j + 1 < peaks.length; j++) { let m = peaks[j]; for (let i = peaks[j]; i <= peaks[j + 1]; i++) if (p[i] < p[m]) m = i; cuts.push(m); }
+  cuts.push(p.length);
+  return peaks.map((_, j) => { let sum = 0, w = 0; for (let i = cuts[j]; i < cuts[j + 1]; i++) { sum += p[i] * (x0 + i + 0.5); w += p[i]; } return sum / w; });
+}
+
+/** The ink-weighted mean row (its centre, image px) of an ink's pixels in the columns [a, b); NaN without ink there. */
+function inkRowCentre(ink: Ink, a: number, b: number): number {
+  let sum = 0, w = 0;
+  for (let j = 0; j < ink.pixels.w.length; j++) {
+    const cx = ink.pixels.x[j] + 0.5;
+    if (cx >= a && cx < b) { sum += ink.pixels.w[j] * (ink.pixels.y[j] + 0.5); w += ink.pixels.w[j]; }
+  }
+  return w > 0 ? sum / w : NaN;
+}
+
+/**
+ * An ellipsis's dots in each render (ruling R148, below 16 device px): the blobs of the design's ellipsis advance and of
+ * Unity's at `shift`, the largest difference of Unity's two gaps from the design's dot pitch (null unless both draw three),
+ * and how far Unity's dots' vertical ink centre lies from the design's, each against its line's baseline (+ lower).
+ */
+export interface EllipsisDots { design: number; unity: number; offPitch: number | null; centre: number | null }
+
+export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: number }, baselines?: { design: number; unity: number }): { shift: number; shape: number; amount: number; common: number; rows: number; dots: EllipsisDots } | null {
   const from = Math.floor(e.at), to = Math.ceil(Math.max(design.right, e.at + 1));
   let massA = 0;
   for (let x = from; x < to; x++) massA += columnAt(design, x + 0.5);
@@ -459,7 +504,19 @@ export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: num
       rows = Math.min(rows, d / massA);
     }
   }
-  return { shift, shape: diff / massA, amount: massB / massA, common: (preB + massB) / Math.max(preA + massA, 1e-9), rows };
+  // the dots, structurally (ruling R148): the blobs of the ellipsis advance on each side, Unity's at the matched shift
+  // a blob centred in the advance's first half pixel is the prefix's last glyph reaching past its advance, not a dot (the
+  // dots' centres lie a sixth of the advance and more inside it)
+  const inside = (c: number, at: number) => c >= at + 0.5 && c <= at + e.width;
+  const da = inkBlobs(design, e.at, e.at + e.width + 0.5).filter((c) => inside(c, e.at));
+  const db = inkBlobs(unity, e.at + shift, e.at + e.width + shift + 0.5).filter((c) => inside(c, e.at + shift));
+  const pitch = da.length === 3 ? (da[2] - da[0]) / 2 : NaN;
+  const offPitch = da.length === 3 && db.length === 3 ? Math.max(Math.abs(db[1] - db[0] - pitch), Math.abs(db[2] - db[1] - pitch)) : null;
+  const centre = baselines
+    ? (inkRowCentre(unity, e.at + shift, e.at + e.width + shift + 0.5) - baselines.unity) - (inkRowCentre(design, e.at, e.at + e.width + 0.5) - baselines.design)
+    : NaN;
+  const dots: EllipsisDots = { design: da.length, unity: db.length, offPitch, centre: Number.isFinite(centre) ? centre : null };
+  return { shift, shape: diff / massA, amount: massB / massA, common: (preB + massB) / Math.max(preA + massA, 1e-9), rows, dots };
 }
 
 /** The colour of an image at a point between pixel centres (a pixel's centre is at x + 0.5), bilinear, clamped to the image. */

@@ -292,6 +292,19 @@ export const ELLIPSIS_SHAPE = 0.45;
  */
 export const ELLIPSIS_ROWS = 0.4;
 export const ELLIPSIS_AMOUNT: readonly [number, number] = [0.8, 1.6];
+/**
+ * Below this device font size the ellipsis glyph check is structural (ruling R148): its dots are one or two pixels, and
+ * a fraction of a pixel's placement moves the profiles past R147's limits (a pilot screen's correct dots at 10 to 15 px:
+ * shape up to 1.08, rows up to 0.78, where the wrong glyph measures 0.95–1.67 and 0.50–0.95). Unity's ellipsis must resolve
+ * into three ink blobs (inkBlobs), each gap within ELLIPSIS_DOTS_PITCH of the design's dot pitch, their vertical ink centre
+ * within ELLIPSIS_DOTS_CENTRE of the design's against each line's baseline. A line whose design dots do not resolve into
+ * three is not judged and is counted (`ellipsisNotJudged`). Measured: the correct dots of the suite's text-spacing line and
+ * of a scratch fixture's titles at 10 to 15 px resolve into three on both sides, gaps within 0.2 px of the pitch, centres
+ * within 0.4 px; the curve resolves into one or two blobs at every size.
+ */
+export const ELLIPSIS_DOTS_BELOW_PX = 16;
+export const ELLIPSIS_DOTS_PITCH = 0.75;
+export const ELLIPSIS_DOTS_CENTRE = 1;
 
 /** The angle in degrees between two colour directions. */
 function angleBetween(p: readonly number[], q: readonly number[]): number {
@@ -532,6 +545,11 @@ export interface ElementRow {
    * error and the ink amount ratio of the line with the largest shape error; absent when the design cuts no line.
    */
   ellipsisGlyph?: { shape: number; rows: number; amount: number };
+  /**
+   * Below ELLIPSIS_DOTS_BELOW_PX (ruling R148): the blobs each render's ellipsis resolves into, Unity's largest gap off the
+   * design's pitch and its dots' centre against the design's (device px); absent at larger sizes.
+   */
+  ellipsisDots?: { design: number; unity: number; offPitch: number | null; centre: number | null };
   /** `<design>/<Unity>` line counts; "not compared" for text without DOM lines. */
   lines: string | null;
 }
@@ -569,6 +587,11 @@ export interface CaptureVerdict {
    * judged; a line it cuts is judged on what both renders show (CaptureContext.clips).
    */
   linesClipped?: string[];
+  /**
+   * Ellipsized lines below ELLIPSIS_DOTS_BELOW_PX whose design dots do not resolve into three (ruling R148): their glyph is
+   * not judged (and they take no R146 allowance); `<key>: line <k> of <n>`.
+   */
+  ellipsisNotJudged?: string[];
   /** Elements that paint a background but had no colour sample left (every point covered or on text). */
   notSampled: string[];
   /** Unity pixels with alpha below 255 (compared premultiplied). */
@@ -860,6 +883,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   const linesCovered: string[] = [];
   /** Text lines an ancestor's overflow clips away in both renders: their ink is not judged (`<key>: line <k> of <n>`). */
   const linesClipped: string[] = [];
+  /** Ellipsized lines whose design dots do not resolve into three below ELLIPSIS_DOTS_BELOW_PX (ruling R148). */
+  const ellipsisNotJudged: string[] = [];
   const removedSet = new Set(removed);
   const issue = (id: string, kind: IssueKind, detail: string, at?: Rect) => issues.push(at ? { id, kind, detail, at } : { id, kind, detail });
   const newRow = (id: string, status: ElementRow["status"] = "ok"): ElementRow =>
@@ -1392,8 +1417,19 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           // ruling R147 (every viewport): a line the design ends in an ellipsis ends in the design's ellipsis glyph in Unity,
           // its column profile and ink amount found next to the end of Unity's ink (a wrong glyph is a visible defect at any size)
           const cut = gl.ellipsis ? ellipsisCut(a, b, gl.ellipsis, { design: gl.baseline, unity: ue.lines[i].baseline }) : null;
-          const glyph = !!cut && cut.shape <= ELLIPSIS_SHAPE + EPS && cut.rows <= ELLIPSIS_ROWS + EPS && cut.amount >= ELLIPSIS_AMOUNT[0] - EPS && cut.amount <= ELLIPSIS_AMOUNT[1] + EPS;
-          if (cut) {
+          // below ELLIPSIS_DOTS_BELOW_PX the dots are judged structurally (ruling R148), from that size on by their profiles
+          const structural = px < ELLIPSIS_DOTS_BELOW_PX;
+          const d = cut?.dots;
+          const notJudged = !!cut && structural && d!.design !== 3;
+          const glyph = !!cut && !notJudged && (structural
+            ? d!.unity === 3 && d!.offPitch !== null && d!.offPitch <= ELLIPSIS_DOTS_PITCH + EPS && d!.centre !== null && Math.abs(d!.centre) <= ELLIPSIS_DOTS_CENTRE + EPS
+            : cut.shape <= ELLIPSIS_SHAPE + EPS && cut.rows <= ELLIPSIS_ROWS + EPS && cut.amount >= ELLIPSIS_AMOUNT[0] - EPS && cut.amount <= ELLIPSIS_AMOUNT[1] + EPS);
+          if (cut && structural) {
+            row.ellipsisDots = { design: d!.design, unity: d!.unity, offPitch: d!.offPitch === null ? null : r6(d!.offPitch), centre: d!.centre === null ? null : r6(d!.centre) };
+            // the design's own dots do not resolve into three: nothing to hold Unity's to; counted, never silent
+            if (notJudged) ellipsisNotJudged.push(`${key}: line ${i + 1} of ${ge.lines.length}`);
+            else if (!glyph) issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: the line does not end in the design's ellipsis: Unity's ink there resolves into ${d!.unity} dot${d!.unity === 1 ? "" : "s"}${d!.offPitch === null ? "" : ` ${d!.offPitch.toFixed(2)} px off the design's pitch (limit ${ELLIPSIS_DOTS_PITCH})`}${d!.centre === null ? "" : `, its centre ${fmt(d!.centre)} px from the design's against the baseline (limit ±${ELLIPSIS_DOTS_CENTRE})`}, the design's into 3 (below ${ELLIPSIS_DOTS_BELOW_PX} device px the dots are judged by their number, pitch and height): another glyph, another height or none`, gl);
+          } else if (cut) {
             if (!row.ellipsisGlyph || cut.shape + cut.rows > row.ellipsisGlyph.shape + row.ellipsisGlyph.rows) row.ellipsisGlyph = { shape: r6(cut.shape), rows: r6(cut.rows), amount: r6(cut.amount) };
             if (!glyph) issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: the line does not end in the design's ellipsis: its shape differs by ${cut.shape.toFixed(2)} across (limit ${ELLIPSIS_SHAPE}) and ${cut.rows.toFixed(2)} up and down against the baseline (limit ${ELLIPSIS_ROWS}), its ink is ${cut.amount.toFixed(2)}× the design's (expected ${ELLIPSIS_AMOUNT[0]}–${ELLIPSIS_AMOUNT[1]}×): another glyph, another height or none`, gl);
           }
@@ -1804,7 +1840,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   return {
     verdict: {
       capture: g.capture, pass: issues.length === 0, ssim: ssim === null ? null : r6(ssim), issues, size: [gp.w, gp.h],
-      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, linesCovered, ...(linesClipped.length ? { linesClipped } : {}), notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
+      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, linesCovered, ...(linesClipped.length ? { linesClipped } : {}), ...(ellipsisNotJudged.length ? { ellipsisNotJudged } : {}), notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
     },
     heat,
   };

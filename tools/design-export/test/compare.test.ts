@@ -1127,6 +1127,66 @@ describe("compareCapture: edge, colour and ink checks", () => {
     });
   });
 
+  describe("the ellipsis glyph below 16 device px is structural (ruling R148): three dots at the design's pitch and height", () => {
+    // ellipsized 20/24 titles of a scratch fixture (r148-dots-*: 10, 10.67, 12.5 and 15 device px at 1280, 1366, 1600 and
+    // 1920), the dots drawn right on both sides a fraction of a pixel apart, where R147's profile check failed them (shape up
+    // to 0.53, rows up to 0.65); and the suite's wrong glyph (the curve of r147-curve-*, 12 to 15 px)
+    const dir = path.join(here, "fixtures", "compare");
+    type Geo = { size: [number, number]; scale: number; viewport: [number, number]; fontPx?: number; element: { x: number; y: number; w: number; h: number };
+      design: CaptureBoxes["elements"][string]["lines"][number]; unity: CaptureBoxes["elements"][string]["lines"][number] };
+    const dots = JSON.parse(fs.readFileSync(path.join(dir, "r148-dots.json"), "utf8")) as Record<string, Geo>;
+    const curve = JSON.parse(fs.readFileSync(path.join(dir, "r147-ellipsis.json"), "utf8")) as Record<string, Geo>;
+    const png = (name: string) => decodePng(fs.readFileSync(path.join(dir, `${name}.png`)));
+    const side = (g: Geo, image: Rgba, unity: boolean) => ({
+      png: image,
+      boxes: { capture: `default@${g.viewport[0]}x${g.viewport[1]}`, viewport: g.size, scale: g.scale, external: [],
+        elements: { root: el(0, 0, g.size[0], g.size[1]), title: el(g.element.x, g.element.y, g.element.w, g.element.h, { text: true, lines: [unity ? g.unity : g.design] }) } } as CaptureBoxes,
+    });
+    const repo = readThresholds();
+    const judge = (g: Geo, w: string, design: Rgba, unity: Rgba, px: number) => {
+      const cls = w === "1366" || w === "1600" ? "scaled" : "exact";
+      return compareCapture(side(g, design, false), side(g, unity, true), [], thresholdsFor(repo, cls), { viewportClass: cls, fontPx: { title: px } });
+    };
+
+    it("passes the correct dots at 10, 10.67, 12.5 and 15 device px", () => {
+      for (const w of ["1280", "1366", "1600", "1920"]) {
+        const g = dots[w];
+        const v = judge(g, w, png(`r148-dots-${w}.design`), png(`r148-dots-${w}.unity`), g.fontPx!);
+        expect(v.issues, w).toEqual([]);
+        expect(v.elements.find((r) => r.id === "title")!.ellipsisDots, w).toMatchObject({ design: 3, unity: 3 });
+      }
+    });
+
+    it("fails the wrong glyph (the curve) at 12, 12.8 and 15 device px", () => {
+      for (const [w, px] of [["1280", 12], ["1366", 12.8], ["1600", 15]] as const) {
+        const v = judge(curve[w], w, png(`r147-ellipsis-${w}.design`), png(`r147-curve-${w}.unity`), px);
+        expect(v.issues.filter((i) => i.id === "title" && i.kind === "ink" && /ellipsis/.test(i.detail)), w).toHaveLength(1);
+      }
+    });
+
+    it("does not judge a line whose design dots do not resolve into three, and counts it", () => {
+      // the design's dots joined into one bar (their gaps filled): nothing to hold Unity's dots to
+      const g = dots["1280"], design = png("r148-dots-1280.design");
+      const at = g.design.ellipsis!.at;
+      for (let y = Math.floor(g.design.baseline) - 1; y <= Math.floor(g.design.baseline); y++) fill(design, { x: Math.ceil(at), y, w: Math.floor(g.design.ellipsis!.width) - 1, h: 1 }, [255, 255, 255]);
+      const v = judge(g, "1280", design, png("r148-dots-1280.unity"), g.fontPx!);
+      expect(v.ellipsisNotJudged).toEqual(["title: line 1 of 1"]);
+      expect(v.issues.filter((i) => /ellipsis/.test(i.detail))).toEqual([]);
+    });
+
+    it("fails dots at another height or pitch below 16 device px", () => {
+      const g = dots["1600"], unity = png("r148-dots-1600.unity"), lifted = png("r148-dots-1600.unity");
+      // the dots moved 3 device px up
+      const at = Math.floor(g.design.ellipsis!.at), base = Math.floor(g.unity.baseline);
+      for (let y = 0; y < lifted.h; y++) for (let x = at; x < lifted.w; x++) {
+        const from = y + 3 < unity.h ? ((y + 3) * unity.w + x) * 4 : -1, o = (y * lifted.w + x) * 4;
+        if (y >= base - 6 && from >= 0) for (let c = 0; c < 4; c++) lifted.data[o + c] = unity.data[from + c];
+      }
+      const v = judge(g, "1600", png("r148-dots-1600.design"), lifted, g.fontPx!);
+      expect(v.issues.filter((i) => i.id === "title" && i.kind === "ink" && /ellipsis/.test(i.detail))).toHaveLength(1);
+    });
+  });
+
   describe("ssimRoundEdge at every viewport (ruling R119): crops of the suite's 1280×720 captures", () => {
     // the design's and Unity's pixels around two elements of the fidelity suite at 1280×720 (scale 0.5), with their boxes
     const crop = (name: string, side: "design" | "unity") => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r119-${name}.${side}.png`)));

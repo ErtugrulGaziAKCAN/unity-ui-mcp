@@ -144,6 +144,7 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     ${c.linesNotCompared.length ? `<p class="muted">Lines not compared (text not in DOM text): ${c.linesNotCompared.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${(c.linesCovered ?? []).length ? `<p class="muted">Lines not judged (covered by an opaque later element): ${c.linesCovered.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${(c.linesClipped ?? []).length ? `<p class="muted">Lines not judged (an ancestor's overflow clips them away in both renders): ${c.linesClipped!.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
+    ${(c.ellipsisNotJudged ?? []).length ? `<p class="muted">Ellipses not judged (below 16 device px the design's own dots do not resolve into three): ${c.ellipsisNotJudged!.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${c.notSampled.length ? `<p class="warn-text">Background not sampled (every sample point covered or on text): ${c.notSampled.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${c.translucent ? `<p class="muted">${c.translucent} Unity pixels are translucent; colours were compared premultiplied.</p>` : ""}
     <details class="elements"><summary>Per-element measures (${listed.length} of ${c.elements.length}: elements that are ok or hidden are counted, not listed)</summary>
