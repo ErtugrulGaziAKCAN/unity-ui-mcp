@@ -158,10 +158,11 @@ namespace DesignUi
             /// <summary>The factor last written here (NaN: none): the only value that counts as this class's own write.</summary>
             public float Written = float.NaN;
             /// <summary>
-            /// The factors written here since the settings' own last changed, each with the own factor it was written over, and
-            /// the one held when it changed (Editor: an Undo of that change, or of a snapshot taken while held, brings one back).
+            /// The factors written here since the settings' own last changed, each with the own factor it was written over and the
+            /// Undo group current when it was first written, and the one held when it changed (Editor: an Undo of that change, or
+            /// of a snapshot taken while held, brings one back; a snapshot recorded in an earlier group cannot hold it).
             /// </summary>
-            public readonly List<(float factor, float own)> History = new List<(float, float)>();
+            public readonly List<(float factor, float own, int group)> History = new List<(float, float, int)>();
             /// <summary>The scale this class last wrote or saw on the settings (Editor): an Undo that leaves it as it is did not touch them.</summary>
             public float Observed = float.NaN;
             public IReadOnlyList<double> ExactScales;
@@ -170,10 +171,15 @@ namespace DesignUi
             public bool Suspended;
             public bool Warned;
 
-            public bool OwnBefore(float factor, out float own)
+            /// <summary>
+            /// The own factor <paramref name="factor"/> was written over, when an Undo or Redo of <paramref name="group"/> can have
+            /// brought it back: a snapshot recorded in a group before the factor was first written holds a value the game or the
+            /// user set, whatever it equals.
+            /// </summary>
+            public bool OwnBefore(float factor, int group, out float own)
             {
                 for (int i = History.Count - 1; i >= 0; i--)
-                    if (History[i].factor == factor)
+                    if (History[i].factor == factor && History[i].group <= group)
                     {
                         own = History[i].own;
                         return true;
@@ -215,7 +221,7 @@ namespace DesignUi
             UnityEditor.EditorApplication.playModeStateChanged += s => { if (s == UnityEditor.PlayModeStateChange.ExitingPlayMode) RestoreAll(); };
             UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += RestoreAll;
             UnityEditor.EditorApplication.quitting += RestoreAll;
-            UnityEditor.Undo.undoRedoPerformed += AfterUndoRedo;
+            UnityEditor.Undo.undoRedoEvent += (in UnityEditor.UndoRedoInfo info) => AfterUndoRedo(info.undoGroup);
             UnityEditor.Undo.postprocessModifications += ObserveModifications;
             UnityEditor.EditorApplication.update += Observe;
         }
@@ -302,7 +308,9 @@ namespace DesignUi
             if (float.IsNaN(e.Written) || settings.scale != e.Written)
             {
 #if UNITY_EDITOR
-                KeepLastWritten(e);
+                // only a real change of the own trims the factors written before it: a new hold keeps what an earlier hold of
+                // these settings wrote (an Undo snapshot taken then can still bring it back)
+                if (settings.scale != e.Own || !float.IsNaN(e.Written)) KeepLastWritten(e);
 #endif
                 e.Own = settings.scale;
                 e.Written = float.NaN;
@@ -318,7 +326,7 @@ namespace DesignUi
                 e.Written = factor;
                 e.Suspended = false;
 #if UNITY_EDITOR
-                e.History.Add((factor, e.Own));
+                if (!e.OwnBefore(factor, int.MaxValue, out var known) || known != e.Own) e.History.Add((factor, e.Own, UnityEditor.Undo.GetCurrentGroup()));
 #endif
                 // the panel applies its settings when it updates: every frame in Play mode and in players, in Edit mode only
                 // when something on it changed after its last update (this runs during one: its style or geometry callbacks)
@@ -429,6 +437,7 @@ namespace DesignUi
             public float observed;
             public List<float> factors = new List<float>();
             public List<float> owns = new List<float>();
+            public List<int> groups = new List<int>();
         }
 
         /// <summary>
@@ -462,10 +471,11 @@ namespace DesignUi
             var r = Load();
             r.records.RemoveAll(x => x.id == id);
             var record = new Record { id = id, observed = e.Observed };
-            foreach (var (factor, own) in e.History)
+            foreach (var (factor, own, group) in e.History)
             {
                 record.factors.Add(factor);
                 record.owns.Add(own);
+                record.groups.Add(group);
             }
             r.records.Add(record);
             UnityEditor.SessionState.SetString(RememberedKey, JsonUtility.ToJson(r));
@@ -500,7 +510,8 @@ namespace DesignUi
                 var settings = UnityEditor.GlobalObjectId.GlobalObjectIdentifierToObjectSlow(gid) as PanelSettings;
                 if (settings == null || Find(s_Entries, settings) != null || Find(s_Released, settings) != null) continue;
                 var e = new Entry { Settings = settings, Own = record.observed, Observed = record.observed };
-                for (int i = 0; i < record.factors.Count && i < record.owns.Count; i++) e.History.Add((record.factors[i], record.owns[i]));
+                for (int i = 0; i < record.factors.Count && i < record.owns.Count; i++)
+                    e.History.Add((record.factors[i], record.owns[i], i < record.groups.Count ? record.groups[i] : int.MinValue));
                 s_Released.Add(e);
             }
         }
@@ -600,13 +611,14 @@ namespace DesignUi
         }
 
         /// <summary>
-        /// After an Undo or Redo, only on the PanelSettings it touched (whose scale is no longer the one this class last wrote or
-        /// saw): one brought back to a factor this wrote (since its own last changed, or the one held then) gets the own factor
-        /// that factor was written over (the snapshot's own): held, the screens hold the factor of that own again; given back,
-        /// it keeps that own. Any other value an Undo brings back is the settings' own. Also after a script reload, for assets
-        /// (SessionState).
+        /// After an Undo or Redo of <paramref name="group"/>, only on the PanelSettings it touched (whose scale is no longer the
+        /// one this class last wrote or saw): one brought back to a factor this wrote (since its own last changed, or the one
+        /// held then) in that group or before it gets the own factor that factor was written over (the snapshot's own): held,
+        /// the screens hold the factor of that own again; given back, it keeps that own. Any other value an Undo brings back is
+        /// the settings' own, also one equal to a held factor from a snapshot recorded before that factor was written (the
+        /// user's own earlier value). Also after a script reload, for assets (SessionState).
         /// </summary>
-        internal static void AfterUndoRedo()
+        internal static void AfterUndoRedo(int group)
         {
             Rehydrate();
             foreach (var e in s_Entries)
@@ -615,7 +627,7 @@ namespace DesignUi
                 float scale = e.Settings.scale;
                 if (scale == e.Observed) continue; // not touched
                 e.Observed = scale;
-                if (scale == e.Written || !e.OwnBefore(scale, out var own)) continue;
+                if (scale == e.Written || !e.OwnBefore(scale, group, out var own)) continue;
                 e.Own = own;
                 e.Written = float.NaN;
                 e.Settings.scale = own;
@@ -629,7 +641,7 @@ namespace DesignUi
                 if (r.Settings == null) { s_Released.RemoveAt(i); continue; }
                 float scale = r.Settings.scale;
                 if (scale == r.Observed) continue; // not touched
-                r.Observed = r.OwnBefore(scale, out var own) ? own : scale;
+                r.Observed = r.OwnBefore(scale, group, out var own) ? own : scale;
                 r.Settings.scale = r.Observed;
                 Remember(r);
             }

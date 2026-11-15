@@ -588,7 +588,7 @@ namespace DesignUi.Editor
         {
             var sizes = kit.Select(b => (b.FontSize, b.LineHeight)).ToList();
             foreach (var step in steps ?? Enumerable.Empty<DesignUi.DesignTextSize>())
-                if (step != null && step.scale > 0 && step.scale != 1f)
+                if (step != null && step.scale > 0 && !float.IsInfinity(step.scale) && step.scale != 1f)
                 {
                     var k = (double)(decimal)step.scale; // the decimal the profile shows, as the rules use it
                     sizes.AddRange(kit.Select(b => (b.FontSize * k, b.LineHeight * k)));

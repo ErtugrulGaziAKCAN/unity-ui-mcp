@@ -800,6 +800,85 @@ namespace DesignUi.Editor.Tests
             Object.DestroyImmediate(doc2.gameObject);
         }
 
+        /// <summary>
+        /// A new hold of a PanelSettings keeps what an earlier hold of it wrote: held at 1600×900 in Play mode (1.2 over the own
+        /// 1), the user's 130 % set in the Inspector while held (Unity's Undo records the changed property, 1.2 → 1.3), the screen
+        /// closed, the resolution changed to 1366×768 and a screen opened (held again): Ctrl+Z brings 1.2 back, the factor held
+        /// over the own 1 then, so the own factor is 1 again and leaving gives 1 back (before, the new hold forgot what the
+        /// earlier one wrote and 1.2 became the own factor, which leaving Play then left on the settings).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AnUndo_OfASnapshotFromAnEarlierHold_GivesItsOwnFactor_AfterANewHold()
+        {
+            // in Play mode (simulated), on settings the Undo system records (not DontSave)
+            DesignRootScalePanels.Playing = () => true;
+            var doc = Document(1600, 900);
+            _settings.hideFlags = HideFlags.None;
+            yield return Frames(2);
+            var screen = PlainScreen("root");
+            doc.rootVisualElement.Add(screen);
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, _settings.scale, 1e-4, "held at 1600×900");
+            Undo.IncrementCurrentGroup();
+            Undo.RecordObject(_settings, "scale"); // the user's 130 % in the Inspector while held: the Undo record holds 1.2 → 1.3
+            _settings.scale = 1.3f;
+            screen.panel.visualTree.MarkDirtyRepaint();
+            yield return Frames(6);
+            Assert.AreEqual(1.3f, DesignRootScalePanels.OwnScale(_settings) ?? float.NaN, 1e-6);
+            screen.RemoveFromHierarchy();
+            Assert.AreEqual(1.3f, _settings.scale, 1e-6, "given back");
+            Undo.IncrementCurrentGroup();
+            _settings.targetTexture = Texture(1366, 768);
+            var screen2 = PlainScreen("root");
+            doc.rootVisualElement.Add(screen2);
+            yield return Frames(6);
+            Assert.AreEqual(0.75 / ScaleOf(1366, 768), _settings.scale, 1e-4, "held again at 1366×768 (1.3 × 0.53346 lays out at 0.75)");
+            float held = _settings.scale;
+            Undo.PerformUndo(); // brings back 1.2, the factor held over the own 1 when the Inspector edit was made
+            Assert.AreNotEqual(held, _settings.scale, "the Undo ran");
+            yield return Frames(6);
+            Assert.AreEqual(1f, DesignRootScalePanels.OwnScale(_settings) ?? float.NaN, 1e-6, "the snapshot's own factor, not its held 1.2");
+            screen2.RemoveFromHierarchy();
+            Assert.AreEqual(1f, _settings.scale, 1e-6, "leaving gives the own factor back");
+            Object.DestroyImmediate(doc.gameObject);
+        }
+
+        /// <summary>
+        /// An Undo that brings back a value the user set before a hold keeps it, also when it equals the held factor: in Edit
+        /// mode the user types 1.2 and then 1 (both recorded), plays at 1600×900 (held 1.2 over the own 1) and stops; Ctrl+Z
+        /// brings the user's 1.2 back, a snapshot recorded before 1.2 was ever held, so it is the user's own value (before, it
+        /// was taken for the held factor and reset to 1).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AnUndo_ToTheUsersEarlierValue_EqualToAHeldFactor_KeepsTheUsersValue()
+        {
+            var doc = Document(1600, 900);
+            _settings.hideFlags = HideFlags.None; // settings the Undo system records
+            DesignRootScalePanels.Playing = () => false;
+            yield return Frames(2);
+            foreach (var value in new[] { 1.2f, 1f })
+            {
+                Undo.IncrementCurrentGroup();
+                Undo.RecordObject(_settings, "scale"); // the Inspector's edit
+                _settings.scale = value;
+                yield return null;
+            }
+            Undo.IncrementCurrentGroup();
+            DesignRootScalePanels.Playing = () => true;
+            var screen = PlainScreen("root");
+            doc.rootVisualElement.Add(screen);
+            yield return Frames(6);
+            Assert.AreEqual(1.2f, _settings.scale, 1e-4, "held at 1600×900 over the user's 1");
+            screen.RemoveFromHierarchy();
+            DesignRootScalePanels.Playing = () => false;
+            Assert.AreEqual(1f, _settings.scale, "given back");
+            yield return null;
+            Undo.PerformUndo(); // the user's own 1 → 1.2 back
+            yield return null;
+            Assert.AreEqual(1.2f, _settings.scale, 1e-6, "the user's own earlier value");
+            Object.DestroyImmediate(doc.gameObject);
+        }
+
         // ---- an overflowing line the design aligns right ------------------------------------------------------------------
 
         /// <summary>

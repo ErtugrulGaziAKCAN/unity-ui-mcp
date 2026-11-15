@@ -356,6 +356,32 @@ namespace DesignUi.Editor.Tests
             Assert.IsNull(JObject.Parse(File.ReadAllText(kit + "/kit.config.json"))["textSizes"]);
         }
 
+        /// <summary>
+        /// A step whose scale is not a positive finite number is not written (the exporter's kit reader refuses such a step,
+        /// which would stop every exporter command, and a NaN is not JSON): kit sync names it and writes the others.
+        /// </summary>
+        [Test]
+        public void Run_WritesOnlyTextSizeStepsWithAPositiveScale_AndNamesTheOthers()
+        {
+            var profile = Profile();
+            profile.textSizes = new[]
+            {
+                new DesignTextSize { key = "small", scale = 0.9f }, new DesignTextSize { key = "zero", scale = 0f },
+                new DesignTextSize { key = "unset", scale = float.NaN }, new DesignTextSize { key = "negative", scale = -1.2f },
+                new DesignTextSize { key = "endless", scale = float.PositiveInfinity },
+            };
+            var kit = Kit();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            var text = File.ReadAllText(kit + "/kit.config.json");
+            StringAssert.DoesNotContain("NaN", text, "the file is JSON");
+            StringAssert.DoesNotContain("Infinity", text);
+            var steps = (JArray)JObject.Parse(text)["textSizes"];
+            CollectionAssert.AreEqual(new[] { "small" }, steps.Select(t => (string)t["key"]).ToArray());
+            foreach (var key in new[] { "zero", "unset", "negative", "endless" })
+                Assert.IsTrue(r.Warnings.Any(w => w.StartsWith("text size '" + key + "' of the profile has scale", StringComparison.Ordinal)), key + ": " + string.Join("\n", r.Warnings));
+        }
+
         [Test]
         public void Run_AnyStyleThatIsWholeAtEveryScale_GetsItsOwnLineBoxTwin()
         {

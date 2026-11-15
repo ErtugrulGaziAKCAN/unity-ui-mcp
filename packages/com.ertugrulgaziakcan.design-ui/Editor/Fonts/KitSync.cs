@@ -187,7 +187,7 @@ namespace DesignUi.Editor
             var fontsJson = Regex.Replace(fontsCss, @"\.css$", "", RegexOptions.IgnoreCase) + ".json";
             outputs[fontsCss] = Utf8(FontsCss(faces));
             outputs[fontsJson] = Utf8(FontsJson(plan));
-            outputs[ConfigFileName] = UpdatedConfig(config, configBytes, profile, plan);
+            outputs[ConfigFileName] = UpdatedConfig(config, configBytes, profile, plan, warnings);
             var text = new HashSet<string>(StringComparer.Ordinal) { fontsCss, fontsJson, ConfigFileName };
             // the font tokens name the synced families, so designs that use them pass lint against fonts.css
             if (tokens != null)
@@ -504,7 +504,7 @@ namespace DesignUi.Editor
         }
 
         /// <summary>kit.config.json with the profile's values; the original bytes when nothing changes (key order and other keys are kept).</summary>
-        static byte[] UpdatedConfig(JObject config, byte[] original, DesignUiProfile profile, FontMap.FontsPlan plan)
+        static byte[] UpdatedConfig(JObject config, byte[] original, DesignUiProfile profile, FontMap.FontsPlan plan, List<string> warnings)
         {
             var updated = (JObject)config.DeepClone();
             updated["reference"] = new JArray(profile.referenceResolution.x, profile.referenceResolution.y);
@@ -512,8 +512,13 @@ namespace DesignUi.Editor
             updated["screenMatch"] = double.Parse(profile.screenMatch.ToString("R", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
             updated["locales"] = new JArray(plan.Locales.Cast<object>().ToArray());
             if (updated["referenceLocale"] != null) updated["referenceLocale"] = plan.ReferenceLocale;
-            // the game's text-size steps: the exporter's kit build warns about a step that draws a style below the readable floor
+            // the game's text-size steps: the exporter's kit build warns about a step that draws a style below the readable floor;
+            // only a step with a key and a positive finite scale (the exporter refuses any other, and so does the compiler)
             var steps = (profile.textSizes ?? new DesignUi.DesignTextSize[0]).Where(t => t != null && !string.IsNullOrEmpty(t.key)).ToArray();
+            foreach (var bad in steps.Where(t => !(t.scale > 0) || float.IsInfinity(t.scale)))
+                warnings.Add("text size '" + bad.key + "' of the profile has scale " + bad.scale.ToString(CultureInfo.InvariantCulture) +
+                             "; a scale is a positive number: it is not written to " + ConfigFileName + " (screens do not import with it)");
+            steps = steps.Where(t => t.scale > 0 && !float.IsInfinity(t.scale)).ToArray();
             if (steps.Length > 0)
                 updated["textSizes"] = new JArray(steps.Select(t => (object)new JObject
                 {
