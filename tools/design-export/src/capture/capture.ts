@@ -155,6 +155,13 @@ async function pageSettle(): Promise<boolean> {
 }
 
 /**
+ * A text-sized box's text within this many device px above a whole pixel is that pixel (`pageTextCeil`), as in
+ * `DesignTextFit.Tolerance`: measured over the fidelity suite's 984 text-sized texts at all six viewports, the same
+ * tolerance on both sides leaves 2 a pixel apart (1e-4 here: 4), docs/findings/viewport-classes.md.
+ */
+export const TEXT_CEIL_TOLERANCE = 0.012;
+
+/**
  * UI Toolkit's pixel grid for a box sized by its text, which the golden reproduces so the comparison sees the compile's
  * differences and not this engine rounding (Unity 6000.3, measured in the fidelity suite, docs/findings/pixel-grid.md):
  * - a text element's measured size is rounded up to the device-pixel grid (TextUtilities.PostProcessMeasuredSize,
@@ -162,12 +169,13 @@ async function pageSettle(): Promise<boolean> {
  * - its border widths are laid out as whole device pixels (a 2px border at scale 0.75, 1.5 device px, takes 2), which
  *   Chromium cannot reproduce with border-width itself (it floors border widths to whole CSS px).
  * An IR text element (text node or text button) whose content width is its one-line text's width gets the width Unity
- * gives it: the text width rounded up to the device grid, plus its padding, plus its borders rounded to whole device
- * pixels. The width is an !important declaration in a style element of its own, keyed by an attribute; every call first
+ * gives it: the text width rounded up to the device grid, a text within `TEXT_CEIL_TOLERANCE` device px above a whole
+ * pixel counting as that pixel (as `DesignTextFit` does with Unity's own measure: the two renderers' widths of a text
+ * differ by up to a few hundredths of a device pixel), plus its padding, plus its borders rounded to whole device pixels. The width is an !important declaration in a style element of its own, keyed by an attribute; every call first
  * removes the previous ones (they depend on the state: a bolder hover, another text). Text under a transform is left
  * alone. Returns how many elements got a width.
  */
-function pageTextCeil(arg: { items: number[]; ir: number[]; scale: number }): number {
+function pageTextCeil(arg: { items: number[]; ir: number[]; scale: number; tolerance: number }): number {
   const ATTR = "data-design-ui-text-ceil";
   for (const el of Array.from(document.querySelectorAll(`[${ATTR}]`))) el.removeAttribute(ATTR);
   let sheet = document.getElementById("design-ui-text-ceil") as HTMLStyleElement | null;
@@ -217,7 +225,7 @@ function pageTextCeil(arg: { items: number[]; ir: number[]; scale: number }): nu
     // letter-spacing: Chromium adds it after the last character too, UI Toolkit's standard generator does not (the compiler
     // gives a text element that spacing as right padding instead), so Unity measures the text without it and adds it back
     const track = cs.letterSpacing === "normal" ? 0 : px(cs.letterSpacing);
-    const content = Math.ceil((text - track) * arg.scale - 1e-4) / arg.scale + track;
+    const content = Math.ceil((text - track) * arg.scale - arg.tolerance) / arg.scale + track;
     // the compensation makes the padding fractional; Yoga then snaps the box's edges to whole device pixels
     const box = content + padding + gridBorder(bl) + gridBorder(br);
     const unity = track ? Math.round(box * arg.scale) / arg.scale : box;
@@ -777,7 +785,7 @@ export class CaptureSession {
     }
     // text widths are measured once a face the job shows for the first time has loaded (else the fallback's width)
     await this.d.page.evaluate(pageSettle);
-    await this.d.page.evaluate(pageTextCeil, { items: this.textItems, ir: this.irIndices, scale: this.scale });
+    await this.d.page.evaluate(pageTextCeil, { items: this.textItems, ir: this.irIndices, scale: this.scale, tolerance: TEXT_CEIL_TOLERANCE });
     await this.d.page.evaluate(pageSettle);
     if (!job.anim) {
       const idOf = new Map(Object.entries(this.elements).map(([id, i]) => [i, id] as const));

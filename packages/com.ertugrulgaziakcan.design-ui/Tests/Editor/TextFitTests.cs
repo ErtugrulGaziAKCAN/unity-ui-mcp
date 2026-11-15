@@ -99,6 +99,8 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(44 / 0.625, DesignTextFit.Snap(69.469f, 0.625), 1e-4, "at 1600×900: 43.4 device px takes 44");
             Assert.AreEqual(86, DesignTextFit.Snap(86.003f, 1), 1e-4, "86.003 is the browser's 86, not 87");
             Assert.AreEqual(87, DesignTextFit.Snap(86.03f, 1), 1e-4, "beyond the tolerance it is the next pixel");
+            Assert.AreEqual(39 / 0.625, DesignTextFit.Snap(38.0174f / 0.625f, 0.625), 1e-3, "a text just over a pixel (Unity 38.0174, the browser 38.0176 device px) takes the next one");
+            Assert.AreEqual(129 / 1.5, DesignTextFit.Snap(129.01f / 1.5f, 1.5), 1e-3, "the browser's 129 px at 3840×2160 is Unity's 129.0100");
             Assert.AreEqual(4, DesignTextFit.SnapBorder(4, 1), 1e-6, "whole at an exact scale");
             Assert.AreEqual(3 / 0.625, DesignTextFit.SnapBorder(4, 0.625), 1e-4, "2.5 device px at 1600×900: Chromium's 3");
             Assert.AreEqual(3 / 0.62499994, DesignTextFit.SnapBorder(4, 0.62499994), 1e-4, "also at a panel's float 0.625");
@@ -171,16 +173,19 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
-        /// A row of ten text-sized buttons at every default viewport (the scaled ones through the root scale). Each DesignButton
-        /// starts where the browser puts it: the sum of the widths before it, each text's width ceiled on the device grid of the
-        /// actual scale (Chromium's rule, <see cref="DesignTextFit.Snap"/>) plus paddings, borders on whole device pixels
-        /// (<see cref="DesignTextFit.SnapBorder"/>) and gaps, times the actual
-        /// scale, within half a device pixel however far along the row; the same row of plain Buttons (UI Toolkit ceils on the
-        /// grid of the scale it lays out at) is a whole device pixel off at the exact viewports, so the limit tells them apart.
+        /// A row of ten text-sized buttons at every default viewport (the scaled ones through the root scale), against the
+        /// golden's row: Chromium's text width of each word at that viewport (<c>Data/chromium-row-buttons.json</c>, measured with
+        /// the kit's fonts) ceiled on the device grid as the exporter lays a text-sized box out (pageTextCeil), plus padding,
+        /// borders on whole device pixels and gaps. Each DesignButton starts within half a device pixel of it however far
+        /// along the row; plain Buttons (UI Toolkit ceils on the grid of the scale it lays out at, with no tolerance) are a
+        /// whole device pixel off at an exact viewport ("Vazgeç" is 86 px in Chromium and 86.0026 in Unity, and takes 87),
+        /// so the limit tells the two apart.
         /// </summary>
         [UnityTest]
-        public IEnumerator ARowOfTenTextSizedButtons_StartsWhereTheDesignPutsEach_AtEveryDefaultViewport()
+        public IEnumerator ARowOfTenTextSizedButtons_StartsWhereTheGoldenPutsEach_AtEveryDefaultViewport()
         {
+            var golden = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(IrReaderTests.PackagePath("Tests", "Editor", "Data", "chromium-row-buttons.json")));
+            CollectionAssert.AreEqual(Words, golden["words"].ToObject<string[]>(), "the words Data/tools~/chromium-row-buttons.mts measured");
             var font = BodyBold();
             // one layout first: a font the test made a moment ago lays its first text out before the kerning pairs of its new
             // glyphs arrive (docs/findings/text-ink.md), and an element keeps that first width until something changes it
@@ -194,6 +199,8 @@ namespace DesignUi.Editor.Tests
             double worstPlainExact = 0;
             foreach (var (w, h) in DefaultViewports)
             {
+                var chromium = golden["widths"]?[w + "x" + h]?.ToObject<double[]>();
+                Assert.IsNotNull(chromium, "Chromium's widths at " + w + "×" + h + " (rebuild Data/chromium-row-buttons.json with Data/tools~/chromium-row-buttons.mts)");
                 var doc = Document(w, h);
                 yield return Frames(2);
                 var screen = new DesignScreen { ExactScales = DesignViewportScales.Encode(Exact) };
@@ -204,23 +211,22 @@ namespace DesignUi.Editor.Tests
                 var plain = Row(screen, 300, false, font);
                 yield return Frames(10);
                 double actual = ScaleOf(w, h), ppp = screen.panel.scaledPixelsPerPoint;
-                double x = 64, worstFit = 0, worstPlain = 0;
+                double x = 64 * actual, worstFit = 0, worstPlain = 0;
+                double border = Math.Max(1, Math.Floor(4 * actual + 0.5)); // device px
                 for (int i = 0; i < Words.Length; i++)
                 {
-                    var exactText = ((DesignButton)fit[i]).Fit.TextWidth();
                     Assert.IsTrue(DesignTextFit.Supported, "DesignTextFit reads the text handle's unrounded width through internal members " +
                                   "(TextElement.uitkTextHandle, UITKTextHandle.MeasuredWidth) that Unity " + Application.unityVersion + " does not have: find their replacement");
-                    Assert.IsFalse(float.IsNaN(exactText), "the text's exact width");
-                    double expected = x * actual;
                     double fitX = fit[i].worldBound.x * ppp, plainX = plain[i].worldBound.x * ppp;
-                    worstFit = Math.Max(worstFit, Math.Abs(fitX - expected));
-                    worstPlain = Math.Max(worstPlain, Math.Abs(plainX - expected));
-                    if (Math.Abs(fitX - expected) > 0.5 + 1e-3) failures.Add(w + "×" + h + " button " + (i + 1) + ": x " + fitX.ToString("0.###") + " device px, the design's " + expected.ToString("0.###") +
-                        " (fit width " + ((DesignButton)fit[i]).Fit.Width + ", border " + fit[i].resolvedStyle.borderLeftWidth + ", text " + exactText + ", layout " + fit[i].layout.width + ")");
-                    // the browser's width: the text's, ceiled on the device grid of the actual scale
-                    x += DesignTextFit.Snap(exactText, actual) + 2 * 32 + 2 * DesignTextFit.SnapBorder(4, actual) + 24;
+                    worstFit = Math.Max(worstFit, Math.Abs(fitX - x));
+                    worstPlain = Math.Max(worstPlain, Math.Abs(plainX - x));
+                    if (Math.Abs(fitX - x) > 0.5 + 1e-3) failures.Add(w + "×" + h + " button " + (i + 1) + ": x " + fitX.ToString("0.###") + " device px, the golden's " + x.ToString("0.###") +
+                        " (fit width " + ((DesignButton)fit[i]).Fit.Width + ", Unity's text " + ((DesignButton)fit[i]).Fit.TextWidth() + ", Chromium's " + chromium[i] / actual + ")");
+                    // the golden's box: Chromium's text width ceiled on the device grid (pageTextCeil), padding, borders, the gap
+                    x += Math.Ceiling(chromium[i] - 1e-4) + 2 * 32 * actual + 2 * border + 24 * actual;
                 }
-                report.Add(w + "×" + h + ": largest |x − design| " + worstFit.ToString("0.###") + " device px with exact widths, " + worstPlain.ToString("0.###") + " without");
+                report.Add(w + "×" + h + ": largest |x − golden| " + worstFit.ToString("0.###") + " device px with exact widths, " + worstPlain.ToString("0.###") + " without; Unity − Chromium text, device px: " +
+                           string.Join(" ", Enumerable.Range(0, Words.Length).Select(i => (((DesignButton)fit[i]).Fit.TextWidth() * actual - chromium[i]).ToString("+0.0000;-0.0000"))));
                 if (Math.Abs(actual - DesignViewportScales.LayoutScale(Exact, actual)) < 1e-4) worstPlainExact = Math.Max(worstPlainExact, worstPlain);
                 Object.DestroyImmediate(doc.gameObject);
                 yield return null;
@@ -254,7 +260,7 @@ namespace DesignUi.Editor.Tests
             yield return Frames(4);
             var short1 = label.Fit.TextWidth();
             Assert.AreEqual(DesignTextFit.Snap(short1, 1), label.Fit.Width, 1e-3, "laid out at the browser's width for its text");
-            Assert.AreEqual(Math.Ceiling(short1 - DesignTextFit.Tolerance), label.layout.width, 1e-3, "a whole device pixel at scale 1");
+            Assert.AreEqual(DesignTextFit.Snap(short1, 1), label.layout.width, 1e-3, "a whole device pixel at scale 1");
             Assert.AreEqual(WhiteSpace.NoWrap, label.resolvedStyle.whiteSpace);
 
             label.text = "Kadro ve taktik";

@@ -862,7 +862,7 @@ namespace DesignUi.Editor
                 var applies = Root is DesignScreen ds && !string.IsNullOrEmpty(ds.Breakpoints);
                 if (!applies) foreach (var name in breakpoints) Root.AddToClassList(ScreenBuilder.BreakpointClassPrefix + name);
                 for (int i = 0; i < MountFrames; i++) yield return null;
-                // a panel scale none of the exact viewports has: the screen root lays its panel out at the nearest exact scale
+                // a panel scale none of the exact viewports has: the screen root lays its panel out at the next exact scale up
                 // and draws scaled (DesignScreen.ApplyRootScale, on attach and when the panel's scale changes); it settles once
                 // the panel applied that scale
                 if (Root is DesignScreen scaledRoot && !string.IsNullOrEmpty(scaledRoot.ExactScales))

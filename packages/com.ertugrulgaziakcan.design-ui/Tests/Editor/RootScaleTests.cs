@@ -18,7 +18,7 @@ namespace DesignUi.Editor.Tests
     /// <summary>
     /// Scaled viewports through a uniform root scale (docs/findings/viewport-classes.md): at a panel scale none of the
     /// profile's exact viewports has, a compiled screen root (DesignScreen, <c>exact-scales</c>) makes its panel lay out at
-    /// the nearest exact scale (the PanelSettings' scale factor) and draws itself scaled by actual / exact from its top-left
+    /// the next exact scale up (the PanelSettings' scale factor) and draws itself scaled by actual / exact from its top-left
     /// corner, so every length is whole device pixels where it is laid out and every edge falls where the design puts it at
     /// the actual scale. Panels here render into textures of the viewport's size.
     /// </summary>
@@ -75,19 +75,20 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
-        public void LayoutScale_IsThePanelsOwnWhereExact_ElseTheNearestExactScaleInLogScale_OrTheRulesNeighbour()
+        public void LayoutScale_IsThePanelsOwnWhereExact_ElseTheNextExactScaleUp_OrTheRulesNeighbour()
         {
             double s1366 = ScaleOf(1366, 768);
+            Assert.AreEqual(DesignViewportScales.BaseRule.Up, DesignViewportScales.Rule, "the default: drawn at most 1, so layout's rounding stays within half a device pixel");
             Assert.AreEqual(0.75, DesignViewportScales.LayoutScale(Exact, 0.75));
             Assert.AreEqual(0.75, DesignViewportScales.LayoutScale(Exact, 0.75 + 5e-5), "within the tolerance");
-            Assert.AreEqual(0.75, DesignViewportScales.LayoutScale(Exact, 0.625), "|ln 1.2| < |ln 0.8|");
-            Assert.AreEqual(0.5, DesignViewportScales.LayoutScale(Exact, s1366));
+            Assert.AreEqual(0.75, DesignViewportScales.LayoutScale(Exact, 0.625));
+            Assert.AreEqual(0.75, DesignViewportScales.LayoutScale(Exact, s1366), "0.5335: the next up, not the nearer 0.5");
             Assert.AreEqual(1.5, DesignViewportScales.LayoutScale(Exact, 2.0), "above every exact scale: the largest");
             Assert.AreEqual(0.5, DesignViewportScales.LayoutScale(Exact, 0.4), "below every exact scale: the smallest");
             Assert.AreEqual(0.6, DesignViewportScales.LayoutScale(null, 0.6), "no exact scales: the panel's own");
-            DesignViewportScales.Rule = DesignViewportScales.BaseRule.Up;
-            Assert.AreEqual(0.75, DesignViewportScales.LayoutScale(Exact, 0.625));
-            Assert.AreEqual(0.75, DesignViewportScales.LayoutScale(Exact, s1366));
+            DesignViewportScales.Rule = DesignViewportScales.BaseRule.Nearest;
+            Assert.AreEqual(0.75, DesignViewportScales.LayoutScale(Exact, 0.625), "|ln 1.2| < |ln 0.8|");
+            Assert.AreEqual(0.5, DesignViewportScales.LayoutScale(Exact, s1366));
             Assert.AreEqual(1.5, DesignViewportScales.LayoutScale(Exact, 2.0));
             DesignViewportScales.Rule = DesignViewportScales.BaseRule.Down;
             Assert.AreEqual(0.5, DesignViewportScales.LayoutScale(Exact, 0.625));
@@ -189,7 +190,7 @@ namespace DesignUi.Editor.Tests
         /// <summary>
         /// The design at the actual scale: a full-screen document moved through every default viewport by new target textures,
         /// with no call into the screen (the root follows the panel's scale by itself, also from 1920×1080 to 1600×900, where
-        /// the panel keeps its size in panel pixels). At a scaled viewport the panel lays out at the nearest exact scale and every
+        /// the panel keeps its size in panel pixels). At a scaled viewport the panel lays out at the next exact scale up and every
         /// edge is the design's times the actual scale (the box at 397.0 px is at 248.125 device px at 0.625, as in Chromium),
         /// padded rows add up to the design's height, text keeps its width; at an exact one nothing is scaled. The PanelSettings
         /// get their own factor back when the screen leaves.
@@ -254,13 +255,14 @@ namespace DesignUi.Editor.Tests
             var screen = instance.Q<DesignScreen>("root");
             yield return Frames(6);
             Assert.AreEqual(0.75, screen.panel.scaledPixelsPerPoint, 1e-4);
-            _settings.scale = 0.9f; // the game's UI scale option: 0.625 × 0.9 = 0.5625, nearest exact 0.5
+            _settings.scale = 0.9f; // the game's UI scale option: 0.625 × 0.9 = 0.5625, the next exact scale up 0.75
             screen.panel.visualTree.MarkDirtyRepaint(); // a panel applies its settings when it updates: every frame in Play mode, here when dirty
             yield return Frames(6);
             Assert.AreEqual(0.5625, screen.DesignScale ?? double.NaN, 1e-4);
-            Assert.AreEqual(0.5, screen.panel.scaledPixelsPerPoint, 1e-4);
-            Assert.AreEqual(1.125, screen.RootScale, 1e-4);
-            AreDevice(new Rect((float)(397 * 0.5625), (float)(101 * 0.5625), (float)(403 * 0.5625), (float)(37 * 0.5625)), instance.Q("box").worldBound, 0.5, 1.125 + 0.01, "box");
+            Assert.AreEqual(0.75, screen.panel.scaledPixelsPerPoint, 1e-4);
+            Assert.AreEqual(0.75, screen.RootScale, 1e-4);
+            Assert.AreEqual(0.9f * 0.75f / 0.5625f, _settings.scale, 1e-4, "the game's factor times exact / actual");
+            AreDevice(new Rect((float)(397 * 0.5625), (float)(101 * 0.5625), (float)(403 * 0.5625), (float)(37 * 0.5625)), instance.Q("box").worldBound, 0.75, 0.75 + 0.01, "box");
             instance.RemoveFromHierarchy();
             Assert.AreEqual(0.9f, _settings.scale, 1e-6, "the game's factor is back");
         }
@@ -410,7 +412,7 @@ namespace DesignUi.Editor.Tests
 
         /// <summary>
         /// Picking and pointer events through the scaled root at 1600×900 (panel at 0.75, root 0.8333) and 1366×768 (panel at
-        /// 0.5, root 1.067): the pointer reaches an element where the design draws it at the actual scale and nowhere else
+        /// 0.75, root 0.7113): the pointer reaches an element where the design draws it at the actual scale and nowhere else
         /// (a point inside the unscaled box but outside the drawn one misses); hover, active, a click, a toggle, a wheel over a
         /// scroll view and a drag (the event's position in the dragged element's space). A text field is focused directly (a
         /// synthesized press does not pick a runtime TextField in Edit mode at any scale) and typing is not covered: keyboard

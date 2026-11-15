@@ -11,7 +11,7 @@ namespace DesignUi
     /// When the design animates (the UXML attribute <c>animated</c>, written by the compiler), it attaches the screen's
     /// <see cref="DesignUiAnimationPlayer"/> on attach, so transitions and keyframe animations play without any wiring.
     /// On a runtime panel whose scale is not one of the profile's exact viewports' (<see cref="ExactScales"/>), it lays the
-    /// screen out at the nearest exact scale and draws its root scaled to the actual one (an inline transform that composes
+    /// screen out at an exact scale (the next one up) and draws its root scaled to the actual one (an inline transform that composes
     /// the root scale with the design's own transform of the root and its animations, and <c>flex-shrink: 0</c>: the root
     /// keeps its design size); it applies the design's breakpoints. A screen inside another screen that has exact scales
     /// is scaled with it (it never scales itself again). Otherwise it is a plain VisualElement.
@@ -69,7 +69,7 @@ namespace DesignUi
         /// <summary>
         /// The panel scales of the profile's exact viewports (written by the compiler, <see cref="DesignViewportScales.Encode"/>).
         /// While the screen is on a runtime panel whose scale is none of them (a scaled viewport, or a resolution the profile does
-        /// not declare), the panel lays out at the nearest exact scale and the root draws scaled by <see cref="RootScale"/>
+        /// not declare), the panel lays out at an exact scale (the next one up) and the root draws scaled by <see cref="RootScale"/>
         /// (actual / exact, its top-left corner fixed), so the screen has the design's geometry at the actual scale
         /// (<see cref="ApplyRootScale"/>).
         /// </summary>
@@ -145,7 +145,7 @@ namespace DesignUi
 
         /// <summary>
         /// Lays the screen out at an exact scale: on a runtime panel whose scale (without the exact-scale factor) is none of
-        /// <see cref="ExactScales"/>, sets the panel's PanelSettings factor so it lays out at the nearest exact one
+        /// <see cref="ExactScales"/>, sets the panel's PanelSettings factor so it lays out at the next exact one up
         /// (<see cref="DesignViewportScales.LayoutScale"/>; given back when the last such screen leaves the panel) and scales the
         /// root by actual / exact from its top-left corner; at an exact scale the root is not scaled. Then applies the
         /// breakpoints at the design's size. Called on attach, on geometry changes of the root and of the panel's root, and when

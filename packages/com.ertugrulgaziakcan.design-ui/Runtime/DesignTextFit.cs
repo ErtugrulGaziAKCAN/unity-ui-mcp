@@ -34,16 +34,16 @@ namespace DesignUi
     }
 
     /// <summary>
-    /// Lays a text element whose width is its content's out at the browser's width for its text. Chromium ceils a text's
-    /// width to whole device pixels at the page's scale (measured on the kit's buttons and tabs at every default viewport:
+    /// Lays a text element whose width is its content's out at the golden's width for its text. The golden lays such a box
+    /// out with Chromium's text width ceiled to whole device pixels at the viewport's scale (the exporter's pageTextCeil:
     /// a text of 69.469 px makes its button 70 px of content at 2560×1440, 105 device px at 3840×2160). UI Toolkit ceils too,
     /// but on the device grid of the scale it lays out at, which under a scaled root is not the design's (at 1600×900 the
     /// panel lays out at 0.75, the design is at 0.625), and with no tolerance: a text the browser measures at exactly 86 px
-    /// measures 86.003 in Unity and takes 87, so every element after it in a row moves a pixel. A measure override cannot
+    /// measures 86.0100 in Unity and takes 87, so every element after it in a row moves a pixel. A measure override cannot
     /// help, because UI Toolkit rounds a measured size after it. Instead the element gets an inline width of the
     /// generator's unrounded width ceiled on the design's device grid (<see cref="Snap"/>) plus its horizontal padding and
-    /// borders (each as the browser lays a border out, <see cref="SnapBorder"/>), which layout keeps exactly (only each edge
-    /// is put on the device grid), and <c>white-space: nowrap</c> (<c>pre</c> for a text that keeps its spaces), because a
+    /// borders as the golden lays them out (<see cref="BrowserWidth"/>, which counts letter-spacing as the golden does),
+    /// which layout keeps exactly (only each edge is put on the device grid), and <c>white-space: nowrap</c> (<c>pre</c> for a text that keeps its spaces), because a
     /// box as wide as its text must not break it when the grid takes a fraction of a pixel off. It is measured again when
     /// the text, the element's styles (a state, the locale's fonts, a text size) or its geometry change. A text the design
     /// lets wrap keeps wrapping where its line does not fit. In a row the layout shows that (it holds the element narrower
@@ -172,7 +172,7 @@ namespace DesignUi
             }
             var rs = e.resolvedStyle;
             double scale = DesignScaleOf(e);
-            float box = Snap(text, scale) + rs.paddingLeft + rs.paddingRight + SnapBorder(rs.borderLeftWidth, scale) + SnapBorder(rs.borderRightWidth, scale);
+            float box = BrowserWidth(text, rs, scale, e.scaledPixelsPerPoint);
             // only a layout made since the width last changed says whether the parent has room (a style callback can come
             // between a change and the layout that follows it)
             float laidOut = m_Laid ? e.layout.width : float.NaN;
@@ -227,6 +227,26 @@ namespace DesignUi
             if (e.style.whiteSpace != m_NoWrap) e.style.whiteSpace = m_NoWrap;
         }
 
+        /// <summary>
+        /// The border-box width the design gives a text of unrounded width <paramref name="text"/> (UI Toolkit's measure) in
+        /// <paramref name="rs"/>, as the golden lays it out (the exporter's pageTextCeil: Chromium's text width ceiled on the
+        /// device grid, borders whole device pixels): the text ceiled on the design's device grid (<see cref="Snap"/>) plus
+        /// padding and borders (<see cref="SnapBorder"/>). With letter-spacing the design's text has one spacing more than UI
+        /// Toolkit's standard generator lays out (after its last character); the compiler wrote that spacing as extra right
+        /// padding, which UI Toolkit put on its device grid. The design's box is the text ceiled, plus the spacing, the
+        /// design's padding (the right padding less the spacing, whole device pixels where it lays out: lint U-CSS-046) and
+        /// the borders, rounded to whole device pixels (Yoga snaps such a box's edges).
+        /// </summary>
+        internal static float BrowserWidth(float text, IResolvedStyle rs, double scale, float ppp)
+        {
+            float spacing = rs.letterSpacing * rs.fontSize / 100f; // USS letter-spacing is hundredths of an em
+            float borders = SnapBorder(rs.borderLeftWidth, scale) + SnapBorder(rs.borderRightWidth, scale);
+            if (spacing == 0 || !(ppp > 0) || !(scale > 0)) return Snap(text, scale) + rs.paddingLeft + rs.paddingRight + borders;
+            float right = Mathf.Max(0, Mathf.Round((rs.paddingRight - spacing) * ppp) / ppp);
+            double box = Snap(text, scale) + spacing + rs.paddingLeft + right + borders;
+            return (float)(Math.Round(box * scale, MidpointRounding.AwayFromZero) / scale);
+        }
+
         /// <summary>Whether the element's text wraps at the room of a column or of an absolute text (<see cref="Width"/>), with the design's white-space.</summary>
         public bool Wrapping { get; private set; }
 
@@ -268,17 +288,20 @@ namespace DesignUi
         }
 
         /// <summary>
-        /// How much wider than the browser's a text may measure in Unity and still be the browser's width: the two renderers'
-        /// widths of one text differ by up to 0.021 device px (measured on the kit's buttons and tabs at the four exact
-        /// viewports), so a text the browser measures at exactly 86 px (Unity: 86.003) is not a pixel wider in Unity.
+        /// How much over a whole device pixel a text may measure and still be that pixel, in device px; the golden's rule
+        /// forgives the same (the exporter's TEXT_CEIL_TOLERANCE). Unity's unrounded width (the text handle's measure) is
+        /// Chromium's within −0.0175…+0.0453 device px (984 text-sized texts of the fidelity suite at all six viewports, median
+        /// +0.0037; a text the browser measures at exactly 86 px is 86.0100 in Unity at every exact scale). With 0.012 on both
+        /// sides 2 of them are a pixel apart (letter-spaced display text, inside their box limits); with 1e-4 on the golden's
+        /// side 4, and with the earlier 0.025 here 8. docs/findings/viewport-classes.md.
         /// </summary>
-        public const float Tolerance = 0.025f;
+        public const float Tolerance = 0.012f;
 
         /// <summary>
         /// The width layout gives a text of unrounded width <paramref name="width"/> (panel px) at <paramref name="scale"/>
-        /// device px per panel px: the browser's, up to the next whole device pixel (Chromium ceils a text's width to the
-        /// device grid of the page's scale: a button's text of 69.469 px at 3840×2160, 104.2 device px, takes 105), forgiving
-        /// <see cref="Tolerance"/>.
+        /// device px per panel px: the golden's, up to the next whole device pixel (the exporter lays a text-sized box out with
+        /// Chromium's text width ceiled on the device grid: a button's text of 69.469 px at 3840×2160, 104.2 device px, takes
+        /// 105), forgiving <see cref="Tolerance"/>.
         /// </summary>
         public static float Snap(float width, double scale)
         {

@@ -12,9 +12,9 @@ namespace DesignUi
     /// <see cref="DesignScreen"/>), and the scale a screen lays out at. UI Toolkit puts font sizes, paddings, margins and
     /// border widths on whole device pixels before layout and ceils text sizes, so a design only lays out as designed where
     /// its lengths are whole device pixels: at an exact viewport's scale. At any other panel scale (a scaled viewport such as
-    /// 1600×900 at 0.625, or any resolution the profile does not declare) the screen's panel lays out at the nearest exact
-    /// scale (<see cref="LayoutScale"/>) and the screen root draws scaled by actual / exact, its top-left corner fixed, so
-    /// every edge and every line of text falls where the design puts it at the actual scale
+    /// 1600×900 at 0.625, or any resolution the profile does not declare) the screen's panel lays out at an exact scale (the
+    /// next one up, <see cref="LayoutScale"/>) and the screen root draws scaled by actual / exact, its top-left corner fixed,
+    /// so every edge and every line of text falls where the design puts it at the actual scale
     /// (docs/findings/viewport-classes.md).
     /// </summary>
     public static class DesignViewportScales
@@ -60,8 +60,13 @@ namespace DesignUi
             Down,
         }
 
-        /// <summary>The rule <see cref="LayoutScale"/> uses (measured on the fidelity suite: docs/findings/viewport-classes.md).</summary>
-        public static BaseRule Rule { get; set; } = BaseRule.Nearest;
+        /// <summary>
+        /// The rule <see cref="LayoutScale"/> uses: the next exact scale up, so the root scale is at most 1 (below the largest
+        /// exact scale). Layout puts every edge on the device grid of the scale it lays out at, up to half a pixel there,
+        /// which the root scale multiplies: drawn at most 1, a box's edges stay within half a device pixel and its width
+        /// within one; laid out at 0.5 and drawn at 1366×768 (1.067) they did not (docs/findings/viewport-classes.md).
+        /// </summary>
+        public static BaseRule Rule { get; set; } = BaseRule.Up;
 
         /// <summary>
         /// The scale a screen lays out at when its panel would render at <paramref name="scale"/>: that scale when it is one of

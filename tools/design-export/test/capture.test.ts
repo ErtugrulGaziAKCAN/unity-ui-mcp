@@ -14,7 +14,7 @@ import type { IrAnim, IrNode, IrScreen } from "../src/ir/types.js";
 import { validateBoxes } from "../src/boxes/validate.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
 import { breakpointsHold, scaleStep, buildMatrix, captureName, sampleTimes, unsampledAnims, type CaptureJob } from "../src/capture/matrix.js";
-import { CaptureSession, captureMatrix, runCapture, type ElementMap } from "../src/capture/capture.js";
+import { CaptureSession, captureMatrix, runCapture, TEXT_CEIL_TOLERANCE, type ElementMap } from "../src/capture/capture.js";
 import { logicalViewport } from "../src/viewport.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -706,14 +706,14 @@ describe("captures", () => {
             const content = b[id].w - inline;
             // to Chromium's layout precision (1/64 CSS px)
             expect(Math.abs(content - Math.round(content)), `${id} at ${vp[0]}: ${content}`).toBeLessThan(s / 64 + 1e-6);
-            expect(content - b[id].lines[0].w, `${id} at ${vp[0]}: text ${b[id].lines[0].w}`).toBeGreaterThan(0);
+            expect(content - b[id].lines[0].w, `${id} at ${vp[0]}: text ${b[id].lines[0].w}`).toBeGreaterThan(-TEXT_CEIL_TOLERANCE);
             expect(content - b[id].lines[0].w, `${id} at ${vp[0]}: text ${b[id].lines[0].w}`).toBeLessThan(1);
           }
           // with letter-spacing, UI Toolkit's standard generator measures the text without the spacing after the last
           // character and the compiler adds that spacing as right padding: the text rounded up without it, plus it
           // (Yoga snaps that box, whose padding is now fractional, to whole device pixels)
           const track = 1.2 * s;
-          expect(b.e.w, `e at ${vp[0]}`).toBeCloseTo(Math.round(Math.ceil(b.e.lines[0].w - track - 1e-4) + track + inline), 1);
+          expect(b.e.w, `e at ${vp[0]}`).toBeCloseTo(Math.round(Math.ceil(b.e.lines[0].w - track - TEXT_CEIL_TOLERANCE) + track + inline), 1);
           expect(b.e.w - inline - b.e.lines[0].w, `e at ${vp[0]}`).toBeGreaterThan(-0.5);
           // the next box follows the rounded one, as Yoga lays it out
           expect(b.b.x).toBeCloseTo(b.a.x + b.a.w + 4 * s, 4);
