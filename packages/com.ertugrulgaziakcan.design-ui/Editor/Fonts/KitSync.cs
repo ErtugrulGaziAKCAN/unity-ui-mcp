@@ -512,6 +512,15 @@ namespace DesignUi.Editor
             updated["screenMatch"] = double.Parse(profile.screenMatch.ToString("R", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
             updated["locales"] = new JArray(plan.Locales.Cast<object>().ToArray());
             if (updated["referenceLocale"] != null) updated["referenceLocale"] = plan.ReferenceLocale;
+            // the game's text-size steps: the exporter's kit build warns about a step that draws a style below the readable floor
+            var steps = (profile.textSizes ?? new DesignUi.DesignTextSize[0]).Where(t => t != null && !string.IsNullOrEmpty(t.key)).ToArray();
+            if (steps.Length > 0)
+                updated["textSizes"] = new JArray(steps.Select(t => (object)new JObject
+                {
+                    ["key"] = t.key,
+                    ["scale"] = double.Parse(t.scale.ToString("R", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture),
+                }).ToArray());
+            else updated.Remove("textSizes");
             return JToken.DeepEquals(config, updated) ? original : Utf8(updated.ToString(Formatting.None) + "\n");
         }
 

@@ -187,6 +187,23 @@ describe("kit build", () => {
     expect(() => buildKit(dir, { check: true })).not.toThrow();
   });
 
+  it("warns, and does not refuse, about a text-size step that draws a kit style below the floor (the player's choice)", async () => {
+    const dir = kitCopy();
+    const cfg = path.join(dir, "kit.config.json");
+    fs.writeFileSync(cfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfg, "utf8")), textSizes: [{ key: "small", scale: 0.85 }, { key: "normal", scale: 1 }, { key: "large", scale: 1.2 }] }));
+    const r = buildKit(dir, { check: true });
+    expect(r.errors).toEqual([]);
+    expect(r.warnings).toEqual([expect.stringMatching(/^text-size step "small" \(×0\.85\) draws caption, caption-bold, label, label-bold \(20px\) at 8\.5 device px at 1280×720, below the readable-text floor of 9 device px: a player who picks it reads smaller text .*Keep the default steps at ×0\.9 or more\.$/)]);
+    const out = io();
+    expect(await runCli(["kit", "build", dir, "--check"], out.io)).toBe(0);
+    expect(out.out.join("")).toMatch(/^warning: text-size step "small"/m);
+    // ×0.9 is at the floor
+    fs.writeFileSync(cfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfg, "utf8")), textSizes: [{ key: "small", scale: 0.9 }] }));
+    expect(buildKit(dir, { check: true }).warnings).toEqual([]);
+    fs.writeFileSync(cfg, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfg, "utf8")), textSizes: [{ key: "small", scale: 0 }] }));
+    expect(() => buildKit(dir, { check: true })).toThrow(/"textSizes" must be a list/);
+  });
+
   it("fails when a --font-* token names a family fonts.css does not declare (both modes; letter case as lint compares it)", async () => {
     expect(buildKit(KIT_DIR, { check: true }).errors).toEqual([]);
     const dir = kitCopy();

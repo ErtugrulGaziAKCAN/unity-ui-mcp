@@ -21,6 +21,11 @@ export interface KitConfig {
   locales: string[];
   /** Locale whose text the design shows and whose font pixels are compared; defaults to `locales[0]`. */
   referenceLocale?: string;
+  /**
+   * The game's text-size steps (kit sync writes the DesignUiProfile's): each multiplies every design text size at runtime.
+   * Absent: none. Kit build warns about a step that draws a kit style below the readable-text floor.
+   */
+  textSizes?: { key: string; scale: number }[];
 }
 
 export function readKit(kitDir: string): KitConfig {
@@ -29,6 +34,9 @@ export function readKit(kitDir: string): KitConfig {
   for (const k of ["fontsCss", "tokensCss", "textStyles", "allowedScriptOrigins", "reference", "viewports", "screenMatch", "filterFunctions", "locales"]) {
     if (raw[k] === undefined) throw new Error(`kit.config.json is missing "${k}"`);
   }
+  if (raw.textSizes !== undefined && !(Array.isArray(raw.textSizes) && raw.textSizes.every((t: unknown) => typeof t === "object" && t !== null &&
+    typeof (t as { key?: unknown }).key === "string" && typeof (t as { scale?: unknown }).scale === "number" && (t as { scale: number }).scale > 0)))
+    throw new Error(`kit.config.json: "textSizes" must be a list of { "key": string, "scale": number above 0 }`);
   const classed = parseViewports(raw.viewports);
   const ref = raw.reference as [number, number];
   if (classed.some((v) => v.class === "scaled" && v.size[0] === ref[0] && v.size[1] === ref[1]))

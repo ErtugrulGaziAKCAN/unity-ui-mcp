@@ -128,6 +128,27 @@ export function textFloorProblems(styles: readonly TextStyle[], kit: Pick<KitCon
     `${s.name}: ${s.fontSize}px draws ${drawnPx(s.fontSize * scale)} device px at ${viewport[0]}×${viewport[1]} (scale ${scale}); the minimum is ${min}px`);
 }
 
+/**
+ * One warning per text-size step of the kit (kit.config.json `textSizes`, written by kit sync from the profile) that draws
+ * a kit text style below TEXT_FLOOR_PX device px at the smallest declared viewport: a step the player picks may make text
+ * smaller than the floor (the player's choice, so kit build warns and does not refuse); the design's own sizes are held to
+ * the floor by kit build and lint U-FONT-004.
+ */
+export function textSizeFloorWarnings(styles: readonly TextStyle[], kit: Pick<KitConfig, "reference" | "viewports" | "screenMatch" | "textSizes">): string[] {
+  const { viewport, scale } = smallestViewport(kit);
+  const out: string[] = [];
+  for (const step of kit.textSizes ?? []) {
+    const below = styles.filter((s) => s.fontSize * step.scale * scale < TEXT_FLOOR_PX - 1e-9);
+    if (!below.length) continue;
+    const sizes = Array.from(new Set(below.map((s) => s.fontSize))).sort((a, b) => a - b);
+    out.push(`text-size step "${step.key}" (×${step.scale}) draws ` +
+      sizes.map((f) => `${below.filter((s) => s.fontSize === f).map((s) => s.name).join(", ")} (${f}px) at ${drawnPx(f * step.scale * scale)} device px`).join(", ") +
+      ` at ${viewport[0]}×${viewport[1]}, below the readable-text floor of ${TEXT_FLOOR_PX} device px: a player who picks it reads smaller text ` +
+      `(the player's choice; the design's own sizes are held to the floor). Keep the default steps at ×${Math.ceil((TEXT_FLOOR_PX / (Math.min(...styles.map((s) => s.fontSize)) * scale)) * 100) / 100} or more.`);
+  }
+  return out;
+}
+
 /** Throws with every problem of textFloorProblems (kit build and the Claude export refuse a kit with such a style). */
 export function assertTextFloor(styles: readonly TextStyle[], kit: Pick<KitConfig, "reference" | "viewports" | "scaledViewports" | "screenMatch" | "textStyles">): void {
   const problems = textFloorProblems(styles, kit);

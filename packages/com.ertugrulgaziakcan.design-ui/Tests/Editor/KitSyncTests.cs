@@ -335,6 +335,27 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(r.Warnings.Any(w => w.Contains("device px at 1280×720") || w.StartsWith("text styles under", StringComparison.Ordinal)), string.Join("\n", r.Warnings));
         }
 
+        /// <summary>
+        /// The profile's text-size steps go to kit.config.json (<c>textSizes</c>), where the exporter's kit build warns about a
+        /// step that draws a kit style below the readable-text floor; without steps the key is gone.
+        /// </summary>
+        [Test]
+        public void Run_WritesTheTextSizeSteps_ForTheExportersFloorWarning()
+        {
+            var profile = Profile();
+            profile.textSizes = new[] { new DesignTextSize { key = "small", scale = 0.85f }, new DesignTextSize { key = "large", scale = 1.2f } };
+            var kit = Kit();
+            var r = KitSync.Run(profile, kit, Resolver(profile));
+            Assert.IsTrue(r.Ok, Errors(r));
+            var steps = (JArray)JObject.Parse(File.ReadAllText(kit + "/kit.config.json"))["textSizes"];
+            Assert.IsNotNull(steps);
+            CollectionAssert.AreEqual(new[] { "small", "large" }, steps.Select(t => (string)t["key"]).ToArray());
+            CollectionAssert.AreEqual(new[] { 0.85, 1.2 }, steps.Select(t => Math.Round((double)t["scale"], 4)).ToArray());
+            profile.textSizes = new DesignTextSize[0];
+            Assert.IsTrue(KitSync.Run(profile, kit, Resolver(profile)).Ok);
+            Assert.IsNull(JObject.Parse(File.ReadAllText(kit + "/kit.config.json"))["textSizes"]);
+        }
+
         [Test]
         public void Run_AnyStyleThatIsWholeAtEveryScale_GetsItsOwnLineBoxTwin()
         {
