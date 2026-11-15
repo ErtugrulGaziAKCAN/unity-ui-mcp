@@ -848,10 +848,13 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(hue.elements.find((e) => e.id === "avatar")!.ssim).toBeGreaterThanOrEqual(0.99);
     expect(hue.issues).toEqual([expect.objectContaining({ id: "avatar", kind: "color", detail: expect.stringMatching(/^ring \w+ border: .*the ring's colour differs/) })]);
     expect(compareCapture(golden, { png: draw([150, 150, 150]), boxes }, [], T, ctx).elements.find((e) => e.id === "avatar")!.ring).toBe(0);
-    // an animation sample is not judged for it (Chromium resamples the moving layer); the value is still recorded
-    const moving = compareCapture(golden, { png: draw([128, 154, 168]), boxes }, [], T, { ...ctx, anim: true });
+    // an animation sample that moves it is not judged for it (Chromium resamples the moving layer); the value is still
+    // recorded. One whose animation does not move it (a colour, an opacity) is judged as a static capture (ruling R132)
+    const moving = compareCapture(golden, { png: draw([128, 154, 168]), boxes }, [], T, { ...ctx, anim: true, moving: new Set(["avatar"]) });
     expect(moving.issues).toEqual([]);
     expect(moving.elements.find((e) => e.id === "avatar")!.ring).toBeGreaterThan(1.5);
+    expect(compareCapture(golden, { png: draw([128, 154, 168]), boxes }, [], T, { ...ctx, anim: true, moving: new Set() }).issues).toEqual([
+      expect.objectContaining({ id: "avatar", kind: "color", detail: expect.stringMatching(/^ring \w+ border: .*the ring's colour differs/) })]);
     // a ring under 2 device px (1.25 here: 2 px at 1600×900) has no sample to give evidence: a missing one is held to ssimElement
     const thin: CaptureContext = { ...ctx, borders: { avatar: [1.25, 1.25, 1.25, 1.25] } };
     const thinGolden = { png: draw([150, 150, 150], 1.25), boxes };
@@ -925,8 +928,10 @@ describe("compareCapture: edge, colour and ink checks", () => {
       const row = v.elements.find((e) => e.id === "cell")!;
       expect(Math.max(row.ssim!, row.ssimShifted!)).toBeCloseTo(0.98296, 4);
       expect(row.ssimRoundEdgeMasked).toBeGreaterThanOrEqual(0.99);
-      // a static capture, or an element the sample does not move, gets no band for its straight edges
-      expect(issuesOf(compareCapture(design, unity, [], exact, { ...cellCtx, moving: new Set() }), "cell")).toEqual([expect.objectContaining({ kind: "ssim" })]);
+      // a static capture, or an element the sample does not move, gets no band for its straight edges (and, as in a static
+      // capture, its ring's colour is judged: this crop's moving layer blends the border's centre, ruling R132)
+      expect(issuesOf(compareCapture(design, unity, [], exact, { ...cellCtx, moving: new Set() }), "cell").map((i) => i.kind)).toEqual(["color", "ssim"]);
+      expect(issuesOf(compareCapture(design, unity, [], exact, { ...cellCtx, anim: false, moving: new Set() }), "cell").map((i) => i.kind)).toEqual(["color", "ssim"]);
     });
 
     it("still fails the moving border a device pixel off (its box within the limit): the band is the design's and Unity's edge both", () => {
@@ -1125,6 +1130,14 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(issuesOf(wrong, "box")).toEqual([expect.objectContaining({ kind: "ssim",
         detail: expect.stringMatching(/masked as well, but the centre of box \w+ border differs by ΔE2000 [\d.]+ \(design #\w+, Unity #\w+; limit 3\.1\): the border in that band is not the design's/) })]);
       expect(wrong.elements.find((e) => e.id === "box")!.bandEvidence!.maxDe).toBeLessThanOrEqual(1);
+      // R132 (the re-review's N5-2): in an animation sample whose animation does not move the box (a colour, an opacity)
+      // it gets the static checks, its centre colour too; one that moves it keeps R130 to static captures (Chromium draws
+      // it from its resampled layer, where a correct 2.13 device px border's centre blends)
+      const sample = (moving: string[]) => compareCapture(golden, { png: draw(true, [216, 196, 168]), boxes: boxes(true) }, [], scaledT, { ...ctx, anim: true, moving: new Set(moving) });
+      expect(issuesOf(sample([]), "box")).toEqual([expect.objectContaining({ kind: "ssim",
+        detail: expect.stringMatching(/masked as well, but the centre of box \w+ border differs by ΔE2000 [\d.]+ \(design #\w+, Unity #\w+; limit 3\.1\)/) })]);
+      expect(issuesOf(sample(["box"]), "box")).toEqual([]);
+      expect(issuesOf(compareCapture(golden, { png: draw(true, line), boxes: boxes(true) }, [], scaledT, { ...ctx, anim: true, moving: new Set() }), "box")).toEqual([]);
     });
 
     it("R124: the edge bands of a repeat's later items come from their boxes; a later item's wrong divider is not the design's", () => {
@@ -1455,6 +1468,26 @@ describe("IR context", () => {
     expect([...captureContext(ix, { state: "default", viewport: [1280, 720], apply: [], anim }, b).rotated!]).toEqual(["card"]);
     // a static capture: Chromium draws a rotated element without a composited layer, as UI Toolkit does
     expect([...captureContext(ix, { state: "default", viewport: [1280, 720], apply: [] }, b).rotated!]).toEqual([]);
+  });
+
+  it("counts an element as moving in an animation sample only when an animation that runs changes its geometry (ruling R132)", () => {
+    const animated = indexIr({ ...ir, root: { ...ir.root, children: [{ ...ir.root.children[0], anims: [
+      { kind: "transition", properties: ["background-color", "border-top-color", "opacity"] },
+      { kind: "keyframes", properties: ["background-color", "translate"] },
+      { kind: "transition", properties: ["width"] },
+      { kind: "keyframes", properties: ["box-shadow", "filter", "color"] },
+      { kind: "transition" },
+    ] }] } });
+    const anim = (...index: number[]) => ({ sampled: [{ elementId: "card", index: index[0] }], runs: index.map((i) => ({ elementId: "card", index: i })), from: null, sample: 1, time: 100 });
+    const moving = (...index: number[]) => [...captureContext(animated, { state: "default", viewport: [1280, 720], apply: [], anim: anim(...index) }, boxes).moving!].sort();
+    // a colour, an opacity, a shadow or a filter does not move it; a translate or a size does, with what it holds
+    expect(moving(0)).toEqual([]);
+    expect(moving(3)).toEqual([]);
+    expect(moving(1)).toEqual(["btn", "card"]);
+    expect(moving(2)).toEqual(["btn", "card"]);
+    expect(moving(0, 3, 1)).toEqual(["btn", "card"]);
+    // an IR without the animation's properties: it may move
+    expect(moving(4)).toEqual(["btn", "card"]);
   });
 
   it("knows which text has a blurred text-shadow in the capture", () => {

@@ -20,7 +20,8 @@
  *   raster picture resampled at a scaled viewport: `ssimResampledPicture`, ruling R125). An edge-band limit (the anti-aliasing
  *   of round shapes, moved edges, straight edges between device pixels, vector edges, and the corner samples next to them)
  *   needs its band's evidence too: outside the band every SSIM block and every 3×3 window match, and every border it masks
- *   has the design's width and, in static captures, its centre colour (evidenceOf; rulings R129, R130);
+ *   has the design's width and, unless an animation sample moves it, its centre colour (evidenceOf; rulings R129, R130,
+ *   R132: an animation counts as moving its element only when it changes geometry);
  * - colour (samples.ts): elements that paint a background get a 5×3 grid of 3×3 means inside both boxes (inset 6 px;
  *   one centre sample under 16 px), skipping points under later elements that paint or on text lines; when every
  *   grid point is covered, samples just inside the border take over; an element left without any sample is listed
@@ -822,6 +823,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   let worst: { id: string; ssim: number } | null = null, maxDE: { id: string; deltaE: number } | null = null;
   if (sameSize) {
     const shown = (id: string) => !!g.elements[id]?.visible && !!u.elements[id]?.visible;
+    /** Whether an animation sample moves the element (an animation of geometry on it or an ancestor; ruling R132). */
+    const movesIn = (id: string) => !!ctx.anim && !!ctx.moving?.has(id);
     const textBoxes: Rect[] = [], textLines: Rect[] = [];
     for (const [id, e] of Object.entries(g.elements)) {
       if (!e.text || !e.visible) continue;
@@ -1036,8 +1039,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
      * at its best offset of up to 1 px) meets ssimElement and every 3×3 window is within deltaE2000 of Unity's closest within
      * 1 px (pixel level, not the region's mean); every border the band masks has its centre pixel (each side of
      * BORDER_SAMPLE_PX or more) within the file's deltaE2000Ring, a side under that width giving no evidence, and its drawn
-     * width within RING_WIDTH_PX of the design's. The centre colour is sampled as deltaE2000Ring samples it, in static
-     * captures; in an animation sample the width and the windows still hold.
+     * width within RING_WIDTH_PX of the design's. The centre colour is sampled as deltaE2000Ring samples it, except on a
+     * border an animation sample moves (ruling R132); there the width and the windows still hold.
      */
     const evidenceOf = (band: Band, region: Rect): Evidence => {
       const blocks = regionSsimShiftedBlocks(gp, up, band.mask, region, 1);
@@ -1047,17 +1050,19 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       let none = "";
       for (const b of band.borders) {
         const cover = covering(b.id);
-        // the centre colour as deltaE2000Ring samples it: in static captures (an animation sample shows a moving element
-        // from Chromium's resampled layer, whose border's centre pixel blends; its colour is judged in the static captures)
-        const full = ctx.anim ? [0, 0, 0, 0] : b.widths.map((v) => (v >= BORDER_SAMPLE_PX ? v : 0));
-        let any = !!ctx.anim;
+        // the centre colour as deltaE2000Ring samples it, unless an animation sample moves the border (Chromium draws a
+        // moving element from its resampled layer, whose border's centre pixel blends; its colour is judged in the static
+        // captures): an element a sample does not move gets the static checks (ruling R132)
+        const moves = movesIn(b.id);
+        const full = moves ? [0, 0, 0, 0] : b.widths.map((v) => (v >= BORDER_SAMPLE_PX ? v : 0));
+        let any = moves;
         for (const p of full.some((v) => v > 0) ? ringPoints(b.g, b.u, full, ["border"], b.radii) : []) {
           if (!usable(p, cover)) continue;
           any = true;
           const r = bestDeltaE(gp, p.gx, p.gy, up, p.ux, p.uy, p.win);
           if (!ring || r.de > ring.de) ring = { de: r.de, where: `${b.label} ${p.where}`, a: r.a, b: r.b };
         }
-        if (!none && !ctx.anim && (b.widths.some((v) => v > 0 && v < BORDER_SAMPLE_PX) || !any))
+        if (!none && !moves && (b.widths.some((v) => v > 0 && v < BORDER_SAMPLE_PX) || !any))
           none = `the border of ${b.label} (a side under ${BORDER_SAMPLE_PX} device px, or no usable point on it) gives no evidence of its colour`;
         const skip = (x: number, y: number) => onText(x, y) || cover.some((c) => inside(c, x, y));
         for (const wp of borderWidths(gp, b.g, up, b.u, b.widths, b.radii, BORDER_SAMPLE_PX, skip)) {
@@ -1084,7 +1089,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const edgeLimit = t.ssimRoundEdge < t.ssimElement - EPS;
     const roundEdge = edgeLimit && !!ctx.radii;
     const scaledClass = ctx.viewportClass === "scaled";
-    const movedAtFraction = (id: string) => !!ctx.anim && !!ctx.moving?.has(id) && !!g.elements[id] && fractionalBox(g.elements[id]);
+    const movedAtFraction = (id: string) => movesIn(id) && !!g.elements[id] && fractionalBox(g.elements[id]);
     const roundWithoutText = (id: string) => !!ctx.radii?.[id] && !(g.elements[id]?.text && g.elements[id].lines.length > 0);
     const edgeScope = (id: string) => edgeLimit && (scaledClass ? roundEdge || movedAtFraction(id) : roundWithoutText(id) || movedAtFraction(id));
     for (const id of compared) {
@@ -1175,11 +1180,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           if (!worst || r.de > worst.de) worst = { de: r.de, p, a: r.a, b: r.b };
         }
         // the ring's colour at every viewport; where ssimRoundEdge applies, also the evidence for it (none: no evidence)
-        // (not in an animation sample: Chromium draws the moving element from its resampled layer, so a thin border's
-        // centre pixel blends with its edges there; the ring's colour is judged in every state's static capture)
+        // (not where an animation sample moves it: Chromium draws the moving element from its resampled layer, so a thin
+        // border's centre pixel blends with its edges there; the ring's colour is judged in every state's static capture)
         if (worst) {
           row.ring = r6(worst.de);
-          if (!ctx.anim && worst.de > t.deltaE2000Ring + EPS) {
+          if (!movesIn(id) && worst.de > t.deltaE2000Ring + EPS) {
             issue(id, "color", `ring ${worst.p.where}: ΔE2000 ${worst.de.toFixed(2)}, design ${hex(worst.a)}, Unity ${hex(worst.b)} (limit ${t.deltaE2000Ring}): the ring's colour differs`,
               { x: worst.p.gx - 1, y: worst.p.gy - 1, w: 3, h: 3 });
           }
@@ -1192,8 +1197,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
         if (thick) {
           row.ringWidth = r6(thick.d);
-          // static captures only: Chromium draws a moving element from its resampled layer
-          if (!ctx.anim && thick.d > RING_WIDTH_PX + EPS) {
+          // not where a sample moves it: Chromium draws a moving element from its resampled layer
+          if (!movesIn(id) && thick.d > RING_WIDTH_PX + EPS) {
             issue(id, "edge", `ring ${thick.where}: drawn ${thick.unity.toFixed(2)} device px wide, the design's ${thick.design.toFixed(2)} (limit ±${RING_WIDTH_PX}): the ring's width differs`, ge);
           }
         }

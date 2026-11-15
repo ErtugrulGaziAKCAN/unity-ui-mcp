@@ -54,9 +54,12 @@ export interface CaptureContext {
   /** An animation sample (Chromium draws a running animation's element from its composited layer, resampled). */
   anim?: boolean;
   /**
-   * In an animation sample, the elements its running animations play on and their descendants (they move with them); a
-   * moved edge Chromium draws from its resampled layer at a fractional device offset (`ssimRoundEdge`). Empty for static
-   * captures.
+   * In an animation sample, the elements its running animations move and their descendants (they move with them): an
+   * animation counts when it changes geometry (GEOMETRY_PROPERTIES: transform and its parts, position and size; not a
+   * colour, an opacity, a filter or a shadow; one whose properties the IR does not list counts too). A moved edge Chromium
+   * draws from its resampled layer at a fractional device offset (`ssimRoundEdge`); such an element's ring and border
+   * centre colours are judged in static captures only. Every other element of a sample gets the static checks (ruling
+   * R132). Empty for static captures.
    */
   moving?: ReadonlySet<string>;
   /** Elements that draw a vector picture (IR kind `vector`): their edge band is the picture's drawn edges (`ssimVectorEdge`). */
@@ -92,7 +95,27 @@ interface LooseNode {
   shadowLayers?: Record<string, LooseShadow | null>;
   initial?: { disabled?: boolean; checked?: boolean } | null;
   repeat?: unknown;
+  /** IR `anims`: only their animated properties are read (whether an animation moves its element). */
+  anims?: { properties?: unknown }[];
   children?: LooseNode[];
+}
+
+/**
+ * The animated properties that move or resize an element's box (ruling R132): the transform and its parts, its position
+ * and its size, and the box-model lengths that place or size it. A colour, an opacity, a filter or a shadow does not.
+ */
+export const GEOMETRY_PROPERTIES: ReadonlySet<string> = new Set([
+  "transform", "translate", "rotate", "scale", "transform-origin", "offset-path", "offset-distance", "offset-rotate",
+  "left", "top", "right", "bottom", "inset", "inset-block", "inset-inline",
+  "width", "height", "min-width", "min-height", "max-width", "max-height", "flex-basis", "flex-grow", "flex-shrink",
+  "margin-top", "margin-right", "margin-bottom", "margin-left", "padding-top", "padding-right", "padding-bottom", "padding-left",
+  "border-top-width", "border-right-width", "border-bottom-width", "border-left-width", "gap", "row-gap", "column-gap",
+]);
+
+/** Whether an IR animation changes geometry (GEOMETRY_PROPERTIES); one whose properties are unknown may. */
+function movesBox(a: { properties?: unknown } | undefined): boolean {
+  if (!a || !Array.isArray(a.properties)) return true;
+  return a.properties.some((p) => typeof p === "string" && GEOMETRY_PROPERTIES.has(p));
 }
 
 export interface IrIndex {
@@ -246,10 +269,14 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     if (n.kind === "vector") vectors.add(id);
     if (isObj(n.repeat)) repeats.add(id);
   }
-  // the elements the sample's running animations play on, and everything inside them
+  // the elements the sample's running animations move (an animation of geometry), and everything inside them
   const moving = new Set<string>();
   const runs = isObj(setup.anim) && Array.isArray(setup.anim.runs) ? (setup.anim.runs as unknown[]) : [];
-  const runIds = new Set(runs.map((r) => (isObj(r) && typeof r.elementId === "string" ? r.elementId : null)).filter((x): x is string => x !== null));
+  const runIds = new Set(runs.map((r) => {
+    if (!isObj(r) || typeof r.elementId !== "string") return null;
+    const anims = ix.nodes.get(r.elementId)?.anims;
+    return movesBox(Array.isArray(anims) && typeof r.index === "number" ? anims[r.index] : undefined) ? r.elementId : null;
+  }).filter((x): x is string => x !== null));
   if (runIds.size) for (const id of ix.order) for (let x: string | undefined = id; x !== undefined; x = ix.parent.get(x)) if (runIds.has(x)) { moving.add(id); break; }
   return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated };
 }
