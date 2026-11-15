@@ -593,7 +593,12 @@ namespace DesignUi.Editor
         /// </summary>
         internal static FontTwinGenerator.TwinRun EnsureTwins(FontsPlan plan)
         {
+            // glyphs runtime text added to loaded twins (outside the Play guard) are taken back first: the saves below then
+            // write only the files' glyphs and what the screens pre-add
+            var reset = TwinPlayGuard.ResetRuntimeGlyphs();
             var run = new FontTwinGenerator.TwinRun(plan.Globals) { Faces = plan.Faces };
+            if (reset.Count > 0)
+                run.Note("font twins that held glyphs runtime text added (not saved) got their files' glyphs back: " + string.Join(", ", reset));
             foreach (var locale in plan.Locales)
                 if (plan.Fonts.TryGetValue(locale, out var font))
                 {

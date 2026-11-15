@@ -219,6 +219,48 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.AreEqual(file, File.ReadAllBytes(path));
         }
 
+        static HashSet<uint> CharactersOfFile(string path)
+        {
+            var loaded = InternalEditorUtility.LoadSerializedFileAndForget(path);
+            try { return new HashSet<uint>(loaded.OfType<FontAsset>().Single().characterTable.Select(c => c.unicode)); }
+            finally { foreach (var o in loaded) if (o != null) Object.DestroyImmediate(o); }
+        }
+
+        /// <summary>
+        /// Text drawn outside an import adds glyphs to a loaded twin where the Play guard does not see it (a twin first loaded
+        /// during Play and not marked dirty, a panel in Edit mode): the next import or kit sync (FontMap.EnsureTwins, then the
+        /// screens' pre-add) saves only what the twin's file holds and what the screens need.
+        /// </summary>
+        [Test]
+        public void AnImport_SavesNoGlyphsAddedOutsideIt_OnlyTheCharactersItsScreensNeed()
+        {
+            var tmp = FontFixture.CreateTmp(FontFixture.RegularTtf, "Guard Import", atlas: 512);
+            var profile = ScriptableObject.CreateInstance<DesignUiProfile>();
+            _objects.Add(profile);
+            profile.referenceLocale = "tr";
+            profile.locales = new[] { "tr" };
+            profile.localeFonts = new[] { new LocaleFont { locale = "tr", font = tmp } };
+            profile.fontTwinFolder = FontFixture.TwinFolder;
+            var plan = FontMap.Plan(profile, new ProfileLocaleFontResolver(profile, null));
+            FontMap.PrepareTwins(plan, FontMap.EnsureTwins(plan), new[] { "Takvim" }); // a first import
+            var path = FontTwinGenerator.TwinPath(tmp, FontFixture.TwinFolder);
+            var twin = AssetDatabase.LoadAssetAtPath<FontAsset>(path);
+            var file = File.ReadAllBytes(path);
+
+            twin.TryAddCharacters(Runtime, out _, true); // runtime text, outside the guard
+            Assert.IsTrue(twin.HasCharacter('Q'));
+            FontMap.PrepareTwins(plan, FontMap.EnsureTwins(plan), new[] { "Takvim" }); // the next import of the same screen
+            CollectionAssert.AreEqual(file, File.ReadAllBytes(path), "the import saved none of the runtime glyphs");
+            Assert.IsFalse(twin.HasCharacter('Q'), "the loaded twin holds the file's glyphs again");
+            Assert.IsTrue(twin.HasCharacter('T'), "the import's characters stay");
+
+            twin.TryAddCharacters(Runtime, out _, true);
+            FontMap.PrepareTwins(plan, FontMap.EnsureTwins(plan), new[] { "Zebra" }); // an import that needs new characters
+            var saved = CharactersOfFile(path);
+            foreach (var c in "TakvimZebra") Assert.IsTrue(saved.Contains(c), "saved: " + c);
+            foreach (var c in "QX7ß") Assert.IsFalse(saved.Contains(c), "not saved: " + c);
+        }
+
         /// <summary>A twin whose file cannot be read back is reported as an error naming it, never as restored.</summary>
         [Test]
         public void ARestoreThatFails_IsAnErrorNamingTheTwin()

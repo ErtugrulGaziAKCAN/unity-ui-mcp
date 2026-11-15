@@ -147,6 +147,63 @@ namespace DesignUi.Editor
             return restored;
         }
 
+        /// <summary>The fingerprint of a twin's file, by path, with the file's size and write time it was read at.</summary>
+        static readonly Dictionary<string, (long size, DateTime written, string fingerprint)> s_FileFingerprints = new Dictionary<string, (long, DateTime, string)>(StringComparer.Ordinal);
+
+        /// <summary>The fingerprint (<see cref="Fingerprint"/>) of the twin saved at <paramref name="path"/>, read without importing it; null when unreadable.</summary>
+        static string FileFingerprint(string path)
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) return null;
+            if (s_FileFingerprints.TryGetValue(path, out var known) && known.size == info.Length && known.written == info.LastWriteTimeUtc) return known.fingerprint;
+            var saved = InternalEditorUtility.LoadSerializedFileAndForget(path);
+            try
+            {
+                var file = saved?.OfType<FontAsset>().FirstOrDefault();
+                var fingerprint = file == null ? null : Fingerprint(file);
+                s_FileFingerprints[path] = (info.Length, info.LastWriteTimeUtc, fingerprint);
+                return fingerprint;
+            }
+            finally
+            {
+                foreach (var o in saved ?? new Object[0]) if (o != null && !EditorUtility.IsPersistent(o)) Object.DestroyImmediate(o);
+            }
+        }
+
+        /// <summary>
+        /// Gives every loaded plain twin that holds glyphs its file does not (text drawn outside an import: a twin first loaded
+        /// during Play, which the Play guard sees only when it is dirty, or a panel drawn in Edit mode) its file's state back,
+        /// before an import or a kit sync adds and saves what the screens need: their saves then write the file's glyphs and the
+        /// screens' characters (<see cref="DesignUi.DesignText.Prepare"/>), never what runtime text added. Line-box variants
+        /// share their twin's glyphs and save none, so they are only linked again. Does nothing while the Play guard is on.
+        /// Returns the twins given back; one that cannot be reloaded is a warning naming it (its next save would write it).
+        /// </summary>
+        public static IReadOnlyList<string> ResetRuntimeGlyphs()
+        {
+            if (Active) return new string[0];
+            var changed = LoadedTwins().Where(kv => !IsVariant(kv.Key))
+                .Where(kv => { var file = FileFingerprint(kv.Key); return file != null && file != Fingerprint(kv.Value); })
+                .OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList();
+            if (changed.Count == 0) return new string[0];
+            // a variant renders its twin's pages: it gets its own state first, so the reload never touches the shared pages
+            foreach (var kv in LoadedTwins())
+                if (IsVariant(kv.Key))
+                    try { TwinLinks.Unlink(kv.Value); }
+                    catch (FontSetupException e) { Debug.LogError("Design UI: " + e.Message, kv.Value); }
+            var restored = new List<string>();
+            foreach (var kv in changed)
+            {
+                string error;
+                try { if (Restore(kv.Key, out error)) { restored.Add(kv.Key); continue; } }
+                catch (Exception e) { error = e.GetType().Name + ": " + e.Message; }
+                Debug.LogWarning("Design UI: the font twin '" + kv.Key + "' holds glyphs its file does not (text drawn outside an import) and could not be reloaded (" +
+                                 error + "); its next save writes them: reimport it (Assets > Reimport) first.", kv.Value);
+            }
+            TwinLinks.LinkLoaded();
+            if (restored.Count > 0) TextAssetRegistry.RepairLoaded();
+            return restored;
+        }
+
         static readonly Regex VariantFile = new Regex(Regex.Escape(FontTwinGenerator.Suffix) + @" r\d+s\d+(p\d+)?(x\d+(p\d+)?)?\.asset$", RegexOptions.CultureInvariant);
 
         /// <summary>Whether <paramref name="path"/> is a line-box variant's file.</summary>
