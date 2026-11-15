@@ -133,6 +133,16 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 - `scripts/capture-on-copy.sh`: the verification capture on a temporary copy of the project (an APFS clone on macOS),
   removed afterwards, success or failure. Setup writes it into a new config.
 
+- Anti-aliasing at every viewport (ruling R119): `ssimRoundEdge` (0.974) applies at exact viewports too, to a round element
+  without text (its curves' 1 device px band, the ring's colour within `deltaE2000Ring` as evidence) and, in an animation
+  sample, to an element moved to a fractional device offset (its curves and its moved straight edges, each the pixels
+  within 1 device px of the edge in the design and in Unity, so an edge a pixel off still fails). The 1280×720 radio
+  (0.98088) and transition sample (0.98296) pass; nothing else at an exact viewport changes.
+- The scaled class's measured residual keys (ruling R121), each only with band evidence: `ssimFractionalEdge` 0.97 (an
+  element whose straight edges fall between device pixels), `ssimVectorEdge` 0.975 (a vector picture's drawn edges) and
+  `deltaE2000FractionalEdge` 5.3 (a corner sample reaching such straight edges); `fidelity-thresholds.json` `scaled`,
+  off at exact viewports (`docs/findings/viewport-classes.md`, "Scaled-class residuals").
+
 ### Changed
 
 - The scaled viewports' font twins (`<face> UITK <box>x<scale>.asset`, `DesignFonts.uss` `.vs-<scale>` blocks, the screen
@@ -159,6 +169,10 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
+- Round 4 of the fidelity suite (4728 captures, 13 min 4 s): every capture passes at the four exact viewports; 786 of 788
+  at 1600×900 and 769 at 1366×768. The remaining 21 are repeated table rows' dividers (no box for a repeat's later items,
+  so their edges' band cannot be placed), a picture drawn at 0.42 and 0.36 of its pixels (below the SSIM floor) and one
+  10.67 px line (ink colour ΔE2000 5.49 against 4.5) (`docs/findings/viewport-classes.md`, "Scaled-class residuals").
 - Text at 8 device px (the 16 px label at 1280×720) measured over the suite: Unity draws about 5 % less ink there than at
   other sizes, and the ink colour is off in both directions (more so where the design puts a line at a half device
   pixel). No generic weight or sharpness adjustment fits both, and UI Toolkit 6000.3 gives runtime panels no SDF
@@ -175,6 +189,19 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- U-FONT-004 judges text the design keeps hidden where a rule or code shows it: a hidden element's own scale counts
+  unless every rule that shows it sets that property (a pop-in), so a closed dialog's, menu's or toast's text under a
+  scale is judged; a hover's `scale` and a press's `transform` multiply (the smallest of each); a breakpoint's
+  `font-size` is judged only at the declared viewports where its @media holds.
+- `DesignOverflowLabel` starts an overflowing line at the right edge in right-to-left text (the resolved language
+  direction), so an overflowing Arabic label shows its beginning; it hears style-only changes (the compiler gives its type
+  a custom property), keeps the design's alignment where its text wraps and after two text changes in one frame, and
+  measures its text only when the text, its font, its width or the panel's scale changed.
+- A new hold of a PanelSettings keeps the factors an earlier hold wrote, so an Undo of a scale edit made while held still
+  maps the held factor back to its own after a resolution change; an Undo or Redo of a group recorded before a factor was
+  first written never maps a value to it (the user's own earlier 120 % stays theirs).
+- Kit sync writes only text-size steps with a positive finite scale to kit.config.json and names the others (a NaN was
+  written as `NaN`, a 0 or negative scale stopped every exporter command, an infinite one threw).
 - An Undo or Redo maps a PanelSettings' scale back to a held factor's own only on the settings it touched and only for a
   factor written since the settings' own last changed: a user's or a game's 120 % equal to a factor held earlier is no
   longer reset by an unrelated Undo, in Edit mode or in Play mode.
@@ -192,7 +219,9 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   outside it that match, the measured `deltaE2000RoundEdge` (`fidelity-thresholds.json` `scaled`; the file's own values
   must be off, as at exact viewports). The band holds the element's own and its descendants' round shapes, and a round element
   without text takes `ssimRoundEdge` only while the middle of each border side of 2 device px or more is within
-  `deltaE2000RoundEdge` of the design's, so a missing or wrong-colour ring in the masked band is caught. The golden's text-sized width forgives the same 0.012
+  `deltaE2000RoundEdge` of the design's, so a missing or wrong-colour ring of 2 device px or more in the masked band is
+  caught (a thinner ring has no sample and keeps the element limit; the sample, the best of ±1 px offsets, sees a ring's
+  colour, not a width a pixel thinner). The golden's text-sized width forgives the same 0.012
   device px as `DesignTextFit` (a text that little over a whole pixel is that pixel on both sides).
 - A radial gradient that ends transparent (the toggle switch's knob) is baked as the ellipse it paints, inside its box:
   Unity's VectorImage drew a speckled ring where the gradient's pad region starts, which failed the knob's SSIM at

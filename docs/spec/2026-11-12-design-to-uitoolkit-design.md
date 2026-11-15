@@ -615,14 +615,22 @@ this section are in `docs/findings/animation.md`.
   - *scaled*: supported, laid out and verified, but exempt from the whole-device-pixel rules, since no design value can
     be whole there (1366×768 is 0.53346). Default: 1600×900 (0.625), 1366×768. Verify holds them to the same thresholds:
     boxes, baselines and line extents within ±1 device px plus `GEOMETRY_EPS`; a measured scaled-class limit for colour,
-    ink or SSIM may be recorded under `fidelity-thresholds.json` `scaled` (never the geometry limits). Recorded: only the
-    anti-aliasing ramp of round shapes, with per-capture evidence: `ssimRoundEdge` 0.974 for an element whose SSIM with
+    ink or SSIM may be recorded under `fidelity-thresholds.json` `scaled` (never the geometry limits). Recorded: the
+    anti-aliasing the root scale draws at the layout scale's pixel, with per-capture evidence: `ssimRoundEdge` 0.974 for an element whose SSIM with
     the edge band of its round shapes masked (1 device px either side of a corner's outer curve and its border's inner
     curve, of its own round shapes and its descendants') meets `ssimElement` and whose other checks pass, and
     `deltaE2000RoundEdge` 5.5 for a corner sample of an element that carries text whose window reaches that band and whose
     pixels outside it (at least 3 at one offset) meet `deltaE2000` (both off at exact viewports, where the file's own values
     must be). A round element without text takes `ssimRoundEdge` only while the middle of each border side of 2 device px
-    or more is within `deltaE2000RoundEdge` (its ring lies in the masked band). Verdicts, the
+    or more is within `deltaE2000RoundEdge` (its ring lies in the masked band). Also scaled-only, with the same kind of
+    evidence: `ssimFractionalEdge` 0.97 (an element whose straight edges, its box's and its border's inner edges, fall
+    between device pixels: those edges' band, the pixels within 1 device px of the edge in the design and in Unity, added),
+    `ssimVectorEdge` 0.975 (a vector picture: the band of its drawn edges in the design, at least half its region left
+    compared) and `deltaE2000FractionalEdge` 5.3 (a corner sample reaching such straight edges, its pixels outside them and
+    the round-edge band matching). At every viewport (ruling R119) `ssimRoundEdge` 0.974 also applies to a round element
+    without text (evidence: the ring's colour within `deltaE2000Ring` at an exact viewport) and, in an animation sample, to
+    an element moved to a fractional device offset (its moved straight edges' band added; the ring's colour is not
+    evidence there). Verdicts, the
     report, `design_ui_verify` and the fidelity summary count captures per class.
   - *Root scale at any other panel scale.* UI Toolkit puts font sizes, paddings, margins and border widths on whole
     device pixels before layout and ceils text sizes, so a design lays out as designed only where its lengths are whole

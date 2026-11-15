@@ -131,8 +131,9 @@ paddings and margins do. Under the root scale a border is drawn at its layout wi
 do not add a difference up, measured (round 3): the findings page `docs/findings/viewport-classes/nested-borders.html`
 (one, two and three levels of 4 px borders on `div`s) through the fidelity suite passes every capture; at 1600×900 the
 golden lays each border out at 2.5 device px, as UI Toolkit draws it (3 at the exact 0.75, drawn ×0.833:
-`RootScaleTests.NestedBorders_…` measures 2.5 / 5 / 7.5), and the label inside three levels is within 0.16 device px of
-the golden (0.28 at 1366×768, where the group's own position differs by as much, from the text widths before it). The
+`RootScaleTests.NestedBorders_…` measures 2.5 / 5 / 7.5; the golden's own layout of the page, 2.5 / 5 / 7.5 at 1600×900,
+2.13 / 4.27 / 6.40 at 1366×768 and 3 / 6 / 9 at 1920×1080, is a contract in design-export's `viewport-classes.test.ts`), and
+the label inside three levels is within 0.16 device px of the golden (0.28 at 1366×768, where the group's own position differs by as much, from the text widths before it). The
 whole-device-pixel border of `DesignTextFit.SnapBorder` (3 device px at 1600×900) was measured on text-sized buttons and
 holds for their widths; a box's border inside a layout is the fraction. An earlier note here predicted 1.5 device px at
 three levels from that model; the measurement replaced it, and no lint warning is needed. UI Toolkit anti-aliases
@@ -223,7 +224,8 @@ lies in the edge band of round shapes (`compare.ts`, `fidelity-thresholds.json` 
   full-window ΔE2000 is 5.10 (a ghost button's focus ring at 1366×768: Chromium draws the 2 device px ring solid, UI Toolkit
   its 2.13 with a partly covered row along the curve). `deltaE2000RoundEdge` = 5.5, the highest plus 0.4.
 
-Both keys are the exact-class values (`ssimElement`, `deltaE2000`: off) outside the scaled block. Crops of each kind
+Outside the scaled block `deltaE2000RoundEdge` is off (`deltaE2000`); `ssimRoundEdge` applies at exact viewports too since
+ruling R119, to fewer elements (section "Edge bands at every viewport"). Crops of each kind
 (design, Unity, difference): the circle's difference is a ring along its edge, the focus ring's lies along the curve and
 the ring's own rows, the not-confined text field's and table's are glyphs.
 
@@ -236,7 +238,66 @@ scaled viewports 0.38 and 0.17). Limit 3.1, the highest plus 0.4. Animation samp
 moving element from its resampled layer, and a translated cell's 2 px border reaches 14.2 there. A ring of another hue at
 the same lightness keeps the element's SSIM at 0.99 or more and fails this check (`compare.test.ts`). A ring under 2 device
 px has no such sample: it gives the scaled class's SSIM relaxation no evidence, and the element is held to `ssimElement`
-there (a missing 1.25 px ring passed before).
+there (a missing 1.25 px ring passed before). **What it admits** (ruling R123): a ring whose colour is within ΔE2000 3.1 of
+the design's, judged only on rings of at least 2 device px; a ring thinner than that has no colour sample and is judged by
+SSIM alone. The sample takes the best of Unity's offsets up to 1 device px, so it sees a wrong colour, not a ring a device
+pixel thinner (section "Edge bands at every viewport").
+
+## Scaled-class residuals (ruling R121)
+
+The scaled class's failures of round 3 (1600×900: 9, 1366×768: 33), per group, measured on a run of the suite on round 3's
+code (crops: design, Unity, difference). Each new key is scaled-only (off at exact viewports, where the file's own values
+must be), applies only with evidence that the difference lies in a band of at most 1 device px of the element's edges, and
+is the measured extreme plus the usual margin; every element it relaxed passes at every exact viewport.
+
+- **A border thinner than a device pixel?** The first check: Chromium (the exporter's headless shell, at a device scale)
+  does not draw such a border at 1 device px. Measured on `div`s with a 1 px border, with a 0 px height and a 1 px border,
+  and 1 px high: at 1366×768 the line covers 0.54 of one pixel row (luma 135 of 255 on black, or 83 + 54 across two
+  rows), at 1600×900 0.63, at 1280×720 0.5. The suite's dividers are 4 px borders (2.13 device px at 1366×768, 2.5 at
+  1600×900), not thinner than a pixel, so no rendering rule applies to them.
+- **Straight edges between device pixels** (`ssimFractionalEdge` 0.97): an element's box edges and its border's inner
+  edges fall between two device pixels at a scaled viewport; Chromium covers such a pixel partly, UI Toolkit under the
+  root scale draws the edge a fraction of a pixel away with its own ramp. The band: the pixels whose centre lies within 1
+  device px of such an edge in the design (its painted rect) and in Unity, the element's own and its descendants', added
+  to the round-edge band. Relaxed: `colors-gradients` root__1__11 at 1366×768, a box with a 4.27 device px border of four
+  colours (3 captures, 0.9735, band-masked 0.99999), and `button` secondary-small focused at 1600×900 (0.9748, 1.0). Limit
+  the lowest less 0.003. Test: the four-colour box's crop passes with the key, fails without it, fails with a dent inside
+  it, and keeps 0.99 at an exact viewport.
+- **A vector picture's edges** (`ssimVectorEdge` 0.975): `icons` star (a 30 device px filled vector) is 0.16 device px
+  left of the design's (laid out on the 0.75 grid, drawn ×0.833) and drawn with the layout scale's ramp, so its outline
+  differs (0.98096 at 1600×900, 0.97875 at 1366×768, 5 captures each, against the small-element 0.984). The band: every
+  pixel of the design whose 3×3 window holds a colour change of more than 6 levels (within a device pixel of a drawn
+  edge), if at least half the element's region stays compared. Band-masked SSIM 1.0. Limit the lowest less 0.003. Test:
+  the star's crop passes with the key and fails without it, with an 8 px hole in it, and when the element is no vector.
+- **Focus-ring corners** (`deltaE2000FractionalEdge` 5.3): `repeat-items` notes-toggle focused at 1366×768 (ΔE2000 4.90)
+  and filter focused at 1600×900 (1.42): the ring lies 0.28 / 0.35 device px from the design's, so a corner sample (4 px
+  in) reaches the ring's straight edges between pixels, where the round-edge rule found differing pixels outside its own
+  band. A corner sample whose window reaches the straight-edge band and whose pixels outside both bands (at least 3, at one
+  offset) meet ΔE2000 1 may meet it. Limit the highest plus 0.4. Test: the notes-toggle crop passes with the key, fails
+  without it and with a ring of another colour.
+- **Transitions at 1366×768** (5 samples, 0.97664–0.981): elements a running transition moves to a fractional offset,
+  drawn by Chromium from its resampled layer (it spills about 8 % into the pixel past each edge); the moved-edge band of
+  ruling R119 confines them (0.99884–0.99904), and they pass at the scaled class's `ssimRoundEdge`.
+
+Left failing, with the cause:
+
+- **Dividers of repeated items** (`controls` table, 17 captures at 1366×768, 0.98639; `scroll-area` inbox at 1600×900,
+  0.98955): the difference lies on the rows' bottom borders (straight edges between pixels), but the captures record a box
+  only for a repeat's first item, so the band cannot be placed on the other items' edges on either side: band-masked
+  0.98789 and 0.98960. A scale-only cause without the evidence the ruling asks for.
+- **Pictures drawn scaled** (`background-images`, 1 capture at each scaled viewport): a picture exported for 3840×2160 is
+  drawn at 0.42 and 0.36 of its pixels; Chromium filters, UI Toolkit samples level 0, so block edges differ: element SSIM
+  0.95284–0.96867 at 1600×900 (below the absolute floor of 0.97 no measured limit may go under) and 0.97866–0.97986 at
+  1366×768, and a colour sample on a resampled edge (ΔE2000 3.22 and 1.64). The raster limitation of section "Raster
+  pictures"; a key would need the floor and a picture colour limit, which the ruling does not cover.
+- **Text ink at 10.67 px** (`stacked-text` value-12 at 1366×768, ΔE2000 5.49 against the small-text 4.5): the fractional
+  size's ink scatter (section "Text ink at fractional sizes"; the measured maximum there was 4.29). Ink is neither an edge
+  band nor a resampled raster, so the ruling gives it no key.
+- **One letter-spaced box** (`letter-spacing` caps-label at 1366×768, Δw −1.30, and −0.996 at 1600×900, in that run only):
+  the box had UI Toolkit's own width there (150 px at 0.75, drawn ×0.711), not the text fit's. Not reproduced: the
+  fixture alone and two later full runs give the fit's width at both scaled viewports (202.45 and 201.6 design px, Δw
+  within 0.17), each viewport measuring the text after its first layout, and the round-4 run passes it at every viewport. No
+cause found in that run.
 
 ## Text ink at 1366×768
 
@@ -442,9 +503,67 @@ suite had passed by chance or not exercised; measured on the captures of round 3
   0.999, 8 below 0.984; the other nine samples of the same transition pass. UI Toolkit has no filtering for a translated
   element's straight edges. Left failing, for a decision.
 
+Both are anti-aliasing differences, which standard screenshot testing excludes; ruling R119 extends the edge-band rule to
+every viewport for exactly these two kinds (next section), and both pass.
+
+## Edge bands at every viewport (ruling R119)
+
+`ssimRoundEdge` (0.974) applies at every viewport, to two kinds of element and only with the same evidence as at a scaled
+viewport: its SSIM with the edge band masked meets `ssimElement` (0.99), its other checks pass, and its unmasked SSIM is at
+least 0.974.
+
+- **A round element without text** (a radio, an avatar ring, a dot): the band is the R109 one, every pixel within 1 device
+  px of a corner's outer curve or its border's inner curve, its own and its descendants'. The ring's colour is the
+  evidence: the middle of each border side of 2 device px or more within `deltaE2000Ring` (3.1) at an exact viewport (the
+  round-edge limit 5.5 at a scaled one); a thinner ring gives no evidence and keeps `ssimElement`.
+- **An element an animation sample moves to a fractional device offset** (the sample's running animations play on it or
+  on an ancestor, and one of its golden box's edges lies between two device pixels): the band adds its moved straight
+  edges, the box's four edges and its border's inner edges, each the pixels whose centre lies within 1 device px of that
+  edge in the design **and** in Unity. An edge Unity draws a device pixel away from the design's is then outside the band.
+  The ring's colour is not evidence in an animation sample (Chromium resamples the moving layer, so a border's centre pixel
+  blends; R117 already left animation samples out of the ring check); the middle of a moved straight border stays compared.
+
+Measured on the suite's captures (provisional limit 0.97 to see every value):
+
+| Where | Elements below 0.99 in scope | Band-masked SSIM | Lowest unmasked (best offset) |
+|---|---|---|---|
+| exact viewports | 16 `controls` radio-b at 1280×720, 1 `transitions` sample at 1280×720 | 1.00000, 0.99999 | 0.98088 (radio), 0.98296 (sample) |
+| scaled viewports, moved edges | 5 `transitions` samples at 1366×768 | 0.99884–0.99904 | 0.97664 |
+
+No other element at an exact viewport is in scope below 0.99. The floor stays 0.974, as the ruling allows (the lowest exact
+value less 0.003 would be 0.978); the 1366×768 samples need the scaled class's 0.974 anyway. Tests (`compare.test.ts`,
+"ssimRoundEdge at every viewport", crops of the suite's own 1280×720 captures): the radio and the 0.774 px sample pass;
+held at 0.99 without the band they fail; a ring 1 device px thinner fails (0.95207 unmasked: the band holds the whole 2 px
+ring, and the ring's colour sample, the best of ±1 px offsets, does not see the width, so the floor is what catches it at
+this size); the moving border a device pixel off, its box within the box limit, fails (0.99 not reached with the band
+masked); the same element in a static capture gets no moved-edge band. A round element that carries text keeps
+`ssimElement` at an exact viewport (it takes the band at a scaled one).
+
+**What it admits.** At an exact viewport: a round element without text whose pixels differ only within 1 device px of its
+curves, by at most SSIM 0.974 over its box, with its ring's colour within ΔE2000 3.1; an element in an animation sample whose
+pixels differ only within 1 device px of its curves and of its edges where both renderers put them, by at most 0.974.
+
 ## Suite at six viewports
 
-**Round 3 (2026-11-15, latest).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
+**Round 4 (2026-11-15, latest).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
+animation samples), 13 min 4 s (setup 18 s, exports 186 s, import 27 s, capture 192 s, comparisons 358 s): **4707 PASS,
+21 FAIL**, nothing incomplete; animation samples 2400 / 0.
+
+| Viewport | Class | PASS | FAIL | What fails |
+|---|---|---|---|---|
+| 3840×2160 | exact | 788 | 0 | |
+| 2560×1440 | exact | 788 | 0 | |
+| 1920×1080 | exact | 788 | 0 | |
+| 1280×720 | exact | 788 | 0 | (the radio and the transition sample pass through the edge band, ruling R119) |
+| 1600×900 | scaled | 786 | 2 | `background-images` (a picture drawn scaled: SSIM below the floor, a resampled edge's colour), `scroll-area` (repeated items' dividers) |
+| 1366×768 | scaled | 769 | 19 | 17 `controls` (repeated table rows' dividers), `background-images`, `stacked-text` (10.67 px ink, ΔE2000 5.49 against 4.5) |
+
+What the edge-band keys relaxed in this run: `ssimRoundEdge` 16 radio captures and 1 transition sample at 1280×720 (lowest
+0.98088), 143 keyframes and 5 transitions elements at the scaled viewports (lowest 0.97664); `ssimFractionalEdge` 4
+elements (lowest 0.9735); `ssimVectorEdge` 10 (lowest 0.97875); `deltaE2000FractionalEdge` 2 focus-ring corners (4.90 and
+1.42). Each remaining failure's cause is in section "Scaled-class residuals". No box, baseline or line-extent check fails.
+
+**Round 3 (2026-11-15).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
 animation samples), 12 min 53 s (setup 15 s, exports 188 s, import 26 s, capture 192 s, comparisons 349 s): **4669 PASS,
 59 FAIL**, nothing incomplete; animation samples 2394 / 6.
 
