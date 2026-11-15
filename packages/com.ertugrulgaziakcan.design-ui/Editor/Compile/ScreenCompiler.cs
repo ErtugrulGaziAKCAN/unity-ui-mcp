@@ -115,8 +115,9 @@ namespace DesignUi.Editor
             }
             if (node.Field != null && node.Field.Password) yield return ScreenBuilder.PasswordMask.ToString(); // drawn instead of the value
             // UI Toolkit draws U+2026 where it cuts a line that ends in an ellipsis: a twin without the glyph adds it while
-            // drawing, and a line-box variant then drew another glyph in its place
-            if (node.Text != null && node.Style.Values.Any(l => l.TryGetValue("text-overflow", out var o) && o.Trim() == "ellipsis")) yield return Ellipsis;
+            // drawing, and a line-box variant then drew another glyph in its place. Every element whose style ellipsizes asks
+            // for it, also one empty in the design and filled at runtime (DesignText.SetText prepares only its text's characters)
+            if (node.Style.Values.Any(l => l.TryGetValue("text-overflow", out var o) && o.Trim() == "ellipsis")) yield return Ellipsis;
             foreach (var c in node.Children ?? new IrNode[0])
                 foreach (var s in ScreenStrings(c)) yield return s;
         }

@@ -128,6 +128,10 @@ namespace DesignUi.Editor.Tests
             plain.Text = new IrText { Key = "p", Tr = "Kadro", En = "Squad" };
             CollectionAssert.Contains(ScreenCompiler.ScreenStrings(Root(cut)).ToList(), "\u2026");
             CollectionAssert.DoesNotContain(ScreenCompiler.ScreenStrings(Root(plain)).ToList(), "\u2026");
+            // an element empty in the design and filled at runtime (DesignText.SetText prepares only its text's characters)
+            // ellipsizes too: its style alone asks for the glyph (fix round 3, N11)
+            var filledLater = Node("filled-later", "text", ("white-space", "nowrap"), ("overflow", "hidden"), ("text-overflow", "ellipsis"));
+            CollectionAssert.Contains(ScreenCompiler.ScreenStrings(Root(filledLater)).ToList(), "\u2026");
         }
 
         [Test]
