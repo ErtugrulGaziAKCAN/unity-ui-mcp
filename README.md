@@ -62,6 +62,15 @@ Guides: [usage guide](docs/guide/usage.md) · [Türkçe kullanım rehberi](docs/
 
 [INSTALL.md](INSTALL.md) is the agent's guide, with every setup option and the manual route.
 
+**Upgrading.** Setup keeps a project's existing kit. After you pull a newer clone, bring the project's kit to the clone's
+version with `npx design-export kit upgrade <kitDir> --dry-run` (in the clone; it prints what it would replace, keep and
+back up), then without `--dry-run`. It takes the clone's base stylesheet, rules, components, text styles and
+configuration keys and keeps the project's fonts, the tokens it changed or added, its locales, own keys, own text styles
+and files, and any viewport it declared besides the clone's; it builds the merged kit before it writes anything, backs up
+the files it changes into `<kitDir>/.backup/<UTC time>/` (the newest three are kept) and runs `kit build` and
+`kit build --check`. Then run a kit sync. A profile saved before the six default viewports keeps its own list: kit sync
+refuses to drop the kit's other viewports and says so; `Window > Design UI > Add Default Viewports to Profile` adds them.
+
 ### By hand
 
 ```sh
@@ -115,7 +124,9 @@ chat is visible only in chats started after it.
    copy of the kit that setup makes in `<designRoot>/design-kit`; it never writes into the clone.
 2. **Publish the kit to Claude Design.** `npx design-export kit claude <kitDir> <outDir>` (in the clone) writes the
    kit as a Claude Design System folder (`<outDir>/project/`: README with the rules, tokens, fonts, a card per
-   component). Ask `/unity-ui-mcp` to publish it, or publish that folder yourself; every canvas then attaches it.
+   component). It ships the font faces the kit's text styles and font tokens reach (`--all-faces`: every face of the
+   kit's fonts) and leaves out any file over the Design System's 15 MiB file cap; it prints what it left out, and the
+   README lists it. Ask `/unity-ui-mcp` to publish it, or publish that folder yourself; every canvas then attaches it.
 3. **Design.** In Claude Design, one artboard per screen, 2560×1440, with the design system attached. Ask for
    variants, pick one, revise it. Visible text is written in the reference locale with an English key, controls get
    ids and actions, repeated rows are written out as samples (the [usage guide](docs/guide/usage.md) has a prompt).
@@ -161,8 +172,9 @@ view.SetEnabled(view.Save, false);                             // the design's :
   the screen open.
 - Fonts: each locale renders with the project's own TMP font (as a UI Toolkit twin), right-to-left locales get the
   `rtl` alignment rules, and the profile's text-size steps compile to `.text-size-<key>` rules. Twins keep the
-  characters the import pre-adds; what text adds to them in Play mode is taken back when Play stops, so twins do not
-  change in version control after a Play session. Twins stay small: one atlas per face, sized to its glyphs, with the
+  characters the import pre-adds; what text adds to them in Play mode is taken back when Play stops, and an import or kit
+  sync gives a loaded twin that holds glyphs runtime text added (a twin first loaded during Play, a panel drawn in Edit
+  mode) its file's glyphs back before it saves, so twins do not change in version control after a Play session. Twins stay small: one atlas per face, sized to its glyphs, with the
   kerning of its own glyphs only; a text style's line-box variant keeps no glyphs on disk and shares its twin's when
   loaded; kit sync and every import remove twins no text style, compiled screen or locale font uses. An Inter family with
   Noto Sans, Arabic, Japanese and Chinese for 11 locales takes 25 MB (48 files) instead of 3.5 GB
@@ -186,6 +198,13 @@ The kit's [RULES.md](design-kit/RULES.md) is the contract (`design_ui_rules` ser
   both sides. A text that does not wrap (`white-space: nowrap`, its lines its `<br>`s, kept by every translation) gets
   exactly that height, so it adds no text-height drift to the labels stacked below it; a bound text or one with
   arguments keeps its measured height. Translations of such a text must keep its line count.
+- **No text cut by its box.** A box with `overflow: hidden` (the text's own, as an ellipsis label, or an ancestor's) must
+  be at least the text's line height, a whole number of line heights for several lines: lint U-CSS-047 rejects a line box
+  it cuts, because both renderers clip the accents and descenders alike and verify does not notice.
+- **A word must fit its wrapping box.** The browser lets a word with no break opportunity (`AUJOURD’HUI`) overflow its
+  line; UI Toolkit breaks it inside the word (the advanced text generator after a quotation mark). Lint W-TEXT-001
+  (warning) names such a word; give the box room for the longest word, also in translations, or make the text one line
+  with an ellipsis ([docs/findings/line-breaks.md](docs/findings/line-breaks.md)).
 - **A readable minimum.** No text draws below 9 device px at any declared viewport, exact or scaled (the game-industry
   practice of a minimum readable size, instead of looser checks for tiny text): with the default viewports design text
   is at least 18 px (9 device px at 1280×720, 9.6 at 1366×768), and the kit's smallest styles are 20 px. Lint U-FONT-004
@@ -237,6 +256,11 @@ settings lays out at the actual scale there, unscaled. The screen root's inline 
 the root scale: game code's own inline `translate`, `rotate`, `scale` or `transform-origin` on a screen root is
 overwritten (move or animate a container instead). `design_ui_status`, `design_ui_verify` (captures per
 class) and `Window > Design UI > Status` show each viewport's class.
+
+Known limit at the scaled viewports: an ellipsized text whose box is within about a css pixel of the width its last
+kept character needs can keep one more character than the browser (a pilot's "Bayview…" against "Bayvie…" at 1600×900
+and 1366×768; the browser counts the ellipsis without kerning against the last letter, 94.0 css px against a 93.6 px
+box). Verify reports it; give such a title a little more room or a shorter text.
 
 Text-sized elements (a button or label whose width is its text's) lay out at the golden's width for their text: the
 golden ceils Chromium's text width to whole device pixels at the viewport's scale, UI Toolkit ceils on the grid of the
@@ -307,7 +331,7 @@ Measured on the sample project (macOS, Apple silicon, warm browser):
 | `design_ui_import` | Exports a screen and compiles it into the Unity project (open Editor bridge, or a command) |
 | `design_ui_verify` | Captures in Unity, compares, returns the verdict, the report path and the top issues |
 | `design_ui_status` | What this version supports and how each Unity step runs; or one screen's hashes, last import and verdict |
-| `design_ui_kit_sync` | Syncs fonts and settings from the Unity project into the kit |
+| `design_ui_kit_sync` | Syncs fonts and settings from the Unity project into the kit; `addProfileViewports` adds the viewports the kit declares and the profile lacks |
 
 Every result has a short text summary, the same data as JSON with per-step timings, and `isError` with the reason when
 a step fails. Verdicts: `pass`; `fail` (a capture failed or did not run); `incomplete` (the design hides a job in every
@@ -372,7 +396,10 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
 | Text drawn with the advanced generator is empty | A font asset unloaded and loaded again is lost to TextCore's registry; the locale controller and scene loads repair the twins (`TextAssetRegistry`). Host code drawing twins outside a locale controller calls `TextAssetRegistry.Repair(font)`. |
 | "Exit Play mode first" from an import or kit sync | Stop Play: what an import adds to the font twins in Play would be taken back when Play stops. |
 | Empty localized labels, "Uxml object has an invalid child element" | A screen was imported before the package defined an element it uses. The package imports generated screens again after a package update (asset by asset); a screen still broken is fixed by importing its folder again. |
-| Disk use | `design_ui_status` shows the screens' bookkeeping; cleanup runs after every import and verify, within `cacheBudgetMB`, and `design_ui_clean` runs it now. A capture command of your own must remove its project copy afterwards, as `scripts/capture-on-copy.sh` does. |
+| Disk use | `design_ui_status` shows the screens' bookkeeping; cleanup runs after every import and verify, within `cacheBudgetMB`, and `design_ui_clean` runs it now. A verify's output is bounded (thumbnails of the first 24 failing captures with different issues, one crop per element, check and viewport, a compact `verdict.json`) and replaces the previous verify's. A capture command of your own must remove its project copy afterwards, as `scripts/capture-on-copy.sh` does. |
+| "kit viewports missing from the profile" from kit sync | The profile was saved before the six default viewports. `Window > Design UI > Add Default Viewports to Profile` (Undo-able), or `design_ui_kit_sync { addProfileViewports: true }`; if the game does not ship a resolution, remove it from kit.config.json. |
+| `kit claude` left a font out | It ships the faces the text styles and font tokens reach (`--all-faces` for every one) and never a file over 15 MiB; the note and the README say which. |
+| An old project kit (text styles, viewports) after a pull | `npx design-export kit upgrade <kitDir> --dry-run`, then without `--dry-run` (README, Upgrading). |
 | "kitDir is the unity-ui-mcp clone's own design-kit" | A config from an earlier setup: copy `design-kit` into `<designRoot>/design-kit` (without `fixtures/`) and point `kitDir` there. |
 | `could not start Chromium` | `npx playwright install chromium` in the clone. |
 
@@ -384,6 +411,7 @@ npx playwright install chromium
 npm test -w design-export && npm test -w design-ui-mcp
 npx tsc --noEmit -p tools/design-export && npx tsc --noEmit -p tools/design-ui-mcp
 npx design-export kit build design-kit --check      # RULES.md, base.css and the kit pages are current
+npx design-export kit upgrade <kitDir> --dry-run    # a project kit against this clone's (prints only)
 ```
 
 Run these before a pull request. GitHub Actions (`.github/workflows/node.yml`) runs the same Node suites and type

@@ -77,7 +77,9 @@ For each screen the user names:
 3. `design_ui_verify { screen }`. Report the verdict exactly as returned (`pass`, `fail` or `incomplete`), the report path and the top issues. `incomplete` means the design hides a job in every context (listed under hidden): it is not a pass.
 4. Use `design_ui_status { screen }` for hashes, last import and last verdict when the user asks what changed.
    `design_ui_kit_sync` refreshes the kit fonts and settings from Unity; run it when the user asks for it or when
-   lint reports kit-related findings.
+   lint reports kit-related findings. When it refuses because the kit declares viewports the profile lacks (a profile
+   saved before the six default viewports), tell the user which and offer `design_ui_kit_sync { addProfileViewports: true }`
+   (or Window > Design UI > Add Default Viewports to Profile); call it only after a clear yes.
 
 Disk use takes care of itself: every import and verify removes the derived files it no longer needs (the Unity captures
 and difference images of a finished verify; the report keeps crops of what failed) and keeps the screens' bookkeeping
@@ -107,8 +109,10 @@ rules):
 2. In the repository clone, run `npx design-export kit claude <kitDir> <outDir>` (`--title "<name>"` for the design
    system's name, `--force` to replace an earlier `<outDir>/project`). It writes the kit as a Claude Design System
    folder: `<outDir>/project/` with `README.md` (the rules), `tokens.json`, the fonts, a card per component, a cover and
-   `design-system.json`. If the command is unknown or fails, report its output and stop; do not assemble the design
-   system by hand.
+   `design-system.json`. It ships only the font faces the kit's text styles and font tokens reach (`--all-faces` ships
+   every face) and leaves out any file over the Design System's 15 MiB file cap; relay its `note:` lines to the user.
+   Publish in calls of at most 16 MiB. If the command is unknown or fails, report its output and stop; do not assemble
+   the design system by hand.
 3. With the user's clear yes, publish that folder as a Design System with the client's Artifact tool, or update the
    design system whose link the user gave. If the client has no Artifact tool, give the user the folder path to upload.
    Publish nothing else.

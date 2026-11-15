@@ -7,6 +7,38 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Added
 
+- `design-export kit upgrade <kitDir> [--from <cloneKit>] [--dry-run]`: brings a project's own kit to the clone's kit
+  version (setup keeps an existing kit, so a pilot merged one by hand). It takes the clone's base stylesheet, RULES.md,
+  components, text styles and configuration keys, and keeps the project's fonts folder (fonts CSS and JSON included), the
+  tokens it changed or added, its `locales`, `referenceLocale`, `reference`, `screenMatch`, `textSizes` and paths, its own
+  keys, text styles and files, and the viewports it declared besides the clone's six. The merge is built on a staging copy
+  first (`kit build`, then `kit build --check`): a merge that does not build writes nothing. The files it changes are backed
+  up into `<kitDir>/.backup/<UTC time>/` (the newest three are kept, older ones removed and named), and it prints what it
+  kept, replaced and backed up; `--dry-run` prints only. A Node command rather than a setup flag: it runs wherever the
+  tools run (Windows without bash too) and reuses kit build. Setup prints the command when it keeps a project's kit.
+- Lint **U-CSS-047** (error): a text whose line box a box with `overflow: hidden` or `clip` (its own, as an ellipsis label,
+  or an ancestor's) cuts at its top or bottom edge, the box being shorter than the text's lines. Both renderers clip the
+  accents and descenders alike, so verify passed and nobody noticed. The finding names the box, its height, the line box
+  and how much is cut; the fix: make the box at least the line height. A box that ends between two lines, content that
+  runs off a taller box and content inside a scroll area are not judged. The lint snapshot records each text element's
+  own lines.
+- Lint **W-TEXT-001** (warning): a word wider than its wrapping text box. The browser keeps a word without a break
+  opportunity on its line and lets it overflow; UI Toolkit breaks it inside the word (the standard text generator after
+  the last character that fits, the advanced one after a quotation mark or other punctuation), so the lines differ. The
+  finding names the word, its width, the box's width and the marks the advanced generator breaks after.
+- `kit claude` ships the font faces the kit's text styles and font tokens reach (each family a `--font-*` token names, at
+  400, 700 and every weight a text style names, matched as the browser matches faces; italic only where a style names
+  it), with `--all-faces` for every face, and leaves out any file over the Design System's 15 MiB file cap. What it leaves
+  out is printed as a `note:` and listed in the README; `tokens.json` lists exactly the files it ships. A pilot's export
+  was 35 MB (18 Inter weights, four Noto fonts) and a 17.8 MB font broke its publish.
+- Kit sync refuses to drop a viewport kit.config.json declares and the DesignUiProfile lacks (a profile saved before the
+  six default viewports keeps its three, and kit sync wrote three back): the error, before anything is written, names
+  them with their class and says how to add them. `Window > Design UI > Add Default Viewports to Profile`
+  (`DesignUiProfileViewports.AddDefaults`) adds the default viewports a profile lacks; kit sync with
+  `addProfileViewports` (`design_ui_kit_sync`, the bridge's `/kit-sync`, batchmode `-designUiAddProfileViewports`,
+  `DESIGN_UI_ADD_PROFILE_VIEWPORTS=true` for a command runner) adds the kit's. Both are one Undo step and save the profile
+  asset only.
+
 - A readable-text floor: no text may draw below 9 device px at any declared viewport, exact or scaled (the game-industry
   practice of a minimum readable size, instead of looser checks for tiny text; measured at 1280×720: 135 texts at 9
   device px meet the exact-class ink limits, max ΔE2000 4.29 against 4.5). Lint **U-FONT-004** (error) names each text
@@ -224,6 +256,15 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
+- Known limit, measured and not fixed (task 36): at 1600×900 and 1366×768 an ellipsized text can keep one more character
+  than the browser when its box is within about a css pixel of the width its last kept character needs (a pilot's
+  "Bayview…" against "Bayvie…", ink edge +9.79 device px). The browser keeps a prefix when its width plus the
+  ellipsis's own advance (no kerning across the cut) fits: "Bayview" 77.61 + "…" 16.39 = 94.00 css px, against boxes of
+  93.0–93.64 css px at every viewport, so "Bayvie…" everywhere. UI Toolkit lays the scaled viewports out at the 0.75 scale
+  of 1920×1080 (box 93.33 css px, ellipsis 17.33) and matches the browser at 1920×1080, but keeps "Bayview" once the root
+  scale draws that layout at 0.833 or 0.711; its elision point is not readable from code, so the mechanism under the
+  root scale was not isolated (docs/findings/viewport-classes.md, "Ellipsis point").
+
 - Task 35's fix round 4 fidelity run (4728 captures, 14 min 26 s): **every capture passes** at all six viewports; the
   same 180 hairline lines take the colour-direction path (at most 0.26°). The previous comparison run on the same captures
   gives an identical verdict: the copies' own paint and the compiler's paint order change no result of the suite.
@@ -263,6 +304,23 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   one 10.67 px line (ink colour ΔE2000 5.49 against 4.5) (`docs/findings/viewport-classes.md`).
 
 ### Fixed
+
+- A keyed inline text matched its kit text style on size and weight only, so with caption 20/28 and label 20/24 a 20/24
+  label (an inline text beside an icon, or one a state shows) was exported as caption and drawn with the 28 px line box:
+  1.6–4 px lower or taller, and the rows below it 4 px down (every verify failure of a pilot's screen at 2560×1440 and
+  3840×2160). Such a text now takes the style of its size, weight and computed line height, exactly; one whose line height
+  no style has gets no style, and lint U-CSS-016 names it. The extraction revision is part of the export hash, so an
+  export of the older extractor is made again; the compiler also gives a text of an older export the style of its own
+  line height and refuses one whose line height no style of its size and weight has.
+- An import or kit sync saved glyphs runtime text had added to a loaded font twin outside the Play guard (a twin first
+  loaded during Play and never marked dirty, or drawn by a panel in Edit mode): binary churn and "Importer generated
+  inconsistent result". Before they touch the twins they now give every loaded plain twin whose glyphs differ from its
+  file its file's state back, so they save the file's glyphs and what the screens pre-add only.
+- A verify's output is bounded: the report keeps thumbnails of the first failing capture of each set of issues (at most
+  24; a later capture with the same issues points at them) and one crop per element, check and viewport (at most 200, six
+  per capture), and `verdict.json` is compact and lists per capture the element rows that did not pass, without the
+  masked regions (the report lists the same rows). One failing verify of a 942-capture screen left 533 MB (report.html
+  152 MB, verdict.json 186 MB, 5910 pictures 195 MB); the same verdict and goldens now give 13.8 MB.
 
 - A rebuilt font twin kept looking up the characters its rebuild dropped (ruling R139): the generator copies a fresh
   asset's fields over a twin it rebuilds, which replaces the character table but not TextCore's lookup, so

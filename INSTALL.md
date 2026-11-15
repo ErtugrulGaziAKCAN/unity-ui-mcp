@@ -103,6 +103,10 @@ The config setup writes:
 }
 ```
 
+An existing project kit is kept as it is too; setup prints the command that brings it to the clone's kit version
+(`npx design-export kit upgrade <kitDir> --dry-run`, then without `--dry-run`: the clone's base, rules, components, text
+styles and config keys; the project's fonts, own and changed tokens, locales, own keys and extra viewports stay; the
+changed files are backed up into `<kitDir>/.backup/`). Show the dry run to the user and run it after a clear yes.
 An existing `design-ui.config.json` is kept as it is; when it has no `mcpServer`, setup prints the line to add (the
 Design UI window's client snippets need it), and when its `kitDir` is the clone's `design-kit`, setup prints how to copy
 the kit into the project and what to set (kit sync refuses to write into the clone). Setup never adds `"testables"` to
@@ -171,7 +175,7 @@ Then tell the user what is left on the Unity side. These are their steps in the 
 | `design_ui_status` | live: what this version supports and how each Unity step runs; per-screen hashes and history |
 | `design_ui_import` | live when its Unity route works: export (lint, IR, goldens, assets, sample data), then the compile in the open Editor (its bridge must answer) or through `unityRunner.command.import` |
 | `design_ui_verify` | live when `unityRunner.command.capture` is configured: Unity capture of every static job and animation sample on a project copy, comparison and report |
-| `design_ui_kit_sync` | live when its Unity route works, like import: copies the project's fonts into the kit, writes the font tokens and checks the text styles |
+| `design_ui_kit_sync` | live when its Unity route works, like import: copies the project's fonts into the kit, writes the font tokens and checks the text styles; refuses to drop a viewport the kit declares and the profile lacks (`addProfileViewports: true` adds them, after the user agrees) |
 | `design_ui_clean` | live: reports (`dryRun`) or runs the cleanup of the screens' bookkeeping that import and verify also run by themselves |
 
 A tool whose route is not set up returns an error with the reason. Do not work around it (for example by writing UXML
