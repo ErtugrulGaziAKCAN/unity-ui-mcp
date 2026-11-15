@@ -537,6 +537,33 @@ describe("U-FONT-004: the readable-text floor", () => {
       expect(await floor(".box:hover p{font-size:0.5em}")).toEqual(["font-size: 0.5em (12px) [style:0 .box:hover p] draws 6 device px at 1280×720: below the readable-text floor of 9 device px; the minimum design size here is 18px"]);
       expect(await floor(".box:hover p{font-size:calc(1em - 2px)}")).toEqual([expect.stringMatching(/font-size: calc\(1em - 2px\) \[style:0 .box:hover p\] cannot be resolved to px here/)]);
       for (const css of [".box{transform:scale(0)}", ".box{scale:0} .box:hover{scale:0.2}"]) for (const d of await floor(css)) expect(d).not.toMatch(/Infinity|NaN/);
+      // text the design keeps hidden (a closed dialog, menu, toast) is judged where a rule or code shows it: a rule that only
+      // shows it keeps the now scale, and so does a hidden container's text
+      for (const css of [".box{scale:0.5;opacity:0} .box.is-open{opacity:1}", ".box{scale:0.5;visibility:hidden} .box.is-open{visibility:visible}",
+        ".box{scale:0.5;display:none} .box.is-open{display:flex}", ".box{opacity:0} .box.is-open{opacity:1} .box p{scale:0.5}", ".box{scale:0.5;display:none}"])
+        expect(await floor(css), css).toEqual([expect.stringMatching(/scaled ×0\.5 by its transforms, draws 6 device px at 1280×720/)]);
+      // two state rules that apply together multiply: hovered and pressed, 24 × 0.8 × 0.8 × 0.5 = 7.68
+      expect(await floor(".box:hover{scale:0.8} .box:active{transform:scale(0.8)}")).toEqual([expect.stringMatching(/scaled ×0\.64 by its transforms, draws 7\.68 device px at 1280×720/)]);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("judges a breakpoint's font size only at the declared viewports where its @media holds", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "floor-bp-"));
+    const page = (css: string) => {
+      const file = path.join(dir, `p${Math.random().toString(36).slice(2)}.html`);
+      fs.writeFileSync(file, `<!doctype html><html><head><meta charset="utf-8"><style>:root{-webkit-font-smoothing:antialiased}body{margin:0}
+        .screen{display:flex;flex-direction:column;width:2560px;height:1440px;position:relative;font-family:"Inter UI";font-size:24px;line-height:30px;color:#ffffff;background-color:#0b1f26}
+        p{margin:0} .box{display:flex;flex-direction:column;flex-shrink:0} ${css}</style></head>
+        <body><div class="screen" data-u-screen="lint.sample"><div class="box" data-u-id="box"><p data-l10n="lint.sample.t" data-en="T">Metin</p></div></div></body></html>`);
+      return file;
+    };
+    const floor = async (css: string) => (await lintFile(page(css))).filter((x) => x.ruleId === "U-FONT-004").map((x) => x.detail);
+    try {
+      // the lint kit declares 16:9 viewports only: a 21:9 breakpoint never holds at them, a 16:9 one at every one
+      expect(await floor("@media (min-aspect-ratio: 21/9) { .box p { font-size: 0.7em } }")).toEqual([]);
+      // (it holds at the lint's own render too, so the computed size is judged as well)
+      expect(await floor("@media (min-aspect-ratio: 16/9) { .box p { font-size: 0.7em } }")).toEqual([
+        expect.stringMatching(/font-size: 0\.7em \(16\.8px\) \[style:0 .box p\] draws 8\.4 device px at 1280×720: below the readable-text floor/)]);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 });

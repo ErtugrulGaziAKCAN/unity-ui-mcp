@@ -1,8 +1,11 @@
 import { logicalViewport } from "../../viewport.js";
-import { declaredViewports } from "../../capture/matrix.js";
+import { breakpointsHold, declaredViewports } from "../../capture/matrix.js";
+import type { KitConfig } from "../../kit.js";
 import { drawnPx, minimumKitTextPx, minimumTextPx, TEXT_FLOOR_PX } from "../../kit/textStyles.js";
 import { px } from "../css-values.js";
+import { breakpointsOf, MediaError, type Breakpoint } from "../resolve/media.js";
 import { splitTransform } from "../resolve/transform.js";
+import { touchesRuntime } from "../selectors.js";
 import type { DomSnapshot } from "../snapshot.js";
 import { describeStyle, matchRichStyle, matchTextStyle } from "../text-styles.js";
 import type { Rule } from "../types.js";
@@ -43,32 +46,41 @@ function hides(decls: readonly { name: string; value: string }[]): boolean {
 }
 
 /**
- * The scales an element's own transforms draw it at, one per state it is drawn in: now (its computed `scale` times
- * `transform`) and in every rule that reaches it and sets either (a hover, a class, a screen state, a breakpoint), where
- * the rule's value replaces only its own property and multiplies with the other's. A state that hides the element
- * (opacity 0, visibility hidden, display none; for a rule, also the hiding it keeps from now) or scales it to 0 draws
- * nothing and does not count; neither do an animation's or a transition's passing frames (only states are judged).
+ * The `scale` and `transform` factors of the states an element is drawn in, per property: now (its computed values) and
+ * every rule of a state that reaches it and sets either (a hover, an is-* class, a screen state, a breakpoint), whose
+ * value replaces only its own property. Rules can apply together (a hover's `scale` with a press's `transform`), so the smallest drawn scale
+ * is the smallest `scale` times the smallest `transform` (each is judged with every other). A rule that hides the element
+ * (opacity 0, visibility hidden, display none) draws nothing and does not count, nor does a factor of 0; neither do an
+ * animation's or a transition's passing frames (only states are judged).
+ *
+ * An element hidden now is drawn when a rule shows it, or when code does (a dialog, a menu or a toast the design keeps
+ * closed): its now values count unless every rule that shows it also sets that property (a pop-in whose closed state is
+ * `scale(0)` with opacity 0 is never drawn at its closed scale), and every other rule's values count, since they can
+ * apply together with the one that shows it. Null: the element is drawn in no state (nothing to judge).
  */
-function drawnScales(s: DomSnapshot, i: number): number[] {
+function drawnFactors(s: DomSnapshot, i: number): { scale: number[]; transform: number[] } | null {
   const e = s.elements[i];
   const nowScale = scaleValue(e.computed["scale"] ?? "none") ?? 1, nowTransform = transformScale(e.computed["transform"] ?? "none") ?? 1;
   const hiddenNow = hides([{ name: "opacity", value: e.computed["opacity"] ?? "1" }, { name: "visibility", value: e.computed["visibility"] ?? "visible" },
     { name: "display", value: e.computed["display"] ?? "block" }]);
-  const out: number[] = [];
-  if (!hiddenNow && nowScale * nowTransform > 0) out.push(nowScale * nowTransform);
+  const rules: { sc?: number; tr?: number; shows: boolean }[] = [];
   for (const r of s.rules) {
-    if (!r.selectors.some((x) => !x.pseudoElement && x.elements?.includes(i))) continue;
+    const own = r.selectors.filter((x) => !x.pseudoElement && x.elements?.includes(i));
+    // a rule of no state applies now: its values are the computed ones
+    if (!own.length || (!r.media.length && !own.some((x) => touchesRuntime(x.parsed)))) continue;
     const decls = r.decls.map((d) => ({ name: d.name, value: resolved(s, d.value, i) }));
-    const sc = decls.find((d) => d.name === "scale"), tr = decls.find((d) => d.name === "transform");
-    if (!sc && !tr) continue;
     if (hides(decls)) continue;
-    // a rule that sets no visibility of its own keeps the element as hidden as it is now
-    const showsItself = decls.some((d) => d.name === "opacity" || d.name === "visibility" || d.name === "display");
-    if (hiddenNow && !showsItself) continue;
-    const f = (sc ? scaleValue(sc.value) ?? 1 : nowScale) * (tr ? transformScale(tr.value) ?? 1 : nowTransform);
-    if (f > 0) out.push(f);
+    const sc = decls.find((d) => d.name === "scale"), tr = decls.find((d) => d.name === "transform");
+    const shows = decls.some((d) => d.name === "opacity" || d.name === "visibility" || d.name === "display");
+    rules.push({ sc: sc ? scaleValue(sc.value) ?? 1 : undefined, tr: tr ? transformScale(tr.value) ?? 1 : undefined, shows });
   }
-  return out;
+  const showing = rules.filter((r) => r.shows);
+  // now: drawn when visible now, or (hidden now) unless every rule that shows it sets the property itself
+  const nowCounts = (own: (r: { sc?: number; tr?: number }) => number | undefined) =>
+    !hiddenNow || !showing.length || showing.some((r) => own(r) === undefined);
+  const scale = [...(nowCounts((r) => r.sc) ? [nowScale] : []), ...rules.flatMap((r) => (r.sc === undefined ? [] : [r.sc]))].filter((f) => f > 0);
+  const transform = [...(nowCounts((r) => r.tr) ? [nowTransform] : []), ...rules.flatMap((r) => (r.tr === undefined ? [] : [r.tr]))].filter((f) => f > 0);
+  return scale.length && transform.length ? { scale, transform } : null;
 }
 
 /**
@@ -78,9 +90,9 @@ function drawnScales(s: DomSnapshot, i: number): number[] {
 function minScaleOf(s: DomSnapshot, i: number): number | null {
   let k = 1;
   for (let j = i; j >= 0; j = s.elements[j].parent) {
-    const own = drawnScales(s, j);
-    if (!own.length) return null;
-    k *= Math.min(...own);
+    const own = drawnFactors(s, j);
+    if (!own) return null;
+    k *= Math.min(...own.scale) * Math.min(...own.transform);
   }
   return k;
 }
@@ -110,9 +122,9 @@ function layerFontSize(s: DomSnapshot, i: number, value: string): number | null 
  * The readable-text floor: no text draws below TEXT_FLOOR_PX device px at a declared viewport, exact or scaled (the
  * game-industry practice of a minimum readable size instead of looser checks for tiny text; measured,
  * docs/findings/text-ink.md section 9). A text's drawn size is its font size times the smallest scale its transforms
- * draw it at in a state it is drawn in (drawnScales) times each declared viewport's panel scale; with the default
+ * draw it at in a state it is drawn in (drawnFactors) times each declared viewport's panel scale; with the default
  * viewports the smallest is 1280×720 (0.5), so design text is at least 18px there. A font size a state or breakpoint layer
- * gives the text (px, em, %, rem) is judged too. Kit build refuses a kit text style below the floor; this rule names each
+ * gives the text (px, em, %, rem) is judged too, a breakpoint's only at the declared viewports where its @media holds. Kit build refuses a kit text style below the floor; this rule names each
  * text that is.
  */
 export const rule: Rule = {
@@ -127,10 +139,10 @@ export const rule: Rule = {
     const isText = new Set(texts.map((e) => e.index));
     const scaleOf = new Map<number, number | null>();
     const k = (i: number) => { if (!scaleOf.has(i)) scaleOf.set(i, minScaleOf(s, i)); return scaleOf.get(i)!; };
-    const judge = (i: number, size: number, what: string, where = "") => {
+    const judge = (i: number, size: number, what: string, where = "", only = scales) => {
       const f = k(i);
       if (f === null || !(size > 0)) return;
-      const below = scales.filter((x) => size * f * x.scale < TEXT_FLOOR_PX - 1e-9);
+      const below = only.filter((x) => size * f * x.scale < TEXT_FLOOR_PX - 1e-9);
       if (!below.length) return;
       const drawn = below.map((x) => `${drawnPx(size * f * x.scale)} device px at ${x.v[0]}×${x.v[1]}`).join(", ");
       c.add(s.elements[i].path, `${what}${f < 1 - 1e-9 ? `, scaled ×${round6(f)} by its transforms,` : ""}${where} draws ${drawn}: below the ` +
@@ -150,6 +162,8 @@ export const rule: Rule = {
       if (!decl) continue;
       const t = targetOf(s, src);
       if (!t) continue;
+      const holding = holdingAt(src.rule!.media, scales, kit);
+      if (!holding.length) continue;
       for (const i of src.elements) {
         const value = resolved(s, decl.value, i);
         const decls = src.decls.map((d) => ({ name: d.name, value: resolved(s, d.value, i) }));
@@ -161,7 +175,7 @@ export const rule: Rule = {
             `readable-text floor cannot be judged: write it in px or use a kit text style class`);
           continue;
         }
-        for (const x of reached) judge(x, size, `font-size: ${value.trim()} (${round6(size)}px)`, at(src, t));
+        for (const x of reached) judge(x, size, `font-size: ${value.trim()} (${round6(size)}px)`, at(src, t), holding);
       }
     }
     const larger = ctx.textStyles.filter((x) => x.fontSize >= min - 1e-9).sort((a, b) => a.fontSize - b.fontSize || a.weight - b.weight)[0];
@@ -172,6 +186,25 @@ export const rule: Rule = {
       `in every state, and do not scale text that is drawn below it with a transform.`);
   },
 };
+
+/**
+ * The declared viewports where a rule's enclosing @media conditions hold (the design's logical size at each, as the
+ * capture lays it out); every one for a condition a breakpoint cannot express (U-CSS-012 names it).
+ */
+function holdingAt<V extends { v: [number, number] }>(media: string[], scales: V[], kit: KitConfig): V[] {
+  if (!media.length) return scales;
+  let bps: Breakpoint[];
+  try {
+    const b = breakpointsOf(media);
+    if (b.always) return scales;
+    bps = b.breakpoints;
+  } catch (e) {
+    if (e instanceof MediaError) return scales;
+    throw e;
+  }
+  const view = { referenceViewport: kit.reference, screenMatch: kit.screenMatch };
+  return scales.filter((x) => bps.some((bp) => breakpointsHold([bp], x.v, view)));
+}
 
 /** Whether element `i` is `anc` or inside it. */
 function descends(s: DomSnapshot, i: number, anc: number): boolean {

@@ -145,7 +145,8 @@ export function specificity(sel: ParsedSelector): Spec {
   return sp;
 }
 
-const touchesRuntime = (sel: ParsedSelector): boolean =>
+/** Whether a selector depends on an interaction or screen state (a dynamic pseudo-class, an `is-*`/`state-*` class). */
+export const touchesRuntime = (sel: ParsedSelector): boolean =>
   sel.compounds.some((c) => c.simples.some((s) =>
     (s.kind === "pseudo-class" && DYNAMIC_PSEUDO_CLASSES.has(s.name)) ||
     (s.kind === "class" && RUNTIME_CLASS.test(s.name)) ||
