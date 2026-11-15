@@ -77,7 +77,6 @@ import { rule as U_NET_001 } from "./rules/U-NET-001.js";
 import { rule as U_NET_002 } from "./rules/U-NET-002.js";
 import { rule as W_FONT_001 } from "./rules/W-FONT-001.js";
 import { rule as W_FONT_002 } from "./rules/W-FONT-002.js";
-import { rule as W_CSS_001 } from "./rules/W-CSS-001.js";
 import { rule as W_IMG_001 } from "./rules/W-IMG-001.js";
 
 export type { Finding, LintContext, Rule, Severity } from "./types.js";
@@ -157,7 +156,6 @@ export const RULES: readonly Rule[] = [
   U_NET_002,
   W_FONT_001,
   W_FONT_002,
-  W_CSS_001,
   W_IMG_001,
   I_MRK_001,
 ];

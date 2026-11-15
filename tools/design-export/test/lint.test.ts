@@ -17,10 +17,7 @@ const kit: KitConfig = readKit(fx("kit"));
 const localesKit: KitConfig = { ...kit, fontsCss: "fonts/locales.css" };
 /** Same kit with an extra face whose file cannot be read (local()). */
 const unreadableKit: KitConfig = { ...kit, fontsCss: "fonts/unreadable.css" };
-/** Same kit with the scaled 1600×900 (laid out at 0.75, drawn ×0.833). */
-const scaledKit: KitConfig = { ...kit, viewports: [...kit.viewports, [1600, 900]], scaledViewports: [[1600, 900]] };
 const KIT_FOR: Record<string, { pass?: KitConfig; fail?: KitConfig }> = {
-  "W-CSS-001": { pass: scaledKit, fail: scaledKit },
   "W-FONT-001": { pass: localesKit, fail: localesKit },
   "W-FONT-002": { fail: unreadableKit },
 };
@@ -499,16 +496,6 @@ describe("device grid, group opacity and stacking rules", () => {
     const moved = await ids(`<div class="row"><div class="card lift" data-u-id="a"></div></div><div class="panel" style="margin-top:40px"></div>`,
       `${css} .card{box-shadow:none} .lift:hover{transform:translateY(48px)}`, "U-CSS-041");
     expect(moved).toHaveLength(1);
-  });
-});
-
-describe("W-CSS-001: nested borders at a scaled viewport", () => {
-  it("names the bordered levels and the drift of their content, once, where it passes 1 device px", async () => {
-    const f = (await lintFile(fx("W-CSS-001.fail.html"), scaledKit)).filter((x) => x.ruleId === "W-CSS-001");
-    expect(f.map((x) => `${x.path}: ${x.detail}`)).toEqual([expect.stringMatching(
-      /\[data-u-id=inner\]: 3 nested left borders, .*outer.* \(4px\) > .*middle.* \(4px\) > .*inner.* \(4px\): their content is drawn -1\.5 device px at 1600×900 from where the browser draws it/)]);
-    // without a scaled viewport nothing drifts
-    expect((await lintFile(fx("W-CSS-001.fail.html"))).filter((x) => x.ruleId === "W-CSS-001")).toEqual([]);
   });
 });
 
