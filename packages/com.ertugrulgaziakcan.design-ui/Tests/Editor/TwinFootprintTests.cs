@@ -126,6 +126,34 @@ namespace DesignUi.Editor.Tests
             Assert.AreSame(page, plain.atlasTextures[0]);
         }
 
+        /// <summary>
+        /// Ruling R139: a variant whose character table is replaced (the generator rebuilds a variant that has glyphs of its
+        /// own; an unlink gives it its file's empty tables) looks up no character it lost, so what an import or a bound text
+        /// prepares for it afterwards reaches it.
+        /// </summary>
+        [Test]
+        public void AVariantsReplacedTable_LeavesNoCharacterInItsLookup_SoAPrepareStillReachesIt()
+        {
+            const string own = "Жизнь";
+            var (_, variant, _) = Pair("Foot Lookup");
+            var tmp = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontFixture.Folder + "/Foot Lookup.asset");
+            Assert.IsTrue(variant.characterLookupTable.ContainsKey('K'), "linked: its twin's characters");
+            Assert.IsTrue(TwinLinks.Unlink(variant));
+            Debug.Log("R139 after unlink: table " + variant.characterTable.Count + ", lookup " + variant.characterLookupTable.Count);
+            Assert.IsFalse(variant.characterLookupTable.ContainsKey('K'), "unlinked: its lookup follows its empty table");
+
+            // characters of its own (text laid out while it was not linked), then the generator revisits it: rebuilt empty
+            Assert.IsTrue(variant.TryAddCharacters(own, out string _, true));
+            Assert.IsTrue(variant.characterLookupTable.ContainsKey('Ж'));
+            var run = new FontTwinGenerator.TwinRun(new TMP_FontAsset[0]);
+            Assert.AreSame(variant, FontTwinGenerator.GetOrCreateTwin(tmp, Twins, run, Box));
+            Debug.Log("R139 after rebuild: table " + variant.characterTable.Count + ", lookup " + variant.characterLookupTable.Count);
+            Assert.AreEqual(0, variant.characterTable.Count, "rebuilt empty");
+            Assert.IsFalse(variant.characterLookupTable.ContainsKey('Ж'), "rebuilt: no character it lost is looked up");
+            DesignText.Prepare(variant, own);
+            Assert.IsTrue(own.All(c => variant.characterTable.Any(x => x.unicode == c)), "a prepare after it reaches the variant");
+        }
+
         [Test]
         public void DesignTextPrepare_OnALinkedVariant_AddsToItsTwin_AndLinksItAgain()
         {

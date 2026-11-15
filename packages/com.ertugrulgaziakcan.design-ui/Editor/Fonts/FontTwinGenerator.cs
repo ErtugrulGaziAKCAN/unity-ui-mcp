@@ -393,6 +393,10 @@ namespace DesignUi.Editor
                     if (!Header.Contains(it.name)) target.CopyFromSerializedProperty(it);
                 target.ApplyModifiedPropertiesWithoutUndo();
             }
+            // the copy replaces the tables but not the lookup TextCore builds from them: without this the rebuilt font still
+            // looks up every character it had, and DesignText.Prepare, which trusts the lookup, adds none of them again
+            // (ruling R139)
+            twin.ReadFontAssetDefinition();
             // the atlas texture and material now belong to the twin: detach them before the in-memory asset is destroyed
             fresh.atlasTextures = new Texture2D[0];
             fresh.material = null;
