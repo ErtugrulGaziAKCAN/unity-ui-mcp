@@ -50,7 +50,9 @@ textarea { resize: none; }
   <!-- text under a later element's box shadow: a dialog's shadow (0 24px 64px) darkens the cards below it by a few levels
        from top to bottom and towards its sides, so the background under each card's text varies across its line. The titles run on past their boxes, which clip
        them (a line's rect is the whole text's width, as an ellipsized title's is); neither the shadowed background nor
-       what lies past the box is the title's ink (a pilot screen's card titles under a month picker) -->
+       what lies past the box is the title's ink (a pilot screen's card titles under a month picker). The titles' own clips
+       already end their windows at their boxes, so this page passes with the background plane switched off too; the
+       plane itself is held by compare.test.ts -->
   <h1 class="heading text-headline-bold" data-l10n="fidelity.shadowed-text.heading" data-en="Text under a shadow">Gölge altında metin</h1>
   <div class="days" data-u-id="days">
     <div class="day" data-u-repeat="days" data-u-id="day">

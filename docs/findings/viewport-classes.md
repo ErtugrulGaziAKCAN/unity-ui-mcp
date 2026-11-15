@@ -1123,7 +1123,7 @@ cut).
     Chromium draws 4; capture.test.ts sweeps such boxes, one with padding).
   - *The glyph's height* (N9): the column profile alone passed dots at another height, so the ellipsis's rows, counted from
     each side's baseline and matched within ±1 device px, must differ by at most 0.4 of its mass (`ELLIPSIS_ROWS`):
-    measured 0.04–0.09 for the dots at the exact viewports, 0.07–0.29 at the scaled ones, 0.41–0.96 for the curve, 1.0 for
+    measured 0.04–0.09 for the dots at the exact viewports, 0.07–0.29 at the scaled ones, 0.50–0.95 for the curve (0.41–0.96 before Task 37 matched the ellipsis on its own columns), 1.0 for
     dots 2 device px off; raised dots fail at every viewport (compare.test.ts).
   - *Every ellipsized element* gets U+2026 in its twins (N11), also one empty in the design and filled at runtime.
 - **No record, so the strict check** (the extent within ±boxPx, no glyph check, no allowance): a line that does not end in
