@@ -711,39 +711,56 @@ at most 0.81 over every copy there) and at 1600×900 (at most 3.69); the IR elem
 (`day-number#6#1`, limit 4.5) and 4.96 at 1366×768 (limit 5.89). The exact class's small-text limit 4.5 was measured on the
 IR elements' text, which has no such glyph; no limit was changed for them.
 
-**Hairline lines (ruling R138).** On a text line whose design has no fully covered pixels the ink's lightness and amount
-measure how the stroke falls on the pixel grid, not the text's colour, and the renderers put a stroke between two device
-pixels differently. Such a line is judged by its ink's colour direction from the background instead (pixelmatch and
+**Hairline lines (rulings R138, R141).** On a text line whose design has no fully covered pixels the ink's lightness and
+amount measure how the stroke falls on the pixel grid, not the text's colour, and the renderers put a stroke between two
+device pixels differently. Such a line is judged by its ink's colour direction from the background instead (pixelmatch and
 Playwright do not colour-judge anti-aliased pixels either):
 
-- **Fully covered.** A pixel whose luma distance from the line's background is at least 0.85 (`HAIRLINE_FULL`) of the
-  declared text colour's (the IR's `color` in the capture, times its alpha and the opacity of the element and its ancestors;
-  for a copy without what the capture applies to the IR's own elements). A line is a hairline line when its design shows
-  fewer than 3 such pixels (`HAIRLINE_PIXELS`, the fewest the ink colour takes its median of), its design ink points the
-  declared colour's way from the background within 2° (`HAIRLINE_SAME_COLOUR`: it is that colour at partial coverage, not
-  another one) and its most covered pixel reaches half of the declared colour (`HAIRLINE_PEAK`: a stroke, not text under a
-  translucent layer, such as the `dialog` lines under their scrim at 0.26). Measured over the suite's 85974 lines (a probe of
-  every line's pixels): the lines with fewer than 3 pixels at 0.85 are exactly the 180 one-glyph lines of one stroke (the em
+- **Which text can be one (ruling R141).** Text of at most 12 device px (`HAIRLINE_MAX_PX`; the suite's hairline lines are
+  10 and 10.67), drawn at opacity 1 (its own times its ancestors', an animation sample's running value included) in the
+  colour the capture recorded for it, with no later layer that paints over its line. The golden records each text's computed
+  colour and drawn opacity (boxes `color` and `opacity`, design side only), a repeat copy its own (a copy whose class mutes
+  it is judged against its muted colour). R138's first rule took the colour from the IR's static style and had no size,
+  opacity or cover bound: any text whose design ink sat on that colour's ray nearer the background counted, and the fix
+  round 1 re-review's probes passed at 16 px with Unity wrong: a label sampled mid-fade (design at opacity 0.6, Unity 0.8 or
+  missing glyphs), text under a 30 % veil (Unity at 0.7 or missing glyphs), a muted copy drawn lighter or missing glyphs.
+  They fail now, and so do their 10 px versions (`compare.test.ts`, "R141").
+- **Fully covered.** A pixel whose luma distance from the line's background is at least 0.85 (`HAIRLINE_FULL`) of the text
+  colour's (the recorded one, over that background). A line is a hairline line when its design shows fewer than 3 such
+  pixels (`HAIRLINE_PIXELS`, the fewest the ink colour takes its median of), its design ink points the text colour's way
+  from the background within 2° (`HAIRLINE_SAME_COLOUR`: it is that colour at partial coverage, not another one) and its
+  most covered pixel reaches half of the text colour (`HAIRLINE_PEAK`: a stroke, not text under a translucent layer, such as
+  the `dialog` lines under their scrim at 0.26). Measured over the suite's 85974 lines (a probe of every line's pixels): the
+  lines with fewer than 3 pixels at 0.85 are exactly the 180 one-glyph lines of one stroke (the em
   dash `row-time#2` at 1280×720 and 1366×768, the "1" `day-number#1` at 1366×768), their design at most 2 such pixels;
   every other line has 3 or more (at 0.90 the count would take in 272 ordinary short lines, at 3 of 10 % of the ink 3455).
-  The sample a line's ink colour is the median of reaches only 0.85 of the declared colour on ordinary 10 px text too (the
+  The sample a line's ink colour is the median of reaches only 0.85 of the text colour on ordinary 10 px text too (the
   white "Ay sonu raporu" at 1280×720 in both renderers): that scatter stays with the small-text limits.
 - **Its direction.** A pixel of glyph coverage α blends the text colour c over the background b, `p − b = α·(c − b)`, so
   the direction of `p − b` does not depend on coverage in the space the blend happens in. Measured: the design's ink of
-  the hairline lines points within 0.02–0.2° of the declared colour's direction in sRGB values and 1.8–3.6° in linear light,
+  the hairline lines points within 0.02–0.2° of the text colour's direction in sRGB values and 1.8–3.6° in linear light,
   so both renderers blend glyph coverage in sRGB (the gamma composite blends as the design) and the direction is taken
   there: the sum of `p − b` over the line's ink pixels on each side, and the angle between the two.
 - **The limit** `textInkDirection` 0.66° (fidelity-thresholds.json): the suite's 180 hairline lines reach 0.26° (`row-time#2`
   at 1280×720), plus 0.4. A dash in the accent colour (#16c2d5) instead of the secondary text colour (#b9d0d6) is 38.0° off, in
   the warning colour (#f2b544) 35.6°; the correct dash drawn over other pixel rows 0.11° (`compare.test.ts`, "R138").
-- **What it does not judge.** On a hairline line the ink's lightness and amount are not judged: **a lightness-only error of
-  such a line (the declared colour moved toward the background or away from it, the same direction) is not caught.** Its
-  geometry (box, line count, baselines, where its glyphs sit) is judged as on any line. A line with fully covered pixels
-  keeps the ink colour and amount checks, a lightness error there fails as before (the same test).
+- **Its ink amount** (ruling R141): Unity's ink against the design's, both as each pixel's distance from the background
+  summed over the line (so a stroke drawn faint everywhere is little ink), within 0.5 to 2 times (`HAIRLINE_INK_BAND`; the
+  suite's 180 hairline lines measure 0.86 to 1.01 that way, 0.69 to 1.17 by the usual coverage ratio). A dash Unity draws
+  at 12 % of one row (0.09 of the design's ink) fails.
+- **What it does not judge.** On a hairline line the ink's lightness is not judged: **a lightness-only error of such a
+  line (the text colour moved toward the background or away from it, the same direction) is not caught**, within the ink
+  amount band. Its geometry (box, line count, baselines, where its glyphs sit) is judged as on any line. A line with fully
+  covered pixels keeps the ink colour and amount checks, a lightness error there fails as before (the same test).
+- **What the direction limit separates** (the fix round 1 re-review's probe: the dash in one kit text colour in the design,
+  another in Unity, on each kit surface): any change of hue (36–38°), disabled text (3.3° or more) and grey swaps on surfaces
+  900 to 700 fail; secondary against muted on surface-600 (0.29–0.33°) and primary against secondary on surface-500
+  (0.81–0.89°, near the suite's 0.26° scatter) do not, or not reliably. The angle is that of the two colours seen from the
+  background, so it depends on the surface's tint, not on how different the colours look.
 
 Red tests (`compare.test.ts`, "R138"): the correct dash drawn by Unity over other pixel rows passes (it failed on ink colour
 and a 0.70× ink amount before); a dash in the accent or the warning colour fails on its direction; a normal line of fully
-covered stems in a lighter colour fails its ink colour; without the declared colour (no IR) nothing is recognised.
+covered stems in a lighter colour fails its ink colour; without the recorded colour nothing is recognised.
 
 **The text fit's face (ruling R134).** The fit measures a text only when its characters are present, because a measure that
 adds glyphs to a dynamic font queues its atlas update outside the panel's repaint and brings the new glyphs' kerning pairs
@@ -794,17 +811,19 @@ test: the binding there writes through `text`, which sends the event; it stays a
 red test. The pilot's write path is not reproduced in Edit mode;
 whatever it is, the label repaints with the new text, which the repaint check covers.
 
-**Fix round 1 on the fit (I-2, M-1).** The repeat check recorded the font and style it compares only for a non-empty
-text, so an empty label with a font found its font changed on every repaint and asked the Editor for another update forever
-in Edit mode (16 requests in ten repaints; `TextFitTests.AnEmptyLabel_RepaintsWithoutAskingForAnotherMeasure`); text, font
-and style are now recorded together. A label measured while its face's new glyphs still waited for their kerning pairs in
-TextCore's update queue (another label's layout added them that frame: 8 glyphs waiting when its text was set) kept that
-width, 262.23 panel px where the same text on that face measures 249.41 once the pairs are there
-(`TextFitTests.ALabelMeasuredBeforeItsFacesKerningPairsArrive_IsMeasuredAgainWithThem`); the fit now measures again after the
-next draw while TextCore's newly added list holds glyphs of the face (at most four times in a row) and keys its cache on the
-face's pair count too. TextCore's own add brings a new glyph's pairs with it as the first glyph only, so the face's width
-there is 0.87 px more than with `DesignText.Prepare`'s complete pairs (248.54): UI Toolkit draws with the face's, which the
-fit measures.
+**Fix rounds 1 and 2 on the fit (I-2, M-1).** The repaint check recorded the font and style it compares only for a
+non-empty text, so an empty label with a font found its font changed on every repaint and asked the Editor for another
+update forever in Edit mode (16 requests in ten repaints); text, font and style are now recorded together, and a font change
+while the text stays empty asks once (`TextFitTests.AnEmptyLabel_RepaintsWithoutAskingForAnotherMeasure`). A label measured
+while its face's new glyphs still waited for their kerning pairs in TextCore's update queue (another label's layout added
+them that frame: 8 glyphs waiting when its text was set) kept that width, 262.23 panel px
+(`TextFitTests.ALabelMeasuredBeforeItsFacesKerningPairsArrive_IsMeasuredAgainWithThem`). Fix round 1 measured again after the
+next draw while the queue held the face's glyphs, at most four times; in one full Unity suite run the queue ran only after
+those four (when another label's text was generated) and the R134 test's bold label kept 295 against 287 panel px. Since
+fix round 2 the fit gives the face all its glyphs' kerning pairs itself before it measures whenever TextCore's newly added
+list holds glyphs (`DesignText.CompleteFeatures` and `ClearPairFlags`, the compiler's path), so the measure is kerned at
+once and nothing polls; the pairs are then the complete ones (248.54, where TextCore's queue alone gives a new glyph's pairs
+as the first glyph only: 249.41), and UI Toolkit draws with them too. Its cache keys on the face's pair count as well.
 
 **Rebuilt twins' lookup (ruling R139).** The generator rebuilds a twin in place (a line-box variant with glyphs of its own,
 a twin whose source font or atlas settings changed) by copying a fresh asset's serialized fields over it. That replaces the
@@ -829,9 +848,11 @@ Suite: in each of five full runs (three with ruling R134's fit, one with R136's 
 ## Suite at six viewports
 
 **Task 35 (2026-11-15, latest).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
-animation samples), the final run on every change of Task 35 (rulings R131 to R139 and its fix round 1), 14 min 12 s (setup
-16 s, exports 195 s, import 32 s, capture 207 s, comparisons 382 s, cleanup 15 s; the comparisons take about 18 s more than
-round 5's with the 30924 copies' texts checked): **4728 PASS, 0 FAIL**, nothing incomplete; animation samples 2400 / 0.
+animation samples), the final run on every change of Task 35 (rulings R131 to R141 and its fix rounds 1 and 2), 15 min 10 s
+(setup 15 s, exports 213 s, import 34 s, capture 223 s, comparisons 405 s, cleanup 15 s; the comparisons take about 40 s
+more than round 5's with the 30924 copies' texts checked, while the pilot's Unity window ran on the same machine; fix round
+1's run on the same comparison less R141 took 14 min 12 s): **4728 PASS, 0 FAIL**, nothing incomplete; animation samples
+2400 / 0.
 
 | Viewport | Class | PASS | FAIL |
 |---|---|---|---|
@@ -844,9 +865,10 @@ round 5's with the 30924 copies' texts checked): **4728 PASS, 0 FAIL**, nothing 
 
 Before ruling R138 four full runs gave 4608 / 120 each (the hairline copies of `repeat-items`, 60 at 1280×720 and 60 at
 1366×768; section "Repeat items' text, the face that draws, what moves"); the 18 divider captures of round 5 and the
-letter-spaced label passed in all of them and pass here. What the keys admit in this run: the hairline path (ruling R138)
-180 lines (`row-time#2` at 1280×720 and 1366×768, `day-number#1` at 1366×768), colour direction at most 0.26° against 0.66°;
-`ssimRoundEdge` 17 elements at 1280×720 (lowest 0.98088) and 148 at the scaled viewports (lowest 0.97664);
+letter-spaced label passed in all of them and pass here. What the keys admit in this run (the same elements and values as
+fix round 1's run): the hairline path (rulings R138, R141) 180 lines (`row-time#2` at 1280×720 and 1366×768, `day-number#1`
+at 1366×768: 10 and 10.67 device px, opacity 1, their recorded colour, nothing over them), colour direction at most 0.26°
+against 0.66°, ink amount 0.86–1.01 against 0.5–2; `ssimRoundEdge` 17 elements at 1280×720 (lowest 0.98088) and 148 at the scaled viewports (lowest 0.97664);
 `ssimFractionalEdge` 4 (lowest 0.9735); `ssimVectorEdge` 10 (lowest 0.97875); the corner limits 20 samples at the scaled
 viewports (ΔE2000 1.02–5.10); `ssimResampledPicture` 6 picture elements (lowest 0.95284) and `deltaE2000ResampledPicture` 3
 colour samples (highest 5.49); the scaled small-text ink limit one line above 4.5 (`stacked-text` value-12, 5.49);

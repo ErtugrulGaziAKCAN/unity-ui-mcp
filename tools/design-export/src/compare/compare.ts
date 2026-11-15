@@ -256,7 +256,7 @@ export const HAIRLINE_PEAK = 0.5;
 /**
  * Ruling R141: only text of at most HAIRLINE_MAX_PX device px can be a hairline line (the suite's are 10 and 10.67), drawn at
  * full opacity in the colour the capture recorded for it (a copy's own) with no later layer over it; and its ink amount stays
- * within HAIRLINE_INK_BAND of the design's (measured 0.69–1.14 on the suite's hairline lines).
+ * within HAIRLINE_INK_BAND of the design's (the suite's 180 hairline lines: 0.86–1.01 by this sum, 0.69–1.17 by coverage).
  */
 export const HAIRLINE_MAX_PX = 12;
 export const HAIRLINE_INK_BAND: readonly [number, number] = [0.5, 2];
