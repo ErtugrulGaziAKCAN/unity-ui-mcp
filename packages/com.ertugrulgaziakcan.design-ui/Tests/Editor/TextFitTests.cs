@@ -289,8 +289,9 @@ namespace DesignUi.Editor.Tests
         /// A row of bordered tabs at 1600×900 just too short for the golden's widths: the golden's box of each (Chromium's
         /// border on whole device pixels, 4.8 panel px a side, the text ceiled on the 0.625 grid) is wider than UI Toolkit's own
         /// (borders 4, the text on the 0.75 grid), and the row's width lies between the two sums. The row takes the exact
-        /// widths off once and keeps UI Toolkit's own; they come back when the row has room again. Each tab's width is the
-        /// same on every frame after that, with no width written.
+        /// widths off once and keeps UI Toolkit's own; they come back when the row has room again, and in a row of the same
+        /// width with room (a list binding the label elsewhere) and at another resolution (1920×1080), where what the first row
+        /// had no room for says nothing. Each tab's width is the same on every frame after the release, with no width written.
         /// </summary>
         [UnityTest]
         public IEnumerator ATightRowOfBorderedTabs_AtAScaledViewport_KeepsItsWidths()
@@ -359,6 +360,38 @@ namespace DesignUi.Editor.Tests
             }
             Assert.Greater(released, 0, "the row took the exact width off its tabs (UI Toolkit's own widths fit, the golden's do not)");
             // (the struggling layout logs an error, which fails the test too)
+
+            // a released tab bound into another row of the same width with room for it (a list rebinding a label): what its
+            // first row had no room for says nothing there
+            var movedTab = fitTabs.First(t => float.IsNaN(((DesignButton)t).Fit.Width));
+            var row2 = new VisualElement();
+            row2.style.position = Position.Absolute;
+            row2.style.left = 64;
+            row2.style.top = 500;
+            row2.style.flexDirection = FlexDirection.Row;
+            row2.style.width = fitRow.style.width;
+            screen.Add(row2);
+            row2.Add(movedTab);
+            yield return Frames(8);
+            Assert.IsFalse(float.IsNaN(((DesignButton)movedTab).Fit.Width), movedTab.text + ": its exact width in a row with room");
+            fitRow.Insert(fitTabs.IndexOf(movedTab), movedTab);
+            yield return Frames(8);
+
+            // a resolution change to 1920×1080 (the same exact scale, the golden's widths at it fit the row): what the row had no
+            // room for at 1600×900 says nothing there, every tab takes its exact width
+            var rt1920 = new RenderTexture(1920, 1080, 24);
+            _objects.Add(rt1920);
+            doc.panelSettings.targetTexture = rt1920;
+            yield return Frames(8);
+            Assert.AreEqual(0.75, screen.DesignScale ?? double.NaN, 1e-4, "1920×1080");
+            foreach (var t in fitTabs)
+            {
+                var fit = ((DesignButton)t).Fit;
+                Assert.IsFalse(float.IsNaN(fit.Width), t.text + ": its exact width at 1920×1080");
+                Assert.AreEqual(fit.Width, t.layout.width, 1f / screen.panel.scaledPixelsPerPoint + 0.01f, t.text + ": laid out at it");
+            }
+            doc.panelSettings.targetTexture = (RenderTexture)_objects.Find(o => o is RenderTexture r && r.width == 1600);
+            yield return Frames(8);
             // room again: the golden's widths
             fitRow.style.width = box + 50;
             yield return Frames(8);

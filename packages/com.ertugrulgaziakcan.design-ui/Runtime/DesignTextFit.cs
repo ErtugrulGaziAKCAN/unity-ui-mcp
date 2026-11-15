@@ -83,6 +83,8 @@ namespace DesignUi
             m_OnParentGeometry = _ => Update();
             element.RegisterCallback<AttachToPanelEvent>(_ =>
             {
+                // another panel, row or scale: what a row had no room for before says nothing here
+                ForgetRelease();
                 WatchParent(element.hierarchy.parent);
                 Update();
             });
@@ -106,6 +108,7 @@ namespace DesignUi
         void WatchParent(VisualElement parent)
         {
             if (ReferenceEquals(parent, m_Parent)) return;
+            ForgetRelease();
             m_Parent?.UnregisterCallback(m_OnParentGeometry);
             m_Parent = parent;
             m_Parent?.RegisterCallback(m_OnParentGeometry);
@@ -206,12 +209,16 @@ namespace DesignUi
                     // would otherwise take it off and put it back on every layout
                     m_ReleasedRoom = ParentRoom();
                     m_ReleasedBox = box;
+                    m_ReleasedScale = scale;
+                    m_ReleasedPpp = e.scaledPixelsPerPoint;
                     return;
                 }
                 if (Mathf.Abs(Width - box) < 1e-4f) return;
             }
             else if (!Wrapping)
             {
+                // a release at another design scale or panel scale (a resolution change) says nothing about this one
+                if (!float.IsNaN(m_ReleasedBox) && (scale != m_ReleasedScale || e.scaledPixelsPerPoint != m_ReleasedPpp)) ForgetRelease();
                 if (!float.IsNaN(m_ReleasedBox))
                 {
                     // the one way back after a row took it off: the row grew or the text needs less (tried once: a row
@@ -285,6 +292,15 @@ namespace DesignUi
         bool m_Laid, m_DesignWraps;
         /// <summary>After a row took the width off: the parent's content width then and the box it had no room for (NaN: none).</summary>
         float m_ReleasedRoom = float.NaN, m_ReleasedBox = float.NaN;
+        /// <summary>The design scale and panel scale of that release.</summary>
+        double m_ReleasedScale = double.NaN;
+        float m_ReleasedPpp = float.NaN;
+
+        void ForgetRelease()
+        {
+            m_ReleasedRoom = m_ReleasedBox = m_ReleasedPpp = float.NaN;
+            m_ReleasedScale = double.NaN;
+        }
 
         /// <summary>How many times the inline width was written (tests: a layout that changes nothing writes nothing).</summary>
         internal int Writes { get; private set; }
