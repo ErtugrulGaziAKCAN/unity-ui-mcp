@@ -53,7 +53,15 @@ function shape(x0: number, y0: number, x1: number, y1: number, w: number, h: num
 type Rgba = [number, number, number, number];
 interface Stop { offset: number; color: Rgba }
 /** One painted part of a gradient: a rect relative to the padding box and the gradient over it, placed at (ox, oy). */
-interface Piece { kind: "linear" | "radial"; rect: { x: number; y: number; w: number; h: number }; stops: Stop[]; attrs: (ox: number, oy: number) => string }
+interface Piece {
+  kind: "linear" | "radial"; rect: { x: number; y: number; w: number; h: number }; stops: Stop[]; attrs: (ox: number, oy: number) => string;
+  /**
+   * A radial gradient that ends transparent: the ellipse (relative to the padding box) beyond which it paints nothing. Drawn
+   * as that ellipse instead of the rect when it lies inside the painted shape, so the gradient is never sampled past its end
+   * (Unity's VectorImage draws a speckled ring where a radial gradient's pad region starts: docs/findings/gradients.md).
+   */
+  ends?: { cx: number; cy: number; rx: number; ry: number; stops: Stop[]; attrs: (ox: number, oy: number) => string };
+}
 /** `gap`: smallest stop spacing as a fraction of the SVG gradient vector (the importer's ramp). */
 interface Laid { pieces: Piece[]; gap: number | null }
 
@@ -218,7 +226,35 @@ function lay(g: ParsedGradient, w: number, h: number, o: GradientOptions): Laid 
     const tf = Math.abs(ry - rx) > 1e-9 ? ` gradientTransform="translate(${fmt(cx)} ${fmt(cy)}) scale(1 ${fmt(ry / rx)}) translate(${fmt(-cx)} ${fmt(-cy)})"` : "";
     return `cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(r)}"${tf}`;
   };
-  return { pieces: [{ kind: "radial", rect: full, stops, attrs }], gap };
+  // a gradient that ends transparent paints nothing past its last stop: the ellipse there, drawn with the gradient's end
+  // moved out a hair when the last stop is at it, so no point of the ellipse samples the gradient at or past its end
+  const last = stops[stops.length - 1];
+  let ends: Piece["ends"];
+  if (last.color[3] === 0 && stops.length > 1) {
+    const k = last.offset * 1.02 < 1 ? 1 : 1.02;
+    const rr = r * k, er = r * last.offset * (k === 1 ? 1.02 : 1.01);
+    ends = {
+      cx: c.x, cy: c.y, rx: er, ry: (er * ry) / rx, stops: stops.map((st) => ({ offset: st.offset / k, color: st.color })),
+      attrs: (ox, oy) => attrs(ox, oy).replace(/ r="[^"]*"/, ` r="${fmt(rr)}"`),
+    };
+  }
+  return { pieces: [{ kind: "radial", rect: full, stops, attrs, ends }], gap };
+}
+
+/** Whether every point of an ellipse lies inside a rect with rounded corners (radii top-left, top-right, bottom-right, bottom-left). */
+function ellipseInside(e: { cx: number; cy: number; rx: number; ry: number }, x0: number, y0: number, x1: number, y1: number, radii?: [number, number, number, number]): boolean {
+  const [tl, tr, br, bl] = radii ?? [0, 0, 0, 0];
+  const inside = (x: number, y: number) => {
+    if (x < x0 || x > x1 || y < y0 || y > y1) return false;
+    const corner = (r: number, ax: number, ay: number, sx: number, sy: number) =>
+      r > 0 && sx * (x - ax) > 0 && sy * (y - ay) > 0 ? Math.hypot(x - ax, y - ay) <= r : true;
+    return corner(tl, x0 + tl, y0 + tl, -1, -1) && corner(tr, x1 - tr, y0 + tr, 1, -1) && corner(br, x1 - br, y1 - br, 1, 1) && corner(bl, x0 + bl, y1 - bl, -1, 1);
+  };
+  for (let k = 0; k < 64; k++) {
+    const a = (k / 64) * 2 * Math.PI;
+    if (!inside(e.cx + e.rx * Math.cos(a), e.cy + e.ry * Math.sin(a))) return false;
+  }
+  return true;
 }
 
 /** Smallest offset distance between consecutive stops whose (premultiplied) colours differ; null when none differ. */
@@ -269,7 +305,7 @@ export function gradientToSvg(value: string, width: number, height: number, opts
     return out;
   };
   const defs: string[] = [], layers: string[][] = [];
-  let covered = false;
+  let covered = false, partial = false;
   gradientsOf(value).forEach((g, k) => {
     const laid = lay(g, width, height, opts);
     const [rx, ry] = repeatAxes(repeats[k % repeats.length]);
@@ -282,15 +318,22 @@ export function gradientToSvg(value: string, width: number, height: number, opts
       if (x1 <= x0 || y1 <= y0) continue;
       const id = n === 0 ? `g${k}` : `g${k}_${n}`;
       n++;
-      defs.push(`<${piece.kind}Gradient id="${id}" gradientUnits="userSpaceOnUse" ${piece.attrs(ox, oy)}>${svgStops(piece.stops).map(stopXml).join("")}</${piece.kind}Gradient>`);
-      rects.push(shape(x0, y0, x1, y1, width, height, opts.radii, `url(#${id})`));
+      const e = piece.ends && { cx: ox + piece.ends.cx, cy: oy + piece.ends.cy, rx: piece.ends.rx, ry: piece.ends.ry };
+      if (e && ellipseInside(e, x0, y0, x1, y1, x0 <= 0 && y0 <= 0 && x1 >= width && y1 >= height ? opts.radii : undefined)) {
+        defs.push(`<radialGradient id="${id}" gradientUnits="userSpaceOnUse" ${piece.ends!.attrs(ox, oy)}>${svgStops(piece.ends!.stops).map(stopXml).join("")}</radialGradient>`);
+        rects.push(`<ellipse cx="${fmt(e.cx)}" cy="${fmt(e.cy)}" rx="${fmt(e.rx)}" ry="${fmt(e.ry)}" fill="url(#${id})"/>`);
+        partial = true;
+      } else {
+        defs.push(`<${piece.kind}Gradient id="${id}" gradientUnits="userSpaceOnUse" ${piece.attrs(ox, oy)}>${svgStops(piece.stops).map(stopXml).join("")}</${piece.kind}Gradient>`);
+        rects.push(shape(x0, y0, x1, y1, width, height, opts.radii, `url(#${id})`));
+      }
     }
     if (pw > 0 && ph > 0 && (rx || (bl <= 0 && br <= 0)) && (ry || (bt <= 0 && bb <= 0))) covered = true;
     layers.push(rects);
   });
   const W = fmt(width), H = fmt(height);
   // an image that leaves part of the box empty keeps the box as its bounds (the importer sizes a VectorImage by its geometry)
-  const pin = covered ? "" : `<rect x="0" y="0" width="${W}" height="${H}" fill="#000000" fill-opacity="0"/>`;
+  const pin = covered && !partial ? "" : `<rect x="0" y="0" width="${W}" height="${H}" fill="#000000" fill-opacity="0"/>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs>${defs.join("")}</defs>${pin}${layers.reverse().flat().join("")}</svg>`;
 }
 

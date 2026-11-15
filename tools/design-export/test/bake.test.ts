@@ -255,6 +255,24 @@ describe("bake against Chromium at the golden viewport", () => {
 
 // ---- gradients ----------------------------------------------------------------------------------------------------------
 describe("gradientToSvg", () => {
+  it("draws a radial gradient that ends transparent as its ellipse when that lies inside the shape, never sampled past its end", () => {
+    // the toggle switch's knob: Unity's VectorImage draws a speckled ring where a radial gradient's pad region starts
+    const knob = gradientToSvg("radial-gradient(circle 12px at 16px 16px, #ffffff 10px, rgba(255, 255, 255, 0) 11px)", 64, 32, { radii: [16, 16, 16, 16] });
+    expect(knob).toContain('<radialGradient id="g0" gradientUnits="userSpaceOnUse" cx="16" cy="16" r="12">');
+    expect(knob).toContain('<ellipse cx="16" cy="16" rx="11.22" ry="11.22" fill="url(#g0)"/>');
+    // the importer sizes a VectorImage by its shapes' bounds: the box is pinned with a transparent rect
+    expect(knob).toContain('<rect x="0" y="0" width="64" height="32" fill="#000000" fill-opacity="0"/>');
+    expect(knob).not.toContain("<path");
+    // its last stop at the gradient's end: the end moves out a hair (2 %), the ellipse stays inside it
+    const edge = gradientToSvg("radial-gradient(circle 12px at 16px 16px, #ffffff 10px, rgba(255, 255, 255, 0) 12px)", 64, 32, { radii: [16, 16, 16, 16] });
+    expect(edge).toContain('r="12.24"');
+    expect(edge).toContain('<stop offset="0.980392" stop-color="#ffffff" stop-opacity="0"/>');
+    expect(edge).toContain('rx="12.12"');
+    // an ellipse that leaves the shape (a corner cut by the radius) or a gradient that ends opaque keeps the shape
+    expect(gradientToSvg("radial-gradient(circle 12px at 6px 16px, #ffffff 10px, rgba(255, 255, 255, 0) 11px)", 64, 32, { radii: [16, 16, 16, 16] })).toContain("<path");
+    expect(gradientToSvg("radial-gradient(circle 12px at 16px 16px, #ffffff 10px, #000000 11px)", 64, 32)).toContain("<rect");
+  });
+
   it("writes a linear gradient in user space over the element box", () => {
     const svg = gradientToSvg("linear-gradient(90deg, #000 0%, #fff 100%)", 200, 50);
     expect(svg).toContain("<linearGradient");
