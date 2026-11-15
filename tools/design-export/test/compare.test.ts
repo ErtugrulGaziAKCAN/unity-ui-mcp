@@ -794,11 +794,11 @@ describe("compareCapture: edge, colour and ink checks", () => {
     // an 80 px avatar at a scaled viewport: a light disc with a 2 px grey ring, drawn with the same ramp on both sides; the
     // ring lies wholly in the edge band (the outer curve and the border's inner curve, a pixel either side)
     const bg: Rgb = [30, 30, 30], disc: Rgb = [200, 200, 200];
-    const draw = (ring: Rgb | null) => {
+    const draw = (ring: Rgb | null, width = 2) => {
       const png = canvas(320, 192, bg);
       for (let y = 50; y < 142; y++) for (let x = 74; x < 166; x++) {
         const d = Math.hypot(x + 0.5 - 120, y + 0.5 - 96);
-        const a = Math.max(0, Math.min(1, 40.5 - d)), c = ring && d > 38 ? ring : disc;
+        const a = Math.max(0, Math.min(1, 40.5 - d)), c = ring && d > 40 - width ? ring : disc;
         const o = (y * png.w + x) * 4;
         for (let k = 0; k < 3; k++) png.data[o + k] = Math.round(c[k] * a + bg[k] * (1 - a));
       }
@@ -817,6 +817,12 @@ describe("compareCapture: edge, colour and ink checks", () => {
     }
     // (a ring of another hue with the same lightness keeps the element's SSIM at 0.99 or more: no viewport compares an
     // element without text for its border colour, so neither does this)
+    // a ring under 2 device px (1.25 here: 2 px at 1600×900) has no sample to give evidence: a missing one is held to ssimElement
+    const thin: CaptureContext = { ...ctx, borders: { avatar: [1.25, 1.25, 1.25, 1.25] } };
+    const thinGolden = { png: draw([150, 150, 150], 1.25), boxes };
+    expect(compareCapture(thinGolden, { png: draw([150, 150, 150], 1.25), boxes }, [], scaled, thin).issues).toEqual([]);
+    expect(compareCapture(thinGolden, { png: draw(null), boxes }, [], scaled, thin).issues).toEqual([
+      expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/its ring \(a border under 2 device px, or no usable point on it\) gives no evidence: held to 0\.99/) })]);
     // at an exact viewport (ssimRoundEdge off) nothing is relaxed and nothing more is sampled
     expect(compareCapture(golden, { png: draw(null), boxes }, [], T, ctx).issues.map((i) => i.kind)).toEqual(["ssim"]);
   });

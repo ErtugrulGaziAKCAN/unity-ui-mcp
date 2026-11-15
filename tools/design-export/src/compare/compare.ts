@@ -748,7 +748,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const lowSsim: { id: string; s0: number; best: number; region: Rect; carriesText: boolean; shadow: boolean }[] = [];
     // ssimRoundEdge applies (scaled viewports); a round element's border side samples, worst first, for its evidence
     const roundEdge = t.ssimRoundEdge < t.ssimElement - EPS && !!ctx.radii;
-    const ringEvidence = new Map<string, { de: number; p: RingPoint; a: number[]; b: number[] }>();
+    const ringEvidence = new Map<string, { de: number; p: RingPoint | null; a: number[]; b: number[] }>();
     for (const id of compared) {
       const ge = g.elements[id], ue = u.elements[id], row = rowOf.get(id)!;
       if (external.has(id)) continue;
@@ -827,7 +827,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       // both renderers), the evidence ssimRoundEdge needs: its ring lies in the edge band that limit masks, so a missing
       // or wrong-colour ring shows only here (an element that carries text samples its border with its ring below)
       const sides = ctx.borders?.[id];
-      if (roundEdge && !carriesText && ctx.radii?.[id] && paints(id) && sides) {
+      if (roundEdge && !carriesText && ctx.radii?.[id] && paints(id) && sides && sides.some((v) => v > 0)) {
         const full = sides.map((v) => (v >= BORDER_SAMPLE_PX ? v : 0));
         for (const p of full.some((v) => v > 0) ? ringPoints(gPaint, ue, full, ["border"], ctx.radii[id]) : []) {
           if (!usable(p, cover)) continue;
@@ -835,6 +835,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           const prev = ringEvidence.get(id);
           if (!prev || r.de > prev.de) ringEvidence.set(id, { de: r.de, p, a: r.a, b: r.b });
         }
+        // a ring with no sample (every side under BORDER_SAMPLE_PX, or every point covered or on text) has no evidence
+        if (!ringEvidence.has(id)) ringEvidence.set(id, { de: NaN, p: null, a: [], b: [] });
       }
       if (use) {
         row.samples = use.length;
@@ -1021,10 +1023,12 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         const confined = banded >= t.ssimElement - EPS;
         // the ring the band hides must be there: its border sides within the band's colour limit
         const ring = ringEvidence.get(l.id);
-        const ringOff = ring && ring.de > t.deltaE2000RoundEdge + EPS ? ring : null;
-        if (confined && !ringOff && !otherIssue.has(l.id) && l.best >= t.ssimRoundEdge - EPS) { row.ssimLimit = t.ssimRoundEdge; continue; }
+        const ringOff = ring && ring.p && ring.de > t.deltaE2000RoundEdge + EPS ? ring : null;
+        const noEvidence = !!ring && !ring.p;
+        if (confined && !ringOff && !noEvidence && !otherIssue.has(l.id) && l.best >= t.ssimRoundEdge - EPS) { row.ssimLimit = t.ssimRoundEdge; continue; }
         roundWhy = `; ${banded.toFixed(5)} with the edge band of round shapes masked` + (!confined ? ` (below ${t.ssimElement}: not confined to that band)`
-          : ringOff ? `, but its ${ringOff.p.where} differs by ΔE2000 ${ringOff.de.toFixed(2)} (design ${hex(ringOff.a)}, Unity ${hex(ringOff.b)}; limit ${t.deltaE2000RoundEdge}): the ring in that band is not the design's`
+          : ringOff ? `, but its ${ringOff.p!.where} differs by ΔE2000 ${ringOff.de.toFixed(2)} (design ${hex(ringOff.a)}, Unity ${hex(ringOff.b)}; limit ${t.deltaE2000RoundEdge}): the ring in that band is not the design's`
+          : noEvidence ? `, but its ring (a border under ${BORDER_SAMPLE_PX} device px, or no usable point on it) gives no evidence: held to ${t.ssimElement}`
           : otherIssue.has(l.id) ? `, the limit ${t.ssimRoundEdge} for it needs its other checks to pass` : `, below ${t.ssimRoundEdge} unmasked`);
       }
       const why = relaxed ? (otherIssue.has(l.id) ? `; the limit ${relaxed.limit} for ${relaxed.why} needs its other checks to pass` : `; ${relaxed.limit} for ${relaxed.why}`) : "";
