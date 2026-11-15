@@ -1459,6 +1459,43 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(fs.existsSync(kept)).toBe(false);
   });
 
+  it("never removes the captures a verify kept in its own cleanup, even over the budget; a later cleanup that does says so (review finding 3)", async () => {
+    const p = tempProject({ prefer: "command" });
+    // a budget the bookkeeping is over as soon as it holds an export
+    p.writeConfig({ ...copyCapture(), cacheBudgetMB: 0.001 });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const kept = path.join(dir, ".design-ui", "kept-captures");
+    const client = await serverFor(p.dir, goldenPipeline());
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    const r = await call(client, "design_ui_verify", { screen: "clean-screen", keepCaptures: true });
+    expect(r.text).toContain(`Unity captures kept in ${kept}`);
+    expect(fs.existsSync(kept)).toBe(true);
+    expect(String(r.data.cleanup ?? "")).not.toContain("kept-captures");
+    // the next cleanup may remove them: the record and the report stop naming them
+    const clean = await call(client, "design_ui_clean", { screen: "clean-screen" });
+    expect(clean.text).toContain(".design-ui/kept-captures");
+    expect(fs.existsSync(kept)).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"), "utf8")).keptCaptures).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir, "report.html"), "utf8")).toContain("Kept captures removed");
+  });
+
+  it("drops the captures a verify kept when an import exports the screen again (review finding 8)", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.writeConfig(copyCapture());
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const kept = path.join(dir, ".design-ui", "kept-captures");
+    const client = await serverFor(p.dir, goldenPipeline());
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    await call(client, "design_ui_verify", { screen: "clean-screen", keepCaptures: true });
+    expect(fs.existsSync(kept)).toBe(true);
+    // this pipeline's export always writes the export again
+    const r = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(r.text).toContain("The Unity captures a verify kept were removed");
+    expect(r.data.keptCapturesRemoved).toBe(true);
+    expect(fs.existsSync(kept)).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"), "utf8")).keptCaptures).toBeUndefined();
+  });
+
   it("fails a screen with a capture Unity did not produce, and gives no verdict when Unity produced nothing", async () => {
     const p = tempProject({ prefer: "command" });
     p.writeConfig(copyCapture(["hover@64x48.png"]));

@@ -11,6 +11,7 @@ import { packageStamp } from "../package-stamp.js";
 import { MISSING } from "../pipeline.js";
 import { guarded, Timings, toolResult } from "../result.js";
 import { afterRun, whileBusy } from "./clean.js";
+import { dropKeptCaptures } from "../cache.js";
 import { CompileWaitTimeout, runUnity, UnityRunnerError, unityIssues, withIssues } from "../runner.js";
 import { bookkeepingDir, exportDirOf, readLastImport, unityDirOf, writeLastImport } from "../status.js";
 import { formatFindings } from "./lint.js";
@@ -49,7 +50,9 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
             { screen: ref.screen, exported: false, unityCalled: false, versionDrift: drift, timings: t.done() }, true);
         }
       }
-      return afterRun(cfg, withWarning(drift.message, await whileBusy(ref.dir, "import", async () => {
+      // captures a verify kept, dropped when this import exports the screen again (said in the answer)
+      let keptNote: string | null = null;
+      const answer = withWarning(drift.message, await whileBusy(ref.dir, "import", async () => {
         const { dir } = ref;
         // exactly the page a path names; a folder argument takes the folder's only page
         const entry = ref.entry ?? findEntry(dir, cfg.designRoot);
@@ -87,6 +90,9 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
           ].join("\n"), { screen, exported: false, unityCalled: false, findings: out.findings, timings: t.done() }, true);
         }
         const exported = !out.skipped;
+        // captures a verify kept were taken against the goldens this export replaced: comparing them again would mislead
+        if (exported && dropKeptCaptures(dir, "the screen was exported again, so they no longer match its goldens"))
+          keptNote = "The Unity captures a verify kept were removed: this import exported the screen again, so they no longer match its goldens.";
         // capture jobs the design shows in no context have no golden: a verify of this export is incomplete
         const hidden = (out.hidden ?? []).map((h) => h.name);
         const hiddenLine = hidden.length
@@ -193,9 +199,19 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         return toolResult(withIssues(`Imported ${named} into Unity via ${run.via}${what}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${verifyArg}" }.${hiddenLine}`, run, false), {
           ...base, hidden, unityTimings: run.timings, timings: t.done(),
         });
-      })));
+      }));
+      return afterRun(cfg, withLine(keptNote, "keptCapturesRemoved", answer));
     });
   });
+}
+
+/** Appends a line to a tool's answer (its first text, and `key: true` in the data). */
+function withLine(line: string | null, key: string, result: CallToolResult): CallToolResult {
+  if (!line) return result;
+  const content = result.content.map((c, i) => (i === 0 && c.type === "text" ? { ...c, text: `${c.text}\n${line}` } : c));
+  const data = result.structuredContent ? { ...result.structuredContent, [key]: true } : undefined;
+  if (data && content[1]?.type === "text") content[1] = { ...content[1], text: JSON.stringify(data, null, 2) };
+  return { ...result, content, ...(data ? { structuredContent: data } : {}) };
 }
 
 /** Appends a version drift warning to a tool's answer (its first text and `versionWarning` in the data). */

@@ -146,7 +146,9 @@ klasörü göster). Skill araçları ve Unity köprüsünü kontrol eder, kurall
    içinde kalır (yakalama klasörünün tamamı: PNG'ler, `boxes.json`, `boxes.meta.json`); bir hata yeni bir Unity çalışması
    olmadan yeniden karşılaştırılabilir: `design-export compare <ekran-id>/.design-ui/export --unity
    <ekran-id>/.design-ui/kept-captures --report <dosya.html>`. `cacheBudgetMB` sınırına sayılırlar; sonraki doğrulama
-   (bir sonuç verdiğinde) ve `design_ui_clean` onları siler.
+   (bir sonuç verdiğinde), ekranı yeniden dışa aktaran bir içe aktarma ve `design_ui_clean` onları siler. Ekranın dışa
+   aktarımı dışa aktarıcının başka bir sürümüyle yapıldıysa doğrulama uyarır (altın görüntüleri yenilemek için ekranı
+   yeniden içe aktarın).
 
 **Raporu okumak.** Her yakalama tasarımı, Unity'yi, üst üste bindirmeyi ve fark görüntüsünü gösterir; sorunlu
 elemanlar çerçevelenir ve sorun adıyla yazılır: 1 px'ten fazla kayan bir kutu, yanlış bir satır kırılması ya da taban
@@ -339,8 +341,10 @@ aktarma ve doğrulamadan sonra her ekranın kayıtlarını (`<designRoot>/<ekran
 son raporun görselleri, en yeni üç başarısız çalışma, istek üzerine tutulan doğrulama görüntüleri) `design-ui.config.json`
 içindeki `cacheBudgetMB` sınırında tutar (varsayılan 2048): aşılırsa önce tutulan görüntüler, sonra en uzun süredir içe
 aktarılmamış ya da doğrulanmamış ekranların dışa aktarımları gider, sonraki içe aktarma ya da doğrulama onları yeniden
-üretir. Tutulan görüntüler aksi halde sonraki doğrulamaya ya da `design_ui_clean` çağrısına kadar kalır; `design_ui_clean`
-onları her zaman siler. Kit eşitleme ve her içe aktarma, hiçbir metin stilinin, derlenmiş
+üretir (bir doğrulamanın az önce tuttuğu görüntüleri o doğrulamanın kendi temizliği asla silmez; bütçe aşılınca sonraki
+bir temizlik silebilir, kayıt ve rapor bunu söyler). Tutulan görüntüler aksi halde sonraki doğrulamaya, ekranı yeniden dışa
+aktaran bir içe aktarmaya (artık altın görüntülerle eşleşmezler) ya da `design_ui_clean` çağrısına kadar kalır;
+`design_ui_clean` onları her zaman siler. Kit eşitleme ve her içe aktarma, hiçbir metin stilinin, derlenmiş
 ekranın ya da dil fontunun kullanmadığı font ikizlerini siler. `design_ui_status` kayıtların boyutunu ekran ekran ve toplam
 olarak gösterir; `design_ui_clean` (`dryRun` ile yalnız rapor) temizliği hemen çalıştırır. Bu klasörleri, üretilmiş
 dosyaları ya da font ikizlerini elle silme.

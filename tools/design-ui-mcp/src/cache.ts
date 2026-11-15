@@ -143,18 +143,22 @@ export function screenRemovals(designRoot: string, folder: string, busy: boolean
  * kept captures go whatever the budget. With `folder`, only that screen's removals are listed (the budget still counts
  * every screen, so its export goes only when the whole designRoot is over budget and it is among the oldest).
  */
-export function planClean(designRoot: string, budgetMB: number, folder?: string, opts: { kept?: boolean } = {}): CleanPlan {
+export function planClean(designRoot: string, budgetMB: number, folder?: string, opts: { kept?: boolean; protect?: readonly string[] } = {}): CleanPlan {
   const screens = screenCaches(designRoot);
   const budget = Math.round(budgetMB * MB);
   const removals: Removal[] = [];
-  for (const s of screens) removals.push(...screenRemovals(designRoot, s.folder, s.busy, opts.kept === true));
+  // what a run that just finished must keep (the captures it was asked to keep): never removed by its own cleanup
+  const kept = (p: string) => (opts.protect ?? []).some((q) => path.resolve(q) === path.resolve(p));
+  for (const s of screens) removals.push(...screenRemovals(designRoot, s.folder, s.busy, opts.kept === true).filter((r) => !kept(r.path)));
   const total = screens.reduce((a, s) => a + s.bytes, 0);
   let after = total - removals.reduce((a, r) => a + r.bytes, 0);
   const oldest = (a: ScreenCache, b: ScreenCache) => a.lastUsed - b.lastUsed || a.folder.localeCompare(b.folder);
   if (after > budget && opts.kept !== true) {
     for (const s of [...screens].filter((x) => !x.busy && x.keptBytes > 0).sort(oldest)) {
       if (after <= budget) break;
-      removals.push({ screen: s.folder, path: path.join(designRoot, s.folder, BOOKKEEPING_DIR, KEPT_CAPTURES_DIR), bytes: s.keptBytes, why: `${KEPT_WHY}; the bookkeeping is over the ${budgetMB} MB budget` });
+      const p = path.join(designRoot, s.folder, BOOKKEEPING_DIR, KEPT_CAPTURES_DIR);
+      if (kept(p)) continue;
+      removals.push({ screen: s.folder, path: p, bytes: s.keptBytes, why: `${KEPT_WHY}; the bookkeeping is over the ${budgetMB} MB budget` });
       after -= s.keptBytes;
     }
   }
@@ -185,6 +189,8 @@ export function applyClean(plan: CleanPlan): { removed: Removal[]; failed: { rem
       removed.push(r);
       // the screen's report shows the export's design captures: say they are gone until the next verify
       if (path.basename(r.path) === "export") markReportExportPruned(path.dirname(path.dirname(r.path)));
+      // kept captures: the record and the report no longer name them
+      if (path.basename(r.path) === KEPT_CAPTURES_DIR) markKeptCapturesRemoved(path.dirname(path.dirname(r.path)), r.why);
     } catch (e) { failed.push({ removal: r, error: (e as Error).message }); }
   }
   return { removed, failed };
@@ -203,6 +209,41 @@ function markReportExportPruned(screenDir: string): void {
     "(the pictures it kept of failing captures stay). design_ui_verify exports and reports the screen again.</p>";
   const at = html.search(/<body[^>]*>/i);
   const out = at < 0 ? note + html : html.replace(/<body[^>]*>/i, (m) => m + note);
+  try { fs.writeFileSync(`${file}.tmp`, out); fs.renameSync(`${file}.tmp`, file); } catch { /* the report stays as it was */ }
+}
+
+const KEPT_NOTE = "Kept captures removed";
+
+/**
+ * Removes a screen's kept captures outside a cleanup (an import that exported the screen again: they were taken against
+ * the goldens it replaced), and says so in the record and the report. Returns whether there were any.
+ */
+export function dropKeptCaptures(screenDir: string, why: string): boolean {
+  const dir = path.join(screenDir, BOOKKEEPING_DIR, KEPT_CAPTURES_DIR);
+  if (!fs.existsSync(dir)) return false;
+  fs.rmSync(dir, { recursive: true, force: true });
+  markKeptCapturesRemoved(screenDir, why);
+  return true;
+}
+
+/**
+ * After a cleanup removed a screen's kept captures: `last-verify.json` drops `keptCaptures`, and the report says so at its
+ * top (once), with why.
+ */
+function markKeptCapturesRemoved(screenDir: string, why: string): void {
+  const record = path.join(screenDir, BOOKKEEPING_DIR, "last-verify.json");
+  const v = readJson(record);
+  if (v && typeof v === "object" && "keptCaptures" in v) {
+    delete v.keptCaptures;
+    try { fs.writeFileSync(`${record}.tmp`, JSON.stringify(v, null, 2) + "\n"); fs.renameSync(`${record}.tmp`, record); } catch { /* the record stays */ }
+  }
+  const file = path.join(screenDir, "report.html");
+  let html: string;
+  try { html = fs.readFileSync(file, "utf8"); } catch { return; }
+  if (html.includes(KEPT_NOTE)) return;
+  const note = `<p class="kept-removed" style="padding:8px 12px;background:#fff3cd;color:#3d2f00;border:1px solid #e0c36a">${KEPT_NOTE}: ` +
+    `the cleanup removed the Unity captures this verify kept (${why.replace(/[<&>]/g, "")}).</p>`;
+  const out = /<body[^>]*>/i.test(html) ? html.replace(/<body[^>]*>/i, (m) => m + note) : note + html;
   try { fs.writeFileSync(`${file}.tmp`, out); fs.renameSync(`${file}.tmp`, file); } catch { /* the report stays as it was */ }
 }
 

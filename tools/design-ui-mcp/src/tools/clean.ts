@@ -11,10 +11,13 @@ import { SCREEN_ARG } from "./status.js";
 
 const rel = (cfg: DesignUiConfig, p: string) => path.relative(cfg.designRoot, p).split(path.sep).join("/");
 
-/** The cleanup the server runs by itself after an import or verify; returns a line for the tool's answer, or null. */
-export function autoClean(cfg: DesignUiConfig): string | null {
+/**
+ * The cleanup the server runs by itself after an import or verify; returns a line for the tool's answer, or null.
+ * `protect`: what the run that just finished keeps whatever the budget (the captures a verify was asked to keep).
+ */
+export function autoClean(cfg: DesignUiConfig, protect: readonly string[] = []): string | null {
   try {
-    const plan = planClean(cfg.designRoot, cfg.cacheBudgetMB);
+    const plan = planClean(cfg.designRoot, cfg.cacheBudgetMB, undefined, { protect });
     if (!plan.removals.length) return null;
     const { removed, failed } = applyClean(plan);
     const freed = removed.reduce((a, r) => a + r.bytes, 0);
@@ -31,9 +34,13 @@ export async function whileBusy(screenDir: string, what: "import" | "verify", ru
   try { return await run(); } finally { release(); }
 }
 
-/** After an import or verify: the automatic cleanup, its line appended to the tool's answer (`cleanup` in the data). */
+/**
+ * After an import or verify: the automatic cleanup, its line appended to the tool's answer (`cleanup` in the data). The
+ * captures the run kept on request (its answer's `keptCaptures`) are not removed by this cleanup; a later one may.
+ */
 export function afterRun(cfg: DesignUiConfig, result: CallToolResult): CallToolResult {
-  const line = autoClean(cfg);
+  const kept = (result.structuredContent as { keptCaptures?: { dir?: unknown } | null } | undefined)?.keptCaptures?.dir;
+  const line = autoClean(cfg, typeof kept === "string" ? [kept] : []);
   if (!line) return result;
   const content = result.content.map((c, i) => (i === 0 && c.type === "text" ? { ...c, text: `${c.text}\n${line}` } : c));
   const data = result.structuredContent ? { ...result.structuredContent, cleanup: line } : undefined;

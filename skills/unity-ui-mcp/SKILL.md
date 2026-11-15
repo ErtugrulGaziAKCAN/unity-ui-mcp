@@ -83,7 +83,8 @@ For each screen the user names:
 
 Disk use takes care of itself: every import and verify removes the derived files it no longer needs (the Unity captures
 and difference images of a finished verify; the report keeps crops of what failed) and keeps the screens' bookkeeping
-under `cacheBudgetMB` (the exports of the screens used least recently go first and are exported again when needed);
+under `cacheBudgetMB` (captures a verify kept on request go first, never in that verify's own cleanup, then the exports of
+the screens used least recently, which are exported again when needed);
 kit sync and import remove font twins nothing uses. When the user asks how much disk the tools take, call
 `design_ui_status` (bookkeeping per screen and in total), then `design_ui_clean { dryRun: true }` to show what a cleanup
 would remove, and `design_ui_clean` only when they want it now. Never delete `<screen>/.design-ui/`, generated Unity
