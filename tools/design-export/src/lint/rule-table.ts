@@ -112,6 +112,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
   "U-NET-002": { when: "a local file or Claude Design blob that is missing", fix: "add the file, or map the blob in blobs.json" },
   "W-FONT-001": { when: "a weight or italic without a real face in another active locale's font (warning)", fix: "add the face or avoid the weight" },
   "W-FONT-002": { when: "a kit font file that cannot be read (WOFF2, `local()`) (warning)", fix: "TTF/OTF/WOFF via `url()`" },
+  "W-CSS-001": { when: "nested bordered boxes whose borders, drawn at the exact scale's whole device px times the root scale at a declared scaled viewport, move their content more than 1 device px from where the browser draws it (warning)", fix: "nest fewer bordered boxes (three 4px levels drift 1.5 device px at 1600×900), or use border widths whose drawn widths agree there" },
   "W-IMG-001": {
     when: "a raster image drawn larger than its pixels at a declared viewport (the browser and Unity resample it differently) (warning)",
     fix: "export it for the largest declared viewport (its drawn size × that scale, 1.5 at 3840×2160) and give it its size in CSS",

@@ -436,6 +436,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-NET-002 | error | a local file or Claude Design blob that is missing | add the file, or map the blob in blobs.json |
 | W-FONT-001 | warning | a weight or italic without a real face in another active locale's font (warning) | add the face or avoid the weight |
 | W-FONT-002 | warning | a kit font file that cannot be read (WOFF2, `local()`) (warning) | TTF/OTF/WOFF via `url()` |
+| W-CSS-001 | warning | nested bordered boxes whose borders, drawn at the exact scale's whole device px times the root scale at a declared scaled viewport, move their content more than 1 device px from where the browser draws it (warning) | nest fewer bordered boxes (three 4px levels drift 1.5 device px at 1600×900), or use border widths whose drawn widths agree there |
 | W-IMG-001 | warning | a raster image drawn larger than its pixels at a declared viewport (the browser and Unity resample it differently) (warning) | export it for the largest declared viewport (its drawn size × that scale, 1.5 at 3840×2160) and give it its size in CSS |
 | I-MRK-001 | info | a `title` attribute: a tooltip, which UI Toolkit shows only in Editor panels (info) | nothing for an Editor-only hint; show hints players need with a visible element |
 
