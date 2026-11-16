@@ -21,7 +21,8 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       "with the design's goldens and returns the verdict, the report path (<screen>/report.html) and the top issues. A " +
       "capture that cannot run gives no verdict; only this tool's verdict counts as a pass. A page path verifies that page " +
       "only when it is the screen folder's last import. keepCaptures keeps the run's Unity captures in the screen's bookkeeping " +
-      "(<screen>/.design-ui/kept-captures) to compare again offline; the next verify or design_ui_clean removes them.",
+      "(<screen>/.design-ui/kept-captures) to compare again offline, with the screen's export beside them; the next verify that gives a " +
+      "verdict, an import that exports the screen again, a later cleanup over the budget or design_ui_clean removes them.",
     inputSchema: {
       screen: z.string().min(1).describe(SCREEN_ARG),
       keepCaptures: z.boolean().optional().describe(

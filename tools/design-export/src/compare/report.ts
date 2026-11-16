@@ -298,7 +298,7 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
 ${v.warnings.length ? `<div class="warning" role="alert"><strong>Checks skipped for this screen</strong><ul>${v.warnings.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
 <p class="muted">Effective tolerance: boxes ±${v.thresholds.boxPx} px. Element SSIM and every colour sample use the Unity image offset by up to 1 px where that matches better, so a move or size change within the box allowance cannot fail them; a 2-px displacement, another shape, a missing shadow or a wrong colour still does. ${pictures
     ? `The report keeps pictures of its failing captures only (thumbnails of the design, Unity and the difference, and a crop of each issue); ${opts.keptCaptures
-      ? `this run's Unity captures were kept on request in ${esc(path.relative(dir, path.resolve(opts.keptCaptures)) || ".")} (design_ui_clean or the next verify removes them) and its difference images deleted after it was written.`
+      ? `this run's Unity captures were kept on request in ${esc(path.relative(dir, path.resolve(opts.keptCaptures)) || ".")} (removed by the next verify that gives a verdict, an import that exports the screen again, a later cleanup over the budget or design_ui_clean) and its difference images deleted after it was written.`
       : "the Unity captures and difference images of this run were deleted after it was written."}`
     : `Images are linked, not embedded: keep this report next to the design captures (${esc(path.relative(dir, path.join(path.resolve(exportDir), "goldens")) || ".")}), the Unity captures (${esc(path.relative(dir, path.resolve(unityDir)) || ".")}) and the difference images.`}</p>
 <div class="cards">

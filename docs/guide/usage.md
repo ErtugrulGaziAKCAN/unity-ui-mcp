@@ -355,10 +355,11 @@ difference images, and after every import and
 verify it keeps each screen's bookkeeping (`<designRoot>/<screen-id>/.design-ui/`: records, the latest export, the latest
 report's pictures, the newest three failed runs, the captures a verify kept on request) within `cacheBudgetMB` of
 `design-ui.config.json` (default 2048): over it, kept captures go first, then the exports of the screens least recently
-imported or verified, and the next import or verify exports them again (the captures a verify just kept are never removed
-by that verify's own cleanup; a later cleanup over the budget may remove them, and the record and report then say so).
-Kept captures otherwise stay until the next verify, an import that exports the screen again (they no longer match its
-goldens) or `design_ui_clean`, which always removes them. Kit sync and every import remove font twins no text style, compiled screen or locale font uses.
+imported or verified, and the next import or verify exports them again (the captures a verify just kept, and the
+screen's export beside them, are never removed by that verify's own cleanup, so the offline comparison its answer prints
+works; a later cleanup over the budget may remove the captures, and the record and report then say so).
+Kept captures otherwise stay until the next verify that gives a verdict, an import that exports the screen again (they no
+longer match its goldens) or `design_ui_clean`, which always removes them. Kit sync and every import remove font twins no text style, compiled screen or locale font uses.
 `design_ui_status` shows the bookkeeping per screen and in total, and `design_ui_clean` (`dryRun` to only report) runs the
 cleanup now. Do not delete these folders, generated files or font twins by hand.
 

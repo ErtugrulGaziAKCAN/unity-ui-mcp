@@ -1639,15 +1639,15 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // ruling R149: a fragment of few stems, a line something covers or clips down to a window narrower than the key's em,
         // takes the measured noise of the statistic for its width (measured on windows cut anywhere along correct lines), in
         // the measurement's domain (the design's ink at least MIN_INK_PX, the amount's floor; not a glowing line's). A whole
-        // short line is no fragment: its window holds whole glyphs and keeps its limits (rulings R126, R138, R141). The cut is
-        // measured on the line's own box (both renders'), a clip's inward rounding to whole device px (a column at each end) no cut.
+        // short line is no fragment: its window holds whole glyphs and keeps its limits (rulings R126, R138, R141). What cuts a
+        // line: rulings R156 and R159 below (cutInto).
         // Ruling R154: a text with a text-shadow, hard or blurred, is outside the measurement (the shadow's paint lies in the
         // window): its fragments take no key and keep the ordinary checks
         const glow = !!ctx.textShadows?.has(id), shadowed = glow || !!ctx.shadowedText?.has(id);
         // ruling R156: what the line's own text cut leaves of it (its own box's clip; an ellipsized line ends at its
         // ellipsis) is the whole; it is cut only by a cover or a clip other than its own, on the design's window (R157), each
-        // end within a column of the design's own rounding; ruling R159: only where it hides the design's ink (its visible ink
-        // reaches within a column of the lost part), never over the line box's empty part alone
+        // end within a column of the design's own rounding; ruling R159: only where it hides the design's ink (the design's
+        // covers taken exactly, its visible ink ending less than two columns from the lost part), never the box's empty part alone
         const ownClip = clipOf(g, id, key, (c) => c === id), otherClips = clipOf(g, id, key, (c) => c !== id);
         let ext: Rect = gl.ellipsis ? { ...gl, w: Math.min(gl.w, gl.ellipsis.at + gl.ellipsis.width - gl.x) } : gl;
         if (ownClip) ext = inBounds(ext, ownClip);
