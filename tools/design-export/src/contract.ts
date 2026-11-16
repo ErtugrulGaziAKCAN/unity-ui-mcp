@@ -115,7 +115,7 @@ export function parseScreenContract(json: unknown): { contract: ScreenContract }
           if (!Array.isArray(raw.samples) || !raw.samples.every((s) => typeof s === "string")) problems.push(`value "${name}": samples must be a list of strings`);
           else if (raw.samples.length === 0) problems.push(`value "${name}" has empty samples`);
           else item.samples = raw.samples as string[];
-        } else if (origin === "existing" && !image) problems.push(`existing value "${name}" has no samples`);
+        } else if (!image && (origin === "existing" || source !== null)) problems.push(`${origin} value "${name}" has no samples`);
       } else if (sec.kind === "repeat") {
         const c = raw.count;
         if (!Array.isArray(c) || c.length !== 2 || !c.every((n) => Number.isInteger(n) && n >= 0) || c[0] > c[1])

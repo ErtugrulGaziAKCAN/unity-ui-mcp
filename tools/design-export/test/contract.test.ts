@@ -94,6 +94,14 @@ describe("screen contract loader", () => {
     expect(problemsOf(j)).toEqual([]);
   });
 
+  it("requires samples for a requested value that has a source", () => {
+    const j = clone();
+    j.values.push({ name: "form", source: "form reader", origin: "requested", note: "user, 2026-11-16: show form" });
+    expect(problemsOf(j).join("\n")).toContain('requested value "form" has no samples');
+    j.values[3].samples = ["WWDLW"];
+    expect(problemsOf(j)).toEqual([]);
+  });
+
   it("allows the same name in the screen and in a list", () => {
     const j = clone();
     j.values.push({ name: "club-name", repeat: "player", source: "row club", samples: ["A"], origin: "existing" });
