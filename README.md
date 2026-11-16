@@ -93,8 +93,10 @@ Unity package (Package Manager → **+** → *Install package from git URL…*):
 https://github.com/ErtugrulGaziAKCAN/unity-ui-mcp.git?path=/packages/com.ertugrulgaziakcan.design-ui
 ```
 
-Without a `#revision` Unity takes the default branch; append `#<tag>` or `#<commit>` to pin a version. Unity records the
-commit in `packages-lock.json`; to update, add the URL again or remove the `com.ertugrulgaziakcan.design-ui` entry from
+Append `#<tag>` (a release, such as `#v0.1.0`) or `#<commit>` to pin a version; without one Unity takes the default
+branch. `scripts/setup.sh` always pins: to the tag the clone's HEAD is at, else to its full commit, never to a branch
+name (a branch moves, and a project that resolved one breaks when it is deleted or rewound). Unity records the commit in
+`packages-lock.json`; to update, add the URL again or remove the `com.ertugrulgaziakcan.design-ui` entry from
 `packages-lock.json`.
 
 MCP server, one per Unity project, the same command for every client:

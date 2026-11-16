@@ -65,7 +65,7 @@ Options (`scripts/setup.sh --help` prints them):
 | `--client <name>` | `claude-code` (default: `claude mcp add --scope local`), `codex` (one `[mcp_servers.design-ui]` table in `~/.codex/config.toml`), `cursor` (merged into `<--client-dir>/.cursor/mcp.json`, or `~/.cursor/mcp.json` without `--client-dir`), `all` (those three; Codex and Cursor are skipped when their config folder does not exist), `claude-desktop` (prints the snippet to add), `none`. |
 | `--client-dir <dir>` | The folder the client starts from (Claude Code's local scope, Cursor's project config). Default: `--project`. |
 | `--design-root <dir>` | `designRoot` for a new `design-ui.config.json`, relative to the project or absolute. Default `Designs`. |
-| `--package git\|local` | The Unity package reference: this repository's git URL at the clone's current branch (default), or a `file:` path to this clone (for unpushed changes; it works only on this machine). |
+| `--package git\|local` | The Unity package reference: this repository's git URL pinned to the tag the clone's HEAD is at, else to its full commit, never a branch name (default); or a `file:` path to this clone (for unpushed changes; it works only on this machine). A clone whose `origin` is a local path gets the `file:` path, as Unity cannot resolve a local path as a git URL. |
 | `--dry-run` | Print every change; change nothing. |
 | `--no-build` | Skip `npm ci`, the server build, the Chromium check and the final server check. |
 | `CLAUDE_BIN=<path>` | Environment variable: the `claude` CLI to use when it is not on `PATH`. |
@@ -192,7 +192,7 @@ or USS by hand). Tell the user.
 | `could not start Chromium` | Run `npx playwright install chromium` in the clone folder. |
 | `design-ui.config.json not found` | Run `scripts/setup.sh` for that project, or check `--project` in the client's registration. |
 | `design_ui_*` tools missing in the session | The session started before the registration: start a new one in the client folder. |
-| Unity cannot resolve the git URL | The clone's branch must exist on GitHub; or rerun setup with `--package local` (a `file:` path to this clone). |
+| Unity cannot resolve the git URL | The tag or commit setup pinned must be on GitHub (setup warns when it is not); or rerun setup with `--package local` (a `file:` path to this clone). |
 
 ## Manual setup (only if `setup.sh` cannot run)
 

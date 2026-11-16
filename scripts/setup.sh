@@ -28,7 +28,7 @@ Usage: scripts/setup.sh --project <UnityProjectDir> [options]
                         config). Default: --project for Claude Code, ~/.cursor for Cursor.
   --design-root <dir>   Where design screens live (one folder per screen), relative to the project or absolute.
                         Used only when design-ui.config.json is created. Default: Designs
-  --package git|local   Unity package reference: git URL of this repository at its current branch (default), or a
+  --package git|local   Unity package reference: git URL of this repository at its tag or commit (default), or a
                         file: path to this clone.
   --dry-run             Print what would change; change nothing.
   --no-build            Skip npm ci, the server build, the Chromium check and the final server check.
@@ -164,17 +164,33 @@ PKG_NAME="com.ertugrulgaziakcan.design-ui"
 # the package's id before 0.1.0: an existing project's entry under it is replaced (the git URL path changed with it)
 PKG_OLD_NAME="com.unity.design-ui"
 echo "[3/7] Unity package $PKG_NAME"
+REV="" REV_KIND=""
+if [ "$PACKAGE" = git ]; then
+  ORIGIN="$(git -C "$REPO" remote get-url origin 2>/dev/null || true)"
+  [ -n "$ORIGIN" ] || die "this clone has no origin remote; use --package local"
+  # a clone of a local clone: Unity resolves only a remote git URL, so a local origin means this clone itself
+  case "$ORIGIN" in
+    file://*) LOCAL_ORIGIN=1 ;;
+    *://*|*@*:*) LOCAL_ORIGIN=0 ;;
+    *) LOCAL_ORIGIN=1 ;;
+  esac
+  if [ "$LOCAL_ORIGIN" = 1 ]; then
+    info "origin is a local path ($ORIGIN), which Unity cannot resolve as a git URL: referencing this clone instead (as --package local)"
+    PACKAGE=local
+  fi
+fi
 if [ "$PACKAGE" = local ]; then
   PKG_VALUE="file:$REPO/packages/$PKG_NAME"
 else
-  ORIGIN="$(git -C "$REPO" remote get-url origin 2>/dev/null || true)"
-  [ -n "$ORIGIN" ] || die "this clone has no origin remote; use --package local"
   case "$ORIGIN" in
     git@*:*) HOST="${ORIGIN#git@}"; ORIGIN="https://${HOST%%:*}/${HOST#*:}" ;;
     ssh://git@*) ORIGIN="https://${ORIGIN#ssh://git@}" ;;
   esac
   case "$ORIGIN" in *.git) ;; *) ORIGIN="$ORIGIN.git" ;; esac
-  REV="$(git -C "$REPO" symbolic-ref --quiet --short HEAD 2>/dev/null || git -C "$REPO" rev-parse HEAD)"
+  # pinned: the release tag HEAD is at, else HEAD's full commit; never a branch name (a branch moves, and a project that
+  # resolved one fails once the branch is deleted or rewound)
+  if REV="$(git -C "$REPO" describe --tags --exact-match HEAD 2>/dev/null)" && [ -n "$REV" ]; then REV_KIND=tag
+  else REV="$(git -C "$REPO" rev-parse HEAD)"; REV_KIND=commit; fi
   PKG_VALUE="$ORIGIN?path=/packages/$PKG_NAME#$REV"
 fi
 MANIFEST_RESULT="$("$NODE" - "$PROJECT/Packages/manifest.json" "$PKG_NAME" "$PKG_VALUE" "$DRY" "$PKG_OLD_NAME" <<'NODE'
@@ -279,8 +295,11 @@ done <<<"$MANIFEST_RESULT"
 if [ -d "$PROJECT/Packages/$PKG_OLD_NAME" ]; then
   info "warning: Packages/$PKG_OLD_NAME is an embedded copy of the package under its id before 0.1.0; remove it (the package is $PKG_NAME now)"
 fi
-if [ "$PACKAGE" = git ] && [ "${DESIGN_UI_SETUP_OFFLINE:-0}" != 1 ] && ! git -C "$REPO" ls-remote --exit-code origin "$REV" >/dev/null 2>&1 && ! git -C "$REPO" ls-remote --exit-code origin "refs/heads/$REV" >/dev/null 2>&1; then
-  info "warning: $REV was not found on origin; Unity can resolve the git URL only after it is pushed (or use --package local)"
+# the pinned revision must be on GitHub: a tag there, or a commit a pushed branch holds (as of the last fetch)
+if [ "$PACKAGE" = git ] && [ "${DESIGN_UI_SETUP_OFFLINE:-0}" != 1 ]; then
+  if [ "$REV_KIND" = tag ]; then git -C "$REPO" ls-remote --exit-code origin "refs/tags/$REV" >/dev/null 2>&1 && PUSHED=1 || PUSHED=0
+  else git -C "$REPO" branch -r --contains "$REV" 2>/dev/null | grep -q '^ *origin/' && PUSHED=1 || PUSHED=0; fi
+  [ "$PUSHED" = 1 ] || info "warning: $REV_KIND $REV was not found on origin; Unity can resolve the git URL only after it is pushed (or use --package local)"
 fi
 
 # 4. design-ui.config.json --------------------------------------------------------------------------------------------

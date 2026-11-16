@@ -23,6 +23,9 @@ const MANIFEST = `{
 }
 `;
 
+/** The answers of the clone's git (setupEnv): its origin, the tag HEAD is at ("" for none) and HEAD's commit. */
+interface GitStub { origin?: string; tag?: string; head?: string }
+
 interface Env {
   project: string;
   clientDir: string;
@@ -36,7 +39,7 @@ interface Env {
  * A temp Unity project, a client folder, and stub `claude` and `git` that record their calls (`claude` on PATH unless
  * `claudeOnPath` is false; its last argv is written one argument per line).
  */
-function setupEnv(opts: { projectName?: string; claudeOnPath?: boolean; extraEnv?: Record<string, string> } = {}): Env {
+function setupEnv(opts: { projectName?: string; claudeOnPath?: boolean; extraEnv?: Record<string, string>; git?: GitStub } = {}): Env {
   const root = tempDir("design-ui-setup-");
   const project = path.join(root, opts.projectName ?? "Game");
   fs.mkdirSync(path.join(project, "Assets"), { recursive: true });
@@ -63,8 +66,16 @@ if [ "$1 $2" = "mcp add" ]; then printf 'design-ui:\\n  Args: %s\\n  Status: con
 if [ "$1 $2" = "mcp remove" ]; then rm -f "$state"; exit 0; fi
 exit 0
 `, { mode: 0o755 });
+  // what this clone's git answers about itself: its own origin (a test never depends on the checkout's remote), the tag at
+  // HEAD (none unless given) and HEAD's commit (the real one unless given); everything else goes to the real git
+  const g = { origin: "https://github.com/example/unity-ui-mcp.git", tag: "", ...opts.git };
   fs.writeFileSync(path.join(bin, "git"), `#!/bin/sh
 echo "$*" >> "${logs}/git.log"
+case "$*" in
+  *" remote get-url origin") echo '${g.origin}'; exit 0 ;;
+  *" describe --tags --exact-match HEAD") [ -n '${g.tag}' ] && { echo '${g.tag}'; exit 0; }; echo "fatal: no tag exactly matches" >&2; exit 128 ;;
+  *" rev-parse HEAD") [ -n '${g.head ?? ""}' ] && { echo '${g.head ?? ""}'; exit 0; } ;;
+esac
 exec "${REAL_GIT}" "$@"
 `, { mode: 0o755 });
   const env: NodeJS.ProcessEnv = {
@@ -340,6 +351,33 @@ describe("scripts/setup.sh", () => {
     expect(json.dependencies["com.ertugrulgaziakcan.design-ui"]).toBe(`file:${path.join(REPO, "packages", "com.ertugrulgaziakcan.design-ui")}`);
     expect(json.scopedRegistries[0].dependencies).toEqual({});
     expect(out.split("\n").length).toBe(nested.split("\n").length + 1);
+  });
+
+  it("pins the package to the tag HEAD is at, else to HEAD's full commit, never to a branch name", () => {
+    const pkg = (e: Env) => JSON.parse(read(path.join(e.project, "Packages", "manifest.json"))).dependencies["com.ertugrulgaziakcan.design-ui"];
+    const url = "https://github.com/example/unity-ui-mcp.git?path=/packages/com.ertugrulgaziakcan.design-ui";
+    const tagged = setupEnv({ git: { tag: "v0.1.0" } });
+    expect(tagged.run("--client", "none").code).toBe(0);
+    expect(pkg(tagged)).toBe(`${url}#v0.1.0`);
+    const head = "0123456789abcdef0123456789abcdef01234567";
+    const commit = setupEnv({ git: { head } });
+    const r = commit.run("--client", "none");
+    expect(r.code, r.out).toBe(0);
+    expect(pkg(commit)).toBe(`${url}#${head}`);
+    // an ssh origin is written as its https URL
+    const ssh = setupEnv({ git: { origin: "git@github.com:example/unity-ui-mcp", head } });
+    expect(ssh.run("--client", "none").code).toBe(0);
+    expect(pkg(ssh)).toBe(`${url}#${head}`);
+  });
+
+  it("references this clone when its origin is a local path (Unity cannot resolve one as a git URL), and says so", () => {
+    for (const origin of ["/somewhere/unity-ui-mcp", "../unity-ui-mcp", "file:///somewhere/unity-ui-mcp"]) {
+      const e = setupEnv({ git: { origin } });
+      const r = e.run("--client", "none");
+      expect(r.code, r.out).toBe(0);
+      expect(r.out).toContain(`origin is a local path (${origin})`);
+      expect(read(path.join(e.project, "Packages", "manifest.json"))).toContain(`"com.ertugrulgaziakcan.design-ui": "file:${path.join(REPO, "packages", "com.ertugrulgaziakcan.design-ui")}",`);
+    }
   });
 
   it("--package local references this clone and --design-root sets designRoot", () => {
