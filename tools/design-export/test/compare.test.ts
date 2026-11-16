@@ -3194,10 +3194,11 @@ describe("design-export compare", () => {
       ssimRoundEdge: 0.974, deltaE2000RoundEdge: 1, deltaE2000Ring: 3.1, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
       ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1,
       // ruling R149: the measured noise of the ink statistic on fragments narrower than 4 em (docs/findings/text-ink.md §12);
-      // ruling R151: the colour direction's measured noise where the ΔE2000 key exceeds 6.5 + 0.4
+      // ruling R151: the colour direction's measured noise where the ΔE2000 key exceeds 6.5 + 0.4; ruling R154: without text
+      // that has a text-shadow
       textInkFragment: { em: 4,
-        small: [[0.5, 18.71, 0.65, 20.48], [1, 15.43, 0.65, 15.71], [1.5, 15.43, 0.65, 14.55], [2, 15.43, 0.58, 14.97], [2.5, 11.15, 0.8, 4.71], [3, 10.13, 0.82, 5.31], [3.5, 9.4, 0.82, 3.73]],
-        full: [[0.5, 14.96, 0.43, 9.9], [1, 9.88, 0.61, 10], [1.5, 7.53, 0.81, 5.25], [2, 6.15, 0.87, null], [2.5, 3.68, 0.88, null], [3, 3.29, 0.88, null], [3.5, 2.92, 0.88, null]] },
+        small: [[0.5, 18.71, 0.65, 4.08], [1, 15.43, 0.65, 3.66], [1.5, 15.43, 0.65, 3.88], [2, 15.43, 0.58, 3.71], [2.5, 11.15, 0.83, 2.05], [3, 10.13, 0.84, 2.2], [3.5, 9.4, 0.84, 1.84]],
+        full: [[0.5, 14.96, 0.43, 3.64], [1, 9.88, 0.61, 2.18], [1.5, 7.53, 0.81, 1.64], [2, 6.15, 0.88, null], [2.5, 3.68, 0.88, null], [3, 3.29, 0.88, null], [3.5, 2.92, 0.88, null]] },
       // the scaled class: R109, R115, R121, and R125 (resampled pictures), R126 (small text ink, at most 6.5), R146 (an
       // ellipsized line's cut one grapheme off)
       scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, textInkSmallPx: 12.99, ssimFractionalEdge: 0.97, ssimVectorEdge: 0.975, deltaE2000FractionalEdge: 5.3,
