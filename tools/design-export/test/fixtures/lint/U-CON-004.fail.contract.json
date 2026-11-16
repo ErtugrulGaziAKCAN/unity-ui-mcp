@@ -1,0 +1,31 @@
+{
+  "contract": 1,
+  "screen": "lint.sample",
+  "kind": "update",
+  "values": [
+    {
+      "name": "club-name",
+      "source": "the club reader's current club name",
+      "samples": [
+        "Northbridge FC",
+        "Real Club Deportivo de la Costa"
+      ],
+      "origin": "existing"
+    }
+  ],
+  "texts": [
+    {
+      "key": "lint.sample.title",
+      "en": "Title",
+      "origin": "existing"
+    }
+  ],
+  "replaces": "The current sample screen (its route, view and presenter)",
+  "removed": [
+    {
+      "kind": "action",
+      "name": "refresh",
+      "note": "user, 2026-11-16: the screen refreshes by itself"
+    }
+  ]
+}

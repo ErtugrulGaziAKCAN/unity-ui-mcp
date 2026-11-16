@@ -1,9 +1,16 @@
+import type { ContractLoad } from "../contract.js";
 import type { KitConfig } from "../kit.js";
 import type { LoadedDesign } from "../load.js";
 import { kitFonts } from "./fonts.js";
 import { collectSnapshot, type DomSnapshot } from "./snapshot.js";
 import { readTextStyles } from "./text-styles.js";
 import type { Finding, LintContext, Rule } from "./types.js";
+import { rule as U_CON_001 } from "./rules/U-CON-001.js";
+import { rule as U_CON_002 } from "./rules/U-CON-002.js";
+import { rule as U_CON_003 } from "./rules/U-CON-003.js";
+import { rule as U_CON_004 } from "./rules/U-CON-004.js";
+import { rule as U_CON_005 } from "./rules/U-CON-005.js";
+import { rule as U_CON_006 } from "./rules/U-CON-006.js";
 import { rule as U_CSS_001 } from "./rules/U-CSS-001.js";
 import { rule as U_CSS_002 } from "./rules/U-CSS-002.js";
 import { rule as U_CSS_003 } from "./rules/U-CSS-003.js";
@@ -51,6 +58,7 @@ import { rule as U_CSS_044 } from "./rules/U-CSS-044.js";
 import { rule as U_CSS_045 } from "./rules/U-CSS-045.js";
 import { rule as U_CSS_046 } from "./rules/U-CSS-046.js";
 import { rule as U_CSS_047 } from "./rules/U-CSS-047.js";
+import { rule as I_CON_001 } from "./rules/I-CON-001.js";
 import { rule as I_MRK_001 } from "./rules/I-MRK-001.js";
 import { rule as U_DC_001 } from "./rules/U-DC-001.js";
 import { rule as U_DC_002 } from "./rules/U-DC-002.js";
@@ -87,6 +95,12 @@ export { collectSnapshot, SNAP_COMPUTED, type DomSnapshot, type SnapElement, typ
 
 /** Every rule, by id. */
 export const RULES: readonly Rule[] = [
+  U_CON_001,
+  U_CON_002,
+  U_CON_003,
+  U_CON_004,
+  U_CON_005,
+  U_CON_006,
   U_CSS_001,
   U_CSS_002,
   U_CSS_003,
@@ -163,6 +177,7 @@ export const RULES: readonly Rule[] = [
   W_FONT_002,
   W_IMG_001,
   W_TEXT_001,
+  I_CON_001,
   I_MRK_001,
 ];
 
@@ -176,25 +191,28 @@ export function sortFindings(list: Finding[]): Finding[] {
     .sort((a, b) => cmp(a.path, b.path) || cmp(a.ruleId, b.ruleId) || cmp(a.detail, b.detail));
 }
 
-/** Kit data and load results the rules read; built once per lint. */
-export function lintContext(d: Pick<LoadedDesign, "blocked" | "missing" | "unresolvedBlobs" | "dynamic">, kit: KitConfig, s: DomSnapshot): LintContext {
+/**
+ * Kit data and load results the rules read; built once per lint. `contract` is the screen contract the caller loaded
+ * beside the design (readScreenContract); without one (null) the contract rules report nothing.
+ */
+export function lintContext(d: Pick<LoadedDesign, "blocked" | "missing" | "unresolvedBlobs" | "dynamic">, kit: KitConfig, s: DomSnapshot, contract?: ContractLoad | null): LintContext {
   return {
     blocked: d.blocked, missing: d.missing, unresolvedBlobs: d.unresolvedBlobs, dynamic: d.dynamic,
-    textStyles: readTextStyles(kit), fonts: kitFonts(kit, s.fontFaces),
+    textStyles: readTextStyles(kit), fonts: kitFonts(kit, s.fontFaces), contract: contract ?? null,
   };
 }
 
 /** Runs every rule over a collected snapshot (pure apart from reading the kit's text styles, font map and font files). */
-export function lintSnapshot(s: DomSnapshot, kit: KitConfig, d: Pick<LoadedDesign, "blocked" | "missing" | "unresolvedBlobs" | "dynamic">): Finding[] {
-  const ctx = lintContext(d, kit, s);
+export function lintSnapshot(s: DomSnapshot, kit: KitConfig, d: Pick<LoadedDesign, "blocked" | "missing" | "unresolvedBlobs" | "dynamic">, contract?: ContractLoad | null): Finding[] {
+  const ctx = lintContext(d, kit, s, contract);
   return sortFindings(RULES.flatMap((r) => r.check(s, kit, d.blocked, ctx)));
 }
 
 /**
  * Lints an open design. Pass the snapshot when the caller already collected one for this page (the exporter shares
- * it), so the page is read once.
+ * it), so the page is read once; pass the screen contract when the caller knows the design's folder.
  */
-export async function lint(d: LoadedDesign, kit: KitConfig, snapshot?: DomSnapshot): Promise<Finding[]> {
+export async function lint(d: LoadedDesign, kit: KitConfig, snapshot?: DomSnapshot, contract?: ContractLoad | null): Promise<Finding[]> {
   const s = snapshot ?? (await collectSnapshot(d.page, d.cdp, kit));
-  return lintSnapshot(s, kit, d);
+  return lintSnapshot(s, kit, d, contract);
 }

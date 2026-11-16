@@ -66,6 +66,12 @@ export interface SnapElement {
    */
   enToks?: EnTok[]; enRendered?: string | null;
   /**
+   * On an element with `data-u-bind` or `data-u-arg`: the value it shows, as the browser renders it (`innerText`; a field
+   * its `value` attribute, a dropdown its selected option, as the IR's sample data reads them), or null when the element
+   * does not render. The screen contract's sample check (U-CON-005) compares it with the contract's samples.
+   */
+  boundText?: string | null;
+  /**
    * Inline <svg> roots: how its shapes paint. `current` = every fill/stroke/stop follows currentColor (tintable),
    * `fixed` = none does, `mixed` = both, `none` = nothing painted.
    */
@@ -181,6 +187,7 @@ interface RawElement {
   size: Size | null; computed: Record<string, string>; pseudo: Record<string, Record<string, string>>; inline: RawStyle | null;
   vars: Record<string, string>; minAuto: { axis: "row" | "column"; before: Box; after: Box } | null; shadow: boolean;
   lines?: SnapLine[]; textOverflow?: SnapElement["textOverflow"]; enToks?: EnTok[]; enRendered?: string | null;
+  boundText?: string | null;
 }
 interface RawPage {
   viewport: { width: number; height: number; scale: number };
@@ -413,11 +420,21 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
       enToks = walk(el);
       enRendered = el.getClientRects().length ? (el as HTMLElement).innerText : null;
     }
+    // a bound value or a Smart String argument: the text it shows (a field its value, a dropdown its selected option)
+    let boundText: string | null | undefined;
+    if (el.hasAttribute("data-u-bind") || el.hasAttribute("data-u-arg")) {
+      if (!el.getClientRects().length) boundText = null;
+      else if (el.localName === "input") boundText = el.getAttribute("value") ?? "";
+      else if (el.localName === "textarea") boundText = (el as HTMLTextAreaElement).value;
+      else if (el.localName === "select") boundText = ((el as HTMLSelectElement).selectedOptions[0] ?? (el as HTMLSelectElement).options[0])?.text ?? "";
+      else boundText = typeof (el as HTMLElement).innerText === "string" ? (el as HTMLElement).innerText : el.textContent ?? "";
+    }
     out.elements.push({
       tag: el.localName, ns, attrs, parent: parentIdx, texts, rendered, box: rendered ? rect(el) : null, size, computed, pseudo, inline, vars,
       minAuto: null, shadow: !!(el as HTMLElement).shadowRoot,
       ...(rendered && texts.length ? textLines(el, cs) : {}),
       ...(enToks !== undefined ? { enToks, enRendered } : {}),
+      ...(boundText !== undefined ? { boundText } : {}),
     });
   });
 
@@ -813,6 +830,7 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
     shadowRoot: e.shadow ? "open" : cdpEls[i].shadow, ua: ua[i] ?? {},
     ...(e.lines ? { lines: e.lines } : {}), ...(e.textOverflow ? { textOverflow: e.textOverflow } : {}),
     ...(e.enToks !== undefined ? { enToks: e.enToks, enRendered: e.enRendered ?? null } : {}),
+    ...(e.boundText !== undefined ? { boundText: e.boundText } : {}),
     ...(raw.svgPaint[i] ? { svgPaint: raw.svgPaint[i] } : {}),
     ...(images.has(i) ? { image: images.get(i) } : {}),
   }));

@@ -1,0 +1,36 @@
+{
+  "contract": 1,
+  "screen": "lint.sample",
+  "kind": "new",
+  "values": [
+    {
+      "name": "name",
+      "source": "the manager reader's first name",
+      "samples": [
+        "Ali",
+        "Jean-Baptiste"
+      ],
+      "origin": "existing"
+    }
+  ],
+  "texts": [
+    {
+      "key": "lint.sample.title",
+      "en": "Title",
+      "ref": "Başlık",
+      "origin": "existing"
+    },
+    {
+      "key": "lint.sample.greet",
+      "en": "Hi {name}",
+      "ref": "Selam {name}",
+      "origin": "existing"
+    },
+    {
+      "key": "lint.sample.search",
+      "en": "Search",
+      "ref": "Ara",
+      "origin": "existing"
+    }
+  ]
+}

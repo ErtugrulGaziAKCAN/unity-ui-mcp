@@ -1,0 +1,30 @@
+{
+  "contract": 1,
+  "screen": "lint.sample",
+  "kind": "new",
+  "values": [
+    {
+      "name": "club-name",
+      "source": "the club reader's current club name",
+      "samples": [
+        "Northbridge FC",
+        "Real Club Deportivo de la Costa"
+      ],
+      "origin": "existing"
+    }
+  ],
+  "texts": [
+    {
+      "key": "lint.sample.title",
+      "en": "Title",
+      "origin": "existing"
+    }
+  ],
+  "actions": [
+    {
+      "name": "open-inbox",
+      "handler": "shell route command: open inbox",
+      "origin": "existing"
+    }
+  ]
+}

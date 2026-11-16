@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
 import { readKit, type KitConfig } from "../src/kit.js";
 import { openDesign } from "../src/load.js";
-import { collectSnapshot, lint, RULES, sortFindings, type Finding } from "../src/lint/index.js";
+import { parseScreenContract, readContractFile, type ContractLoad } from "../src/contract.js";
+import { collectSnapshot, lint, lintSnapshot, RULES, sortFindings, type Finding } from "../src/lint/index.js";
+import { designInventory, normalizeText } from "../src/lint/contract-scan.js";
 import { memberPart } from "../src/lint/rules/U-MRK-005.js";
 import { repeatSamples, sampleHidden } from "../src/lint/repeat.js";
 
@@ -19,11 +21,17 @@ const localesKit: KitConfig = { ...kit, fontsCss: "fonts/locales.css" };
 const unreadableKit: KitConfig = { ...kit, fontsCss: "fonts/unreadable.css" };
 /** Same kit with English as the reference locale (the package's default): the visible text is the English entry. */
 const englishKit: KitConfig = { ...kit, locales: ["en"] };
+/** Same kit with the screen contract required: a design without one is an error (U-CON-001). */
+const requiredKit: KitConfig = { ...kit, screenContract: "required" };
 const KIT_FOR: Record<string, { pass?: KitConfig; fail?: KitConfig }> = {
   "W-FONT-001": { pass: localesKit, fail: localesKit },
   "W-FONT-002": { fail: unreadableKit },
   "U-MRK-014": { pass: englishKit, fail: englishKit },
+  "U-CON-001": { pass: requiredKit, fail: requiredKit },
 };
+/** The contract rules read the contract beside their fixture (`<id>.<pass|fail>.contract.json`, absent when there is none); other rules get none. */
+const contractFor = (id: string, file: string): ContractLoad | null =>
+  /^[UI]-CON-/.test(id) ? readContractFile(file.replace(/\.(dc\.)?html$/, ".contract.json")) : null;
 
 const fixture = (id: string, kind: "pass" | "fail") => {
   const plain = `${id}.${kind}.html`;
@@ -34,9 +42,9 @@ let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch(); });
 afterAll(async () => { await browser.close(); });
 
-async function lintFile(file: string, k: KitConfig = kit): Promise<Finding[]> {
+async function lintFile(file: string, k: KitConfig = kit, contract?: ContractLoad | null): Promise<Finding[]> {
   const d = await openDesign(file, k, [2560, 1440], browser);
-  try { return await lint(d, k); } finally { await d.close(); }
+  try { return await lint(d, k, undefined, contract); } finally { await d.close(); }
 }
 
 const show = (f: Finding[]) => f.map((x) => `${x.ruleId} ${x.path}: ${x.detail}`);
@@ -75,11 +83,13 @@ describe("the English entry when the reference locale is en", () => {
 describe("lint rules: one pass and one fail fixture per rule", () => {
   for (const r of RULES) {
     it(`${r.id}: pass fixture has no findings`, async () => {
-      const f = await lintFile(fx(fixture(r.id, "pass")), KIT_FOR[r.id]?.pass ?? kit);
+      const file = fx(fixture(r.id, "pass"));
+      const f = await lintFile(file, KIT_FOR[r.id]?.pass ?? kit, contractFor(r.id, file));
       expect(show(f)).toEqual([]);
     });
     it(`${r.id}: fail fixture has exactly one ${r.id} finding with a fix, and nothing else`, async () => {
-      const f = await lintFile(fx(fixture(r.id, "fail")), KIT_FOR[r.id]?.fail ?? kit);
+      const file = fx(fixture(r.id, "fail"));
+      const f = await lintFile(file, KIT_FOR[r.id]?.fail ?? kit, contractFor(r.id, file));
       const mine = f.filter((x) => x.ruleId === r.id);
       expect(show(mine)).toHaveLength(1);
       expect(mine[0].severity).toBe(r.severity);
@@ -95,6 +105,179 @@ describe("lint rules: one pass and one fail fixture per rule", () => {
     const files = fs.readdirSync(fx(".")).filter((n) => /\.(pass|fail)(\.dc)?\.html$/.test(n));
     expect(new Set(files.map((n) => n.split(".")[0]))).toEqual(ids);
     for (const id of ids) for (const k of ["pass", "fail"] as const) expect(fs.existsSync(fx(fixture(id, k)))).toBe(true);
+    // a contract fixture sits beside its design
+    for (const n of fs.readdirSync(fx(".")).filter((x) => x.endsWith(".contract.json"))) expect(fs.existsSync(fx(n.replace(/\.contract\.json$/, ".html"))), n).toBe(true);
+  });
+});
+
+describe("screen contract", () => {
+  const valid = (json: unknown): ContractLoad => {
+    const r = parseScreenContract(json);
+    if ("problems" in r) throw new Error(r.problems.join("; "));
+    return { state: "valid", file: "screen.contract.json", contract: r.contract, sha: "" };
+  };
+  const json = (name: string): any => JSON.parse(fs.readFileSync(fx(name), "utf8"));
+  const con = (f: Finding[]) => show(f.filter((x) => /^[UI]-CON-/.test(x.ruleId)));
+  const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "lint-contract-"));
+  const ROW = "[data-u-screen=lint.sample] > div[data-u-id=rows] > div[data-u-id=row]";
+
+  it("normalizes text: whitespace runs collapsed, trimmed, NFC", () => {
+    expect(normalizeText("  A.\n\t Novak  ")).toBe("A. Novak");
+    expect(normalizeText("10\u00a0km")).toBe("10 km");
+    expect(normalizeText("Mu\u0308ller")).toBe("M\u00fcller");
+  });
+
+  it("matches names per scope", async () => {
+    // "title" is bound in the screen and in the player repeat: a contract with only the screen one lacks the other
+    const c = json("U-CON-002.pass.contract.json");
+    c.values = c.values.filter((v: { repeat?: string }) => v.repeat === undefined);
+    expect(con(await lintFile(fx("U-CON-002.pass.html"), kit, valid(c))))
+      .toEqual([`U-CON-002 ${ROW} > p[data-u-id=role]: value "title" in repeat "player" is not in the screen contract`]);
+    // and an action listed in the screen is not the repeat's: one extra, one missing
+    const a = json("U-CON-002.pass.contract.json");
+    delete a.actions[0].repeat;
+    expect(con(await lintFile(fx("U-CON-002.pass.html"), kit, valid(a)))).toEqual([
+      `U-CON-002 ${ROW} > div[data-u-id=open]: action "open-player" in repeat "player" is not in the screen contract`,
+      'U-CON-003 document: action "open-player" is in the screen contract but not in the design',
+    ]);
+  });
+
+  it("scopes a value, an action and a nested repeat by the repeat whose written-out item holds them", async () => {
+    const dir = tmp();
+    try {
+      const players = (names: string[]) => '<div class="rows" data-u-id="players">' + names.map((n, k) =>
+        `<div class="row"${k === 0 ? ' data-u-repeat="player"' : ""} data-u-id="player" data-u-action="open-player"><p data-u-id="name" data-u-bind="player-name">${n}</p></div>`).join("") + "</div>";
+      const groups = '<div class="rows" data-u-id="groups">' +
+        `<div class="group" data-u-repeat="group" data-u-id="group"><p data-u-id="group-name" data-u-bind="group-name">Defenders</p>${players(["A. Novak", "B. Kaya"])}</div>` +
+        `<div class="group" data-u-id="group"><p data-u-id="group-name" data-u-bind="group-name">Forwards</p>${players(["C. Diaz"])}</div></div>`;
+      const page = fs.readFileSync(fx("U-CON-002.pass.html"), "utf8").replace(/<p data-u-id="heading"[^\n]*\n<div class="rows"[^\n]*\n/, groups + "\n");
+      fs.writeFileSync(path.join(dir, "nested.html"), page);
+      const d = await openDesign(path.join(dir, "nested.html"), kit, [2560, 1440], browser);
+      try {
+        const items = designInventory(await collectSnapshot(d.page, d.cdp, kit), kit);
+        expect(items.map((x) => [x.kind, x.name, x.repeat, x.samples])).toEqual([
+          ["text", "lint.sample.title", null, []],
+          ["repeat", "group", null, []],
+          ["value", "group-name", "group", ["Defenders", "Forwards"]],
+          ["action", "open-player", "player", []],
+          ["repeat", "player", "group", []],
+          ["value", "player-name", "player", ["A. Novak", "B. Kaya", "C. Diaz"]],
+        ]);
+      } finally { await d.close(); }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("checks every sample row", async () => {
+    // the third row's name is not a sample; "B.  Kaya" in the contract is the design's "B. Kaya" (whitespace collapsed)
+    const f = await lintFile(fx("U-CON-005.fail.html"), kit, readContractFile(fx("U-CON-005.fail.contract.json")));
+    expect(con(f)).toEqual([`U-CON-005 ${ROW} > p[data-u-id=name]: value "player-name" in repeat "player" shows "Z. Unknown", not among the screen contract's samples`]);
+    // up to three unknown samples are named
+    const dir = tmp();
+    try {
+      const names = ["A. Novak", "C. One", "D. Two", "E. Three", "F. Four", "C. One"];
+      const rows = '<div class="rows" data-u-id="rows">' + names.map((n, k) =>
+        `<div class="row"${k === 0 ? ' data-u-repeat="player"' : ""} data-u-id="row"><p data-u-id="name" data-u-bind="player-name">${n}</p></div>`).join("") + "</div>";
+      fs.writeFileSync(path.join(dir, "rows.html"), fs.readFileSync(fx("U-CON-005.fail.html"), "utf8").replace(/<div class="rows"[^\n]*/, rows));
+      const g = (await lintFile(path.join(dir, "rows.html"), kit, readContractFile(fx("U-CON-005.fail.contract.json")))).filter((x) => x.ruleId === "U-CON-005");
+      expect(g.map((x) => x.detail)).toEqual(['value "player-name" in repeat "player" shows "C. One", "D. Two", "E. Three" and 1 more, not among the screen contract\'s samples']);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("reads a bound field's value and a dropdown's selected option as their samples, as the IR's sample data does", async () => {
+    const dir = tmp();
+    try {
+      const page = fs.readFileSync(fx("U-CON-006.pass.html"), "utf8").replace(/<p data-l10n="lint.sample.greet"[^\n]*\n<input[^\n]*\n/,
+        '<input class="field" data-u-id="manager" value="Sam Whitfield" data-u-bind="manager-name">\n' +
+        '<textarea class="field" data-u-id="note" data-u-bind="note">Fit  again</textarea>\n' +
+        '<select class="field" data-u-id="formation" data-u-bind="formation"><option>4-4-2</option><option selected>4-3-3</option></select>\n');
+      fs.writeFileSync(path.join(dir, "fields.html"), page);
+      const d = await openDesign(path.join(dir, "fields.html"), kit, [2560, 1440], browser);
+      try {
+        const values = designInventory(await collectSnapshot(d.page, d.cdp, kit), kit).filter((x) => x.kind === "value");
+        expect(values.map((x) => [x.name, x.samples])).toEqual([["manager-name", ["Sam Whitfield"]], ["note", ["Fit again"]], ["formation", ["4-3-3"]]]);
+      } finally { await d.close(); }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("skips samples of image binds and of requested values without a source", async () => {
+    const file = fx("U-CON-005.pass.html");
+    const c = json("U-CON-005.pass.contract.json");
+    expect(con(await lintFile(file, kit, valid(c)))).toEqual([]);
+    // the same design values are checked once the crest is not an image bind and the form has a source
+    for (const v of c.values) {
+      if (v.name === "club-crest") { delete v.image; v.samples = ["Crest"]; }
+      if (v.name === "form") { v.source = "the results reader's last five results"; v.samples = ["LLLLL"]; }
+    }
+    expect(con(await lintFile(file, kit, valid(c)))).toEqual([
+      'U-CON-005 [data-u-screen=lint.sample] > div[data-u-id=crest]: value "club-crest" shows "", not among the screen contract\'s samples',
+      'U-CON-005 [data-u-screen=lint.sample] > p[data-u-id=form]: value "form" shows "WWDLW", not among the screen contract\'s samples',
+    ]);
+  });
+
+  it("keeps an element hidden in a sample row", async () => {
+    const dir = tmp();
+    try {
+      // every written-out row hides its injury note by its own markup: it is still the design's
+      const page = fs.readFileSync(fx("U-CON-005.pass.html"), "utf8")
+        .replace(/(<p data-u-id="name" data-u-bind="player-name">[^<]*<\/p>)/g, '$1<p data-u-id="injury" data-u-bind="injury" style="display: none">Hamstring</p>');
+      fs.writeFileSync(path.join(dir, "hidden.html"), page);
+      const c = json("U-CON-005.pass.contract.json");
+      c.values.push({ name: "injury", repeat: "player", source: "the medical reader's current injury", samples: ["Hamstring"], origin: "existing" });
+      expect(con(await lintFile(path.join(dir, "hidden.html"), kit, valid(c)))).toEqual([]);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("compares English and reference text", async () => {
+    // reference tr: data-en against the contract's en
+    const fail = await lintFile(fx("U-CON-006.fail.html"), kit, readContractFile(fx("U-CON-006.fail.contract.json")));
+    expect(con(fail)).toEqual(['U-CON-006 [data-u-screen=lint.sample] > p:0: text "lint.sample.title": its English "Title" is not the contract\'s en "Club overview"']);
+    // reference tr: the visible text (a variable as {name}) and an attribute value against the contract's ref
+    const c = json("U-CON-006.pass.contract.json");
+    c.texts[1].ref = "Merhaba {name}";
+    c.texts[2].ref = "Bul";
+    expect(con(await lintFile(fx("U-CON-006.pass.html"), kit, valid(c)))).toEqual([
+      'U-CON-006 [data-u-screen=lint.sample] > input[data-u-id=search]: text "lint.sample.search": its visible text "Ara" is not the contract\'s ref "Bul"',
+      'U-CON-006 [data-u-screen=lint.sample] > p:1: text "lint.sample.greet": its visible text "Selam {name}" is not the contract\'s ref "Merhaba {name}"',
+    ]);
+    // reference en: the visible text is the English (data-en left out), and ref is not compared
+    const dir = tmp();
+    try {
+      const page = fs.readFileSync(fx("U-CON-006.pass.html"), "utf8")
+        .replace('data-en="Title">Başlık', ">Title")
+        .replace('data-en="Hi {name}">Selam ', ">Hi ")
+        .replace('placeholder="Ara" data-l10n-placeholder="lint.sample.search" data-en-placeholder="Search"', 'placeholder="Search" data-l10n-placeholder="lint.sample.search"');
+      fs.writeFileSync(path.join(dir, "en.html"), page);
+      const en = json("U-CON-006.pass.contract.json");
+      expect(show(await lintFile(path.join(dir, "en.html"), englishKit, valid(en)))).toEqual([]);
+      en.texts[0].en = "Club overview";
+      expect(con(await lintFile(path.join(dir, "en.html"), englishKit, valid(en))))
+        .toEqual(['U-CON-006 [data-u-screen=lint.sample] > p:0: text "lint.sample.title": its English "Title" is not the contract\'s en "Club overview"']);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("reports a contract it cannot check against once, and checks nothing else against it", async () => {
+    const d = await openDesign(fx("U-CON-001.pass.html"), kit, [2560, 1440], browser);
+    try {
+      const s = await collectSnapshot(d.page, d.cdp, kit);
+      const run = (c: ContractLoad | null, k: KitConfig = kit) => con(lintSnapshot(s, k, d, c));
+      const absent: ContractLoad = { state: "absent", file: "screen.contract.json" };
+      expect(run(null, requiredKit)).toEqual([]);
+      expect(run(absent)).toEqual(["I-CON-001 document: no screen.contract.json beside the design: it is not checked against what the game has for this screen"]);
+      expect(run(absent, requiredKit)).toEqual(["U-CON-001 document: no screen.contract.json beside the design, and the kit requires one (screenContract: required)"]);
+      expect(run({ state: "invalid", file: "screen.contract.json", sha: "", problems: ["contract must be 1", "screen is missing"] }))
+        .toEqual(["U-CON-001 document: the screen contract is not valid: contract must be 1; screen is missing"]);
+      // a contract for another screen: its items are not compared (the design's club-name would be extra)
+      const other = json("U-CON-001.pass.contract.json");
+      other.screen = "club.overview";
+      other.values = [];
+      expect(run(valid(other))).toEqual(['U-CON-001 document: screen.contract.json is for screen "club.overview", but the design\'s data-u-screen is "lint.sample"']);
+    } finally { await d.close(); }
+  });
+
+  it("skips every contract rule when the caller passes no contract", async () => {
+    for (const r of RULES.filter((x) => /^[UI]-CON-/.test(x.id))) {
+      expect(con(await lintFile(fx(fixture(r.id, "fail")), KIT_FOR[r.id]?.fail ?? kit)), r.id).toEqual([]);
+    }
   });
 });
 

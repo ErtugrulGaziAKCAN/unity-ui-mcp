@@ -1,3 +1,4 @@
+import type { ContractLoad } from "../contract.js";
 import type { KitConfig } from "../kit.js";
 import type { DcDynamic, LoadedDesign } from "../load.js";
 import type { KitFonts } from "./fonts.js";
@@ -17,6 +18,8 @@ export interface LintContext {
   dynamic: DcDynamic[];
   textStyles: TextStyle[];
   fonts: KitFonts;
+  /** The screen contract beside the design as the caller loaded it; null = the caller did not look for one (every contract rule returns []). */
+  contract: ContractLoad | null;
 }
 
 export interface Rule {

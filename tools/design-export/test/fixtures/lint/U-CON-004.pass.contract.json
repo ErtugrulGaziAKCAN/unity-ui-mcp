@@ -1,0 +1,39 @@
+{
+  "contract": 1,
+  "screen": "lint.sample",
+  "kind": "update",
+  "values": [
+    {
+      "name": "club-name",
+      "source": "the club reader's current club name",
+      "samples": [
+        "Northbridge FC",
+        "Real Club Deportivo de la Costa"
+      ],
+      "origin": "existing"
+    }
+  ],
+  "texts": [
+    {
+      "key": "lint.sample.title",
+      "en": "Title",
+      "origin": "existing"
+    }
+  ],
+  "replaces": "The current sample screen (its route, view and presenter)",
+  "actions": [
+    {
+      "name": "refresh",
+      "handler": "the club reader's reload command",
+      "origin": "existing"
+    }
+  ],
+  "removed": [
+    {
+      "kind": "action",
+      "name": "refresh",
+      "repeat": "player",
+      "note": "user, 2026-11-16: rows refresh with the screen"
+    }
+  ]
+}

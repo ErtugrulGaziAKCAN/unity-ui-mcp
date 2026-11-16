@@ -373,6 +373,12 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 
 | Rule | Severity | Fails when | Fix |
 |---|---|---|---|
+| U-CON-001 | error | the screen contract (`screen.contract.json` beside the design) is missing under `screenContract: required`, is not valid JSON, fails the contract format (each problem listed), or names another screen | write or repair `screen.contract.json` |
+| U-CON-002 | error | the design has a value, action, state, list or text key, in a scope, that the screen contract lacks | remove it from the design, or add it to the contract: with its game source, or as requested with the user's note |
+| U-CON-003 | error | a screen contract item that is not in `removed` is missing from the design, in its scope | draw it, or record the user's decision in `removed` |
+| U-CON-004 | error | an item the screen contract lists in `removed` is still in the design | remove it from the design |
+| U-CON-005 | error | a bound text's sample, in any sample row, is not one of the value's contract `samples` (whitespace collapsed; image binds and requested values with no source skipped) | a real sample from the contract; if the game shows other values, add those real values to the contract |
+| U-CON-006 | error | a text key's English (`data-en`, or the visible text with the reference locale `en`, as U-MRK-014 reads it) differs from the contract's `en`; with another reference locale, also its visible text from the contract's `ref` | the game's text; change the contract only when the user changed the text |
 | U-CSS-001 | error | `display: grid` or `inline-grid` | nested flex rows and columns (`flex-wrap` for tiles) |
 | U-CSS-002 | error | `::before` / `::after` with content, or list markers | a real element; `list-style: none` |
 | U-CSS-003 | error | structural selectors (`:nth-*`, `:first/last/only-child`, `:*-of-type`, `:empty`) | a class per element |
@@ -449,6 +455,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | W-FONT-002 | warning | a kit font file that cannot be read (WOFF2, `local()`) (warning) | TTF/OTF/WOFF via `url()` |
 | W-IMG-001 | warning | a raster image drawn larger than its pixels at a declared viewport (the browser and Unity resample it differently) (warning) | export it for the largest declared viewport (its drawn size × that scale, 1.5 at 3840×2160) and give it its size in CSS |
 | W-TEXT-001 | warning | a word wider than its wrapping text box: the browser lets it overflow its line, UI Toolkit breaks it inside the word (after a quotation mark with Enable Advanced Text) (warning) | room for the longest word (also in translations), or `white-space: nowrap` with an ellipsis |
+| I-CON-001 | info | no screen contract (`screen.contract.json`) beside the design under `screenContract: optional` (info) | write one to have the design checked against the game |
 | I-MRK-001 | info | a `title` attribute: a tooltip, which UI Toolkit shows only in Editor panels (info) | nothing for an Editor-only hint; show hints players need with a visible element |
 
 ## Components

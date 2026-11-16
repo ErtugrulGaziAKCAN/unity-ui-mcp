@@ -1,0 +1,52 @@
+{
+  "contract": 1,
+  "screen": "lint.sample",
+  "kind": "new",
+  "values": [
+    {
+      "name": "title",
+      "source": "the squad reader's squad name",
+      "samples": [
+        "First team",
+        "Under-21"
+      ],
+      "origin": "existing"
+    },
+    {
+      "name": "title",
+      "repeat": "player",
+      "source": "the squad reader's player role",
+      "samples": [
+        "Captain",
+        "Reserve"
+      ],
+      "origin": "existing"
+    }
+  ],
+  "actions": [
+    {
+      "name": "open-player",
+      "repeat": "player",
+      "handler": "player profile route with the row's player id",
+      "origin": "existing"
+    }
+  ],
+  "repeats": [
+    {
+      "name": "player",
+      "source": "the squad reader's first-team players",
+      "count": [
+        0,
+        40
+      ],
+      "origin": "existing"
+    }
+  ],
+  "texts": [
+    {
+      "key": "lint.sample.title",
+      "en": "Title",
+      "origin": "existing"
+    }
+  ]
+}

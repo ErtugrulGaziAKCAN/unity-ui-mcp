@@ -1,0 +1,57 @@
+{
+  "contract": 1,
+  "screen": "lint.sample",
+  "kind": "new",
+  "values": [
+    {
+      "name": "club-name",
+      "source": "the club reader's current club name",
+      "samples": [
+        "Northbridge FC",
+        "Real Club Deportivo de la Costa"
+      ],
+      "origin": "existing"
+    },
+    {
+      "name": "club-crest",
+      "source": "the club reader's crest sprite",
+      "image": true,
+      "origin": "existing"
+    },
+    {
+      "name": "form",
+      "source": null,
+      "origin": "requested",
+      "note": "user, 2026-11-16: show the last five results"
+    },
+    {
+      "name": "player-name",
+      "repeat": "player",
+      "source": "squad reader, player display name",
+      "samples": [
+        "A. Novak",
+        "Jean-Baptiste Okonkwo-Lindqvist",
+        "B.  Kaya"
+      ],
+      "origin": "existing"
+    }
+  ],
+  "texts": [
+    {
+      "key": "lint.sample.title",
+      "en": "Title",
+      "origin": "existing"
+    }
+  ],
+  "repeats": [
+    {
+      "name": "player",
+      "source": "squad reader, first-team players",
+      "count": [
+        0,
+        40
+      ],
+      "origin": "existing"
+    }
+  ]
+}
