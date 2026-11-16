@@ -1116,6 +1116,27 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(same.masked).toEqual([]);
   });
 
+  it("does not take the cover's own text for text drawn over the cover: another text's line box is that text's (decision D-160)", () => {
+    // the sheet's own note, whose line box reaches into the covered label's window: Unity draws its last glyph a pixel
+    // further right (a scaled viewport's fractional box), into the label's window
+    const ctx: CaptureContext = {
+      order: ["root", "card", "label", "panel", "sheet", "note"], backgrounds: new Set(["root", "card", "panel", "sheet"]),
+      painters: new Set(["root", "card", "panel", "sheet"]), opaque: new Set(["root", "card", "panel", "sheet"]), fontPx: { label: 16, note: 12 },
+    };
+    const withNote = (last: number) => {
+      const s = scene();
+      fill(s.png, { x: 40, y: 40, w: 110, h: 40 }, [20, 40, 52]);
+      s.boxes.elements.sheet = el(40, 40, 110, 40);
+      for (let x = 41; x <= last; x += 2) fill(s.png, { x, y: 60, w: 1, h: 10 }, [140, 160, 170]);
+      s.boxes.elements.note = el(40, 58, 20, 16, { text: true, lines: [{ x: 40, y: 58, w: 20, h: 16, baseline: 70 }] });
+      return s;
+    };
+    // the note's line box overlaps the label's own line rect (x 50 on), where Unity's extra glyph lands
+    const v = compareCapture(withNote(49), withNote(51), [], T, ctx);
+    expect(v.linesCovered).toEqual(["label: line 1 of 1"]);
+    expect(v.issues.filter((i) => i.id === "label")).toEqual([]);
+  });
+
   it("checks the text ink: colour and amount", () => {
     expect(compareCapture(badge(), badge(), [], T, bctx).elements.find((r) => r.id === "badge")).toMatchObject({ ink: 0, inkRatio: 1 });
     const colour = compareCapture(badge(), badge({ text: [250, 210, 60] }), [], T, bctx);

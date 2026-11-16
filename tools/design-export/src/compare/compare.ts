@@ -1634,10 +1634,14 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           // decision D-160: what the design's covers hide must be the cover in Unity too. Unity's ink in the window, on the
           // pixels a pixel inside the design's covers, where the design shows none there, is text drawn over the cover (a
           // paint-order error, a host panel above a popup). Where the design shows the cover's own content there, the
-          // cover's SSIM judges the window (the line is out of the text masks)
+          // cover's SSIM judges the window (the line is out of the text masks). Another text's line box (the cover's own
+          // note, on either side, a pixel wider for its anti-aliasing) is that text's: its glyphs are judged by its own checks
+          // (at a scaled viewport Unity drew a note's last glyph a pixel into a covered title's window)
           const deep = deepInside(exactCover);
           if (deep) {
-            const outside = (x: number, y: number) => !deep(x, y);
+            const own = new Set<Rect>([gl, ue.lines[i]]);
+            const others = keyedLines.filter(({ r }) => !own.has(r) && r.x - 1 < win.x + win.w && r.x + r.w + 1 > win.x && r.y - 1 < win.y + win.h && r.y + r.h + 1 > win.y);
+            const outside = (x: number, y: number) => !deep(x, y) || others.some(({ r }) => inside(r, x + 0.5, y + 0.5, 1));
             const drawn = inkIn(up, win, outside);
             if (drawn && !inkIn(gp, win, outside)) {
               issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: Unity draws text the design covers (ink ${hex(drawn.ink)} on the cover's ${hex(drawn.bg)}, ${drawn.coverage.toFixed(1)} px of ink; the design shows only the cover there)`, gl);
