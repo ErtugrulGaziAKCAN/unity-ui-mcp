@@ -26,9 +26,11 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
    ekranların klasörü (`outputFolder`, varsayılan `Assets/UI/Generated`) ve namespace'i, çözünürlükler, diller, fontlar,
    localization, sağdan sola kuralları, yazı boyutları ve ekranların uGUI kabuğuna nasıl yerleşeceği. **Reference Locale**
    tasarımların yazıldığı dildir: yeni bir profilde İngilizce (`en`). Başka bir dilde tasarlamak için (örneğin `tr`)
-   ilk kit sync'ten önce ayarla; kit sync onu kit'in `locales` listesine yazar, böylece RULES.md, yayımlanan Design
-   System ve lint o dili söyler, import da tasarımların metnini o dilin String Table girdileri olarak yazar. Bir profil
-   kaydedildiği değeri korur.
+   ilk kit sync'ten önce ayarla; kit sync onu kit'in `locales` listesine yazar, böylece lint ve yayımlanan Design System
+   o dili söyler, import da tasarımların metnini o dilin String Table girdileri olarak yazar (`en` ile İngilizce ve
+   referans dil tek tablodur, girdisi görünen metindir). Kit sync, `design_ui_rules`'un sunduğu kit `RULES.md` dosyasını
+   yeniden yazmaz: dili değiştirdikten sonra kuralların da yeni dili söylemesi için klonda `npx design-export kit build
+   <kitDir>` çalıştır. Bir profil kaydedildiği değeri korur.
 3. **Fontlar.** Her dil, projenin zaten kullandığı TMP fontuyla çizilir. Varsayılan olarak bu, her dil için TMP
    Settings'teki varsayılan fonttur. Dile göre font eşlemesi olan bir proje profildeki **Locale Fonts** listesini
    doldurur ya da bir Editor assembly'sinde kendi font sistemine soran küçük bir `DesignUiFontResolver` alt sınıfı yazıp

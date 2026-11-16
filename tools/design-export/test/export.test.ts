@@ -262,7 +262,7 @@ describe("skip hash", () => {
   }, 300_000);
 
   it("the tool hash covers what the goldens record: their schema and the extraction revision (an older export is made again)", () => {
-    // an export of an extractor whose goldens lack a record (the ellipsis cut of decisions D-146/R147, added to the boxes after
+    // an export of an extractor whose goldens lack a record (the ellipsis cut of decisions D-146/D-147, added to the boxes after
     // revision 2) must not be reused: the comparison cannot apply what the record decides
     const schema = fs.readFileSync(path.join(here, "..", "src", "boxes", "schema.json"));
     const inputs = toolHashInputs();

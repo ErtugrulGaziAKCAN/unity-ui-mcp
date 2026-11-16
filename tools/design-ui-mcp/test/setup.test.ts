@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, type TestContext } from "vitest";
 import { tempDir } from "./helpers.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -13,6 +13,16 @@ const which = (cmd: string) => execFileSync("sh", ["-c", `command -v ${cmd}`], {
 const REAL_GIT = which("git");
 const NODE = which("node");
 /** PATH with node, git and the basic tools, but no `claude`. */
+/**
+ * Setup pins the package to this clone's tag or commit, which needs a git checkout; a release extract (a tarball, `git
+ * archive`) has none, so the tests that run setup's git route without a stubbed HEAD are skipped there, saying why.
+ */
+const CHECKOUT = spawnSync(REAL_GIT, ["-C", REPO, "rev-parse", "--verify", "--quiet", "HEAD"], { encoding: "utf8" }).status === 0;
+const itGit = (name: string, fn: (ctx: TestContext) => unknown, timeout?: number) =>
+  it(name, (ctx) => {
+    if (!CHECKOUT) ctx.skip("not a git checkout (a release extract): setup pins the package to the clone's commit, which needs git");
+    return fn(ctx);
+  }, timeout);
 const BASE_PATH = [path.dirname(NODE), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":");
 
 const MANIFEST = `{
@@ -23,8 +33,11 @@ const MANIFEST = `{
 }
 `;
 
-/** The answers of the clone's git (setupEnv): its origin, the tag HEAD is at ("" for none) and HEAD's commit. */
-interface GitStub { origin?: string; tag?: string; head?: string }
+/**
+ * The answers of the clone's git (setupEnv): its origin, the tag HEAD is at ("" for none), HEAD's commit and the uncommitted
+ * changes `git status --porcelain` lists under packages/ and tools/ (none unless given).
+ */
+interface GitStub { origin?: string; tag?: string; head?: string; dirty?: string }
 
 interface Env {
   project: string;
@@ -75,6 +88,7 @@ case "$*" in
   *" remote get-url origin") echo '${g.origin}'; exit 0 ;;
   *" describe --tags --exact-match HEAD") [ -n '${g.tag}' ] && { echo '${g.tag}'; exit 0; }; echo "fatal: no tag exactly matches" >&2; exit 128 ;;
   *" rev-parse HEAD") [ -n '${g.head ?? ""}' ] && { echo '${g.head ?? ""}'; exit 0; } ;;
+  *" status --porcelain --untracked-files=no -- packages tools") printf '%s' '${g.dirty ?? ""}'; exit 0 ;;
 esac
 exec "${REAL_GIT}" "$@"
 `, { mode: 0o755 });
@@ -98,7 +112,7 @@ const expectedAddArgs = (project: string) => ["mcp", "add", "--scope", "local", 
 const ODD = `my "odd" game's dir`;
 
 describe("scripts/setup.sh", () => {
-  it("--dry-run lists the changes and changes nothing", () => {
+  itGit("--dry-run lists the changes and changes nothing", () => {
     const e = setupEnv();
     const r = e.run("--dry-run");
     expect(r.code, r.out).toBe(0);
@@ -113,7 +127,7 @@ describe("scripts/setup.sh", () => {
     expect(lines(path.join(e.logs, "claude.log")).filter((l) => l.includes("mcp add"))).toEqual([]);
   });
 
-  it("adds one manifest line, writes the config, registers once, and a second run changes nothing", () => {
+  itGit("adds one manifest line, writes the config, registers once, and a second run changes nothing", () => {
     const e = setupEnv();
     const first = e.run();
     expect(first.code, first.out).toBe(0);
@@ -152,7 +166,7 @@ describe("scripts/setup.sh", () => {
     expect(lines(path.join(e.logs, "git.log")).filter((l) => /^(commit|push|add|stash|reset)\b/.test(l))).toEqual([]);
   });
 
-  it("passes a path with spaces and quotes intact, and the printed command is valid shell", () => {
+  itGit("passes a path with spaces and quotes intact, and the printed command is valid shell", () => {
     const e = setupEnv({ projectName: ODD });
     const r = e.run();
     expect(r.code, r.out).toBe(0);
@@ -166,7 +180,7 @@ describe("scripts/setup.sh", () => {
     expect(lines(path.join(e.logs, "claude-add-args"))).toEqual(expectedAddArgs(e.project));
   });
 
-  it("without a claude CLI prints a pasteable command and registers nothing; CLAUDE_BIN selects one explicitly", () => {
+  itGit("without a claude CLI prints a pasteable command and registers nothing; CLAUDE_BIN selects one explicitly", () => {
     const e = setupEnv({ projectName: ODD, claudeOnPath: false });
     const r = e.run();
     expect(r.code, r.out).toBe(0);
@@ -188,7 +202,7 @@ describe("scripts/setup.sh", () => {
     expect(lines(path.join(x.logs, "claude-add-args"))).toEqual(expectedAddArgs(x.project));
   });
 
-  it("--dry-run for Codex and Cursor prints the planned configuration and writes nothing", () => {
+  itGit("--dry-run for Codex and Cursor prints the planned configuration and writes nothing", () => {
     const e = setupEnv({ projectName: ODD });
     const cursor = e.run("--client", "cursor", "--dry-run");
     expect(cursor.code, cursor.out).toBe(0);
@@ -208,7 +222,7 @@ describe("scripts/setup.sh", () => {
     expect(fs.existsSync(path.join(e.clientDir, ".cursor"))).toBe(false);
   });
 
-  it("an existing config whose kitDir is this clone's design-kit gets a message to move it; kit sync would write into the clone", () => {
+  itGit("an existing config whose kitDir is this clone's design-kit gets a message to move it; kit sync would write into the clone", () => {
     const e = setupEnv();
     fs.writeFileSync(path.join(e.project, "design-ui.config.json"), JSON.stringify({ designRoot: "Designs", kitDir: path.join(REPO, "design-kit"), profileAsset: "Assets/P.asset", mcpServer: SERVER_JS }) + "\n");
     const r = e.run("--client", "none");
@@ -218,7 +232,7 @@ describe("scripts/setup.sh", () => {
     expect(fs.existsSync(path.join(e.project, "Designs", "design-kit")), "setup changes no existing config and copies nothing for it").toBe(false);
   });
 
-  it("an existing project kit is kept, with the command that upgrades it to this clone's kit", () => {
+  itGit("an existing project kit is kept, with the command that upgrades it to this clone's kit", () => {
     const e = setupEnv();
     const kit = path.join(e.project, "Designs", "design-kit");
     fs.mkdirSync(kit, { recursive: true });
@@ -231,7 +245,7 @@ describe("scripts/setup.sh", () => {
     expect(read(path.join(kit, "kit.config.json"))).toBe("{}\n");
   });
 
-  it("keeps an existing package entry and an existing config", () => {
+  itGit("keeps an existing package entry and an existing config", () => {
     const e = setupEnv();
     const manifest = MANIFEST.replace(`"dependencies": {`, `"dependencies": {\n    "com.ertugrulgaziakcan.design-ui": "file:/somewhere/else",`);
     fs.writeFileSync(path.join(e.project, "Packages", "manifest.json"), manifest);
@@ -303,7 +317,7 @@ describe("scripts/setup.sh", () => {
     expect(Object.keys(json.dependencies)).toEqual([NEW]);
   });
 
-  it("removes the old package id when the new one is listed too, and warns about an embedded copy under the old id", () => {
+  itGit("removes the old package id when the new one is listed too, and warns about an embedded copy under the old id", () => {
     const e = setupEnv();
     const file = path.join(e.project, "Packages", "manifest.json");
     fs.writeFileSync(file, `{
@@ -370,6 +384,21 @@ describe("scripts/setup.sh", () => {
     expect(pkg(ssh)).toBe(`${url}#${head}`);
   });
 
+  it("warns when it pins HEAD while the package's or the server's sources have uncommitted changes", () => {
+    const head = "0123456789abcdef0123456789abcdef01234567";
+    const warning = /warning: this clone has 2 uncommitted changes under packages\/ or tools\/: Unity resolves commit 0123456789abcdef0123456789abcdef01234567 as committed, while the server is built from the working tree; commit them, or run setup with --package local/;
+    const dirty = setupEnv({ git: { head, dirty: " M packages/com.ertugrulgaziakcan.design-ui/Editor/Ir/IrReader.cs\n M tools/design-export/src/export.ts\n" } });
+    const r = dirty.run("--client", "none");
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toMatch(warning);
+    const clean = setupEnv({ git: { head } }).run("--client", "none");
+    expect(clean.code, clean.out).toBe(0);
+    expect(clean.out).not.toMatch(/uncommitted changes/);
+    // the clone itself is referenced (--package local): nothing is pinned, nothing to warn about
+    const local = setupEnv({ git: { head, dirty: " M tools/design-export/src/export.ts\n" } }).run("--package", "local", "--client", "none");
+    expect(local.out).not.toMatch(/uncommitted changes/);
+  });
+
   it("references this clone when its origin is a local path (Unity cannot resolve one as a git URL), and says so", () => {
     for (const origin of ["/somewhere/unity-ui-mcp", "../unity-ui-mcp", "file:///somewhere/unity-ui-mcp"]) {
       const e = setupEnv({ git: { origin } });
@@ -403,7 +432,7 @@ describe("setup.sh multi-client registration and skill install", () => {
   const codexConfig = (e: Env) => path.join(e.env.HOME!, ".codex", "config.toml");
   const OTHER_TOML = `# my codex config\nmodel = "x"\n\n[mcp_servers.other]\ncommand = "other"\nargs = ["a"]\n\n[profiles.p]\nk = 1\n`;
 
-  it("Codex: adds exactly one table once, keeps the rest byte for byte, second run changes nothing", () => {
+  itGit("Codex: adds exactly one table once, keeps the rest byte for byte, second run changes nothing", () => {
     const e = setupEnv({ projectName: ODD });
     fs.mkdirSync(path.join(e.env.HOME!, ".codex"));
     fs.writeFileSync(codexConfig(e), OTHER_TOML);
@@ -421,7 +450,7 @@ describe("setup.sh multi-client registration and skill install", () => {
     expect(read(codexConfig(e))).toBe(after);
   });
 
-  it("Codex: another project's design-ui entry stays; this project gets design-ui-<folder>, created when the file is absent", () => {
+  itGit("Codex: another project's design-ui entry stays; this project gets design-ui-<folder>, created when the file is absent", () => {
     const e = setupEnv({ projectName: "My Game" });
     fs.mkdirSync(path.join(e.env.HOME!, ".codex"));
     const old = `[mcp_servers.design-ui]\ncommand = "old"\nargs = ["x", "--project", "/other"]\n\n`;
@@ -441,7 +470,7 @@ describe("setup.sh multi-client registration and skill install", () => {
     expect(read(codexConfig(f)).match(/^\[mcp_servers\.design-ui\]$/gm)).toHaveLength(1);
   });
 
-  it("Cursor: merges into an existing mcp.json keeping other servers; --client-dir selects the folder; second run no change", () => {
+  itGit("Cursor: merges into an existing mcp.json keeping other servers; --client-dir selects the folder; second run no change", () => {
     const e = setupEnv();
     const file = path.join(e.clientDir, ".cursor", "mcp.json");
     fs.mkdirSync(path.dirname(file));
@@ -459,7 +488,7 @@ describe("setup.sh multi-client registration and skill install", () => {
     expect(read(file)).toBe(bytes);
   });
 
-  it("Cursor without --client-dir uses ~/.cursor/mcp.json", () => {
+  itGit("Cursor without --client-dir uses ~/.cursor/mcp.json", () => {
     const e = setupEnv();
     const r = spawnSync("bash", [SETUP, "--project", e.project, "--no-build", "--client", "cursor"], { env: e.env, encoding: "utf8" });
     expect(r.status, r.stdout + r.stderr).toBe(0);
@@ -467,7 +496,7 @@ describe("setup.sh multi-client registration and skill install", () => {
     expect(json.mcpServers["design-ui"].args).toEqual([SERVER_JS, "--project", e.project]);
   });
 
-  it("--client all skips clients whose config folder is missing and says so", () => {
+  itGit("--client all skips clients whose config folder is missing and says so", () => {
     const e = setupEnv();
     const r = e.run("--client", "all");
     expect(r.code, r.out).toBe(0);
@@ -478,7 +507,7 @@ describe("setup.sh multi-client registration and skill install", () => {
     expect(lines(path.join(e.logs, "claude.log")).filter((l) => l.includes("mcp add"))).toHaveLength(1);
   });
 
-  it("--client all registers Claude Code, Codex and Cursor when their folders exist", () => {
+  itGit("--client all registers Claude Code, Codex and Cursor when their folders exist", () => {
     const e = setupEnv();
     fs.mkdirSync(path.join(e.env.HOME!, ".codex"));
     fs.mkdirSync(path.join(e.clientDir, ".cursor"));
@@ -502,7 +531,7 @@ describe("setup.sh multi-client registration and skill install", () => {
     expect(read(codexConfig(e))).toBe("this is = = not toml\n");
   });
 
-  it("links the skill into the existing skill folders only, once; second run changes nothing; dry-run changes nothing", () => {
+  itGit("links the skill into the existing skill folders only, once; second run changes nothing; dry-run changes nothing", () => {
     const e = setupEnv();
     const home = e.env.HOME!;
     fs.mkdirSync(path.join(home, ".claude", "skills"), { recursive: true });

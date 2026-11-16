@@ -26,9 +26,11 @@ fix; a difference after import is reported, never smoothed over.
    where generated screens go (`outputFolder`, default `Assets/UI/Generated`) and their namespace, viewports, locales,
    fonts, localization, right-to-left rules, text sizes, and how screens sit in a uGUI shell. Its **Reference Locale**
    is the language designs are written in: English (`en`) for a new profile. To design in another language, set it
-   (for example `tr`) before the first kit sync; kit sync writes it into the kit's `locales`, so RULES.md, the published
-   Design System and lint name it, and the import writes the designs' text as that locale's String Table entries. A
-   profile keeps the value it was saved with.
+   (for example `tr`) before the first kit sync; kit sync writes it into the kit's `locales`, so lint and the published
+   Design System name it, and the import writes the designs' text as that locale's String Table entries (with `en`,
+   English and the reference locale are one table, whose entry is the visible text). Kit sync does not rewrite the
+   kit's `RULES.md`, which `design_ui_rules` serves: after changing the locale, run `npx design-export kit build
+   <kitDir>` in the clone so its rules name the new one too. A profile keeps the value it was saved with.
 3. **Fonts.** Each locale renders with the TMP font the project already uses. By default that is TMP Settings' default
    font for every locale. A project with a per-locale mapping fills the profile's **Locale Fonts**, or writes a
    `DesignUiFontResolver` subclass in an Editor assembly that asks its own font system, and sets that asset as the

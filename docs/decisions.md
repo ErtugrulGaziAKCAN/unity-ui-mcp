@@ -5,6 +5,10 @@ measured. The code, the measurements in [findings](findings/) and the [changelog
 The numbers are not consecutive (only decisions the code or the documents cite are listed); the spec's risk ids `R1` to
 `R10` are a different list. Each line says what was decided and why; the numbers behind it are in the findings.
 
+The findings and the tests also name the development rounds those measurements came from ("Task 35", "fix round 3", "a
+re-review's probe", ids such as `N4-3` or `F2`): these are labels of internal reviews that are not published, kept so a
+measurement can be traced to the run it came from. Nothing depends on them; the decisions below are the public record.
+
 | Id | What was decided, and why |
 |---|---|
 | D-109 | At a scaled viewport an element may meet a lower SSIM only for the anti-aliasing ramp of its round shapes, and only with evidence that the difference lies within 1 device px of those edges; the limit is the measured value with a small margin. UI Toolkit draws that ramp at the layout scale's pixel under the root scale: a sub-pixel softness nobody sees in play. |

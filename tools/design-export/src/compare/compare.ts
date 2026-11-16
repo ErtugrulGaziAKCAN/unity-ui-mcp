@@ -319,7 +319,7 @@ export const SCALED_HAIRLINE_INK_FLOOR = 0.84;
  * How far an ellipsized line's ellipsis may differ from the design's at any viewport (decision D-147; at a scaled viewport also
  * the condition of the one-grapheme allowance of decision D-146): the shape, as the L1 difference of the column profiles over the
  * design's ellipsis mass, each scaled to the design's mass (ellipsisCut), and the ink amount, Unity's over the design's.
- * Measured on the crops of the fidelity suite's ellipsized text-spacing line at all six viewports (r147-* in the compare
+ * Measured on the crops of the fidelity suite's ellipsized text-spacing line at all six viewports (d147-* in the compare
  * fixtures; 12 to 36 device px), the ellipsis matched on its own columns: the dots drawn right 0.06–0.34 (0.06–0.32 at the
  * exact viewports, 0.22–0.34 at the scaled ones), amount 1.08–1.31 (Unity's dots are a little heavier); a letter where the
  * dots are 0.65–1.30 and 3.5–4.1; the wrong glyph a twin without U+2026 drew (a curve) 0.95–1.67, amount 1.54–3.16.

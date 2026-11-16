@@ -1533,7 +1533,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     // the end of the text-spacing fixture's ellipsized body line ("…kala…") at all six viewports, design and Unity, with the
     // boxes the captures recorded (in crop coordinates); `curve`: Unity's capture with the twin pre-add of U+2026 turned off,
     // where a line-box variant drew a curve in place of the dots
-    const geo = JSON.parse(fs.readFileSync(path.join(here, "fixtures", "compare", "r147-ellipsis.json"), "utf8")) as Record<string, {
+    const geo = JSON.parse(fs.readFileSync(path.join(here, "fixtures", "compare", "d147-ellipsis.json"), "utf8")) as Record<string, {
       size: [number, number]; scale: number; viewport: [number, number]; element: { x: number; y: number; w: number; h: number };
       design: CaptureBoxes["elements"][string]["lines"][number]; unity: CaptureBoxes["elements"][string]["lines"][number];
     }>;
@@ -1549,31 +1549,31 @@ describe("compareCapture: edge, colour and ink checks", () => {
     const repo = readThresholds();
     const judge = (w: string, unity: string) => {
       const cls = w === "1366" || w === "1600" ? "scaled" : "exact";
-      return compareCapture(side(w, png(`r147-ellipsis-${w}.design`), false), side(w, png(unity), true), [], thresholdsFor(repo, cls), { viewportClass: cls });
+      return compareCapture(side(w, png(`d147-ellipsis-${w}.design`), false), side(w, png(unity), true), [], thresholdsFor(repo, cls), { viewportClass: cls });
     };
     const viewports = ["1280", "1366", "1600", "1920", "2560", "3840"];
 
     it("passes the dots Unity draws at all six viewports", () => {
-      for (const w of viewports) expect(judge(w, `r147-ellipsis-${w}.unity`).issues, w).toEqual([]);
+      for (const w of viewports) expect(judge(w, `d147-ellipsis-${w}.unity`).issues, w).toEqual([]);
     });
 
     it("fails the curve a twin without U+2026 drew, at the exact viewports too", () => {
       for (const w of viewports) {
-        const v = judge(w, `r147-curve-${w}.unity`);
+        const v = judge(w, `d147-curve-${w}.unity`);
         expect(v.issues.filter((i) => i.id === "title" && i.kind === "ink" && /ellipsis/.test(i.detail)), w).toHaveLength(1);
       }
     });
   });
 
   describe("the ellipsis glyph below 16 device px is structural (decision D-148): three dots at the design's pitch and height", () => {
-    // ellipsized 20/24 titles of a scratch fixture (r148-dots-*: 10, 10.67, 12.5 and 15 device px at 1280, 1366, 1600 and
+    // ellipsized 20/24 titles of a scratch fixture (d148-dots-*: 10, 10.67, 12.5 and 15 device px at 1280, 1366, 1600 and
     // 1920), the dots drawn right on both sides a fraction of a pixel apart, where D-147's profile check failed them (shape up
-    // to 0.53, rows up to 0.65); and the suite's wrong glyph (the curve of r147-curve-*, 12 to 15 px)
+    // to 0.53, rows up to 0.65); and the suite's wrong glyph (the curve of d147-curve-*, 12 to 15 px)
     const dir = path.join(here, "fixtures", "compare");
     type Geo = { size: [number, number]; scale: number; viewport: [number, number]; fontPx?: number; element: { x: number; y: number; w: number; h: number };
       design: CaptureBoxes["elements"][string]["lines"][number]; unity: CaptureBoxes["elements"][string]["lines"][number] };
-    const dots = JSON.parse(fs.readFileSync(path.join(dir, "r148-dots.json"), "utf8")) as Record<string, Geo>;
-    const curve = JSON.parse(fs.readFileSync(path.join(dir, "r147-ellipsis.json"), "utf8")) as Record<string, Geo>;
+    const dots = JSON.parse(fs.readFileSync(path.join(dir, "d148-dots.json"), "utf8")) as Record<string, Geo>;
+    const curve = JSON.parse(fs.readFileSync(path.join(dir, "d147-ellipsis.json"), "utf8")) as Record<string, Geo>;
     const png = (name: string) => decodePng(fs.readFileSync(path.join(dir, `${name}.png`)));
     const side = (g: Geo, image: Rgba, unity: boolean) => ({
       png: image,
@@ -1589,7 +1589,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     it("passes the correct dots at 10, 10.67, 12.5 and 15 device px", () => {
       for (const w of ["1280", "1366", "1600", "1920"]) {
         const g = dots[w];
-        const v = judge(g, w, png(`r148-dots-${w}.design`), png(`r148-dots-${w}.unity`), g.fontPx!);
+        const v = judge(g, w, png(`d148-dots-${w}.design`), png(`d148-dots-${w}.unity`), g.fontPx!);
         expect(v.issues, w).toEqual([]);
         expect(v.elements.find((r) => r.id === "title")!.ellipsisDots, w).toMatchObject({ design: 3, unity: 3 });
       }
@@ -1597,37 +1597,37 @@ describe("compareCapture: edge, colour and ink checks", () => {
 
     it("fails the wrong glyph (the curve) at 12, 12.8 and 15 device px", () => {
       for (const [w, px] of [["1280", 12], ["1366", 12.8], ["1600", 15]] as const) {
-        const v = judge(curve[w], w, png(`r147-ellipsis-${w}.design`), png(`r147-curve-${w}.unity`), px);
+        const v = judge(curve[w], w, png(`d147-ellipsis-${w}.design`), png(`d147-curve-${w}.unity`), px);
         expect(v.issues.filter((i) => i.id === "title" && i.kind === "ink" && /ellipsis/.test(i.detail)), w).toHaveLength(1);
       }
     });
 
     it("does not judge a line whose design dots do not resolve into three, and counts it", () => {
       // the design's dots joined into one bar (their gaps filled): nothing to hold Unity's dots to
-      const g = dots["1280"], design = png("r148-dots-1280.design");
+      const g = dots["1280"], design = png("d148-dots-1280.design");
       const at = g.design.ellipsis!.at;
       for (let y = Math.floor(g.design.baseline) - 1; y <= Math.floor(g.design.baseline); y++) fill(design, { x: Math.ceil(at), y, w: Math.floor(g.design.ellipsis!.width) - 1, h: 1 }, [255, 255, 255]);
-      const v = judge(g, "1280", design, png("r148-dots-1280.unity"), g.fontPx!);
+      const v = judge(g, "1280", design, png("d148-dots-1280.unity"), g.fontPx!);
       expect(v.ellipsisNotJudged).toEqual(["title: line 1 of 1"]);
       expect(v.issues.filter((i) => /ellipsis/.test(i.detail))).toEqual([]);
     });
 
     it("fails dots at another height or pitch below 16 device px", () => {
-      const g = dots["1600"], unity = png("r148-dots-1600.unity"), lifted = png("r148-dots-1600.unity");
+      const g = dots["1600"], unity = png("d148-dots-1600.unity"), lifted = png("d148-dots-1600.unity");
       // the dots moved 3 device px up
       const at = Math.floor(g.design.ellipsis!.at), base = Math.floor(g.unity.baseline);
       for (let y = 0; y < lifted.h; y++) for (let x = at; x < lifted.w; x++) {
         const from = y + 3 < unity.h ? ((y + 3) * unity.w + x) * 4 : -1, o = (y * lifted.w + x) * 4;
         if (y >= base - 6 && from >= 0) for (let c = 0; c < 4; c++) lifted.data[o + c] = unity.data[from + c];
       }
-      const v = judge(g, "1600", png("r148-dots-1600.design"), lifted, g.fontPx!);
+      const v = judge(g, "1600", png("d148-dots-1600.design"), lifted, g.fontPx!);
       expect(v.issues.filter((i) => i.id === "title" && i.kind === "ink" && /ellipsis/.test(i.detail))).toHaveLength(1);
     });
   });
 
   describe("ssimRoundEdge at every viewport (decision D-119): crops of the suite's 1280×720 captures", () => {
     // the design's and Unity's pixels around two elements of the fidelity suite at 1280×720 (scale 0.5), with their boxes
-    const crop = (name: string, side: "design" | "unity") => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r119-${name}.${side}.png`)));
+    const crop = (name: string, side: "design" | "unity") => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `d119-${name}.${side}.png`)));
     const at = (x: number, y: number, w: number, h: number, ox: number, oy: number) => el(x - ox, y - oy, w, h);
     // the limits of fidelity-thresholds.json at an exact viewport: a small element's 0.984, ssimRoundEdge the measured floor
     const exact: Thresholds = { ...T, ssimElementSmall: [[32768, 0.984]], ssimRoundEdge: 0.974, deltaE2000Ring: 3.1 };
@@ -1703,7 +1703,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
   });
 
   describe("the scaled class's measured keys for straight edges, vectors and corners (decision D-121): crops of the suite's captures", () => {
-    const crop = (name: string, side: "design" | "unity") => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r121-${name}.${side}.png`)));
+    const crop = (name: string, side: "design" | "unity") => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `d121-${name}.${side}.png`)));
     const boxesOf = (w: number, h: number, ox: number, oy: number, scale: number, id: string, b: Box): CaptureBoxes =>
       ({ capture: "c", viewport: [w, h], scale, external: [], elements: { root: el(0, 0, w, h), [id]: { ...b, x: b.x - ox, y: b.y - oy, lines: b.lines.map((l) => ({ ...l, x: l.x - ox, y: l.y - oy })) } } });
     const scaled: Thresholds = { ...T, ssimElementSmall: [[32768, 0.984]], ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, deltaE2000Ring: 3.1 };
@@ -2398,7 +2398,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     it("D-125: a raster picture resampled at a scaled viewport meets ssimResampledPicture and its colour limit, nowhere else", () => {
       // background-images root__1__0 at 1600×900: a 225 × 135 device px picture exported for 3840×2160 drawn at 0.42 of its
       // pixels (crop of the suite's capture, on the 8 px block grid)
-      const crop = (side: string) => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r125-picture-1600.${side}.png`)));
+      const crop = (side: string) => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `d125-picture-1600.${side}.png`)));
       const boxes: CaptureBoxes = { capture: "c", viewport: [256, 168], scale: 0.625, external: [], elements: { root: el(0, 0, 256, 168), pic: el(14, 16, 225, 135) } };
       const ctx: CaptureContext = { pictures: new Set(["pic"]), backgrounds: new Set(["pic"]), painters: new Set(["pic"]), order: ["root", "pic"], root: "root", viewportClass: "scaled" };
       const v = (t: Thresholds, c: CaptureContext = ctx) => compareCapture({ png: crop("design"), boxes }, { png: crop("unity"), boxes }, [], t, c);
@@ -2417,7 +2417,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
 
     it("D-126: text under 13 device px at a scaled viewport takes the measured small-text ink limit, capped at 6.5", () => {
       // stacked-text value-12 at 1366×768: a 10.67 device px line, ink colour ΔE2000 5.49 (crop of the suite's capture)
-      const crop = (side: string) => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r126-ink-1366.${side}.png`)));
+      const crop = (side: string) => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `d126-ink-1366.${side}.png`)));
       const line = (x: number, w: number) => ({ x: x - 792, y: 206.983854 - 200, w, h: 12.803125, baseline: 217.119662 - 200 });
       const boxes = (unity: boolean): CaptureBoxes => ({ capture: "c", viewport: [56, 24], scale: 0.533464, external: [], elements: { root: el(0, 0, 56, 24),
         v: unity ? el(798.061391 - 792, 206.983855 - 200, 39.831947, 12.803126, { text: true, lines: [line(798.061391, 39.883033)] })

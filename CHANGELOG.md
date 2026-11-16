@@ -132,7 +132,7 @@ On macOS (Apple silicon), Unity 6000.3.6f1:
 
 - The fidelity suite (`scripts/fidelity.sh`: 24 fidelity fixtures and the 9 kit components at the kit's six viewports,
   4740 captures, about 14 minutes) passes every capture, exact and scaled.
-- The package's EditMode tests (1046), the exporter's tests (1071) and the MCP server's tests (217) pass; GitHub
+- The package's EditMode tests (1048), the exporter's tests (1086) and the MCP server's tests (221) pass; GitHub
   Actions runs the Node suites and type checks on Linux with Node 20 and 22.
 
 ### Known limitations
@@ -156,7 +156,11 @@ On macOS (Apple silicon), Unity 6000.3.6f1:
   when its hue is right; a lightness-only error on a covered or clipped fragment narrower than 4 em judged by colour
   direction; below 16 device px a wrong glyph drawn as three dots at the design's pitch in place of an ellipsis; one
   grapheme more or fewer before an ellipsis at a scaled viewport; a ring 0.5 device px thinner than the design's (1 CSS
-  px at 1280×720). [docs/decisions.md](docs/decisions.md) says why.
+  px at 1280×720); text Unity draws over the design's cover in fewer than 4 pixels, within 2 device px of a cover edge
+  of a similar colour, or inside another text's line box, and the covered lines of a multi-line element only partly
+  covered are judged by that rule alone (its box stays in the whole-capture SSIM's mask). The covered-line bounds (2
+  device px, 8 levels, 4 pixels) are reasoned, not measured on a corpus. [docs/decisions.md](docs/decisions.md) says
+  why.
 - **Versions between releases.** The server and the package compare their versions and IR versions; two builds of the
   same version (between releases) cannot tell each other apart. Update the clone and the package together (INSTALL,
   Updating).

@@ -314,7 +314,7 @@ namespace DesignUi.Editor.Tests
                 var regular = FontFixture.Kept(FontFixture.RegularTtf, name);
                 var bold = FontFixture.Kept(FontFixture.BoldTtf, name + " Bold");
                 if (regular.fontWeightTable[7].regularTypeface != bold) FontFixture.SetWeight(regular, 700, bold);
-                return FontTwinGenerator.GetOrCreateTwin(regular, FontFixture.KeptTwinFolder + "/R134");
+                return FontTwinGenerator.GetOrCreateTwin(regular, FontFixture.KeptTwinFolder + "/D134");
             }
             var twin = Twin("Kept D-134");
             var boldTwin = twin.fontWeightTable[7].regularTypeface;

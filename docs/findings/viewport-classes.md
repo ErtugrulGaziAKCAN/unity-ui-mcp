@@ -1145,7 +1145,7 @@ cut).
   viewports.
 - **D-147, the glyph at every viewport**: a wrong ellipsis glyph is a visible defect at any size, so the glyph check of
   D-146 (shape error at most 0.45, ink amount 0.8–1.6) applies at the exact viewports too; a line that fails it is an `ink`
-  issue ("does not end in the design's ellipsis"). Measured on crops of the text-spacing capture (`r147-*` in the
+  issue ("does not end in the design's ellipsis"). Measured on crops of the text-spacing capture (`d147-*` in the
   compare fixtures, the ellipsis matched on its own columns since Task 37): the dots 0.06–0.32 and 1.08–1.26 at the exact
   viewports, 0.22–0.34 and 1.18–1.31 at the scaled ones (0.06–0.34 in all), so one band serves both classes; the curve
   0.95–1.67 at the exact viewports and 1.20–1.50 at the scaled ones. Tests: the dots pass at all six viewports, the

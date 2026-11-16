@@ -301,6 +301,14 @@ if [ "$PACKAGE" = git ] && [ "${DESIGN_UI_SETUP_OFFLINE:-0}" != 1 ]; then
   else git -C "$REPO" branch -r --contains "$REV" 2>/dev/null | grep -q '^ *origin/' && PUSHED=1 || PUSHED=0; fi
   [ "$PUSHED" = 1 ] || info "warning: $REV_KIND $REV was not found on origin; Unity can resolve the git URL only after it is pushed (or use --package local)"
 fi
+# the pinned revision is the package as committed, while the server is built from this working tree: uncommitted changes of
+# their sources would make the two different builds of one version
+if [ "$PACKAGE" = git ]; then
+  DIRTY="$(git -C "$REPO" status --porcelain --untracked-files=no -- packages tools 2>/dev/null | grep -c . || true)"
+  if [ "${DIRTY:-0}" -gt 0 ]; then
+    info "warning: this clone has $DIRTY uncommitted change$([ "$DIRTY" = 1 ] || echo s) under packages/ or tools/: Unity resolves $REV_KIND $REV as committed, while the server is built from the working tree; commit them, or run setup with --package local"
+  fi
+fi
 
 # 4. design-ui.config.json --------------------------------------------------------------------------------------------
 # The design kit is the project's own copy, in <designRoot>/design-kit: kit sync writes the project's fonts and tokens
