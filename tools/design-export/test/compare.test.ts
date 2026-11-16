@@ -2009,7 +2009,8 @@ describe("compareCapture: edge, colour and ink checks", () => {
       // a pilot screen's 12.5 px status at 1600×900 (two one-stroke digits around a dash, the secondary colour on surface-700):
       // Chromium draws each stroke on whole device pixels (a stem one column at 0.97 with a 0.16 neighbour, the dash one
       // row), UI Toolkit's box lies 0.42 px right and down and splits each over two. `split`: Unity's two shares of the first
-      // stem, the second stem and the dash; by default they keep the design's ink (ruling R155: a split keeps or adds ink)
+      // stem, the second stem and the dash; by default they keep the design's ink, `pilot` (the pilot's own pixels) keeps 0.96
+      // of it summed (rulings R155, R158: Unity's summed ink at least 0.84 of the design's when only Unity's render qualifies)
       const bgC: Rgb = [18, 60, 71], secondary: Rgb = [185, 208, 214];
       const scaledT = thresholdsFor(readThresholds(), "scaled"), exactT = thresholdsFor(readThresholds(), "exact");
       const keeps = [0.58, 0.57, 0.5, 0.65, 0.25, 0.74], pilot = [0.54, 0.54, 0.46, 0.62, 0.22, 0.73];
@@ -2033,9 +2034,9 @@ describe("compareCapture: edge, colour and ink checks", () => {
         expect(issues(one(secondary, true), ctx())).toEqual([]);
       });
 
-      it("R155: only Unity's render qualifies, so Unity's ink must be at least the design's: a dimmed line fails", () => {
+      it("R155, R158: only Unity's render qualifies, so Unity's ink must be at least 0.84 of the design's: a dimmed line fails", () => {
         // the re-review's probe P1: twelve one-pixel stems and a bar, fully covered in the design, Unity at 0.8 to 0.6 of the
-        // colour (no fully covered pixel there, the colour's direction): dimming removes ink, a split keeps it
+        // colour (no fully covered pixel there, the colour's direction): dimming removes ink, a split keeps most of it
         const word = (k: number) => {
           const png = canvas(40, 24, bgC);
           const m = [0, 1, 2].map((j) => Math.round(bgC[j] + k * (secondary[j] - bgC[j]))) as Rgb;
@@ -2047,8 +2048,16 @@ describe("compareCapture: edge, colour and ink checks", () => {
           const v = compareCapture({ png: word(1), boxes }, { png: word(k), boxes }, [], scaledT, ctx()).issues.filter((i) => i.id === "t");
           expect(v.map((i) => i.kind), `${k}`).toContain("ink");
         }
-        // the pilot's own pixels lose 4 % of the ink in the split (0.54 + 0.54 against 0.97 + 0.16): reported, the ruling's cost
-        expect(issues(one(secondary, true, pilot), ctx()).map((i) => i.kind)).toContain("ink");
+      });
+
+      it("R158: a split that loses a little ink passes: the pilot's own pixels, and a split at the suite's lowest 0.86", () => {
+        // the pilot's own pixels lose 4 % of the ink in the split (0.54 + 0.54 against 0.97 + 0.16; summed 0.96 of the design's)
+        expect(issues(one(secondary, true, pilot), ctx())).toEqual([]);
+        // the same split scaled to 0.86 of the design's summed ink (the lowest of the suite's 180 correct hairline lines) passes,
+        // to 0.82 (under the floor, 0.84) it fails
+        const at = (f: number) => one(secondary, true, pilot.map((v) => v * f / 0.959));
+        expect(issues(at(0.86), ctx())).toEqual([]);
+        expect(issues(at(0.82), ctx()).map((i) => i.kind)).toContain("ink");
       });
 
       it("keeps the usual checks without the scale-only evidence, and at an exact viewport", () => {
@@ -2063,7 +2072,8 @@ describe("compareCapture: edge, colour and ink checks", () => {
       });
 
       it("takes only text below 13 device px", () => {
-        expect(issues(one(secondary, true), ctx({ fontPx: { t: 13 } })).map((i) => i.kind)).toContain("ink");
+        for (const px of [13, 16]) for (const [name, split] of [["keeps", keeps], ["pilot", pilot]] as const)
+          expect(issues(one(secondary, true, split), ctx({ fontPx: { t: px } })).map((i) => i.kind), `${px} px, ${name}`).toContain("ink");
       });
     });
 

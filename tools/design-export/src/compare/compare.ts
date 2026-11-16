@@ -300,11 +300,21 @@ export const HAIRLINE_INK_BAND: readonly [number, number] = [0.5, 2];
  * most covered pixel of at least HAIRLINE_PEAK: Chromium puts a 12.5 px stroke on whole pixels, UI Toolkit splits it), R141's
  * other conditions hold, and the same text passes its ink checks at every exact viewport of the run (R126's scale-only
  * evidence, CaptureContext.scaleOnly). Ruling R155: when only Unity's render qualifies, Unity's ink summed against the text
- * colour must be at least the design's (a split keeps or adds ink, dimming removes it). Not caught: a lightness-only error of
- * such a line at a scaled viewport alone that does not lower Unity's ink (a darker or lighter colour along the same
- * direction where the design itself qualifies, or a split that adds ink).
+ * colour must be at least SCALED_HAIRLINE_INK_FLOOR of the design's (ruling R158; dimming removes ink, a split keeps most of
+ * it). Not caught: a lightness-only error of such a line at a scaled viewport alone where the design's render qualifies (a
+ * darker or lighter colour along the same direction), or where Unity's summed ink stays at the floor or above (a dimming by
+ * up to 16 %, a split that adds ink).
  */
 export const SCALED_HAIRLINE_BELOW_PX = 13;
+/**
+ * Ruling R158 (R155's floor): when only Unity's render makes a scaled line a hairline line, Unity's ink summed against the
+ * text colour (R141's measure: each ink pixel's luma distance from the background, summed) must be at least this share of
+ * the design's. 0.84 = the lowest of the suite's 180 correct hairline lines on that summed measure (0.86; they measure
+ * 0.86–1.01) − 0.02, ruling R149's amount convention (lowest minus 0.02); not taken from the lines it concerns. Correct
+ * renders lose up to 14 % on this measure (a pilot screen's split strokes keep 0.983 and 0.993 of it, a split built from
+ * their pixels 0.959); Unity's own dimming to 0.8 of the colour or less stays below the floor.
+ */
+export const SCALED_HAIRLINE_INK_FLOOR = 0.84;
 /**
  * How far an ellipsized line's ellipsis may differ from the design's at any viewport (ruling R147; at a scaled viewport also
  * the condition of the one-grapheme allowance of ruling R146): the shape, as the L1 difference of the column profiles over the
@@ -1642,10 +1652,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // ink amount only within HAIRLINE_INK_BAND (a stroke drawn a row off scatters, a missing or added glyph does not)
         // ruling R152: at a scaled viewport (scaledHairline) either render may show the line as a hairline one
         // ruling R155: when only Unity's render qualifies (the design's has fully covered pixels), Unity's ink, summed against the
-        // text colour, must be at least the design's: splitting a stroke over two pixels keeps or adds ink, dimming removes it
+        // text colour, must be at least SCALED_HAIRLINE_INK_FLOOR of the design's (ruling R158): splitting a stroke over two
+        // pixels keeps most of the ink (correct renders lose up to 14 %), dimming removes it
         const hairline = b && mayBeHairline && !gl.mixed && !later!.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y)
           ? (px <= HAIRLINE_MAX_PX && isHairline(a, declared!) ? "design"
-            : scaledHairline && (isHairline(a, declared!) || (isHairline(b, declared!) && sum(b.dists) >= sum(a.dists) * (1 - EPS))) ? "scaled" : null) : null;
+            : scaledHairline && (isHairline(a, declared!) || (isHairline(b, declared!) && sum(b.dists) >= sum(a.dists) * (SCALED_HAIRLINE_INK_FLOOR - EPS))) ? "scaled" : null) : null;
         if (b && hairline) {
           const dir = angleBetween(a.dirSrgb, b.dirSrgb);
           if (!wDir || dir > wDir.dir) wDir = { dir, i, a: a.ink, b: b.ink, scaled: hairline === "scaled" };
