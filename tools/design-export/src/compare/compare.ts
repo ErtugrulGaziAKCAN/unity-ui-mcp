@@ -979,7 +979,12 @@ function difference(a: Rgba, b: Rgba, mask: Uint8Array, wantImage: boolean): { i
   return { image: out ? { w: a.w, h: a.h, data: out } : null, off: counted ? off / counted : 0 };
 }
 
-interface Analysis { verdict: CaptureVerdict; heat: Rgba | null }
+/**
+ * `judged`: per text key, how its lines' ink colour was judged in this capture: by ΔE2000 on at least one line, else only by
+ * colour direction (a hairline line, a direction-keyed or below-domain fragment). Absent: no line judged (covered, clipped,
+ * without ink). The scale-only evidence of ruling R152 reads it (review N7).
+ */
+interface Analysis { verdict: CaptureVerdict; heat: Rgba | null; judged: Map<string, "deltaE" | "direction"> }
 
 function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thresholds, ctx: CaptureContext, wantHeat: boolean): Analysis {
   const g = golden.boxes, u = unity.boxes, gp = opaque(golden.png).img;
@@ -994,6 +999,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   /** Ellipsized lines whose design dots do not resolve into three below ELLIPSIS_DOTS_BELOW_PX (ruling R148). */
   const ellipsisNotJudged: string[] = [];
   const fragmentsBelowDomain: string[] = [];
+  const judged = new Map<string, "deltaE" | "direction">();
+  const judgedBy = (key: string, how: "deltaE" | "direction") => { if (judged.get(key) !== "deltaE") judged.set(key, how); };
   const fragmentColourNotJudged: string[] = [];
   const removedSet = new Set(removed);
   const issue = (id: string, kind: IssueKind, detail: string, at?: Rect) => issues.push(at ? { id, kind, detail, at } : { id, kind, detail });
@@ -1623,6 +1630,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           fragmentsBelowDomain.push(`${key}: line ${i + 1} of ${ge.lines.length}`);
           const what = `line ${i + 1} of ${ge.lines.length}: a fragment below the measured domain (the design's ink here ${a.coverage.toFixed(1)} px, under ${MIN_INK_PX})`;
           if (!b) { issue(key, "inkCoverage", `${what}: Unity draws none of it`, gl); return; }
+          judgedBy(key, "direction");
           const dir = angleBetween(a.dirSrgb, b.dirSrgb);
           if (dir > t.textInkDirection + EPS) issue(key, "ink", `${what}: its ink's colour direction from the background differs by ${dir.toFixed(2)}° (design ${hex(a.ink)}, Unity ${hex(b.ink)}; limit ${t.textInkDirection}°)`, gl);
           const ratio = sum(b.dists) / Math.max(sum(a.dists), 1);
@@ -1641,6 +1649,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         if (b && hairline) {
           const dir = angleBetween(a.dirSrgb, b.dirSrgb);
           if (!wDir || dir > wDir.dir) wDir = { dir, i, a: a.ink, b: b.ink, scaled: hairline === "scaled" };
+          judgedBy(key, "direction");
           const ratio = sum(b.dists) / Math.max(sum(a.dists), 1);
           const off = Math.max(HAIRLINE_INK_BAND[0] - ratio, ratio - HAIRLINE_INK_BAND[1]);
           if (off > EPS && (!wAmount || off > Math.max(HAIRLINE_INK_BAND[0] - wAmount.ratio, wAmount.ratio - HAIRLINE_INK_BAND[1]))) wAmount = { ratio, i };
@@ -1654,12 +1663,14 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // with the width's measured key; a width without one does not judge its colour, and the line is counted
         if (b && fragment?.byDirection) {
           if (fragment.direction === null) { fragmentColourNotJudged.push(`${key}: line ${i + 1} of ${ge.lines.length}`); return; }
+          judgedBy(key, "direction");
           const dir = angleBetween(a.dirSrgb, b.dirSrgb);
           if (!wFragDir || dir - fragment.direction > wFragDir.dir - wFragDir.limit) wFragDir = { dir, i, a: a.ink, b: b.ink, limit: fragment.direction, em: fragment.em };
           return;
         }
         if (b) {
           const de = deltaE2000(a.ink, b.ink), limit = Math.max(inkColourLimit(t, px, i), fragment?.deltaE ?? 0);
+          judgedBy(key, "deltaE");
           maxDe = Math.max(maxDe, de);
           if (!wDe || de - limit > wDe.de - wDe.limit) wDe = { de, i, a: a.ink, b: b.ink, limit, ...(fragment ? { em: fragment.em } : {}) };
         }
@@ -2052,6 +2063,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, linesCovered, ...(linesClipped.length ? { linesClipped } : {}), ...(ellipsisNotJudged.length ? { ellipsisNotJudged } : {}), ...(fragmentsBelowDomain.length ? { fragmentsBelowDomain } : {}), ...(fragmentColourNotJudged.length ? { fragmentColourNotJudged } : {}), notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
     },
     heat,
+    judged,
   };
 }
 
@@ -2216,11 +2228,16 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
     if (vp && classOfName(n) === "exact" && !exactViewports.some((v) => v[0] === vp[0] && v[1] === vp[1])) exactViewports.push([vp[0], vp[1]]);
   }
   const TEXT_INK: readonly IssueKind[] = ["ink", "inkCoverage", "inkExtent"];
-  const scaleOnlyOf = (name: string) => (key: string) => exactViewports.length > 0 && exactViewports.every((vp) => {
-    const at = name.replace(/@\d+x\d+/, `@${vp[0]}x${vp[1]}`), r = results.get(at), gb = goldenBoxes[at];
-    const shown = gb?.elements[key]?.visible || gb?.items?.[key]?.visible;
-    return !!r && !!shown && !r.issues.some((i) => i.id === key && TEXT_INK.includes(i.kind));
-  });
+  const judgedIn = new Map<string, Map<string, "deltaE" | "direction">>();
+  // the same text judged and passing at every exact viewport, by its ink colour (ΔE2000) at one of them at least: a line
+  // covered, clipped or without ink there is no evidence (review N7)
+  const scaleOnlyOf = (name: string) => (key: string) => {
+    const at = exactViewports.map((vp) => name.replace(/@\d+x\d+/, `@${vp[0]}x${vp[1]}`));
+    return at.length > 0 && at.every((n) => {
+      const r = results.get(n);
+      return !!r && !!judgedIn.get(n)?.has(key) && !r.issues.some((i) => i.id === key && TEXT_INK.includes(i.kind));
+    }) && at.some((n) => judgedIn.get(n)?.get(key) === "deltaE");
+  };
   const compareOne = async (name: string) => {
     const c0 = performance.now();
     const [gpng, upng] = await Promise.all([
@@ -2235,7 +2252,8 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
     const cls = viewportClassOf(ix?.scaledViewports, entry?.viewport ?? gb.viewport);
     ctx.viewportClass = cls;
     if (cls === "scaled") ctx.scaleOnly = scaleOnlyOf(name);
-    const { verdict, heat } = analyze({ png: gpng, boxes: gb }, { png: upng, boxes: unityBoxes[name] }, removed!, thresholdsFor(t, cls), ctx, !!opts.diffDir);
+    const { verdict, heat, judged } = analyze({ png: gpng, boxes: gb }, { png: upng, boxes: unityBoxes[name] }, removed!, thresholdsFor(t, cls), ctx, !!opts.diffDir);
+    judgedIn.set(name, judged);
     verdict.info = entry ? {
       state: entry.state, viewport: entry.viewport, viewportClass: cls, apply: entry.apply,
       anim: entry.anim ? { element: entry.anim.sampled[0].elementId, sample: entry.anim.sample, time: entry.anim.time, series: entry.anim.sampled.map((r) => r.elementId).join(",") } : null,

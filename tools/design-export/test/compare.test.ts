@@ -400,6 +400,15 @@ describe("compareCapture", () => {
       });
     });
 
+    it("R151: a width without a direction key leaves the fragment's colour not judged and counts it (review N5)", () => {
+      // a thresholds object whose full 2 em row (ΔE2000 key above 6.9) has no direction key: the wrong colour is not judged
+      const f = repo.textInkFragment!;
+      const t2: Thresholds = { ...repo, textInkFragment: { ...f, full: f.full.map((r) => (r[0] === 2 ? [2, 9, r[2], null] : r)) as typeof f.full } };
+      const v = compareCapture(chip(false), chip(true, [22, 194, 213]), [], t2, ctx);
+      expect(label(v).filter((i) => i.kind === "ink")).toEqual([]);
+      expect(v.fragmentColourNotJudged).toEqual(["label: line 1 of 1"]);
+    });
+
     describe("ruling R153: a fragment below the measured domain (the design's ink under 16 px)", () => {
       // the menu covers the chip but for its first stem (11 px of ink): a pilot screen's chip the type menu leaves a sliver of
       // at 1280×720 (13.4 px of design ink there, 0.78× in Unity)
@@ -2940,15 +2949,17 @@ describe("compareScreen", () => {
       for (let x = 13; x < 20; x++) { if (split) { put(x, 10, 0.25); put(x, 11, 0.74); } else put(x, 10, 0.97); }
       return png;
     };
-    const run = async (exactUnity: Rgb) => {
+    const run = async (exactUnity: Rgb, exactDraws = true) => {
       const root = tmp(), exportDir = path.join(root, "export"), unityDir = path.join(root, "unity");
       fs.mkdirSync(path.join(exportDir, "goldens"), { recursive: true });
       fs.mkdirSync(unityDir, { recursive: true });
       const boxes = (name: string, vp: [number, number], scale: number): CaptureBoxes => ({ capture: name, viewport: vp, scale, external: [], elements: { root: el(0, 0, 40, 24),
         t: el(6, 3, 22, 15, { text: true, lines: [{ x: 6, y: 3, w: 22, h: 15, baseline: 15 }], color: [...secondary, 1] as [number, number, number, number], opacity: 1 }) } });
-      const entries = [{ name: "default@32x20", ...job("default", [32, 20]) }, { name: "default@40x24", ...job("default", [40, 24]) }];
+      // the scaled capture first in the matrix: the comparison must still take the exact one first (review N5)
+      const entries = [{ name: "default@40x24", ...job("default", [40, 24]) }, { name: "default@32x20", ...job("default", [32, 20]) }];
       const g = { "default@32x20": boxes("default@32x20", [32, 20], 0.5), "default@40x24": boxes("default@40x24", [40, 24], 0.625) };
-      const pngs: Record<string, [Rgba, Rgba]> = { "default@32x20": [draw(secondary, false), draw(exactUnity, false)], "default@40x24": [draw(secondary, false), draw(secondary, true)] };
+      const blank = canvas(40, 24, bgC);
+      const pngs: Record<string, [Rgba, Rgba]> = { "default@32x20": exactDraws ? [draw(secondary, false), draw(exactUnity, false)] : [blank, blank], "default@40x24": [draw(secondary, false), draw(secondary, true)] };
       for (const e of entries) {
         fs.writeFileSync(path.join(exportDir, "goldens", `${e.name}.png`), encodePng(pngs[e.name][0]));
         fs.writeFileSync(path.join(unityDir, `${e.name}.png`), encodePng(pngs[e.name][1]));
@@ -2968,6 +2979,10 @@ describe("compareScreen", () => {
     const other = await run([22, 194, 213]);
     expect(other["default@32x20"]).toContain("ink");
     expect(other["default@40x24"]).toContain("ink");
+    // the text not judged at the exact viewport (no ink there in either render): no evidence either (review N7)
+    const none = await run(secondary, false);
+    expect(none["default@32x20"]).toEqual([]);
+    expect(none["default@40x24"]).toContain("ink");
   });
 });
 
