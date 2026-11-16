@@ -415,15 +415,6 @@ export function endShift(design: Ink, unity: Ink, from: number, to: number, arou
 }
 
 /**
- * An ellipsized line whose cut may differ by one grapheme (ruling R146): where Unity's ellipsis sits against the design's
- * and whether it is the design's ellipsis. `e` is the design's cut (boxes `ellipsis`, device px). Unity's ellipsis is found
- * by matching the column profile of the design's ellipsis ink (from `e.at` to the end of the line's ink) to Unity's near the
- * end of its ink (endShift, ±1 px around the ink extents' difference). Returns that shift (+: Unity keeps more), the
- * ellipsis's shape error (the profiles' L1 difference over the design's ellipsis mass, each scaled to the design's mass) and
- * its ink amount (Unity's over the design's), and the ink amount of the part both lines draw (the prefix up to the earlier
- * of the two cuts, plus the ellipsis). Null when the design has no ellipsis ink after `e.at`.
- */
-/**
  * The centres of the ink blobs an ink's column profile resolves into over [a, b) (image px): its local maxima of at least
  * 0.2 of the highest column, a maximum at the range's edge only when it is higher than the column outside (the tail of
  * the glyph before is no blob), two maxima one blob unless the profile between them falls to half the lower of them; each
@@ -468,6 +459,15 @@ function inkRowCentre(ink: Ink, a: number, b: number): number {
  */
 export interface EllipsisDots { design: number; unity: number; offPitch: number | null; centre: number | null }
 
+/**
+ * An ellipsized line whose cut may differ by one grapheme (ruling R146): where Unity's ellipsis sits against the design's
+ * and whether it is the design's ellipsis. `e` is the design's cut (boxes `ellipsis`, device px). Unity's ellipsis is found
+ * by matching the column profile of the design's ellipsis ink (from `e.at` to the end of the line's ink) to Unity's near the
+ * end of its ink (endShift, ±1 px around the ink extents' difference). Returns that shift (+: Unity keeps more), the
+ * ellipsis's shape error (the profiles' L1 difference over the design's ellipsis mass, each scaled to the design's mass) and
+ * its ink amount (Unity's over the design's), and the ink amount of the part both lines draw (the prefix up to the earlier
+ * of the two cuts, plus the ellipsis). Null when the design has no ellipsis ink after `e.at`.
+ */
 export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: number }, baselines?: { design: number; unity: number }): { shift: number; shape: number; amount: number; common: number; rows: number; dots: EllipsisDots } | null {
   const from = Math.floor(e.at), to = Math.ceil(Math.max(design.right, e.at + 1));
   let massA = 0;

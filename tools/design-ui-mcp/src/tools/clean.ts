@@ -36,11 +36,12 @@ export async function whileBusy(screenDir: string, what: "import" | "verify", ru
 
 /**
  * After an import or verify: the automatic cleanup, its line appended to the tool's answer (`cleanup` in the data). The
- * captures the run kept on request (its answer's `keptCaptures`) are not removed by this cleanup; a later one may.
+ * captures the run kept on request (its answer's `keptCaptures`) and the screen's export beside them, which the offline
+ * comparison the answer prints reads, are not removed by this cleanup; a later one may.
  */
 export function afterRun(cfg: DesignUiConfig, result: CallToolResult): CallToolResult {
   const kept = (result.structuredContent as { keptCaptures?: { dir?: unknown } | null } | undefined)?.keptCaptures?.dir;
-  const line = autoClean(cfg, typeof kept === "string" ? [kept] : []);
+  const line = autoClean(cfg, typeof kept === "string" ? [kept, path.join(path.dirname(kept), "export")] : []);
   if (!line) return result;
   const content = result.content.map((c, i) => (i === 0 && c.type === "text" ? { ...c, text: `${c.text}\n${line}` } : c));
   const data = result.structuredContent ? { ...result.structuredContent, cleanup: line } : undefined;

@@ -9,7 +9,8 @@ import { BOOKKEEPING_DIR, screenFolders } from "./design.js";
  * What a screen keeps: its records (last-import.json, last-verify.json, lint-report.json and the run marker), the latest
  * export (import and verify read it), the latest report's pictures (`report/`) and verdict (`compare/verdict.json`), and
  * the newest `FAILED_RUNS_KEPT` failed runs, and the Unity captures a verify kept on request (`KEPT_CAPTURES_DIR`, the
- * verify's `keepCaptures`) until the next verify or design_ui_clean. What goes: the Unity captures and difference images
+ * verify's `keepCaptures`) until the next verify that gives a verdict, an import that exports the screen again, a later cleanup
+ * over the budget or design_ui_clean (the verify's own cleanup keeps them and the export they are compared with). What goes: the Unity captures and difference images
  * of a finished verify (the report keeps crops of what failed), staging folders a run left behind, older failed runs and
  * `.tmp` files. When the designRoot's bookkeeping is larger than the budget (`cacheBudgetMB`), kept captures go first,
  * then the exports of the screens least recently imported or verified, oldest first; the next import or verify exports
@@ -147,7 +148,8 @@ export function planClean(designRoot: string, budgetMB: number, folder?: string,
   const screens = screenCaches(designRoot);
   const budget = Math.round(budgetMB * MB);
   const removals: Removal[] = [];
-  // what a run that just finished must keep (the captures it was asked to keep): never removed by its own cleanup
+  // what a run that just finished must keep (the captures it was asked to keep, and the export they are compared with): never
+  // removed by its own cleanup
   const kept = (p: string) => (opts.protect ?? []).some((q) => path.resolve(q) === path.resolve(p));
   for (const s of screens) removals.push(...screenRemovals(designRoot, s.folder, s.busy, opts.kept === true).filter((r) => !kept(r.path)));
   const total = screens.reduce((a, s) => a + s.bytes, 0);
@@ -166,6 +168,7 @@ export function planClean(designRoot: string, budgetMB: number, folder?: string,
     for (const s of [...screens].filter((x) => !x.busy && x.exportBytes > 0).sort(oldest)) {
       if (after <= budget) break;
       const p = path.join(designRoot, s.folder, BOOKKEEPING_DIR, "export");
+      if (kept(p)) continue;
       removals.push({ screen: s.folder, path: p, bytes: s.exportBytes, why: `export of a screen not imported or verified since ${new Date(s.lastUsed).toISOString()} (the bookkeeping is over the ${budgetMB} MB budget; the next import or verify exports it again)` });
       after -= s.exportBytes;
     }

@@ -503,7 +503,6 @@ export function cornerInRoundBand(p: RingPoint, g: Rect, u: Rect, border: readon
   return false;
 }
 
-/** The ink colour limit for text of `px` device px (font size); `line` counts from 0 (later lines of small text: textInkDeltaELater). */
 /**
  * Ruling R149: the fragment key of a text window `em` wide (its visible columns over the device font size), or null when
  * it is not narrower than the key's em (or there is no key). The row of the widest width the window reaches, the
@@ -556,6 +555,7 @@ export function visibleColumns(r: Rect, hidden: ((x: number, y: number) => boole
   return n;
 }
 
+/** The ink colour limit for text of `px` device px (font size); `line` counts from 0 (later lines of small text: textInkDeltaELater). */
 export function inkColourLimit(t: Thresholds, px: number, line = 0): number {
   let usual = px >= t.textInkFullPx ? t.textInkDeltaE
     : (t.textInkDeltaESmall.find(([min]) => px >= min) ?? t.textInkDeltaESmall[t.textInkDeltaESmall.length - 1])[1];

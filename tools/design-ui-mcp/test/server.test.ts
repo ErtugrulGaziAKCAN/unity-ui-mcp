@@ -1471,6 +1471,9 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(r.text).toContain(`Unity captures kept in ${kept}`);
     expect(fs.existsSync(kept)).toBe(true);
     expect(String(r.data.cleanup ?? "")).not.toContain("kept-captures");
+    // nor the export the offline comparison the answer prints needs (re-review N4)
+    expect(fs.existsSync(path.join(dir, ".design-ui", "export", "goldens", "boxes.json"))).toBe(true);
+    expect(String(r.data.cleanup ?? "")).not.toContain(".design-ui/export");
     // the next cleanup may remove them: the record and the report stop naming them
     const clean = await call(client, "design_ui_clean", { screen: "clean-screen" });
     expect(clean.text).toContain(".design-ui/kept-captures");

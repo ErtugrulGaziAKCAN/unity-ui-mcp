@@ -27,7 +27,8 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
       keepCaptures: z.boolean().optional().describe(
         "Keep this run's Unity captures (PNGs, boxes.json, boxes.meta.json) in <screen>/.design-ui/kept-captures once the verdict is " +
         "written, for an offline comparison (design-export compare <export> --unity <kept-captures> --report <file>), instead of " +
-        "deleting them (default false). They count toward cacheBudgetMB; the next verify and design_ui_clean remove them."),
+        "deleting them (default false). They count toward cacheBudgetMB; the next verify that gives a verdict, an import that exports the " +
+        "screen again, a later cleanup over the budget and design_ui_clean remove them."),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async ({ screen: screenArg, keepCaptures }, extra) => {
@@ -163,7 +164,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
           ...(v.colour?.space === "Linear" && v.colour.path !== "linear-panel"
             ? ["Colour: Linear colour space, captured through the gamma composite: in game this holds for panels rendered through DesignUiGammaComposite"] : []),
           ...(v.notSampled ? [`Backgrounds not sampled (every point covered or on text): ${v.notSampled}`] : []),
-          ...(keptRun ? [`Unity captures kept in ${keptRun.dir} (${mb(keptRun.bytes)}; counted by cacheBudgetMB, removed by the next verify or design_ui_clean). ` +
+          ...(keptRun ? [`Unity captures kept in ${keptRun.dir} (${mb(keptRun.bytes)}; counted by cacheBudgetMB; removed by the next verify, an import that exports the screen again, a later cleanup over the budget or design_ui_clean). ` +
             `Compare them again offline: design-export compare ${exportDir} --unity ${keptRun.dir} --report <file.html>`] : []),
           ...(keepCaptures === true && !keptRun ? ["Unity captures were not kept: this comparison step cannot keep them."] : []),
         ];
