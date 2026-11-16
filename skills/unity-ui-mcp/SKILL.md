@@ -93,7 +93,7 @@ what; its `source`, `handler` or `when` may be `null` (a named dependency), and 
   "contract": 1, "screen": "club.overview", "kind": "update",
   "replaces": "The current club overview screen (its route, view and presenter as the project names them)",
   "values": [
-    { "name": "club-name", "source": "the club service's current club name", "samples": ["Northbridge FC", "Real Club Deportivo de la Costa"], "origin": "existing" },
+    { "name": "club-name", "source": "the club service's current club name", "samples": ["Eastmoor FC", "Real Club Deportivo de la Costa"], "origin": "existing" },
     { "name": "club-crest", "source": "the club service's crest sprite", "image": true, "origin": "existing" },
     { "name": "player-name", "repeat": "player", "source": "squad reader, player display name", "samples": ["A. Novak", "Jean-Baptiste Okonkwo-Lindqvist"], "origin": "existing" }
   ],

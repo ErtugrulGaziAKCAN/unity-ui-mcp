@@ -56,7 +56,7 @@ folder–screen pair is unique.
   "replaces": "The current club overview screen (its route, view and presenter as the project names them)",
   "values": [
     { "name": "club-name", "source": "the club service's current club name",
-      "samples": ["Northbridge FC", "Real Club Deportivo de la Costa"], "origin": "existing" },
+      "samples": ["Eastmoor FC", "Real Club Deportivo de la Costa"], "origin": "existing" },
     { "name": "player-name", "repeat": "player", "source": "squad reader, player display name",
       "samples": ["A. Novak", "Jean-Baptiste Okonkwo-Lindqvist"], "origin": "existing" },
     { "name": "budget", "source": "finance reader, formatted in the display currency",

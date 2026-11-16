@@ -17,7 +17,7 @@ const EXAMPLE = {
   contract: 1, screen: "club.overview", kind: "update",
   replaces: "The current club overview screen (its route, view and presenter as the project names them)",
   values: [
-    { name: "club-name", source: "the club service's current club name", samples: ["Northbridge FC", "Real Club Deportivo de la Costa"], origin: "existing" },
+    { name: "club-name", source: "the club service's current club name", samples: ["Eastmoor FC", "Real Club Deportivo de la Costa"], origin: "existing" },
     { name: "player-name", repeat: "player", source: "squad reader, player display name", samples: ["A. Novak", "Jean-Baptiste Okonkwo-Lindqvist"], origin: "existing" },
     { name: "budget", source: "finance reader, formatted in the display currency", samples: ["€12.4M", "€0"], origin: "existing" },
   ],
@@ -51,7 +51,7 @@ describe("contract brief", () => {
 
       | Name | In | Source | Real samples |
       |---|---|---|---|
-      | club-name | screen | the club service's current club name | Northbridge FC · Real Club Deportivo de la Costa |
+      | club-name | screen | the club service's current club name | Eastmoor FC · Real Club Deportivo de la Costa |
       | player-name | repeat player | squad reader, player display name | A. Novak · Jean-Baptiste Okonkwo-Lindqvist |
       | budget | screen | finance reader, formatted in the display currency | €12.4M · €0 |
 
