@@ -50,14 +50,19 @@ export type ContractLoad =
 
 const TOP_KEYS = ["contract", "screen", "kind", "replaces", "values", "actions", "states", "repeats", "texts", "removed"];
 
-/** Per JSON array: the item kind, the field that holds its name, the field that holds its source and the word for a missing one. */
-const SECTIONS: { key: string; kind: ContractKind; nameField: string; sourceField: string | null; scopeField: string | null; sourceWord: string }[] = [
-  { key: "values", kind: "value", nameField: "name", sourceField: "source", scopeField: "repeat", sourceWord: "source" },
-  { key: "actions", kind: "action", nameField: "name", sourceField: "handler", scopeField: "repeat", sourceWord: "handler" },
-  { key: "states", kind: "state", nameField: "name", sourceField: "when", scopeField: null, sourceWord: "when" },
-  { key: "repeats", kind: "repeat", nameField: "name", sourceField: "source", scopeField: "parent", sourceWord: "source" },
-  { key: "texts", kind: "text", nameField: "key", sourceField: null, scopeField: null, sourceWord: "source" },
+/**
+ * Per JSON array: the item kind, the field that holds its name, the field that holds its source and the word for a
+ * missing one, and every key its entries may have (any other is reported).
+ */
+const SECTIONS: { key: string; kind: ContractKind; nameField: string; sourceField: string | null; scopeField: string | null; sourceWord: string; keys: string[] }[] = [
+  { key: "values", kind: "value", nameField: "name", sourceField: "source", scopeField: "repeat", sourceWord: "source", keys: ["name", "repeat", "source", "samples", "image", "origin", "note"] },
+  { key: "actions", kind: "action", nameField: "name", sourceField: "handler", scopeField: "repeat", sourceWord: "handler", keys: ["name", "repeat", "handler", "origin", "note"] },
+  { key: "states", kind: "state", nameField: "name", sourceField: "when", scopeField: null, sourceWord: "when", keys: ["name", "when", "origin", "note"] },
+  { key: "repeats", kind: "repeat", nameField: "name", sourceField: "source", scopeField: "parent", sourceWord: "source", keys: ["name", "parent", "source", "count", "origin", "note"] },
+  { key: "texts", kind: "text", nameField: "key", sourceField: null, scopeField: null, sourceWord: "source", keys: ["key", "en", "ref", "origin", "note"] },
 ];
+/** The keys a `removed` entry may have: its scope is `repeat`, or `parent` for a removed repeat (the field a repeat uses). */
+const REMOVED_KEYS = ["kind", "name", "repeat", "parent", "note"];
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -88,7 +93,9 @@ export function parseScreenContract(json: unknown): { contract: ScreenContract }
       if (!isObj(raw)) { problems.push(`${sec.key}[${i}] must be an object`); return; }
       const name = raw[sec.nameField];
       const word = sec.kind;
-      if (typeof name !== "string" || name === "") { problems.push(`${word} at ${sec.key}[${i}] has no ${sec.nameField}`); return; }
+      const named = typeof name === "string" && name !== "";
+      for (const k of Object.keys(raw)) if (!sec.keys.includes(k)) problems.push(`${named ? `${word} "${name}"` : `${word} at ${sec.key}[${i}]`}: unknown key "${k}"`);
+      if (!named) { problems.push(`${word} at ${sec.key}[${i}] has no ${sec.nameField}`); return; }
       const pattern = sec.kind === "text" ? KEY_PATTERN : ID_PATTERN;
       if (!pattern.test(name)) problems.push(`${word} "${name}" does not match ${pattern.source}`);
       let repeat: string | null = null;
@@ -109,6 +116,7 @@ export function parseScreenContract(json: unknown): { contract: ScreenContract }
       const item: ContractItem = { kind: sec.kind, name, repeat, origin, source };
       if (note !== undefined) item.note = note;
       if (sec.kind === "value") {
+        if (raw.image !== undefined && typeof raw.image !== "boolean") problems.push(`value "${name}": image must be true or false`);
         const image = raw.image === true;
         if (image) item.image = true;
         if (raw.samples !== undefined) {
@@ -125,6 +133,7 @@ export function parseScreenContract(json: unknown): { contract: ScreenContract }
         if (!filled(raw.en)) problems.push(`text "${name}" has no en`);
         else item.en = raw.en;
         if (typeof raw.ref === "string") item.ref = raw.ref;
+        else if (raw.ref !== undefined) problems.push(`text "${name}": ref must be a string`);
       }
       items.push(item);
     });
@@ -137,6 +146,8 @@ export function parseScreenContract(json: unknown): { contract: ScreenContract }
     if (!isObj(raw)) { problems.push(`removed[${i}] must be an object`); return; }
     const rk = raw.kind as ContractKind;
     const name = raw.name;
+    const label = KINDS.includes(rk) && typeof name === "string" ? `removed ${rk} ${JSON.stringify(name)}` : `removed[${i}]`;
+    for (const k of Object.keys(raw)) if (!REMOVED_KEYS.includes(k)) problems.push(`${label}: unknown key "${k}"`);
     if (!KINDS.includes(rk)) { problems.push(`removed[${i}]: kind must be one of ${KINDS.join(", ")}`); return; }
     if (typeof name !== "string" || !(rk === "text" ? KEY_PATTERN : ID_PATTERN).test(name)) { problems.push(`removed ${rk} ${JSON.stringify(name)} has a bad name`); return; }
     const scope = raw.repeat ?? raw.parent;

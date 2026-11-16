@@ -82,11 +82,32 @@ describe("screen contract loader", () => {
     ["a removed state with a repeat", (j) => { j.removed.push({ kind: "state", name: "error", repeat: "player", note: "n" }); }, 'removed state "error" cannot have a repeat'],
     ["a removed text with a parent", (j) => { j.removed.push({ kind: "text", name: "club.overview.subtitle", parent: "player", note: "n" }); }, 'removed text "club.overview.subtitle" cannot have a repeat'],
     ["an item both listed and removed", (j) => { j.removed.push({ kind: "value", name: "club-name", note: "n" }); }, 'value "club-name" is both listed and removed'],
+    ["an unknown key in a value", (j) => { j.values[1].parent = "player"; }, 'value "player-name": unknown key "parent"'],
+    ["an unknown key in an action", (j) => { j.actions[0].source = "inbox route"; }, 'action "open-inbox": unknown key "source"'],
+    ["an unknown key in a state", (j) => { j.states[0].repeat = "player"; }, 'state "loading": unknown key "repeat"'],
+    ["an unknown key in a repeat", (j) => { j.repeats[0].repeat = "team"; }, 'repeat "player": unknown key "repeat"'],
+    ["an unknown key in a text", (j) => { j.texts[0].tr = "Kulüp"; }, 'text "club.overview.title": unknown key "tr"'],
+    ["an unknown key in a nameless item", (j) => { j.values.push({ title: "x", origin: "existing" }); }, 'value at values[3]: unknown key "title"'],
+    ["an unknown key in a removed entry", (j) => { j.removed[0].reason = "auto refresh"; }, 'removed action "refresh": unknown key "reason"'],
+    ["a non-boolean image", (j) => { j.values.push({ name: "crest", source: "club crest sprite", image: "yes", origin: "existing" }); }, 'value "crest": image must be true or false'],
+    ["a non-string ref", (j) => { j.texts[0].ref = 42; }, 'text "club.overview.title": ref must be a string'],
   ];
   it.each(cases)("names each problem: %s", (_n, mutate, message) => {
     const j = clone();
     mutate(j);
     expect(problemsOf(j).join("\n")).toContain(message);
+  });
+
+  it("knows every documented key of each kind", () => {
+    const j = clone();
+    j.values.push({ name: "crest", repeat: "player", source: "row crest sprite", image: true, origin: "existing", note: "the row's club" });
+    j.values.push({ name: "flag", source: "nation flag", image: false, samples: ["TR"], origin: "existing" });
+    j.actions[0].note = "the inbox button"; j.states[0].note = "a spinner";
+    j.repeats.push({ name: "season", parent: "player", source: "career reader", count: [1, 20], origin: "existing", note: "per player" });
+    j.texts[0].ref = "Kulüp özeti"; j.texts[0].note = "the header";
+    j.removed.push({ kind: "repeat", name: "trophy", parent: "player", note: "user, 2026-11-16: no trophies" });
+    j.removed.push({ kind: "value", name: "age", repeat: "player", note: "user, 2026-11-16: no ages" });
+    expect(problemsOf(j)).toEqual([]);
   });
 
   it("allows an image value without samples and a requested value with no source", () => {
