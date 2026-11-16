@@ -325,6 +325,36 @@ describe("compareCapture", () => {
       expect(v.map((i) => i.kind)).toContain("ink");
       expect(v.find((i) => i.kind === "ink")!.detail).not.toMatch(/a window of/);
     });
+
+    describe("ruling R153: a fragment below the measured domain (the design's ink under 16 px)", () => {
+      // the menu covers the chip but for its first stem (11 px of ink): a pilot screen's chip the type menu leaves a sliver of
+      // at 1280×720 (13.4 px of design ink there, 0.78× in Unity)
+      const sliver = (unity: boolean, colour: Rgb = [185, 208, 214]) => chip(unity, colour, 43);
+
+      it("passes the right sliver and counts it as below the measured domain", () => {
+        const v = compareCapture(sliver(false), sliver(true), [], repo, ctx);
+        expect(label(v)).toEqual([]);
+        expect(v.fragmentsBelowDomain).toEqual(["label: line 1 of 1"]);
+        // a lightness-only error within the amount band passes (the ruling's documented limit)
+        expect(label(compareCapture(sliver(false), sliver(true, [150, 170, 175]), [], repo, ctx))).toEqual([]);
+      });
+
+      it("fails a sliver of another hue on its colour direction", () => {
+        for (const hue of [[22, 194, 213], [242, 181, 68]] as Rgb[]) {
+          const v = label(compareCapture(sliver(false), sliver(true, hue), [], repo, ctx));
+          expect(v.map((i) => i.kind), hue.join()).toEqual(["ink"]);
+          expect(v[0].detail).toMatch(/below the measured domain .*colour direction from the background differs by [\d.]+°/);
+        }
+      });
+
+      it("fails a sliver Unity does not draw", () => {
+        const none = chip(true, [185, 208, 214], 43);
+        fill(none.png, { x: 40, y: 26, w: 3, h: 18 }, [11, 31, 38]);
+        const v = label(compareCapture(sliver(false), none, [], repo, ctx));
+        expect(v.map((i) => i.kind)).toContain("inkCoverage");
+        expect(v.find((i) => i.kind === "inkCoverage")!.detail).toMatch(/below the measured domain.*Unity draws none of it/);
+      });
+    });
   });
 
   describe("text an ancestor's overflow clips: only what both renders show is compared (scroll areas, clipped boxes)", () => {

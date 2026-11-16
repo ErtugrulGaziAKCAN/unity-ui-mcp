@@ -648,6 +648,11 @@ export interface CaptureVerdict {
    * not judged (and they take no R146 allowance); `<key>: line <k> of <n>`.
    */
   ellipsisNotJudged?: string[];
+  /**
+   * Text fragments below the measured domain (ruling R153): a line something covers or clips down to a window where the
+   * design's ink is under MIN_INK_PX, judged on its presence, its colour direction and R141's amount band only.
+   */
+  fragmentsBelowDomain?: string[];
   /** Elements that paint a background but had no colour sample left (every point covered or on text). */
   notSampled: string[];
   /** Unity pixels with alpha below 255 (compared premultiplied). */
@@ -942,6 +947,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   const linesClipped: string[] = [];
   /** Ellipsized lines whose design dots do not resolve into three below ELLIPSIS_DOTS_BELOW_PX (ruling R148). */
   const ellipsisNotJudged: string[] = [];
+  const fragmentsBelowDomain: string[] = [];
   const removedSet = new Set(removed);
   const issue = (id: string, kind: IssueKind, detail: string, at?: Rect) => issues.push(at ? { id, kind, detail, at } : { id, kind, detail });
   const newRow = (id: string, status: ElementRow["status"] = "ok"): ElementRow =>
@@ -1522,22 +1528,6 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           }
           if (!wX || worst > wX.worst) wX = { i, dl, dr, dw, worst };
         }
-        // a hairline line (rulings R138, R141): its lightness measures coverage; its ink's colour direction is judged, and its
-        // ink amount only within HAIRLINE_INK_BAND (a stroke drawn a row off scatters, a missing or added glyph does not)
-        // ruling R152: at a scaled viewport (scaledHairline) either render may show the line as a hairline one
-        const hairline = b && mayBeHairline && !gl.mixed && !later!.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y)
-          ? (px <= HAIRLINE_MAX_PX && isHairline(a, declared!) ? "design" : scaledHairline && (isHairline(a, declared!) || isHairline(b, declared!)) ? "scaled" : null) : null;
-        if (b && hairline) {
-          const dir = angleBetween(a.dirSrgb, b.dirSrgb);
-          if (!wDir || dir > wDir.dir) wDir = { dir, i, a: a.ink, b: b.ink, scaled: hairline === "scaled" };
-          // the ink amount against the text colour on both sides (each pixel's distance from the background over the colour's),
-          // not each side's own ink colour: a stroke drawn faint everywhere is little ink, not a full stroke of a lighter colour
-          const sum = (x: Float64Array) => { let v = 0; for (const d of x) v += d; return v; };
-          const ratio = sum(b.dists) / Math.max(sum(a.dists), 1);
-          const off = Math.max(HAIRLINE_INK_BAND[0] - ratio, ratio - HAIRLINE_INK_BAND[1]);
-          if (off > EPS && (!wAmount || off > Math.max(HAIRLINE_INK_BAND[0] - wAmount.ratio, wAmount.ratio - HAIRLINE_INK_BAND[1]))) wAmount = { ratio, i };
-          return;
-        }
         // ruling R149: a fragment of few stems, a line something covers or clips down to a window narrower than the key's em,
         // takes the measured noise of the statistic for its width (measured on windows cut anywhere along correct lines), in
         // the measurement's domain (the design's ink at least MIN_INK_PX, the amount's floor; not a glowing line's). A whole
@@ -1548,7 +1538,38 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         const shown = inBounds(lineBox, { x0: win.x, y0: win.y, x1: win.x + win.w, y1: win.y + win.h });
         const whole = Math.ceil(lineBox.x + lineBox.w) - Math.floor(lineBox.x);
         const visible = empty(shown) ? 0 : visibleColumns(shown, hidden);
-        const fragment = !glow && a.coverage >= MIN_INK_PX && visible < whole - 2 ? fragmentKey(t, px, visibleColumns(win, hidden) / px) : null;
+        const cut = !glow && visible < whole - 2;
+        // the ink amount against the text colour on both sides (each pixel's distance from the background over the colour's),
+        // not each side's own ink colour: a stroke drawn faint everywhere is little ink, not a full stroke of a lighter colour
+        const sum = (x: Float64Array) => { let v = 0; for (const d of x) v += d; return v; };
+        // ruling R153: a fragment below the measured domain (the design's ink under MIN_INK_PX, where no noise was measured) is
+        // judged on its presence, its colour direction (R138's limit) and R141's amount band, and counted
+        if (cut && a.coverage < MIN_INK_PX) {
+          fragmentsBelowDomain.push(`${key}: line ${i + 1} of ${ge.lines.length}`);
+          const what = `line ${i + 1} of ${ge.lines.length}: a fragment below the measured domain (the design's ink here ${a.coverage.toFixed(1)} px, under ${MIN_INK_PX})`;
+          if (!b) { issue(key, "inkCoverage", `${what}: Unity draws none of it`, gl); return; }
+          const dir = angleBetween(a.dirSrgb, b.dirSrgb);
+          if (dir > t.textInkDirection + EPS) issue(key, "ink", `${what}: its ink's colour direction from the background differs by ${dir.toFixed(2)}° (design ${hex(a.ink)}, Unity ${hex(b.ink)}; limit ${t.textInkDirection}°)`, gl);
+          const ratio = sum(b.dists) / Math.max(sum(a.dists), 1);
+          if (ratio < HAIRLINE_INK_BAND[0] - EPS || ratio > HAIRLINE_INK_BAND[1] + EPS) issue(key, "inkCoverage", `${what}: Unity draws ${ratio.toFixed(2)}× the design's ink there (expected ${HAIRLINE_INK_BAND[0]}–${HAIRLINE_INK_BAND[1]}×)`, gl);
+          row.inkDirection = r6(Math.max(row.inkDirection ?? 0, dir));
+          return;
+        }
+        // a hairline line (rulings R138, R141): its lightness measures coverage; its ink's colour direction is judged, and its
+        // ink amount only within HAIRLINE_INK_BAND (a stroke drawn a row off scatters, a missing or added glyph does not)
+        // ruling R152: at a scaled viewport (scaledHairline) either render may show the line as a hairline one
+        const hairline = b && mayBeHairline && !gl.mixed && !later!.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y)
+          ? (px <= HAIRLINE_MAX_PX && isHairline(a, declared!) ? "design" : scaledHairline && (isHairline(a, declared!) || isHairline(b, declared!)) ? "scaled" : null) : null;
+        if (b && hairline) {
+          const dir = angleBetween(a.dirSrgb, b.dirSrgb);
+          if (!wDir || dir > wDir.dir) wDir = { dir, i, a: a.ink, b: b.ink, scaled: hairline === "scaled" };
+          const ratio = sum(b.dists) / Math.max(sum(a.dists), 1);
+          const off = Math.max(HAIRLINE_INK_BAND[0] - ratio, ratio - HAIRLINE_INK_BAND[1]);
+          if (off > EPS && (!wAmount || off > Math.max(HAIRLINE_INK_BAND[0] - wAmount.ratio, wAmount.ratio - HAIRLINE_INK_BAND[1]))) wAmount = { ratio, i };
+          return;
+        }
+        // ruling R149 (above): a fragment in the measured domain takes the key of its width
+        const fragment = cut ? fragmentKey(t, px, visibleColumns(win, hidden) / px) : null;
         inkLines.push({ id: key, i, n: ge.lines.length, ratio: common ?? (b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null), at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow, ...(fragment ? { fragment } : {}) });
         ctx.inkProbe?.({ key, line: i, px, window: win, hidden, design: gp, unity: up, glow });
         if (b) {
@@ -1935,7 +1956,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   return {
     verdict: {
       capture: g.capture, pass: issues.length === 0, ssim: ssim === null ? null : r6(ssim), issues, size: [gp.w, gp.h],
-      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, linesCovered, ...(linesClipped.length ? { linesClipped } : {}), ...(ellipsisNotJudged.length ? { ellipsisNotJudged } : {}), notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
+      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, linesCovered, ...(linesClipped.length ? { linesClipped } : {}), ...(ellipsisNotJudged.length ? { ellipsisNotJudged } : {}), ...(fragmentsBelowDomain.length ? { fragmentsBelowDomain } : {}), notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
     },
     heat,
   };

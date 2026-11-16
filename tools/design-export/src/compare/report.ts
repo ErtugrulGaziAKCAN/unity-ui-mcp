@@ -145,6 +145,7 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     ${(c.linesCovered ?? []).length ? `<p class="muted">Lines not judged (covered by an opaque later element): ${c.linesCovered.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${(c.linesClipped ?? []).length ? `<p class="muted">Lines not judged (the overflow clips around them hide them in the design and in Unity): ${c.linesClipped!.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${(c.ellipsisNotJudged ?? []).length ? `<p class="muted">Ellipses not judged (below 16 device px the design's own dots do not resolve into three): ${c.ellipsisNotJudged!.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
+    ${(c.fragmentsBelowDomain ?? []).length ? `<p class="muted">Fragments below the measured domain (the design's ink in what shows under 16 px; judged on presence, colour direction and amount band only): ${c.fragmentsBelowDomain!.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${c.notSampled.length ? `<p class="warn-text">Background not sampled (every sample point covered or on text): ${c.notSampled.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${c.translucent ? `<p class="muted">${c.translucent} Unity pixels are translucent; colours were compared premultiplied.</p>` : ""}
     <details class="elements"><summary>Per-element measures (${listed.length} of ${c.elements.length}: elements that are ok or hidden are counted, not listed)</summary>
