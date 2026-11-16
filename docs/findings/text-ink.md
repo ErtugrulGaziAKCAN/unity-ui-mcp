@@ -422,8 +422,8 @@ So the URP game draws small text as the Built-in sample does; the one line over 
 A URP copy of the sample was not run: the game's own captures settle it.
 
 **What the fix rounds settled** (the kept captures compared again with the final comparison: every viewport passes all
-157 captures (fix round 4); after fix round 1 1280×720 passed 143 and 1600×900 22, after fix round 2 every viewport all
-157, after fix round 3 1600×900 22):
+157 captures (fix round 4, rulings R158 and R159); after fix round 1 1280×720 passed 143 and 1600×900 22, after fix round
+2 every viewport all 157, after fix round 3 1600×900 22):
 
 - *Half a device pixel* (section 9): at 1920×1080 the cards sit at x 304.5 (406 CSS px × 0.75); UI Toolkit puts a text's
   box on whole device pixels. A status chip that the open month picker covers but for its first four glyphs (39 px,
@@ -455,18 +455,27 @@ A URP copy of the sample was not run: the game's own captures settle it.
 - *The ellipsis glyph below 16 device px*: judged by its dots since ruling R148; docs/findings/viewport-classes.md,
   "Ellipsized titles of a pilot screen".
 
-## 12. Text ink on few stems: the fragment key (rulings R149, R151, R153 to R157; Task 37 fix rounds 1 to 3)
+## 12. Text ink on few stems: the fragment key (rulings R149, R151, R153 to R157, R159; Task 37 fix rounds 1 to 4)
 
 Where something covers or clips a line down to a few stems, the ink colour (the mean of its most inked tenth) and the ink
 amount rest on a handful of pixels, and the half-pixel layout differences of section 9 no longer average out (the status
 chip of section 11: ΔE2000 2.84 on four glyphs, 0.00 on the whole chip). The key for such fragments is measured, not taken
 from the failures it concerns.
 
-**What a fragment is** (rulings R149, R156, R157). A line whose ink the design shows is cut by a cover (a later opaque
+**What a fragment is** (rulings R149, R156, R157, R159). A line whose ink the design shows is cut by a cover (a later opaque
 element, `hidden`) or by an overflow clip other than its own text cut. Its own text cut is its own box's clip, and an
 ellipsized line ends at its ellipsis: such a line covered by nothing keeps its ordinary limits however short it is. The
 cut is measured on the design's visible window (Unity's clip never shrinks the window: section 11) against the line's own
 extent, each end within a column of the design's own rounding (`cutInto`); a column hidden inside the line cuts it too.
+A cover or clip cuts only where it hides the design's ink (ruling R159): the design's covers are taken exactly there (a
+pixel whose centre lies in one, not the comparison's half-pixel margin), and a lost end cuts when the design's visible ink
+ends less than two columns from it, a hidden run inside the line when a visible column on either side of it, or the one
+beyond, holds half a pixel of ink. A cover or clip over only the line box's empty part (trailing letter-spacing, side
+bearings, a word gap) cuts nothing. Fix round 3 measured the cut on the line's extent alone: a badge over a short line's
+empty tail (stems to x 72, its line rect to 76, the badge from 74) made it a fragment, so a 10 px line drawn 30 % dimmer
+passed by direction and a 15 px one ΔE2000 4.2 off by the 2 em key (fix-3 re-review F1). A cover or clip that starts in
+a word gap hides glyphs no visible ink stands next to: such a line keeps its ordinary limits (stricter; a failure is
+reported, never hidden).
 A whole short line keeps its limits (rulings R126, R133, R138 and R141 set them on whole lines). Fix round 1 measured the
 cut against the union of both renders' line boxes, so a line in its own box lost two columns at an end when the two boxes
 straddled a pixel (40.75 against 41.17: a colour error ΔE2000 4.20 passed as a 2 em fragment), and every ellipsized line

@@ -255,12 +255,15 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   range; the curve and dots a row higher fail (`docs/findings/viewport-classes.md`, "Ellipsized titles of a pilot screen").
 - A fragment of a text line takes the measured noise of its width (ruling R149, `textInkFragment`): a line whose ink the
   design shows is cut by a cover or by a clip other than its own text cut (its own box, its ellipsis; ruling R156), each
-  end within a column of the design's own rounding, down to a window narrower than 4 em, has the ink colour limit and the
-  ink amount's lower bound measured on windows of that width sliding along the suite's passing lines (highest ΔE2000 plus
-  0.4, lowest amount minus 0.02, by size class), where the design's ink in the window is at least 16 px. A whole short
-  line keeps its limits, an ellipsized one too; text with a text-shadow, hard or blurred, takes no key (ruling R154: the
-  shadow's paint lies in the window). A status chip a month picker covers but for four glyphs (ΔE2000 2.84 on
-  15 px text against 2) passes; a wrong colour on such a fragment still fails (`docs/findings/text-ink.md` section 12).
+  end within a column of the design's own rounding and only where it hides the design's ink (ruling R159: the design's
+  visible ink, under its covers taken exactly, ends less than two columns from the hidden part; a badge over only a line
+  box's empty tail let a 10 px line drawn 30 % dimmer pass by direction), down to a window narrower than 4 em, has the
+  ink colour limit and the ink amount's lower bound measured on windows of that width sliding along the suite's passing
+  lines (highest ΔE2000 plus 0.4, lowest amount minus 0.02, by size class), where the design's ink in the window is at
+  least 16 px. A whole short line keeps its limits, an ellipsized one too; text with a text-shadow, hard or blurred, takes
+  no key (ruling R154: the shadow's paint lies in the window). A status chip a month picker covers but for four glyphs
+  (ΔE2000 2.84 on 15 px text against 2) passes; a wrong colour on such a fragment still fails
+  (`docs/findings/text-ink.md` section 12).
 - A line's ink window grows by a device pixel for anti-aliasing but no longer into another text's line box (ruling
   R150): two labels laid edge to edge took the next one's first stem into the first one's ink in Chromium only (ink
   extent −4.35 px).
@@ -342,8 +345,8 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
-- Task 37's fidelity run after its fourth fix round (rulings R148–R158; 4740 captures with the two new fixtures, 14 min
-  24 s): **every capture passes** at all six viewports (exact 3160, scaled 1580), as after each earlier round. A pilot
+- Task 37's fidelity run after its fourth fix round (rulings R148–R159; 4740 captures with the two new fixtures, 14 min
+  21 s): **every capture passes** at all six viewports (exact 3160, scaled 1580), as after each earlier round. A pilot
   screen's verify, its captures kept and compared again offline with this version: every viewport passes all 157
   captures. Two whole 12.5 px lines of one-pixel strokes UI Toolkit splits over two device pixels at the scaled root (ink
   colour ΔE2000 8.07 and 6.13 against 5.89 at 1600×900) pass by direction: ruling R152 judged them so in the second round,
