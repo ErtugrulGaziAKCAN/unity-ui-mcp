@@ -123,15 +123,32 @@ Kit'in Design System'ini canvas'a ekle. Sonra:
 - **Oyunun zaten çizdiği alanlar** (mevcut üst bar ya da yan menü) `data-u-external` ile işaretlenmiş yer tutuculardır:
   kutuları korunur, Unity'de hiçbir şey çizmezler ve karşılaştırmada maskelenirler.
 
+**Taslak değil, oyundan tasarla.** Bu ekranları oyuncular kullanır. Çizmeye başlamadan önce ekranın envanterini oyundan
+çıkar: gösterdiği her değer ve oyunun onu nereden aldığı, her aksiyon ve onu çalıştıran kod, durumları, listeleri ve
+zaten var olan metinleri (yeniden tasarımda mevcut ekranın yaptığı her şey). Tam olarak bunu ve senin istediğini çiz:
+oyunun karşılayamayacağı hiçbir buton, metin ya da değer yok. Örnek veri oyununkine benzer (kullandığı türden adlar,
+gerçek aralıklar ve biçimler, en uzun metinleri); bağlı değerleri çalışırken oyun doldurur.
+
 İyi çalışan bir istek:
 
-> Ekli design system'i kullan ve README'sindeki kurallara uy. Ekran kimliği `club.overview`, tek bir 2560×1440 artboard.
+> Ekli design system'i kullan ve README'sindeki kurallara uy. Bu ekran kulüp özetini yeniden tasarlıyor; envanteri:
+> kulüp verisinden kulüp adı, bütçe ve oyuncu listesi (ad, sakatlık rozeti), open-inbox ve open-player aksiyonları,
+> default ve loading durumları. Tam olarak bunu çiz, fazlasını değil. Ekran kimliği `club.overview`, tek bir 2560×1440 artboard.
 > Görünen metinleri kuralların adını verdiği referans dilde yaz; her metne İngilizce `data-l10n` anahtarı ve `data-en` İngilizce metni ekle. Her butona
 > `data-u-id` ve `data-u-action` ver. Yalnız kit'in yazı stili sınıflarını (caption'dan küçüğü yok) ve token'larını kullan, yalnız flex yerleşim,
 > grid ya da calc yok. Oyuncu listesini beş örnek satır olarak yaz, ilkine `data-u-repeat="player"` koy. Mevcut üst
 > barı `data-u-external` ile işaretle.
 
 HTML'i başka bir AI yazacaksa aynı sözleşmeyi `design_ui_rules` aracıyla okuyabilir.
+
+**Ekran sözleşmesi.** Envanteri isteğe elle yazmak yerine `/unity-ui-mcp`'ye onu projeden
+`<designRoot>/<ekran-klasörü>/screen.contract.json` olarak yazdır ve `design_ui_brief { screen }` çağır (ya da
+`design-export contract brief <tasarım klasörü> --kit <kitDir>`): brif, gerçek örnek değerler ve oyunun metinleriyle
+tam olarak neyin çizileceğini listeler; onu tasarım aracına yapıştır. Brif için henüz tasarım sayfası gerekmez. Lint
+sonra tasarımı bu dosyayla karşılaştırır (`U-CON-*`; dosya yoksa ekran `I-CON-001` notunu alır, kit'in `screenContract`
+ayarı `required` ise hata). Kullanıcının karar verdiği bir çıkarma ya da ekleme, onun sözleriyle `note` alanına
+yazılarak sözleşmeye girer; aktarma sonucu, presenter'ın yazılacağı bağlantı listesini verir. Dosyanın biçimi skill'de
+(`/unity-ui-mcp`) bir tablo ve örnekle anlatılır.
 
 ## Ekranı Unity'ye getirmek
 
@@ -172,7 +189,10 @@ yazmaz ve onu listeler; değişikliği tasarıma taşı ya da bilerek `discardMa
 
 ## Ekranı oyun koduna bağlamak
 
-Oyunun dokunduğu tek kod üretilen View sınıfıdır. Ona veri veren ve olaylarını işleyen presenter senin kodundur.
+Oyunun dokunduğu tek kod üretilen View sınıfıdır. Presenter (oyunun kendi kodu) ona envanterin listelediği
+kaynaklardan veri verir ve olaylarından aynı komutları çalıştırır. Yeniden tasarım, envanterdeki her madde Play modunda
+her çözünürlükte ve dil değişiminden sonra yeni konsol hatası olmadan çalıştığında biter; `/unity-ui-mcp` her maddeyi,
+aktarmanın bağlantı listesindeki her girdi için bir satır olarak, geçti, kaldı ya da çalıştırılmadı diye raporlar.
 
 **Ekranı göstermek.** UI'nın altına kaynağı ekranın `<Ekran>.uxml` dosyası olan ve profilin PanelSettings'ini
 (varsayılan: paketin `DesignUiPanelSettings`'i) kullanan bir `UIDocument` koy. uGUI kabuğunun içindeysen ekranın
@@ -374,6 +394,7 @@ npx design-export compare <exportDir> --unity <captureDir> --report report.html
 npx design-export kit build <kitDir> --check
 npx design-export kit claude <kitDir> <outDir> [--all-faces]
 npx design-export kit upgrade <kitDir> [--dry-run]
+npx design-export contract brief <tasarım klasörü ya da sayfası> --kit <kitDir>
 ```
 
 Unity'de: `Window > Design UI > Import Screen…` ve `Window > Design UI > Kit Sync`; batchmode'da
@@ -406,6 +427,11 @@ Unity'de: `Window > Design UI > Import Screen…` ve `Window > Design UI > Kit S
 | U-MRK-014 | referans dil `en` iken görünen metinden farklı `data-en` | görünen metnin aynısını yaz ya da `data-en`'i kaldır |
 | U-FONT-001 | fontta gerçek yüzü olmayan kalınlık ya da italik | 400 ya da 700, ya da yüzü Unity'de ekleyip kit'i senkronla |
 | U-FONT-003 | kit fontunda olmayan bir karakter | fontun kapsadığı karakterler ya da onları içeren bir font |
+| U-CON-001 | `screenContract: required` iken sözleşme yok, ya da sözleşme geçersiz | `screen.contract.json`'u projeden yaz ya da düzelt |
+| U-CON-002 | tasarımda sözleşmede olmayan bir değer, aksiyon, durum, liste ya da metin anahtarı | tasarımdan çıkar, ya da kaynağıyla (veya kullanıcının notuyla istenmiş olarak) sözleşmeye ekle |
+| U-CON-003 | sözleşmedeki bir madde tasarımda yok | çiz, ya da kullanıcının kararını `removed`'a yaz |
+| U-CON-005 | bağlı bir metnin örneği sözleşmenin `samples` değerlerinden biri değil | sözleşmedeki gerçek bir örneği kullan |
+| U-CON-006 | bir metnin İngilizcesi (ya da `ref`'i) sözleşmedekinden farklı | oyunun metnini kullan |
 
 Her düzeltmesiyle tam liste [RULES.md](../../design-kit/RULES.md#lint-rules) dosyasındadır. Lint dışındaki sorunlar
 için README'deki [sorun giderme](../../README.md#troubleshooting) tablosuna bak.

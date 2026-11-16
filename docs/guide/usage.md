@@ -408,6 +408,7 @@ npx design-export compare <exportDir> --unity <captureDir> --report report.html
 npx design-export kit build <kitDir> --check
 npx design-export kit claude <kitDir> <outDir> [--all-faces]
 npx design-export kit upgrade <kitDir> [--dry-run]
+npx design-export contract brief <design folder or page> --kit <kitDir>
 ```
 
 In Unity: `Window > Design UI > Import Screen…` and `Window > Design UI > Kit Sync`, or in batchmode
@@ -442,6 +443,11 @@ Profile` gives an older profile the default viewports it lacks.
 | U-MRK-014 | with the reference locale `en`, a `data-en` that is not the visible text | write it as the visible text, or leave it out |
 | U-FONT-001 | a weight or italic the font has no real face for | 400 or 700, or add the face in Unity and sync the kit |
 | U-FONT-003 | a character the kit font lacks | characters the font covers, or a font that has them |
+| U-CON-001 | no screen contract under `screenContract: required`, or an invalid one | write or repair `screen.contract.json` from the project |
+| U-CON-002 | a value, action, state, list or text key the contract lacks | remove it from the design, or add it to the contract with its source (or as requested, with the user's note) |
+| U-CON-003 | a contract item missing from the design | draw it, or record the user's decision in `removed` |
+| U-CON-005 | a bound text's sample that is not one of the contract's `samples` | use a real sample from the contract |
+| U-CON-006 | a text whose English (or `ref`) differs from the contract's | use the game's text |
 
 The full list with every fix is in [RULES.md](../../design-kit/RULES.md#lint-rules). For problems outside lint, see
 the README's [troubleshooting](../../README.md#troubleshooting).
