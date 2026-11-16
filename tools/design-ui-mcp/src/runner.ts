@@ -25,6 +25,8 @@ export interface ImportAnswer {
   ms: number | null;
   /** The project's scripts do not compile (Unity's last compilation failed); null from a bridge that does not say. */
   scriptsFailed: boolean | null;
+  /** The screen's generated folder (an asset path, `<outputFolder>/<Screen>`); null from a bridge that does not say. */
+  output: string | null;
 }
 
 /**
@@ -105,6 +107,7 @@ function importAnswer(res: any): ImportAnswer | null {
     changed: strings(res.changed), imported: strings(res.imported), compiled: strings(res.compiled), compiling: res.compiling,
     compileId: typeof res.compileId === "number" ? res.compileId : null, ms: typeof res.ms === "number" ? res.ms : null,
     scriptsFailed: typeof res.scriptsFailed === "boolean" ? res.scriptsFailed : null,
+    output: typeof res.output === "string" && res.output.length > 0 ? res.output : null,
   };
 }
 

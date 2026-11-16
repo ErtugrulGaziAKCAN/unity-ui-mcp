@@ -71,6 +71,7 @@ namespace DesignUi.Editor.Tests
             var r = DesignUiBatch.Run(DesignUiBatch.ImportCommand, Line("Import", "-designUiProfile", profile, "-designUiExport", export));
             Assert.AreEqual(0, r.Code, r.Log);
             StringAssert.StartsWith("Imported batch.screen into " + output + "/BatchScreen: ", r.Log);
+            Assert.AreEqual(output + "/BatchScreen", r.Output, "the screen's generated folder, for a runner that checks it is still there");
             StringAssert.Contains("#123456", File.ReadAllText(Path.Combine(output, "BatchScreen", "BatchScreen.uss")));
         }
 
@@ -117,7 +118,8 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void ImportEach_WritesTheDoneMarker_WithEachIrsSha256AndCode()
         {
-            var profile = Profile(TempDir("out"));
+            var profileOutput = TempDir("out");
+            var profile = Profile(profileOutput);
             var good = Export(TempDir("good"), "batch.good", "#111111");
             var missing = Path.Combine(TempDir("x"), "missing");
             var done = Path.Combine(TempDir("done"), "sub", "import-done.json");
@@ -131,8 +133,10 @@ namespace DesignUi.Editor.Tests
             using (var h = System.Security.Cryptography.SHA256.Create())
                 sha = string.Concat(h.ComputeHash(File.ReadAllBytes(Path.Combine(good, ScreenCompiler.IrFileName))).Select(b => b.ToString("x2")));
             Assert.AreEqual(sha, imports[0].Value<string>("irSha"));
+            Assert.AreEqual(Path.Combine(profileOutput, "BatchGood").Replace('\\', '/'), imports[0].Value<string>("output"), "where the screen was written");
             Assert.AreEqual(1, imports[1].Value<int>("code"));
             Assert.AreEqual(Newtonsoft.Json.Linq.JTokenType.Null, imports[1]["irSha"].Type);
+            Assert.AreEqual(Newtonsoft.Json.Linq.JTokenType.Null, imports[1]["output"].Type);
         }
 
         [Test]

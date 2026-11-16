@@ -21,6 +21,11 @@ export interface ImportRecord {
   importedAt: string;
   via: RunnerRoute;
   discardManualEdits: boolean;
+  /**
+   * The screen's generated folder in the Unity project (`<outputFolder>/<Screen>`, as Unity names it), relative to the project;
+   * an unchanged import calls Unity again when its manifest is gone. Absent in records of older versions (Unity is called).
+   */
+  output?: string;
   /** Milliseconds of the import's steps (export, import, compile), carried into the verification report. */
   timings?: Record<string, number>;
 }

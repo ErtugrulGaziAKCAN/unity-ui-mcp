@@ -29,7 +29,7 @@ namespace DesignUi.Editor
     /// Loopback HTTP endpoint inside the open Editor. The listener thread never calls Unity APIs.
     /// <para>
     /// <c>POST /import</c> answers as soon as the written files are imported: <c>{ code, log, warnings, errors, changed,
-    /// imported, compiled, compiling, compileId, ms }</c>; <c>POST /kit-sync</c> with <c>{ code, log, warnings, errors, ms }</c>.
+    /// imported, compiled, compiling, compileId, ms, output }</c>; <c>POST /kit-sync</c> with <c>{ code, log, warnings, errors, ms }</c>.
     /// <c>warnings</c> and <c>errors</c> list the operation's warnings and errors one by one (the log has them too, but a client
     /// may keep only its end). When a generated C# file changed (<c>compiled</c>), Unity compiles and reloads the
     /// scripts afterwards; <c>compiling</c> stays true in <c>GET /status</c> until that reload (or until the compile fails or
@@ -271,6 +271,8 @@ namespace DesignUi.Editor
                 // already ended inside the import): an import is not usable while scripts fail, even without a script change
                 ["scriptsFailed"] = s_ScriptsFailed || EndedFailed(id),
                 ["lastCompile"] = string.IsNullOrEmpty(s_LastCompile) ? JValue.CreateNull() : JToken.Parse(s_LastCompile),
+                // the screen's generated folder: the server imports again when it is gone
+                ["output"] = r.Output,
             };
         }
 

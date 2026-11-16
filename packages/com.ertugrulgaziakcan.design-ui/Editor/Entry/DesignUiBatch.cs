@@ -136,8 +136,8 @@ namespace DesignUi.Editor
         /// <see cref="DesignUiOps.Import"/> for each folder, in order; a failure does not stop the next. One folder answers
         /// with its own log; several prefix each log with <c>== &lt;folder&gt;</c> and end with a count of the failed ones.
         /// <paramref name="doneFile"/> (a command runner's <c>DESIGN_UI_IMPORT_DONE</c>): written last, <c>{ "imports": [ {
-        /// exportDir, code, irSha } ] }</c> with the SHA-256 of each folder's screen.ir.json, so the runner knows which design
-        /// this run imported.
+        /// exportDir, code, irSha, output } ] }</c> with the SHA-256 of each folder's screen.ir.json, so the runner knows which design
+        /// this run imported, and the screen's generated folder (<see cref="OpResult.Output"/>).
         /// </summary>
         public static OpResult ImportEach(string profilePath, IReadOnlyList<string> exportDirs, bool discardManualEdits, Action<string, OpResult> each = null, string doneFile = null)
         {
@@ -151,7 +151,7 @@ namespace DesignUi.Editor
                     if (File.Exists(ir))
                         using (var h = System.Security.Cryptography.SHA256.Create())
                             sha = string.Concat(h.ComputeHash(File.ReadAllBytes(ir)).Select(b => b.ToString("x2")));
-                    done.Add(new Newtonsoft.Json.Linq.JObject { ["exportDir"] = dir, ["code"] = one.Code, ["irSha"] = sha });
+                    done.Add(new Newtonsoft.Json.Linq.JObject { ["exportDir"] = dir, ["code"] = one.Code, ["irSha"] = sha, ["output"] = one.Output });
                     each?.Invoke(dir, one);
                 });
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(doneFile)));

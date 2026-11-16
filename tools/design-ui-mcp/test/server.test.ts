@@ -398,6 +398,32 @@ describe("design_ui_import", () => {
     expect(p.runnerCalls()).toHaveLength(2);
   });
 
+  it("calls Unity again for an unchanged export when the screen's generated folder is gone, and records where Unity wrote it", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const pipeline = stubPipeline();
+    const client = await serverFor(p.dir, pipeline);
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    // the generated folder Unity names in its done marker (the stub writes Assets/UI/Generated/CleanScreen)
+    const rec = JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-import.json"), "utf8"));
+    expect(rec.output).toBe("Assets/UI/Generated/CleanScreen");
+    const generated = path.join(p.dir, "Assets", "UI", "Generated", "CleanScreen");
+    expect(fs.existsSync(path.join(generated, ".design-ui.json"))).toBe(true);
+    fs.rmSync(generated, { recursive: true });
+    const again = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(again.isError).toBeFalsy();
+    expect(again.data).toMatchObject({ exported: false, unityCalled: true });
+    expect(p.runnerCalls()).toHaveLength(2);
+    expect(fs.existsSync(path.join(generated, ".design-ui.json"))).toBe(true);
+    // back in place: skipped again; an import recorded before the record named its folder calls Unity once
+    expect((await call(client, "design_ui_import", { design: "clean-screen" })).data).toMatchObject({ unityCalled: false });
+    const file = path.join(dir, ".design-ui", "last-import.json");
+    const { output: _output, ...older } = JSON.parse(fs.readFileSync(file, "utf8"));
+    fs.writeFileSync(file, JSON.stringify(older));
+    expect((await call(client, "design_ui_import", { design: "clean-screen" })).data).toMatchObject({ unityCalled: true });
+    expect(p.runnerCalls()).toHaveLength(3);
+  });
+
   it("calls Unity again for an unchanged export when the profile or the kit changed", async () => {
     const p = tempProject({ prefer: "command" });
     p.addScreen("clean-screen", "clean-screen");

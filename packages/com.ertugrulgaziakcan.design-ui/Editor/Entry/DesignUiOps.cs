@@ -23,18 +23,27 @@ namespace DesignUi.Editor
         public readonly IReadOnlyList<string> Warnings;
         /// <summary>The operation's errors, one entry each (the log has them too); empty, not null, for a result made by a constructor.</summary>
         public readonly IReadOnlyList<string> Errors;
+        /// <summary>
+        /// An import's screen folder (<c>&lt;outputFolder&gt;/&lt;Screen&gt;</c>, as the profile names the output folder: an asset path,
+        /// or absolute outside the project) once it was written; null otherwise. A runner records it, and imports again when it is gone.
+        /// </summary>
+        public readonly string Output;
 
         public OpResult(int code, string log) : this(code, log, null) { }
 
         public OpResult(int code, string log, IReadOnlyList<string> written) : this(code, log, written, null, null) { }
 
         public OpResult(int code, string log, IReadOnlyList<string> written, IReadOnlyList<string> warnings, IReadOnlyList<string> errors)
+            : this(code, log, written, warnings, errors, null) { }
+
+        public OpResult(int code, string log, IReadOnlyList<string> written, IReadOnlyList<string> warnings, IReadOnlyList<string> errors, string output)
         {
             Code = code;
             Log = log;
             Written = written;
             Warnings = warnings ?? None;
             Errors = errors ?? None;
+            Output = output;
         }
 
         static readonly string[] None = new string[0];
@@ -172,7 +181,7 @@ namespace DesignUi.Editor
             }
             warnings.AddRange(r.Orphans.Select(o => "orphan screen folder (not deleted): " + o));
             warnings.AddRange(r.StaleAssets.Select(a => "asset no screen uses (not deleted): " + a));
-            return new OpResult(r.Ok ? 0 : 1, log.ToString().TrimEnd('\n'), r.Written, warnings, errors);
+            return new OpResult(r.Ok ? 0 : 1, log.ToString().TrimEnd('\n'), r.Written, warnings, errors, r.Ok ? r.Folder : null);
         }
     }
 }

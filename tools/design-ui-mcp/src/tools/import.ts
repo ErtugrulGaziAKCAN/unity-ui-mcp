@@ -124,7 +124,9 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         const verifyArg = page ?? screen;
 
         const discard = discardManualEdits === true;
-        if (last && last.irSha === irSha && last.kitSha === kit.sha && (last.compiler ?? null) === compiler && (last.profileSha ?? null) === profileSha && !discard) {
+        // the generated screen must still be there: an unchanged IR skips Unity only while its folder's manifest exists
+        const generated = typeof last?.output === "string" && fs.existsSync(path.join(path.resolve(cfg.projectDir, last.output), GENERATED_MANIFEST));
+        if (last && generated && last.irSha === irSha && last.kitSha === kit.sha && (last.compiler ?? null) === compiler && (last.profileSha ?? null) === profileSha && !discard) {
           if (exported || last.sourceSha !== src || last.entry !== entryName || last.screen !== screen) {
             writeLastImport(dir, { ...last, screen, entry: entryName, sourceSha: src });
           }
@@ -168,7 +170,8 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
           screen, entry: entryName, exported, unityCalled: true, via: run.via, code: 0, irSha, sourceSha: src, exportDir,
           warnings: run.warnings, errors: run.errors, logTail: run.logTail, ...unity,
         };
-        if (run.via === "command" && !confirmsImport(doneFile, irSha)) {
+        const confirmed = run.via === "command" ? confirmsImport(doneFile, irSha) : null;
+        if (run.via === "command" && !confirmed) {
           return toolResult(withIssues(`Unity import of ${named} (via command) exited 0 but did not confirm this export: ${fs.existsSync(doneFile) ? "import-done.json names another IR or a failed import" : "no import-done.json"} ` +
             "(the import command must run DesignUiOpsTests.ImportFromEnv or DesignUiBatch.Import, which write it). Nothing was recorded.", run),
           { ...base, unityTimings: run.timings, timings: t.done() }, true);
@@ -197,9 +200,11 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
         const steps: Record<string, number> = { export: t.steps.export };
         if (run.via === "editor") { steps.import = run.timings.request; if (run.timings.compileWait !== undefined) steps.compile = run.timings.compileWait; }
         else steps.import = run.timings.total;
+        // where Unity wrote the screen (its answer, or the command route's done marker)
+        const output = run.via === "command" ? confirmed?.output ?? null : run.answer?.output ?? null;
         writeLastImport(dir, {
           screen, entry: entryName, sourceSha: src, kitSha: kit.sha, irSha, ...(compiler ? { compiler } : {}), ...(profileSha ? { profileSha } : {}),
-          importedAt: new Date().toISOString(), via: run.via, discardManualEdits: discard, timings: steps,
+          importedAt: new Date().toISOString(), via: run.via, discardManualEdits: discard, timings: steps, ...(output ? { output } : {}),
         });
         const a = run.answer;
         const what = a
@@ -249,10 +254,17 @@ function irScreen(ir: Buffer): string | null {
   } catch { return null; }
 }
 
-/** Whether the command route's import-done.json confirms a successful import of this IR. */
-function confirmsImport(file: string, irSha: string): boolean {
+/** The name of the manifest Unity writes in a screen's generated folder (ScreenCompiler.ManifestFileName). */
+const GENERATED_MANIFEST = ".design-ui.json";
+
+/**
+ * The command route's import-done.json entry that confirms a successful import of this IR (with the generated folder Unity
+ * names, when it does), or null.
+ */
+function confirmsImport(file: string, irSha: string): { output: string | null } | null {
   try {
     const done = JSON.parse(fs.readFileSync(file, "utf8"));
-    return Array.isArray(done?.imports) && done.imports.some((e: any) => e?.irSha === irSha && e?.code === 0);
-  } catch { return false; }
+    const e = Array.isArray(done?.imports) ? done.imports.find((x: any) => x?.irSha === irSha && x?.code === 0) : undefined;
+    return e ? { output: typeof e.output === "string" && e.output.length > 0 ? e.output : null } : null;
+  } catch { return null; }
 }

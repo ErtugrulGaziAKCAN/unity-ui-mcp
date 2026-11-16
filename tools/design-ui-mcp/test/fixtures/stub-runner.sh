@@ -29,7 +29,10 @@ fi
 if [ "${1:-}" = import ] && [ "$code" = 0 ] && [ -n "${DESIGN_UI_IMPORT_DONE:-}" ] && [ "$done_mode" != none ]; then
   sha="$(node -e 'const c=require("crypto"),f=require("fs");process.stdout.write(c.createHash("sha256").update(f.readFileSync(process.argv[1])).digest("hex"))' "$DESIGN_UI_EXPORT_DIR/screen.ir.json")"
   [ "$done_mode" = wrong ] && sha="0000000000000000000000000000000000000000000000000000000000000000"
-  printf '{"imports":[{"exportDir":"%s","code":0,"irSha":"%s"}]}\n' "$DESIGN_UI_EXPORT_DIR" "$sha" > "$DESIGN_UI_IMPORT_DONE"
+  # the screen's generated folder, with its manifest, as Unity's import writes it
+  out="Assets/UI/Generated/CleanScreen"
+  if [ -n "${DESIGN_UI_PROJECT_DIR:-}" ]; then mkdir -p "$DESIGN_UI_PROJECT_DIR/$out" && echo '{}' > "$DESIGN_UI_PROJECT_DIR/$out/.design-ui.json"; fi
+  printf '{"imports":[{"exportDir":"%s","code":0,"irSha":"%s","output":"%s"}]}\n' "$DESIGN_UI_EXPORT_DIR" "$sha" "$out" > "$DESIGN_UI_IMPORT_DONE"
 fi
 if [ "${1:-}" = kitSync ] && [ "$code" = 0 ] && [ -n "${DESIGN_UI_KIT_SYNC_DONE:-}" ] && [ "$kit_done_mode" != none ]; then
   printf '{"kitSync":{"kitDir":"%s","code":0}}\n' "${DESIGN_UI_KIT_DIR:-}" > "$DESIGN_UI_KIT_SYNC_DONE"
