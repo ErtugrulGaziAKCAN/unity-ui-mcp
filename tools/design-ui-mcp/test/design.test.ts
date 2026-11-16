@@ -48,6 +48,17 @@ describe("resolveScreen", () => {
     expect(resolveScreen("canvas", root)).toEqual({ screen: "clean.screen", dir: d, entry: null });
     expect(resolveScreen("clean.screen", root)).toEqual({ screen: "clean.screen", dir: d, entry: null });
   });
+  it("names the screen folder as it is on disk when the argument spells it in another case (a case-insensitive file system)", (ctx) => {
+    const root = tempDir();
+    const d = path.join(root, "Login");
+    fs.mkdirSync(d);
+    fs.writeFileSync(path.join(d, "screen.html"), html.replace(/data-u-screen="[^"]+"/, 'data-u-screen="login"'));
+    if (!fs.existsSync(path.join(root, "login"))) ctx.skip("this file system tells Login and login apart");
+    // the run's lock and the cleanup key on the folder: one folder has one name
+    expect(resolveScreen("login", root)).toEqual({ screen: "login", dir: d, entry: null });
+    expect(resolveScreen("LOGIN/SCREEN.HTML", root)).toEqual({ screen: "login", dir: d, entry: path.join(d, "screen.html") });
+    expect(resolveScreen(path.join(root, "login"), root).dir).toBe(d);
+  });
   it("refuses a file that is not a design page", () => {
     const root = tempDir();
     const d = path.join(root, "canvas");

@@ -183,6 +183,31 @@ describe("bookkeeping cleanup", () => {
     markBusy(dir, "verify")();
   });
 
+  it("holds the folder, not its spelling: a case-variant name neither takes over a running run's marker nor hides it from the cleanup", (ctx) => {
+    const d = designRoot();
+    const dir = d.screen("Login");
+    if (!fs.existsSync(path.join(d.root, "login"))) ctx.skip("this file system tells Login and login apart");
+    const variant = path.join(d.root, "login");
+    fs.mkdirSync(path.join(dir, ".design-ui", "unity.next"));
+    fs.writeFileSync(path.join(dir, ".design-ui", "unity.next", "default.png"), "png");
+    // a verify that names the screen by its id (lower case) while the folder on disk is "Login"
+    const done = markBusy(variant, "verify");
+    try {
+      expect(isBusy(dir)).toBe(true);
+      expect(isBusy(variant)).toBe(true);
+      expect(() => markBusy(dir, "import")).toThrow(ScreenBusyError);
+      expect(() => markBusy(path.join(d.root, "LOGIN"), "import")).toThrow(ScreenBusyError);
+      // another screen's run ends and cleans up: the running verify's captures stay
+      const plan = planClean(d.root, 2048);
+      expect(plan.removals.filter((r) => r.screen === "Login" && r.path.includes("unity.next"))).toEqual([]);
+      expect(fs.existsSync(path.join(dir, ".design-ui", "unity.next", "default.png"))).toBe(true);
+    } finally { done(); }
+    expect(isBusy(dir)).toBe(false);
+    // and the other way round: the folder's own name first, the id's spelling refused
+    const first = markBusy(dir, "verify");
+    try { expect(() => markBusy(variant, "import")).toThrow(ScreenBusyError); } finally { first(); }
+  });
+
   it("treats a run marker of a process that is gone as left over", () => {
     const d = designRoot();
     const dir = d.screen("crashed");

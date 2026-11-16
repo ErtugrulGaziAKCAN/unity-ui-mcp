@@ -177,7 +177,9 @@ export function resolveScreen(design: string, designRoot: string): ScreenRef {
     p = path.join(designRoot, holders[0]);
   }
   const isDir = fs.statSync(p).isDirectory();
-  const dir = isDir ? p : path.dirname(p);
+  // the folder's name as it is on disk: a case-insensitive file system also opens another spelling, and the run's claim and
+  // the cleanup know one folder by one name
+  const dir = onDiskName(isDir ? p : path.dirname(p));
   if (!sameProject(path.dirname(dir), designRoot)) {
     throw new Error(`${dir} is not a screen folder under designRoot (${designRoot}): put the design in ${path.join(designRoot, "<screen-id>")}${path.sep} first`);
   }
@@ -195,6 +197,16 @@ export function resolveScreen(design: string, designRoot: string): ScreenRef {
     entry = path.join(dir, pages.find((n) => n === base) ?? pages.find((n) => n.toLowerCase() === base.toLowerCase()) ?? base);
   }
   return { screen: folderScreenId(dir, designRoot), dir, entry };
+}
+
+/** `p` with its last name spelled as its folder lists it (the exact name first, else the one that differs only in case). */
+function onDiskName(p: string): string {
+  const parent = path.dirname(p), base = path.basename(p);
+  let names: string[];
+  try { names = fs.readdirSync(parent); } catch { return p; }
+  if (names.includes(base)) return p;
+  const same = names.filter((n) => n.toLowerCase() === base.toLowerCase());
+  return same.length === 1 ? path.join(parent, same[0]) : p;
 }
 
 /** Screen folders under designRoot: subfolders (not dot folders) that contain a design page. */

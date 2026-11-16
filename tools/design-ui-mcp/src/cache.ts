@@ -74,11 +74,20 @@ function alive(pid: unknown): boolean {
   try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === "EPERM"; }
 }
 
+/**
+ * The key of a screen folder's claim (and of a path the cleanup protects): its real path as it is on disk
+ * (`realpathSync.native` gives the on-disk letter case on macOS and Windows, which open `login` for a folder `Login`), so
+ * every spelling of one folder is one claim.
+ */
+function folderKey(screenDir: string): string {
+  try { return fs.realpathSync.native(screenDir); } catch { return path.resolve(screenDir); }
+}
+
 /** Whether an import or verify of the screen folder is running (its marker names a live process, set in the last hours). */
 export function isBusy(screenDir: string, now = Date.now()): boolean {
   const file = path.join(screenDir, BOOKKEEPING_DIR, BUSY_FILE);
   if (!fs.existsSync(file)) return false;
-  return holds(path.resolve(screenDir), file, readJson(file), now);
+  return holds(folderKey(screenDir), file, readJson(file), now);
 }
 
 /** An import or verify that holds a screen folder. */
@@ -102,8 +111,8 @@ function holds(key: string, file: string, m: any, now: number): boolean {
     // created exclusively a moment ago and not written yet, or a broken file a crash left
     try { return now - fs.statSync(file).mtimeMs < BUSY_WRITE_MS; } catch { return false; }
   }
-  // this process knows its own runs: a marker with its pid that it does not hold is left over
-  if (m.pid === process.pid) return running.get(key)?.token === m.token;
+  // this process knows its own runs: a marker with its pid that none of them holds is left over
+  if (m.pid === process.pid) return running.get(key)?.token === m.token || [...running.values()].some((r) => r.token === m.token);
   const since = Date.parse(m.since ?? "");
   return alive(m.pid) && Number.isFinite(since) && now - since < BUSY_STALE_MS;
 }
@@ -116,11 +125,11 @@ function holds(key: string, file: string, m: any, now: number): boolean {
  * crash and taken over. Throws ScreenBusyError while another run holds the folder.
  */
 export function markBusy(screenDir: string, what: "import" | "verify"): () => void {
-  const key = path.resolve(screenDir), screen = path.basename(key);
-  const mine = running.get(key);
-  if (mine) throw new ScreenBusyError(screen, { what: mine.what, pid: process.pid, since: mine.since });
   const dir = path.join(screenDir, BOOKKEEPING_DIR), file = path.join(dir, BUSY_FILE);
   fs.mkdirSync(dir, { recursive: true });
+  const key = folderKey(screenDir), screen = path.basename(key);
+  const mine = running.get(key);
+  if (mine) throw new ScreenBusyError(screen, { what: mine.what, pid: process.pid, since: mine.since });
   const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const marker = { what, pid: process.pid, since: new Date().toISOString(), token };
   for (let attempt = 0; ; attempt++) {
@@ -210,7 +219,8 @@ export function planClean(designRoot: string, budgetMB: number, folder?: string,
   const removals: Removal[] = [];
   // what a run that just finished must keep (the captures it was asked to keep, and the export they are compared with): never
   // removed by its own cleanup
-  const kept = (p: string) => (opts.protect ?? []).some((q) => path.resolve(q) === path.resolve(p));
+  const protect = (opts.protect ?? []).map(folderKey);
+  const kept = (p: string) => protect.includes(folderKey(p));
   for (const s of screens) removals.push(...screenRemovals(designRoot, s.folder, s.busy, opts.kept === true).filter((r) => !kept(r.path)));
   const total = screens.reduce((a, s) => a + s.bytes, 0);
   let after = total - removals.reduce((a, r) => a + r.bytes, 0);
