@@ -67,11 +67,12 @@ export interface SnapElement {
   enToks?: EnTok[]; enRendered?: string | null;
   /**
    * On an element with `data-u-bind` or `data-u-arg`: its sample value as the IR's sample data reads it (`plainText`):
-   * every descendant text node, a `<br>` as a line break, whatever CSS shows of it (visibility, text-transform); a field
-   * its `value` attribute, a dropdown its selected option. Null when the element does not render (no client rects).
-   * The screen contract's sample check (U-CON-005) compares it, normalized, with the contract's samples.
+   * every descendant text node, a `<br>` as a line break, whatever CSS shows of it (visibility, text-transform, display:
+   * a value that does not render, as in an inactive state root, has its text too); a field its `value` attribute, a
+   * dropdown its selected option; "" without text (an `<img>`). The screen contract's sample check (U-CON-005)
+   * compares it, normalized, with the contract's samples.
    */
-  boundText?: string | null;
+  boundText?: string;
   /**
    * Inline <svg> roots: how its shapes paint. `current` = every fill/stroke/stop follows currentColor (tintable),
    * `fixed` = none does, `mixed` = both, `none` = nothing painted.
@@ -188,7 +189,7 @@ interface RawElement {
   size: Size | null; computed: Record<string, string>; pseudo: Record<string, Record<string, string>>; inline: RawStyle | null;
   vars: Record<string, string>; minAuto: { axis: "row" | "column"; before: Box; after: Box } | null; shadow: boolean;
   lines?: SnapLine[]; textOverflow?: SnapElement["textOverflow"]; enToks?: EnTok[]; enRendered?: string | null;
-  boundText?: string | null;
+  boundText?: string;
 }
 interface RawPage {
   viewport: { width: number; height: number; scale: number };
@@ -423,13 +424,13 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
     }
     // a bound value or a Smart String argument: its sample as the IR's sample data reads it (extract/text.ts plainText),
     // the text of every descendant whatever CSS shows of it (innerText drops visibility: hidden text and applies
-    // text-transform); a field its value attribute, a dropdown its selected option (else its first)
-    let boundText: string | null | undefined;
+    // text-transform), rendered or not (no invented value anywhere in the design); a field its value attribute, a
+    // dropdown its selected option (else its first)
+    let boundText: string | undefined;
     if (el.hasAttribute("data-u-bind") || el.hasAttribute("data-u-arg")) {
       const rawText = (n: Node): string => Array.from(n.childNodes).map((c) => c.nodeType === 3 ? (c as Text).data
         : c.nodeType === 1 ? ((c as Element).localName === "br" && (c as Element).namespaceURI === "http://www.w3.org/1999/xhtml" ? "\n" : rawText(c)) : "").join("");
-      if (!el.getClientRects().length) boundText = null;
-      else if (el.localName === "input") boundText = el.getAttribute("value") ?? "";
+      if (el.localName === "input") boundText = el.getAttribute("value") ?? "";
       else if (el.localName === "select") {
         const opts = Array.from(el.children).filter((c) => c.localName === "option");
         const o = opts.find((c) => c.hasAttribute("selected")) ?? opts[0];

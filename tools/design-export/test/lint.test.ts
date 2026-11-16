@@ -214,6 +214,47 @@ describe("screen contract", () => {
     ]);
   });
 
+  it("names image: true as the fix for an image bind the contract gives text samples", async () => {
+    const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const c = json("U-CON-005.pass.contract.json");
+    for (const v of c.values) if (v.name === "club-crest") { delete v.image; v.samples = ["Crest"]; }
+    const plain = '<div class="crest" data-u-id="crest" data-u-bind="club-crest"></div>';
+    const crests: [string, RegExp][] = [
+      // an <img>, and an element that paints a background image and shows no text: image binds
+      [`<img class="crest" data-u-id="crest" data-u-bind="club-crest" src="${PNG}">`, /^This value is an image bind in the design: mark it "image": true in the contract/],
+      [`<div class="crest" data-u-id="crest" data-u-bind="club-crest" style="background-image: url('${PNG}')"></div>`, /^This value is an image bind in the design/],
+      // an element that shows text over a background image, and one with neither: a text sample to fix
+      [`<div class="crest" data-u-id="crest" data-u-bind="club-crest" style="background-image: url('${PNG}')">NB</div>`, /^Use a real sample from the contract/],
+      [plain, /^Use a real sample from the contract/],
+    ];
+    const dir = tmp();
+    try {
+      for (const [crest, fix] of crests) {
+        fs.writeFileSync(path.join(dir, "crest.html"), fs.readFileSync(fx("U-CON-005.pass.html"), "utf8").replace(plain, crest));
+        const f = (await lintFile(path.join(dir, "crest.html"), kit, valid(c))).filter((x) => x.ruleId === "U-CON-005");
+        expect(f.map((x) => x.detail), crest).toEqual([`value "club-crest" shows "${crest.includes(">NB<") ? "NB" : ""}", not among the screen contract's samples`]);
+        expect(f[0].fix, crest).toMatch(fix);
+      }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("checks the samples of values that do not render, as in an inactive state root", async () => {
+    const dir = tmp();
+    try {
+      const page = fs.readFileSync(fx("U-CON-005.pass.html"), "utf8")
+        .replace("</style>", ".err{display:none;flex-direction:column}.state-error .err{display:flex}</style>")
+        .replace('<p data-u-id="form"', '<div class="err" data-u-id="error" data-u-state="error"><p data-u-id="reason" data-u-bind="error-reason">Stadium on fire</p></div>\n<p data-u-id="form"');
+      fs.writeFileSync(path.join(dir, "state.html"), page);
+      const c = json("U-CON-005.pass.contract.json");
+      c.states = [{ name: "error", when: "the club data could not be read", origin: "existing" }];
+      c.values.push({ name: "error-reason", source: "the club reader's error, localized", samples: ["Connection lost"], origin: "existing" });
+      expect(con(await lintFile(path.join(dir, "state.html"), kit, valid(c))))
+        .toEqual(['U-CON-005 [data-u-screen=lint.sample] > div[data-u-id=error] > p[data-u-id=reason]: value "error-reason" shows "Stadium on fire", not among the screen contract\'s samples']);
+      c.values.at(-1).samples.push("Stadium on fire");
+      expect(con(await lintFile(path.join(dir, "state.html"), kit, valid(c)))).toEqual([]);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it("keeps an element hidden in a sample row", async () => {
     const dir = tmp();
     try {
@@ -224,12 +265,15 @@ describe("screen contract", () => {
       const c = json("U-CON-005.pass.contract.json");
       c.values.push({ name: "injury", repeat: "player", source: "the medical reader's current injury", samples: ["Hamstring"], origin: "existing" });
       expect(con(await lintFile(path.join(dir, "hidden.html"), kit, valid(c)))).toEqual([]);
-      // visibility: hidden keeps the element's box: its text is still its sample (as the IR's sample data reads it), and checked
+      // visibility: hidden keeps the element's box: its text is still its sample (as the IR's sample data reads it)
       fs.writeFileSync(path.join(dir, "invisible.html"), page.replaceAll('style="display: none"', 'style="visibility: hidden"'));
       expect(con(await lintFile(path.join(dir, "invisible.html"), kit, valid(c)))).toEqual([]);
+      // and both are checked: no invented value anywhere in the design, shown or not
       c.values.at(-1).samples = ["Ankle"];
-      expect(con(await lintFile(path.join(dir, "invisible.html"), kit, valid(c))))
-        .toEqual([`U-CON-005 ${ROW} > p[data-u-id=injury]: value "injury" in repeat "player" shows "Hamstring", not among the screen contract's samples`]);
+      for (const file of ["hidden.html", "invisible.html"]) {
+        expect(con(await lintFile(path.join(dir, file), kit, valid(c))), file)
+          .toEqual([`U-CON-005 ${ROW} > p[data-u-id=injury]: value "injury" in repeat "player" shows "Hamstring", not among the screen contract's samples`]);
+      }
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 

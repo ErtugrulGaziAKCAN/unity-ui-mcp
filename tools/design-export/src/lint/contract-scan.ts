@@ -21,8 +21,10 @@ export interface DesignItem {
   repeat: string | null;
   /** Element paths of its occurrences, document order, for findings. */
   paths: string[];
-  /** Values: the normalized sample text (boundText) of every rendered occurrence (all sample rows); empty for other kinds. */
+  /** Values: the normalized sample text (boundText) of every occurrence (all sample rows, shown or not); empty for other kinds. */
   samples: string[];
+  /** Values: an occurrence draws an image and shows no text (an `<img>`, or an element that paints a loaded image). */
+  image?: boolean;
   /** Texts: the English as U-MRK-014 reads it (data-en, or the visible text with the reference locale en), normalized. */
   en?: string;
   /** Texts with a reference locale other than en: the visible text (variables as `{name}`) or attribute value, normalized. */
@@ -66,8 +68,8 @@ const cache = new WeakMap<DomSnapshot, Map<boolean, DesignItem[]>>();
  * Every value (data-u-bind, data-u-arg), action (data-u-action), state (data-u-state), repeat (data-u-repeat) and text
  * key (data-l10n, data-l10n-<attr>) of the design, outside external regions and non-design elements. The scope is the
  * repeat whose written-out item holds the element (for a repeat, its container's); the same kind, name and scope in
- * several sample rows is one item. Elements hidden in a sample row are items too; values that render (visibility:
- * hidden ones included) give samples.
+ * several sample rows is one item. Elements hidden in a sample row are items too, and every value gives its samples,
+ * shown or not (display: none, visibility: hidden, an inactive state root).
  */
 export function designInventory(s: DomSnapshot, kit: KitConfig): DesignItem[] {
   const english = referenceIsEnglish(kit);
@@ -97,7 +99,9 @@ export function designInventory(s: DomSnapshot, kit: KitConfig): DesignItem[] {
       const name = named(attr);
       if (name === undefined) continue;
       const it = add("value", name, scope(), e.index);
-      if (e.boundText != null) it.samples.push(normalizeText(e.boundText));
+      const sample = e.boundText === undefined ? undefined : normalizeText(e.boundText);
+      if (sample !== undefined) it.samples.push(sample);
+      if (e.tag === "img" || (e.image !== undefined && !sample)) it.image = true;
     }
     const action = named("data-u-action");
     if (action !== undefined) add("action", action, scope(), e.index);

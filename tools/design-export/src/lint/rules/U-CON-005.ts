@@ -5,6 +5,7 @@ import { make } from "./util.js";
 /**
  * A bound text that shows, in any sample row, a value the screen contract's samples for that value do not list
  * (compared with whitespace collapsed). Image binds and requested values with no source yet have no samples to check.
+ * When the design binds an image to a value the contract gives text samples, the fix is the contract's `image: true`.
  */
 export const rule: Rule = {
   id: "U-CON-005", severity: "error",
@@ -24,7 +25,9 @@ export const rule: Rule = {
       if (bad.length === 0) continue;
       const more = bad.length > 3 ? ` and ${bad.length - 3} more` : "";
       out.push(make(rule, d.paths[0], `${describeItem(d)} shows ${bad.slice(0, 3).map(quote).join(", ")}${more}, not among the screen contract's samples`,
-        "Use a real sample from the contract. If the game shows other values, add those real values to the contract's samples."));
+        d.image
+          ? 'This value is an image bind in the design: mark it "image": true in the contract (an image bind has no text samples).'
+          : "Use a real sample from the contract. If the game shows other values, add those real values to the contract's samples."));
     }
     return out;
   },
