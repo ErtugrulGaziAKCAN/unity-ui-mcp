@@ -28,6 +28,16 @@ export interface KitConfig {
   textSizes?: { key: string; scale: number }[];
 }
 
+/** The locale code of English, the package's default reference locale (and the profile's default English locale). */
+export const ENGLISH_LOCALE = "en";
+
+/**
+ * Whether the kit's reference locale is English: the visible text is then the English String Table entry (one table holds
+ * both), so `data-en` may be left out and, when written, repeats the visible text.
+ */
+export const referenceIsEnglish = (kit: Pick<KitConfig, "locales" | "referenceLocale">): boolean =>
+  (kit.referenceLocale ?? kit.locales[0] ?? "") === ENGLISH_LOCALE;
+
 export function readKit(kitDir: string): KitConfig {
   const dir = path.resolve(kitDir);
   const raw = JSON.parse(fs.readFileSync(path.join(dir, "kit.config.json"), "utf8"));

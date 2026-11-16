@@ -27,6 +27,10 @@ namespace DesignUi.Editor
     /// </summary>
     internal static class ScreenLocalization
     {
+        /// <summary>The TextCore tags the exporter writes into a rich text (colour, size, bold, italic): the words are what is left.</summary>
+        static readonly System.Text.RegularExpressions.Regex RichTags =
+            new System.Text.RegularExpressions.Regex("</?(?:b|i|color(?:=[^>]*)?|size(?:=[^>]*)?)>", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
         /// <summary>The UXML type of the binding (an UxmlObject of the optional DesignUi.Runtime.Localization assembly).</summary>
         public const string BindingType = "DesignUi.DesignLocalizedString";
         public const string TextProperty = "text";
@@ -49,14 +53,28 @@ namespace DesignUi.Editor
             var reference = (profile.referenceLocale ?? "").Trim();
             if (reference.Length == 0) throw new IrFormatException("the profile has no reference locale");
 
+            // the reference locale is the English locale: one table holds both, and its entry is the visible text (what the design
+            // shows and verify checks); data-en may be left out, and a data-en that says something else is refused (lint U-MRK-014)
+            var englishReference = string.Equals(english, reference, StringComparison.OrdinalIgnoreCase);
             var texts = new List<ScreenText>();
             var byKey = new Dictionary<string, ScreenText>(StringComparer.Ordinal);
             void Collect(IrText text, string place, bool withArgs)
             {
                 var args = withArgs ? (text.Args ?? new string[0]).Distinct(StringComparer.Ordinal).ToArray() : new string[0];
+                var en = text.En;
+                if (englishReference)
+                {
+                    var visible = text.Ref ?? "";
+                    var words = text.Rich ? RichTags.Replace(visible, "") : visible;
+                    if (!string.IsNullOrEmpty(en) && !string.Equals(en, words, StringComparison.Ordinal))
+                        throw new IrFormatException("localization key '" + text.Key + "' (" + place + "): data-en '" + en + "' is not its visible text '" + words +
+                                                    "'; with the reference locale " + reference + " (the English locale) the visible text is the English entry: " +
+                                                    "write data-en as the visible text, or leave data-en out");
+                    en = visible;
+                }
                 var t = new ScreenText
                 {
-                    Key = text.Key, En = Format(text.En ?? "", args, settings.argumentFormat), Reference = Format(text.Ref ?? "", args, settings.argumentFormat), Args = args,
+                    Key = text.Key, En = Format(en ?? "", args, settings.argumentFormat), Reference = Format(text.Ref ?? "", args, settings.argumentFormat), Args = args,
                 };
                 if (byKey.TryGetValue(text.Key, out var known))
                 {

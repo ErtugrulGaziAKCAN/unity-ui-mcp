@@ -88,12 +88,12 @@ Kit'in Design System'ini canvas'a ekle. Sonra:
   `white-space: nowrap` kullanır (satırları `<br>`'leridir); her çeviride aynı satır sayısını koru ki Unity'de tam
   yüksekliğini alsın.
 - **Görünen her metnin bir anahtarı vardır.** Metni referans dilde (RULES.md'nin adını verdiği dil: profilin **Reference
-  Locale** ayarı, proje başka bir dil seçmediyse İngilizce) yaz; `data-l10n="club.overview.title"`
-  (anlamlı İngilizce bir anahtar) ve `data-en="Overview"` ekle. Referans dil İngilizceyse görünen metin ve `data-en`
-  aynı metindir, iki kez yazılır (`data-en="Overview">Overview`): içe aktarma `data-en`'i İngilizce String Table girdisi
-  olarak yazar, karşılaştırma ise görünen metni çizer. Cümle içindeki bir değer
-  `<span data-u-arg="count">3</span>` olur ve `data-en`'de `{count}` diye yazılır. Oyundan gelen ve çevrilmeyen değerler
-  (oyuncu adı, bir sayı) `data-u-bind="player-name"` kullanır; metni yalnız örnek veridir.
+  Locale** ayarı, proje başka bir dil seçmediyse İngilizce) yaz; `data-l10n="club.overview.title"` (anlamlı İngilizce
+  bir anahtar) ve `data-en="Overview"` ekle. Referans dil İngilizceyse görünen metin İngilizce String Table girdisidir
+  (tasarımın gösterdiği ve verify'ın denetlediği metin): `data-en`'i yazma ya da görünen metnin aynısı olarak yaz
+  (`data-en="Overview">Overview`); lint (U-MRK-014) ve import başka bir şey söyleyen `data-en`'i reddeder. Cümle
+  içindeki bir değer `<span data-u-arg="count">3</span>` olur ve `data-en`'de `{count}` diye yazılır. Oyundan gelen ve
+  çevrilmeyen değerler (oyuncu adı, bir sayı) `data-u-bind="player-name"` kullanır; metni yalnız örnek veridir.
 - **Kontrollerin kimliği olur.** Her buton, girdi ya da bağlı eleman `data-u-id` taşır; bir şey yapan elemanda
   `data-u-action="open-inbox"` bulunur. Bir elemanda tek aksiyon.
 - **Durumlar.** Etkileşim durumları `:hover`, `:active`, `:focus`, `:disabled`, `:checked`. Seçili sekme ya da satır
@@ -401,6 +401,7 @@ Unity'de: `Window > Design UI > Import Screen…` ve `Window > Design UI > Kit S
 | U-MRK-004 | `data-l10n` ve `data-en`'i olmayan görünür metin | anahtarı ve İngilizce metni ekle |
 | U-MRK-005 | izin verilmeyen karakterli kimlik ya da anahtar (`İ`, `ı`, `ş`, rakamla başlama) | ASCII karşılığı |
 | U-MRK-013 | kendi işaretlemesiyle gizlenmiş örnek satır | o satırı hiç yazma |
+| U-MRK-014 | referans dil `en` iken görünen metinden farklı `data-en` | görünen metnin aynısını yaz ya da `data-en`'i kaldır |
 | U-FONT-001 | fontta gerçek yüzü olmayan kalınlık ya da italik | 400 ya da 700, ya da yüzü Unity'de ekleyip kit'i senkronla |
 | U-FONT-003 | kit fontunda olmayan bir karakter | fontun kapsadığı karakterler ya da onları içeren bir font |
 

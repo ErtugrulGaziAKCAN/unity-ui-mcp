@@ -17,9 +17,12 @@ const kit: KitConfig = readKit(fx("kit"));
 const localesKit: KitConfig = { ...kit, fontsCss: "fonts/locales.css" };
 /** Same kit with an extra face whose file cannot be read (local()). */
 const unreadableKit: KitConfig = { ...kit, fontsCss: "fonts/unreadable.css" };
+/** Same kit with English as the reference locale (the package's default): the visible text is the English entry. */
+const englishKit: KitConfig = { ...kit, locales: ["en"] };
 const KIT_FOR: Record<string, { pass?: KitConfig; fail?: KitConfig }> = {
   "W-FONT-001": { pass: localesKit, fail: localesKit },
   "W-FONT-002": { fail: unreadableKit },
+  "U-MRK-014": { pass: englishKit, fail: englishKit },
 };
 
 const fixture = (id: string, kind: "pass" | "fail") => {
@@ -37,6 +40,29 @@ async function lintFile(file: string, k: KitConfig = kit): Promise<Finding[]> {
 }
 
 const show = (f: Finding[]) => f.map((x) => `${x.ruleId} ${x.path}: ${x.detail}`);
+
+describe("the English entry when the reference locale is en", () => {
+  it("takes the visible text: data-en may be left out, and a data-en that is not the visible text is an error", async () => {
+    // with the reference locale tr, data-en is the English source (its own text), required, and never compared
+    const tr = await lintFile(fx("U-MRK-014.pass.html"));
+    expect(show(tr.filter((x) => x.ruleId === "U-MRK-004" || x.ruleId === "U-MRK-007")).length).toBe(3);
+    expect(show(tr.filter((x) => x.ruleId === "U-MRK-008"))).toEqual([]);
+    expect(show((await lintFile(fx("U-MRK-014.fail.html"))).filter((x) => x.ruleId === "U-MRK-014"))).toEqual([]);
+    // with en: the visible text is the entry, so data-en (and data-en-<attr>) repeats it or is left out
+    expect(show(await lintFile(fx("U-MRK-014.pass.html"), englishKit))).toEqual([]);
+    const f = (await lintFile(fx("U-MRK-014.fail.html"), englishKit)).filter((x) => x.ruleId === "U-MRK-014");
+    expect(f.map((x) => [x.severity, x.detail])).toEqual([["error", 'data-en "Save" is not the visible text "Save changes"']]);
+    expect(f[0].fix).toMatch(/leave data-en out/);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lint-en-"));
+    try {
+      const page = fs.readFileSync(fx("U-MRK-014.pass.html"), "utf8")
+        .replace('data-en-placeholder="Search"', 'data-en-placeholder="Search players"');
+      fs.writeFileSync(path.join(dir, "attr.html"), page);
+      const a = (await lintFile(path.join(dir, "attr.html"), englishKit)).filter((x) => x.ruleId === "U-MRK-014");
+      expect(a.map((x) => x.detail)).toEqual(['data-en-placeholder "Search players" is not the placeholder "Search"']);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});
 
 describe("lint rules: one pass and one fail fixture per rule", () => {
   for (const r of RULES) {

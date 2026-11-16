@@ -14,7 +14,8 @@ NAME="text-row"
 OUT="$T/out"
 fails=0
 
-# the stub: setup passes (the kit copy already has the repository kit's fonts); import reports the case's code per folder;
+# the stub: setup passes (the kit copy already has the repository kit's fonts) and, as the real setup's kit sync does, writes
+# the sample project's reference locale (tr, the fixtures' language) into the kit copy; import reports the case's code per folder;
 # capture does what $STUB_CAPTURE says; the cleanup notes its root in $STUB_CLEANED and does what $STUB_CLEANUP says
 cat > "$T/unity-stub.sh" <<'STUB'
 #!/usr/bin/env bash
@@ -22,6 +23,7 @@ filter=""
 while [ $# -gt 0 ]; do [ "$1" = "--editmode" ] && filter="$2"; shift; done
 case "$filter" in
   *SetupFromEnv*) [ "$STUB_SETUP" = die ] && { echo "klon-test=editmode sonuç=FAIL detay=setup broke png=yok"; exit 1; }
+    "${DESIGN_UI_NODE:-node}" -e 'const fs = require("fs"), f = process.argv[1]; fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, "utf8")), locales: ["tr"] }))' "$DESIGN_UI_KIT_DIR/kit.config.json"
     echo "klon-test=editmode sonuç=PASS detay=total:1 pass:1 png=yok"; exit 0 ;;
   *CleanupFromEnv*)
     echo "$DESIGN_UI_FIDELITY_ROOT" >> "$STUB_CLEANED"

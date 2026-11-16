@@ -102,11 +102,12 @@ Attach the kit's Design System to the canvas. Then:
   `<br>`s); keep that line count in every translation, so it gets an exact height in Unity.
 - **Every visible text has a key.** Write the text in the reference locale (the one RULES.md names: the profile's
   **Reference Locale**, English unless the project chose another) and add `data-l10n="club.overview.title"` (a
-  meaningful English key) and `data-en="Overview"`. With the English reference locale the visible text and `data-en`
-  are the same text, written twice (`data-en="Overview">Overview`): the import writes `data-en` as the English String
-  Table entry, and the comparison draws the visible text. A value inside a sentence is
-  `<span data-u-arg="count">3</span>`, written `{count}` in `data-en`. Values that come from the game and are not
-  translated (a player's name, a number) use `data-u-bind="player-name"`; their text is sample data.
+  meaningful English key) and `data-en="Overview"`. With the English reference locale the visible text is the English
+  String Table entry (what the design shows and verify checks): leave `data-en` out, or write it exactly as the visible
+  text (`data-en="Overview">Overview`); lint (U-MRK-014) and the import refuse a `data-en` that says something else. A
+  value inside a sentence is `<span data-u-arg="count">3</span>`, written `{count}` in `data-en`. Values that come from
+  the game and are not translated (a player's name, a number) use `data-u-bind="player-name"`; their text is sample
+  data.
 - **Controls get ids.** Every button, input or bound element has `data-u-id`; an element that does something has
   `data-u-action="open-inbox"`. One action per element.
 - **States.** Interaction states are `:hover`, `:active`, `:focus`, `:disabled`, `:checked`. A selected tab or row is an
@@ -417,6 +418,7 @@ Profile` gives an older profile the default viewports it lacks.
 | U-MRK-004 | a visible text without `data-l10n` and `data-en` | add the key and English text |
 | U-MRK-005 | an id or key outside the allowed characters (`İ`, `ı`, `ş`, a leading digit) | ASCII transliteration |
 | U-MRK-013 | a sample row hidden by its own markup | leave the row out |
+| U-MRK-014 | with the reference locale `en`, a `data-en` that is not the visible text | write it as the visible text, or leave it out |
 | U-FONT-001 | a weight or italic the font has no real face for | 400 or 700, or add the face in Unity and sync the kit |
 | U-FONT-003 | a character the kit font lacks | characters the font covers, or a font that has them |
 

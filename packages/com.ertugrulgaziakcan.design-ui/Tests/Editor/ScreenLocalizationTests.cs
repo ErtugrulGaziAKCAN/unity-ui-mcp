@@ -201,6 +201,67 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.Contains(result.Localization.Lines().ToList(), "localization written: loc.title (en, tr)");
         }
 
+        /// <summary>
+        /// The reference locale is the English locale (the default): one table holds both, and its entry is the visible text,
+        /// what the design shows and verify checks. data-en may be left out; a data-en that says something else is refused
+        /// (the lint's U-MRK-014), so a text changed on the canvas never ships its old English.
+        /// </summary>
+        [Test]
+        public void AnEnglishReference_WritesTheVisibleTextAsTheEnglishEntry_AndRefusesAnotherDataEn()
+        {
+            IrScreen English()
+            {
+                var title = Keyed(Text("title", "Club"), "loc.title", "Club");
+                var greet = Keyed(Text("greet", "Hi {name}"), "loc.greet", null);
+                greet.Text.Args = new[] { "name" };
+                var bold = Keyed(Text("bold", "Two <b>bold</b> words"), "loc.bold", "Two bold words");
+                bold.Text.Rich = true;
+                var query = Node("query", "input", ("width", "200px"), ("height", "30px"));
+                query.Initial = new IrInitial();
+                query.AttrTexts["placeholder"] = new IrText { Key = "loc.search", Ref = "Search", En = null };
+                return Screen(Root(title, greet, bold, query), "loc.screen");
+            }
+            DesignUiProfile EnglishProfile()
+            {
+                var p = Profile(null);
+                p.referenceLocale = "en";
+                p.localeFonts[0].locale = "en";
+                return p;
+            }
+
+            var tables = new FakeTables();
+            var r = Compile(English(), EnglishProfile(), tables, out _);
+            Assert.IsTrue(r.Ok, string.Join("\n", r.Errors));
+            Assert.AreEqual("en", tables.Written.ReferenceLocale);
+            var by = tables.Written.Texts.ToDictionary(t => t.Key);
+            Assert.AreEqual("Club", by["loc.title"].En);
+            Assert.AreEqual("Hi {name}", by["loc.greet"].En, "without data-en the visible text is the English entry");
+            Assert.AreEqual("Two <b>bold</b> words", by["loc.bold"].En, "a rich text's entry keeps its formatting; data-en names its words");
+            Assert.AreEqual("Search", by["loc.search"].En);
+
+            // the text changed on the canvas, its data-en did not: the game would show the old text
+            var changed = English();
+            changed.Root.Children[0].Text.Ref = "Club overview";
+            var refused = new FakeTables();
+            r = Compile(changed, EnglishProfile(), refused, out _);
+            Assert.IsFalse(r.Ok);
+            StringAssert.Contains("localization key 'loc.title' (title): data-en 'Club' is not its visible text 'Club overview'", r.Errors.Single());
+            StringAssert.Contains("leave data-en out", r.Errors.Single());
+            Assert.IsNull(refused.Written, "nothing is written");
+            var attr = English();
+            attr.Root.Children[3].AttrTexts["placeholder"].En = "Search players";
+            r = Compile(attr, EnglishProfile(), new FakeTables(), out _);
+            Assert.IsFalse(r.Ok);
+            StringAssert.Contains("localization key 'loc.search' (query@placeholder): data-en 'Search players' is not its visible text 'Search'", r.Errors.Single());
+
+            // another reference locale keeps data-en as the English source, whatever the reference text says
+            var turkish = Profile(null);
+            var kept = new FakeTables();
+            r = Compile(changed, turkish, kept, out _);
+            Assert.IsTrue(r.Ok, string.Join("\n", r.Errors));
+            Assert.AreEqual("Club", kept.Written.Texts.Single(t => t.Key == "loc.title").En);
+        }
+
         [Test]
         public void IndexedFormat_WritesPositionalPlaceholders_InTheOrderTheViewSetsThem()
         {

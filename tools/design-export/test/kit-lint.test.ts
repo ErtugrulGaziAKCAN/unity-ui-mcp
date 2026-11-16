@@ -44,6 +44,8 @@ beforeAll(async () => { browser = await launchChromium(); kit = readKit(lintKitD
 afterAll(async () => { await browser.close(); for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });
 
 const lintFile = async (file: string, k: KitConfig = kit): Promise<Finding[]> => (await lintScreen(file, k, { browser })).findings;
+/** The fidelity fixtures are Turkish with English data-en: the suite runs them with the reference locale tr (FidelitySetup). */
+const turkish = (): KitConfig => ({ ...kit, locales: ["tr"] });
 const show = (f: Finding[]) => f.map((x) => `${x.severity} ${x.ruleId} ${x.path}: ${x.detail}`);
 const html = (dir: string) => fs.readdirSync(dir).filter((f) => f.endsWith(".html")).sort().map((f) => path.join(dir, f));
 const components = html(path.join(KIT_DIR, "components"));
@@ -68,7 +70,7 @@ describe("fidelity fixtures lint clean", () => {
     ]);
   });
   for (const file of fixtures.filter((f) => !PENDING[path.basename(f)])) {
-    it(path.basename(file), async () => { expect(show(await lintFile(file))).toEqual([]); });
+    it(path.basename(file), async () => { expect(show(await lintFile(file, turkish()))).toEqual([]); });
   }
 
   it("pending.json names only fixtures, each with a note", () => {
@@ -80,7 +82,7 @@ describe("fidelity fixtures lint clean", () => {
 
   it("the lint-only page fails every rejected filter function with U-CSS-015 and css-support.json's fix", async () => {
     const page = path.join(KIT_DIR, "fixtures", "lint", "filters-rejected.html");
-    const found = await lintFile(page);
+    const found = await lintFile(page, turkish());
     const fns = ["blur", "contrast", "grayscale", "hue-rotate", "opacity", "sepia", "brightness", "saturate", "drop-shadow", "url"];
     expect(found.map((f) => f.ruleId)).toEqual(fns.map(() => "U-CSS-015"));
     for (const fn of fns) {
@@ -90,7 +92,7 @@ describe("fidelity fixtures lint clean", () => {
       expect(f!.fix).toBe(cssSupport.fixFor("filter"));
     }
     // the kit's filterFunctions cannot widen what css-support.json enables
-    const widened = await lintFile(page, { ...kit, filterFunctions: [...fns, "invert"] });
+    const widened = await lintFile(page, { ...turkish(), filterFunctions: [...fns, "invert"] });
     expect(widened.map((f) => f.ruleId)).toEqual(found.map((f) => f.ruleId));
   });
 

@@ -17,12 +17,12 @@ import { parseViewports, viewportClassOf, viewportEntries, viewportLabel } from 
 const kitDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../design-kit");
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "vp-classes-"));
 
-/** A copy of the repository kit's config with other viewports. */
-function kitWith(viewports: unknown): string {
+/** A copy of the repository kit's config with other viewports (and other fields of kit.config.json). */
+function kitWith(viewports: unknown, extra: Record<string, unknown> = {}): string {
   const dir = tmp();
   for (const f of fs.readdirSync(kitDir)) if (f !== "fixtures" && f !== "components") fs.cpSync(path.join(kitDir, f), path.join(dir, f), { recursive: true });
   const file = path.join(dir, "kit.config.json");
-  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, "utf8")), viewports }));
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, "utf8")), viewports, ...extra }));
   return dir;
 }
 
@@ -156,7 +156,9 @@ describe("the golden's nested borders (docs/findings/viewport-classes.md, nested
     const browser = await chromium.launch();
     try {
       const out = path.join(tmp(), "out");
-      const r = await exportScreen(page, kitDir, out, { browser });
+      // the page's text is Turkish with English data-en, as in the fidelity suite, whose kit's reference locale is tr
+      const kit = kitWith(JSON.parse(fs.readFileSync(path.join(kitDir, "kit.config.json"), "utf8")).viewports, { locales: ["tr"] });
+      const r = await exportScreen(page, kit, out, { browser });
       expect(r.ok, JSON.stringify(r.findings)).toBe(true);
       boxes = JSON.parse(fs.readFileSync(path.join(out, "goldens", "boxes.json"), "utf8"));
     } finally { await browser.close(); }

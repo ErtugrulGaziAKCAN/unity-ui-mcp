@@ -677,7 +677,7 @@ describe("text styles of one size and weight with different line heights", () =>
   const css = `.panel{display:flex;flex-direction:column;flex-shrink:0} .row{display:none;flex-direction:row;align-items:center;flex-shrink:0}
     .panel.is-open .row{display:flex} .ic{width:16px;height:16px;flex-shrink:0}`;
   const body = (cls: string[]) => `<div class="panel" data-u-id="panel">${cls.map((c, i) =>
-    `<div class="row" data-u-id="row-${i}">${icon}<span class="${c}" data-u-id="t-${i}" data-l10n="s.t${i}" data-en="Text ${i}">Metin ${i}</span></div>`).join("")}</div>`;
+    `<div class="row" data-u-id="row-${i}">${icon}<span class="${c}" data-u-id="t-${i}" data-l10n="s.t${i}" data-en="Text ${i}">Text ${i}</span></div>`).join("")}</div>`;
 
   it("maps each keyed inline text to the style of its own line height, in the IR", async () => {
     const p = write(css, body(["label", "label-bold", "caption", "caption-bold"]));

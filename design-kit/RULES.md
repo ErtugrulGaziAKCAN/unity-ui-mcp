@@ -8,7 +8,7 @@ The contract for HTML screens (from Claude Design or any other source) that the 
 2. The style starts with the base stylesheet (`base.css`, below); it sizes boxes as UI Toolkit does and writes out every browser default.
 3. Lay out with flex only. Colours, spacing, radii and shadows come from the tokens through `var(--name)`.
 4. Every text uses a kit text style class (`.text-body`, `.text-title-bold`, …) and the kit font; never declare `@font-face`.
-5. Visible text is written in the reference locale (en: the Unity project's choice, its DesignUiProfile's Reference Locale, which kit sync writes into the kit) with a `data-l10n` key and the English `data-en` (with the reference locale `en`, `data-en` repeats the visible text exactly: the import writes it as the English entry); runtime values use `data-u-bind` and sample text.
+5. Visible text is written in the reference locale (en: the Unity project's choice, its DesignUiProfile's Reference Locale, which kit sync writes into the kit) with a `data-l10n` key and the English `data-en` (with the reference locale `en` the visible text is the English String Table entry: leave `data-en` out, or repeat the visible text exactly, U-MRK-014); runtime values use `data-u-bind` and sample text.
 6. Interactive, bound and action elements carry `data-u-id`; actions name a command in `data-u-action`.
 7. Interaction states are `:hover`, `:active`, `:focus`, `:disabled`, `:checked` and `is-*` classes; screen states are `data-u-state` roots shown under `.state-<name>`.
 8. Every screen is linted before it goes to Unity (`design_ui_lint` in the MCP server, or `design-export lint <screen> --kit <kit>`); fix the design, never the generated Unity files.
@@ -67,10 +67,10 @@ textarea { resize: none; }
 | `data-u-screen` | Screen id on the root element, e.g. `club.overview` | yes, exactly once |
 | `data-u-id` | Stable element name exposed to code | on every interactive, bound or action element |
 | `data-l10n` | Localization key in meaningful English, e.g. `club.overview.title` | on every visible static text |
-| `data-en` | English source text for that key (the element's own text is the reference-locale text; with the reference locale `en` both are the same text) | with `data-l10n` |
+| `data-en` | English source text for that key (the element's own text is the reference-locale text; with the reference locale `en` the visible text is the English entry, so `data-en` is left out or repeats it exactly, U-MRK-014) | with `data-l10n` (optional with the reference locale `en`) |
 | `data-u-arg` | On a `<span>` inside localized text: a Smart String argument with sample text; `data-en` writes it as `{name}` | when the text has variables |
 | `data-l10n-args` | Smart String argument names, e.g. `amount,currency` | optional |
-| `data-l10n-<attr>, data-en-<attr>` | Key and English text for `placeholder`, `title`, `alt`, `aria-label` | when such an attribute has text |
+| `data-l10n-<attr>, data-en-<attr>` | Key and English text for `placeholder`, `title`, `alt`, `aria-label` (with the reference locale `en`, `data-en-<attr>` as `data-en`) | when such an attribute has text |
 | `data-u-bind` | Dynamic, non-translated value (player name, number); the element's text is sample data | for runtime values |
 | `data-u-action` | Command raised on activation, e.g. `open-inbox` | on actionable elements |
 | `data-u-repeat` | Repeated item template, e.g. `players`; the written-out samples follow it | on the first sample item |
@@ -423,16 +423,17 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-MRK-001 | error | not exactly one `data-u-screen` | one screen root with `data-u-screen` |
 | U-MRK-002 | error | duplicate `data-u-id` | unique ids (each repeat item is its own scope) |
 | U-MRK-003 | error | interactive, bound or action elements, or an element some written-out repeat items hide by markup and others show, without `data-u-id` | add `data-u-id` |
-| U-MRK-004 | error | visible text without `data-l10n` + `data-en` on the element holding it (or `data-u-bind`) | add the key and English text |
+| U-MRK-004 | error | visible text without `data-l10n` + `data-en` on the element holding it (or `data-u-bind`); with the reference locale `en`, `data-en` may be left out | add the key and English text |
 | U-MRK-005 | error | ids, actions or names outside `^[a-z0-9]+([._-][a-z0-9]+)*$` or starting with a digit (they become C# members), or localization keys outside `^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$` (any letter case) | ASCII transliteration (no İ, ı, ş, …); keys spelled exactly as the String Table key |
 | U-MRK-006 | error | the screen root is not the kit reference size at (0, 0) | root `width/height` = reference in px, `body { margin: 0 }` |
-| U-MRK-007 | error | placeholder, title, alt or aria-label text without `data-l10n-<attr>` + `data-en-<attr>` | add the key and English text per attribute |
+| U-MRK-007 | error | placeholder, title, alt or aria-label text without `data-l10n-<attr>` + `data-en-<attr>` (with the reference locale `en`, `data-en-<attr>` may be left out) | add the key and English text per attribute |
 | U-MRK-008 | error | a variable inside localized text not marked as `<span data-u-arg="name">` with one `{name}` in `data-en` | one `data-u-arg` span per `{name}` placeholder; `data-l10n-args` (optional) lists the same names |
 | U-MRK-009 | error | a keyed, bound, id'd or action inline element sharing a line with other text, tags or spaces, or changing font size or line height in the line | its own block element (or a flex row of them); `data-u-arg` for a variable inside one text |
 | U-MRK-010 | error | a `data-u-repeat` container with other children, a sample whose structure differs from the template (a later sample may leave a nested repeat empty; the template may not), or a mode other than list/inline | only the items in the container, samples with the template's elements, ids, keys and binds |
 | U-MRK-011 | error | a `data-u-id` that gives a member the generated view class already has (`state`, `set-state`, `find`, `screen-root`, …) | another id, e.g. `state-label` |
 | U-MRK-012 | error | a `data-u-action` element inside another `data-u-action` element | one action per element; a button in a card: the card's action on a full-size layer element beside the button, not on the card container |
 | U-MRK-013 | error | a written-out `data-u-repeat` item hidden by its own markup (`hidden`, inline `display: none`): the repeat alone shows and hides its items | remove the item from the samples; for an empty nested list write no items in that sample |
+| U-MRK-014 | error | with the reference locale `en`, a `data-en` (or `data-en-<attr>`) that is not the visible text (variables as `{name}`): the visible text is the English entry | write `data-en` as the visible text, or leave it out |
 | U-NET-001 | error | any remote resource (fonts, stylesheets, images) except scripts from allowed origins | no remote resources; local files |
 | U-NET-002 | error | a local file or Claude Design blob that is missing | add the file, or map the blob in blobs.json |
 | W-FONT-001 | warning | a weight or italic without a real face in another active locale's font (warning) | add the face or avoid the weight |

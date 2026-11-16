@@ -151,13 +151,15 @@ export const argProblems = memo((s): Map<string, string[]> => {
     const key = e.attrs["data-l10n"];
     if (key === undefined) continue;
     const args = argSpans(s, e.index).map((k) => s.elements[k].attrs["data-u-arg"]);
+    // without data-en the visible text is the English entry (an English reference locale; else U-MRK-004 asks for it)
+    const hasEn = (e.attrs["data-en"] ?? "").trim() !== "";
     const names = placeholders(e.attrs["data-en"] ?? "");
     const dup = (l: string[]) => Array.from(new Set(l.filter((n, k) => l.indexOf(n) !== k)));
     if (dup(args).length) add(e, `data-u-arg ${dup(args).map((n) => `"${n}"`).join(", ")} appears more than once`);
     if (dup(names).length) add(e, `data-en uses {${dup(names).join("}, {")}} more than once`);
     const missingSpan = names.filter((n) => !args.includes(n)), missingName = args.filter((n) => !names.includes(n));
     if (missingSpan.length) add(e, `data-en "${e.attrs["data-en"]}" has {${missingSpan.join("}, {")}} without a <span data-u-arg> in the text`);
-    if (missingName.length) add(e, `<span data-u-arg="${missingName.join("\">, <span data-u-arg=\"")}"> has no {${missingName.join("}, {")}} in data-en`);
+    if (missingName.length && hasEn) add(e, `<span data-u-arg="${missingName.join("\">, <span data-u-arg=\"")}"> has no {${missingName.join("}, {")}} in data-en`);
     const declared = e.attrs["data-l10n-args"];
     if (declared !== undefined) {
       const d = declared.split(",").map((x) => x.trim()).filter(Boolean);

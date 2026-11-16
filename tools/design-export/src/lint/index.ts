@@ -74,6 +74,7 @@ import { rule as U_MRK_010 } from "./rules/U-MRK-010.js";
 import { rule as U_MRK_011 } from "./rules/U-MRK-011.js";
 import { rule as U_MRK_012 } from "./rules/U-MRK-012.js";
 import { rule as U_MRK_013 } from "./rules/U-MRK-013.js";
+import { rule as U_MRK_014 } from "./rules/U-MRK-014.js";
 import { rule as U_NET_001 } from "./rules/U-NET-001.js";
 import { rule as U_NET_002 } from "./rules/U-NET-002.js";
 import { rule as W_FONT_001 } from "./rules/W-FONT-001.js";
@@ -155,6 +156,7 @@ export const RULES: readonly Rule[] = [
   U_MRK_011,
   U_MRK_012,
   U_MRK_013,
+  U_MRK_014,
   U_NET_001,
   U_NET_002,
   W_FONT_001,

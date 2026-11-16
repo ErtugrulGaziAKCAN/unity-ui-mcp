@@ -114,7 +114,10 @@ kit and the profile's lists in step.
   branch exists: replace the revision with a tag or commit (setup keeps an existing entry, so remove the entry before
   running it again).
 - A new profile's reference locale (the language designs are written in) is English; a saved profile keeps the one it
-  was saved with. The default kit's `locales` are `["en"]`; kit sync writes the profile's into the project's kit.
+  was saved with. The default kit's `locales` are `["en"]`; kit sync writes the profile's into the project's kit. With
+  the reference locale `en` one String Table holds English and the reference text, and its entry is the visible text:
+  `data-en` may be left out, and a `data-en` that is not the visible text is a lint error (U-MRK-014) the import
+  refuses too.
 - The IR is version 2: its text field is `ref` (version 1 wrote `tr`). An export of version 1 is exported again by
   itself at the next import (the exporter's tool hash covers the IR schema, and the export's own IR version is read
   too); the package refuses version 1 ("export the screen again"), a package that reads version 1 refuses version 2

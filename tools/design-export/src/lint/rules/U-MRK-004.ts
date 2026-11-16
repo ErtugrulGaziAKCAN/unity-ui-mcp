@@ -1,3 +1,4 @@
+import { referenceIsEnglish } from "../../kit.js";
 import { clip } from "../css-values.js";
 import type { Rule } from "../types.js";
 import { inFlow, isExternal, make, nonDesign } from "./util.js";
@@ -7,12 +8,14 @@ const RICH = new Set(["b", "strong", "i", "em", "span"]);
 /**
  * Visible static text is localizable on the element that holds it: data-l10n (+ data-en) or data-u-bind on the text's
  * element, or on the paragraph it sits in when only rich inline tags (b, strong, i, em, span) are in between. A key on
- * an ancestor that holds several text elements would give them one key.
+ * an ancestor that holds several text elements would give them one key. With the reference locale English the visible
+ * text is the English entry, so data-en may be left out (U-MRK-014 compares it when written).
  */
 export const rule: Rule = {
   id: "U-MRK-004", severity: "error",
-  check(s) {
+  check(s, kit) {
     const out = [];
+    const english = referenceIsEnglish(kit);
     for (const e of s.elements) {
       if (e.texts.length === 0 || nonDesign(s)[e.index] || isExternal(s, e.index)) continue;
       let k = e.index, problem: string | null = null;
@@ -20,7 +23,7 @@ export const rule: Rule = {
         const x = s.elements[k], a = x.attrs;
         if (a["data-u-bind"] !== undefined || a["data-u-arg"] !== undefined) break; // runtime values
         if (a["data-l10n"] !== undefined) {
-          if ((a["data-en"] ?? "").trim() === "") problem = `data-l10n="${a["data-l10n"]}" on ${x.path} has no data-en`;
+          if (!english && (a["data-en"] ?? "").trim() === "") problem = `data-l10n="${a["data-l10n"]}" on ${x.path} has no data-en`;
           break;
         }
         if (!(inFlow(x) && RICH.has(x.tag)) || x.parent < 0) {

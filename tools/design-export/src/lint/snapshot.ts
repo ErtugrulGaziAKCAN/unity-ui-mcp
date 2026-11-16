@@ -57,6 +57,11 @@ export interface SnapElement {
   /** Kit text style the element's text matches (set when collectSnapshot gets the kit); null = no match, undefined = no text. */
   textStyle?: string | null;
   /**
+   * On an element with `data-l10n` (not an input): its text as an English entry holds it, to compare with `data-en`: the
+   * words with whitespace collapsed as they render, a `data-u-arg` span as `{name}`, a `<br>` as a line break.
+   */
+  enText?: string;
+  /**
    * Inline <svg> roots: how its shapes paint. `current` = every fill/stroke/stop follows currentColor (tintable),
    * `fixed` = none does, `mixed` = both, `none` = nothing painted.
    */
@@ -171,7 +176,7 @@ interface RawElement {
   tag: string; ns: string; attrs: Record<string, string>; parent: number; texts: string[]; rendered: boolean; box: Box | null;
   size: Size | null; computed: Record<string, string>; pseudo: Record<string, Record<string, string>>; inline: RawStyle | null;
   vars: Record<string, string>; minAuto: { axis: "row" | "column"; before: Box; after: Box } | null; shadow: boolean;
-  lines?: SnapLine[]; textOverflow?: SnapElement["textOverflow"];
+  lines?: SnapLine[]; textOverflow?: SnapElement["textOverflow"]; enText?: string;
 }
 interface RawPage {
   viewport: { width: number; height: number; scale: number };
@@ -370,10 +375,32 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
     const vars: Record<string, string> = {};
     for (const n of varNames) if (vals[n] !== base[n]) vars[n] = vals[n];
     const ns = el.namespaceURI === "http://www.w3.org/2000/svg" ? "svg" : el.namespaceURI === "http://www.w3.org/1998/Math/MathML" ? "math" : "html";
+    // a keyed text as an English entry would hold it: its words, a variable as {name}, a <br> as a line break
+    let enText: string | undefined;
+    if (el.hasAttribute("data-l10n") && el.localName !== "input" && el.localName !== "textarea") {
+      const BR = "\u0001";
+      const words = (n: Node): string => {
+        let t = "";
+        for (const c of Array.from(n.childNodes)) {
+          if (c.nodeType === 3) t += (c as Text).data;
+          else if (c.nodeType === 1) {
+            const x = c as Element;
+            if (x.localName === "br") t += BR;
+            else if (x.hasAttribute("data-u-arg")) t += `{${x.getAttribute("data-u-arg")}}`;
+            else if (!["script", "style", "template", "noscript", "title"].includes(x.localName)) t += words(x);
+          }
+        }
+        return t;
+      };
+      // rendered whitespace: collapsed unless the text preserves it (white-space: pre, pre-wrap)
+      const keep = cs.getPropertyValue("white-space-collapse") === "preserve";
+      enText = keep ? words(el).split(BR).join("\n") : words(el).split(BR).map((l) => l.replace(/\s+/g, " ").trim()).join("\n").trim();
+    }
     out.elements.push({
       tag: el.localName, ns, attrs, parent: parentIdx, texts, rendered, box: rendered ? rect(el) : null, size, computed, pseudo, inline, vars,
       minAuto: null, shadow: !!(el as HTMLElement).shadowRoot,
       ...(rendered && texts.length ? textLines(el, cs) : {}),
+      ...(enText !== undefined ? { enText } : {}),
     });
   });
 
@@ -768,6 +795,7 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
     inline: inlinePlans[i] ? finish(inlinePlans[i]!) : null, vars: e.vars, minAuto: e.minAuto,
     shadowRoot: e.shadow ? "open" : cdpEls[i].shadow, ua: ua[i] ?? {},
     ...(e.lines ? { lines: e.lines } : {}), ...(e.textOverflow ? { textOverflow: e.textOverflow } : {}),
+    ...(e.enText !== undefined ? { enText: e.enText } : {}),
     ...(raw.svgPaint[i] ? { svgPaint: raw.svgPaint[i] } : {}),
     ...(images.has(i) ? { image: images.get(i) } : {}),
   }));
