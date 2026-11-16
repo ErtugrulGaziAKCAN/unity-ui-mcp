@@ -55,12 +55,12 @@ async function serverFor(dir: string, pipeline?: Pipeline): Promise<Client> {
 }
 
 describe("server surface", () => {
-  it("lists exactly the 8 tools and the rules resource", async () => {
+  it("lists exactly the 9 tools and the rules resource", async () => {
     const p = tempProject();
     const client = await serverFor(p.dir);
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(tools).toEqual([...TOOL_NAMES].sort());
-    expect(tools).toEqual(["design_ui_clean", "design_ui_import", "design_ui_kit_sync", "design_ui_lint", "design_ui_list", "design_ui_rules", "design_ui_status", "design_ui_verify"]);
+    expect(tools).toEqual(["design_ui_brief", "design_ui_clean", "design_ui_import", "design_ui_kit_sync", "design_ui_lint", "design_ui_list", "design_ui_rules", "design_ui_status", "design_ui_verify"]);
     const resources = (await client.listResources()).resources.map((r) => r.uri);
     expect(resources).toEqual(["design-ui://rules"]);
     const res = await client.readResource({ uri: "design-ui://rules" });
@@ -224,6 +224,38 @@ describe("design_ui_rules", () => {
   it("has a summary only for rules the linter has", () => {
     const ids = new Set(RULES.map((r) => r.id));
     for (const id of Object.keys(RULE_SUMMARIES)) expect(ids.has(id), id).toBe(true);
+  });
+});
+
+describe("design_ui_brief", () => {
+  it("returns the brief of a valid contract", async () => {
+    const p = tempProject();
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    fs.writeFileSync(path.join(dir, "screen.contract.json"), JSON.stringify({
+      contract: 1, screen: "clean.screen", kind: "new",
+      actions: [{ name: "open-it", handler: null, origin: "requested", note: "user, 2026-11-16: add it" }],
+      texts: [{ key: "clean.screen.title", en: "Title", origin: "existing" }],
+    }));
+    const r = await call(await serverFor(p.dir), "design_ui_brief", { screen: "clean-screen" });
+    expect(r.isError).toBeFalsy();
+    expect(r.text).toMatch(/^# Design brief: clean\.screen\n/);
+    expect(r.data.brief).toMatch(/^# Design brief: clean\.screen\n/);
+    expect(r.data).toMatchObject({ screen: "clean.screen", contract: "valid", dependencies: ["action open-it: user, 2026-11-16: add it"] });
+  });
+
+  it("errors on an absent or invalid contract with the fix", async () => {
+    const p = tempProject();
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const client = await serverFor(p.dir);
+    const absent = await call(client, "design_ui_brief", { screen: "clean-screen" });
+    expect(absent.isError).toBe(true);
+    expect(absent.text).toContain("no screen.contract.json in clean-screen");
+    expect(absent.text).toContain('write screen.contract.json from the project (see design_ui_rules, "Screen contract")');
+    fs.writeFileSync(path.join(dir, "screen.contract.json"), JSON.stringify({ contract: 2 }));
+    const bad = await call(client, "design_ui_brief", { screen: "clean-screen" });
+    expect(bad.isError).toBe(true);
+    expect(bad.text).toContain("screen.contract.json: contract must be 1");
+    expect(bad.text).toContain("write screen.contract.json from the project");
   });
 });
 
@@ -1732,8 +1764,8 @@ describe("without design-ui.config.json", () => {
     client = await connect(createUnconfiguredServer(tempDir(), "design-ui.config.json not found", { runtime }));
   });
 
-  it("still lists the 8 tools and serves the rules", async () => {
-    expect((await client.listTools()).tools).toHaveLength(8);
+  it("still lists the 9 tools and serves the rules", async () => {
+    expect((await client.listTools()).tools).toHaveLength(9);
     const r = await call(client, "design_ui_rules");
     expect(r.isError).toBeFalsy();
     expect(r.text).toContain("U-CSS-001");

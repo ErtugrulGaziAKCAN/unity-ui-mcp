@@ -86,6 +86,7 @@ and continue from there. Never invent blob files or edit the design to make it p
 
 For each screen the user names:
 
+0. When the screen has a `screen.contract.json`, `design_ui_brief { screen }` returns the brief for the design tool; show it to the user before anything is designed.
 1. `design_ui_lint { design }`. If there are errors, report them as design-side fixes (rule id, element, fix) for the
    user or the design tool to apply, and stop. Do not fix them in Unity output or by editing the exported files.
 2. `design_ui_import { design }`. If it answers "not available yet" or fails, report the reason as it is and stop.

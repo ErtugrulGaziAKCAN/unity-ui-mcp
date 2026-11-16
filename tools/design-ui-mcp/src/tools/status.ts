@@ -38,6 +38,7 @@ export function availability(ctx: ServerContext, bridge?: BridgeStatus | null): 
   return {
     design_ui_rules: { available: true, note: "live (kit RULES.md, attributes, text styles, allowed CSS and every lint rule with its fix)" },
     design_ui_list: { available: true, note: "live" },
+    design_ui_brief: { available: true, note: "live (the screen contract as a design brief)" },
     design_ui_lint: { available: true, note: "live (real lint in Chromium with the kit fonts)" },
     design_ui_status: { available: true, note: "live" },
     design_ui_import: !exp

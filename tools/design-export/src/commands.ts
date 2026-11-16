@@ -2,7 +2,10 @@ import { Command, CommanderError } from "commander";
 import path from "node:path";
 import { compareScreen, readThresholds, summarizeIssues } from "./compare/compare.js";
 import { writeReport, writeVerdict } from "./compare/report.js";
+import { contractBrief } from "./contract-brief.js";
+import { CONTRACT_FILE, readScreenContract } from "./contract.js";
 import { exportScreen, lintScreen } from "./export.js";
+import { readKit } from "./kit.js";
 import { buildKit } from "./kit/build.js";
 import { writeClaudeDesignSystem } from "./kit/claudeDesignSystem.js";
 import { KEEP_BACKUPS, upgradeKit } from "./kit/upgrade.js";
@@ -16,6 +19,7 @@ const USAGE = `Usage: design-export <command> [options]
 Commands:
   lint <designDir> --kit <kitDir>                Lint a Claude Design HTML screen
   export <designDir> --kit <kitDir> --out <dir>  Export a screen: IR, goldens, assets, sample data
+  contract brief <designDir> --kit <kitDir>      Print the design brief of the screen's screen.contract.json
   compare <exportDir> --unity <captureDir> --report <file.html>
                                                  Compare Unity captures with the goldens; write the report and verdict.json
   kit build <kitDir> [--check]                   Regenerate base.css, RULES.md and the base block of kit pages;
@@ -100,6 +104,17 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       for (const line of summarizeIssues(v, 10, { notRun: false })) io.out(`- ${line}\n`);
       io.out(`report: ${report}\nverdict: ${verdictFile}\n`);
       return v.pass ? 0 : 1;
+    }) as never);
+
+  const contractCmd = program.command("contract").description("Screen contract commands");
+  contractCmd.command("brief").allowExcessArguments(false).argument("<designDir>").requiredOption("--kit <kitDir>")
+    .description("Print the design brief of a screen's contract")
+    .action(guard(async (dir: string, o: { kit: string }) => {
+      const load = readScreenContract(path.resolve(dir));
+      if (load.state === "absent") { io.out(`no ${CONTRACT_FILE} in ${dir}\n`); return 1; }
+      if (load.state === "invalid") { for (const p of load.problems) io.out(`${CONTRACT_FILE}: ${p}\n`); return 1; }
+      io.out(contractBrief(load.contract, readKit(path.resolve(o.kit))));
+      return 0;
     }) as never);
 
   const kitCmd = program.command("kit").description("Kit maintenance: generated kit files and the Claude Design System export");
