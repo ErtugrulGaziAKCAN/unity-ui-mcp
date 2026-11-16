@@ -240,7 +240,7 @@ namespace DesignUi.Editor.Tests
             var cells = Node("cells", "container", ("display", "flex"), ("flex-direction", "row"), ("gap", "4px"))
                 .Add(Node("cell", "container", ("width", "20px")).Add(cellValue));
             cells.Repeat = new IrRepeat { Name = "cell", Mode = "inline", Count = 3 };
-            var rowName = Text("row-name", "Ahmet", ("font-size", "16.515625px"));
+            var rowName = Text("row-name", "Row One", ("font-size", "16.515625px"));
             rowName.Bind = "row.name";
             var row = Node("row", "container", ("height", "40px")).Add(rowName, cells);
             row.Action = "open-row";
