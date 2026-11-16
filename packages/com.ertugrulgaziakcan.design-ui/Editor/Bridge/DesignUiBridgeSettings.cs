@@ -35,12 +35,36 @@ namespace DesignUi.Editor
             s_Enabled = null;
         }
 
-        internal static void WriteAtomic(string path, string text)
+        /// <summary>
+        /// Writes <paramref name="text"/> to <paramref name="path"/> through a temporary file. <paramref name="ownerOnly"/> (a
+        /// secret, such as the bridge token): on macOS and Linux the file is readable and writable by its user only (mode 0600,
+        /// set before the text is written); on Windows it keeps the ACLs of the project's folder.
+        /// </summary>
+        internal static void WriteAtomic(string path, string text, bool ownerOnly = false)
         {
             var tmp = path + ".tmp";
+            if (ownerOnly)
+            {
+                File.WriteAllText(tmp, "");
+                RestrictToOwner(tmp);
+            }
             File.WriteAllText(tmp, text);
             if (File.Exists(path)) File.Replace(tmp, path, null);
             else File.Move(tmp, path);
+        }
+
+        [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "chmod", SetLastError = true)]
+        static extern int Chmod(string path, int mode);
+
+        /// <summary>Mode 0600 on macOS and Linux (the file's user reads and writes it, nobody else); nothing on Windows.</summary>
+        static void RestrictToOwner(string path)
+        {
+            if (Application.platform == RuntimePlatform.WindowsEditor) return;
+            int result;
+            try { result = Chmod(path, 0x180); } // 0600
+            catch (Exception e) { throw new IOException("could not restrict " + path + " to its user: " + e.Message, e); }
+            if (result != 0)
+                throw new IOException("could not restrict " + path + " to its user (chmod error " + System.Runtime.InteropServices.Marshal.GetLastWin32Error() + ")");
         }
 
         static bool Read()

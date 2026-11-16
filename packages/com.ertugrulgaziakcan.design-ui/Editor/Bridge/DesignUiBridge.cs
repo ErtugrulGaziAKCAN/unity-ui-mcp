@@ -481,7 +481,8 @@ namespace DesignUi.Editor
                     ["pid"] = System.Diagnostics.Process.GetCurrentProcess().Id,
                     ["version"] = s_Version,
                 };
-                DesignUiBridgeSettings.WriteAtomic(p, o.ToString());
+                // the token: readable by this user only
+                DesignUiBridgeSettings.WriteAtomic(p, o.ToString(), ownerOnly: true);
             }
             catch (Exception e)
             {

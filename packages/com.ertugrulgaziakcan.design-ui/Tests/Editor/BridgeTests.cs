@@ -108,6 +108,21 @@ namespace DesignUi.Editor.Tests
             Assert.Greater(cfg.Value<int>("pid"), 0);
         }
 
+        /// <summary>bridge.json holds the bridge's token: on macOS and Linux only its user may read it (mode 0600).</summary>
+        [Test]
+        public void BridgeJson_IsReadableByItsUserOnly()
+        {
+            if (Application.platform == RuntimePlatform.WindowsEditor) Assert.Ignore("Windows: the file inherits the project folder's ACLs");
+            Assert.IsTrue(File.Exists(BridgeJson));
+            var ls = new System.Diagnostics.ProcessStartInfo("/bin/ls", "-l \"" + BridgeJson + "\"") { RedirectStandardOutput = true, UseShellExecute = false };
+            using (var p = System.Diagnostics.Process.Start(ls))
+            {
+                var line = p.StandardOutput.ReadToEnd();
+                p.WaitForExit();
+                StringAssert.StartsWith("-rw-------", line, "bridge.json's mode");
+            }
+        }
+
         [UnityTest]
         public IEnumerator NoToken_Is401()
         {
