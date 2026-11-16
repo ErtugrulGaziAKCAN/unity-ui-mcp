@@ -58,7 +58,7 @@ namespace DesignUi.Editor.Tests
             card.Action = "open-card";
             var save = Inter(Node("save", "button", ("width", "100px"), ("height", "30px"), ("background-color", "#444444")), "16px")
                 .With("disabled", ("opacity", "0.5"));
-            save.Text = new IrText { Key = "test.save", Tr = "Kaydet", En = "Save" };
+            save.Text = new IrText { Key = "test.save", Ref = "Kaydet", En = "Save" };
             save.Initial = new IrInitial();
 
             var chipLabel = Inter(Text("chip-label", "a"), "16px");
@@ -88,7 +88,7 @@ namespace DesignUi.Editor.Tests
             query.Bind = "query";
             query.Initial = new IrInitial();
             var choice = Inter(Node("choice", "dropdown", ("width", "200px"), ("height", "30px")), "16px");
-            choice.Text = new IrText { Key = "test.choice", Tr = "Bir", En = "One" };
+            choice.Text = new IrText { Key = "test.choice", Ref = "Bir", En = "One" };
             choice.Bind = "choice";
             choice.Initial = new IrInitial();
 

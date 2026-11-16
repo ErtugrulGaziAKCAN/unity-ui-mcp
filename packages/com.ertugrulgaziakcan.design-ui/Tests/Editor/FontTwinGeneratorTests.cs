@@ -182,7 +182,7 @@ namespace DesignUi.Editor.Tests
 
                 CollectionAssert.AreEqual(new[] { 20f, 40f, 100f }, labels.Select(l => l.layout.height).ToArray(), "line boxes at scale " + scale);
                 var ir = TestIr.Screen(TestIr.Root(), "box.test");
-                ir.Root.Children = labels.Select(l => { var n = TestIr.Node(l.name, "text"); n.Text = new IrText { Tr = "H" }; return n; }).ToArray();
+                ir.Root.Children = labels.Select(l => { var n = TestIr.Node(l.name, "text"); n.Text = new IrText { Ref = "H" }; return n; }).ToArray();
                 var measured = BoxesWriter.Measure("c", root, new Vector2Int(256, 256), scale, ir);
                 foreach (var l in labels)
                 {

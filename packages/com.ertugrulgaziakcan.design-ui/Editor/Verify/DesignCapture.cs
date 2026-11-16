@@ -1345,14 +1345,14 @@ namespace DesignUi.Editor
                         case "text":
                         case "value":
                             if (node.Text == null) break;
-                            PrepareFonts(node.Text.Tr ?? "");
-                            SetText(el, node.Text.Tr ?? "", node.Text.Rich);
+                            PrepareFonts(node.Text.Ref ?? "");
+                            SetText(el, node.Text.Ref ?? "", node.Text.Rich);
                             break;
                         case "placeholderText":
-                            if (el is TextField field && Attr("placeholder") != null) field.textEdition.placeholder = Attr("placeholder").Tr ?? "";
+                            if (el is TextField field && Attr("placeholder") != null) field.textEdition.placeholder = Attr("placeholder").Ref ?? "";
                             break;
                         case "tooltip":
-                            if (Attr("title") != null) el.tooltip = Attr("title").Tr ?? "";
+                            if (Attr("title") != null) el.tooltip = Attr("title").Ref ?? "";
                             break;
                     }
                 }

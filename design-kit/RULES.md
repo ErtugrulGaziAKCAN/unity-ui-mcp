@@ -8,7 +8,7 @@ The contract for HTML screens (from Claude Design or any other source) that the 
 2. The style starts with the base stylesheet (`base.css`, below); it sizes boxes as UI Toolkit does and writes out every browser default.
 3. Lay out with flex only. Colours, spacing, radii and shadows come from the tokens through `var(--name)`.
 4. Every text uses a kit text style class (`.text-body`, `.text-title-bold`, …) and the kit font; never declare `@font-face`.
-5. Visible text is written in the reference locale (tr) with a `data-l10n` key and the English `data-en`; runtime values use `data-u-bind` and sample text.
+5. Visible text is written in the reference locale (en: the Unity project's choice, its DesignUiProfile's Reference Locale, which kit sync writes into the kit) with a `data-l10n` key and the English `data-en`; runtime values use `data-u-bind` and sample text.
 6. Interactive, bound and action elements carry `data-u-id`; actions name a command in `data-u-action`.
 7. Interaction states are `:hover`, `:active`, `:focus`, `:disabled`, `:checked` and `is-*` classes; screen states are `data-u-state` roots shown under `.state-<name>`.
 8. Every screen is linted before it goes to Unity (`design_ui_lint` in the MCP server, or `design-export lint <screen> --kit <kit>`); fix the design, never the generated Unity files.
@@ -472,7 +472,7 @@ A complete screen; with the base stylesheet pasted at the marked line it lints c
 
 ```html
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>squad.overview</title>
@@ -492,8 +492,8 @@ A complete screen; with the base stylesheet pasted at the marked line it lints c
 </head>
 <body>
 <div class="screen" data-u-screen="squad.overview">
-  <h1 class="heading text-headline-bold" data-l10n="squad.overview.title" data-en="Squad">Kadro</h1>
-  <button class="start text-body-bold" data-u-id="start" data-u-action="start-training" data-l10n="squad.overview.start" data-en="Start training">Antrenmanı başlat</button>
+  <h1 class="heading text-headline-bold" data-l10n="squad.overview.title" data-en="Squad">Squad</h1>
+  <button class="start text-body-bold" data-u-id="start" data-u-action="start-training" data-l10n="squad.overview.start" data-en="Start training">Start training</button>
   <div class="list" data-u-id="players">
     <div class="row is-selected" data-u-repeat="players" data-u-id="player" data-u-action="open-player">
       <span class="text-body-bold" data-u-id="name" data-u-bind="player.name">Kerem Örnekoğlu</span>
@@ -504,7 +504,7 @@ A complete screen; with the base stylesheet pasted at the marked line it lints c
       <span class="text-body" data-u-id="rating" data-u-bind="player.rating">7.9</span>
     </div>
   </div>
-  <p class="loading text-body" data-u-state="loading" data-l10n="squad.overview.loading" data-en="Loading players…">Oyuncular yükleniyor…</p>
+  <p class="loading text-body" data-u-state="loading" data-l10n="squad.overview.loading" data-en="Loading players…">Loading players…</p>
 </div>
 </body>
 </html>

@@ -42,7 +42,8 @@ namespace DesignUi.Editor
     public sealed class IrText
     {
         [JsonProperty("key")] public string Key;
-        [JsonProperty("tr")] public string Tr;
+        /// <summary>The design's own text, in the reference locale (the profile's <c>referenceLocale</c>).</summary>
+        [JsonProperty("ref")] public string Ref;
         [JsonProperty("en")] public string En;
         [JsonProperty("args")] public string[] Args = new string[0];
         [JsonProperty("rich")] public bool Rich;

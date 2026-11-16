@@ -85,7 +85,7 @@ namespace DesignUi.Editor.Tests
         static IrNode TextNode(string id, string kind, string text)
         {
             var n = Node(id, kind);
-            n.Text = new IrText { Tr = text };
+            n.Text = new IrText { Ref = text };
             return n;
         }
 

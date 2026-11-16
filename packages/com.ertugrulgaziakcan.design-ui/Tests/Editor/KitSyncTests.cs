@@ -293,6 +293,45 @@ namespace DesignUi.Editor.Tests
             finally { AssetDatabase.DeleteAsset(folder); }
         }
 
+        /// <summary>
+        /// The reference locale defaults to English for a new profile, and for a saved one whose YAML lacks the field; a saved
+        /// profile keeps the reference locale it serialized (a project set up with Turkish stays Turkish after the update).
+        /// </summary>
+        [Test]
+        public void ASavedProfile_KeepsItsReferenceLocale_ANewProfileStartsWithEnglish()
+        {
+            var meta = File.ReadAllText(IrReaderTests.PackagePath("Editor", "Profile", "DesignUiProfile.cs.meta"));
+            var guid = System.Text.RegularExpressions.Regex.Match(meta, @"guid: ([0-9a-f]{32})").Groups[1].Value;
+            Assert.IsNotEmpty(guid);
+            const string folder = "Assets/DesignUiLocaleProfile";
+            if (!AssetDatabase.IsValidFolder(folder)) AssetDatabase.CreateFolder("Assets", "DesignUiLocaleProfile");
+            string Yaml(string name, string fields) =>
+                "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!114 &11400000\nMonoBehaviour:\n  m_ObjectHideFlags: 0\n" +
+                "  m_CorrespondingSourceObject: {fileID: 0}\n  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n  m_GameObject: {fileID: 0}\n" +
+                "  m_Enabled: 1\n  m_EditorHideFlags: 0\n  m_Script: {fileID: 11500000, guid: " + guid + ", type: 3}\n  m_Name: " + name + "\n" +
+                "  m_EditorClassIdentifier: \n  referenceResolution: {x: 2560, y: 1440}\n  screenMatch: 0.5\n" + fields;
+            try
+            {
+                File.WriteAllText(folder + "/Turkish.asset", Yaml("Turkish", "  referenceLocale: tr\n  locales:\n  - en\n"));
+                File.WriteAllText(folder + "/Unset.asset", Yaml("Unset", ""));
+                AssetDatabase.ImportAsset(folder + "/Turkish.asset", ImportAssetOptions.ForceUpdate);
+                AssetDatabase.ImportAsset(folder + "/Unset.asset", ImportAssetOptions.ForceUpdate);
+                var turkish = AssetDatabase.LoadAssetAtPath<DesignUiProfile>(folder + "/Turkish.asset");
+                Assert.IsNotNull(turkish, "the saved profile loads");
+                Assert.AreEqual("tr", turkish.referenceLocale, "a saved reference locale is kept");
+                CollectionAssert.AreEqual(new[] { "en" }, turkish.locales);
+                Assert.AreEqual("en", AssetDatabase.LoadAssetAtPath<DesignUiProfile>(folder + "/Unset.asset").referenceLocale, "a field the asset lacks takes the default");
+
+                var fresh = DesignUiProfile.CreateNew();
+                _objects.Add(fresh);
+                Assert.AreEqual("en", fresh.referenceLocale, "a new profile");
+                var made = ScriptableObject.CreateInstance<DesignUiProfile>();
+                _objects.Add(made);
+                Assert.AreEqual("en", made.referenceLocale, "an instance made in the Editor");
+            }
+            finally { AssetDatabase.DeleteAsset(folder); }
+        }
+
         /// <summary>The six default viewports as kit.config.json writes them (the clone's kit).</summary>
         const string SixViewports = "[[2560,1440],[1920,1080],[1280,720],[3840,2160],{\"size\":[1600,900],\"class\":\"scaled\"},{\"size\":[1366,768],\"class\":\"scaled\"}]";
 

@@ -58,7 +58,8 @@ Guides: [usage guide](docs/guide/usage.md) · [Türkçe kullanım rehberi](docs/
 3. **Open the project in Unity and start a new chat.** Unity resolves the package and the bridge starts by itself
    (`Window > Design UI > Status`). In a new session of your client, type `/unity-ui-mcp` (or ask for `design_ui_list`):
    `unity.bridge: "connected"` means you are ready. Create the profile in that window (**Create Profile**) and run a
-   kit sync (step 1 of the loop below).
+   kit sync (step 1 of the loop below). Designs are written in the profile's **Reference Locale**, English by default:
+   to design in another language, set it in the profile before that kit sync (the usage guide says how).
 
 [INSTALL.md](INSTALL.md) is the agent's guide, with every setup option and the manual route.
 

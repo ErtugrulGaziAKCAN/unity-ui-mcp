@@ -304,7 +304,7 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
   timings.bake = Math.round(bakeMs * 10) / 10;
 
   // ---- 6. fixtures, fonts, tokens -----------------------------------------------------------------------------
-  const sample = (i: number) => (el(i).tag === "select" ? irText(s, i, page.seqs, styles, page.rendered)?.tr ?? "" : plainText(s, i, page.seqs, page.rendered));
+  const sample = (i: number) => (el(i).tag === "select" ? irText(s, i, page.seqs, styles, page.rendered)?.ref ?? "" : plainText(s, i, page.seqs, page.rendered));
   const isClasses = (i: number) => (el(i).attrs.class ?? "").split(/\s+/).filter((c) => /^is-./.test(c));
   // the IR's template of each repeat (the first item of its first container): every written-out item, in whichever
   // container, is recorded by the ids of the template element at the same place (a nested repeat's later containers

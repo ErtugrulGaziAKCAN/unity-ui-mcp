@@ -45,6 +45,12 @@ namespace DesignUi.Editor
                 throw new IrFormatException("the export is IR version " + major + ", made by an older design-export; this com.ertugrulgaziakcan.design-ui " +
                                             "package reads IR version " + SupportedVersion + ": export the design again with the current MCP server");
 
+            // an earlier exporter wrote the design's text under "tr": read field by field, every text would compile empty
+            if (HasOldTextField(obj))
+                throw new IrFormatException("the export was made by an earlier design-export: its texts are under \"tr\", where this " +
+                                            "com.ertugrulgaziakcan.design-ui package reads \"ref\"; export the design again with the current MCP " +
+                                            "server (design_ui_import exports it again by itself), then import it");
+
             IrScreen screen;
             try { screen = obj.ToObject<IrScreen>(JsonSerializer.Create(new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })); }
             catch (JsonException e) { throw new IrFormatException("IR file does not match the IR schema: " + e.Message, e); }
@@ -55,7 +61,20 @@ namespace DesignUi.Editor
             return screen;
         }
 
-        static readonly HashSet<string> AttrTextNames = new HashSet<string> { "placeholder", "title", "alt", "aria-label" };
+        /// <summary>Whether a text object anywhere in the IR (a key, English text and args) has the field "tr" and no "ref".</summary>
+        static bool HasOldTextField(JToken token)
+        {
+            if (token is JObject o)
+            {
+                if (o.Property("tr") != null && o.Property("ref") == null && o.Property("en") != null && o.Property("args") != null) return true;
+                foreach (var p in o.Properties()) if (HasOldTextField(p.Value)) return true;
+            }
+            else if (token is JArray a)
+                foreach (var item in a) if (HasOldTextField(item)) return true;
+            return false;
+        }
+
+        static readonly HashSet<string> AttrTextNames =new HashSet<string> { "placeholder", "title", "alt", "aria-label" };
         static readonly HashSet<string> Directions = new HashSet<string> { "normal", "reverse", "alternate", "alternate-reverse" };
         static readonly HashSet<string> FillModes = new HashSet<string> { "none", "forwards", "backwards", "both" };
 

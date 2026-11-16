@@ -24,7 +24,7 @@ namespace DesignUi.Editor.Tests
         public static IrNode Text(string id, string tr, params (string k, string v)[] style)
         {
             var n = Node(id, "text", style);
-            n.Text = new IrText { Key = "test." + id, Tr = tr, En = tr };
+            n.Text = new IrText { Key = "test." + id, Ref = tr, En = tr };
             return n;
         }
 

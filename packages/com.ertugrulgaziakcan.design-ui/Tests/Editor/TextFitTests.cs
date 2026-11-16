@@ -57,7 +57,7 @@ namespace DesignUi.Editor.Tests
         static IrNode Button(string id, string text, params (string k, string v)[] style)
         {
             var n = Node(id, "button", style);
-            n.Text = new IrText { Key = "test." + id, Tr = text, En = text };
+            n.Text = new IrText { Key = "test." + id, Ref = text, En = text };
             return n;
         }
 

@@ -9,7 +9,8 @@ export type StyleMap = Record<string, string>;
  */
 export type StyleLayers = Record<string, StyleMap>;
 /** `style`: the kit text style the text matches (text-styles.json name), or null. */
-export interface IrText { key: string | null; tr: string; en: string | null; args: string[]; rich: boolean; style: string | null }
+/** A text: `ref` is the design's own text, in the reference locale (the kit's `referenceLocale`, else its first locale). */
+export interface IrText { key: string | null; ref: string; en: string | null; args: string[]; rich: boolean; style: string | null }
 /**
  * `tint`: an SVG painted with currentColor, written white; the compiler tints it with the node's `color` in each layer.
  * `slice`: 9-slice insets in image pixels, CSS box order top, right, bottom, left (shadows), else null.

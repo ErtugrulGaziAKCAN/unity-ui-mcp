@@ -9,7 +9,7 @@ namespace DesignUi.Editor
         public string Key;
         /// <summary>English, as the String Table stores it (arguments already in the profile's format).</summary>
         public string En;
-        /// <summary>The design's own text in the reference locale (the IR's <c>tr</c>), in the same format.</summary>
+        /// <summary>The design's own text in the reference locale (the IR's <c>ref</c>), in the same format.</summary>
         public string Reference;
         /// <summary>The argument names in the order the generated view sets them (empty without arguments).</summary>
         public string[] Args = new string[0];

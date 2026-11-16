@@ -24,7 +24,11 @@ fix; a difference after import is reported, never smoothed over.
 1. **Install** (README, three steps). Unity shows `Window > Design UI > Status` with the bridge state.
 2. **Create the profile** in that window (**Create Profile**). The `DesignUiProfile` holds every project setting:
    where generated screens go (`outputFolder`, default `Assets/UI/Generated`) and their namespace, viewports, locales,
-   fonts, localization, right-to-left rules, text sizes, and how screens sit in a uGUI shell.
+   fonts, localization, right-to-left rules, text sizes, and how screens sit in a uGUI shell. Its **Reference Locale**
+   is the language designs are written in: English (`en`) for a new profile. To design in another language, set it
+   (for example `tr`) before the first kit sync; kit sync writes it into the kit's `locales`, so RULES.md, the published
+   Design System and lint name it, and the import writes the designs' text as that locale's String Table entries. A
+   profile keeps the value it was saved with.
 3. **Fonts.** Each locale renders with the TMP font the project already uses. By default that is TMP Settings' default
    font for every locale. A project with a per-locale mapping fills the profile's **Locale Fonts**, or writes a
    `DesignUiFontResolver` subclass in an Editor assembly that asks its own font system, and sets that asset as the
@@ -96,8 +100,9 @@ Attach the kit's Design System to the canvas. Then:
   styles (caption 20/28, label 20/24) sit at that minimum on the kit's 4 px grid. Do not scale text below it with a
   transform either. Lint U-FONT-004 rejects such text. Text sits in its own element. A label that must stay on its lines uses `white-space: nowrap` (its lines are its
   `<br>`s); keep that line count in every translation, so it gets an exact height in Unity.
-- **Every visible text has a key.** Write the text in the reference locale (Turkish in the kit) and add
-  `data-l10n="club.overview.title"` (a meaningful English key) and `data-en="Overview"`. A value inside a sentence is
+- **Every visible text has a key.** Write the text in the reference locale (the one RULES.md names: the profile's
+  **Reference Locale**, English unless the project chose another) and add `data-l10n="club.overview.title"` (a
+  meaningful English key) and `data-en="Overview"`. A value inside a sentence is
   `<span data-u-arg="count">3</span>`, written `{count}` in `data-en`. Values that come from the game and are not
   translated (a player's name, a number) use `data-u-bind="player-name"`; their text is sample data.
 - **Controls get ids.** Every button, input or bound element has `data-u-id`; an element that does something has
@@ -130,7 +135,7 @@ Attach the kit's Design System to the canvas. Then:
 A prompt that works well:
 
 > Use the attached design system and follow its README rules. Screen id `club.overview`, one 2560×1440 artboard.
-> Write visible text in Turkish with a `data-l10n` English key and `data-en` English text on every text. Give every
+> Write visible text in the reference locale the rules name, with a `data-l10n` English key and `data-en` English text on every text. Give every
 > button `data-u-id` and `data-u-action`. Use only the kit's text style classes (none smaller than caption) and tokens, flex layout only, no grid
 > or calc. Write the player list out as five sample rows with `data-u-repeat="player"` on the first. Mark the existing
 > top bar `data-u-external`.

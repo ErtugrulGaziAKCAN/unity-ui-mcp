@@ -581,7 +581,7 @@ namespace DesignUi.Editor
                 // UXML only as a choice: one choice at index 0; the view fills the real choices at runtime.
                 if (node.Text != null && d.Tag == "ui:DropdownField")
                 {
-                    var option = node.Text.Tr ?? "";
+                    var option = node.Text.Ref ?? "";
                     if (option.IndexOf(',') >= 0)
                         throw new IrFormatException("the selected option '" + option + "' of dropdown '" + node.Id + "' contains a comma, which a UXML choices list cannot hold; reword the option");
                     if (option.Length > 0)
@@ -591,7 +591,7 @@ namespace DesignUi.Editor
                     }
                 }
                 else if (node.Text != null && d.Tag == "ui:TextField")
-                    d.Attributes.Add(new KeyValuePair<string, string>("value", node.Text.Tr ?? "")); // an input's text is its value
+                    d.Attributes.Add(new KeyValuePair<string, string>("value", node.Text.Ref ?? "")); // an input's text is its value
                 else if (node.Text != null && d.Tag != "ui:Label" && d.Tag != "ui:Button" && d.Tag != "ui:Toggle")
                     throw new IrFormatException("node '" + node.Id + "' of kind '" + node.Kind + "' has text; only text, button, toggle, input and dropdown nodes carry text");
                 if (node.Field != null)
@@ -612,10 +612,10 @@ namespace DesignUi.Editor
                         case "placeholder":
                             if (d.Tag != "ui:TextField")
                                 throw new IrFormatException("node '" + node.Id + "' of kind '" + node.Kind + "' has a placeholder; only input nodes show one");
-                            d.Attributes.Add(new KeyValuePair<string, string>(PlaceholderAttribute, kv.Value?.Tr ?? ""));
+                            d.Attributes.Add(new KeyValuePair<string, string>(PlaceholderAttribute, kv.Value?.Ref ?? ""));
                             break;
                         case "title":
-                            d.Attributes.Add(new KeyValuePair<string, string>("tooltip", kv.Value?.Tr ?? ""));
+                            d.Attributes.Add(new KeyValuePair<string, string>("tooltip", kv.Value?.Ref ?? ""));
                             break;
                         default:
                             // alt and aria-label: UI Toolkit draws no alternative text or accessible label; the manifest keeps them per element
@@ -1161,9 +1161,9 @@ namespace DesignUi.Editor
                 if (node.Bind != null || (node.Text.Args?.Length ?? 0) > 0) return false;
                 var style = node.Text.Style;
                 if (style == null || _lineBoxes == null || !_lineBoxes.TryGetValue(style, out var key) || key == null || !_boxesByKey.TryGetValue(key, out var box)) return false;
-                var tr = node.Text.Tr ?? "";
-                if (node.Text.Rich && tr.IndexOf("<size=", StringComparison.Ordinal) >= 0) return false; // another size in a line changes its box
-                lines = tr.Split('\n').Length;
+                var text = node.Text.Ref ?? "";
+                if (node.Text.Rich && text.IndexOf("<size=", StringComparison.Ordinal) >= 0) return false; // another size in a line changes its box
+                lines = text.Split('\n').Length;
                 if (node.Text.En != null && node.Text.En.Split('\n').Length != lines) return false;
                 // every locale's translation in the screen's String Tables keeps the line count, or the text is not fixed
                 if (node.Text.Key != null && _options.Translations != null)
@@ -1585,7 +1585,7 @@ namespace DesignUi.Editor
                 e.Attributes.AddRange(d.Attributes);
                 if (node.Text != null && d.Tag != "ui:DropdownField") // a dropdown's text is its value attribute
                 {
-                    e.Text = node.Text.Tr ?? "";
+                    e.Text = node.Text.Ref ?? "";
                     // plain text stays plain: a '<' in it, a bound value or a filled-in argument (runtime values) is never read as a tag
                     if (!node.Text.Rich && (e.Text.IndexOf('<') >= 0 || node.Bind != null || node.Text.Args.Length > 0)) e.EnableRichText = false;
                 }

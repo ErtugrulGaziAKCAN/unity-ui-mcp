@@ -80,9 +80,9 @@
           ],
           "en": "Welcome {name}",
           "key": "sample.title",
+          "ref": "Hoş geldin {name}",
           "rich": false,
-          "style": "title",
-          "tr": "Hoş geldin {name}"
+          "style": "title"
         }
       },
       {
@@ -256,9 +256,9 @@
             "args": [],
             "en": "Start the match",
             "key": "sample.play.title",
+            "ref": "Maçı başlat",
             "rich": false,
-            "style": null,
-            "tr": "Maçı başlat"
+            "style": null
           }
         },
         "background": null,
@@ -293,9 +293,9 @@
               "args": [],
               "en": "Play",
               "key": "sample.play",
+              "ref": "Oyna",
               "rich": false,
-              "style": "label",
-              "tr": "Oyna"
+              "style": "label"
             }
           }
         ],
@@ -404,9 +404,9 @@
                   "args": [],
                   "en": null,
                   "key": null,
+                  "ref": "Ali",
                   "rich": false,
-                  "style": "label",
-                  "tr": "Ali"
+                  "style": "label"
                 }
               }
             ],

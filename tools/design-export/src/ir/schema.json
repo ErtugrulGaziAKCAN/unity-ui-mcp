@@ -836,7 +836,7 @@
       "additionalProperties": false,
       "required": [
         "key",
-        "tr",
+        "ref",
         "en",
         "args",
         "rich",
@@ -849,7 +849,7 @@
             "null"
           ]
         },
-        "tr": {
+        "ref": {
           "type": "string"
         },
         "en": {

@@ -56,7 +56,7 @@ namespace DesignUi.Editor
                 var args = withArgs ? (text.Args ?? new string[0]).Distinct(StringComparer.Ordinal).ToArray() : new string[0];
                 var t = new ScreenText
                 {
-                    Key = text.Key, En = Format(text.En ?? "", args, settings.argumentFormat), Reference = Format(text.Tr ?? "", args, settings.argumentFormat), Args = args,
+                    Key = text.Key, En = Format(text.En ?? "", args, settings.argumentFormat), Reference = Format(text.Ref ?? "", args, settings.argumentFormat), Args = args,
                 };
                 if (byKey.TryGetValue(text.Key, out var known))
                 {

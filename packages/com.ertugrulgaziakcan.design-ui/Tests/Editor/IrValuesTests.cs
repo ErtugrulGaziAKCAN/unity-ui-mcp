@@ -22,7 +22,7 @@ namespace DesignUi.Editor.Tests
 
         static string Decl(UssRule r, string property) => r.Declarations.Where(d => d.Property == property).Select(d => d.Value).SingleOrDefault();
 
-        static IrText T(string tr) => new IrText { Key = "k." + tr, Tr = tr, En = tr };
+        static IrText T(string tr) => new IrText { Key = "k." + tr, Ref = tr, En = tr };
 
         static KeyValuePair<string, string> A(string k, string v) => new KeyValuePair<string, string>(k, v);
 
@@ -75,7 +75,7 @@ namespace DesignUi.Editor.Tests
             var s = Build(Screen(Root(img)));
             var crest = s.Find("crest");
             CollectionAssert.IsEmpty(crest.Attributes, "nothing in the UXML");
-            Assert.AreEqual("Arma", crest.AccessibilityLabels[name].Tr);
+            Assert.AreEqual("Arma", crest.AccessibilityLabels[name].Ref);
             Assert.AreEqual("k.Arma", crest.AccessibilityLabels[name].Key);
 
             // a structural wrapper with a label stays, so the manifest's element exists

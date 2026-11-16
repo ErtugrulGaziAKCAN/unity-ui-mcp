@@ -109,9 +109,9 @@ namespace DesignUi.Editor.Tests
         public void ScreenStrings_AreTheTextsAttributeTextsAndThePasswordMask()
         {
             var label = Node("label", "text");
-            label.Text = new IrText { Key = "k", Tr = "Kadro", En = "Squad" };
+            label.Text = new IrText { Key = "k", Ref = "Kadro", En = "Squad" };
             var secret = Node("secret", "input");
-            secret.AttrTexts["placeholder"] = new IrText { Key = "p", Tr = "Parola", En = "Password" };
+            secret.AttrTexts["placeholder"] = new IrText { Key = "p", Ref = "Parola", En = "Password" };
             secret.Field = new IrField { Password = true };
             var strings = ScreenCompiler.ScreenStrings(Root(label, secret)).Where(x => x != null).ToList();
             CollectionAssert.AreEquivalent(new[] { "Kadro", "Squad", "Parola", "Password", ScreenBuilder.PasswordMask.ToString() }, strings);
@@ -123,9 +123,9 @@ namespace DesignUi.Editor.Tests
             // UI Toolkit draws U+2026 where it cuts such a line; a twin that lacks the glyph added it while drawing and drew
             // another glyph in its place (the fidelity suite's 2560×1440 capture showed "kala" and a curve instead of the dots)
             var cut = Node("cut", "text", ("white-space", "nowrap"), ("overflow", "hidden"), ("text-overflow", "ellipsis"));
-            cut.Text = new IrText { Key = "k", Tr = "Bilet fiyatları", En = "Ticket prices" };
+            cut.Text = new IrText { Key = "k", Ref = "Bilet fiyatları", En = "Ticket prices" };
             var plain = Node("plain", "text", ("white-space", "nowrap"), ("overflow", "hidden"), ("text-overflow", "clip"));
-            plain.Text = new IrText { Key = "p", Tr = "Kadro", En = "Squad" };
+            plain.Text = new IrText { Key = "p", Ref = "Kadro", En = "Squad" };
             CollectionAssert.Contains(ScreenCompiler.ScreenStrings(Root(cut)).ToList(), "\u2026");
             CollectionAssert.DoesNotContain(ScreenCompiler.ScreenStrings(Root(plain)).ToList(), "\u2026");
             // an element empty in the design and filled at runtime (DesignText.SetText prepares only its text's characters)
@@ -682,7 +682,7 @@ namespace DesignUi.Editor.Tests
                 Assert.AreEqual("DesignUi.Generated", p.generatedNamespace);
                 Assert.AreEqual(new Vector2Int(2560, 1440), p.referenceResolution);
                 Assert.AreEqual(0.5f, p.screenMatch);
-                Assert.AreEqual("tr", p.referenceLocale);
+                Assert.AreEqual("en", p.referenceLocale);
                 Assert.AreEqual(TextureImporterCompression.Uncompressed, p.textureCompression);
                 var theme = AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(DesignUiProfile.RuntimeThemePath);
                 Assert.IsNotNull(theme, "the package's runtime theme imports as a ThemeStyleSheet");
@@ -817,26 +817,26 @@ namespace DesignUi.Editor.Tests
             banner.Background = new IrAsset { Kind = "image", File = image, Sha256 = new string('d', 64), Width = 8, Height = 6 };
             var go = Node("go", "button", ("height", "10px")).With("disabled", ("opacity", "0.4"));
             go.Initial = new IrInitial { Disabled = true };
-            go.AttrTexts["title"] = new IrText { Key = "t.go", Tr = "Başla", En = "Start" };
+            go.AttrTexts["title"] = new IrText { Key = "t.go", Ref = "Başla", En = "Start" };
             var check = Node("check", "toggle", ("height", "10px"));
             check.Initial = new IrInitial { Checked = true };
             var search = Node("search", "input", ("height", "20px"));
-            search.AttrTexts["placeholder"] = new IrText { Key = "t.find", Tr = "Ara", En = "Search" };
+            search.AttrTexts["placeholder"] = new IrText { Key = "t.find", Ref = "Ara", En = "Search" };
             search.Field = new IrField { PlaceholderColor = "#8899aa" };
             // an input's text is its value; the field form gives a password field and a multi-line text area
             var manager = Node("manager", "input", ("height", "20px"));
-            manager.Text = new IrText { Tr = "Deniz Yılmaz" };
+            manager.Text = new IrText { Ref = "Deniz Yılmaz" };
             var secret = Node("secret", "input", ("height", "20px"));
-            secret.Text = new IrText { Tr = "parola12" };
+            secret.Text = new IrText { Ref = "parola12" };
             secret.Field = new IrField { Password = true };
             var notes = Node("notes", "input", ("height", "40px"));
             notes.Field = new IrField { Multiline = true };
             var league = Node("league", "dropdown", ("height", "20px"));
-            league.Text = new IrText { Key = "t.league", Tr = "Süper Lig", En = "Super League" };
+            league.Text = new IrText { Key = "t.league", Ref = "Süper Lig", En = "Super League" };
             var tile = Node("tile", "container", ("height", "8px")).With("focus", ("opacity", "0.6"));
             var crest = Node("crest", "image", ("width", "8px"), ("height", "8px"));
             crest.Asset = new IrAsset { Kind = "image", File = image, Sha256 = new string('d', 64), Width = 8, Height = 8 };
-            crest.AttrTexts["alt"] = new IrText { Key = "t.crest", Tr = "Kulüp arması", En = "Club crest" };
+            crest.AttrTexts["alt"] = new IrText { Key = "t.crest", Ref = "Kulüp arması", En = "Club crest" };
             var lifted = Node("lifted", "container", ("width", "8px"), ("height", "8px")).With("class:is-selected", ("translate", "0 -2px"));
             lifted.Shadow = new IrShadow { Kind = "shadow9", File = ShadowFile, Sha256 = new string('d', 64), Width = 8, Height = 8, Slice = new float[] { 2, 2, 2, 2 }, Offset = new BoxRect() };
             var ir = TestIr.Screen(Root(card, hov, icon, banner, go, check, search, manager, secret, notes, league, tile, crest, lifted));
@@ -914,7 +914,7 @@ namespace DesignUi.Editor.Tests
 
             // the manifest the compile wrote: undrawn attribute texts and a host that mirrors its element's class
             var manifest = GeneratedManifest.Load(AssetsRoot + "/TestScreen/" + ScreenCompiler.ManifestFileName);
-            Assert.AreEqual("Kulüp arması", manifest.accessibility["crest"]["alt"].tr);
+            Assert.AreEqual("Kulüp arması", manifest.accessibility["crest"]["alt"].@ref);
             Assert.AreEqual("t.crest", manifest.accessibility["crest"]["alt"].key);
             Assert.AreEqual("Club crest", manifest.accessibility["crest"]["alt"].en);
             var mirror = manifest.mirrors.Single(m => m.host == "lifted__shadowhost");

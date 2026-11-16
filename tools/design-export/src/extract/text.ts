@@ -149,17 +149,17 @@ export function irText(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>, s
   const style = e.textStyle ?? null;
   if (e.ns === "html" && (e.tag === "input" || e.tag === "textarea")) {
     const value = plainText(s, i, seqs, rendered);
-    return value ? { key: null, tr: value, en: null, args: [], rich: false, style } : null;
+    return value ? { key: null, ref: value, en: null, args: [], rich: false, style } : null;
   }
   if (e.ns === "html" && e.tag === "select") {
     const opts = e.children.map((k) => s.elements[k]).filter((o) => o.tag === "option");
     const o = opts.find((x) => x.attrs.selected !== undefined) ?? opts[0];
     if (!o) return null;
-    return { key: o.attrs["data-l10n"] ?? null, tr: plainText(s, o.index, seqs, rendered), en: o.attrs["data-en"] ?? null, args: [], rich: false, style };
+    return { key: o.attrs["data-l10n"] ?? null, ref: plainText(s, o.index, seqs, rendered), en: o.attrs["data-en"] ?? null, args: [], rich: false, style };
   }
   const t = richText(s, i, seqs, styles, rendered);
   const args = argSpans(s, i).map((k) => s.elements[k].attrs["data-u-arg"]);
-  return { key: e.attrs["data-l10n"] ?? null, tr: t.text, en: e.attrs["data-en"] ?? null, args, rich: t.rich, style };
+  return { key: e.attrs["data-l10n"] ?? null, ref: t.text, en: e.attrs["data-en"] ?? null, args, rich: t.rich, style };
 }
 
 /** Attribute texts: placeholder (drawn with the field's text style), title, alt, aria-label. */
@@ -168,7 +168,7 @@ export function attrTexts(e: SnapElement): Record<string, IrText> {
   for (const a of TEXT_ATTRS) {
     const v = e.attrs[a];
     if (v === undefined || v.trim() === "") continue;
-    out[a] = { key: e.attrs[`data-l10n-${a}`] ?? null, tr: v, en: e.attrs[`data-en-${a}`] ?? null, args: [], rich: false, style: a === "placeholder" ? e.textStyle ?? null : null };
+    out[a] = { key: e.attrs[`data-l10n-${a}`] ?? null, ref: v, en: e.attrs[`data-en-${a}`] ?? null, args: [], rich: false, style: a === "placeholder" ? e.textStyle ?? null : null };
   }
   return out;
 }

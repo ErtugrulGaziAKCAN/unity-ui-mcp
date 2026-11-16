@@ -24,7 +24,11 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
 1. **Kur** (README, üç adım). Unity'de `Window > Design UI > Status` penceresi köprünün durumunu gösterir.
 2. **Profili oluştur:** aynı pencerede **Create Profile**. `DesignUiProfile` projeye özel her ayarı tutar: üretilen
    ekranların klasörü (`outputFolder`, varsayılan `Assets/UI/Generated`) ve namespace'i, çözünürlükler, diller, fontlar,
-   localization, sağdan sola kuralları, yazı boyutları ve ekranların uGUI kabuğuna nasıl yerleşeceği.
+   localization, sağdan sola kuralları, yazı boyutları ve ekranların uGUI kabuğuna nasıl yerleşeceği. **Reference Locale**
+   tasarımların yazıldığı dildir: yeni bir profilde İngilizce (`en`). Başka bir dilde tasarlamak için (örneğin `tr`)
+   ilk kit sync'ten önce ayarla; kit sync onu kit'in `locales` listesine yazar, böylece RULES.md, yayımlanan Design
+   System ve lint o dili söyler, import da tasarımların metnini o dilin String Table girdileri olarak yazar. Bir profil
+   kaydedildiği değeri korur.
 3. **Fontlar.** Her dil, projenin zaten kullandığı TMP fontuyla çizilir. Varsayılan olarak bu, her dil için TMP
    Settings'teki varsayılan fonttur. Dile göre font eşlemesi olan bir proje profildeki **Locale Fonts** listesini
    doldurur ya da bir Editor assembly'sinde kendi font sistemine soran küçük bir `DesignUiFontResolver` alt sınıfı yazıp
@@ -83,7 +87,8 @@ Kit'in Design System'ini canvas'a ekle. Sonra:
   sınırdadır. Metni bir dönüşümle de bunun altına küçültme. Lint U-FONT-004 böyle bir metni reddeder. Metin kendi elemanında durur. Satırlarında kalması gereken bir etiket
   `white-space: nowrap` kullanır (satırları `<br>`'leridir); her çeviride aynı satır sayısını koru ki Unity'de tam
   yüksekliğini alsın.
-- **Görünen her metnin bir anahtarı vardır.** Metni referans dilde (kit'te Türkçe) yaz; `data-l10n="club.overview.title"`
+- **Görünen her metnin bir anahtarı vardır.** Metni referans dilde (RULES.md'nin adını verdiği dil: profilin **Reference
+  Locale** ayarı, proje başka bir dil seçmediyse İngilizce) yaz; `data-l10n="club.overview.title"`
   (anlamlı İngilizce bir anahtar) ve `data-en="Overview"` ekle. Cümle içindeki bir değer
   `<span data-u-arg="count">3</span>` olur ve `data-en`'de `{count}` diye yazılır. Oyundan gelen ve çevrilmeyen değerler
   (oyuncu adı, bir sayı) `data-u-bind="player-name"` kullanır; metni yalnız örnek veridir.
@@ -117,7 +122,7 @@ Kit'in Design System'ini canvas'a ekle. Sonra:
 İyi çalışan bir istek:
 
 > Ekli design system'i kullan ve README'sindeki kurallara uy. Ekran kimliği `club.overview`, tek bir 2560×1440 artboard.
-> Görünen metinleri Türkçe yaz; her metne İngilizce `data-l10n` anahtarı ve `data-en` İngilizce metni ekle. Her butona
+> Görünen metinleri kuralların adını verdiği referans dilde yaz; her metne İngilizce `data-l10n` anahtarı ve `data-en` İngilizce metni ekle. Her butona
 > `data-u-id` ve `data-u-action` ver. Yalnız kit'in yazı stili sınıflarını (caption'dan küçüğü yok) ve token'larını kullan, yalnız flex yerleşim,
 > grid ya da calc yok. Oyuncu listesini beş örnek satır olarak yaz, ilkine `data-u-repeat="player"` koy. Mevcut üst
 > barı `data-u-external` ile işaretle.

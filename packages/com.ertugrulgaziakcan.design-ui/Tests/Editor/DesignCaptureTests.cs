@@ -398,7 +398,7 @@ namespace DesignUi.Editor.Tests
                 ("color", "#ffffff"), ("font-family", "Inter"), ("font-size", "16px"));
             query.Initial = new IrInitial();
             query.Field = new IrField { PlaceholderColor = "#9be9f2" };
-            query.AttrTexts["placeholder"] = new IrText { Key = "capture.search", Tr = "Ara", En = "Search", Style = "label" };
+            query.AttrTexts["placeholder"] = new IrText { Key = "capture.search", Ref = "Ara", En = "Search", Style = "label" };
             var export = Export(Small(BlackRoot(title, score, query)), "{ \"team\": \"Kartal\" }");
 
             var plain = Profile(new Vector2Int(320, 180), 0.5f);

@@ -141,7 +141,7 @@ namespace DesignUi.Editor.Tests
 
                 var ir = TestIr.Screen(TestIr.Root(), "linebox.table");
                 ir.Root.Children = labels.Select(x => x.label.name).Concat(kerned.Select(x => x.label.name))
-                    .Select(id => { var n = TestIr.Node(id, "text"); n.Text = new IrText { Tr = "Hg" }; return n; }).ToArray();
+                    .Select(id => { var n = TestIr.Node(id, "text"); n.Text = new IrText { Ref = "Hg" }; return n; }).ToArray();
                 var measured = BoxesWriter.Measure("c", root, new Vector2Int(_rt.width, _rt.height), scale, ir);
                 double worstH = 0, worstB = 0;
                 foreach (var (label, style, lines) in labels)

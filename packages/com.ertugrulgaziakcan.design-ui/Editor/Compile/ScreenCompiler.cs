@@ -110,7 +110,7 @@ namespace DesignUi.Editor
             foreach (var t in new[] { node.Text }.Concat((node.AttrTexts ?? new Dictionary<string, IrText>()).Values))
             {
                 if (t == null) continue;
-                yield return t.Tr;
+                yield return t.Ref;
                 yield return t.En;
             }
             if (node.Field != null && node.Field.Password) yield return ScreenBuilder.PasswordMask.ToString(); // drawn instead of the value
@@ -437,7 +437,7 @@ namespace DesignUi.Editor
         {
             var result = new Dictionary<string, Dictionary<string, AccessibilityText>>(StringComparer.Ordinal);
             foreach (var e in compiled.AllElements().Where(x => x.AccessibilityLabels.Count > 0))
-                result[e.Name] = e.AccessibilityLabels.ToDictionary(kv => kv.Key, kv => new AccessibilityText { key = kv.Value?.Key, tr = kv.Value?.Tr, en = kv.Value?.En },
+                result[e.Name] = e.AccessibilityLabels.ToDictionary(kv => kv.Key, kv => new AccessibilityText { key = kv.Value?.Key, @ref = kv.Value?.Ref, en = kv.Value?.En },
                     StringComparer.Ordinal);
             return result.Count > 0 ? result : null;
         }

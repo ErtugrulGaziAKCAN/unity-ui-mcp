@@ -48,9 +48,13 @@ namespace DesignUi.Editor.Tests
             get { EnsureShared(); return s_Bold; }
         }
 
-        /// <summary>Maps the profile's reference locale to the shared Regular fixture; twins go to <see cref="TwinFolder"/>.</summary>
+        /// <summary>
+        /// A project that designs in Turkish (the tests' sample texts): reference locale <c>tr</c>, mapped to the shared Regular
+        /// fixture; twins go to <see cref="TwinFolder"/>.
+        /// </summary>
         public static void Use(DesignUiProfile profile)
         {
+            profile.referenceLocale = "tr";
             profile.localeFonts = new[] { new LocaleFont { locale = profile.referenceLocale, font = Regular } };
             profile.fontTwinFolder = TwinFolder;
         }

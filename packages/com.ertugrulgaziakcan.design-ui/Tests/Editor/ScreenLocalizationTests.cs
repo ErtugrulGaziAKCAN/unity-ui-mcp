@@ -92,11 +92,11 @@ namespace DesignUi.Editor.Tests
             play.Action = "play";
             var query = Node("query", "input", ("width", "200px"), ("height", "30px"));
             query.Initial = new IrInitial();
-            query.AttrTexts["placeholder"] = new IrText { Key = "loc.search", Tr = "Ara", En = "Search" };
-            query.AttrTexts["title"] = new IrText { Key = "loc.search-hint", Tr = "İsim yaz", En = "Type a name" };
+            query.AttrTexts["placeholder"] = new IrText { Key = "loc.search", Ref = "Ara", En = "Search" };
+            query.AttrTexts["title"] = new IrText { Key = "loc.search-hint", Ref = "İsim yaz", En = "Type a name" };
             var crest = Node("crest", "image", ("width", "32px"), ("height", "32px"));
             crest.Asset = new IrAsset { Kind = "image", File = "assets/crest.png", Width = 32, Height = 32 };
-            crest.AttrTexts["alt"] = new IrText { Key = "loc.crest", Tr = "Arma", En = "Crest" };
+            crest.AttrTexts["alt"] = new IrText { Key = "loc.crest", Ref = "Arma", En = "Crest" };
             var rowName = Keyed(Text("row-name", "Oyuncu"), "loc.row", "Player");
             var row = Node("row", "container", ("display", "flex"), ("height", "20px")).Add(rowName);
             var rows = Node("rows", "list", ("display", "flex"), ("flex-direction", "column"), ("overflow-y", "auto"), ("height", "100px")).Add(row);

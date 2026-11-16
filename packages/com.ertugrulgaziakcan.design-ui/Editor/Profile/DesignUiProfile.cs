@@ -61,7 +61,8 @@ namespace DesignUi.Editor
             return profile;
         }
         [Range(0f, 1f)] public float screenMatch = 0.5f;
-        public string referenceLocale = "tr";
+        [Tooltip("The locale the designs' visible text is written in (English by default). Kit sync writes it into the kit's locales, which the design rules name; a profile keeps the value it was saved with.")]
+        public string referenceLocale = "en";
         public string[] locales = new string[0];
         [Tooltip("The TMP font each locale renders with when no font resolver is set, or when the resolver gives no font for a locale.")]
         public LocaleFont[] localeFonts = new LocaleFont[0];

@@ -1164,7 +1164,7 @@ namespace DesignUi.Editor
 
         static IrText CloneText(IrText t) => t == null ? null : new IrText
         {
-            Key = t.Key, Tr = t.Tr, En = t.En, Args = (string[])t.Args?.Clone() ?? new string[0], Rich = t.Rich, Style = t.Style,
+            Key = t.Key, Ref = t.Ref, En = t.En, Args = (string[])t.Args?.Clone() ?? new string[0], Rich = t.Rich, Style = t.Style,
         };
 
         static IrAsset CloneAsset(IrAsset a) => a?.Copy();

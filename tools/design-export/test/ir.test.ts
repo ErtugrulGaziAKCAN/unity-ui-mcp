@@ -19,6 +19,20 @@ describe("IR contract", () => {
     ir.irVersion = 2;
     expect(validateIr(ir).join("\n")).toContain("irVersion");
   });
+  it("holds the design's text in `ref` (the reference locale); an IR of an earlier exporter, its text under `tr`, is invalid", () => {
+    const texts: any[] = [];
+    const walk = (n: any) => { if (n.text) texts.push(n.text); for (const t of Object.values(n.attrTexts ?? {})) texts.push(t); n.children.forEach(walk); };
+    const ir = contract("ir-sample.json");
+    walk(ir.root);
+    expect(texts.length).toBeGreaterThan(2);
+    for (const t of texts) { expect(typeof t.ref).toBe("string"); expect(t).not.toHaveProperty("tr"); }
+    // the earlier field: refused, so an export made before the rename is never read without its text
+    const { ref, ...rest } = texts[0];
+    texts[0].tr = ref;
+    delete texts[0].ref;
+    expect(rest).not.toHaveProperty("ref");
+    expect(validateIr(ir).join("\n")).toMatch(/ref|tr/);
+  });
   it("rejects an unknown node kind and a bad shadow", () => {
     const ir = contract("ir-sample.json");
     ir.root.kind = "blob";

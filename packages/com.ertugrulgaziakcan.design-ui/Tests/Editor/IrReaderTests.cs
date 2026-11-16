@@ -52,7 +52,7 @@ namespace DesignUi.Editor.Tests
             var title = root.Children[0];
             Assert.IsNull(title.Bind);
             Assert.AreEqual("sample.title", title.Text.Key);
-            Assert.AreEqual("Hoş geldin {name}", title.Text.Tr, "Smart String arguments are named");
+            Assert.AreEqual("Hoş geldin {name}", title.Text.Ref, "Smart String arguments are named");
             Assert.AreEqual("name", title.Text.Args[0]);
             Assert.AreEqual("title", title.Text.Style);
             Assert.IsNull(title.Initial);
@@ -64,7 +64,7 @@ namespace DesignUi.Editor.Tests
             Assert.IsFalse(play.Initial.Disabled);
             Assert.IsFalse(play.Initial.Checked);
             Assert.AreEqual("sample.play.title", play.AttrTexts["title"].Key);
-            Assert.AreEqual("Maçı başlat", play.AttrTexts["title"].Tr);
+            Assert.AreEqual("Maçı başlat", play.AttrTexts["title"].Ref);
             var rows = root.Children[3];
             Assert.AreEqual("list", rows.Repeat.Mode);
             Assert.AreEqual(3, rows.Repeat.Count);
@@ -114,7 +114,7 @@ namespace DesignUi.Editor.Tests
                 var again = IrReader.Read(path);
                 Assert.AreEqual(float.PositiveInfinity, again.Root.Children[1].Anims[0].Iterations);
                 StringAssert.Contains("\"iterations\":\"infinite\"", File.ReadAllText(path));
-                Assert.AreEqual("Maçı başlat", again.Root.Children[2].AttrTexts["title"].Tr);
+                Assert.AreEqual("Maçı başlat", again.Root.Children[2].AttrTexts["title"].Ref);
             }
             finally { File.Delete(path); }
         }
@@ -131,6 +131,28 @@ namespace DesignUi.Editor.Tests
                 StringAssert.Contains("update the package", e.Message);
             }
             finally { File.Delete(path); }
+        }
+
+        [Test]
+        public void Read_AnExportOfAnEarlierExporter_WithItsTextsUnderTr_IsRefused()
+        {
+            // texts in the field an earlier exporter wrote ("tr"): read as they are they would compile without their text
+            foreach (var json in new[]
+            {
+                "{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"text\":{\"key\":\"s.t\",\"tr\":\"Kadro\",\"en\":\"Squad\",\"args\":[],\"rich\":false,\"style\":null}}}",
+                "{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"container\",\"children\":[{\"id\":\"f\",\"kind\":\"input\",\"attrTexts\":" +
+                "{\"placeholder\":{\"key\":\"s.find\",\"tr\":\"Ara\",\"en\":\"Search\",\"args\":[],\"rich\":false,\"style\":\"body\"}}}]}}",
+            })
+            {
+                var path = WriteTemp(json);
+                try
+                {
+                    var e = Assert.Throws<IrFormatException>(() => IrReader.Read(path));
+                    StringAssert.Contains("made by an earlier design-export", e.Message);
+                    StringAssert.Contains("export the design again", e.Message);
+                }
+                finally { File.Delete(path); }
+            }
         }
 
         [Test]
@@ -170,8 +192,8 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void Read_DateLikeText_StaysVerbatim()
         {
-            var path = WriteTemp("{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"text\":{\"key\":null,\"tr\":\"2026-11-12T10:00:00\",\"en\":null,\"args\":[],\"rich\":false}}}");
-            try { Assert.AreEqual("2026-11-12T10:00:00", IrReader.Read(path).Root.Text.Tr); }
+            var path = WriteTemp("{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"text\":{\"key\":null,\"ref\":\"2026-11-12T10:00:00\",\"en\":null,\"args\":[],\"rich\":false}}}");
+            try { Assert.AreEqual("2026-11-12T10:00:00", IrReader.Read(path).Root.Text.Ref); }
             finally { File.Delete(path); }
         }
 
@@ -199,7 +221,7 @@ namespace DesignUi.Editor.Tests
 
         static string WithAnims(params string[] anims) =>
             "{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"anims\":[" + string.Join(",", anims) +
-            "],\"text\":{\"key\":\"a.b\",\"tr\":\"x\",\"en\":\"x\",\"args\":[],\"rich\":false,\"style\":\"label-bold\"}}}";
+            "],\"text\":{\"key\":\"a.b\",\"ref\":\"x\",\"en\":\"x\",\"args\":[],\"rich\":false,\"style\":\"label-bold\"}}}";
 
         [Test]
         public void Read_TextStyleAndTypedAnims_AreAccepted_AndCopiedByLowering()
@@ -317,20 +339,20 @@ namespace DesignUi.Editor.Tests
         public void Read_NewNodeFields()
         {
             var path = WriteTemp(Node("\"kind\":\"input\",\"initial\":{\"disabled\":true,\"checked\":false}," +
-                                      "\"attrTexts\":{\"placeholder\":{\"key\":\"s.find\",\"tr\":\"Ara\",\"en\":\"Search\",\"args\":[],\"rich\":false,\"style\":\"body\"}}," +
+                                      "\"attrTexts\":{\"placeholder\":{\"key\":\"s.find\",\"ref\":\"Ara\",\"en\":\"Search\",\"args\":[],\"rich\":false,\"style\":\"body\"}}," +
                                       "\"asset\":{\"kind\":\"svg\",\"file\":\"assets/i.svg\",\"sha256\":\"x\",\"width\":24,\"height\":24,\"slice\":null,\"tint\":true}").Replace("\"kind\":\"container\",", ""));
             try
             {
                 var root = IrReader.Read(path).Root;
                 Assert.IsTrue(root.Initial.Disabled);
                 Assert.IsFalse(root.Initial.Checked);
-                Assert.AreEqual("Ara", root.AttrTexts["placeholder"].Tr);
+                Assert.AreEqual("Ara", root.AttrTexts["placeholder"].Ref);
                 Assert.AreEqual("body", root.AttrTexts["placeholder"].Style);
                 Assert.IsTrue(root.Asset.Tint);
             }
             finally { File.Delete(path); }
 
-            var unknown = WriteTemp(Node("\"attrTexts\":{\"label\":{\"key\":null,\"tr\":\"x\",\"en\":null,\"args\":[],\"rich\":false,\"style\":null}}"));
+            var unknown = WriteTemp(Node("\"attrTexts\":{\"label\":{\"key\":null,\"ref\":\"x\",\"en\":null,\"args\":[],\"rich\":false,\"style\":null}}"));
             try { StringAssert.Contains("label", Assert.Throws<IrFormatException>(() => IrReader.Read(unknown)).Message); }
             finally { File.Delete(unknown); }
 

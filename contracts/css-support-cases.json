@@ -1664,9 +1664,9 @@
                         "args": [],
                         "en": "Link",
                         "key": "cases.link",
+                        "ref": "Bağlantı",
                         "rich": false,
-                        "style": "label",
-                        "tr": "Bağlantı"
+                        "style": "label"
                       }
                     }
                   ],
@@ -18789,9 +18789,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -18957,9 +18957,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -19125,9 +19125,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -19296,9 +19296,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -19465,9 +19465,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -19639,9 +19639,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -19807,9 +19807,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -19988,9 +19988,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -20156,9 +20156,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -20324,9 +20324,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -20494,9 +20494,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -20662,9 +20662,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -20831,9 +20831,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -20998,9 +20998,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -21166,9 +21166,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -21335,9 +21335,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label-bold",
-                    "tr": "Metin"
+                    "style": "label-bold"
                   }
                 }
               ],
@@ -21502,9 +21502,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": null,
-                    "tr": "Metin"
+                    "style": null
                   }
                 }
               ],
@@ -21664,9 +21664,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -24162,9 +24162,9 @@
                       "args": [],
                       "en": "Tip",
                       "key": "cases.tip",
+                      "ref": "İpucu",
                       "rich": false,
-                      "style": null,
-                      "tr": "İpucu"
+                      "style": null
                     }
                   },
                   "background": null,
@@ -24714,9 +24714,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -28132,9 +28132,9 @@
                         "args": [],
                         "en": "Link",
                         "key": "cases.link",
+                        "ref": "Bağlantı",
                         "rich": false,
-                        "style": "label",
-                        "tr": "Bağlantı"
+                        "style": "label"
                       }
                     }
                   ],
@@ -28329,9 +28329,9 @@
                         "args": [],
                         "en": "Link",
                         "key": "cases.link",
+                        "ref": "Bağlantı",
                         "rich": false,
-                        "style": "caption",
-                        "tr": "Bağlantı"
+                        "style": "caption"
                       }
                     }
                   ],
@@ -28532,9 +28532,9 @@
                         "args": [],
                         "en": "Link",
                         "key": "cases.link",
+                        "ref": "Bağlantı",
                         "rich": false,
-                        "style": "label",
-                        "tr": "Bağlantı"
+                        "style": "label"
                       }
                     }
                   ],
@@ -28733,9 +28733,9 @@
                         "args": [],
                         "en": "Link",
                         "key": "cases.link",
+                        "ref": "Bağlantı",
                         "rich": false,
-                        "style": "label",
-                        "tr": "Bağlantı"
+                        "style": "label"
                       }
                     }
                   ],
@@ -28934,9 +28934,9 @@
                         "args": [],
                         "en": "Link",
                         "key": "cases.link",
+                        "ref": "Bağlantı",
                         "rich": false,
-                        "style": "label",
-                        "tr": "Bağlantı"
+                        "style": "label"
                       }
                     }
                   ],
@@ -29132,9 +29132,9 @@
                         "args": [],
                         "en": "Link",
                         "key": "cases.link",
+                        "ref": "Bağlantı",
                         "rich": false,
-                        "style": "label",
-                        "tr": "Bağlantı"
+                        "style": "label"
                       }
                     },
                     {
@@ -29172,9 +29172,9 @@
                         "args": [],
                         "en": "3",
                         "key": "cases.count",
+                        "ref": "3",
                         "rich": false,
-                        "style": "label",
-                        "tr": "3"
+                        "style": "label"
                       }
                     }
                   ],
@@ -29371,9 +29371,9 @@
                         "args": [],
                         "en": "Link",
                         "key": "cases.link",
+                        "ref": "Bağlantı",
                         "rich": false,
-                        "style": "label",
-                        "tr": "Bağlantı"
+                        "style": "label"
                       }
                     }
                   ],
@@ -29567,9 +29567,9 @@
                         "args": [],
                         "en": "Run",
                         "key": "cases.run",
+                        "ref": "Koşu",
                         "rich": false,
-                        "style": "label",
-                        "tr": "Koşu"
+                        "style": "label"
                       }
                     }
                   ],
@@ -29764,9 +29764,9 @@
                         "args": [],
                         "en": "Run",
                         "key": "cases.run",
+                        "ref": "Koşu",
                         "rich": false,
-                        "style": "label",
-                        "tr": "Koşu"
+                        "style": "label"
                       }
                     }
                   ],
@@ -29965,9 +29965,9 @@
                         "args": [],
                         "en": "Run",
                         "key": "cases.run",
+                        "ref": "Koşu",
                         "rich": false,
-                        "style": "label",
-                        "tr": "Koşu"
+                        "style": "label"
                       }
                     }
                   ],
@@ -31556,9 +31556,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -31723,9 +31723,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -31892,9 +31892,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -32688,9 +32688,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -32855,9 +32855,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],
@@ -33024,9 +33024,9 @@
                     "args": [],
                     "en": "Text",
                     "key": "cases.text",
+                    "ref": "Metin",
                     "rich": false,
-                    "style": "label",
-                    "tr": "Metin"
+                    "style": "label"
                   }
                 }
               ],

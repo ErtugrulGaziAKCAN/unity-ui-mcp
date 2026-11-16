@@ -143,13 +143,13 @@ describe("buildIr: styles", () => {
   });
 
   it("records text with localization data and the kit text style", () => {
-    expect(byId(r.ir.root, "title").text).toEqual({ key: "inbox.title", tr: "Gelen Kutusu", en: "Inbox", args: [], rich: false, style: "label" });
+    expect(byId(r.ir.root, "title").text).toEqual({ key: "inbox.title", ref: "Gelen Kutusu", en: "Inbox", args: [], rich: false, style: "label" });
     expect(byId(r.ir.root, "title").kind).toBe("text");
   });
 
   it("writes inline emphasis as rich text", () => {
     const note = byId(r.ir.root, "note");
-    expect(note.text).toMatchObject({ key: "inbox.note", tr: "Yeni <b>posta</b> var", rich: true });
+    expect(note.text).toMatchObject({ key: "inbox.note", ref: "Yeni <b>posta</b> var", rich: true });
     expect(note.children).toEqual([]);
   });
 
@@ -254,7 +254,7 @@ describe("buildIr: repeats", () => {
     const chips = byId(rows, "chips");
     expect(chips.kind).toBe("container");
     expect(chips.repeat).toEqual({ name: "tags", mode: "inline", count: 1 });
-    expect(byId(rows, "name").text).toEqual({ key: null, tr: "Ali", en: null, args: [], rich: false, style: "label" });
+    expect(byId(rows, "name").text).toEqual({ key: null, ref: "Ali", en: null, args: [], rich: false, style: "label" });
     expect(byId(rows, "name").bind).toBe("name");
     expect(r.fixtures).toEqual({
       club: "Kartal",
@@ -420,7 +420,7 @@ describe("buildIr: layers, text runs and lossless values", () => {
     expect(n("save").kind).toBe("button");
     expect(n("save").children[0].text?.key).toBe("probe.save");
     expect(n("who").kind).toBe("container");
-    expect(n("nm")).toMatchObject({ kind: "text", bind: "player-name", text: { tr: "Ali", key: null } });
+    expect(n("nm")).toMatchObject({ kind: "text", bind: "player-name", text: { ref: "Ali", key: null } });
     expect(r.fixtures["player-name"]).toBe("Ali");
     expect(n("pair").style.base).toMatchObject({ display: "flex", "flex-direction": "row", "justify-content": "flex-start" });
     expect(n("pair").children.map((c) => c.text?.key)).toEqual(["probe.a", "probe.b"]);
@@ -432,17 +432,17 @@ describe("buildIr: layers, text runs and lossless values", () => {
     await expect(build(fx("review-text-two.html"))).rejects.toThrow(/space between them/);
   });
 
-  it("Smart String arguments are {name} in tr with their sample in fixtures", async () => {
+  it("Smart String arguments are {name} in ref with their sample in fixtures", async () => {
     const r = await build(fx("review-ctl.html"));
-    expect(byId(r.ir.root, "greet").text).toEqual({ key: "probe.greet", tr: "Selam {name}", en: "Hi {name}", args: ["name"], rich: false, style: "label" });
+    expect(byId(r.ir.root, "greet").text).toEqual({ key: "probe.greet", ref: "Selam {name}", en: "Hi {name}", args: ["name"], rich: false, style: "label" });
     expect(r.fixtures.name).toBe("Ali");
     expect(await lintIds(fx("review-ctl.html"))).toEqual([]);
     expect(await lintIds(write("", '<p data-l10n="s.g" data-en="Hi {name}" data-l10n-args="name">Selam <span data-u-id="nm" data-u-bind="name">Ali</span></p>'))).toEqual(["U-MRK-008", "U-MRK-009"]);
   });
 
   it("whitespace collapses as rendered across inline tags; pre-line is exact", async () => {
-    expect(byId((await build(fx("review-text.html"))).ir.root, "ws").text?.tr).toBe("Merhaba <b>dünya</b>");
-    expect(byId((await build(fx("compound.html"))).ir.root, "pl").text?.tr).toBe("a b\nc");
+    expect(byId((await build(fx("review-text.html"))).ir.root, "ws").text?.ref).toBe("Merhaba <b>dünya</b>");
+    expect(byId((await build(fx("compound.html"))).ir.root, "pl").text?.ref).toBe("a b\nc");
   });
 
   it("url() backgrounds are assets; size, repeat and position stay in the layers", async () => {
@@ -475,16 +475,16 @@ describe("buildIr: layers, text runs and lossless values", () => {
     const mail = byId(r.ir.root, "mail");
     expect(mail.kind).toBe("input");
     expect(mail.text).toBeNull();
-    expect(mail.attrTexts).toEqual({ placeholder: { key: "probe.mail", tr: "E-posta", en: "Email", args: [], rich: false, style: "label" } });
+    expect(mail.attrTexts).toEqual({ placeholder: { key: "probe.mail", ref: "E-posta", en: "Email", args: [], rich: false, style: "label" } });
     // a text field's form: the compiler writes a password field and a multi-line text area; other nodes have none
     expect(mail.field).toEqual({ password: false, multiline: false, placeholderColor: "#8899aa" });
     expect(byId(r.ir.root, "pw").field).toEqual({ password: true, multiline: false, placeholderColor: null });
-    expect(byId(r.ir.root, "pw").text).toMatchObject({ tr: "gizli", key: null });
+    expect(byId(r.ir.root, "pw").text).toMatchObject({ ref: "gizli", key: null });
     expect(byId(r.ir.root, "note").field).toEqual({ password: false, multiline: true, placeholderColor: null });
     expect(byId(r.ir.root, "note").kind).toBe("input");
     expect(byId(r.ir.root, "go").field).toBeUndefined();
     expect(validateIr(r.ir)).toEqual([]);
-    expect(byId((await build(fx("assets.html"))).ir.root, "logo").attrTexts.alt).toMatchObject({ key: "assets.logo", tr: "Logo", en: "Logo", style: null });
+    expect(byId((await build(fx("assets.html"))).ir.root, "logo").attrTexts.alt).toMatchObject({ key: "assets.logo", ref: "Logo", en: "Logo", style: null });
   });
 
   it("CSS initial values that render differently in USS are explicit", async () => {

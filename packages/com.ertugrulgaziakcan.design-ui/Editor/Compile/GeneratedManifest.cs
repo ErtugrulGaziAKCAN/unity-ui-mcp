@@ -25,7 +25,8 @@ namespace DesignUi.Editor
     public sealed class AccessibilityText
     {
         public string key;
-        public string tr;
+        /// <summary>The design's text, in the reference locale (the IR's <c>ref</c>).</summary>
+        public string @ref;
         public string en;
     }
 

@@ -454,7 +454,7 @@ namespace DesignUi.Editor
         {
             var runs = new HashSet<(bool, bool)>();
             if (n.Text != null && n.Text.Rich)
-                foreach (var text in new[] { n.Text.Tr, n.Text.En })
+                foreach (var text in new[] { n.Text.Ref, n.Text.En })
                 {
                     if (string.IsNullOrEmpty(text)) continue;
                     int bold = 0, italic = 0, at = 0;
