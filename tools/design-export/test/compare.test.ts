@@ -326,6 +326,38 @@ describe("compareCapture", () => {
       expect(v.find((i) => i.kind === "ink")!.detail).not.toMatch(/a window of/);
     });
 
+    describe("ruling R151: a width whose measured ΔE2000 noise exceeds 6.5 judges the fragment's colour direction instead", () => {
+      // the chip covered at `x0 + w`: a fragment `w` device px wide, the glyphs 15 px (full) or 10 px (small) text
+      const at = (unity: boolean, colour: Rgb, w: number) => chip(unity, colour, 40 + w);
+      const of = (px: number) => ({ ...ctx, fontPx: { label: px } });
+      const rowsOf = (px: number) => (px <= repo.textInkSmallPx ? repo.textInkFragment!.small : repo.textInkFragment!.full);
+
+      it("holds the rule in the file: rows whose ΔE2000 key exceeds 6.5 + 0.4 carry a direction key or none, the others none", () => {
+        for (const rows of [repo.textInkFragment!.small, repo.textInkFragment!.full])
+          for (const [, de, , dir] of rows) expect(de > 6.9 ? dir === null || dir > 0 : dir === null).toBe(true);
+        // today: every small row and the full rows to 1.5 em
+        expect(repo.textInkFragment!.small.every(([, de]) => de > 6.9)).toBe(true);
+        expect(repo.textInkFragment!.full.filter(([, de]) => de > 6.9).map(([w]) => w)).toEqual([0.5, 1, 1.5]);
+      });
+
+      it("fails a wrong-hue fragment in every bucket whose colour is judged; a bucket without a direction key is counted", () => {
+        // the wrong hues of the R138 tests: the kit's accent and warning colours in place of the secondary
+        const right: Rgb = [185, 208, 214];
+        for (const wrong of [[22, 194, 213], [242, 181, 68]] as Rgb[]) for (const px of [15, 10]) for (const [em, de, , dir] of rowsOf(px)) {
+          const w = Math.round((em + 0.25) * px), what = `${wrong.join()}, ${px} px, ${em} em`;
+          const ok = compareCapture(at(false, right, w), at(true, right, w), [], repo, of(px));
+          expect(label(ok), `${what}: the right colour`).toEqual([]);
+          const v = compareCapture(at(false, right, w), at(true, wrong, w), [], repo, of(px));
+          if (de > 6.9 && dir === null) {
+            expect(v.fragmentColourNotJudged, what).toEqual(["label: line 1 of 1"]);
+            continue;
+          }
+          expect(label(v).map((i) => i.kind), what).toContain("ink");
+          if (de > 6.9) expect(label(v).find((i) => i.kind === "ink")!.detail, what).toMatch(/colour direction from the background differs by [\d.]+°/);
+        }
+      });
+    });
+
     describe("ruling R153: a fragment below the measured domain (the design's ink under 16 px)", () => {
       // the menu covers the chip but for its first stem (11 px of ink): a pilot screen's chip the type menu leaves a sliver of
       // at 1280×720 (13.4 px of design ink there, 0.78× in Unity)
@@ -3063,15 +3095,22 @@ describe("design-export compare", () => {
       // the scaled class's own keys (R121) off at exact viewports, measured at scaled ones
       ssimRoundEdge: 0.974, deltaE2000RoundEdge: 1, deltaE2000Ring: 3.1, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
       ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1,
-      // ruling R149: the measured noise of the ink statistic on fragments narrower than 4 em (docs/findings/text-ink.md §12)
+      // ruling R149: the measured noise of the ink statistic on fragments narrower than 4 em (docs/findings/text-ink.md §12);
+      // ruling R151: the colour direction's measured noise where the ΔE2000 key exceeds 6.5 + 0.4
       textInkFragment: { em: 4,
-        small: [[0.5, 18.71, 0.65], [1, 15.43, 0.65], [1.5, 15.43, 0.65], [2, 15.43, 0.58], [2.5, 11.15, 0.8], [3, 10.13, 0.82], [3.5, 9.4, 0.82]],
-        full: [[0.5, 14.96, 0.43], [1, 9.88, 0.61], [1.5, 7.53, 0.81], [2, 6.15, 0.87], [2.5, 3.68, 0.88], [3, 3.29, 0.88], [3.5, 2.92, 0.88]] },
+        small: [[0.5, 18.71, 0.65, 20.48], [1, 15.43, 0.65, 15.71], [1.5, 15.43, 0.65, 14.55], [2, 15.43, 0.58, 14.97], [2.5, 11.15, 0.8, 4.71], [3, 10.13, 0.82, 5.31], [3.5, 9.4, 0.82, 3.73]],
+        full: [[0.5, 14.96, 0.43, 9.9], [1, 9.88, 0.61, 10], [1.5, 7.53, 0.81, 5.25], [2, 6.15, 0.87, null], [2.5, 3.68, 0.88, null], [3, 3.29, 0.88, null], [3.5, 2.92, 0.88, null]] },
       // the scaled class: R109, R115, R121, and R125 (resampled pictures), R126 (small text ink, at most 6.5), R146 (an
       // ellipsized line's cut one grapheme off)
       scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, textInkSmallPx: 12.99, ssimFractionalEdge: 0.97, ssimVectorEdge: 0.975, deltaE2000FractionalEdge: 5.3,
         ssimResampledPicture: 0.95, deltaE2000ResampledPicture: 5.89, textInkDeltaEFirstSmall: 5.89, ellipsisGraphemes: 1 },
     });
+    // ruling R151: a colour direction key only on a row whose ΔE2000 key exceeds 6.5 + 0.4
+    for (const full of [[[2, 6.15, 0.87, 3]], [[2, 6.15, 0.87]]]) {
+      const f = path.join(tmp(), "d.json");
+      fs.writeFileSync(f, JSON.stringify({ ...T, textInkFragment: { em: 4, small: [[1, 15.43, 0.65, 15.71]], full } }));
+      expect(() => readThresholds(f), JSON.stringify(full)).toThrow(/a direction only where the ΔE2000 key exceeds 6\.9/);
+    }
     // ruling R146: the exact class keeps the design's cut; the scaled block may allow one grapheme, no more
     for (const [v, where, msg] of [[1, "", /"ellipsisGraphemes" must be 0 \(off\)/], [2, "scaled", /"ellipsisGraphemes" must be 0 or 1/]] as const) {
       const f = path.join(tmp(), "e.json");

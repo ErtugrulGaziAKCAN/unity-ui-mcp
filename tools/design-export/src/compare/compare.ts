@@ -215,10 +215,11 @@ export interface Thresholds {
   /**
    * Text ink on few stems (ruling R149): a line whose visible ink window (after what covers and clips it) is narrower than
    * `em` of its device font size takes, for its width, the measured noise of the ink statistic on known-correct text
-   * (docs/findings/text-ink.md section 12): rows `[width in em, ink colour ΔE2000, lowest ink amount]` by growing width, per
-   * size class (`small`: text of at most `textInkSmallPx` device px; `full`: larger). A window takes the row of the widest
-   * width it reaches (the narrowest row below that); the colour limit is the larger of the row's and its usual one, the ink
-   * amount's lower bound the smaller. Absent: no fragment key.
+   * (docs/findings/text-ink.md section 12): rows `[width in em, ink colour ΔE2000, lowest ink amount, colour direction or
+   * null]` (FragmentRow) by growing width, per size class (`small`: text of at most `textInkSmallPx` device px; `full`:
+   * larger). A window takes the row of the widest width it reaches (the narrowest row below that); the colour limit is the
+   * larger of the row's and its usual one, the ink amount's lower bound the smaller; a row above FRAGMENT_DE_BOUND judges the
+   * colour direction instead (ruling R151). Absent: no fragment key.
    */
   textInkFragment?: TextInkFragment;
   /**
@@ -229,7 +230,15 @@ export interface Thresholds {
 }
 
 /** Ruling R149's fragment key (Thresholds.textInkFragment). */
-export interface TextInkFragment { em: number; small: [number, number, number][]; full: [number, number, number][] }
+export interface TextInkFragment { em: number; small: FragmentRow[]; full: FragmentRow[] }
+/**
+ * A width's row of the fragment key: `[width in em, ink colour ΔE2000, lowest ink amount, colour direction in degrees or
+ * null]`. Ruling R151: a row whose ΔE2000 key is above FRAGMENT_DE_BOUND (its measured highest above R126's cap) judges the
+ * fragment by its ink's colour direction from the background with the row's direction key (measured highest plus R138's
+ * margin) instead; null there: the width's colour is not judged (its measured direction would let a wrong hue pass) and the
+ * line is counted (`fragmentColourNotJudged`). A row at or below the bound has null and keeps its ΔE2000 key.
+ */
+export type FragmentRow = [number, number, number, number | null];
 
 /** `tools/design-export/fidelity-thresholds.json`, the only place the thresholds live (keys starting with `$` are comments). */
 export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.json", import.meta.url));
@@ -414,10 +423,12 @@ function checkThresholds(raw: Record<string, unknown>, file: string, scaled = fa
   // ruling R149: the fragment key, rows by growing width below its em, colour limits at least textInkDeltaE, amounts in (0, 1]
   const frag = raw.textInkFragment as TextInkFragment | undefined;
   if (frag !== undefined) {
-    const rowsOk = (r: unknown) => Array.isArray(r) && r.length > 0 && r.every((x, i, a) => Array.isArray(x) && x.length === 3 && x.every((v) => typeof v === "number" && Number.isFinite(v))
-      && x[0] > 0 && x[0] <= frag.em && x[1] >= (raw.textInkDeltaE as number) && x[2] > 0 && x[2] <= 1 && (i === 0 || x[0] > (a[i - 1] as number[])[0]));
+    // ruling R151: a direction key only on a row whose ΔE2000 key is above FRAGMENT_DE_BOUND (null there: not judged)
+    const rowsOk = (r: unknown) => Array.isArray(r) && r.length > 0 && r.every((x, i, a) => Array.isArray(x) && x.length === 4 && x.slice(0, 3).every((v) => typeof v === "number" && Number.isFinite(v))
+      && x[0] > 0 && x[0] <= frag.em && x[1] >= (raw.textInkDeltaE as number) && x[2] > 0 && x[2] <= 1 && (i === 0 || x[0] > (a[i - 1] as number[])[0])
+      && (x[3] === null || (typeof x[3] === "number" && Number.isFinite(x[3]) && x[3] > 0 && x[1] > FRAGMENT_DE_BOUND)));
     if (!frag || typeof frag.em !== "number" || !(frag.em > 0) || !rowsOk(frag.small) || !rowsOk(frag.full))
-      throw new Error(`${file}: "textInkFragment" must be { em, small, full } with [width in em, ΔE2000, lowest ink amount] rows by growing width up to em`);
+      throw new Error(`${file}: "textInkFragment" must be { em, small, full } with [width in em, ΔE2000, lowest ink amount, colour direction or null] rows by growing width up to em, a direction only where the ΔE2000 key exceeds ${FRAGMENT_DE_BOUND}`);
   }
   return {
     ...(frag ? { textInkFragment: frag } : {}),
@@ -495,13 +506,22 @@ export function cornerInRoundBand(p: RingPoint, g: Rect, u: Rect, border: readon
  * it is not narrower than the key's em (or there is no key). The row of the widest width the window reaches, the
  * narrowest row below it.
  */
-export function fragmentKey(t: Thresholds, px: number, em: number): { em: number; deltaE: number; amount: number } | null {
+export function fragmentKey(t: Thresholds, px: number, em: number): FragmentKey | null {
   const f = t.textInkFragment;
   if (!f || !(em < f.em)) return null;
   const rows = px <= t.textInkSmallPx ? f.small : f.full;
   const row = [...rows].reverse().find(([w]) => w <= em + 1e-9) ?? rows[0];
-  return { em, deltaE: row[1], amount: row[2] };
+  return { em, deltaE: row[1], amount: row[2], byDirection: row[1] > FRAGMENT_DE_BOUND, direction: row[3] };
 }
+
+/** A fragment's key for its width (fragmentKey): by direction (ruling R151) when its ΔE2000 key is above FRAGMENT_DE_BOUND. */
+export interface FragmentKey { em: number; deltaE: number; amount: number; byDirection: boolean; direction: number | null }
+
+/**
+ * Ruling R151: a fragment key row whose ΔE2000 key (measured highest plus 0.4) exceeds R126's cap plus that margin, so whose
+ * measured highest exceeds the cap, does not judge the fragment by ΔE2000.
+ */
+export const FRAGMENT_DE_BOUND = SCALED_SMALL_INK_CAP + 0.4;
 
 /** The columns of a window holding at least one pixel `hidden` does not hide (all of them without `hidden`). */
 export function visibleColumns(r: Rect, hidden: ((x: number, y: number) => boolean) | null): number {
@@ -653,6 +673,8 @@ export interface CaptureVerdict {
    * design's ink is under MIN_INK_PX, judged on its presence, its colour direction and R141's amount band only.
    */
   fragmentsBelowDomain?: string[];
+  /** Text fragments whose width has no colour key (ruling R151): their ink colour is not judged; `<key>: line <k> of <n>`. */
+  fragmentColourNotJudged?: string[];
   /** Elements that paint a background but had no colour sample left (every point covered or on text). */
   notSampled: string[];
   /** Unity pixels with alpha below 255 (compared premultiplied). */
@@ -948,6 +970,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   /** Ellipsized lines whose design dots do not resolve into three below ELLIPSIS_DOTS_BELOW_PX (ruling R148). */
   const ellipsisNotJudged: string[] = [];
   const fragmentsBelowDomain: string[] = [];
+  const fragmentColourNotJudged: string[] = [];
   const removedSet = new Set(removed);
   const issue = (id: string, kind: IssueKind, detail: string, at?: Rect) => issues.push(at ? { id, kind, detail, at } : { id, kind, detail });
   const newRow = (id: string, status: ElementRow["status"] = "ok"): ElementRow =>
@@ -1206,7 +1229,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return false;
     };
     /** `light`: the design's ink is lighter than its background (font smoothing thickens such text most). */
-    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean; later: boolean; small: boolean; glow: boolean; fragment?: { em: number; deltaE: number; amount: number } }
+    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean; later: boolean; small: boolean; glow: boolean; fragment?: FragmentKey }
     const inkLines: InkLine[] = [];
     const inImage = (p: RingPoint) => p.gx >= 0 && p.gy >= 0 && p.gx < w && p.gy < h && p.ux >= 0 && p.uy >= 0 && p.ux < w && p.uy < h;
     const usable = (p: RingPoint, cover: Rect[]) => inImage(p)
@@ -1458,6 +1481,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
       let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number; em?: number } | null = null, maxDe = 0;
       let wX: { i: number; dl: number; dr: number; dw: number; worst: number } | null = null;
+      let wFragDir: { dir: number; i: number; a: number[]; b: number[]; limit: number; em: number } | null = null;
       let wDir: { dir: number; i: number; a: number[]; b: number[]; scaled: boolean } | null = null, wAmount: { ratio: number; i: number } | null = null;
       // ruling R141: a hairline line is small text drawn in its own colour (the one the capture recorded for this element or
       // this copy) at full opacity (its own and its ancestors', an animation sample's running value included), all of the
@@ -1572,6 +1596,14 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         const fragment = cut ? fragmentKey(t, px, visibleColumns(win, hidden) / px) : null;
         inkLines.push({ id: key, i, n: ge.lines.length, ratio: common ?? (b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null), at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow, ...(fragment ? { fragment } : {}) });
         ctx.inkProbe?.({ key, line: i, px, window: win, hidden, design: gp, unity: up, glow });
+        // ruling R151: a width whose ΔE2000 noise is above R126's cap judges the fragment's colour direction (R138's measure)
+        // with the width's measured key; a width without one does not judge its colour, and the line is counted
+        if (b && fragment?.byDirection) {
+          if (fragment.direction === null) { fragmentColourNotJudged.push(`${key}: line ${i + 1} of ${ge.lines.length}`); return; }
+          const dir = angleBetween(a.dirSrgb, b.dirSrgb);
+          if (!wFragDir || dir - fragment.direction > wFragDir.dir - wFragDir.limit) wFragDir = { dir, i, a: a.ink, b: b.ink, limit: fragment.direction, em: fragment.em };
+          return;
+        }
         if (b) {
           const de = deltaE2000(a.ink, b.ink), limit = Math.max(inkColourLimit(t, px, i), fragment?.deltaE ?? 0);
           maxDe = Math.max(maxDe, de);
@@ -1593,6 +1625,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         row.inkDirection = r6(x.dir);
         if (x.dir > t.textInkDirection + EPS) {
           issue(key, "ink", `line ${x.i + 1} of ${ge.lines.length}: a hairline line (fewer than ${HAIRLINE_PIXELS} fully covered pixels ${x.scaled ? `in a render, below ${SCALED_HAIRLINE_BELOW_PX} device px at a scaled viewport` : "in the design"}): its ink's colour direction from the background differs by ${x.dir.toFixed(2)}° (design ${hex(x.a)}, Unity ${hex(x.b)}; limit ${t.textInkDirection}°)`, ge.lines[x.i]);
+        }
+      }
+      if (wFragDir) {
+        const x = wFragDir as { dir: number; i: number; a: number[]; b: number[]; limit: number; em: number };
+        row.inkDirection = r6(Math.max(row.inkDirection ?? 0, x.dir));
+        if (x.dir > x.limit + EPS) {
+          issue(key, "ink", `line ${x.i + 1} of ${ge.lines.length}: a fragment of ${x.em.toFixed(1)} em, where the ink colour's ΔE2000 scatters above ${SCALED_SMALL_INK_CAP} on correct text: its ink's colour direction from the background differs by ${x.dir.toFixed(2)}° (design ${hex(x.a)}, Unity ${hex(x.b)}; limit ${x.limit}°, the measured noise of its width)`, ge.lines[x.i]);
         }
       }
       if (wAmount) {
@@ -1956,7 +1995,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   return {
     verdict: {
       capture: g.capture, pass: issues.length === 0, ssim: ssim === null ? null : r6(ssim), issues, size: [gp.w, gp.h],
-      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, linesCovered, ...(linesClipped.length ? { linesClipped } : {}), ...(ellipsisNotJudged.length ? { ellipsisNotJudged } : {}), ...(fragmentsBelowDomain.length ? { fragmentsBelowDomain } : {}), notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
+      worstElement: worst, maxBoxDelta: maxBox, maxDeltaE: maxDE, pixelsOff, linesNotCompared, linesCovered, ...(linesClipped.length ? { linesClipped } : {}), ...(ellipsisNotJudged.length ? { ellipsisNotJudged } : {}), ...(fragmentsBelowDomain.length ? { fragmentsBelowDomain } : {}), ...(fragmentColourNotJudged.length ? { fragmentColourNotJudged } : {}), notSampled, translucent, masked, offGridEdges: edgeMasked, outsideScreen, elements: rows,
     },
     heat,
   };
