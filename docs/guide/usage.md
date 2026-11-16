@@ -102,7 +102,9 @@ Attach the kit's Design System to the canvas. Then:
   `<br>`s); keep that line count in every translation, so it gets an exact height in Unity.
 - **Every visible text has a key.** Write the text in the reference locale (the one RULES.md names: the profile's
   **Reference Locale**, English unless the project chose another) and add `data-l10n="club.overview.title"` (a
-  meaningful English key) and `data-en="Overview"`. A value inside a sentence is
+  meaningful English key) and `data-en="Overview"`. With the English reference locale the visible text and `data-en`
+  are the same text, written twice (`data-en="Overview">Overview`): the import writes `data-en` as the English String
+  Table entry, and the comparison draws the visible text. A value inside a sentence is
   `<span data-u-arg="count">3</span>`, written `{count}` in `data-en`. Values that come from the game and are not
   translated (a player's name, a number) use `data-u-bind="player-name"`; their text is sample data.
 - **Controls get ids.** Every button, input or bound element has `data-u-id`; an element that does something has

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>kit.scroll-area</title>
@@ -36,7 +36,7 @@ textarea { resize: none; }
 .heading { margin-bottom: 48px; }
 .row { display: flex; flex-direction: row; align-items: flex-start; }
 .scroll { display: flex; flex-direction: column; width: 720px; height: 480px; margin-right: 48px; padding: 24px; overflow-y: auto; border-radius: var(--radius-lg); background-color: var(--color-surface-800); }
-.paragraph { margin-bottom: 16px; color: var(--color-text-secondary); }
+.paragraph { flex-shrink: 0; margin-bottom: 16px; color: var(--color-text-secondary); }
 .feed { display: flex; flex-direction: column; width: 720px; height: 480px; overflow-y: auto; border-radius: var(--radius-lg); background-color: var(--color-surface-800); }
 .feed-item { display: flex; flex-direction: row; align-items: center; height: 72px; flex-shrink: 0; padding: 0 24px; border-bottom: 4px solid var(--color-surface-900); }
 .feed-item:hover { background-color: var(--color-surface-700); }
@@ -45,42 +45,42 @@ textarea { resize: none; }
 </head>
 <body>
 <div class="screen" data-u-screen="kit.scroll-area">
-  <h1 class="heading text-headline-bold" data-l10n="kit.scroll-area.heading" data-en="Scroll areas">Kaydırma alanları</h1>
+  <h1 class="heading text-headline-bold" data-l10n="kit.scroll-area.heading" data-en="Scroll areas">Scroll areas</h1>
   <div class="row">
     <div class="scroll" data-u-id="report">
-      <p class="paragraph text-body" data-l10n="kit.scroll-area.p1" data-en="The board expects a place in the top half of the table this season.">Yönetim bu sezon tablonun üst yarısında bir yer bekliyor.</p>
-      <p class="paragraph text-body" data-l10n="kit.scroll-area.p2" data-en="Two young players from the academy are ready for the first team.">Akademiden iki genç oyuncu A takıma hazır.</p>
-      <p class="paragraph text-body" data-l10n="kit.scroll-area.p3" data-en="Ticket sales rose after the last home win.">Son iç saha galibiyetinden sonra bilet satışları arttı.</p>
-      <p class="paragraph text-body" data-l10n="kit.scroll-area.p4" data-en="The training ground needs new pitches before winter.">Antrenman tesisinin kıştan önce yeni sahalara ihtiyacı var.</p>
-      <p class="paragraph text-body" data-l10n="kit.scroll-area.p5" data-en="Supporters ask for a stronger defence in away matches.">Taraftarlar deplasman maçlarında daha güçlü bir savunma istiyor.</p>
-      <p class="paragraph text-body" data-l10n="kit.scroll-area.p6" data-en="The sponsor offers a bonus for every cup round won.">Sponsor kazanılan her kupa turu için prim öneriyor.</p>
-      <p class="paragraph text-body" data-l10n="kit.scroll-area.p7" data-en="Scouts report a promising goalkeeper in the second league.">Gözlemciler ikinci ligde umut vadeden bir kaleci bildiriyor.</p>
-      <p class="paragraph text-body" data-l10n="kit.scroll-area.p8" data-en="The medical team clears the captain for Saturday.">Sağlık ekibi kaptanın cumartesi oynamasına izin verdi.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p1" data-en="The board expects a place in the top half of the table this season.">The board expects a place in the top half of the table this season.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p2" data-en="Two young players from the academy are ready for the first team.">Two young players from the academy are ready for the first team.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p3" data-en="Ticket sales rose after the last home win.">Ticket sales rose after the last home win.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p4" data-en="The training ground needs new pitches before winter.">The training ground needs new pitches before winter.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p5" data-en="Supporters ask for a stronger defence in away matches.">Supporters ask for a stronger defence in away matches.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p6" data-en="The sponsor offers a bonus for every cup round won.">The sponsor offers a bonus for every cup round won.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p7" data-en="Scouts report a promising goalkeeper in the second league.">Scouts report a promising goalkeeper in the second league.</p>
+      <p class="paragraph text-body" data-l10n="kit.scroll-area.p8" data-en="The medical team clears the captain for Saturday.">The medical team clears the captain for Saturday.</p>
     </div>
     <div class="feed" data-u-id="inbox">
       <div class="feed-item is-unread" data-u-repeat="messages" data-u-id="message" data-u-action="open-message">
-        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Yönetim kurulu toplantısı</span>
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Board meeting</span>
       </div>
       <div class="feed-item" data-u-id="message" data-u-action="open-message">
-        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Transfer teklifi geldi</span>
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Transfer offer received</span>
       </div>
       <div class="feed-item" data-u-id="message" data-u-action="open-message">
-        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Antrenman raporu</span>
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Training report</span>
       </div>
       <div class="feed-item" data-u-id="message" data-u-action="open-message">
-        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Bilet satışları</span>
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Ticket sales</span>
       </div>
       <div class="feed-item" data-u-id="message" data-u-action="open-message">
-        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Sponsor görüşmesi</span>
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Sponsor meeting</span>
       </div>
       <div class="feed-item" data-u-id="message" data-u-action="open-message">
-        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Sağlık raporu</span>
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Medical report</span>
       </div>
       <div class="feed-item" data-u-id="message" data-u-action="open-message">
-        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Gözlemci notları</span>
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Scout notes</span>
       </div>
       <div class="feed-item" data-u-id="message" data-u-action="open-message">
-        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Taraftar anketi</span>
+        <span class="text-body-bold" data-u-id="subject" data-u-bind="message.subject">Supporter survey</span>
       </div>
     </div>
   </div>

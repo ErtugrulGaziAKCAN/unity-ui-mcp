@@ -159,5 +159,6 @@ On macOS (Apple silicon), Unity 6000.3.6f1:
 - **The built server reads the clone at run time.** `dist/server.js` keeps the clone's absolute paths and reads the
   exporter's data (schemas, the CSS whitelist, thresholds) from it: rebuild after every pull (`scripts/setup.sh` does)
   and do not move the clone without running setup again.
-- **Sample content.** The kit's components and fidelity fixtures carry Turkish sample text.
+- **Sample content.** The fidelity fixtures carry Turkish sample text; the kit's components and the RULES.md example
+  show English, the default reference locale.
 - **Code size.** The comparison (`tools/design-export/src/compare/compare.ts`) is one module of about 2,400 lines.

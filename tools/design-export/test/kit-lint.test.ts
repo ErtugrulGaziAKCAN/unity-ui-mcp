@@ -145,6 +145,57 @@ describe("kit pages fit the reference artboard with the kit's text styles", () =
   }
 });
 
+/**
+ * What a kit page shows that is not English, the default reference locale: with the reference locale `en` the visible text
+ * is the English text, so `data-en` (and `data-en-<attr>`) repeats it exactly (the import writes `data-en` as the English
+ * entry, the one table both are); a bound value's sample is English too (plain ASCII here: the kit's samples use no other
+ * script). [] when the page shows English only.
+ */
+const notEnglish = async (file: string): Promise<string[]> => {
+  const d = await openDesign(file, kit, kit.reference, browser);
+  try {
+    return await d.page.evaluate(() => {
+      const out: string[] = [];
+      if (document.documentElement.lang !== "en") out.push(`<html lang="${document.documentElement.lang}">`);
+      for (const e of Array.from(document.querySelectorAll<HTMLElement>("[data-l10n]"))) {
+        const text = (e.textContent ?? "").trim();
+        if (text !== e.dataset.en) out.push(`${e.dataset.l10n}: "${text}" is not its data-en "${e.dataset.en}"`);
+      }
+      for (const e of Array.from(document.querySelectorAll<HTMLElement>("*"))) {
+        for (const a of ["placeholder", "title", "alt", "aria-label"]) {
+          const key = e.getAttribute(`data-l10n-${a}`);
+          if (key && e.getAttribute(a) !== e.getAttribute(`data-en-${a}`)) out.push(`${key}: ${a} "${e.getAttribute(a)}" is not its data-en-${a} "${e.getAttribute(`data-en-${a}`)}"`);
+        }
+      }
+      for (const e of Array.from(document.querySelectorAll<HTMLElement>("[data-u-bind]"))) {
+        const v = (e instanceof HTMLInputElement || e instanceof HTMLTextAreaElement ? e.value : e.textContent ?? "").trim();
+        if (/[^\x20-\x7e]/.test(v)) out.push(`${e.dataset.uBind}: sample "${v}"`);
+      }
+      return out;
+    });
+  } finally { await d.close(); }
+};
+
+describe("the kit's components and the RULES.md example show English, the default reference locale", () => {
+  for (const file of components) {
+    it(path.basename(file), async () => { expect(await notEnglish(file)).toEqual([]); });
+  }
+  it("the RULES.md example screen", async () => {
+    const dir = tmp();
+    const md = fs.readFileSync(path.join(KIT_DIR, "RULES.md"), "utf8");
+    fs.writeFileSync(path.join(dir, "example.html"), exampleOf(md).replace(EXAMPLE_STYLESHEET_LINE("kit"), fs.readFileSync(path.join(KIT_DIR, "base.css"), "utf8").trim()));
+    expect(await notEnglish(path.join(dir, "example.html"))).toEqual([]);
+  });
+  it("the guides' markup samples (components/*.md)", () => {
+    for (const f of fs.readdirSync(path.join(KIT_DIR, "components")).filter((n) => n.endsWith(".md"))) {
+      const md = fs.readFileSync(path.join(KIT_DIR, "components", f), "utf8");
+      // every `…` code span with markup: its visible text and attribute values are ASCII (the guides write English samples)
+      const spans = [...md.matchAll(/`([^`]*<[^`]*)`/g)].map((m) => m[1]);
+      expect(spans.filter((c) => /[^\x20-\x7e…]/.test(c)), f).toEqual([]);
+    }
+  });
+});
+
 /** The ```html block after the "## Example" heading. */
 const exampleOf = (md: string): string => {
   const at = md.indexOf("## Example");

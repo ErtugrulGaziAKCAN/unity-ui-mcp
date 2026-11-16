@@ -2,7 +2,7 @@ A dropdown picks one value from a short list: a select box with a chevron icon d
 
 **Compiles to** a UI Toolkit `DropdownField`; each `<option>` is a choice and the `selected` one is the value shown.
 
-**Markup:** `<select data-u-id="…"><option data-l10n="…" data-en="…" selected>Seçenek</option>…</select>` inside a `position: relative` box, with an inline `<svg>` chevron positioned absolutely on the right and `pointer-events: none`.
+**Markup:** `<select data-u-id="…"><option data-l10n="…" data-en="Option" selected>Option</option>…</select>` inside a `position: relative` box, with an inline `<svg>` chevron positioned absolutely on the right and `pointer-events: none`.
 
 **States:** `:hover` changes the background, `:focus` the border colour, `:disabled` the colours (`--color-disabled-*`, U-CSS-039).
 

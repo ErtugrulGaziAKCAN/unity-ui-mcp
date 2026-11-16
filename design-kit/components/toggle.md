@@ -2,7 +2,7 @@ Toggles switch one setting on or off: a checkbox, a radio group and a switch, ea
 
 **Compiles to** a UI Toolkit `Toggle` per `<input type="checkbox">` or `<input type="radio">`; the label is a separate text element.
 
-**Markup:** `<label class="option"><input type="checkbox" data-u-id="…"><span data-l10n="…" data-en="…">Etiket</span></label>`; mark the initial value with `checked`.
+**Markup:** `<label class="option"><input type="checkbox" data-u-id="…"><span data-l10n="…" data-en="Label">Label</span></label>`; mark the initial value with `checked`.
 
 **States:** `:checked` sets the fill (the switch moves its knob by changing its `radial-gradient` background), `:hover` and `:focus` the border colour, `:disabled` the colours (`--color-disabled-*`, U-CSS-039).
 

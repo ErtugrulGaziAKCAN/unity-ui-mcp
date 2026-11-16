@@ -8,7 +8,7 @@ The contract for HTML screens (from Claude Design or any other source) that the 
 2. The style starts with the base stylesheet (`base.css`, below); it sizes boxes as UI Toolkit does and writes out every browser default.
 3. Lay out with flex only. Colours, spacing, radii and shadows come from the tokens through `var(--name)`.
 4. Every text uses a kit text style class (`.text-body`, `.text-title-bold`, …) and the kit font; never declare `@font-face`.
-5. Visible text is written in the reference locale (en: the Unity project's choice, its DesignUiProfile's Reference Locale, which kit sync writes into the kit) with a `data-l10n` key and the English `data-en`; runtime values use `data-u-bind` and sample text.
+5. Visible text is written in the reference locale (en: the Unity project's choice, its DesignUiProfile's Reference Locale, which kit sync writes into the kit) with a `data-l10n` key and the English `data-en` (with the reference locale `en`, `data-en` repeats the visible text exactly: the import writes it as the English entry); runtime values use `data-u-bind` and sample text.
 6. Interactive, bound and action elements carry `data-u-id`; actions name a command in `data-u-action`.
 7. Interaction states are `:hover`, `:active`, `:focus`, `:disabled`, `:checked` and `is-*` classes; screen states are `data-u-state` roots shown under `.state-<name>`.
 8. Every screen is linted before it goes to Unity (`design_ui_lint` in the MCP server, or `design-export lint <screen> --kit <kit>`); fix the design, never the generated Unity files.
@@ -67,7 +67,7 @@ textarea { resize: none; }
 | `data-u-screen` | Screen id on the root element, e.g. `club.overview` | yes, exactly once |
 | `data-u-id` | Stable element name exposed to code | on every interactive, bound or action element |
 | `data-l10n` | Localization key in meaningful English, e.g. `club.overview.title` | on every visible static text |
-| `data-en` | English source text for that key (the element's own text is the reference-locale text) | with `data-l10n` |
+| `data-en` | English source text for that key (the element's own text is the reference-locale text; with the reference locale `en` both are the same text) | with `data-l10n` |
 | `data-u-arg` | On a `<span>` inside localized text: a Smart String argument with sample text; `data-en` writes it as `{name}` | when the text has variables |
 | `data-l10n-args` | Smart String argument names, e.g. `amount,currency` | optional |
 | `data-l10n-<attr>, data-en-<attr>` | Key and English text for `placeholder`, `title`, `alt`, `aria-label` | when such an attribute has text |
@@ -496,11 +496,11 @@ A complete screen; with the base stylesheet pasted at the marked line it lints c
   <button class="start text-body-bold" data-u-id="start" data-u-action="start-training" data-l10n="squad.overview.start" data-en="Start training">Start training</button>
   <div class="list" data-u-id="players">
     <div class="row is-selected" data-u-repeat="players" data-u-id="player" data-u-action="open-player">
-      <span class="text-body-bold" data-u-id="name" data-u-bind="player.name">Kerem Örnekoğlu</span>
+      <span class="text-body-bold" data-u-id="name" data-u-bind="player.name">Robin Hale</span>
       <span class="text-body" data-u-id="rating" data-u-bind="player.rating">8.4</span>
     </div>
     <div class="row" data-u-id="player" data-u-action="open-player">
-      <span class="text-body-bold" data-u-id="name" data-u-bind="player.name">İsmail Şahin</span>
+      <span class="text-body-bold" data-u-id="name" data-u-bind="player.name">Casey Moreno</span>
       <span class="text-body" data-u-id="rating" data-u-bind="player.rating">7.9</span>
     </div>
   </div>

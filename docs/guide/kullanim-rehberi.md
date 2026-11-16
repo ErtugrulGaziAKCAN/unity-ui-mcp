@@ -89,7 +89,9 @@ Kit'in Design System'ini canvas'a ekle. Sonra:
   yüksekliğini alsın.
 - **Görünen her metnin bir anahtarı vardır.** Metni referans dilde (RULES.md'nin adını verdiği dil: profilin **Reference
   Locale** ayarı, proje başka bir dil seçmediyse İngilizce) yaz; `data-l10n="club.overview.title"`
-  (anlamlı İngilizce bir anahtar) ve `data-en="Overview"` ekle. Cümle içindeki bir değer
+  (anlamlı İngilizce bir anahtar) ve `data-en="Overview"` ekle. Referans dil İngilizceyse görünen metin ve `data-en`
+  aynı metindir, iki kez yazılır (`data-en="Overview">Overview`): içe aktarma `data-en`'i İngilizce String Table girdisi
+  olarak yazar, karşılaştırma ise görünen metni çizer. Cümle içindeki bir değer
   `<span data-u-arg="count">3</span>` olur ve `data-en`'de `{count}` diye yazılır. Oyundan gelen ve çevrilmeyen değerler
   (oyuncu adı, bir sayı) `data-u-bind="player-name"` kullanır; metni yalnız örnek veridir.
 - **Kontrollerin kimliği olur.** Her buton, girdi ya da bağlı eleman `data-u-id` taşır; bir şey yapan elemanda

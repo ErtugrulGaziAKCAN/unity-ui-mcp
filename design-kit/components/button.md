@@ -2,7 +2,7 @@ A button runs one command when it is pressed: primary, secondary, ghost and dest
 
 **Compiles to** a UI Toolkit `Button`; its own text is the label, centred by `display: flex`, `align-items: center` and `justify-content: center`.
 
-**Markup:** `<button data-u-id="…" data-u-action="…" data-l10n="…" data-en="…">Etiket</button>` with a text style class (`text-body-bold`, `text-label-bold`).
+**Markup:** `<button data-u-id="…" data-u-action="…" data-l10n="…" data-en="Label">Label</button>` with a text style class (`text-body-bold`, `text-label-bold`).
 
 **States:** `:hover` and `:active` change the background colour, `:focus` the border colour (a 4px border, transparent at rest: UI Toolkit has no outline), `:disabled` the colours (`--color-disabled-*`, U-CSS-039).
 
