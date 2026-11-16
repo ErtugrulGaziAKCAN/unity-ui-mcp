@@ -60,6 +60,14 @@ describe("the English entry when the reference locale is en", () => {
       fs.writeFileSync(path.join(dir, "attr.html"), page);
       const a = (await lintFile(path.join(dir, "attr.html"), englishKit)).filter((x) => x.ruleId === "U-MRK-014");
       expect(a.map((x) => x.detail)).toEqual(['data-en-placeholder "Search players" is not the placeholder "Search"']);
+      // text that does not render is not the visible text (as the import reads it); a no-break space is not a plain space
+      const base = fs.readFileSync(fx("U-MRK-014.pass.html"), "utf8");
+      fs.writeFileSync(path.join(dir, "hidden.html"), base.replace('<p data-l10n="lint.sample.title" data-en="Title">Title</p>',
+        '<p data-l10n="lint.sample.title" data-en="Title">Title<span hidden> more</span></p>'));
+      expect((await lintFile(path.join(dir, "hidden.html"), englishKit)).filter((x) => x.ruleId === "U-MRK-014")).toEqual([]);
+      fs.writeFileSync(path.join(dir, "space.html"), base.replace('data-en="10&nbsp;km"', 'data-en="10 km"'));
+      const sp = (await lintFile(path.join(dir, "space.html"), englishKit)).filter((x) => x.ruleId === "U-MRK-014");
+      expect(sp.map((x) => x.detail)).toEqual(['data-en "10 km" is not the visible text "10\u00a0km"']);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 });

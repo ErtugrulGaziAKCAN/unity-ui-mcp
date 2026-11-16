@@ -129,6 +129,14 @@ const preserves = (e: SnapElement) => (e.computed["white-space-collapse"] ?? "co
 const render = (toks: Tok[], e: SnapElement, rendered: string | null | undefined) =>
   (rendered != null ? align(toks, rendered) : null) ?? collapse(toks, preserves(e));
 
+/**
+ * A keyed text's English entry as the import reads it with the reference locale English: the visible words (no rich tags),
+ * whitespace and entities rendered as in the exported `ref`. The lint compares `data-en` with this.
+ */
+export function englishEntry(toks: Tok[], preserve: boolean, rendered: string | null | undefined): string {
+  return (rendered != null ? align(toks, rendered) : null) ?? collapse(toks, preserve);
+}
+
 /** Text of a text node: rich-text tags, {arg} placeholders; `rich` when a tag was written. */
 export function richText(s: DomSnapshot, i: number, seqs: Map<number, ChildSeq>, styles: TextStyle[], rendered: Rendered): { text: string; rich: boolean } {
   const toks = tokens(s, i, seqs, styles, true);

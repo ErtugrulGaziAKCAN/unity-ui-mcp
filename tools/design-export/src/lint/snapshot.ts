@@ -14,6 +14,9 @@ export interface Box { x: number; y: number; w: number; h: number }
 export interface Size { w: number; h: number }
 export interface PlatformFont { familyName: string; postScriptName: string; isCustomFont: boolean; glyphCount: number }
 
+/** A keyed text's raw token as the page reports it (the shape `extract/text.ts` reads). */
+export type EnTok = { text: string } | { br: true } | { arg: string; inner: EnTok[] };
+
 export interface SnapElement {
   /** Position in `elements` (document order: body, then its descendants). */
   index: number;
@@ -57,10 +60,11 @@ export interface SnapElement {
   /** Kit text style the element's text matches (set when collectSnapshot gets the kit); null = no match, undefined = no text. */
   textStyle?: string | null;
   /**
-   * On an element with `data-l10n` (not an input): its text as an English entry holds it, to compare with `data-en`: the
-   * words with whitespace collapsed as they render, a `data-u-arg` span as `{name}`, a `<br>` as a line break.
+   * On an element with `data-l10n` (not an input): its text as raw tokens (text, `<br>`, a `data-u-arg` span with its
+   * sample text; children that do not render left out) and the browser's rendered text. The export's own text
+   * normalization (`extract/text.ts`, `englishEntry`) turns them into the English entry the lint compares with `data-en`.
    */
-  enText?: string;
+  enToks?: EnTok[]; enRendered?: string | null;
   /**
    * Inline <svg> roots: how its shapes paint. `current` = every fill/stroke/stop follows currentColor (tintable),
    * `fixed` = none does, `mixed` = both, `none` = nothing painted.
@@ -176,7 +180,7 @@ interface RawElement {
   tag: string; ns: string; attrs: Record<string, string>; parent: number; texts: string[]; rendered: boolean; box: Box | null;
   size: Size | null; computed: Record<string, string>; pseudo: Record<string, Record<string, string>>; inline: RawStyle | null;
   vars: Record<string, string>; minAuto: { axis: "row" | "column"; before: Box; after: Box } | null; shadow: boolean;
-  lines?: SnapLine[]; textOverflow?: SnapElement["textOverflow"]; enText?: string;
+  lines?: SnapLine[]; textOverflow?: SnapElement["textOverflow"]; enToks?: EnTok[]; enRendered?: string | null;
 }
 interface RawPage {
   viewport: { width: number; height: number; scale: number };
@@ -375,32 +379,45 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
     const vars: Record<string, string> = {};
     for (const n of varNames) if (vals[n] !== base[n]) vars[n] = vals[n];
     const ns = el.namespaceURI === "http://www.w3.org/2000/svg" ? "svg" : el.namespaceURI === "http://www.w3.org/1998/Math/MathML" ? "math" : "html";
-    // a keyed text as an English entry would hold it: its words, a variable as {name}, a <br> as a line break
-    let enText: string | undefined;
+    // a keyed text as raw tokens (the lint normalizes them with the export's own text rules): a variable keeps its sample
+    // text, a child that does not render is left out
+    let enToks: EnTok[] | undefined, enRendered: string | null = null;
     if (el.hasAttribute("data-l10n") && el.localName !== "input" && el.localName !== "textarea") {
-      const BR = "\u0001";
-      const words = (n: Node): string => {
-        let t = "";
+      const SKIP = ["script", "style", "template", "noscript", "title"];
+      const plain = (n: Node): EnTok[] => {
+        const r: EnTok[] = [];
         for (const c of Array.from(n.childNodes)) {
-          if (c.nodeType === 3) t += (c as Text).data;
+          if (c.nodeType === 3) r.push({ text: (c as Text).data });
           else if (c.nodeType === 1) {
             const x = c as Element;
-            if (x.localName === "br") t += BR;
-            else if (x.hasAttribute("data-u-arg")) t += `{${x.getAttribute("data-u-arg")}}`;
-            else if (!["script", "style", "template", "noscript", "title"].includes(x.localName)) t += words(x);
+            if (x.localName === "br") r.push({ br: true });
+            else if (!SKIP.includes(x.localName) && getComputedStyle(x).display !== "none") r.push(...plain(x));
           }
         }
-        return t;
+        return r;
       };
-      // rendered whitespace: collapsed unless the text preserves it (white-space: pre, pre-wrap)
-      const keep = cs.getPropertyValue("white-space-collapse") === "preserve";
-      enText = keep ? words(el).split(BR).join("\n") : words(el).split(BR).map((l) => l.replace(/\s+/g, " ").trim()).join("\n").trim();
+      const walk = (n: Node): EnTok[] => {
+        const r: EnTok[] = [];
+        for (const c of Array.from(n.childNodes)) {
+          if (c.nodeType === 3) r.push({ text: (c as Text).data });
+          else if (c.nodeType === 1) {
+            const x = c as Element;
+            if (x.localName === "br") r.push({ br: true });
+            else if (SKIP.includes(x.localName) || getComputedStyle(x).display === "none") continue;
+            else if (x.hasAttribute("data-u-arg")) r.push({ arg: x.getAttribute("data-u-arg")!, inner: plain(x) });
+            else r.push(...walk(x));
+          }
+        }
+        return r;
+      };
+      enToks = walk(el);
+      enRendered = el.getClientRects().length ? (el as HTMLElement).innerText : null;
     }
     out.elements.push({
       tag: el.localName, ns, attrs, parent: parentIdx, texts, rendered, box: rendered ? rect(el) : null, size, computed, pseudo, inline, vars,
       minAuto: null, shadow: !!(el as HTMLElement).shadowRoot,
       ...(rendered && texts.length ? textLines(el, cs) : {}),
-      ...(enText !== undefined ? { enText } : {}),
+      ...(enToks !== undefined ? { enToks, enRendered } : {}),
     });
   });
 
@@ -795,7 +812,7 @@ async function collectOnce(page: Page, cdp: CDPSession, kit?: KitConfig): Promis
     inline: inlinePlans[i] ? finish(inlinePlans[i]!) : null, vars: e.vars, minAuto: e.minAuto,
     shadowRoot: e.shadow ? "open" : cdpEls[i].shadow, ua: ua[i] ?? {},
     ...(e.lines ? { lines: e.lines } : {}), ...(e.textOverflow ? { textOverflow: e.textOverflow } : {}),
-    ...(e.enText !== undefined ? { enText: e.enText } : {}),
+    ...(e.enToks !== undefined ? { enToks: e.enToks, enRendered: e.enRendered ?? null } : {}),
     ...(raw.svgPaint[i] ? { svgPaint: raw.svgPaint[i] } : {}),
     ...(images.has(i) ? { image: images.get(i) } : {}),
   }));

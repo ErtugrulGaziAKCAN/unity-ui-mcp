@@ -1,4 +1,5 @@
 import { referenceIsEnglish } from "../../kit.js";
+import { englishEntry } from "../../extract/text.js";
 import { clip } from "../css-values.js";
 import type { Finding, Rule } from "../types.js";
 import { TEXT_ATTRS } from "./U-MRK-007.js";
@@ -23,8 +24,9 @@ export const rule: Rule = {
       if (isExternal(s, e.index) || nonDesign(s)[e.index]) continue;
       const bad: string[] = [];
       const en = e.attrs["data-en"];
-      if (e.attrs["data-l10n"] !== undefined && en !== undefined && en.trim() !== "" && e.enText !== undefined && en !== e.enText) {
-        bad.push(`data-en "${clip(en, 60)}" is not the visible text "${clip(e.enText, 60)}"`);
+      if (e.attrs["data-l10n"] !== undefined && en !== undefined && en.trim() !== "" && e.enToks !== undefined) {
+        const visible = englishEntry(e.enToks, (e.computed["white-space-collapse"] ?? "collapse") !== "collapse", e.enRendered);
+        if (en !== visible) bad.push(`data-en "${clip(en, 60)}" is not the visible text "${clip(visible, 60)}"`);
       }
       for (const a of TEXT_ATTRS) {
         const v = e.attrs[a], ea = e.attrs[`data-en-${a}`];
