@@ -151,7 +151,7 @@ namespace DesignUi.Editor.Tests
             // what the MCP server compares with its own before an import: the package version and the IR version it reads
             StringAssert.IsMatch(@"^\d+\.\d+\.\d+", t.Result.body.Value<string>("version"));
             Assert.AreEqual(UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(DesignUiBridge).Assembly)?.version, t.Result.body.Value<string>("version"));
-            Assert.AreEqual(IrReader.SupportedVersion, t.Result.body.Value<int>("irVersion"));
+            Assert.AreEqual(2, t.Result.body.Value<int>("irVersion"));
         }
 
         [UnityTest]

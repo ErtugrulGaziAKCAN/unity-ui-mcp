@@ -105,7 +105,7 @@ export interface IrNode {
   anims: IrAnim[]; children: IrNode[];
 }
 export interface IrScreen {
-  irVersion: 1; screen: string; source: { path: string; sha256: string };
+  irVersion: 2; screen: string; source: { path: string; sha256: string };
   /**
    * `viewports`: every declared viewport, both classes; `scaledViewports` (absent: none): those of class `scaled`, which
    * are laid out and verified but exempt from the whole-device-pixel rules (viewport.ts ViewportClass).
@@ -117,5 +117,9 @@ export interface IrScreen {
   root: IrNode;
 }
 
-/** The IR's schema version (its major version: another one is another format); the Unity package's IrReader reads this one. */
-export const IR_VERSION = 1 as const;
+/**
+ * The IR's schema version (its major version: another one is another format); the Unity package's IrReader reads this one.
+ * 2: the design's text is `ref` (version 1 wrote it as `tr`), so a package that reads version 1 refuses these exports
+ * instead of compiling their texts empty.
+ */
+export const IR_VERSION = 2 as const;

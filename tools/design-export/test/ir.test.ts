@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { stableStringify } from "../src/ir/stableStringify.js";
 import { validateIr } from "../src/ir/validate.js";
 import { validateBoxes } from "../src/boxes/validate.js";
+import { IR_VERSION } from "../src/ir/types.js";
 
 const contract = (name: string): any =>
   JSON.parse(readFileSync(fileURLToPath(new URL(`../../../contracts/${name}`, import.meta.url)), "utf8"));
@@ -14,10 +15,16 @@ describe("IR contract", () => {
   it("accepts the shared sample", () => {
     expect(validateIr(contract("ir-sample.json"))).toEqual([]);
   });
-  it("rejects another irVersion", () => {
-    const ir = contract("ir-sample.json");
-    ir.irVersion = 2;
-    expect(validateIr(ir).join("\n")).toContain("irVersion");
+  it("is IR version 2 and rejects another irVersion, the earlier 1 included", () => {
+    // the text field's rename (tr → ref) is a new IR version: a package that reads version 1 refuses these exports
+    // instead of reading their texts as empty
+    expect(IR_VERSION).toBe(2);
+    expect(contract("ir-sample.json").irVersion).toBe(2);
+    for (const v of [1, 3]) {
+      const ir = contract("ir-sample.json");
+      ir.irVersion = v;
+      expect(validateIr(ir).join("\n"), String(v)).toContain("irVersion");
+    }
   });
   it("holds the design's text in `ref` (the reference locale); an IR of an earlier exporter, its text under `tr`, is invalid", () => {
     const texts: any[] = [];

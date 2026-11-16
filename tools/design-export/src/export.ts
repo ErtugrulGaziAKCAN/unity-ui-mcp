@@ -14,6 +14,7 @@ import { CHROMIUM_ARGS, launchChromium } from "./browser.js";
 import { captureMatrix, type HiddenJob } from "./capture/capture.js";
 import { buildIr } from "./extract/tree.js";
 import { stableStringify } from "./ir/stableStringify.js";
+import { IR_VERSION } from "./ir/types.js";
 import { validateIr } from "./ir/validate.js";
 import { readKit, type KitConfig } from "./kit.js";
 import { collectSnapshot, lint, type Finding } from "./lint/index.js";
@@ -73,6 +74,10 @@ export const hasMarker = (dir: string): boolean => {
 };
 const OUTPUTS = ["screen.ir.json", "lint-report.json", "fixtures/sample-data.json", "goldens/matrix.json", "goldens/boxes.json"];
 const sha256 = (b: Buffer | string) => crypto.createHash("sha256").update(b).digest("hex");
+/** The top-level `irVersion` of an IR file (only the root object has that key; a text's quotes are escaped), or null. */
+const irVersionOf = (file: string): number | null => {
+  try { const m = /"irVersion"\s*:\s*(\d+)/.exec(fs.readFileSync(file, "utf8")); return m ? Number(m[1]) : null; } catch { return null; }
+};
 const ms = (t0: number) => Math.round((performance.now() - t0) * 10) / 10;
 const rounded = (n: number) => Math.round(n * 10) / 10;
 
@@ -334,11 +339,13 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
     const kitSha = kitHash(kit);
     const toolSha = toolHash();
 
-    // unchanged design, kit and tool: the previous export stands
+    // unchanged design, kit and tool, and an IR of this version: the previous export stands. The tool hash covers the IR
+    // schema, so an export of another IR version has another hash; the IR's own version is read as well, because a server
+    // process older than its clone's files hashes the new schema while it writes its own IR version
     if (!opts.force) {
       const prev = readJsonIf<{ ok: boolean; sourceSha: string; kitSha: string; toolSha: string; source: string }>(path.join(outDir, "export-report.json"));
       if (prev?.ok && prev.sourceSha === sourceSha && prev.kitSha === kitSha && prev.toolSha === toolSha && prev.source === path.basename(htmlPath)
-        && OUTPUTS.every((f) => fs.existsSync(path.join(outDir, f)))) {
+        && OUTPUTS.every((f) => fs.existsSync(path.join(outDir, f))) && irVersionOf(path.join(outDir, "screen.ir.json")) === IR_VERSION) {
         const lintReport = readJsonIf<{ findings: Finding[] }>(path.join(outDir, "lint-report.json"));
         return {
           ok: true, skipped: true, findings: lintReport?.findings ?? [], outDir, warnings, hidden: hiddenOf(outDir),

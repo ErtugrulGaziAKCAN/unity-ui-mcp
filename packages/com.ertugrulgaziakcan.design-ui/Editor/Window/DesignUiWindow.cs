@@ -236,7 +236,7 @@ namespace DesignUi.Editor
                 var info = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(DesignUiWindow).Assembly);
                 s_Version = info != null ? info.version : "unknown";
             }
-            m_Package.text = "Design UI " + s_Version;
+            m_Package.text = "Design UI " + s_Version + " (reads IR version " + IrReader.SupportedVersion + ")";
         }
 
         // ---- project (on open, focus and after operations) ----------------------------------------------------------

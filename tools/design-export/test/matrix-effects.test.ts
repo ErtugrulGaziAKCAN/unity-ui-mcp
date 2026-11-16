@@ -11,7 +11,7 @@ const node = (id: string, o: Partial<IrNode> = {}): IrNode => ({
   action: null, repeat: null, anims: [], children: [], ...o,
 });
 const screen = (root: IrNode, o: Partial<IrScreen> = {}): IrScreen => ({
-  irVersion: 1, screen: "s", source: { path: "s.html", sha256: "0".repeat(64) }, referenceViewport: [2560, 1440],
+  irVersion: 2, screen: "s", source: { path: "s.html", sha256: "0".repeat(64) }, referenceViewport: [2560, 1440],
   viewports: [[2560, 1440], [1920, 1080], [1280, 720]], screenMatch: 0.5, states: ["default"], breakpoints: [], tokens: {}, fonts: [],
   root, ...o,
 });

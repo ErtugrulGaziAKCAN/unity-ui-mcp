@@ -19,7 +19,7 @@
   ],
   "properties": {
     "irVersion": {
-      "const": 1
+      "const": 2
     },
     "screen": {
       "type": "string",

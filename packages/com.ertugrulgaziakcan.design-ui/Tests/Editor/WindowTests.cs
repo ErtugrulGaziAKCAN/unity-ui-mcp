@@ -75,6 +75,7 @@ namespace DesignUi.Editor.Tests
             Assert.IsTrue(HasLabel(w, "Listening on 127.0.0.1:" + DesignUiBridge.Port));
             Assert.IsTrue(HasLabel(w, "None yet"));
             Assert.IsTrue(HasLabel(w, "Design UI "));
+            Assert.IsTrue(HasLabel(w, "reads IR version 2"), "the package row names the IR version this package reads (the bridge reports it)");
             string copied = null;
             DesignUiWindow.Clipboard = t => copied = t;
             try { w.CopySnippet(McpClient.ClaudeCode); }

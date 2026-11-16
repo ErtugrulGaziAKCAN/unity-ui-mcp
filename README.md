@@ -411,6 +411,7 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
 | `U-CSS-010` on every text after a kit sync | The kit's `--font-ui` names a family the synced fonts do not have (a TMP asset's name can differ from its face family). Kit sync rewrites the token from the real family; run `kit build`, and use the same token in the design. |
 | `U-FONT-001` / a missing face at import | The reference locale's font has no real face for that weight or italic: add the face to the TMP font's weight table and sync the kit, or use 400/700. Other locales get a warning or a note. |
 | Verify says "its export was made by another version of the exporter" | The export is from another tool version (after an update): run `design_ui_import` again (it exports the screen with this version), then verify. |
+| Import says "the export is IR version 1, made by an earlier design-export" | The screen's export predates IR version 2: run `design_ui_import` again, which exports it with this version by itself. "Reads IR version …, the exporter writes IR version …" before an import: the clone and the Unity package are different builds; update both together ([INSTALL.md](INSTALL.md#updating)). |
 | Verify gives no verdict | Read `<screen>/.design-ui/failed-<run>/` (the Unity log and what was captured). Check `unityRunner.command.capture` and `timeoutSec`. |
 | Verify is `incomplete` | Some capture job shows an element no state, class or sample row shows; the import named it. Make it visible in some context, or remove it. |
 | Arabic letters unshaped or reversed | Turn on Enable Advanced Text (and give players ICU data on their PanelSettings). |
@@ -438,7 +439,7 @@ npx design-export kit upgrade <kitDir> --dry-run    # a project kit against this
 Versions: the Unity package and the Node tools share one version number (`package.json` of each). A change of the IR
 format (`tools/design-export/src/ir/schema.json`) after a release raises `irVersion` on both sides (the package's IR
 reader refuses another one, and the server stops an import when the bridge reports another one); any other change raises
-the version.
+the version. 0.1.0 is IR version 2.
 
 Run these before a pull request. GitHub Actions (`.github/workflows/node.yml`) runs the same Node suites and type
 checks on Linux with Node 20 and 22 on every push and pull request. The Unity package tests

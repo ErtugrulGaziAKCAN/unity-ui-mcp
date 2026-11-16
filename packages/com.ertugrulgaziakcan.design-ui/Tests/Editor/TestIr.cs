@@ -45,7 +45,7 @@ namespace DesignUi.Editor.Tests
 
         public static IrScreen Screen(IrNode root, string id = "test.screen") => new IrScreen
         {
-            IrVersion = 1,
+            IrVersion = IrReader.SupportedVersion,
             Screen = id,
             Source = new IrSource { Path = "test.html", Sha256 = new string('a', 64) },
             ReferenceViewport = new[] { 2560, 1440 },

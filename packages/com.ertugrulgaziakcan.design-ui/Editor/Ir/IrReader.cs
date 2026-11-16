@@ -16,7 +16,11 @@ namespace DesignUi.Editor
 
     public static class IrReader
     {
-        public const int SupportedVersion = 1;
+        /// <summary>
+        /// The IR version this package reads (the schema's major version). 2: the design's text is <c>ref</c> (version 1
+        /// wrote it as <c>tr</c>); an export of version 1 is refused and made again by the next import.
+        /// </summary>
+        public const int SupportedVersion = 2;
 
         public static IrScreen Read(string path)
         {
@@ -41,15 +45,11 @@ namespace DesignUi.Editor
                 throw new IrFormatException("the export is IR version " + major + ", made by a newer design-export; this com.ertugrulgaziakcan.design-ui " +
                                             "package reads IR version " + SupportedVersion + ": update the package to the version of the MCP server " +
                                             "(scripts/setup.sh of the unity-ui-mcp clone), then import again");
+            // an earlier IR (version 1 wrote the design's text under "tr"): read field by field, every text would compile empty
             if (major != SupportedVersion)
-                throw new IrFormatException("the export is IR version " + major + ", made by an older design-export; this com.ertugrulgaziakcan.design-ui " +
-                                            "package reads IR version " + SupportedVersion + ": export the design again with the current MCP server");
-
-            // an earlier exporter wrote the design's text under "tr": read field by field, every text would compile empty
-            if (HasOldTextField(obj))
-                throw new IrFormatException("the export was made by an earlier design-export: its texts are under \"tr\", where this " +
-                                            "com.ertugrulgaziakcan.design-ui package reads \"ref\"; export the design again with the current MCP " +
-                                            "server (design_ui_import exports it again by itself), then import it");
+                throw new IrFormatException("the export is IR version " + major + ", made by an earlier design-export; this com.ertugrulgaziakcan.design-ui " +
+                                            "package reads IR version " + SupportedVersion + ": export the screen again with the current MCP server " +
+                                            "(design_ui_import exports it again by itself), then import it");
 
             IrScreen screen;
             try { screen = obj.ToObject<IrScreen>(JsonSerializer.Create(new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })); }
@@ -59,19 +59,6 @@ namespace DesignUi.Editor
                 throw new IrFormatException("IR file has no root node");
             Validate(screen.Root);
             return screen;
-        }
-
-        /// <summary>Whether a text object anywhere in the IR (a key, English text and args) has the field "tr" and no "ref".</summary>
-        static bool HasOldTextField(JToken token)
-        {
-            if (token is JObject o)
-            {
-                if (o.Property("tr") != null && o.Property("ref") == null && o.Property("en") != null && o.Property("args") != null) return true;
-                foreach (var p in o.Properties()) if (HasOldTextField(p.Value)) return true;
-            }
-            else if (token is JArray a)
-                foreach (var item in a) if (HasOldTextField(item)) return true;
-            return false;
         }
 
         static readonly HashSet<string> AttrTextNames =new HashSet<string> { "placeholder", "title", "alt", "aria-label" };

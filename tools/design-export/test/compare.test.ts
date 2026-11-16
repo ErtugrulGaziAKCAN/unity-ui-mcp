@@ -2359,7 +2359,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
           for (let p = 0; p < 48 * 40; p++) { const o = p * 4; for (let j = 0; j < 3; j++) png.data[o + j] = Math.round(0.7 * png.data[o + j] + 0.3 * veilC[j]); }
           return png;
         };
-        const ix = indexIr({ irVersion: 1, screen: "s", referenceViewport: [2560, 1440], screenMatch: 0.5, states: ["default"], breakpoints: [],
+        const ix = indexIr({ irVersion: 2, screen: "s", referenceViewport: [2560, 1440], screenMatch: 0.5, states: ["default"], breakpoints: [],
           root: { id: "root", kind: "container", style: { base: { position: "relative", "background-color": "rgb(18, 60, 71)" } }, children: [
             { id: "scrim", kind: "container", style: { base: { position: "absolute", "background-color": "rgba(11, 31, 38, 0.3)" } }, children: [] },
             { id: "t", kind: "text", text: { tr: "Ay" }, style: { base: { "font-size": "20px" } }, children: [] },
@@ -2623,7 +2623,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
 
 describe("IR context", () => {
   const ir = {
-    irVersion: 1, screen: "s", referenceViewport: [2560, 1440], viewports: [[2560, 1440]], screenMatch: 0.5, states: ["default", "busy"],
+    irVersion: 2, screen: "s", referenceViewport: [2560, 1440], viewports: [[2560, 1440]], screenMatch: 0.5, states: ["default", "busy"],
     breakpoints: [{ name: "narrow", maxWidth: 1000 }],
     root: {
       id: "root", kind: "container", style: { base: { "background-color": "rgb(10, 10, 10)" } }, children: [
@@ -2944,7 +2944,7 @@ describe("compareScreen", () => {
     expect(exact.byClass).toEqual({ exact: { viewports: [[320, 192]], pass: 3, fail: 0, notRun: 1 } });
     expect(exact.captures[0].info?.viewportClass).toBe("exact");
     expect(classLines(exact)).toEqual(["exact 320×192: 3 pass, 0 fail, 1 not run"]);
-    const ir = { irVersion: 1, screen: "inbox", referenceViewport: [320, 192], viewports: [[320, 192]], scaledViewports: [[320, 192]], screenMatch: 0.5, breakpoints: [],
+    const ir = { irVersion: 2, screen: "inbox", referenceViewport: [320, 192], viewports: [[320, 192]], scaledViewports: [[320, 192]], screenMatch: 0.5, breakpoints: [],
       root: { id: "root", kind: "container", style: { base: {} }, children: [
         { id: "card", kind: "container", style: { base: {} }, children: [{ id: "label", kind: "text", style: { base: {} }, children: [] }] },
         { id: "panel", kind: "container", style: { base: {} }, children: [] }] } };
@@ -3081,7 +3081,7 @@ describe("compareScreen", () => {
 
   it("uses the IR's shadows (scaled) and backgrounds", async () => {
     const f = screenFixture((name, s) => s);
-    const ir = { irVersion: 1, screen: "inbox", referenceViewport: [320, 192], screenMatch: 0.5, breakpoints: [], root: {
+    const ir = { irVersion: 2, screen: "inbox", referenceViewport: [320, 192], screenMatch: 0.5, breakpoints: [], root: {
       id: "root", kind: "container", style: { base: { "background-color": "#101820" } }, children: [
         { id: "card", kind: "container", style: { base: { "background-color": "#b43c3c" } }, shadow: { offset: { x: -6, y: -6, w: 12, h: 12 } }, children: [
           { id: "label", kind: "text", style: { base: {} }, children: [] }] },
@@ -3136,7 +3136,7 @@ describe("compareScreen", () => {
       }
       fs.writeFileSync(path.join(exportDir, "goldens", "boxes.json"), JSON.stringify(g));
       fs.writeFileSync(path.join(exportDir, "goldens", "matrix.json"), JSON.stringify({ chromium: "1", platform: "p", captures: entries, unsampled: [] }));
-      fs.writeFileSync(path.join(exportDir, "screen.ir.json"), JSON.stringify({ irVersion: 1, screen: "s", referenceViewport: [64, 38], viewports: [[32, 20], [40, 24]], scaledViewports: [[40, 24]],
+      fs.writeFileSync(path.join(exportDir, "screen.ir.json"), JSON.stringify({ irVersion: 2, screen: "s", referenceViewport: [64, 38], viewports: [[32, 20], [40, 24]], scaledViewports: [[40, 24]],
         screenMatch: 0.5, breakpoints: [], root: { id: "root", kind: "container", style: { base: {} }, children: [{ id: "t", kind: "text", style: { base: { "font-size": "20px" } }, children: [] }] } }));
       fs.writeFileSync(path.join(unityDir, "boxes.json"), JSON.stringify(g));
       fs.writeFileSync(path.join(unityDir, "capture-done.json"), JSON.stringify({ runId: "r", jobs: 2, captured: 2, notCaptured: 0 }));

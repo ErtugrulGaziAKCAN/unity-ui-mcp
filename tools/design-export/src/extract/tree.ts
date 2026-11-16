@@ -19,7 +19,7 @@
 import path from "node:path";
 import type { Page } from "playwright";
 import { sharedBakePage } from "../bake/shadow.js";
-import type { IrAnim, IrAsset, IrNode, IrScreen, NodeKind } from "../ir/types.js";
+import { IR_VERSION, type IrAnim, type IrAsset, type IrNode, type IrScreen, type NodeKind } from "../ir/types.js";
 import { validateIr } from "../ir/validate.js";
 import type { KitConfig } from "../kit.js";
 import { kitScales, wholeBorderWidths } from "../lint/rules/U-CSS-040.js";
@@ -396,7 +396,7 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
   }
 
   const ir: IrScreen = {
-    irVersion: 1,
+    irVersion: IR_VERSION,
     screen: el(root).attrs["data-u-screen"],
     source: { path: path.basename(htmlPath), sha256: fileSha(htmlPath) },
     referenceViewport: [kit.reference[0], kit.reference[1]],

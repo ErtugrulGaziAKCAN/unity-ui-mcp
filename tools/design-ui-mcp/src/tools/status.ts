@@ -158,7 +158,7 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
         ...(unity?.bridge === "connected" && unity.version
           ? [(() => {
             const d = versionDrift(unity.version, unity.irVersion);
-            const head = `package version: ${unity.version} (server ${VERSION}, IR ${unity.irVersion ?? "not reported"})`;
+            const head = `package version: ${unity.version}, reads IR version ${unity.irVersion ?? "(not reported)"} (server ${VERSION}, writes IR version ${IR_VERSION})`;
             return d.level === "ok" ? `${head}: matches` : `${head}: ${d.level === "error" ? "imports refused" : "minor drift"}: ${d.message}`;
           })()]
           : []),

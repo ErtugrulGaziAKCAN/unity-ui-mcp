@@ -270,6 +270,39 @@ describe("skip hash", () => {
     expect(inputs).toContain("extract 3");
   });
 
+  it("an export of IR version 1 is made again: its tool hash names the version-1 schema, and its IR's version is read too", async () => {
+    const out = path.join(tmp(), "out");
+    await exportScreen(fx("inbox-mini"), KIT, out, { browser });
+    const irFile = path.join(out, "screen.ir.json"), repFile = path.join(out, "export-report.json");
+    const rep = readJson(repFile);
+    // what an exporter of IR version 1 recorded: the schema with irVersion 1 in its tool hash, texts under "tr"
+    const schemaFile = path.join(here, "..", "src", "ir", "schema.json");
+    const schema = fs.readFileSync(schemaFile, "utf8");
+    const v1Schema = schema.replace(/("irVersion": \{\s*"const": )2/, "$11");
+    expect(v1Schema).not.toBe(schema);
+    const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
+    const inputs = toolHashInputs();
+    expect(inputs).toContain(sha(schema));
+    const v1Tool = sha(inputs.map((i) => (i === sha(schema) ? sha(v1Schema) : i)).join("\n"));
+    expect(v1Tool).not.toBe(rep.toolSha);
+    const asV1 = (toolSha: string) => {
+      fs.writeFileSync(irFile, fs.readFileSync(irFile, "utf8").replace(/"irVersion": 2/, '"irVersion": 1').replace(/"ref":/g, '"tr":'));
+      fs.writeFileSync(repFile, JSON.stringify({ ...rep, toolSha }));
+    };
+    const again = async () => {
+      const r = await exportScreen(fx("inbox-mini"), KIT, out, { browser });
+      const ir = readJson(irFile);
+      return { skipped: !!r.skipped, irVersion: ir.irVersion, valid: validateIr(ir) };
+    };
+
+    asV1(v1Tool);
+    expect(await again()).toEqual({ skipped: false, irVersion: 2, valid: [] });
+    // the same IR recorded with this tool's hash (a server process older than its clone's schema file wrote it): made again
+    asV1(rep.toolSha);
+    expect(await again()).toEqual({ skipped: false, irVersion: 2, valid: [] });
+    expect(await again()).toEqual({ skipped: true, irVersion: 2, valid: [] });
+  }, 300_000);
+
   it("a lone html file hashes its references, not the folder; a symlinked asset is followed", () => {
     const d = path.join(tmp(), "design");
     fs.cpSync(fx("inbox-mini"), d, { recursive: true });

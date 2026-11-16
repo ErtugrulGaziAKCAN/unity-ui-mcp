@@ -71,7 +71,7 @@ describe("viewport classes in kit.config.json", () => {
 
 describe("goldens and coverage at both classes", () => {
   const ir = (extra: Partial<IrScreen> = {}): IrScreen => ({
-    irVersion: 1, screen: "s", source: { path: "s.html", sha256: "0".repeat(64) },
+    irVersion: 2, screen: "s", source: { path: "s.html", sha256: "0".repeat(64) },
     referenceViewport: [2560, 1440], viewports: [[2560, 1440], [1280, 720], [1366, 768]], scaledViewports: [[1366, 768]], screenMatch: 0.5,
     states: ["default"], breakpoints: [], tokens: {}, fonts: [],
     root: {

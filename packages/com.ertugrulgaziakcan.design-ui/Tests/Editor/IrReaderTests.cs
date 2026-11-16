@@ -27,7 +27,7 @@ namespace DesignUi.Editor.Tests
         {
             var screen = IrReader.Read(SamplePath());
             Assert.AreEqual("root", screen.Root.Id);
-            Assert.AreEqual(1, screen.IrVersion);
+            Assert.AreEqual(2, screen.IrVersion);
             Assert.AreEqual("sample.screen", screen.Screen);
             CollectionAssert.AreEqual(new[] { 2560, 1440 }, screen.ReferenceViewport);
             Assert.AreEqual(2, screen.Viewports.Length);
@@ -122,34 +122,38 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void Read_UnsupportedVersion_Throws()
         {
-            var path = WriteTemp("{\"irVersion\":2,\"root\":{}}");
+            var path = WriteTemp("{\"irVersion\":3,\"root\":{}}");
             try
             {
                 // an export of a newer exporter: the message says which side to update, never a field-level schema error
                 var e = Assert.Throws<IrFormatException>(() => IrReader.Read(path));
-                StringAssert.StartsWith("the export is IR version 2, made by a newer design-export; this com.ertugrulgaziakcan.design-ui package reads IR version 1", e.Message);
+                StringAssert.StartsWith("the export is IR version 3, made by a newer design-export; this com.ertugrulgaziakcan.design-ui package reads IR version 2", e.Message);
                 StringAssert.Contains("update the package", e.Message);
             }
             finally { File.Delete(path); }
         }
 
         [Test]
-        public void Read_AnExportOfAnEarlierExporter_WithItsTextsUnderTr_IsRefused()
+        public void Read_AnExportOfIrVersion1_IsRefused_ExportTheScreenAgain()
         {
-            // texts in the field an earlier exporter wrote ("tr"): read as they are they would compile without their text
+            // IR version 1: an earlier exporter (texts under "tr") or one of the same release before the version bump (texts
+            // under "ref"); read field by field the first would compile without its texts, so both are refused as a version
+            Assert.AreEqual(2, IrReader.SupportedVersion);
             foreach (var json in new[]
             {
                 "{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"text\":{\"key\":\"s.t\",\"tr\":\"Kadro\",\"en\":\"Squad\",\"args\":[],\"rich\":false,\"style\":null}}}",
                 "{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"container\",\"children\":[{\"id\":\"f\",\"kind\":\"input\",\"attrTexts\":" +
                 "{\"placeholder\":{\"key\":\"s.find\",\"tr\":\"Ara\",\"en\":\"Search\",\"args\":[],\"rich\":false,\"style\":\"body\"}}}]}}",
+                "{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"text\":{\"key\":\"s.t\",\"ref\":\"Squad\",\"en\":\"Squad\",\"args\":[],\"rich\":false,\"style\":null}}}",
             })
             {
                 var path = WriteTemp(json);
                 try
                 {
                     var e = Assert.Throws<IrFormatException>(() => IrReader.Read(path));
-                    StringAssert.Contains("made by an earlier design-export", e.Message);
-                    StringAssert.Contains("export the design again", e.Message);
+                    StringAssert.StartsWith("the export is IR version 1, made by an earlier design-export; this com.ertugrulgaziakcan.design-ui package reads IR version 2", e.Message);
+                    StringAssert.Contains("export the screen again", e.Message);
+                    StringAssert.Contains("design_ui_import exports it again by itself", e.Message);
                 }
                 finally { File.Delete(path); }
             }
@@ -174,7 +178,7 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void Read_MissingRoot_Throws()
         {
-            var path = WriteTemp("{\"irVersion\":1}");
+            var path = WriteTemp("{\"irVersion\":2}");
             try
             {
                 var e = Assert.Throws<IrFormatException>(() => IrReader.Read(path));
@@ -192,7 +196,7 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void Read_DateLikeText_StaysVerbatim()
         {
-            var path = WriteTemp("{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"text\":{\"key\":null,\"ref\":\"2026-11-12T10:00:00\",\"en\":null,\"args\":[],\"rich\":false}}}");
+            var path = WriteTemp("{\"irVersion\":2,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"text\":{\"key\":null,\"ref\":\"2026-11-12T10:00:00\",\"en\":null,\"args\":[],\"rich\":false}}}");
             try { Assert.AreEqual("2026-11-12T10:00:00", IrReader.Read(path).Root.Text.Ref); }
             finally { File.Delete(path); }
         }
@@ -200,7 +204,7 @@ namespace DesignUi.Editor.Tests
         [Test]
         public void Read_FractionalAssetSizes_AreKept()
         {
-            var path = WriteTemp("{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"image\",\"asset\":{\"kind\":\"image\",\"file\":\"a.png\",\"sha256\":\"x\",\"width\":96.5,\"height\":20.25,\"slice\":null}}}");
+            var path = WriteTemp("{\"irVersion\":2,\"root\":{\"id\":\"r\",\"kind\":\"image\",\"asset\":{\"kind\":\"image\",\"file\":\"a.png\",\"sha256\":\"x\",\"width\":96.5,\"height\":20.25,\"slice\":null}}}");
             try
             {
                 var a = IrReader.Read(path).Root.Asset;
@@ -220,7 +224,7 @@ namespace DesignUi.Editor.Tests
                             "{\"offset\":1,\"values\":{\"rotate\":\"360deg\"},\"easing\":\"steps(4)\"}]}";
 
         static string WithAnims(params string[] anims) =>
-            "{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"anims\":[" + string.Join(",", anims) +
+            "{\"irVersion\":2,\"root\":{\"id\":\"r\",\"kind\":\"text\",\"anims\":[" + string.Join(",", anims) +
             "],\"text\":{\"key\":\"a.b\",\"ref\":\"x\",\"en\":\"x\",\"args\":[],\"rich\":false,\"style\":\"label-bold\"}}}";
 
         [Test]
@@ -312,7 +316,7 @@ namespace DesignUi.Editor.Tests
             finally { File.Delete(path); }
         }
 
-        static string Node(string extra) => "{\"irVersion\":1,\"root\":{\"id\":\"r\",\"kind\":\"container\"," + extra + "}}";
+        static string Node(string extra) => "{\"irVersion\":2,\"root\":{\"id\":\"r\",\"kind\":\"container\"," + extra + "}}";
 
         [Test]
         public void Read_StyleKeys_MustBeCanonicalAndWellFormed()

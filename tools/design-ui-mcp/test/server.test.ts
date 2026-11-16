@@ -33,7 +33,7 @@ function stubPipeline(): Pipeline & { exports: string[] } {
     exportScreen: async (entry, _kit, outDir) => {
       const html = fs.readFileSync(entry, "utf8");
       // the real IR names its screen with the page's data-u-screen
-      const ir = JSON.stringify({ irVersion: 1, screen: /data-u-screen="([^"]+)"/.exec(html)?.[1], source: { path: path.basename(entry), length: html.length } });
+      const ir = JSON.stringify({ irVersion: 2, screen: /data-u-screen="([^"]+)"/.exec(html)?.[1], source: { path: path.basename(entry), length: html.length } });
       const file = path.join(outDir, "screen.ir.json");
       // like the real exporter: unchanged input keeps the previous export
       if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === ir) return { ok: true, findings: [], skipped: true };
@@ -929,7 +929,7 @@ describe("a canvas folder with several artboards", () => {
     const exportScreen = pipeline.exportScreen!;
     pipeline.exportScreen = async (entry, kit, outDir, browser) => {
       const out = await exportScreen(entry, kit, outDir, browser);
-      if (entry.endsWith("scripted.html")) fs.writeFileSync(path.join(outDir, "screen.ir.json"), JSON.stringify({ irVersion: 1, screen: "inbox", source: { path: "scripted.html" } }));
+      if (entry.endsWith("scripted.html")) fs.writeFileSync(path.join(outDir, "screen.ir.json"), JSON.stringify({ irVersion: 2, screen: "inbox", source: { path: "scripted.html" } }));
       return out;
     };
     const r = await call(await serverFor(p.dir, pipeline), "design_ui_import", { design: "canvas/scripted.html" });
@@ -1002,24 +1002,31 @@ describe("version drift between this server and the Unity package", () => {
     bridge = await startStubBridge(p.dir);
     const client = await serverFor(p.dir, stubPipeline());
 
-    bridge.statusVersion = "1.0.0"; bridge.statusIrVersion = 1;
+    bridge.statusVersion = "1.0.0"; bridge.statusIrVersion = 2;
     const major = await call(client, "design_ui_import", { design: "clean-screen" });
     expect(major.isError).toBe(true);
     expect(major.text).toMatch(/^Import of clean\.screen not run: the Unity package com\.ertugrulgaziakcan\.design-ui is 1\.0\.0, this MCP server 0\.1\.0/);
     expect(bridge.requests.some((q) => q.path === "/import")).toBe(false);
 
-    bridge.statusVersion = "0.1.0"; bridge.statusIrVersion = 2;
+    // a package of the same version that reads IR version 1 (built before the text field's rename) would read every text
+    // of this server's exports as empty: refused, both IR versions named, nothing exported
+    bridge.statusVersion = "0.1.0"; bridge.statusIrVersion = 1;
+    const older = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(older.isError).toBe(true);
+    expect(older.text).toMatch(/reads IR version 1, the exporter writes IR version 2: update the package/);
+    expect(older.data).toMatchObject({ exported: false, unityCalled: false });
+    bridge.statusIrVersion = 3;
     const ir = await call(client, "design_ui_import", { design: "clean-screen" });
     expect(ir.isError).toBe(true);
-    expect(ir.text).toMatch(/reads IR version 2, the exporter writes IR version 1/);
+    expect(ir.text).toMatch(/reads IR version 3, the exporter writes IR version 2: update the unity-ui-mcp clone/);
     expect(bridge.requests.some((q) => q.path === "/import")).toBe(false);
 
-    bridge.statusVersion = "0.2.0"; bridge.statusIrVersion = 1;
+    bridge.statusVersion = "0.2.0"; bridge.statusIrVersion = 2;
     const minor = await call(client, "design_ui_import", { design: "clean-screen" });
     expect(minor.isError, minor.text).toBeFalsy();
     expect(minor.text).toMatch(/Warning: the Unity package com\.ertugrulgaziakcan\.design-ui is 0\.2\.0, this MCP server 0\.1\.0/);
     expect(bridge.requests.some((q) => q.path === "/import")).toBe(true);
-    expect((await call(client, "design_ui_status")).text).toMatch(/package version: 0\.2\.0 \(server 0\.1\.0, IR 1\): minor drift/);
+    expect((await call(client, "design_ui_status")).text).toMatch(/package version: 0\.2\.0, reads IR version 2 \(server 0\.1\.0, writes IR version 2\): minor drift/);
   });
 
   it("says nothing when the versions match, or when an older bridge does not report them", async () => {
@@ -1030,9 +1037,20 @@ describe("version drift between this server and the Unity package", () => {
     const r = await call(client, "design_ui_import", { design: "clean-screen" });
     expect(r.isError, r.text).toBeFalsy();
     expect(r.text).not.toMatch(/Warning: the Unity package/);
-    bridge.statusVersion = "0.1.0"; bridge.statusIrVersion = 1;
+    bridge.statusVersion = "0.1.0"; bridge.statusIrVersion = 2;
     const s = await call(client, "design_ui_status");
-    expect(s.text).toMatch(/package version: 0\.1\.0 \(server 0\.1\.0, IR 1\): matches/);
+    expect(s.text).toMatch(/package version: 0\.1\.0, reads IR version 2 \(server 0\.1\.0, writes IR version 2\): matches/);
+    expect(s.data).toMatchObject({ irVersion: 2, unity: { irVersion: 2 }, versionDrift: { level: "ok" } });
+  });
+
+  it("status names the IR version the package reads and the one the exporter writes", async () => {
+    const p = tempProject({ prefer: "editor" });
+    bridge = await startStubBridge(p.dir);
+    bridge.statusVersion = "0.1.0"; bridge.statusIrVersion = 1;
+    const s = await call(await serverFor(p.dir, stubPipeline()), "design_ui_status");
+    expect(s.text).toContain("package version: 0.1.0, reads IR version 1 (server 0.1.0, writes IR version 2): imports refused: " +
+      "the Unity package com.ertugrulgaziakcan.design-ui reads IR version 1, the exporter writes IR version 2: update the package");
+    expect(s.data).toMatchObject({ irVersion: 2, unity: { irVersion: 1 }, versionDrift: { level: "error" } });
   });
 });
 
@@ -1411,7 +1429,7 @@ function goldenPipeline(): Pipeline {
       });
       fs.writeFileSync(path.join(g, "boxes.json"), JSON.stringify(boxes));
       fs.writeFileSync(path.join(g, "matrix.json"), JSON.stringify({ chromium: "test", platform: "test", captures, unsampled: [] }));
-      fs.writeFileSync(path.join(outDir, "screen.ir.json"), JSON.stringify({ irVersion: 1, screen: "clean-screen", root: { id: "root", children: [{ id: "card", children: [] }] } }));
+      fs.writeFileSync(path.join(outDir, "screen.ir.json"), JSON.stringify({ irVersion: 2, screen: "clean-screen", root: { id: "root", children: [{ id: "card", children: [] }] } }));
       fs.writeFileSync(path.join(outDir, "export-report.json"), JSON.stringify({ screen: "clean-screen", timings: { lint: 11 }, totalMs: 99 }));
       return { ok: true, findings: [], timings: { total: 99 } };
     },

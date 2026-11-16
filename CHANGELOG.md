@@ -40,9 +40,9 @@ kit and the profile's lists in step.
   box, text below a readable 9 device px, layout animations, oversized raster pictures, …). Every finding names the rule,
   the element and the fix.
 - Claude Design artboards (`.dc.html`), plain HTML folders and ZIP files as input.
-- Export to a versioned, deterministic IR (states, `is-*` classes, pseudo-states, breakpoints and their combinations),
-  golden captures at every declared viewport, baked shadows and gradients, sample data for bound values and repeat
-  items, and animation samples at the delay and every quarter of each animation.
+- Export to a versioned, deterministic IR (version 2: states, `is-*` classes, pseudo-states, breakpoints and their
+  combinations), golden captures at every declared viewport, baked shadows and gradients, sample data for bound values
+  and repeat items, and animation samples at the delay and every quarter of each animation.
 
 **The Unity package** (`com.ertugrulgaziakcan.design-ui`, Unity 6000.3)
 
@@ -115,9 +115,12 @@ kit and the profile's lists in step.
   running it again).
 - A new profile's reference locale (the language designs are written in) is English; a saved profile keeps the one it
   was saved with. The default kit's `locales` are `["en"]`; kit sync writes the profile's into the project's kit.
-- The IR's text field is `ref` (it was `tr`). An earlier export is exported again by itself at the next import (the
-  exporter's tool hash changed); the package refuses an IR with the old field ("export the design again"), and verify
-  refuses an export another exporter version made. Update the clone and the Unity package together.
+- The IR is version 2: its text field is `ref` (version 1 wrote `tr`). An export of version 1 is exported again by
+  itself at the next import (the exporter's tool hash covers the IR schema, and the export's own IR version is read
+  too); the package refuses version 1 ("export the screen again"), a package that reads version 1 refuses version 2
+  ("update the package"), and the MCP server stops an import before it exports while the bridge reports another IR
+  version (`design_ui_status` names both). Verify refuses an export another exporter version made. Update the clone and
+  the Unity package together.
 
 ### Verified
 

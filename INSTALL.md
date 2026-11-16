@@ -229,8 +229,10 @@ The README lists the snippets for Cursor, Codex and Claude Desktop. The Unity pa
    HEAD`), or remove the entry and run setup again; if Unity keeps the commit it resolved, remove the package's entry from
    `packages-lock.json` too.
 3. **Update both together.** The server checks the package's version and IR version through the bridge (another major
-   version or IR version stops an import, another minor version is a warning), but two builds of the same version, between
-   releases, cannot tell each other apart. From 0.1.0 on, a change of the IR format comes with a new IR version.
+   version or IR version stops an import, another minor version is a warning; `design_ui_status` names the IR version the
+   package reads and the one the exporter writes), but two builds of the same version, between releases, cannot tell each
+   other apart. 0.1.0 writes and reads IR version 2; from 0.1.0 on, a change of the IR format comes with a new IR
+   version.
 
 A project set up before 0.1.0 lists the package under its old id (see CHANGELOG): setup replaces that entry with
 `com.ertugrulgaziakcan.design-ui` and its new git URL path (the dry run shows the replacement first).

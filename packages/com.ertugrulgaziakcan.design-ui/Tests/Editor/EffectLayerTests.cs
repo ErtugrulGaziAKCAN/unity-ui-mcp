@@ -80,7 +80,7 @@ namespace DesignUi.Editor.Tests
         static string WriteIr(string node)
         {
             var path = Path.Combine(Path.GetTempPath(), "design-ui-effects-" + Guid.NewGuid().ToString("N") + ".json");
-            File.WriteAllText(path, "{\"irVersion\":1,\"screen\":\"s\",\"root\":{\"id\":\"root\",\"kind\":\"container\"," + node + "}}");
+            File.WriteAllText(path, "{\"irVersion\":2,\"screen\":\"s\",\"root\":{\"id\":\"root\",\"kind\":\"container\"," + node + "}}");
             return path;
         }
 
