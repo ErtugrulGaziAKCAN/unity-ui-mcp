@@ -1,0 +1,90 @@
+<!--
+  The internal Unity members the design-ui runtime reaches by reflection, kept through a player build's code stripping.
+  Each has a fallback in the runtime, but the fallback measures or draws differently. The Editor's DesignUiLinkXml hands this
+  file to the build; LinkXmlTests checks that every name here exists in the Unity version the package runs on.
+-->
+<linker>
+  <assembly fullname="UnityEngine.TextCoreTextEngineModule">
+    <!-- DesignText (kerning and mark records), FontTwinLink (line-box variants share their twin's tables) -->
+    <type fullname="UnityEngine.TextCore.Text.FontAsset">
+      <field name="m_GlyphIndexListNewlyAdded" />
+      <field name="m_GlyphTable" />
+      <field name="m_CharacterTable" />
+      <field name="m_FontFeatureTable" />
+      <field name="m_AtlasTextures" />
+      <field name="m_AtlasTexture" />
+      <field name="m_AtlasTextureIndex" />
+      <field name="m_UsedGlyphRects" />
+      <field name="m_FreeGlyphRects" />
+      <field name="m_AtlasWidth" />
+      <field name="m_AtlasHeight" />
+      <field name="m_IsClone" />
+      <field name="m_CharacterLookupDictionary" />
+      <method name="UpdateGlyphAdjustmentRecords" />
+      <method name="UpdateDiacriticalMarkAdjustmentRecords" />
+      <method name="ClearFallbackCharacterTable" />
+    </type>
+    <type fullname="UnityEngine.TextCore.Text.FontFeatureTable">
+      <field name="m_MarkToBaseAdjustmentRecords" />
+      <field name="m_MarkToMarkAdjustmentRecords" />
+      <field name="m_GlyphPairAdjustmentRecordLookup" />
+      <property name="glyphPairAdjustmentRecords" />
+    </type>
+    <!-- TextAssetRegistry (TextCore's registry of loaded font assets) -->
+    <type fullname="UnityEngine.TextCore.Text.TextAsset">
+      <field name="kTextAssetByInstanceId" />
+    </type>
+  </assembly>
+  <assembly fullname="UnityEngine.TextCoreFontEngineModule">
+    <type fullname="UnityEngine.TextCore.LowLevel.MarkToBaseAdjustmentRecord">
+      <property name="baseGlyphID" />
+      <property name="markGlyphID" />
+    </type>
+    <type fullname="UnityEngine.TextCore.LowLevel.MarkToMarkAdjustmentRecord">
+      <property name="baseMarkGlyphID" />
+      <property name="combiningMarkGlyphID" />
+    </type>
+  </assembly>
+  <assembly fullname="UnityEngine.UIElementsModule">
+    <!-- DesignUiOverlayOrder (where the gamma composite draws among overlays) -->
+    <type fullname="UnityEngine.UIElements.UIElementsRuntimeUtility">
+      <field name="currentOverlayIndex" />
+      <method name="GetSortedScreenOverlayPlayerPanels" />
+      <method name="RenderOverlaysBeforePriority" />
+      <method name="RenderPanel" />
+    </type>
+    <type fullname="UnityEngine.UIElements.BaseRuntimePanel">
+      <field name="targetTexture" />
+      <field name="DefaultScreenToPanelSpace" />
+      <property name="sortingPriority" />
+      <property name="targetDisplay" />
+    </type>
+    <type fullname="UnityEngine.UIElements.RuntimePanel">
+      <property name="panelSettings" />
+    </type>
+    <!-- DesignUiGammaComposite (pointer input mapped to the composite's texture) -->
+    <type fullname="UnityEngine.UIElements.PanelSettings">
+      <field name="m_AssignedScreenToPanel" />
+      <property name="isTransient" />
+    </type>
+    <!-- DesignTextFit (the generator's unrounded width), LocaleFontController (the Advanced Text switch) -->
+    <type fullname="UnityEngine.UIElements.TextElement">
+      <property name="uitkTextHandle" />
+    </type>
+    <type fullname="UnityEngine.UIElements.UITKTextHandle">
+      <property name="MeasuredWidth" />
+    </type>
+    <type fullname="UnityEngine.UIElements.TextUtilities">
+      <method name="IsAdvancedTextEnabledForElement" />
+      <method name="IsAdvancedTextEnabledForPanel" />
+    </type>
+  </assembly>
+  <assembly fullname="UnityEngine.UIModule">
+    <!-- DesignUiOverlayOrder (the overlay pass's hooks) -->
+    <type fullname="UnityEngine.Canvas">
+      <property name="externBeginRenderOverlays" />
+      <property name="externRenderOverlaysBefore" />
+      <property name="externEndRenderOverlays" />
+    </type>
+  </assembly>
+</linker>
