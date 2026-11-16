@@ -780,7 +780,7 @@ Playwright do not colour-judge anti-aliased pixels either):
   900 to 700 fail; secondary against muted on surface-600 (0.29–0.33°) and primary against secondary on surface-500
   (0.81–0.89°, near the suite's 0.26° scatter) do not, or not reliably. The angle is that of the two colours seen from the
   background, so it depends on the surface's tint, not on how different the colours look.
-- **At scaled viewports (rulings R152 and R155, Task 37 fix rounds 2 and 3).** The root scale lays text boxes at
+- **At scaled viewports (rulings R152, R155 and R158, Task 37 fix rounds 2 to 4).** The root scale lays text boxes at
   fractional device pixels, where Chromium still draws a one-pixel stroke on whole pixels: a pilot screen's 12.5 px status
   of two one-stroke digits around a dash at 1600×900, its stems one column at 0.97 of the colour in the design, two at
   0.54 + 0.54 and 0.46 + 0.62 in Unity (the box 0.42 px right and down), the dash one row against 0.22 + 0.73: ink colour
@@ -795,15 +795,22 @@ Playwright do not colour-judge anti-aliased pixels either):
   text that fails or is not judged at one, a lone `compareCapture`) the usual checks stay. The code checks no stroke
   structure: Unity's own dimming also leaves no fully covered pixel (twelve stems at 0.8 to 0.6 of the colour passed by
   direction at fix round 2, re-review N1). So when only Unity's render qualifies (the design's has fully covered pixels),
-  Unity's ink summed against the text colour must be at least the design's (ruling R155): a split keeps or adds ink, dimming
-  removes it (0.8 to 0.6 of it). The pilot's two lines measure 0.983 and 0.993 by that sum and are reported again (their
-  coverage ratio, which each render scales by its own most inked tenth, is 1.22 and 1.18). Exact viewports keep 12 device
-  px and the design's render. Not caught: a lightness-only error at a scaled viewport alone on a line the design's render
-  qualifies, or one that keeps or adds Unity's ink. Red tests (`compare.test.ts`, "R152", "R155"): a split that keeps the
-  ink passes with the evidence and fails without it or at an exact viewport; the accent and warning hues fail; text of
-  13 px keeps the usual checks; the three 16 px probes of R141 still fail at a scaled viewport; the dimmed stems fail; the
-  pilot's own pixels (0.96 of the ink) are reported; a screen whose exact viewport draws the text in another hue, or shows
-  it without ink, gives its scaled capture no evidence, whatever the matrix's order.
+  Unity's ink summed against the text colour (R141's measure: each ink pixel's luma distance from the background) must be
+  at least 0.84 of the design's (`SCALED_HAIRLINE_INK_FLOOR`; rulings R155 and R158): dimming removes ink in proportion
+  (the dimmed stems keep 0.80, 0.70 and 0.60 of it), a split keeps most of it. Fix round 3 asked for all of it (R155 as
+  first ruled: a split keeps or adds ink), but correct renders lose some on this sum: the suite's 180 hairline lines
+  measure 0.86–1.01, the pilot's two split lines 0.983 and 0.993, a split built from their pixels 0.959. R158's floor is
+  the suite's lowest minus 0.02 (ruling R149's amount convention), not taken from the pilot's lines; with it they pass by
+  direction again (fix round 3 reported them in 135 captures at 1600×900). (The coverage ratio,
+  which each render scales by its own most inked tenth, 1.22 and 1.18 for the pilot's lines, does not see dimming: 1.000
+  for the stems at 0.6.) Exact viewports keep 12 device px and the design's render. Not caught: a lightness-only error at a
+  scaled viewport alone on a line the design's render qualifies, or one that leaves Unity at least 0.84 of the design's
+  summed ink (a dimming by up to 16 %, a split that adds ink). Red tests (`compare.test.ts`, "R152", "R155, R158",
+  "R158"): a split that keeps the ink passes with the evidence and fails without it or at an exact viewport; the accent
+  and warning hues fail; text of 13 and 16 px keeps the usual checks with either split; the three 16 px probes of R141
+  still fail at a scaled viewport; the dimmed stems fail; the pilot's own pixels (0.959 of the ink) pass, as does that
+  split scaled to 0.86, and at 0.82 it fails; a screen whose exact viewport draws the text in another hue, or shows it
+  without ink, gives its scaled capture no evidence, whatever the matrix's order.
 
 Red tests (`compare.test.ts`, "R138"): the correct dash drawn by Unity over other pixel rows passes (it failed on ink colour
 and a 0.70× ink amount before); a dash in the accent or the warning colour fails on its direction; a normal line of fully

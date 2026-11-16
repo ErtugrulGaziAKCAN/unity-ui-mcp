@@ -421,8 +421,9 @@ missed the nested copies of finding 1):
 So the URP game draws small text as the Built-in sample does; the one line over its usual limit is a fragment (below).
 A URP copy of the sample was not run: the game's own captures settle it.
 
-**What the fix rounds settled** (the kept captures compared again with the final comparison: 3840×2160, 2560×1440, 1920×1080, 1280×720 and 1366×768 pass all 157 captures, 1600×900 22 (fix round 3; after fix round 1
-1280×720 passed 143 and 1600×900 22, after fix round 2 every viewport all 157)):
+**What the fix rounds settled** (the kept captures compared again with the final comparison: every viewport passes all
+157 captures (fix round 4); after fix round 1 1280×720 passed 143 and 1600×900 22, after fix round 2 every viewport all
+157, after fix round 3 1600×900 22):
 
 - *Half a device pixel* (section 9): at 1920×1080 the cards sit at x 304.5 (406 CSS px × 0.75); UI Toolkit puts a text's
   box on whole device pixels. A status chip that the open month picker covers but for its first four glyphs (39 px,
@@ -443,10 +444,14 @@ A URP copy of the sample was not run: the game's own captures settle it.
   tenth is lighter. Ruling R152 (fix round 2) judged such a line, below 13 device px at a scaled viewport with Unity's
   render showing it as a hairline line and the same text passing at every exact viewport, by its colour direction: 0.03°
   for both. Ruling R155 (fix round 3) adds that when only Unity's render qualifies, Unity's ink summed against the text
-  colour must be at least the design's, since dimming removes ink where a split keeps it: here Unity's split keeps 0.983
-  and 0.993 of the design's ink (the usual coverage ratio, which each render scales by its own most inked tenth, is 1.22
-  and 1.18), so both lines are reported again, 135 captures at 1600×900 (`docs/findings/viewport-classes.md`, "Hairline lines"). The dash was
-  called "20" in the first report, which the pixels do not show.
+  colour must be at least the design's, since dimming removes ink where a split keeps it. Here Unity's split keeps 0.983
+  and 0.993 of the design's ink by that sum (the usual coverage ratio, which each render scales by its own most inked
+  tenth, is 1.22 and 1.18), so fix round 3 reported both lines again, 135 captures at 1600×900. Ruling R158 (fix round 4)
+  sets the floor at 0.84 of the design's ink (`SCALED_HAIRLINE_INK_FLOOR`): correct renders lose some ink on this sum,
+  the suite's 180 hairline lines down to 0.86, and the floor is that lowest minus 0.02 (ruling R149's amount convention),
+  not taken from these lines. Both lines pass by direction again; Unity's own dimming to 0.8 of the colour or less still
+  fails (`docs/findings/viewport-classes.md`, "Hairline lines"). The dash was called "20" in the first report, which the
+  pixels do not show.
 - *The ellipsis glyph below 16 device px*: judged by its dots since ruling R148; docs/findings/viewport-classes.md,
   "Ellipsized titles of a pilot screen".
 
@@ -546,7 +551,7 @@ lightness-only error within the band passes.
 2.6 em against the full 2.5 em ΔE2000 key 3.68) passes; no fragment fails its colour or amount at any viewport with the
 keys of fix round 3, and no width's colour goes unjudged; the type menu's chip (13.4 px of design ink) is below the domain
 (R153, counted in 14 captures at 1280×720 and 14 at 1366×768); the two whole lines at 1600×900 are no fragments
-(section 11).
+(section 11: they pass as hairline lines under ruling R158's ink floor, 0.84 of the design's summed ink).
 
 ## Reproduction
 

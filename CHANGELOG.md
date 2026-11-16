@@ -277,10 +277,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   1600×900: ΔE2000 8.07 against 5.89). It needs R141's other conditions and R126's scale-only evidence, the same text
   judged and passing its ink checks at every exact viewport of the run, by its ink colour at one of them at least: the
   comparison takes the exact viewports first and hands each scaled capture that evidence. When only Unity's render
-  qualifies, Unity's ink summed against the text colour must be at least the design's (ruling R155): a split keeps or adds
-  ink, Unity's own dimming (which also leaves no fully covered pixel) removes it. Exact viewports keep 12 device px and the
-  design's render. Not caught: a lightness-only error at a scaled viewport alone on a line the design's render qualifies,
-  or one that keeps Unity's ink (`docs/findings/viewport-classes.md`, "Hairline lines").
+  qualifies, Unity's ink summed against the text colour must be at least 0.84 of the design's (rulings R155 and R158):
+  Unity's own dimming (which also leaves no fully covered pixel) removes ink in proportion, a split keeps most of it. The
+  floor is the lowest of the suite's 180 correct hairline lines on that sum (0.86) minus 0.02; R155's first floor, all of
+  the design's ink, reported correct splits (a pilot screen's keep 0.983 and 0.993). Exact viewports keep 12 device px and
+  the design's render. Not caught: a lightness-only error at a scaled viewport alone on a line the design's render
+  qualifies, or one that leaves Unity at least 0.84 of the design's summed ink (a dimming by up to 16 %;
+  `docs/findings/viewport-classes.md`, "Hairline lines").
 - A fragment below the measured domain (ruling R153: the design's ink in what shows under 16 px) is judged on its
   presence, its colour direction (R138's 0.66°) and R141's amount band 0.5–2×, and counted (`fragmentsBelowDomain` in the
   verdict, named in the report); it was judged against the 16 px floor of the ink amount (a sliver of a chip beside a type
@@ -339,13 +342,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
-- Task 37's fidelity run after its third fix round (rulings R148–R157; 4740 captures with the two new fixtures, 14 min
-  9 s): **every capture passes** at all six viewports (exact 3160, scaled 1580), as after each earlier round. A pilot
-  screen's verify, its captures kept and compared again offline with this version: 3840×2160, 2560×1440, 1920×1080,
-  1280×720 and 1366×768 pass all 157 captures each, 1600×900 22. The 135 there are two whole 12.5 px lines of one-pixel
-  strokes UI Toolkit splits over two device pixels at the scaled root (ink colour ΔE2000 8.07 and 6.13 against 5.89): ruling
-  R152 judged them by direction in the second round, and ruling R155 now asks Unity's ink summed against the text colour to
-  be at least the design's, where the split keeps 0.983 and 0.993 of it, so they are reported
+- Task 37's fidelity run after its fourth fix round (rulings R148–R158; 4740 captures with the two new fixtures, 14 min
+  24 s): **every capture passes** at all six viewports (exact 3160, scaled 1580), as after each earlier round. A pilot
+  screen's verify, its captures kept and compared again offline with this version: every viewport passes all 157
+  captures. Two whole 12.5 px lines of one-pixel strokes UI Toolkit splits over two device pixels at the scaled root (ink
+  colour ΔE2000 8.07 and 6.13 against 5.89 at 1600×900) pass by direction: ruling R152 judged them so in the second round,
+  ruling R155's first floor (all of the design's ink summed against the text colour) reported them in 135 captures in the
+  third, where the split keeps 0.983 and 0.993 of it, and ruling R158's floor of 0.84 lets them pass
   (`docs/findings/text-ink.md` section 11).
 - The ellipsis point at the scaled viewports (task 36, ruling R146): a pilot's ellipsized titles at 1600×900 and
   1366×768 kept one grapheme more or fewer in Unity than in the design (the line's ink end +2.5 to +10.6 device px), where
