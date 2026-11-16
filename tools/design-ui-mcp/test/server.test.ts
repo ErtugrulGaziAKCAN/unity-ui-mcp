@@ -234,7 +234,7 @@ describe("design_ui_brief", () => {
     fs.writeFileSync(path.join(dir, "screen.contract.json"), JSON.stringify({
       contract: 1, screen: "clean.screen", kind: "new",
       actions: [{ name: "open-it", handler: null, origin: "requested", note: "user, 2026-11-16: add it" }],
-      texts: [{ key: "clean.screen.title", en: "Title", origin: "existing" }],
+      texts: [{ key: "clean.screen.title", en: "Title", origin: "existing" }, { key: "clean.screen.hint", en: "Hint", origin: "requested", note: "user, 2026-11-16: add a hint" }],
     }));
     const r = await call(await serverFor(p.dir), "design_ui_brief", { screen: "clean-screen" });
     expect(r.isError).toBeFalsy();

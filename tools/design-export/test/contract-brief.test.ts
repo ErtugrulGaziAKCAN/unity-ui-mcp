@@ -113,6 +113,16 @@ describe("contract brief", () => {
   });
 });
 
+describe("requested texts", () => {
+  it("are not named dependencies", () => {
+    const c = parse({ ...EXAMPLE, texts: [...EXAMPLE.texts, { key: "club.overview.hint", en: "Hint", origin: "requested", note: "user, 2026-11-16: add a hint" }] });
+    expect(namedDependencies(c)).toEqual(["action compare-players: user, 2026-11-16: add a compare button"]);
+    const brief = contractBrief(c, kit);
+    expect(brief).toContain("| club.overview.hint | Hint |");
+    expect(brief.split("## Named dependencies")[1]).not.toContain("hint");
+  });
+});
+
 describe("design-export contract brief", () => {
   const run = async (argv: string[]) => {
     let out = "";

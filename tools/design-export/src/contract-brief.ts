@@ -8,9 +8,9 @@ function table(head: string[], rows: (string | null | undefined)[][]): string[] 
   return [`| ${head.join(" | ")} |`, `|${head.map(() => "---").join("|")}|`, ...rows.map((r) => `| ${r.map(cell).join(" | ")} |`)];
 }
 
-/** Requested items the game cannot back yet (no source, handler or condition): "<kind> <name>: <note>". */
+/** Requested items (texts carry their own English, so never texts) the game cannot back yet (no source, handler or condition): "<kind> <name>: <note>". */
 export function namedDependencies(c: ScreenContract): string[] {
-  return c.items.filter((i) => i.origin === "requested" && !i.source)
+  return c.items.filter((i) => i.kind !== "text" && i.origin === "requested" && !i.source)
     .map((i) => `${i.kind} ${i.name}${i.repeat === null ? "" : ` (in repeat ${i.repeat})`}: ${i.note ?? ""}`);
 }
 
