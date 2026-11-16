@@ -4,6 +4,7 @@ import type { Browser } from "playwright";
 import type { BridgeStatus } from "./bridge.js";
 import { KEPT_CAPTURES_DIR } from "./cache.js";
 import type { DesignUiConfig, UnityStep } from "./config.js";
+import type { ContractLoad } from "./exporter.js";
 import { readThresholds, runCompare, runExport, summarizeIssues, writeReport, writeReportPictures, writeVerdict, type ClassSummary, type Finding, type KitConfig, type ReportPictures, type ViewportClass } from "./exporter.js";
 
 export interface ExportOutcome {
@@ -15,6 +16,8 @@ export interface ExportOutcome {
   timings?: Record<string, number>;
   /** true when the exporter found the design, kit and tool unchanged and kept the previous export. */
   skipped?: boolean;
+  /** The screen contract read beside the design (absent: none, or an exporter that does not report it). */
+  contract?: ContractLoad;
 }
 /** Exports one design page into `outDir` (screen.ir.json, goldens/, assets/, fixtures/, lint-report.json). */
 export type ExportScreen = (entry: string, kit: KitConfig, outDir: string, browser: () => Promise<Browser>) => Promise<ExportOutcome>;
@@ -89,7 +92,7 @@ export const INSTALLED_PIPELINE: Pipeline = {
   exportScreen: async (entry, kit, outDir, browser) => {
     // a lint failure keeps the previous export; its report goes next to the export folder
     const r = await runExport(entry, kit, outDir, { browser, lintReportFile: path.join(path.dirname(outDir), "lint-report.json") });
-    return { ok: r.ok, findings: r.findings, timings: { ...r.timings, total: r.totalMs }, skipped: r.skipped, hidden: r.hidden };
+    return { ok: r.ok, findings: r.findings, timings: { ...r.timings, total: r.totalMs }, skipped: r.skipped, hidden: r.hidden, contract: r.contract };
   },
   compareScreen: async (exportDir, unityDir, reportFile, opts = {}) => {
     // derived files live in the screen's bookkeeping folder (a dot folder: not design source); this run's go to staging

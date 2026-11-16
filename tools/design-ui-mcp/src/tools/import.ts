@@ -15,6 +15,7 @@ import { dropKeptCaptures } from "../cache.js";
 import { CompileWaitTimeout, runUnity, UnityRunnerError, unityIssues, withIssues } from "../runner.js";
 import { bookkeepingDir, exportDirOf, readLastImport, unityDirOf, writeLastImport } from "../status.js";
 import { formatFindings } from "./lint.js";
+import { readScreenContract, type ContractKind, type ContractLoad, type ScreenContract } from "../exporter.js";
 
 const importArg = z.string().min(1).describe(
   "A screen folder under designRoot (its id or path) with one design page, or the path of one .html / .dc.html page in a " +
@@ -102,6 +103,8 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
           ].join("\n"), { screen, exported: false, unityCalled: false, findings: out.findings, timings: t.done() }, true);
         }
         const exported = !out.skipped;
+        // an import that passed lint has no invalid contract (U-CON-001 is an error), so the contract is valid or absent
+        const wiring = wiringSection(out.contract ?? readScreenContract(dir));
         // captures a verify kept were taken against the goldens this export replaced: comparing them again would mislead
         if (exported && dropKeptCaptures(dir, "the screen was exported again, so they no longer match its goldens"))
           keptNote = "The Unity captures a verify kept were removed: this import exported the screen again, so they no longer match its goldens.";
@@ -130,9 +133,9 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
           if (exported || last.sourceSha !== src || last.entry !== entryName || last.screen !== screen) {
             writeLastImport(dir, { ...last, screen, entry: entryName, sourceSha: src });
           }
-          return toolResult(`${named} is unchanged since the last import (${last.importedAt}); Unity was not called.${hiddenLine}`, {
+          return withWiring(toolResult(`${named} is unchanged since the last import (${last.importedAt}); Unity was not called.${hiddenLine}`, {
             screen, entry: entryName, exported, unityCalled: false, via: last.via, irSha, sourceSha: src, exportDir, hidden, timings: t.done(),
-          });
+          }), wiring);
         }
 
         // the command route's done marker: Unity names the IR it imported (a command's exit code alone proves nothing)
@@ -213,13 +216,61 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
               ? `, scripts compiled${run.compile?.state === "reloaded" ? ` and reloaded (${Math.round((run.timings.compileWait ?? 0) / 100) / 10} s)` : " (Unity did not report this import's compile result, but the project's scripts compile)"}`
               : ", no script change")
           : "";
-        return toolResult(withIssues(`Imported ${named} into Unity via ${run.via}${what}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${verifyArg}" }.${hiddenLine}`, run, false), {
+        return withWiring(toolResult(withIssues(`Imported ${named} into Unity via ${run.via}${what}${exported ? "" : " (export reused: design and kit unchanged)"}. Next: design_ui_verify { screen: "${verifyArg}" }.${hiddenLine}`, run, false), {
           ...base, hidden, unityTimings: run.timings, timings: t.done(),
-        });
+        }), wiring);
       }));
       return afterRun(cfg, withLine(keptNote, "keptCapturesRemoved", answer));
     });
   });
+}
+
+export interface WiringEntry { kind: ContractKind; name: string; in: string; source: string | null; count?: [number, number] }
+
+/**
+ * What the game must back for a screen: every value, action, state and repeat of the contract (texts carry their own English,
+ * so they are not wiring), and the requested ones that have no source yet (the named dependencies, same rule as the brief).
+ */
+export function wiringOf(c: ScreenContract): { entries: WiringEntry[]; dependencies: WiringEntry[] } {
+  const items = c.items.filter((i) => i.kind !== "text");
+  const entry = (i: (typeof items)[number]): WiringEntry => ({ kind: i.kind, name: i.name, in: i.repeat ?? "screen", source: i.source, ...(i.count ? { count: i.count } : {}) });
+  return { entries: items.map(entry), dependencies: items.filter((i) => i.origin === "requested" && !i.source).map(entry) };
+}
+
+interface WiringSection { data: { contract: "valid" | "absent"; entries: WiringEntry[]; dependencies: WiringEntry[] }; lines: string[] }
+
+const wiringLine = (e: WiringEntry): string => {
+  const head = `- ${e.kind} ${e.name} (${e.in})`;
+  if (!e.source) return head;
+  if (e.kind === "action") return `${head} → ${e.source}`;
+  if (e.kind === "state") return `${head} when ${e.source}`;
+  return `${head} ← ${e.source}${e.kind === "repeat" && e.count ? `, count ${e.count[0]}–${e.count[1]}` : ""}`;
+};
+
+function wiringSection(load: ContractLoad): WiringSection {
+  if (load.state !== "valid") {
+    return {
+      data: { contract: "absent", entries: [], dependencies: [] },
+      lines: ["No screen contract: the wiring list must come from the inventory (the skill's step 3)."],
+    };
+  }
+  const { entries, dependencies } = wiringOf(load.contract);
+  return {
+    data: { contract: "valid", entries, dependencies },
+    lines: [
+      "Wiring checklist (from screen.contract.json): connect the generated view to these, then prove each in Play mode:",
+      ...entries.map(wiringLine),
+      ...(dependencies.length ? [`Named dependencies (no source in the game yet): ${dependencies.map((d) => `${d.kind} ${d.name}`).join(", ")}`] : []),
+    ],
+  };
+}
+
+/** Appends the wiring section to a successful import answer (its first text, and `wiring` in the data). */
+function withWiring(result: CallToolResult, w: WiringSection): CallToolResult {
+  const content = result.content.map((c, i) => (i === 0 && c.type === "text" ? { ...c, text: `${c.text}\n${w.lines.join("\n")}` } : c));
+  const data = { ...(result.structuredContent ?? {}), wiring: w.data };
+  if (content[1]?.type === "text") content[1] = { ...content[1], text: JSON.stringify(data, null, 2) };
+  return { ...result, content, structuredContent: data };
 }
 
 /** Appends a line to a tool's answer (its first text, and `key: true` in the data). */

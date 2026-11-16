@@ -11,6 +11,8 @@ import { RULE_SUMMARIES } from "../src/rule-table.js";
 import { Runtime } from "../src/runtime.js";
 import { createServer, createUnconfiguredServer, TOOL_NAMES, VERSION } from "../src/server.js";
 import { screenStatus } from "../src/status.js";
+import { parseScreenContract } from "../../design-export/src/contract.js";
+import { wiringOf } from "../src/tools/import.js";
 import { keepFailedRun } from "../src/tools/verify.js";
 import { kitViewports } from "../src/tools/rules.js";
 import { fileURLToPath } from "node:url";
@@ -593,7 +595,7 @@ describe("design_ui_import", () => {
     const r = await call(client, "design_ui_import", { design: "clean-screen" });
     expect(r.isError).toBeFalsy();
     expect(r.data).toMatchObject({ warnings: ["localization conflict (not overwritten): a.title"], errors: [] });
-    expect((r.content[0] as { text: string }).text).toMatch(/^Imported clean\.screen into Unity via editor: .*\nUnity warnings \(1\):\n- localization conflict \(not overwritten\): a\.title$/);
+    expect((r.content[0] as { text: string }).text).toMatch(/^Imported clean\.screen into Unity via editor: .*\nUnity warnings \(1\):\n- localization conflict \(not overwritten\): a\.title\nNo screen contract: [^\n]*$/);
 
     fs.appendFileSync(path.join(p.designRoot, "clean-screen", "screen.html"), "\n<!-- changed -->\n");
     bridge.answer = { code: 1, log: "Import failed; nothing was written for the screen.\n" + "written: x\n".repeat(600), errors: ["the screen id 'x' is taken"], warnings: [] };
@@ -1785,5 +1787,92 @@ describe("viewport classes", () => {
   it("names the kit's viewports by class, exact first", () => {
     expect(kitViewports({ viewports: [[2560, 1440], [1366, 768], [1280, 720]], scaledViewports: [[1366, 768]] })).toBe("exact 2560×1440, 1280×720; scaled 1366×768");
     expect(kitViewports({ viewports: [[2560, 1440]] })).toBe("exact 2560×1440");
+  });
+});
+
+describe("screen contract wiring and status", () => {
+  const EXAMPLE = {
+    contract: 1, screen: "club.overview", kind: "update",
+    replaces: "The current club overview screen (its route, view and presenter as the project names them)",
+    values: [
+      { name: "club-name", source: "the club service's current club name", samples: ["Northbridge FC"], origin: "existing" },
+      { name: "player-name", repeat: "player", source: "squad reader, player display name", samples: ["A. Novak"], origin: "existing" },
+      { name: "budget", source: "finance reader, formatted in the display currency", samples: ["€12.4M"], origin: "existing" },
+    ],
+    actions: [
+      { name: "open-inbox", handler: "shell route command: open inbox", origin: "existing" },
+      { name: "open-player", repeat: "player", handler: "player profile route with the row's player id", origin: "existing" },
+      { name: "compare-players", handler: null, origin: "requested", note: "user, 2026-11-16: add a compare button" },
+    ],
+    states: [{ name: "loading", when: "first read of the club data has not finished", origin: "existing" }],
+    repeats: [{ name: "player", source: "squad reader, first-team players", count: [0, 40], origin: "existing" }],
+    texts: [{ key: "club.overview.title", en: "Club overview", origin: "existing" }],
+    removed: [],
+  };
+  const write = (dir: string) => fs.writeFileSync(path.join(dir, "screen.contract.json"), JSON.stringify(EXAMPLE));
+
+  it("wiringOf lists every value, action, state and repeat but no text, and the requested ones without a source", () => {
+    const parsed = parseScreenContract(EXAMPLE);
+    if (!("contract" in parsed)) throw new Error(parsed.problems.join("\n"));
+    const w = wiringOf(parsed.contract);
+    expect(w.entries).toHaveLength(8);
+    expect(w.entries.some((e) => e.kind === "text")).toBe(false);
+    expect(w.entries).toContainEqual({ kind: "repeat", name: "player", in: "screen", source: "squad reader, first-team players", count: [0, 40] });
+    expect(w.entries).toContainEqual({ kind: "value", name: "player-name", in: "player", source: "squad reader, player display name" });
+    expect(w.dependencies).toEqual([{ kind: "action", name: "compare-players", in: "screen", source: null }]);
+  });
+
+  it("an import with a contract lists the wiring, also when nothing changed", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    write(dir);
+    const client = await serverFor(p.dir, stubPipeline());
+    const first = await call(client, "design_ui_import", { design: "clean-screen" });
+    const again = await call(client, "design_ui_import", { design: "clean-screen" });
+    expect(again.data).toMatchObject({ unityCalled: false });
+    for (const r of [first, again]) {
+      expect(r.isError).toBeFalsy();
+      expect(r.text).toContain("Wiring checklist (from screen.contract.json): connect the generated view to these, then prove each in Play mode:");
+      expect(r.text).toContain("- value club-name (screen) ← the club service's current club name");
+      expect(r.text).toContain("- action open-player (player) → player profile route with the row's player id");
+      expect(r.text).toContain("- state loading (screen) when first read of the club data has not finished");
+      expect(r.text).toContain("- repeat player (screen) ← squad reader, first-team players, count 0–40");
+      expect(r.text).toContain("Named dependencies (no source in the game yet): action compare-players");
+      expect(r.text).not.toContain("club.overview.title");
+      expect(r.data.wiring.contract).toBe("valid");
+      expect(r.data.wiring.entries).toHaveLength(8);
+      expect(r.data.wiring.dependencies).toHaveLength(1);
+    }
+  });
+
+  it("an import without a contract says the wiring list comes from the inventory", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.addScreen("clean-screen", "clean-screen");
+    const client = await serverFor(p.dir, stubPipeline());
+    for (let n = 0; n < 2; n++) {
+      const r = await call(client, "design_ui_import", { design: "clean-screen" });
+      expect(r.text).toContain("No screen contract: the wiring list must come from the inventory (the skill's step 3).");
+      expect(r.text).not.toContain("Wiring checklist");
+      expect(r.data.wiring).toEqual({ contract: "absent", entries: [], dependencies: [] });
+    }
+  });
+
+  it("status shows the kit's screenContract setting and each screen's contract state", async () => {
+    const p = tempProject();
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const client = await serverFor(p.dir);
+    const all = await call(client, "design_ui_status");
+    expect(all.data.screenContract).toMatch(/^(optional|required)$/);
+    expect(all.text).toContain(`screen contract: ${all.data.screenContract}`);
+    const none = await call(client, "design_ui_status", { screen: "clean-screen" });
+    expect(none.data).toMatchObject({ contract: "absent", contractProblems: 0 });
+    expect(none.text).toContain("contract: absent");
+    write(dir);
+    expect((await call(client, "design_ui_status", { screen: "clean-screen" })).data).toMatchObject({ contract: "valid", contractProblems: 0 });
+    fs.writeFileSync(path.join(dir, "screen.contract.json"), JSON.stringify({ contract: 2 }));
+    const bad = await call(client, "design_ui_status", { screen: "clean-screen" });
+    expect(bad.data.contract).toBe("invalid");
+    expect(bad.data.contractProblems).toBeGreaterThan(0);
+    expect(bad.text).toMatch(/contract: invalid \(\d+ problems?\)/);
   });
 });

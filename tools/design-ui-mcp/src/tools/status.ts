@@ -8,7 +8,7 @@ import { requireConfig } from "../context.js";
 import { designPath, findEntry, resolveScreen } from "../design.js";
 import { mb, screenCache, screenCaches } from "../cache.js";
 import { versionDrift } from "../drift.js";
-import { IR_VERSION, viewportClassOf } from "../exporter.js";
+import { IR_VERSION, readScreenContract, viewportClassOf } from "../exporter.js";
 import { cloneKitMessage, isCloneKit } from "../kit-location.js";
 import { chromiumSandbox } from "../exporter.js";
 import { OLD_PACKAGE_NAME, oldPackageId, PACKAGE_NAME } from "../package-stamp.js";
@@ -95,8 +95,10 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
         const label = ref.entry ? designPath(ref.entry, cfg.designRoot) : id;
         const other = ref.entry && lastImport && imported !== entry;
         const cache = screenCache(cfg.designRoot, path.basename(dir));
+        const contract = readScreenContract(dir);
+        const contractProblems = contract.state === "invalid" ? contract.problems.length : 0;
         const data = {
-          screen: id, folder: dir, entry, ...s, lastImport, lastVerify, exportDir: exportDirOf(dir),
+          screen: id, contract: contract.state, contractProblems, folder: dir, entry, ...s, lastImport, lastVerify, exportDir: exportDirOf(dir),
           cache: { bytes: cache.bytes, exportBytes: cache.exportBytes, busy: cache.busy },
           manualEdits: null, pendingTranslations: null,
           note: "manual edits and pending translations are reported by the Unity package's import pipeline (not available in this version)",
@@ -107,6 +109,7 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
           `source sha ${s.sourceSha.slice(0, 12)}, ` + (other
             ? `not the folder's last import (${imported ?? "another page"}, ${lastImport!.importedAt})`
             : s.lastImportSha && lastImport ? `last import ${lastImport.importedAt} via ${lastImport.via}` : "never imported"),
+          `contract: ${contract.state}${contractProblems ? ` (${contractProblems} problem${contractProblems === 1 ? "" : "s"})` : ""}`,
           s.verdict ? `last verdict: ${s.verdict} (${s.reportPath ?? "report missing"})` : "no verdict",
           `bookkeeping: ${mb(cache.bytes)} (export ${mb(cache.exportBytes)})${cache.busy ? ", an import or verify is running" : ""}`,
         ];
@@ -149,10 +152,15 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
           };
         } catch (e) { viewports = { exact: [], scaled: [], text: `kit.config.json cannot be read: ${(e as Error).message}` }; }
       }
+      let screenContract: "optional" | "required" | null = null;
+      if (cfg && fs.existsSync(path.join(cfg.kitDir, "kit.config.json"))) {
+        try { screenContract = ctx.runtime.kit(cfg.kitDir).kit.screenContract ?? "optional"; } catch { /* reported by the viewports line */ }
+      }
       const lines = [
         `design-ui MCP server ${VERSION} for ${ctx.projectDir}`,
         cfg ? `config: ${cfg.configPath} (designRoot ${cfg.designRoot}, Unity runner ${cfg.unityRunner.prefer})` : `config problem: ${ctx.configError}`,
         ...(cfg && isCloneKit(cfg.kitDir) ? [`warning: ${cloneKitMessage(cfg.kitDir, cfg.designRoot, cfg.configPath)}`] : []),
+        ...(screenContract ? [`screen contract: ${screenContract} (kit.config.json screenContract)`] : []),
         ...(viewports ? [`viewports: ${viewports.text} (exact: every kit value is whole device px; scaled: verified within ±1 device px, exempt from the whole-pixel rules)`] : []),
         ...(oldId ? [`old package id: ${OLD_PACKAGE_NAME} in ${old.join(", ")}; ${oldId.fix}`] : []),
         ...(unity ? [`Unity bridge: ${unity.bridge} — ${unity.detail}`] : []),
@@ -172,7 +180,7 @@ export function registerStatus(server: McpServer, ctx: ServerContext): void {
         ...Object.entries(tools).map(([name, a]) => `- ${name}: ${a.note}`),
       ];
       return toolResult(lines.join("\n"), {
-        server: "design-ui", version: VERSION, project: ctx.projectDir, config, viewports: viewports ? { exact: viewports.exact, scaled: viewports.scaled } : null,
+        server: "design-ui", version: VERSION, project: ctx.projectDir, config, screenContract, viewports: viewports ? { exact: viewports.exact, scaled: viewports.scaled } : null,
         package: { id: PACKAGE_NAME, oldId }, tools,
         pipeline: { export: !!ctx.pipeline.exportScreen, compare: !!ctx.pipeline.compareScreen, capture: !!ctx.pipeline.unityCapture },
         unity, versionDrift: unity?.bridge === "connected" ? versionDrift(unity.version, unity.irVersion) : null, irVersion: IR_VERSION,
