@@ -164,8 +164,9 @@ In your AI client, type `/unity-ui-mcp`, give it the canvas link and name the ar
    written (the whole capture folder: PNGs, `boxes.json`, `boxes.meta.json`), so a failure can be compared again
    offline without another Unity run: `design-export compare <screen-id>/.design-ui/export --unity
    <screen-id>/.design-ui/kept-captures --report <file.html>`. They count toward `cacheBudgetMB`, and the next verify
-   (when it gives a verdict), an import that exports the screen again and `design_ui_clean` remove them. A verify warns
-   when the screen's export was made by another version of the exporter (import the screen again to refresh its goldens).
+   (when it gives a verdict), an import that exports the screen again and `design_ui_clean` remove them. A verify of an
+   export another version of the exporter made gives no verdict and runs no capture (its goldens may lack what the
+   comparison reads): import the screen again, which exports it with this version, then verify.
 
 **Reading the report.** Each capture shows the design, Unity, an overlay and a difference view, with the elements that
 have an issue outlined and the issue named: a box off by more than 1 px, a wrong line break or baseline, a colour, a

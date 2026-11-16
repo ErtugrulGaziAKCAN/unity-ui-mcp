@@ -152,8 +152,9 @@ klasörü göster). Skill araçları ve Unity köprüsünü kontrol eder, kurall
    olmadan yeniden karşılaştırılabilir: `design-export compare <ekran-id>/.design-ui/export --unity
    <ekran-id>/.design-ui/kept-captures --report <dosya.html>`. `cacheBudgetMB` sınırına sayılırlar; sonraki doğrulama
    (bir sonuç verdiğinde), ekranı yeniden dışa aktaran bir içe aktarma ve `design_ui_clean` onları siler. Ekranın dışa
-   aktarımı dışa aktarıcının başka bir sürümüyle yapıldıysa doğrulama uyarır (altın görüntüleri yenilemek için ekranı
-   yeniden içe aktarın).
+   aktarımı dışa aktarıcının başka bir sürümüyle yapıldıysa doğrulama yakalama yapmaz ve sonuç vermez (altın görüntülerde
+   karşılaştırmanın okuduğu kayıtlar eksik olabilir): ekranı yeniden içe aktarın (bu sürümle yeniden dışa aktarır), sonra
+   doğrulayın.
 
 **Raporu okumak.** Her yakalama tasarımı, Unity'yi, üst üste bindirmeyi ve fark görüntüsünü gösterir; sorunlu
 elemanlar çerçevelenir ve sorun adıyla yazılır: 1 px'ten fazla kayan bir kutu, yanlış bir satır kırılması ya da taban

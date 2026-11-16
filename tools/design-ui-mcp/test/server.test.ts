@@ -1542,7 +1542,7 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(JSON.parse(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"), "utf8")).keptCaptures).toBeUndefined();
   });
 
-  it("warns when the export was made by another version of the exporter (review finding 7)", async () => {
+  it("never verifies an export another version of the exporter made: no capture and no verdict, import the screen again", async () => {
     const p = tempProject({ prefer: "command" });
     p.writeConfig(copyCapture());
     const dir = p.addScreen("clean-screen", "clean-screen");
@@ -1551,10 +1551,17 @@ describe("design_ui_verify with the installed comparison", () => {
     const report = path.join(dir, ".design-ui", "export", "export-report.json");
     const ok = await call(client, "design_ui_verify", { screen: "clean-screen" });
     expect(ok.text).not.toMatch(/another version of the exporter/);
+    const record = fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"), "utf8");
+    const captures = p.runnerCalls().filter((c) => c.startsWith("capture|")).length;
+    // goldens of an older extraction may lack what this comparison reads: a verdict on them could pass what it cannot see
     fs.writeFileSync(report, JSON.stringify({ ...JSON.parse(fs.readFileSync(report, "utf8")), toolSha: "0".repeat(64) }));
     const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
-    expect(r.text).toMatch(/Warning: the screen's export was made by another version of the exporter/);
-    expect(r.data.warnings.join(" ")).toMatch(/import the screen again/);
+    expect(r.isError).toBe(true);
+    expect(r.data.verdict).toBeNull();
+    expect(r.text).toMatch(/^clean-screen cannot be verified: its export was made by another version of the exporter/);
+    expect(r.text).toMatch(/Run design_ui_import \{ design: "clean-screen\/screen.html" \} \(it exports the screen again\)/);
+    expect(p.runnerCalls().filter((c) => c.startsWith("capture|"))).toHaveLength(captures);
+    expect(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"), "utf8")).toBe(record);
   });
 
   it("fails a screen with a capture Unity did not produce, and gives no verdict when Unity produced nothing", async () => {

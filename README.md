@@ -397,7 +397,7 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
 | Compile errors after an import | The import returns Unity's compiler messages. Generated view under an assembly definition: add `DesignUi.Runtime` to its references. A presenter using a removed `data-u-id`: put the id back or update the presenter. |
 | `U-CSS-010` on every text after a kit sync | The kit's `--font-ui` names a family the synced fonts do not have (a TMP asset's name can differ from its face family). Kit sync rewrites the token from the real family; run `kit build`, and use the same token in the design. |
 | `U-FONT-001` / a missing face at import | The reference locale's font has no real face for that weight or italic: add the face to the TMP font's weight table and sync the kit, or use 400/700. Other locales get a warning or a note. |
-| Verify fails with "import the screen again from a current export" | The export and the compiled screen are from different tool versions: run `design_ui_import` again. |
+| Verify says "its export was made by another version of the exporter" | The export is from another tool version (after an update): run `design_ui_import` again (it exports the screen with this version), then verify. |
 | Verify gives no verdict | Read `<screen>/.design-ui/failed-<run>/` (the Unity log and what was captured). Check `unityRunner.command.capture` and `timeoutSec`. |
 | Verify is `incomplete` | Some capture job shows an element no state, class or sample row shows; the import named it. Make it visible in some context, or remove it. |
 | Arabic letters unshaped or reversed | Turn on Enable Advanced Text (and give players ICU data on their PanelSettings). |

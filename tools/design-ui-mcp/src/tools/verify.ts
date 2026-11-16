@@ -93,6 +93,14 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
             `import ${again} again first (its import of ${imp.importedAt} is recorded, but the export changed since). No capture ran.`,
           { screen, entry, verdict: null, timings: t.done() }, true);
         }
+        // an export another version of the exporter made: its goldens may lack records this comparison reads (an export made
+        // before the ellipsis records was judged without the ellipsis checks), so a verdict on it could pass what it cannot see
+        const staleExport = exportOfOtherTool(exportDir);
+        if (staleExport) {
+          const again = entry ? designPath(path.join(dir, entry), cfg.designRoot) : screen;
+          return toolResult(`${page ?? screen} cannot be verified: ${staleExport}. Run design_ui_import { design: "${again}" } (it exports the screen ` +
+            `again), then verify. No capture ran; the previous verdict is unchanged.`, { screen, entry, verdict: null, timings: t.done() }, true);
+        }
         // the capture goes to a fresh staging folder: captures left from an earlier run are never compared, and the
         // previous report, its captures and last-verify.json stay as they are until there is a new verdict
         const staging = `${unityDir}.next`;
@@ -123,9 +131,6 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
             `The previous report and verdict are unchanged.${kept(evidence)}`, { screen, verdict: null, logTail: run.logTail, evidence, timings: t.done() }, true);
         }
         const steps: Record<string, number> = { ...(imp.timings ?? {}), capture: t.steps.capture };
-        // an export another version of the exporter made (review finding 7): its goldens may lack records this comparison
-        // reads (the ellipsis cut of rulings R146 and R147 was missing from every export made before revision 3)
-        const staleExport = exportOfOtherTool(exportDir);
         let v;
         try {
           v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir, keepCaptures: keepCaptures === true }));
@@ -161,7 +166,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
           ...(v.notRun.length ? [`Not run: ${v.notRun.join(", ")}`] : []),
           ...(hidden.length ? [`Hidden in the design (no golden, not compared; show them in a state, class or repeat item, or remove their layers): ${hidden.join(", ")}`] : []),
           ...(v.extra?.length ? [`Extra Unity captures (not compared): ${v.extra.join(", ")}`] : []),
-          ...[...(v.warnings ?? []), ...(staleExport ? [staleExport] : [])].map((w) => `Warning: ${w}`),
+          ...(v.warnings ?? []).map((w) => `Warning: ${w}`),
           ...(v.colour?.space === "Linear" && v.colour.path !== "linear-panel"
             ? ["Colour: Linear colour space, captured through the gamma composite: in game this holds for panels rendered through DesignUiGammaComposite"] : []),
           ...(v.notSampled ? [`Backgrounds not sampled (every point covered or on text): ${v.notSampled}`] : []),
@@ -171,7 +176,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         ];
         return toolResult(lines.join("\n"), {
           screen, entry, verdict, reportPath, verdictFile: v.verdictFile ?? null, compared: v.compared ?? null, topIssues: v.topIssues, notRun: v.notRun, hidden,
-          extra: v.extra ?? [], warnings: [...(v.warnings ?? []), ...(staleExport ? [staleExport] : [])], colour: v.colour ?? null, notSampled: v.notSampled ?? 0, byClass: v.byClass ?? {}, keptCaptures: keptRun,
+          extra: v.extra ?? [], warnings: v.warnings ?? [], colour: v.colour ?? null, notSampled: v.notSampled ?? 0, byClass: v.byClass ?? {}, keptCaptures: keptRun,
           steps: v.timings ?? steps, timings: t.done(),
         }, verdict !== "pass");
       }));
@@ -187,8 +192,8 @@ export function exportOfOtherTool(exportDir: string): string | null {
   let rep: { toolSha?: unknown };
   try { rep = JSON.parse(fs.readFileSync(path.join(exportDir, "export-report.json"), "utf8")); } catch { return null; }
   if (typeof rep?.toolSha !== "string" || rep.toolSha === toolHash()) return null;
-  return "the screen's export was made by another version of the exporter, so its goldens may lack what this comparison reads " +
-    "(an older export has no ellipsis records, for example); import the screen again to export it with this version";
+  return "its export was made by another version of the exporter, so its goldens may lack what this comparison reads " +
+    "(an older export has no ellipsis records, for example)";
 }
 
 /** How many failed-<run> folders a screen keeps (the newest); older ones are deleted when a new one is kept. */
