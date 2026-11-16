@@ -64,6 +64,15 @@ describe("skills/unity-ui-mcp/SKILL.md", () => {
     expect(frontmatter(text).description).toMatch(/tasarimi Unity'ye aktar/);
   });
 
+  it("writes the screen contract from the project and wires from its checklist", () => {
+    expect(text).toMatch(/<designRoot>\/<screen-folder>\/screen\.contract\.json/);
+    expect(text).toMatch(/design_ui_brief/);
+    expect(text).toMatch(/U-CON/);
+    expect(text).toMatch(/user's words in its `note`/);
+    expect(text).toMatch(/wiring checklist/i);
+    expect(text).toMatch(/one row\s+per checklist entry/);
+  });
+
   it("has no local paths or private plan ids", () => {
     expect(text).not.toMatch(/\/Users\/|C:\\|Task \d+|\.superpowers/);
   });

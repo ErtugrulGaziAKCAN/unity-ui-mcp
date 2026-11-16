@@ -265,6 +265,11 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
     "- The first screen you hand over is this grounded one, not a quick draft to be replaced later.",
   );
 
+  h("Screen contract");
+  L.push(
+    "`screen.contract.json` beside the design is the screen's inventory from the game. Every bind, arg, action, state, repeat and text key must be in it, in its scope, and every item in it drawn, except those in `removed`, which stay out. Sample text comes from a value's `samples`; texts match its `en` (and `ref`). The design tool gets the brief from `design_ui_brief`: draw exactly that.",
+  );
+
   h(claude ? "Claude Design artboards" : "Claude Design canvases");
   L.push(
     ...(claude ? [] : ["When a screen is drawn in Claude Design, the kit is attached as a Design System and each screen is one artboard:", ""]),

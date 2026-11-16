@@ -155,6 +155,14 @@ A prompt that works well:
 
 Any other AI that writes the HTML can read the same contract with the `design_ui_rules` tool.
 
+**Screen contract.** Instead of retyping the inventory into a prompt, have `/unity-ui-mcp` write it from the project as
+`<designRoot>/<screen-id>/screen.contract.json` and call `design_ui_brief { screen }` (or `design-export contract brief
+<designDir> --kit <kitDir>`): the brief lists exactly what to draw, with real sample values and the game's texts, and
+paste it into the design tool. Lint then compares the design with the file (`U-CON-*`; without a file the screen gets the
+note `I-CON-001`, or an error when the kit's `screenContract` is `required`). A drop or an addition the user decided on
+goes into the contract with their words in its `note`; the import result lists the wiring checklist the presenter is
+written from.
+
 ## Bringing a screen into Unity
 
 In your AI client, type `/unity-ui-mcp`, give it the canvas link and name the artboard (or point it at a folder under
@@ -196,7 +204,7 @@ lists it; move the change into the design, or pass `discardManualEdits` on purpo
 The generated view is the only code the game touches. A presenter (your game's code) gives it data from the sources
 the inventory lists and runs the same commands from its events. A redesign is done when every inventory item works in
 Play mode at every viewport and after a locale switch, with no new console errors; `/unity-ui-mcp` reports each item
-as passed, failed or not run.
+as passed, failed or not run, one row per entry of the import's wiring checklist.
 
 **Showing the screen.** Put a `UIDocument` with the screen's `<Screen>.uxml` as its source and the profile's
 PanelSettings (the package's `DesignUiPanelSettings` by default) under your UI. Inside a uGUI shell, add

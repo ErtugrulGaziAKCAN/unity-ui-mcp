@@ -501,3 +501,15 @@ describe("Claude design system export (kit claude)", () => {
   });
 
 });
+
+describe("rules doc: screen contract", () => {
+  it.each(["claude", "kit"] as const)("has the Screen contract section for the %s audience", (audience) => {
+    const md = renderRules(readKit(KIT_DIR), audience, { title: "Unity UI Kit" });
+    const section = md.slice(md.indexOf("## Screen contract"));
+    expect(md.indexOf("## Real screens, not mock-ups")).toBeLessThan(md.indexOf("## Screen contract"));
+    expect(section).toContain("screen.contract.json");
+    expect(section).toContain("design_ui_brief");
+    expect(section).toContain("`removed`");
+    expect(section.split("\n## ")[0].length).toBeLessThan(900);
+  });
+});

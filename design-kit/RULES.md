@@ -22,6 +22,10 @@ Players use these screens, so a screen is designed from the game it belongs to, 
 - Sample data looks like the real game's: the kinds of names it uses, its real ranges and formats, its longest texts and realistic list lengths. It stays sample data: the game fills bound values at run time.
 - The first screen you hand over is this grounded one, not a quick draft to be replaced later.
 
+## Screen contract
+
+`screen.contract.json` beside the design is the screen's inventory from the game. Every bind, arg, action, state, repeat and text key must be in it, in its scope, and every item in it drawn, except those in `removed`, which stay out. Sample text comes from a value's `samples`; texts match its `en` (and `ref`). The design tool gets the brief from `design_ui_brief`: draw exactly that.
+
 ## Claude Design canvases
 
 When a screen is drawn in Claude Design, the kit is attached as a Design System and each screen is one artboard:
@@ -378,7 +382,7 @@ Errors (`U-`) block export and import; warnings (`W-`) and information (`I-`) ar
 | U-CON-003 | error | a screen contract item that is not in `removed` is missing from the design, in its scope | draw it, or record the user's decision in `removed` |
 | U-CON-004 | error | an item the screen contract lists in `removed` is still in the design | remove it from the design |
 | U-CON-005 | error | a bound text's sample, in any sample row, is not one of the value's contract `samples` (whitespace collapsed; image binds and requested values with no source skipped) | a real sample from the contract; if the game shows other values, add those real values to the contract |
-| U-CON-006 | error | a text key's English (`data-en`, or the visible text with the reference locale `en`, as U-MRK-014 reads it) differs from the contract's `en`; with another reference locale, also its visible text from the contract's `ref` | the game's text; change the contract only when the user changed the text |
+| U-CON-006 | error | a text key's English (`data-en`, or the visible text with the reference locale `en`, as U-MRK-014 reads it) differs from the contract's `en`; with another reference locale, also when its visible text differs from the contract's `ref` (when given) | the game's text; change the contract only when the user changed the text |
 | U-CSS-001 | error | `display: grid` or `inline-grid` | nested flex rows and columns (`flex-wrap` for tiles) |
 | U-CSS-002 | error | `::before` / `::after` with content, or list markers | a real element; `list-style: none` |
 | U-CSS-003 | error | structural selectors (`:nth-*`, `:first/last/only-child`, `:*-of-type`, `:empty`) | a class per element |

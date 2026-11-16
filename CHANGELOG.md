@@ -7,6 +7,15 @@ numbers below are in [docs/findings/](docs/findings/); the decisions they cite (
 
 ## Unreleased
 
+### Added
+
+- Screen contract: the screen's inventory kept as `screen.contract.json` beside the design, written from the project and
+  checked by lint (`I-CON-001` info, `U-CON-001`…`U-CON-006` errors, D-161). `design_ui_brief` and
+  `design-export contract brief <designDir> --kit <kitDir>` turn it into the brief for the design tool; the import result
+  lists the wiring checklist for the presenter; `design_ui_status` shows the kit setting and a screen's contract state.
+  The kit setting `screenContract` (`optional` default, `required`) is kept by `kit upgrade` (D-162). Samples must be
+  real values (D-163); info findings count as notes, not warnings (D-164).
+
 ### Changed
 
 - Screens are designed from the game and finished in the game. The design rules (`design_ui_rules`, the kit's

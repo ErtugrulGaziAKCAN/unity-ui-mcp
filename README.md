@@ -144,7 +144,8 @@ chat is visible only in chats started after it.
    runs them, its states, lists and existing texts (for a redesign, everything the current screen does). The design
    holds exactly that plus what you ask for: no button, text or value the game cannot back, and sample data that looks
    like the game's. Visible text is written in the reference locale with an English key, controls get ids and actions,
-   repeated rows are written out as samples (the [usage guide](docs/guide/usage.md) has a prompt).
+   repeated rows are written out as samples (the [usage guide](docs/guide/usage.md) has a prompt). When the inventory
+   is kept as a [screen contract](#screen-contract), the brief from `design_ui_brief` is the prompt.
 4. **Apply it.** In your AI client: `/unity-ui-mcp`, then give it the canvas link (or a folder under `designRoot`) and
    name the screen. It fetches the artboard, then runs:
    - **lint** (`design_ui_lint`): any finding is a design-side fix (rule id, element, fix); fix it in Claude Design.
@@ -161,6 +162,17 @@ chat is visible only in chats started after it.
 
 Changing the design later is the same loop: re-import regenerates only generated files and refuses to overwrite a
 generated file someone edited by hand.
+
+## Screen contract
+
+The inventory can be kept as `screen.contract.json` beside the design, written by your AI from the project (the tools
+check it; they never read your game code). It lists the values (with real `samples`), actions (with the handlers that
+run them), states, lists, texts (`en`, and `ref` for a non-English reference locale) and the items the user decided to
+drop (`removed`). Lint then fails a design that adds or lacks an item (`U-CON-001`…`U-CON-006`), `design_ui_brief`
+(`design-export contract brief <designDir> --kit <kitDir>`) turns the contract into the brief for the design tool, and
+the import result carries the wiring checklist the presenter is written from. The kit setting `screenContract` in
+`kit.config.json` is `optional` (default: a screen without a contract gets the info finding `I-CON-001`) or `required`
+(a missing contract blocks import); `kit upgrade` keeps it.
 
 ## What the generated view gives you
 

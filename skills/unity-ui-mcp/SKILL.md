@@ -59,6 +59,12 @@ itself, never from the design:
   screen you hand over is this grounded one, not a quick draft. When you receive a design, compare it with the
   inventory before importing: an item it drops is a design-side fix, an item it adds without a source in the game is a
   named dependency to report, never data you invent.
+- Write the inventory as `<designRoot>/<screen-folder>/screen.contract.json` from the project (the format is in the
+  brief and the rules: values with real `samples`, actions with their handlers, states, repeats, texts, `removed`).
+  Then run `design_ui_brief { screen }` and show the brief to the user for the design tool, or use it yourself when you
+  design. A screen with a contract is linted against it (`U-CON-*`): those findings are design-side fixes, except an
+  incomplete or invalid contract, which you fix from the project. A contract change for a "requested" item needs the
+  user's words in its `note`. The kit setting `screenContract` (`design_ui_status`) says whether a contract is required.
 
 ## 4. Claude Design canvases
 
@@ -86,7 +92,6 @@ and continue from there. Never invent blob files or edit the design to make it p
 
 For each screen the user names:
 
-0. When the screen has a `screen.contract.json`, `design_ui_brief { screen }` returns the brief for the design tool; show it to the user before anything is designed.
 1. `design_ui_lint { design }`. If there are errors, report them as design-side fixes (rule id, element, fix) for the
    user or the design tool to apply, and stop. Do not fix them in Unity output or by editing the exported files.
 2. `design_ui_import { design }`. If it answers "not available yet" or fails, report the reason as it is and stop.
@@ -95,14 +100,15 @@ For each screen the user names:
 3. `design_ui_verify { screen }`. Report the verdict exactly as returned (`pass`, `fail` or `incomplete`), the report path and the top issues. `incomplete` means the design hides a job in every context (listed under hidden): it is not a pass. Pass `keepCaptures: true` only when the user wants to study a failure offline: the run's Unity captures then stay in `<screen>/.design-ui/kept-captures` until the next verify or `design_ui_clean`.
 4. **The import is the visual half; a screen is done when it works in the game.** After `pass`:
    - Write the presenter, the project's own code under its own rules (its AGENTS.md or CLAUDE.md, assembly layout,
-     test setup): it feeds the generated view from the same sources and runs the same commands as the inventory says.
+     test setup), from the import's wiring checklist (the contract's values, actions, states and repeats; without a
+     contract, from the inventory): it feeds the generated view from the same sources and runs the same commands.
      For an update, point the existing route or host at the new screen and keep the old presentation reachable behind
      a switch until the checks below pass.
    - Prove it where the project runs its tests and Play checks: no compile errors; the old UI's tests and new
      presenter tests pass; in Play mode every inventory item works (values fill from game data and refresh, every
      action runs its handler, every state appears, input and navigation work) at every viewport of the profile and
      after a locale switch, with no new console errors.
-   - Report the inventory as a table, each item passed, failed or not run. Any failed or not-run item, or a named
+   - Report the inventory as a table with one row per checklist entry, each passed, failed or not run. Any failed or not-run item, or a named
      dependency with no source yet, means the screen is not done: say so. A new screen is wired the same way to the
      services that can feed it.
 5. Use `design_ui_status { screen }` for hashes, last import and last verdict when the user asks what changed.

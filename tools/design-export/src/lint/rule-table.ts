@@ -22,7 +22,7 @@ export const RULE_SUMMARIES: Record<string, RuleSummary> = {
     fix: "a real sample from the contract; if the game shows other values, add those real values to the contract",
   },
   "U-CON-006": {
-    when: "a text key's English (`data-en`, or the visible text with the reference locale `en`, as U-MRK-014 reads it) differs from the contract's `en`; with another reference locale, also its visible text from the contract's `ref`",
+    when: "a text key's English (`data-en`, or the visible text with the reference locale `en`, as U-MRK-014 reads it) differs from the contract's `en`; with another reference locale, also when its visible text differs from the contract's `ref` (when given)",
     fix: "the game's text; change the contract only when the user changed the text",
   },
   "U-CSS-001": { when: "`display: grid` or `inline-grid`", fix: "nested flex rows and columns (`flex-wrap` for tiles)" },

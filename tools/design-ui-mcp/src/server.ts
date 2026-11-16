@@ -54,7 +54,7 @@ export function instructions(ctx: ServerContext): string {
     "(dryRun first). Never delete <screen>/.design-ui, generated Unity files or font twins by hand.",
     "Rules: never edit generated Unity files; never claim a pass that design_ui_verify did not return.",
     "",
-    "Real screens: players use these screens.",
+    "Real screens: players use these screens. The inventory is kept as screen.contract.json beside the design.",
     "- Design from the game, not as a mock-up: first take the screen's inventory from the project (every value and its source,",
     "  every action and the code that runs it, states, lists, existing texts; for a redesign, everything the current screen does).",
     "  The design holds exactly that plus what the user asked for: no button, text or value the game cannot back. Sample data",

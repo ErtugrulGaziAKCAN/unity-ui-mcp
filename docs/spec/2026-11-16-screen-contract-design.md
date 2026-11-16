@@ -86,7 +86,7 @@ folder–screen pair is unique.
 | `actions[]` | One entry per `data-u-action`, with `repeat` as above and `handler` (what runs it in the game). |
 | `states[]` | One entry per `data-u-state`, with `when`. |
 | `repeats[]` | One entry per `data-u-repeat`, with `parent` (a nesting list, absent at top), `source` and `count` `[min, max]` as the game produces it. |
-| `texts[]` | One entry per `data-l10n` and `data-l10n-<attr>` key, with the English text `en` (the String Table entry for an existing key). |
+| `texts[]` | One entry per `data-l10n` and `data-l10n-<attr>` key, with the English text `en` (the String Table entry for an existing key) and optionally `ref`, the reference-locale text as the game has it (compared by U-CON-006 only when given, so a non-English reference locale is not invented by the design tool). |
 | `removed[]` | Items of the current UI the user decided to drop: `kind` (`value`, `action`, `state`, `repeat`, `text`), `name`, `note`. |
 
 **Origins.**
