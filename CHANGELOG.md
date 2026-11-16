@@ -11,7 +11,8 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   done marker) in `<screen>/.design-ui/kept-captures/` once the verdict is written, so a failure can be compared again
   offline (`design-export compare <export> --unity <kept-captures> --report <file>`) without another Unity run. The answer
   and `last-verify.json` name the folder; the report says the captures were kept. They count toward `cacheBudgetMB`
-  (over the budget they go before any export, but never in the cleanup of the verify that kept them; when a later cleanup
+  (over the budget they go before any export, but never in the cleanup of the verify that kept them, which keeps the
+  screen's export beside them too, so the offline comparison the answer prints works; when a later cleanup
   removes them, `last-verify.json` drops them and the report says so), the next verify that gives a verdict replaces or
   removes them, an import that exports the screen again removes them (they no longer match its goldens) and says so, and
   `design_ui_clean` always removes them. Default off: a verify still deletes its captures.
@@ -252,28 +253,34 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   (`ellipsisNotJudged` in the verdict, named in the report). R147's profile check is unchanged from 16 px on, and R146's
   allowance applies where the dots pass. Correct dots at 10 to 15 px measured R147's shape and rows in the wrong glyph's
   range; the curve and dots a row higher fail (`docs/findings/viewport-classes.md`, "Ellipsized titles of a pilot screen").
-- A fragment of a text line takes the measured noise of its width (ruling R149, `textInkFragment`): a line something
-  covers or clips into (more than a column at each end of its line box) down to a window narrower than 4 em has the ink
-  colour limit and the ink amount's lower bound measured on windows of that width sliding along the suite's passing lines
-  (highest ΔE2000 plus 0.4, lowest amount minus 0.02, by size class), where the design's ink in the window is at least
-  16 px. A whole short line keeps its limits. A status chip a month picker covers but for four glyphs (ΔE2000 2.84 on
+- A fragment of a text line takes the measured noise of its width (ruling R149, `textInkFragment`): a line whose ink the
+  design shows is cut by a cover or by a clip other than its own text cut (its own box, its ellipsis; ruling R156), each
+  end within a column of the design's own rounding, down to a window narrower than 4 em, has the ink colour limit and the
+  ink amount's lower bound measured on windows of that width sliding along the suite's passing lines (highest ΔE2000 plus
+  0.4, lowest amount minus 0.02, by size class), where the design's ink in the window is at least 16 px. A whole short
+  line keeps its limits, an ellipsized one too; text with a text-shadow, hard or blurred, takes no key (ruling R154: the
+  shadow's paint lies in the window). A status chip a month picker covers but for four glyphs (ΔE2000 2.84 on
   15 px text against 2) passes; a wrong colour on such a fragment still fails (`docs/findings/text-ink.md` section 12).
 - A line's ink window grows by a device pixel for anti-aliasing but no longer into another text's line box (ruling
   R150): two labels laid edge to edge took the next one's first stem into the first one's ink in Chromium only (ink
   extent −4.35 px).
 - Where a fragment's width has a measured ΔE2000 noise above 6.5 (ruling R151: every small width, full 0.5–1.5 em, keys of
-  9 to 18.7 that check almost nothing) the fragment's colour is judged by its ink's colour direction from the background
-  (R138's measure) within the highest direction measured on the same sliding windows plus 0.4 (small 3.73–20.48°, full
-  5.25–10°; the fourth entry of `textInkFragment`'s rows), its amount floor kept. A width whose direction key would let a
+  7.5 to 18.7 that check almost nothing) the fragment's colour is judged by its ink's colour direction from the background
+  (R138's measure) within the highest direction measured on the same sliding windows plus 0.4 (small 1.84–4.08°, full
+  1.64–3.64°, measured without text that has a text-shadow; with it one hard-shadow line set 3.73–20.48° and 5.25–10°; the
+  fourth entry of `textInkFragment`'s rows), its amount floor kept. A width whose direction key would let a
   wrong hue pass leaves its colour not judged and counted (`fragmentColourNotJudged`): none today, every key lies below
   the kit's hue swaps (31–38°). A lightness-only error on such a fragment is not caught (`docs/findings/text-ink.md`
   section 12).
-- At a scaled viewport a one-stroke line below 13 device px is a hairline line when either render shows it as one
-  (ruling R152): the root scale's fractional boxes split strokes Chromium draws on whole pixels (a pilot screen's 12.5 px
-  status at 1600×900: ΔE2000 8.07 against 5.89). It needs R141's other conditions and R126's scale-only evidence, the same
-  text passing its ink checks at every exact viewport of the run: the comparison takes the exact viewports first and
-  hands each scaled capture that evidence. Exact viewports keep 12 device px and the design's render. A lightness-only
-  error of such a line at a scaled viewport alone is not caught (`docs/findings/viewport-classes.md`, "Hairline lines").
+- At a scaled viewport a line below 13 device px is a hairline line when either render shows it as one (ruling R152): the
+  root scale's fractional boxes split strokes Chromium draws on whole pixels (a pilot screen's 12.5 px status at
+  1600×900: ΔE2000 8.07 against 5.89). It needs R141's other conditions and R126's scale-only evidence, the same text
+  judged and passing its ink checks at every exact viewport of the run, by its ink colour at one of them at least: the
+  comparison takes the exact viewports first and hands each scaled capture that evidence. When only Unity's render
+  qualifies, Unity's ink summed against the text colour must be at least the design's (ruling R155): a split keeps or adds
+  ink, Unity's own dimming (which also leaves no fully covered pixel) removes it. Exact viewports keep 12 device px and the
+  design's render. Not caught: a lightness-only error at a scaled viewport alone on a line the design's render qualifies,
+  or one that keeps Unity's ink (`docs/findings/viewport-classes.md`, "Hairline lines").
 - A fragment below the measured domain (ruling R153: the design's ink in what shows under 16 px) is judged on its
   presence, its colour direction (R138's 0.66°) and R141's amount band 0.5–2×, and counted (`fragmentsBelowDomain` in the
   verdict, named in the report); it was judged against the 16 px floor of the ink amount (a sliver of a chip beside a type
@@ -332,13 +339,14 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
-- Task 37's fidelity run after its second fix round (rulings R148–R153; 4740 captures with the two new fixtures, 14 min
-  9 s): **every capture passes** at all six viewports (exact 3160, scaled 1580; the first fix round's run, 14 min 15 s,
-  and the task's first run, 14 min 24 s, too). A pilot screen's verify, its captures kept and compared again offline with
-  this version: **all 942 captures pass**, 157 at each viewport. After the first fix round 1280×720 passed 143 and
-  1600×900 22: a status chip's sliver beside a type menu, under the fragment key's domain, now judged by ruling R153, and
-  two whole 12.5 px lines of one-pixel strokes UI Toolkit splits over two device pixels at the scaled root, now hairline
-  lines by ruling R152 (`docs/findings/text-ink.md` section 11).
+- Task 37's fidelity run after its third fix round (rulings R148–R157; 4740 captures with the two new fixtures, 14 min
+  9 s): **every capture passes** at all six viewports (exact 3160, scaled 1580), as after each earlier round. A pilot
+  screen's verify, its captures kept and compared again offline with this version: 3840×2160, 2560×1440, 1920×1080,
+  1280×720 and 1366×768 pass all 157 captures each, 1600×900 22. The 135 there are two whole 12.5 px lines of one-pixel
+  strokes UI Toolkit splits over two device pixels at the scaled root (ink colour ΔE2000 8.07 and 6.13 against 5.89): ruling
+  R152 judged them by direction in the second round, and ruling R155 now asks Unity's ink summed against the text colour to
+  be at least the design's, where the split keeps 0.983 and 0.993 of it, so they are reported
+  (`docs/findings/text-ink.md` section 11).
 - The ellipsis point at the scaled viewports (task 36, ruling R146): a pilot's ellipsized titles at 1600×900 and
   1366×768 kept one grapheme more or fewer in Unity than in the design (the line's ink end +2.5 to +10.6 device px), where
   UI Toolkit decides its cut under the root scale; at every exact viewport its own elision cuts where Chromium does. The
@@ -390,9 +398,12 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   clip came out infinite and the line's window NaN, and the line counted as covered without a check: 18,360 lines of a
   pilot screen's 942 captures. The comparison builds the key with the capture's own function, and a window that is not
   finite stops the comparison with an error.
-- Comparison, a line only Unity's clip hides: it counted as clipped and was not judged. The design's clip decides what
-  must show: a line the design shows is judged on the design's window (Unity's missing ink fails), a line the design's clip
-  hides that Unity draws is an issue, and only a line both clips hide is not judged (`linesClipped`).
+- Comparison, a line Unity's clip hides in whole or in part: it counted as clipped and was not judged, or was judged on
+  what both renders showed (a nested copy whose clipping box Unity laid out 30 or 12 px wide, the design's 60, passed).
+  The design's clip decides what must show (ruling R157): the window is the design's visible window, Unity's clip never
+  shrinks it, and a part with the design's ink that Unity's clip hides beyond a pixel of its own rounding is missing ink,
+  an issue naming the clipping box. A line the design's clip hides that Unity draws is an issue, and only a line both clips
+  hide is not judged (`linesClipped`).
 - Comparison, ink against a varying background: each ink pixel's weight and the ink's colour direction were measured
   against the window's median while the pixels were found against the fitted plane; both use the plane now.
 - Comparison, text ink under a shadow: a line's ink is measured against its background where it is. Against the window's
