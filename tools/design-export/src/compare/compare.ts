@@ -299,7 +299,10 @@ export const HAIRLINE_INK_BAND: readonly [number, number] = [0.5, 2];
  * shows it as one (its ink there has fewer than HAIRLINE_PIXELS fully covered pixels, in the declared colour's direction, a
  * most covered pixel of at least HAIRLINE_PEAK: Chromium puts a 12.5 px stroke on whole pixels, UI Toolkit splits it), R141's
  * other conditions hold, and the same text passes its ink checks at every exact viewport of the run (R126's scale-only
- * evidence, CaptureContext.scaleOnly). A lightness-only error of such a line at a scaled viewport alone is not caught.
+ * evidence, CaptureContext.scaleOnly). Ruling R155: when only Unity's render qualifies, Unity's ink summed against the text
+ * colour must be at least the design's (a split keeps or adds ink, dimming removes it). Not caught: a lightness-only error of
+ * such a line at a scaled viewport alone that does not lower Unity's ink (a darker or lighter colour along the same
+ * direction where the design itself qualifies, or a split that adds ink).
  */
 export const SCALED_HAIRLINE_BELOW_PX = 13;
 /**
@@ -1584,8 +1587,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // a hairline line (rulings R138, R141): its lightness measures coverage; its ink's colour direction is judged, and its
         // ink amount only within HAIRLINE_INK_BAND (a stroke drawn a row off scatters, a missing or added glyph does not)
         // ruling R152: at a scaled viewport (scaledHairline) either render may show the line as a hairline one
+        // ruling R155: when only Unity's render qualifies (the design's has fully covered pixels), Unity's ink, summed against the
+        // text colour, must be at least the design's: splitting a stroke over two pixels keeps or adds ink, dimming removes it
         const hairline = b && mayBeHairline && !gl.mixed && !later!.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y)
-          ? (px <= HAIRLINE_MAX_PX && isHairline(a, declared!) ? "design" : scaledHairline && (isHairline(a, declared!) || isHairline(b, declared!)) ? "scaled" : null) : null;
+          ? (px <= HAIRLINE_MAX_PX && isHairline(a, declared!) ? "design"
+            : scaledHairline && (isHairline(a, declared!) || (isHairline(b, declared!) && sum(b.dists) >= sum(a.dists) * (1 - EPS))) ? "scaled" : null) : null;
         if (b && hairline) {
           const dir = angleBetween(a.dirSrgb, b.dirSrgb);
           if (!wDir || dir > wDir.dir) wDir = { dir, i, a: a.ink, b: b.ink, scaled: hairline === "scaled" };

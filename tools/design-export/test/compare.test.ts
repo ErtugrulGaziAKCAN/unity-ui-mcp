@@ -1952,16 +1952,18 @@ describe("compareCapture: edge, colour and ink checks", () => {
     describe("R152: at a scaled viewport a one-stroke line below 13 device px with scale-only evidence is a hairline line", () => {
       // a pilot screen's 12.5 px status at 1600×900 (two one-stroke digits around a dash, the secondary colour on surface-700):
       // Chromium draws each stroke on whole device pixels (a stem one column at 0.97 with a 0.16 neighbour, the dash one
-      // row), UI Toolkit's box lies 0.42 px right and down and splits each over two (0.54 + 0.54, 0.46 + 0.62; 0.22 + 0.73)
+      // row), UI Toolkit's box lies 0.42 px right and down and splits each over two. `split`: Unity's two shares of the first
+      // stem, the second stem and the dash; by default they keep the design's ink (ruling R155: a split keeps or adds ink)
       const bgC: Rgb = [18, 60, 71], secondary: Rgb = [185, 208, 214];
       const scaledT = thresholdsFor(readThresholds(), "scaled"), exactT = thresholdsFor(readThresholds(), "exact");
-      const one = (c: Rgb, unity: boolean) => {
+      const keeps = [0.58, 0.57, 0.5, 0.65, 0.25, 0.74], pilot = [0.54, 0.54, 0.46, 0.62, 0.22, 0.73];
+      const one = (c: Rgb, unity: boolean, split = keeps) => {
         const png = canvas(40, 24, bgC);
         const put = (x: number, y: number, cov: number) => { const o = (y * 40 + x) * 4; for (let j = 0; j < 3; j++) png.data[o + j] = Math.round(bgC[j] + cov * (c[j] - bgC[j])); };
         for (let y = 6; y < 16; y++) {
-          if (unity) { put(8, y, 0.54); put(9, y, 0.54); put(24, y, 0.46); put(25, y, 0.62); } else { put(8, y, 0.97); put(9, y, 0.16); put(24, y, 0.97); put(25, y, 0.16); }
+          if (unity) { put(8, y, split[0]); put(9, y, split[1]); put(24, y, split[2]); put(25, y, split[3]); } else { put(8, y, 0.97); put(9, y, 0.16); put(24, y, 0.97); put(25, y, 0.16); }
         }
-        for (let x = 13; x < 20; x++) { if (unity) { put(x, 10, 0.22); put(x, 11, 0.73); } else put(x, 10, 0.97); }
+        for (let x = 13; x < 20; x++) { if (unity) { put(x, 10, split[4]); put(x, 11, split[5]); } else put(x, 10, 0.97); }
         return png;
       };
       const line = { x: 6, y: 3, w: 22, h: 15, baseline: 15 };
@@ -1973,6 +1975,24 @@ describe("compareCapture: edge, colour and ink checks", () => {
 
       it("passes the pilot pattern by its colour direction, with the same text passing at every exact viewport", () => {
         expect(issues(one(secondary, true), ctx())).toEqual([]);
+      });
+
+      it("R155: only Unity's render qualifies, so Unity's ink must be at least the design's: a dimmed line fails", () => {
+        // the re-review's probe P1: twelve one-pixel stems and a bar, fully covered in the design, Unity at 0.8 to 0.6 of the
+        // colour (no fully covered pixel there, the colour's direction): dimming removes ink, a split keeps it
+        const word = (k: number) => {
+          const png = canvas(40, 24, bgC);
+          const m = [0, 1, 2].map((j) => Math.round(bgC[j] + k * (secondary[j] - bgC[j]))) as Rgb;
+          for (let st = 0; st < 12; st++) fill(png, { x: 6 + 2 * st, y: 6, w: 1, h: 10 }, m);
+          fill(png, { x: 6, y: 11, w: 23, h: 1 }, m);
+          return png;
+        };
+        for (const k of [0.8, 0.7, 0.6]) {
+          const v = compareCapture({ png: word(1), boxes }, { png: word(k), boxes }, [], scaledT, ctx()).issues.filter((i) => i.id === "t");
+          expect(v.map((i) => i.kind), `${k}`).toContain("ink");
+        }
+        // the pilot's own pixels lose 4 % of the ink in the split (0.54 + 0.54 against 0.97 + 0.16): reported, the ruling's cost
+        expect(issues(one(secondary, true, pilot), ctx()).map((i) => i.kind)).toContain("ink");
       });
 
       it("keeps the usual checks without the scale-only evidence, and at an exact viewport", () => {
@@ -2869,8 +2889,8 @@ describe("compareScreen", () => {
     const draw = (c: Rgb, split: boolean) => {
       const png = canvas(40, 24, bgC);
       const put = (x: number, y: number, cov: number) => { const o = (y * 40 + x) * 4; for (let j = 0; j < 3; j++) png.data[o + j] = Math.round(bgC[j] + cov * (c[j] - bgC[j])); };
-      for (let y = 6; y < 16; y++) { if (split) { put(8, y, 0.54); put(9, y, 0.54); put(24, y, 0.46); put(25, y, 0.62); } else { put(8, y, 0.97); put(9, y, 0.16); put(24, y, 0.97); put(25, y, 0.16); } }
-      for (let x = 13; x < 20; x++) { if (split) { put(x, 10, 0.22); put(x, 11, 0.73); } else put(x, 10, 0.97); }
+      for (let y = 6; y < 16; y++) { if (split) { put(8, y, 0.58); put(9, y, 0.57); put(24, y, 0.5); put(25, y, 0.65); } else { put(8, y, 0.97); put(9, y, 0.16); put(24, y, 0.97); put(25, y, 0.16); } }
+      for (let x = 13; x < 20; x++) { if (split) { put(x, 10, 0.25); put(x, 11, 0.74); } else put(x, 10, 0.97); }
       return png;
     };
     const run = async (exactUnity: Rgb) => {
