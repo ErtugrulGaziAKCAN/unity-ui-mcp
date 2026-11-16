@@ -1527,10 +1527,14 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // ruling R149: a fragment of few stems, a line something covers or clips down to a window narrower than the key's em,
         // takes the measured noise of the statistic for its width (measured on windows cut anywhere along correct lines), in
         // the measurement's domain (the design's ink at least MIN_INK_PX, the amount's floor; not a glowing line's). A whole
-        // short line is no fragment: its window holds whole glyphs and keeps its limits (rulings R126, R138, R141)
+        // short line is no fragment: its window holds whole glyphs and keeps its limits (rulings R126, R138, R141). The cut is
+        // measured on the line's own box (both renders'), a clip's inward rounding to whole device px (a column at each end) no cut
         const glow = !!ctx.textShadows?.has(id);
-        const visible = visibleColumns(win, hidden), whole = Math.ceil(margin.x + margin.w) - Math.floor(margin.x);
-        const fragment = !glow && a.coverage >= MIN_INK_PX && visible < whole - 1 ? fragmentKey(t, px, visible / px) : null;
+        const lineBox = unionRect(gl, ue.lines[i]);
+        const shown = inBounds(lineBox, { x0: win.x, y0: win.y, x1: win.x + win.w, y1: win.y + win.h });
+        const whole = Math.ceil(lineBox.x + lineBox.w) - Math.floor(lineBox.x);
+        const visible = empty(shown) ? 0 : visibleColumns(shown, hidden);
+        const fragment = !glow && a.coverage >= MIN_INK_PX && visible < whole - 2 ? fragmentKey(t, px, visibleColumns(win, hidden) / px) : null;
         inkLines.push({ id: key, i, n: ge.lines.length, ratio: common ?? (b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null), at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow, ...(fragment ? { fragment } : {}) });
         ctx.inkProbe?.({ key, line: i, px, window: win, hidden, design: gp, unity: up, glow });
         if (b) {

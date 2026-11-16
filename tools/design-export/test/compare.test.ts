@@ -306,6 +306,25 @@ describe("compareCapture", () => {
       };
       expect(label(compareCapture(short(false), short(true), [], repo, { ...ctx, order: ["root", "label"] })).map((i) => i.kind)).toContain("ink");
     });
+
+    it("gives no key to a whole line its own clip trims by rounding alone (a box on fractional device px)", () => {
+      // a pilot screen's 12.5 px score "1 – 1" in its own overflow-hidden box at x 511.25–535.24 (Unity 511.67–535.00): the
+      // clip, rounded inward to whole device px, takes a column at each end of the line's box but no glyph. Here four stems
+      // in a box at x 40.25 (Unity 40.67), the line 32 px wide; the colour ΔE2000 4.2 off must fail at the usual limit
+      const off: Rgb = [165, 195, 205];
+      const boxed = (unity: boolean) => {
+        const s = chip(unity, unity ? off : [185, 208, 214], 320);
+        fill(s.png, { x: 72, y: 26, w: 160, h: 18 }, [11, 31, 38]);
+        const x = unity ? 40.67 : 40.25, w = unity ? 31.9 : 32.5;
+        s.boxes.elements.label = el(x, 26, w, 18, { text: true, lines: [{ x, y: 27, w: 32, h: 16, baseline: 41 }] });
+        delete (s.boxes.elements as Record<string, unknown>).menu;
+        return s;
+      };
+      const own: CaptureContext = { ...ctx, order: ["root", "label"], clips: { label: [{ id: "label", x: true, y: true, inset: [0, 0, 0, 0] }] } };
+      const v = label(compareCapture(boxed(false), boxed(true), [], repo, own));
+      expect(v.map((i) => i.kind)).toContain("ink");
+      expect(v.find((i) => i.kind === "ink")!.detail).not.toMatch(/a window of/);
+    });
   });
 
   describe("text an ancestor's overflow clips: only what both renders show is compared (scroll areas, clipped boxes)", () => {
