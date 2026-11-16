@@ -285,6 +285,15 @@ export const HAIRLINE_PEAK = 0.5;
 export const HAIRLINE_MAX_PX = 12;
 export const HAIRLINE_INK_BAND: readonly [number, number] = [0.5, 2];
 /**
+ * Ruling R152: at a scaled viewport the hairline size bound is ruling R126's domain, text below SCALED_HAIRLINE_BELOW_PX device
+ * px, where the root scale's fractional boxes split one-pixel strokes. Such a line is a hairline line when either render
+ * shows it as one (its ink there has fewer than HAIRLINE_PIXELS fully covered pixels, in the declared colour's direction, a
+ * most covered pixel of at least HAIRLINE_PEAK: Chromium puts a 12.5 px stroke on whole pixels, UI Toolkit splits it), R141's
+ * other conditions hold, and the same text passes its ink checks at every exact viewport of the run (R126's scale-only
+ * evidence, CaptureContext.scaleOnly). A lightness-only error of such a line at a scaled viewport alone is not caught.
+ */
+export const SCALED_HAIRLINE_BELOW_PX = 13;
+/**
  * How far an ellipsized line's ellipsis may differ from the design's at any viewport (ruling R147; at a scaled viewport also
  * the condition of the one-grapheme allowance of ruling R146): the shape, as the L1 difference of the column profiles over the
  * design's ellipsis mass, each scaled to the design's mass (ellipsisCut), and the ink amount, Unity's over the design's.
@@ -1443,14 +1452,16 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
       let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number; em?: number } | null = null, maxDe = 0;
       let wX: { i: number; dl: number; dr: number; dw: number; worst: number } | null = null;
-      let wDir: { dir: number; i: number; a: number[]; b: number[] } | null = null, wAmount: { ratio: number; i: number } | null = null;
+      let wDir: { dir: number; i: number; a: number[]; b: number[]; scaled: boolean } | null = null, wAmount: { ratio: number; i: number } | null = null;
       // ruling R141: a hairline line is small text drawn in its own colour (the one the capture recorded for this element or
       // this copy) at full opacity (its own and its ancestors', an animation sample's running value included), all of the
       // line in it (no span of another colour: fix round 3, N-6), and nothing painted later lies over it (a later element or
       // copy, or the shadow it casts: N-5); then R138's conditions (isHairline)
       const own = key === id ? g.elements[id] : g.items?.[key];
       const declared = own?.color && own.opacity !== undefined ? { rgb: own.color.slice(0, 3), alpha: own.color[3] * own.opacity } : undefined;
-      const later = declared && px <= HAIRLINE_MAX_PX && declared.alpha >= 1 - 1e-6 ? laterLayers(id, key) : null;
+      // ruling R152: at a scaled viewport, text below SCALED_HAIRLINE_BELOW_PX with the scale-only evidence
+      const scaledHairline = ctx.viewportClass === "scaled" && px < SCALED_HAIRLINE_BELOW_PX && ctx.scaleOnly?.(key) === true;
+      const later = declared && (px <= HAIRLINE_MAX_PX || scaledHairline) && declared.alpha >= 1 - 1e-6 ? laterLayers(id, key) : null;
       const mayBeHairline = !!later;
       const hidden = hiddenBy(id);
       const clipG = clipOf(g, id, key), clipU = clipOf(u, id, key);
@@ -1513,10 +1524,12 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
         // a hairline line (rulings R138, R141): its lightness measures coverage; its ink's colour direction is judged, and its
         // ink amount only within HAIRLINE_INK_BAND (a stroke drawn a row off scatters, a missing or added glyph does not)
-        if (b && mayBeHairline && !gl.mixed && !later!.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y) &&
-            isHairline(a, declared!)) {
+        // ruling R152: at a scaled viewport (scaledHairline) either render may show the line as a hairline one
+        const hairline = b && mayBeHairline && !gl.mixed && !later!.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y)
+          ? (px <= HAIRLINE_MAX_PX && isHairline(a, declared!) ? "design" : scaledHairline && (isHairline(a, declared!) || isHairline(b, declared!)) ? "scaled" : null) : null;
+        if (b && hairline) {
           const dir = angleBetween(a.dirSrgb, b.dirSrgb);
-          if (!wDir || dir > wDir.dir) wDir = { dir, i, a: a.ink, b: b.ink };
+          if (!wDir || dir > wDir.dir) wDir = { dir, i, a: a.ink, b: b.ink, scaled: hairline === "scaled" };
           // the ink amount against the text colour on both sides (each pixel's distance from the background over the colour's),
           // not each side's own ink colour: a stroke drawn faint everywhere is little ink, not a full stroke of a lighter colour
           const sum = (x: Float64Array) => { let v = 0; for (const d of x) v += d; return v; };
@@ -1555,10 +1568,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
       }
       if (wDir) {
-        const x = wDir as { dir: number; i: number; a: number[]; b: number[] };
+        const x = wDir as { dir: number; i: number; a: number[]; b: number[]; scaled: boolean };
         row.inkDirection = r6(x.dir);
         if (x.dir > t.textInkDirection + EPS) {
-          issue(key, "ink", `line ${x.i + 1} of ${ge.lines.length}: a hairline line (fewer than ${HAIRLINE_PIXELS} fully covered pixels in the design): its ink's colour direction from the background differs by ${x.dir.toFixed(2)}° (design ${hex(x.a)}, Unity ${hex(x.b)}; limit ${t.textInkDirection}°)`, ge.lines[x.i]);
+          issue(key, "ink", `line ${x.i + 1} of ${ge.lines.length}: a hairline line (fewer than ${HAIRLINE_PIXELS} fully covered pixels ${x.scaled ? `in a render, below ${SCALED_HAIRLINE_BELOW_PX} device px at a scaled viewport` : "in the design"}): its ink's colour direction from the background differs by ${x.dir.toFixed(2)}° (design ${hex(x.a)}, Unity ${hex(x.b)}; limit ${t.textInkDirection}°)`, ge.lines[x.i]);
         }
       }
       if (wAmount) {
@@ -2079,7 +2092,22 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   if (opts.diffDir) fs.mkdirSync(opts.diffDir, { recursive: true });
   const results = new Map<string, CaptureVerdict>();
   const concurrency = opts.concurrency ?? Math.max(1, Math.min(4, os.availableParallelism?.() ?? 4));
-  await pool(runnable, concurrency, async (name) => {
+  // ruling R152: the exact viewports first, so that a scaled capture's text knows whether the same text passes its ink checks
+  // at every exact viewport of the run in the same state (R126's scale-only evidence)
+  const viewportOf = (name: string) => byName.get(name)?.viewport ?? goldenBoxes[name]?.viewport;
+  const classOfName = (name: string) => viewportClassOf(ix?.scaledViewports, viewportOf(name) ?? [0, 0]);
+  const exactViewports: number[][] = [];
+  for (const n of names) {
+    const vp = viewportOf(n);
+    if (vp && classOfName(n) === "exact" && !exactViewports.some((v) => v[0] === vp[0] && v[1] === vp[1])) exactViewports.push([vp[0], vp[1]]);
+  }
+  const TEXT_INK: readonly IssueKind[] = ["ink", "inkCoverage", "inkExtent"];
+  const scaleOnlyOf = (name: string) => (key: string) => exactViewports.length > 0 && exactViewports.every((vp) => {
+    const at = name.replace(/@\d+x\d+/, `@${vp[0]}x${vp[1]}`), r = results.get(at), gb = goldenBoxes[at];
+    const shown = gb?.elements[key]?.visible || gb?.items?.[key]?.visible;
+    return !!r && !!shown && !r.issues.some((i) => i.id === key && TEXT_INK.includes(i.kind));
+  });
+  const compareOne = async (name: string) => {
     const c0 = performance.now();
     const [gpng, upng] = await Promise.all([
       fs.promises.readFile(path.join(goldensDir, `${name}.png`)).then(decodePngAsync),
@@ -2092,6 +2120,7 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
       : {};
     const cls = viewportClassOf(ix?.scaledViewports, entry?.viewport ?? gb.viewport);
     ctx.viewportClass = cls;
+    if (cls === "scaled") ctx.scaleOnly = scaleOnlyOf(name);
     const { verdict, heat } = analyze({ png: gpng, boxes: gb }, { png: upng, boxes: unityBoxes[name] }, removed!, thresholdsFor(t, cls), ctx, !!opts.diffDir);
     verdict.info = entry ? {
       state: entry.state, viewport: entry.viewport, viewportClass: cls, apply: entry.apply,
@@ -2105,7 +2134,9 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
     }
     verdict.ms = Math.round((performance.now() - c0) * 10) / 10;
     results.set(name, verdict);
-  });
+  };
+  await pool(runnable.filter((n) => classOfName(n) === "exact"), concurrency, compareOne);
+  await pool(runnable.filter((n) => classOfName(n) !== "exact"), concurrency, compareOne);
 
   const captures = runnable.map((n) => results.get(n)!);
   const notRun = names.filter((n) => n in notRunReasons);

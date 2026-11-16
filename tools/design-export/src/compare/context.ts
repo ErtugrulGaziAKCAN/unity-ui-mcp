@@ -72,6 +72,12 @@ export interface CaptureContext {
   /** The capture's viewport class (absent: exact): which elements `ssimRoundEdge` may apply to. */
   viewportClass?: "exact" | "scaled";
   /**
+   * At a scaled viewport: whether the same text (an element or a repeat copy, by its key) passes its ink checks at every
+   * exact viewport of the run in the same state (ruling R126's scale-only evidence, which ruling R152 requires). compareScreen
+   * compares the exact viewports first and sets it; absent, no text has the evidence.
+   */
+  scaleOnly?: (key: string) => boolean;
+  /**
    * The containers of data-u-repeat lists (IR `repeat`): their children are the first item; the boxes' `items` hold the
    * later written-out items' copies, whose edge bands an element around them takes with its own.
    */

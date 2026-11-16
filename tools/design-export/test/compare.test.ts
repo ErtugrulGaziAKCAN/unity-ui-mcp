@@ -1861,6 +1861,60 @@ describe("compareCapture: edge, colour and ink checks", () => {
         expect(kinds(design, gb, dash([[5, 0.01], [6, 1], [7, 0.12]], secondary), c)).toEqual([]);
         expect(kinds(design, gb, dash([[6, 0.12]], secondary), c)).toEqual(["inkCoverage"]);
       });
+
+      it("R152: the three 16 px probes still fail at a scaled viewport, with the scale-only evidence given", () => {
+        const scaledT = thresholdsFor(readThresholds(), "scaled");
+        const at = (c: CaptureContext): CaptureContext => ({ ...c, viewportClass: "scaled", scaleOnly: () => true });
+        const scaledKinds = (gp: Rgba, gb: CaptureBoxes, up: Rgba, c: CaptureContext, id = "t") =>
+          compareCapture({ png: gp, boxes: gb }, { png: up, boxes: gb }, [], scaledT, at(c)).issues.filter((i) => i.id === id).map((i) => i.kind);
+        expect(scaledKinds(stems(secondary, 0.6), boxes(secondary, 0.6), stems(secondary, 0.8), ctxOf(16, secondary, { anim: true, moving: new Set() })), "opacity sample").toContain("ink");
+        const veil = el(0, 0, 48, 24);
+        expect(scaledKinds(stems(secondary, 1, 0, 5, 0.3), boxes(secondary, 1, false, { veil }), stems(secondary, 0.7, 0, 5, 0.3),
+          ctxOf(16, secondary, { order: ["root", "list", "t", "veil"], painters: new Set(["veil"]) })), "under a veil").toContain("ink");
+        expect(scaledKinds(stems(muted), boxes(muted, 1, true), stems(muted, 0.75), ctxOf(16, secondary), "t#1"), "muted copy").toContain("ink");
+      });
+    });
+
+    describe("R152: at a scaled viewport a one-stroke line below 13 device px with scale-only evidence is a hairline line", () => {
+      // a pilot screen's 12.5 px status at 1600×900 (two one-stroke digits around a dash, the secondary colour on surface-700):
+      // Chromium draws each stroke on whole device pixels (a stem one column at 0.97 with a 0.16 neighbour, the dash one
+      // row), UI Toolkit's box lies 0.42 px right and down and splits each over two (0.54 + 0.54, 0.46 + 0.62; 0.22 + 0.73)
+      const bgC: Rgb = [18, 60, 71], secondary: Rgb = [185, 208, 214];
+      const scaledT = thresholdsFor(readThresholds(), "scaled"), exactT = thresholdsFor(readThresholds(), "exact");
+      const one = (c: Rgb, unity: boolean) => {
+        const png = canvas(40, 24, bgC);
+        const put = (x: number, y: number, cov: number) => { const o = (y * 40 + x) * 4; for (let j = 0; j < 3; j++) png.data[o + j] = Math.round(bgC[j] + cov * (c[j] - bgC[j])); };
+        for (let y = 6; y < 16; y++) {
+          if (unity) { put(8, y, 0.54); put(9, y, 0.54); put(24, y, 0.46); put(25, y, 0.62); } else { put(8, y, 0.97); put(9, y, 0.16); put(24, y, 0.97); put(25, y, 0.16); }
+        }
+        for (let x = 13; x < 20; x++) { if (unity) { put(x, 10, 0.22); put(x, 11, 0.73); } else put(x, 10, 0.97); }
+        return png;
+      };
+      const line = { x: 6, y: 3, w: 22, h: 15, baseline: 15 };
+      const boxes: CaptureBoxes = { capture: "c", viewport: [40, 24], scale: 0.625, external: [], elements: { root: el(0, 0, 40, 24),
+        t: el(6, 3, 22, 15, { text: true, lines: [line], color: [...secondary, 1] as [number, number, number, number], opacity: 1 }) } };
+      const ctx = (more: Partial<CaptureContext> = {}): CaptureContext => ({ fontPx: { t: 12.5 }, backgrounds: new Set(), painters: new Set(), order: ["root", "t"], root: "root",
+        viewportClass: "scaled", scaleOnly: () => true, ...more });
+      const issues = (up: Rgba, c: CaptureContext, t = scaledT) => compareCapture({ png: one(secondary, false), boxes }, { png: up, boxes }, [], t, c).issues.filter((i) => i.id === "t");
+
+      it("passes the pilot pattern by its colour direction, with the same text passing at every exact viewport", () => {
+        expect(issues(one(secondary, true), ctx())).toEqual([]);
+      });
+
+      it("keeps the usual checks without the scale-only evidence, and at an exact viewport", () => {
+        expect(issues(one(secondary, true), ctx({ scaleOnly: () => false })).map((i) => i.kind)).toContain("ink");
+        expect(issues(one(secondary, true), ctx({ scaleOnly: undefined })).map((i) => i.kind)).toContain("ink");
+        expect(issues(one(secondary, true), ctx({ viewportClass: "exact" }), exactT).map((i) => i.kind)).toContain("ink");
+      });
+
+      it("fails a one-stroke line of another hue at 12.5 px", () => {
+        for (const hue of [[22, 194, 213], [242, 181, 68]] as Rgb[])
+          expect(issues(one(hue, true), ctx()).map((i) => i.kind), hue.join()).toContain("ink");
+      });
+
+      it("takes only text below 13 device px", () => {
+        expect(issues(one(secondary, true), ctx({ fontPx: { t: 13 } })).map((i) => i.kind)).toContain("ink");
+      });
     });
 
     describe("fix round 3: what paints over a hairline line, and the colours drawn on it", () => {
@@ -2728,6 +2782,47 @@ describe("compareScreen", () => {
     expect(v.notes).toEqual([]);
     expect(v.warnings).toEqual([]);
     expect(v.captures[0].issues.filter((i) => i.id === "card").map((i) => i.kind)).toContain("shadow");
+  });
+
+  it("gives a scaled capture's text ruling R152's path only when the same text passes at every exact viewport (R126's evidence)", async () => {
+    // a 20 px status: 12.5 device px at the scaled 40×24 capture (scale 0.625), 10 at the exact 32×20 one (scale 0.5); the
+    // scaled capture's Unity render splits its strokes over two pixels (the pilot pattern of the R152 tests)
+    const bgC: Rgb = [18, 60, 71], secondary: Rgb = [185, 208, 214];
+    const draw = (c: Rgb, split: boolean) => {
+      const png = canvas(40, 24, bgC);
+      const put = (x: number, y: number, cov: number) => { const o = (y * 40 + x) * 4; for (let j = 0; j < 3; j++) png.data[o + j] = Math.round(bgC[j] + cov * (c[j] - bgC[j])); };
+      for (let y = 6; y < 16; y++) { if (split) { put(8, y, 0.54); put(9, y, 0.54); put(24, y, 0.46); put(25, y, 0.62); } else { put(8, y, 0.97); put(9, y, 0.16); put(24, y, 0.97); put(25, y, 0.16); } }
+      for (let x = 13; x < 20; x++) { if (split) { put(x, 10, 0.22); put(x, 11, 0.73); } else put(x, 10, 0.97); }
+      return png;
+    };
+    const run = async (exactUnity: Rgb) => {
+      const root = tmp(), exportDir = path.join(root, "export"), unityDir = path.join(root, "unity");
+      fs.mkdirSync(path.join(exportDir, "goldens"), { recursive: true });
+      fs.mkdirSync(unityDir, { recursive: true });
+      const boxes = (name: string, vp: [number, number], scale: number): CaptureBoxes => ({ capture: name, viewport: vp, scale, external: [], elements: { root: el(0, 0, 40, 24),
+        t: el(6, 3, 22, 15, { text: true, lines: [{ x: 6, y: 3, w: 22, h: 15, baseline: 15 }], color: [...secondary, 1] as [number, number, number, number], opacity: 1 }) } });
+      const entries = [{ name: "default@32x20", ...job("default", [32, 20]) }, { name: "default@40x24", ...job("default", [40, 24]) }];
+      const g = { "default@32x20": boxes("default@32x20", [32, 20], 0.5), "default@40x24": boxes("default@40x24", [40, 24], 0.625) };
+      const pngs: Record<string, [Rgba, Rgba]> = { "default@32x20": [draw(secondary, false), draw(exactUnity, false)], "default@40x24": [draw(secondary, false), draw(secondary, true)] };
+      for (const e of entries) {
+        fs.writeFileSync(path.join(exportDir, "goldens", `${e.name}.png`), encodePng(pngs[e.name][0]));
+        fs.writeFileSync(path.join(unityDir, `${e.name}.png`), encodePng(pngs[e.name][1]));
+      }
+      fs.writeFileSync(path.join(exportDir, "goldens", "boxes.json"), JSON.stringify(g));
+      fs.writeFileSync(path.join(exportDir, "goldens", "matrix.json"), JSON.stringify({ chromium: "1", platform: "p", captures: entries, unsampled: [] }));
+      fs.writeFileSync(path.join(exportDir, "screen.ir.json"), JSON.stringify({ irVersion: 1, screen: "s", referenceViewport: [64, 38], viewports: [[32, 20], [40, 24]], scaledViewports: [[40, 24]],
+        screenMatch: 0.5, breakpoints: [], root: { id: "root", kind: "container", style: { base: {} }, children: [{ id: "t", kind: "text", style: { base: { "font-size": "20px" } }, children: [] }] } }));
+      fs.writeFileSync(path.join(unityDir, "boxes.json"), JSON.stringify(g));
+      fs.writeFileSync(path.join(unityDir, "capture-done.json"), JSON.stringify({ runId: "r", jobs: 2, captured: 2, notCaptured: 0 }));
+      const v = await compareScreen(exportDir, unityDir, readThresholds());
+      return Object.fromEntries(v.captures.map((c) => [c.capture, c.issues.filter((i) => i.id === "t").map((i) => i.kind)]));
+    };
+    // the same text passes at the exact viewport: the scaled capture's split strokes pass by their colour direction
+    expect(await run(secondary)).toEqual({ "default@32x20": [], "default@40x24": [] });
+    // the exact viewport draws it in another hue: no scale-only evidence, the scaled capture keeps the usual checks
+    const other = await run([22, 194, 213]);
+    expect(other["default@32x20"]).toContain("ink");
+    expect(other["default@40x24"]).toContain("ink");
   });
 });
 
