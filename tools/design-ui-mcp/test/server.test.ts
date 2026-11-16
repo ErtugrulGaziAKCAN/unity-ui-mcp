@@ -430,12 +430,20 @@ describe("design_ui_import", () => {
     expect(fs.existsSync(path.join(dir, ".design-ui", "last-import.json"))).toBe(false);
   });
 
-  it("fails without a bridge when the editor route is preferred, naming the project", async () => {
+  it("fails without a bridge when the editor route is preferred, naming the project, before it exports anything", async () => {
     const p = tempProject({ prefer: "editor" });
-    p.addScreen("clean-screen", "clean-screen");
-    const r = await call(await serverFor(p.dir, stubPipeline()), "design_ui_import", { design: "clean-screen" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    // captures a verify kept: an import that exports the screen again removes them; one that cannot reach Unity must not
+    const kept = path.join(dir, ".design-ui", "kept-captures");
+    fs.mkdirSync(kept, { recursive: true });
+    const pipeline = stubPipeline();
+    const r = await call(await serverFor(p.dir, pipeline), "design_ui_import", { design: "clean-screen" });
     expect(r.isError).toBe(true);
     expect(r.text).toContain(`Editor not reachable: Unity Editor bridge not found for ${p.dir}`);
+    expect(r.text).toContain("Nothing was exported or written.");
+    expect(r.data).toMatchObject({ exported: false, unityCalled: false });
+    expect(pipeline.exports).toEqual([]);
+    expect(fs.existsSync(kept)).toBe(true);
     expect(p.runnerCalls()).toEqual([]);
   });
 

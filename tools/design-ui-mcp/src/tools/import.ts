@@ -43,6 +43,18 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       let drift: ReturnType<typeof versionDrift> = { level: "ok", message: null };
       if (cfg.unityRunner.prefer === "editor") {
         const st = await t.async("bridge", () => bridgeStatus(cfg.projectDir));
+        // no bridge for this project, or one that refuses the token: the Unity step cannot run, so nothing is exported (an
+        // export would replace the screen's goldens and drop the captures a verify kept). An Editor that is busy or reloading
+        // (not-responding) may still answer the import: that case goes on
+        if (st.bridge === "not-found" || st.bridge === "unauthorized") {
+          const label = ref.entry ? designPath(ref.entry, cfg.designRoot) : ref.screen;
+          const why = st.bridge === "not-found"
+            ? `Editor not reachable: Unity Editor bridge not found for ${cfg.projectDir}: open this project in Unity with the com.ertugrulgaziakcan.design-ui package ` +
+              `(Window > Design UI > Status shows the bridge), or set "unityRunner.prefer": "command" in design-ui.config.json`
+            : `the Unity Editor bridge refused this server's token: press Restart in Window > Design UI > Status`;
+          return toolResult(`Import of ${label} not run: ${why}. Nothing was exported or written.`,
+            { screen: ref.screen, exported: false, unityCalled: false, bridge: st.bridge, timings: t.done() }, true);
+        }
         if (st.bridge === "connected") drift = versionDrift(st.version, st.irVersion);
         if (drift.level === "error") {
           const label = ref.entry ? designPath(ref.entry, cfg.designRoot) : ref.screen;
