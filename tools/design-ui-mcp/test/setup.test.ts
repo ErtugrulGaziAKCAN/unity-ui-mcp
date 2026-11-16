@@ -569,6 +569,9 @@ describe("scripts/install-skill.sh", () => {
     fs.mkdirSync(path.join(home, ".claude"));
     const dry = run(home, "--dry-run");
     expect(dry.out).toMatch(/would create .*\.claude\/skills/);
+    // the dry run shows the link it will make in the folder it would create
+    expect(dry.out).toContain(`would link ${path.join(home, ".claude", "skills", "unity-ui-mcp")} -> ${SKILL_DIR}`);
+    expect(dry.out).not.toContain(`skipped: ${path.join(home, ".claude", "skills")}`);
     expect(fs.existsSync(path.join(home, ".claude", "skills"))).toBe(false);
     const r = run(home);
     expect(r.code, r.out).toBe(0);

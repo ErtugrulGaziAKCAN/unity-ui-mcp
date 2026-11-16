@@ -18,13 +18,16 @@ SKILL="$REPO/skills/unity-ui-mcp"
 : "${HOME:?HOME is not set}"
 
 # Claude Code is installed (~/.claude) but has no skill folder yet: create it, so a fresh install gets /unity-ui-mcp
+# (a dry run counts it as made, so it shows the link it would put there)
+WOULD_CREATE=""
 if [ -d "$HOME/.claude" ] && [ ! -d "$HOME/.claude/skills" ]; then
-  if [ "$DRY" = 1 ]; then echo "  would create $HOME/.claude/skills"; else mkdir "$HOME/.claude/skills" && echo "  change: created $HOME/.claude/skills"; fi
+  if [ "$DRY" = 1 ]; then echo "  would create $HOME/.claude/skills"; WOULD_CREATE="$HOME/.claude/skills"
+  else mkdir "$HOME/.claude/skills" && echo "  change: created $HOME/.claude/skills"; fi
 fi
 
 FOUND=0
 for dir in "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.cursor/skills"; do
-  if [ ! -d "$dir" ]; then echo "  skipped: $dir does not exist (that client is not installed, or has no skill folder yet)"; continue; fi
+  if [ ! -d "$dir" ] && [ "$dir" != "$WOULD_CREATE" ]; then echo "  skipped: $dir does not exist (that client is not installed, or has no skill folder yet)"; continue; fi
   FOUND=1
   link="$dir/unity-ui-mcp"
   if [ -L "$link" ]; then
