@@ -324,6 +324,36 @@ describe("compareCapture", () => {
       const v = label(compareCapture(boxed(false), boxed(true), [], repo, own));
       expect(v.map((i) => i.kind)).toContain("ink");
       expect(v.find((i) => i.kind === "ink")!.detail).not.toMatch(/a window of/);
+      // ruling R156: the boxes straddling a pixel boundary (the re-review's 40.75 against 41.17) are no cut either: the line's
+      // own box is its own text cut, and each render rounds its own edges
+      const straddling = (unity: boolean) => {
+        const s2 = boxed(unity);
+        const x = unity ? 41.17 : 40.75, w = unity ? 31.9 : 32.5;
+        s2.boxes.elements.label = el(x, 26, w, 18, { text: true, lines: [{ x, y: 27, w: 32, h: 16, baseline: 41 }] });
+        return s2;
+      };
+      const w2 = label(compareCapture(straddling(false), straddling(true), [], repo, own));
+      expect(w2.map((i) => i.kind)).toContain("ink");
+      expect(w2.find((i) => i.kind === "ink")!.detail).not.toMatch(/a window of/);
+    });
+
+    it("gives no key to an ellipsized short line: its own text-overflow cut is no fragment (ruling R156)", () => {
+      // the re-review's probe P5b: a 10 px label at 1280×720 in a 30 px box, its line rect the whole text's 120 px, cut by
+      // its own text-overflow; Unity draws it in the secondary colour where the design has the primary
+      const draw = (c: Rgb) => {
+        const png = canvas(200, 60, [16, 24, 32]);
+        for (let x = 41; x < 60; x += 2) fill(png, { x, y: 32, w: 1, h: 10 }, c);
+        for (const x of [61, 64, 67]) fill(png, { x, y: 40, w: 1, h: 2 }, c);
+        return png;
+      };
+      const boxes: CaptureBoxes = { capture: "c", viewport: [200, 60], scale: 0.5, external: [], elements: { root: el(0, 0, 200, 60),
+        label: el(40, 30, 30, 14, { text: true, lines: [{ x: 40, y: 30, w: 120, h: 14, baseline: 42, ellipsis: { at: 60.5, last: 4, next: 5, width: 8 } }] }) } };
+      const c: CaptureContext = { order: ["root", "label"], root: "root", fontPx: { label: 10 }, viewportClass: "exact",
+        clips: { label: [{ id: "label", x: true, y: true, inset: [0, 0, 0, 0] }] } };
+      const exactT = thresholdsFor(repo, "exact");
+      expect(label(compareCapture({ png: draw([255, 255, 255]), boxes }, { png: draw([255, 255, 255]), boxes }, [], exactT, c))).toEqual([]);
+      const v = label(compareCapture({ png: draw([255, 255, 255]), boxes }, { png: draw([185, 208, 214]), boxes }, [], exactT, c));
+      expect(v.map((i) => i.detail).join(" | ")).toMatch(/text colour ΔE2000 [\d.]+, design #ffffff/);
     });
 
     it("gives no key to a fragment of a text with a text-shadow, hard or blurred (ruling R154): the ordinary checks", () => {
@@ -528,6 +558,23 @@ describe("compareCapture", () => {
         const v = compareCapture(nested(false), u, [], T, ctx);
         expect(v.linesClipped ?? []).toEqual([]);
         expect(of(v, "title#1")).toContain("inkCoverage");
+      });
+
+      it("judges the design's window when Unity's clip shows less: the hidden part is missing ink, the clip named (ruling R157)", () => {
+        // the re-review's probe P3: Unity lays the copy's own clipping box out 30 or 12 px wide (the design's 60) and draws its
+        // title only inside it; the window was what both showed, so nothing judged the rest
+        for (const w of [30, 12]) {
+          const u = nested(true);
+          fill(u.png, { x: 144 + w, y: 20, w: 96 - w, h: 40 }, [18, 60, 71]);
+          u.boxes.items!["title#1"] = { ...u.boxes.items!["title#1"], w };
+          const mine = compareCapture(nested(false), u, [], T, ctx).issues.filter((i) => i.id === "title#1");
+          expect(mine.map((i) => i.kind), `${w} px`).toContain("inkCoverage");
+          expect(mine.some((i) => /Unity's overflow clip \(title#1\) hides/.test(i.detail)), `${w} px`).toBe(true);
+        }
+        // Unity's clip within its own rounding of the design's (a pixel at an edge) is no such issue
+        const near = nested(true);
+        near.boxes.items!["title#1"] = { ...near.boxes.items!["title#1"], w: 59.4 };
+        expect(of(compareCapture(nested(false), near, [], T, ctx), "title#1")).toEqual([]);
       });
 
       it("flags a line Unity draws where the design's clip hides it", () => {

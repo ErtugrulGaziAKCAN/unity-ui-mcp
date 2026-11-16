@@ -526,6 +526,27 @@ export interface FragmentKey { em: number; deltaE: number; amount: number; byDir
  */
 export const FRAGMENT_DE_BOUND = SCALED_SMALL_INK_CAP + 0.4;
 
+/**
+ * Ruling R156: whether a cover or a clip cuts into a line's extent `ext` (what its own text cut leaves), seen through `shown`
+ * (the window other clips leave): a column of `ext` is visible when it lies in `shown` and holds a pixel `hidden` does not
+ * hide; the line is cut when no column is, when more than one column is lost at an end (one is the rounding of the
+ * extent's own edge), or when a column inside is hidden.
+ */
+export function cutInto(ext: Rect, shown: Rect, hidden: ((x: number, y: number) => boolean) | null): boolean {
+  const L = Math.floor(ext.x), R = Math.ceil(ext.x + ext.w);
+  const y0 = Math.floor(Math.max(ext.y, shown.y)), y1 = Math.ceil(Math.min(ext.y + ext.h, shown.y + shown.h));
+  let first = -1, last = -1, count = 0;
+  for (let x = L; x < R; x++) {
+    if (x < shown.x - 1e-9 || x + 1 > shown.x + shown.w + 1e-9 || y1 <= y0) continue;
+    let seen = !hidden;
+    for (let y = y0; !seen && y < y1; y++) if (!hidden!(x, y)) seen = true;
+    if (!seen) continue;
+    if (first < 0) first = x;
+    last = x; count++;
+  }
+  return count === 0 || first - L > 1 || R - 1 - last > 1 || count < last - first + 1;
+}
+
 /** The columns of a window holding at least one pixel `hidden` does not hide (all of them without `hidden`). */
 export function visibleColumns(r: Rect, hidden: ((x: number, y: number) => boolean) | null): number {
   const x0 = Math.floor(r.x), x1 = Math.ceil(r.x + r.w), y0 = Math.floor(r.y), y1 = Math.ceil(r.y + r.h);
@@ -1005,26 +1026,36 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   };
   /** A clip's bounds: each edge, ±Infinity where nothing clips that side. */
   interface Bounds { x0: number; y0: number; x1: number; y1: number }
+  /** A clip's bounds and, per edge, the key of the element whose box sets it (the clip's own `x0`… edges). */
+  interface ClipBounds extends Bounds { by: { x0?: string; y0?: string; x1?: string; y1?: string } }
   /**
    * Where the overflow clips around a text (CaptureContext.clips) let it show on one side: the intersection of the clipping
    * elements' padding boxes on the clipped axes, each element's box from that side's boxes (for a copy in a later repeat
    * item, the element's copy in the same item when it lies inside the repeat), rounded inwards to whole device pixels. An
    * element without a box on that side clips nothing there. Null when nothing clips the text.
    */
-  const clipOf = (side: CaptureBoxes, id: string, key: string): Bounds | null => {
-    const cl = ctx.clips?.[id];
+  const clipOf = (side: CaptureBoxes, id: string, key: string, keep: (clipId: string) => boolean = () => true): ClipBounds | null => {
+    const cl = ctx.clips?.[id]?.filter((c) => keep(c.id));
     if (!cl?.length) return null;
     const me = placeOf(id, key);
-    const b: Bounds = { x0: -Infinity, y0: -Infinity, x1: Infinity, y1: Infinity };
+    const b: ClipBounds = { x0: -Infinity, y0: -Infinity, x1: Infinity, y1: Infinity, by: {} };
     for (const c of cl) {
-      const box = boxOf(side, c.id, me.path.slice(0, containersOf(c.id).length));
+      const at = me.path.slice(0, containersOf(c.id).length), box = boxOf(side, c.id, at), name = c.id + itemSuffix(at);
       if (!box || !box.visible) continue;
-      if (c.x) { b.x0 = Math.max(b.x0, box.x + c.inset[3]); b.x1 = Math.min(b.x1, box.x + box.w - c.inset[1]); }
-      if (c.y) { b.y0 = Math.max(b.y0, box.y + c.inset[0]); b.y1 = Math.min(b.y1, box.y + box.h - c.inset[2]); }
+      // a box edge that is no number would clip nothing on one side and everything on the other: never silently
+      if (![box.x, box.y, box.w, box.h].every(Number.isFinite)) throw new Error(`a text's overflow clip is not finite: the clipping box ${name} at (${box.x}, ${box.y}, ${box.w}, ${box.h})`);
+      if (c.x) {
+        if (box.x + c.inset[3] > b.x0) { b.x0 = box.x + c.inset[3]; b.by.x0 = name; }
+        if (box.x + box.w - c.inset[1] < b.x1) { b.x1 = box.x + box.w - c.inset[1]; b.by.x1 = name; }
+      }
+      if (c.y) {
+        if (box.y + c.inset[0] > b.y0) { b.y0 = box.y + c.inset[0]; b.by.y0 = name; }
+        if (box.y + box.h - c.inset[2] < b.y1) { b.y1 = box.y + box.h - c.inset[2]; b.by.y1 = name; }
+      }
     }
     // whole pixels only: a clip edge between two device pixels is rounded its own way by each renderer (Chromium drew the
     // row a scroll area's bottom at y 807.5 crosses, UI Toolkit did not: a pilot screen's half-clipped label at 0.73× the ink)
-    return { x0: Math.ceil(b.x0), y0: Math.ceil(b.y0), x1: Math.floor(b.x1), y1: Math.floor(b.y1) };
+    return { x0: Math.ceil(b.x0), y0: Math.ceil(b.y0), x1: Math.floor(b.x1), y1: Math.floor(b.y1), by: b.by };
   };
   /** A rect within bounds (null: the rect as it is); its width or height is 0 or less when nothing of it is inside. */
   const inBounds = (a: Rect, b: Bounds | null): Rect => {
@@ -1510,11 +1541,24 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           if (inkIn(up, uw, hidden ?? undefined)) issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: Unity draws text the design's overflow clips away (a box that should clip it does not, or is larger)`, gl);
           return;
         }
-        const both = empty(uw) ? gw : inBounds(gw, clipU);
-        const win = empty(both) ? gw : both;
+        // ruling R157: the window is the design's visible window; Unity's clip never shrinks it
+        const win = gw;
         if (hidden && everyPixel(win, w, h, hidden)) { covered++; linesCovered.push(`${key}: line ${i + 1} of ${ge.lines.length}`); return; }
         const a = inkIn(gp, win, hidden ?? undefined);
         if (!a) return;
+        // a part of it with the design's ink that Unity's clip hides beyond Unity's own rounding (a pixel at an edge) is missing
+        // ink: an issue naming the clip
+        if (clipU) {
+          const x1 = win.x + win.w, y1 = win.y + win.h;
+          const strips: [Rect, string | undefined][] = [
+            [{ x: win.x, y: win.y, w: Math.min(x1, clipU.x0 - 1) - win.x, h: win.h }, clipU.by.x0],
+            [{ x: Math.max(win.x, clipU.x1 + 1), y: win.y, w: x1 - Math.max(win.x, clipU.x1 + 1), h: win.h }, clipU.by.x1],
+            [{ x: win.x, y: win.y, w: win.w, h: Math.min(y1, clipU.y0 - 1) - win.y }, clipU.by.y0],
+            [{ x: win.x, y: Math.max(win.y, clipU.y1 + 1), w: win.w, h: y1 - Math.max(win.y, clipU.y1 + 1) }, clipU.by.y1],
+          ];
+          const lost = strips.find(([r]) => !empty(r) && inkIn(gp, r, hidden ?? undefined));
+          if (lost) issue(key, "inkCoverage", `line ${i + 1} of ${ge.lines.length}: Unity's overflow clip (${lost[1] ?? "an ancestor"}) hides ${Number(lost[0].w.toFixed(2))}×${Number(lost[0].h.toFixed(2))} device px of the text the design shows there (its clipping box is smaller or placed elsewhere in Unity)`, gl);
+        }
         const b = inkIn(up, win, hidden ?? undefined);
         // the ink's horizontal extent: spacing, kerning or alignment moves it inside a box of the right size (geometry:
         // the box limit, whatever the text size)
@@ -1563,11 +1607,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // Ruling R154: a text with a text-shadow, hard or blurred, is outside the measurement (the shadow's paint lies in the
         // window): its fragments take no key and keep the ordinary checks
         const glow = !!ctx.textShadows?.has(id), shadowed = glow || !!ctx.shadowedText?.has(id);
-        const lineBox = unionRect(gl, ue.lines[i]);
-        const shown = inBounds(lineBox, { x0: win.x, y0: win.y, x1: win.x + win.w, y1: win.y + win.h });
-        const whole = Math.ceil(lineBox.x + lineBox.w) - Math.floor(lineBox.x);
-        const visible = empty(shown) ? 0 : visibleColumns(shown, hidden);
-        const cut = !shadowed && visible < whole - 2;
+        // ruling R156: what the line's own text cut leaves of it (its own box's clip; an ellipsized line ends at its
+        // ellipsis) is the whole; it is cut only by a cover or a clip other than its own, on the design's window (R157), each
+        // end within a column of the design's own rounding
+        const ownClip = clipOf(g, id, key, (c) => c === id), otherClips = clipOf(g, id, key, (c) => c !== id);
+        let ext: Rect = gl.ellipsis ? { ...gl, w: Math.min(gl.w, gl.ellipsis.at + gl.ellipsis.width - gl.x) } : gl;
+        if (ownClip) ext = inBounds(ext, ownClip);
+        const cut = !shadowed && !empty(ext) && cutInto(ext, inBounds(margin, otherClips), hidden);
         // the ink amount against the text colour on both sides (each pixel's distance from the background over the colour's),
         // not each side's own ink colour: a stroke drawn faint everywhere is little ink, not a full stroke of a lighter colour
         const sum = (x: Float64Array) => { let v = 0; for (const d of x) v += d; return v; };
