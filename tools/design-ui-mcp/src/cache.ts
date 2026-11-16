@@ -76,19 +76,79 @@ function alive(pid: unknown): boolean {
 
 /** Whether an import or verify of the screen folder is running (its marker names a live process, set in the last hours). */
 export function isBusy(screenDir: string, now = Date.now()): boolean {
-  const m = readJson(path.join(screenDir, BOOKKEEPING_DIR, BUSY_FILE));
-  if (!m) return false;
+  const file = path.join(screenDir, BOOKKEEPING_DIR, BUSY_FILE);
+  if (!fs.existsSync(file)) return false;
+  return holds(path.resolve(screenDir), file, readJson(file), now);
+}
+
+/** An import or verify that holds a screen folder. */
+export interface BusyRun { what: string; pid: number; since: string }
+
+/** A second import or verify of a screen folder while one runs: refused (one run per folder; they share its files). */
+export class ScreenBusyError extends Error {
+  constructor(readonly screen: string, readonly run: BusyRun | null) {
+    super(`An import or verify of ${screen} is running; call it again when it ends.`);
+  }
+}
+
+/** The runs this process holds, by screen folder (the marker file is the same claim across processes). */
+const running = new Map<string, { what: string; since: string; token: string }>();
+/** An unreadable marker younger than this is being written by its run (exclusive create, then the write). */
+const BUSY_WRITE_MS = 10 * 1000;
+
+/** Whether a marker found on disk belongs to a run that still holds the folder. */
+function holds(key: string, file: string, m: any, now: number): boolean {
+  if (!m) {
+    // created exclusively a moment ago and not written yet, or a broken file a crash left
+    try { return now - fs.statSync(file).mtimeMs < BUSY_WRITE_MS; } catch { return false; }
+  }
+  // this process knows its own runs: a marker with its pid that it does not hold is left over
+  if (m.pid === process.pid) return running.get(key)?.token === m.token;
   const since = Date.parse(m.since ?? "");
   return alive(m.pid) && Number.isFinite(since) && now - since < BUSY_STALE_MS;
 }
 
-/** Marks an import or verify of the screen folder as running; the returned function ends it. */
+/**
+ * Claims the screen folder for one import or verify and returns the function that ends the run. One run per folder: its
+ * runs share the export, the staging folders and the records, and a finished run's cleanup would delete a running one's
+ * captures. The claim is held in this process and as an exclusive marker file (`busy.json`, for the cleanup of other
+ * server processes too); a marker of a process that is gone, or set more than BUSY_STALE_MS ago, is left over from a
+ * crash and taken over. Throws ScreenBusyError while another run holds the folder.
+ */
 export function markBusy(screenDir: string, what: "import" | "verify"): () => void {
+  const key = path.resolve(screenDir), screen = path.basename(key);
+  const mine = running.get(key);
+  if (mine) throw new ScreenBusyError(screen, { what: mine.what, pid: process.pid, since: mine.since });
   const dir = path.join(screenDir, BOOKKEEPING_DIR), file = path.join(dir, BUSY_FILE);
   fs.mkdirSync(dir, { recursive: true });
   const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  fs.writeFileSync(file, JSON.stringify({ what, pid: process.pid, since: new Date().toISOString(), token }) + "\n");
+  const marker = { what, pid: process.pid, since: new Date().toISOString(), token };
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.writeFileSync(file, JSON.stringify(marker) + "\n", { flag: "wx" });
+      break;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+    }
+    const held = readJson(file);
+    if (attempt >= 3 || holds(key, file, held, Date.now())) {
+      throw new ScreenBusyError(screen, held && typeof held.pid === "number" ? { what: String(held.what), pid: held.pid, since: String(held.since) } : null);
+    }
+    // left over: moved aside under a name of its own, so two processes taking over the same marker cannot both win; a marker
+    // that turns out to be a live run's (written between the read and the move) goes back
+    const aside = `${file}.${token}.old`;
+    try { fs.renameSync(file, aside); } catch { continue; }
+    const moved = readJson(aside);
+    if (moved?.token !== held?.token && holds(key, aside, moved, Date.now())) {
+      try { fs.linkSync(aside, file); } catch { /* another run claimed it meanwhile */ }
+      fs.rmSync(aside, { force: true });
+      throw new ScreenBusyError(screen, { what: String(moved.what), pid: moved.pid, since: String(moved.since) });
+    }
+    fs.rmSync(aside, { force: true });
+  }
+  running.set(key, { what, since: marker.since, token });
   return () => {
+    if (running.get(key)?.token === token) running.delete(key);
     if (readJson(file)?.token === token) fs.rmSync(file, { force: true });
   };
 }

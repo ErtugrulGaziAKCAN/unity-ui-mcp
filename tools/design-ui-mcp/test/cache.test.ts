@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyClean, FAILED_RUNS_KEPT, isBusy, markBusy, planClean } from "../src/cache.js";
+import { applyClean, FAILED_RUNS_KEPT, isBusy, markBusy, planClean, ScreenBusyError } from "../src/cache.js";
 import { readConfig } from "../src/config.js";
 import { tempDir } from "./helpers.js";
 
@@ -145,6 +145,42 @@ describe("bookkeeping cleanup", () => {
       expect(failed.map((f) => f.error)).toEqual(failed.map(() => "an import or verify of the screen started; left for the next cleanup"));
       expect(fs.existsSync(path.join(dir, ".design-ui", "unity"))).toBe(true);
     } finally { done(); }
+  });
+
+  it("holds one run per screen folder: a second run is refused while the first holds it; a live process's marker refuses it, a stale or dead one is taken over", () => {
+    const d = designRoot();
+    const dir = d.screen("one");
+    const file = path.join(dir, ".design-ui", "busy.json");
+    const done = markBusy(dir, "verify");
+    try {
+      expect(() => markBusy(dir, "import")).toThrow(ScreenBusyError);
+      expect(() => markBusy(dir, "verify")).toThrow("An import or verify of one is running; call it again when it ends.");
+      // the first run's marker is untouched, so the cleanup still sees the screen as busy
+      expect(isBusy(dir)).toBe(true);
+    } finally { done(); }
+    expect(isBusy(dir)).toBe(false);
+    // a marker another server process (alive) holds
+    const other = { what: "verify", pid: process.ppid, since: new Date().toISOString(), token: "other" };
+    fs.writeFileSync(file, JSON.stringify(other));
+    let refused: unknown;
+    try { markBusy(dir, "import"); } catch (e) { refused = e; }
+    expect(refused).toBeInstanceOf(ScreenBusyError);
+    expect((refused as ScreenBusyError).run).toMatchObject({ what: "verify", pid: process.ppid });
+    expect(JSON.parse(fs.readFileSync(file, "utf8")).token).toBe("other");
+    // one set hours ago, or of a process that is gone, is left over: taken over
+    for (const left of [{ ...other, since: new Date(Date.now() - 7 * 3600e3).toISOString() }, { ...other, pid: 2 ** 22 + 12345 }]) {
+      fs.writeFileSync(file, JSON.stringify(left));
+      const mine = markBusy(dir, "verify");
+      expect(JSON.parse(fs.readFileSync(file, "utf8"))).toMatchObject({ pid: process.pid, what: "verify" });
+      mine();
+      expect(fs.existsSync(file)).toBe(false);
+    }
+    // a marker being written (empty, just made) counts as held; an old unreadable one is left over
+    fs.writeFileSync(file, "");
+    expect(() => markBusy(dir, "verify")).toThrow(ScreenBusyError);
+    const old = new Date(Date.now() - 60e3);
+    fs.utimesSync(file, old, old);
+    markBusy(dir, "verify")();
   });
 
   it("treats a run marker of a process that is gone as left over", () => {

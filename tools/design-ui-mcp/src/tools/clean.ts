@@ -2,7 +2,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { applyClean, markBusy, mb, planClean, type CleanPlan, type Removal } from "../cache.js";
+import { applyClean, markBusy, mb, planClean, ScreenBusyError, type CleanPlan, type Removal } from "../cache.js";
 import type { DesignUiConfig } from "../config.js";
 import { requireConfig, type ServerContext } from "../context.js";
 import { resolveScreen } from "../design.js";
@@ -28,9 +28,19 @@ export function autoClean(cfg: DesignUiConfig, protect: readonly string[] = []):
   }
 }
 
-/** Runs an import or verify of a screen folder with its run marker set, so no cleanup touches what the run writes. */
+/**
+ * Runs an import or verify of a screen folder with its run marker set, so no cleanup touches what the run writes. One run
+ * per folder: while another import or verify of it runs (this server or another process), the call is refused with an
+ * error and touches nothing (the folder's runs share its export, staging folders and records).
+ */
 export async function whileBusy(screenDir: string, what: "import" | "verify", run: () => Promise<CallToolResult>): Promise<CallToolResult> {
-  const release = markBusy(screenDir, what);
+  let release: () => void;
+  try { release = markBusy(screenDir, what); } catch (e) {
+    if (!(e instanceof ScreenBusyError)) throw e;
+    return toolResult(`${e.message} Nothing was exported, captured or written.`, {
+      screen: e.screen, running: e.run ? { what: e.run.what, since: e.run.since, ...(e.run.pid !== process.pid ? { pid: e.run.pid } : {}) } : null,
+    }, true);
+  }
   try { return await run(); } finally { release(); }
 }
 
@@ -40,6 +50,8 @@ export async function whileBusy(screenDir: string, what: "import" | "verify", ru
  * comparison the answer prints reads, are not removed by this cleanup; a later one may.
  */
 export function afterRun(cfg: DesignUiConfig, result: CallToolResult): CallToolResult {
+  // a call refused because another run holds the screen (whileBusy's `running`) ran nothing: nothing to clean after it
+  if ((result.structuredContent as { running?: unknown } | undefined)?.running !== undefined) return result;
   const kept = (result.structuredContent as { keptCaptures?: { dir?: unknown } | null } | undefined)?.keptCaptures?.dir;
   const line = autoClean(cfg, typeof kept === "string" ? [kept, path.join(path.dirname(kept), "export")] : []);
   if (!line) return result;

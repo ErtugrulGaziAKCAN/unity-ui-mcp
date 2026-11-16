@@ -1272,6 +1272,49 @@ describe("design_ui_verify", () => {
     expect(st).toMatchObject({ state: "failed", verdict: "fail", reportPath: path.join(dir, "report.html") });
   });
 
+  it("runs one import or verify per screen folder: a call that overlaps a running one is refused and touches nothing", async () => {
+    const p = tempProject({ prefer: "command" });
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const pipeline = { ...stubPipeline(), unityCapture: true };
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>((r) => { release = r; }), started = new Promise<void>((r) => { entered = r; });
+    let compares = 0;
+    pipeline.compareScreen = async (_e, unityDir, reportFile) => {
+      compares++;
+      entered();
+      await gate;
+      // the first run's staging folder is still its own: the second call deleted nothing
+      expect(fs.existsSync(unityDir)).toBe(true);
+      fs.writeFileSync(reportFile, "<p>report</p>");
+      return { pass: true, topIssues: [], notRun: [] };
+    };
+    const client = await serverFor(p.dir, pipeline);
+    await call(client, "design_ui_import", { design: "clean-screen" });
+    const calls = p.runnerCalls().length;
+    // what a cleanup would remove (another screen's finished captures): a refused call runs no cleanup either
+    const other = p.addScreen("other-screen", "clean-screen");
+    fs.mkdirSync(path.join(other, ".design-ui", "unity"), { recursive: true });
+    const first = call(client, "design_ui_verify", { screen: "clean-screen" });
+    await started;
+    for (const [tool, args] of [["design_ui_verify", { screen: "clean-screen" }], ["design_ui_import", { design: "clean-screen" }]] as const) {
+      const second = await call(client, tool, args);
+      expect(second.isError).toBe(true);
+      expect(second.text).toMatch(/^An import or verify of clean-screen is running; call it again when it ends\./);
+      expect(second.data).toMatchObject({ screen: "clean-screen", running: { what: "verify" } });
+      expect(second.data.cleanup).toBeUndefined();
+    }
+    expect(fs.existsSync(path.join(other, ".design-ui", "unity"))).toBe(true);
+    // neither refused call ran Unity
+    expect(p.runnerCalls()).toHaveLength(calls + 1);
+    release();
+    const r = await first;
+    expect(r.data).toMatchObject({ verdict: "pass" });
+    expect(compares).toBe(1);
+    // once the first ends, the next call runs
+    expect((await call(client, "design_ui_import", { design: "clean-screen" })).isError).toBeFalsy();
+    expect(fs.existsSync(path.join(dir, ".design-ui", "busy.json"))).toBe(false);
+  });
+
   it("calls a screen whose design hides a job in every context incomplete, never a pass, at import and at verify", async () => {
     const p = tempProject({ prefer: "command" });
     const dir = p.addScreen("clean-screen", "clean-screen");
