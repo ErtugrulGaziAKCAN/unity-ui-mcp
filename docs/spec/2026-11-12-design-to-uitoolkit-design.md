@@ -405,11 +405,11 @@ Output per screen:
   export-report.json           source, kit and tool hashes; an unchanged design is not exported again
 ```
 
-IR outline (`irVersion: 1`, validated with a JSON Schema shipped in the repo):
+IR outline (`irVersion: 2`, validated with a JSON Schema shipped in the repo):
 
 ```json
 {
-  "irVersion": 1,
+  "irVersion": 2,
   "screen": "club.overview",
   "source": { "path": "club-overview.html", "sha256": "…" },
   "referenceViewport": [2560, 1440],
@@ -423,7 +423,7 @@ IR outline (`irVersion: 1`, validated with a JSON Schema shipped in the repo):
     "id": "root", "kind": "container",
     "style": { "base": {}, "hover": {}, "active": {}, "focus": {}, "disabled": {}, "checked": {},
                "bp:narrow": {}, "state:loading": {} },
-    "text": { "key": "club.overview.title", "tr": "Genel Bakış", "en": "Overview", "args": [], "rich": false },
+    "text": { "key": "club.overview.title", "ref": "Genel Bakış", "en": "Overview", "args": [], "rich": false },
     "bind": null, "action": null, "repeat": null, "anims": [], "children": []
   }
 }
