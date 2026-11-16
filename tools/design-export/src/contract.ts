@@ -169,3 +169,15 @@ export function readContractFile(file: string): ContractLoad {
 
 /** The contract that sits beside a design (its screen folder). */
 export const readScreenContract = (designDir: string): ContractLoad => readContractFile(path.join(designDir, CONTRACT_FILE));
+
+/**
+ * The screen folder whose contract is read, from a folder (as it is) or a design page in it (.html, .dc.html: its folder).
+ * No design page is needed: the brief is made before anything is designed.
+ */
+export function contractFolder(input: string): string {
+  const p = path.resolve(input);
+  if (!fs.existsSync(p)) throw new Error(`design not found: ${p}`);
+  if (fs.statSync(p).isDirectory()) return p;
+  if (/\.html$/i.test(p)) return path.dirname(p);
+  throw new Error(`${p} is not a screen folder or a design page (.html, .dc.html)`);
+}

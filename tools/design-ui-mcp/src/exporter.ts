@@ -14,5 +14,5 @@ export { writeReportPictures, type ReportPictures } from "../../design-export/sr
 export { chromiumSandbox, type SandboxState } from "../../design-export/src/browser.js";
 export { IR_VERSION } from "../../design-export/src/ir/types.js";
 export { viewportClassOf, type ViewportClass } from "../../design-export/src/viewport.js";
-export { readScreenContract, readContractFile, CONTRACT_FILE, type ContractLoad, type ScreenContract, type ContractItem, type ContractKind, type RemovedItem } from "../../design-export/src/contract.js";
+export { readScreenContract, readContractFile, contractFolder, CONTRACT_FILE, type ContractLoad, type ScreenContract, type ContractItem, type ContractKind, type RemovedItem } from "../../design-export/src/contract.js";
 export { contractBrief, namedDependencies } from "../../design-export/src/contract-brief.js";

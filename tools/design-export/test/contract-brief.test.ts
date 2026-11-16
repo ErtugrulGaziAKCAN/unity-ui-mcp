@@ -152,4 +152,21 @@ describe("design-export contract brief", () => {
     expect(r.code).toBe(1);
     expect(r.out).toBe(`no screen.contract.json in ${d}\n`);
   });
+
+  it("takes a design page like lint and export: the contract beside it", async () => {
+    const d = tmp();
+    fs.writeFileSync(path.join(d, "screen.contract.json"), JSON.stringify(EXAMPLE));
+    for (const n of ["month.dc.html", "empty-day.dc.html"]) fs.writeFileSync(path.join(d, n), "<p>artboard</p>");
+    const r = await run(["contract", "brief", path.join(d, "month.dc.html"), "--kit", KIT]);
+    expect(r.code).toBe(0);
+    expect(r.out).toBe(contractBrief(parse(EXAMPLE), { locales: ["tr"] }));
+    // the folder of several artboards works too: no page is needed
+    expect((await run(["contract", "brief", d, "--kit", KIT])).code).toBe(0);
+    // a path that does not exist, or is no folder or page, is a usage error
+    expect(await run(["contract", "brief", path.join(d, "nope"), "--kit", KIT])).toEqual({ code: 2, out: `design-export: design not found: ${path.join(d, "nope")}\n` });
+    fs.writeFileSync(path.join(d, "notes.txt"), "x");
+    const txt = await run(["contract", "brief", path.join(d, "notes.txt"), "--kit", KIT]);
+    expect(txt.code).toBe(2);
+    expect(txt.out).toContain("is not a screen folder or a design page");
+  });
 });

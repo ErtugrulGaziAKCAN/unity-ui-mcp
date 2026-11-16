@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { sameProject } from "./bridge.js";
+import { contractFolder } from "./exporter.js";
 import { extractZip } from "./zip.js";
 
 /** Per-screen bookkeeping folder: `<designRoot>/<screen>/.design-ui/` (last-import.json, last-verify.json, export/). */
@@ -98,6 +99,20 @@ export async function openDesignInput(design: string, designRoot: string): Promi
   }
   if (/\.html$/i.test(p)) return { entry: p, zip: null, cleanup: () => {} };
   throw new Error(`unsupported design input ${p}: expected a folder, an .html or .dc.html file, or a .zip`);
+}
+
+/**
+ * The screen folder whose screen.contract.json the brief reads: a folder (a screen id under designRoot, or a path) as it
+ * is and a page's folder (contractFolder), so no design page is needed; a ZIP is opened as a design input (its page's folder).
+ */
+export async function openContractFolder(design: string, designRoot: string): Promise<{ dir: string; cleanup(): void }> {
+  const p = resolveInput(design, designRoot);
+  if (!fs.existsSync(p)) throw new Error(`design not found: ${design} (looked for ${p})`);
+  if (/\.zip$/i.test(p) && fs.statSync(p).isFile()) {
+    const input = await openDesignInput(p, designRoot);
+    return { dir: path.dirname(input.entry), cleanup: input.cleanup };
+  }
+  return { dir: contractFolder(p), cleanup: () => {} };
 }
 
 /**

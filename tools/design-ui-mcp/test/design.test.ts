@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { findEntry, openDesignInput, resolveScreen, sourceSha } from "../src/design.js";
+import { findEntry, openContractFolder, openDesignInput, resolveScreen, sourceSha } from "../src/design.js";
 import { extractZip } from "../src/zip.js";
 import { FIXTURES, tempDir, writeZip } from "./helpers.js";
 
@@ -137,5 +137,25 @@ describe("openDesignInput", () => {
   });
   it("names a path that does not exist", async () => {
     await expect(openDesignInput("missing", tempDir())).rejects.toThrow(/not found/);
+  });
+});
+
+describe("openContractFolder", () => {
+  it("takes a folder as it is (no page needed), a page's folder, and a ZIP's page folder", async () => {
+    const root = tempDir();
+    const screen = path.join(root, "inbox");
+    fs.mkdirSync(screen);
+    // only the contract: nothing is designed yet
+    for (const input of ["inbox", screen]) expect((await openContractFolder(input, root)).dir).toBe(screen);
+    for (const n of ["a.dc.html", "b.dc.html"]) fs.writeFileSync(path.join(screen, n), html);
+    for (const input of ["inbox", "inbox/a.dc.html", path.join(screen, "b.dc.html")]) expect((await openContractFolder(input, root)).dir).toBe(screen);
+    writeZip(path.join(root, "inbox.zip"), [{ name: "inbox/screen.html", data: html }, { name: "inbox/screen.contract.json", data: "{}" }]);
+    const z = await openContractFolder("inbox.zip", root);
+    expect(fs.existsSync(path.join(z.dir, "screen.contract.json"))).toBe(true);
+    z.cleanup();
+    expect(fs.existsSync(z.dir)).toBe(false);
+    await expect(openContractFolder("missing", root)).rejects.toThrow(/design not found: missing/);
+    fs.writeFileSync(path.join(screen, "notes.txt"), "x");
+    await expect(openContractFolder("inbox/notes.txt", root)).rejects.toThrow(/not a screen folder or a design page/);
   });
 });

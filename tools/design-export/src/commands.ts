@@ -3,7 +3,7 @@ import path from "node:path";
 import { compareScreen, readThresholds, summarizeIssues } from "./compare/compare.js";
 import { writeReport, writeVerdict } from "./compare/report.js";
 import { contractBrief } from "./contract-brief.js";
-import { CONTRACT_FILE, readScreenContract } from "./contract.js";
+import { CONTRACT_FILE, contractFolder, readScreenContract } from "./contract.js";
 import { exportScreen, lintScreen } from "./export.js";
 import { readKit } from "./kit.js";
 import { buildKit } from "./kit/build.js";
@@ -110,7 +110,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   contractCmd.command("brief").allowExcessArguments(false).argument("<designDir>").requiredOption("--kit <kitDir>")
     .description("Print the design brief of a screen's contract")
     .action(guard(async (dir: string, o: { kit: string }) => {
-      const load = readScreenContract(path.resolve(dir));
+      const load = readScreenContract(contractFolder(dir));
       if (load.state === "absent") { io.out(`no ${CONTRACT_FILE} in ${dir}\n`); return 1; }
       if (load.state === "invalid") { for (const p of load.problems) io.out(`${CONTRACT_FILE}: ${p}\n`); return 1; }
       io.out(contractBrief(load.contract, readKit(path.resolve(o.kit))));

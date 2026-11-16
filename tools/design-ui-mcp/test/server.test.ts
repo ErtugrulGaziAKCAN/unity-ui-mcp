@@ -261,6 +261,44 @@ describe("design_ui_brief", () => {
     expect(bad.text).toContain("screen.contract.json: contract must be 1");
     expect(bad.text).toContain("write screen.contract.json from the project");
   });
+
+  /** A contract for the screen "calendar" (an empty new screen: one requested action). */
+  const CALENDAR = JSON.stringify({
+    contract: 1, screen: "calendar", kind: "new",
+    actions: [{ name: "open-day", handler: null, origin: "requested", note: "user, 2026-11-16: open a day" }],
+  });
+
+  it("briefs a folder that holds only the contract: nothing is designed yet", async () => {
+    const p = tempProject();
+    const dir = path.join(p.designRoot, "calendar");
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, "screen.contract.json"), CALENDAR);
+    const client = await serverFor(p.dir);
+    for (const screen of ["calendar", dir]) {
+      const r = await call(client, "design_ui_brief", { screen });
+      expect(r.isError, r.text).toBeFalsy();
+      expect(r.text).toMatch(/^# Design brief: calendar\n/);
+      expect(r.data).toMatchObject({ screen: "calendar", contract: "valid", dependencies: ["action open-day: user, 2026-11-16: open a day"] });
+    }
+    const missing = await call(client, "design_ui_brief", { screen: "nowhere" });
+    expect(missing.isError).toBe(true);
+    expect(missing.text).toContain("design not found: nowhere");
+  });
+
+  it("briefs a canvas folder with several artboards, by the folder or by an artboard", async () => {
+    const p = tempProject();
+    const dir = path.join(p.designRoot, "canvas");
+    fs.mkdirSync(dir);
+    const page = fs.readFileSync(path.join(here, "fixtures", "designs", "clean-screen", "screen.html"), "utf8").replace('data-u-screen="clean.screen"', 'data-u-screen="calendar"');
+    for (const n of ["calendar-month.dc.html", "calendar-empty-day.dc.html"]) fs.writeFileSync(path.join(dir, n), page);
+    fs.writeFileSync(path.join(dir, "screen.contract.json"), CALENDAR);
+    const client = await serverFor(p.dir);
+    for (const screen of ["canvas", "canvas/calendar-month.dc.html"]) {
+      const r = await call(client, "design_ui_brief", { screen });
+      expect(r.isError, r.text).toBeFalsy();
+      expect(r.data).toMatchObject({ screen: "calendar", contract: "valid" });
+    }
+  });
 });
 
 describe("design_ui_lint", () => {
