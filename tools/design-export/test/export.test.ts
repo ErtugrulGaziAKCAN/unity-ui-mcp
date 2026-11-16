@@ -9,6 +9,7 @@ import { exportScreen, designHash, MARKER_FILE, toolHashInputs } from "../src/ex
 import crypto from "node:crypto";
 import { validateBoxes } from "../src/boxes/validate.js";
 import { validateIr } from "../src/ir/validate.js";
+import { readKit } from "../src/kit.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fx = (...n: string[]) => path.join(here, "fixtures", "export", ...n);
@@ -180,6 +181,18 @@ describe("exportScreen: failures", () => {
     expect(tree(out)).toEqual([MARKER_FILE, "lint-report.json"]);
     expect(readJson(out, "lint-report.json").findings.some((f: { ruleId: string }) => f.ruleId === "U-CSS-001")).toBe(true);
     expect(fs.readdirSync(path.dirname(out)).filter((n) => n.includes(".tmp-"))).toEqual([]);
+  }, 120_000);
+
+  it("a kit that requires a screen contract stops the export of a design without one", async () => {
+    // the import exports first, so it refuses such a design too
+    const out = path.join(tmp(), "out");
+    const r = await exportScreen(fx("inbox-mini"), { ...readKit(KIT), screenContract: "required" }, out, { browser });
+    expect(r.ok).toBe(false);
+    expect(r.contract.state).toBe("absent");
+    expect(r.findings.filter((f) => f.severity === "error").map((f) => `${f.ruleId}: ${f.detail}`))
+      .toEqual(["U-CON-001: no screen.contract.json beside the design, and the kit requires one (screenContract: required)"]);
+    expect(fs.existsSync(path.join(out, "export-report.json"))).toBe(false);
+    expect(tree(out)).toEqual([MARKER_FILE, "lint-report.json"]);
   }, 120_000);
 
   it("an internal error leaves the previous export intact and no temp folder", async () => {
