@@ -35,6 +35,12 @@ Guides: [usage guide](docs/guide/usage.md) · [Türkçe kullanım rehberi](docs/
   Chromium once per machine.
 - `scripts/setup.sh` is bash: macOS or Linux; on Windows use WSL or Git Bash, or the manual steps in
   [INSTALL.md](INSTALL.md). All measurements so far were made on macOS.
+- **A TMP font with real faces** for the weights the kit's text styles use (400 and 700), as each locale's font: TMP
+  Settings' default font or the profile's locale fonts. Kit sync refuses a synthesized bold. A new project that has
+  none (TMP's default Liberation Sans has no bold face) can use the kit's Inter: the usage guide's "Once per project",
+  step 3, says how.
+- Verification runs its Unity capture as an EditMode test on a temporary copy of the project. A project without the
+  **Unity Test Framework** gets the version built into its Unity in that copy only; the project is not changed.
 - Optional, for localized screens: **Unity Localization 1.5** or later, with Addressables settings in the project (the
   import creates String Table collections through them).
 - A **Linear colour space** project shows design screens through the `DesignUiGammaComposite` component (see

@@ -40,6 +40,9 @@ Ask these questions in one message and wait for the answers:
 
 - `node --version` is 20 or later, and `npm` and `git` exist. If Node is missing or older, stop and ask the user to
   install Node.js 20+ (https://nodejs.org).
+- The Unity project has a TMP font with real regular (400) and bold (700) faces for its reference locale (TMP Settings'
+  default font, or the profile's locale fonts later). A new project often has none: tell the user that kit sync will
+  ask for one, and that the usage guide's "Once per project", step 3, sets up the kit's Inter in a few clicks.
 
 ## 3. Clone
 
@@ -195,6 +198,9 @@ or USS by hand). Tell the user.
 | `could not start Chromium` | Run `npx playwright install chromium` in the clone folder. |
 | `design-ui.config.json not found` | Run `scripts/setup.sh` for that project, or check `--project` in the client's registration. |
 | `design_ui_*` tools missing in the session | The session started before the registration: start a new one in the client folder. |
+| Kit sync: `no font resolves for locale '…'` | Import TMP's essentials (`Window > TextMeshPro > Import TMP Essential Resources`) and set a font, or map the locale in the profile's **Locale Fonts** (usage guide, "Once per project", step 3). |
+| Kit sync: `uses weight 700, but … has no real face for it` | Add a bold TMP font asset to that font asset's **Font Weights** table at 700 (usage guide, "Once per project", step 3); a synthesized bold is refused. |
+| Verify: `the project has no com.unity.test-framework … could not be read` | Add **Test Framework** to the project in the Package Manager (the capture is an EditMode test); normally the copy gets the built-in version by itself. |
 | Unity cannot resolve the git URL | The tag or commit setup pinned must be on GitHub (setup warns when it is not); or rerun setup with `--package local` (a `file:` path to this clone). |
 
 ## Manual setup (only if `setup.sh` cannot run)

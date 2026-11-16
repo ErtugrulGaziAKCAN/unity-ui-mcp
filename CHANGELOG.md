@@ -7,6 +7,13 @@ numbers below are in [docs/findings/](docs/findings/); the decisions they cite (
 
 ## Unreleased
 
+### Fixed
+
+- Verification on a project without the Unity Test Framework: the capture is an EditMode test, so the temporary copy now
+  gets the Test Framework built into its Unity when the project has none (in its manifest or `packages-lock.json`), and
+  says so; the project is not changed. Before, the copy failed to compile the package's tests. The README and INSTALL.md
+  also name the font a project needs (real 400 and 700 faces) and how a new project sets up the kit's Inter.
+
 ### Added
 
 - Screen contract: the screen's inventory kept as `screen.contract.json` beside the design, written from the project and

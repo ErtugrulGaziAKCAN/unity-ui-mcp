@@ -34,7 +34,12 @@ fix; a difference after import is reported, never smoothed over.
 3. **Fonts.** Each locale renders with the TMP font the project already uses. By default that is TMP Settings' default
    font for every locale. A project with a per-locale mapping fills the profile's **Locale Fonts**, or writes a
    `DesignUiFontResolver` subclass in an Editor assembly that asks its own font system, and sets that asset as the
-   profile's **Font Resolver** (one source of truth).
+   profile's **Font Resolver** (one source of truth). Each font needs real faces for the weights the kit's text styles
+   use (400 and 700): kit sync refuses a synthesized bold. **A new project without such a font** (TMP's default Liberation
+   Sans has no bold face): import TMP's essentials if asked (`Window > TextMeshPro > Import TMP Essential Resources`),
+   copy `Inter_18pt-Regular.ttf` and `Inter_18pt-Bold.ttf` from the kit's `fonts/` folder into `Assets/`, make a TMP font
+   asset from each (`Assets > Create > TextMeshPro > Font Asset > SDF`), put the Bold asset in the Regular asset's **Font
+   Weights** table at 700 (Regular column), and set the Regular asset as TMP Settings' **Default Font Asset**.
 4. **The kit.** Setup copies `design-kit` from the clone into `<designRoot>/design-kit`, the project's own kit, and points
    `kitDir` at it (kit sync never writes into the clone). Setup keeps a kit that is already there; after pulling a newer
    clone, run `npx design-export kit upgrade <kitDir> --dry-run` in the clone to see what changes, then without

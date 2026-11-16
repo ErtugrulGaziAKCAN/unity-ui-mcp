@@ -34,7 +34,13 @@ söylenir. Aktarımdan sonra çıkan bir fark raporlanır, asla gizlice yaklaşt
 3. **Fontlar.** Her dil, projenin zaten kullandığı TMP fontuyla çizilir. Varsayılan olarak bu, her dil için TMP
    Settings'teki varsayılan fonttur. Dile göre font eşlemesi olan bir proje profildeki **Locale Fonts** listesini
    doldurur ya da bir Editor assembly'sinde kendi font sistemine soran küçük bir `DesignUiFontResolver` alt sınıfı yazıp
-   onun asset'ini profilin **Font Resolver** alanına koyar (tek doğru kaynak).
+   onun asset'ini profilin **Font Resolver** alanına koyar (tek doğru kaynak). Her fontun, kit'in yazı stillerinin
+   kullandığı kalınlıklar (400 ve 700) için gerçek yüzleri olmalı: kit senkronu taklit kalını reddeder. **Böyle bir fontu
+   olmayan yeni bir proje** (TMP'nin varsayılan Liberation Sans'ında kalın yüz yok): istenirse TMP'nin temel dosyalarını
+   içe aktar (`Window > TextMeshPro > Import TMP Essential Resources`), kit'in `fonts/` klasöründeki
+   `Inter_18pt-Regular.ttf` ve `Inter_18pt-Bold.ttf` dosyalarını `Assets/` altına kopyala, her birinden bir TMP font
+   asset'i yap (`Assets > Create > TextMeshPro > Font Asset > SDF`), Bold asset'ini Regular asset'inin **Font Weights**
+   tablosunda 700 satırına (Regular sütunu) koy ve Regular asset'ini TMP Settings'in **Default Font Asset**'i yap.
 4. **Kit.** Kurulum `design-kit` klasörünü klondan projenin kendi kiti olan `<designRoot>/design-kit` klasörüne
    kopyalar ve `kitDir`'i oraya çevirir (kit senkronu klona hiç yazmaz). Sonra **kit senkronu** yap (AI'dan
    `design_ui_kit_sync` iste ya da `Window > Design UI > Kit Sync`): projenin font dosyaları kit'e kopyalanır,

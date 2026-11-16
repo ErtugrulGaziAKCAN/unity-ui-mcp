@@ -53,12 +53,16 @@ mkdir -p "$DESIGN_UI_OUT_DIR" && echo '{}' > "$DESIGN_UI_OUT_DIR/capture-done.js
 exit ${code}
 `);
   fs.chmodSync(unity, 0o755);
+  // the Unity stand-in's built-in Test Framework, where a Linux or Windows install keeps it (next to the binary)
+  const builtIn = path.join(root, "Data", "Resources", "PackageManager", "BuiltInPackages", "com.unity.test-framework", "package.json");
+  fs.mkdirSync(path.dirname(builtIn), { recursive: true });
+  fs.writeFileSync(builtIn, JSON.stringify({ name: "com.unity.test-framework", version: "9.8.7" }));
   const lockDir = path.join(root, "slots");
   const env = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => ({
     ...process.env, DESIGN_UI_OUT_DIR: out, CAPTURE_COPY_LOCK_DIR: lockDir, CAPTURE_COPY_POLL_SEC: "0.1", CAPTURE_COPY_MIN_FREE_GB: "0", ...extra,
   });
   const runs = () => fs.existsSync(seen) ? fs.readFileSync(seen, "utf8").trim().split("\n").map((l) => JSON.parse(l)) : [];
-  return { root, project, out, seen, unity, manifest, lockDir, env, runs };
+  return { root, project, out, seen, unity, manifest, builtIn, lockDir, env, runs };
 }
 
 const modes = process.platform === "darwin" ? ["clone", "rsync"] : ["rsync"];
@@ -104,6 +108,45 @@ describe("scripts/capture-on-copy.sh", () => {
       expect(fs.readdirSync(s.lockDir).filter((f) => f.startsWith("slot."))).toEqual([]);
     });
   }
+
+  describe("the Unity Test Framework the capture runs on", () => {
+    it("a project without it: the copy gets this Unity's built-in version, the project stays as it was", () => {
+      const s = setup(0);
+      const r = spawnSync("bash", [SCRIPT, s.project, s.unity], { env: s.env(), encoding: "utf8" });
+      expect(r.status, r.stderr).toBe(0);
+      expect(s.runs()[0].manifest.dependencies["com.unity.test-framework"]).toBe("9.8.7");
+      expect(r.stdout).toContain("the project has no com.unity.test-framework: the copy adds 9.8.7");
+      expect(fs.readFileSync(path.join(s.project, "Packages", "manifest.json"), "utf8")).toBe(s.manifest);
+    });
+
+    it("a project that has it, in its manifest or only through another package (packages-lock.json): nothing is added", () => {
+      const s = setup(0);
+      fs.writeFileSync(path.join(s.project, "Packages", "manifest.json"),
+        JSON.stringify({ dependencies: { "com.unity.ugui": "2.0.0", "com.unity.test-framework": "1.4.5" } }));
+      let r = spawnSync("bash", [SCRIPT, s.project, s.unity], { env: s.env(), encoding: "utf8" });
+      expect(r.status, r.stderr).toBe(0);
+      expect(s.runs()[0].manifest.dependencies["com.unity.test-framework"]).toBe("1.4.5");
+      expect(r.stdout).not.toContain("the copy adds");
+
+      const t = setup(0);
+      fs.writeFileSync(path.join(t.project, "Packages", "packages-lock.json"),
+        JSON.stringify({ dependencies: { "com.unity.test-framework": { version: "1.1.31", depth: 1, source: "registry" } } }));
+      r = spawnSync("bash", [SCRIPT, t.project, t.unity], { env: t.env(), encoding: "utf8" });
+      expect(r.status, r.stderr).toBe(0);
+      expect(t.runs()[0].manifest.dependencies).not.toHaveProperty("com.unity.test-framework");
+    });
+
+    it("a project without it and a Unity whose built-in version cannot be read: says what to do and runs no Unity", () => {
+      const s = setup(0);
+      fs.rmSync(s.builtIn);
+      const r = spawnSync("bash", [SCRIPT, s.project, s.unity], { env: s.env(), encoding: "utf8" });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain("the project has no com.unity.test-framework");
+      expect(r.stderr).toContain("add Test Framework to the project in the Package Manager");
+      expect(s.runs()).toEqual([]);
+      expect(fs.readdirSync(s.lockDir).filter((f) => f.startsWith("slot."))).toEqual([]);
+    });
+  });
 
   it("runs node from DESIGN_UI_NODE when node is not on PATH (the server names its own), and says so when neither has it", () => {
     const s = setup(0);

@@ -13,8 +13,9 @@
 #      the copy before Unity starts (Library/ilpp.pid and every other *.pid, Library/EditorInstance.json, the asset
 #      databases' -lock files, search index locks, packages' .lock and *.lock files, UnityLockfile): a copy that keeps
 #      them makes its Unity treat the open Editor's helpers as its own (it stops the open Editor's IL post-processing runner);
-#   4. in the COPY's Packages/manifest.json only, lists the design-ui package's tests ("testables") and turns relative
-#      file: package paths into absolute ones (the copy lives elsewhere);
+#   4. in the COPY's Packages/manifest.json only, lists the design-ui package's tests ("testables"), turns relative
+#      file: package paths into absolute ones (the copy lives elsewhere) and, when the project has no Unity Test Framework
+#      (com.unity.test-framework, in its manifest or packages-lock.json), adds the version built into the Unity it runs;
 #   5. runs DesignUi.Editor.Tests.DesignCaptureTests.CaptureFromEnv there in batchmode; the MCP server passes the export
 #      and output folders in DESIGN_UI_EXPORT_DIR and DESIGN_UI_OUT_DIR (outside the copy);
 #   6. removes the copy and gives the slot back when Unity exits, whether the capture succeeded or failed, and exits with
@@ -241,18 +242,40 @@ fi
 [ ! -e "$COPY/Library/ilpp.pid" ] || die "the copy still has Library/ilpp.pid; Unity was not started"
 
 # ---- 4. the copy's manifest ------------------------------------------------------------------------------------------
-"$NODE" - "$COPY/Packages/manifest.json" "$PROJECT/Packages" "$PACKAGE" <<'NODE'
+# The capture runs as an EditMode test, so the copy needs the Unity Test Framework. A project that has none (not in its
+# manifest, nor pulled in by another package in packages-lock.json) gets the version built into this Unity, in the copy only.
+UNITY_DIR="$(cd "$(dirname "$UNITY")" && pwd)"
+TEST_FRAMEWORK_BUILTIN=("$UNITY_DIR/../Resources/PackageManager/BuiltInPackages/com.unity.test-framework/package.json"
+                        "$UNITY_DIR/Data/Resources/PackageManager/BuiltInPackages/com.unity.test-framework/package.json")
+MANIFEST_NOTE="$("$NODE" - "$COPY/Packages/manifest.json" "$PROJECT/Packages" "$PACKAGE" "${TEST_FRAMEWORK_BUILTIN[@]}" <<'NODE'
 const fs = require("fs"), path = require("path");
-const [file, packagesDir, id] = process.argv.slice(2);
+const [file, packagesDir, id, ...builtIn] = process.argv.slice(2);
+const TEST_FRAMEWORK = "com.unity.test-framework";
 const raw = fs.readFileSync(file, "utf8");
 const bom = raw.startsWith("﻿") ? "﻿" : "";
 const m = JSON.parse(raw.slice(bom.length));
-for (const [k, v] of Object.entries(m.dependencies || {})) {
+m.dependencies = m.dependencies || {};
+for (const [k, v] of Object.entries(m.dependencies)) {
   if (typeof v === "string" && v.startsWith("file:") && !path.isAbsolute(v.slice(5))) m.dependencies[k] = "file:" + path.resolve(packagesDir, v.slice(5));
 }
 m.testables = Array.from(new Set([...(Array.isArray(m.testables) ? m.testables : []), id]));
+let lock = {};
+try { lock = JSON.parse(fs.readFileSync(path.join(packagesDir, "packages-lock.json"), "utf8")).dependencies || {}; } catch {}
+if (!(TEST_FRAMEWORK in m.dependencies) && !(TEST_FRAMEWORK in lock)) {
+  const found = builtIn.find((f) => fs.existsSync(f));
+  let version = null;
+  try { version = found ? JSON.parse(fs.readFileSync(found, "utf8")).version : null; } catch {}
+  if (typeof version !== "string" || !version) {
+    console.log(`ERROR the project has no ${TEST_FRAMEWORK}, which the capture runs on (it is an EditMode test), and this Unity's built-in version could not be read: add Test Framework to the project in the Package Manager`);
+    process.exit(3);
+  }
+  m.dependencies[TEST_FRAMEWORK] = version;
+  console.log(`the project has no ${TEST_FRAMEWORK}: the copy adds ${version}, this Unity's built-in version (the capture runs as an EditMode test)`);
+}
 fs.writeFileSync(file, bom + JSON.stringify(m, null, 2) + "\n");
 NODE
+)" || die "${MANIFEST_NOTE#ERROR }"
+[ -z "$MANIFEST_NOTE" ] || echo "capture-on-copy: $MANIFEST_NOTE"
 
 # ---- 5. the capture --------------------------------------------------------------------------------------------------
 # Unity runs in the background, in a process group of its own (job control), so a signal reaches this script at once
