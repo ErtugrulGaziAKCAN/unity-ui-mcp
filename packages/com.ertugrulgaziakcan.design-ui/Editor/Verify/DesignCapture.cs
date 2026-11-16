@@ -1003,8 +1003,29 @@ namespace DesignUi.Editor
                         throw new NotCapturableException("'" + focus.name + "' does not take focus in Unity (not focusable, disabled or hidden; focused: " +
                                                          (focused?.name ?? "nothing") + ")");
                     m_Focus = focus;
+                    // the golden shows no caret (the exporter hides Chromium's in every capture); UI Toolkit's would be a difference
+                    // the design does not have, drawn or not depending on what the input went through before (a press shows it)
+                    if (HideCarets(focus))
+                        for (int i = 0; i < ChangeFrames; i++) yield return null;
                 }
                 m_Applied = new List<CaptureApply>(target);
+            }
+
+            /// <summary>Makes the caret of every text input at or below <paramref name="root"/> transparent; whether one was visible.</summary>
+            static bool HideCarets(VisualElement root)
+            {
+                var fields = root.Query<TextField>().ToList();
+                if (root is TextField own && !fields.Contains(own)) fields.Add(own);
+                var hid = false;
+                foreach (var f in fields)
+                {
+                    if (f.textSelection.cursorColor.a <= 0f) continue;
+                    f.textSelection.cursorColor = Color.clear;
+                    f.MarkDirtyRepaint();
+                    f.Query<TextElement>().ForEach(t => t.MarkDirtyRepaint());
+                    hid = true;
+                }
+                return hid;
             }
 
             /// <summary>Applies or removes a class, disabled or checked.</summary>

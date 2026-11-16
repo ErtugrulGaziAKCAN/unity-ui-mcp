@@ -1118,6 +1118,44 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("#ff0000", Hex(Pixel(Png(req), 50, 20)));
         }
 
+        /// <summary>
+        /// A focused text input draws no caret in a capture: the design's capture shows none (Chromium's carets are hidden for
+        /// every capture), so Unity's would be a difference the design does not have (a caret beside a placeholder's first glyph).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Run_Focus_OnATextField_DrawsNoCaret()
+        {
+            // no focus style: the focused capture differs from the plain one only by what focus draws by itself
+            var field = Node("field", "input", ("position", "absolute"), ("left", "20px"), ("top", "20px"), ("width", "200px"), ("height", "40px"),
+                ("padding-left", "12px"), ("background-color", "#112233"), ("color", "#ffffff"), ("font-size", "20px"));
+            field.Initial = new IrInitial();
+            field.AttrTexts["placeholder"] = new IrText { Ref = "Type the name", Style = null };
+            var export = Export(Small(BlackRoot(field)));
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var plain = Request(export, screen, "default@320x180", 320, 180);
+            yield return DesignCapture.Run(plain, profile);
+            var req = Request(export, screen, "default@320x180.focus.field", 320, 180, CaptureApply.Pseudo("focus", "field"));
+            var seen = false;
+            req.Inspect = tree =>
+            {
+                seen = true;
+                var focused = tree.panel.focusController.focusedElement as VisualElement;
+                Assert.IsTrue(focused != null && (focused == tree.Q("field") || tree.Q("field").Contains(focused)), "the field is focused");
+                // whether UI Toolkit draws its caret in a capture depends on what the input went through before (a press
+                // shows it); the capture hides it, whatever the theme's --unity-cursor-color
+                Assert.AreEqual(0f, tree.Q<TextField>("field").textSelection.cursorColor.a, "the caret is transparent in the capture");
+            };
+            yield return DesignCapture.Run(req, profile);
+            Assert.IsTrue(seen);
+            Texture2D a = Png(plain), b = Png(req);
+            var marked = new List<string>();
+            for (int y = 20; y < 60; y++)
+                for (int x = 20; x < 220; x++)
+                    if (Hex(Pixel(a, x, y)) != Hex(Pixel(b, x, y))) marked.Add(x + "," + y + " " + Hex(Pixel(a, x, y)) + "→" + Hex(Pixel(b, x, y)));
+            Assert.IsEmpty(marked, "pixels focus changed (a caret): " + string.Join("; ", marked.Take(8)));
+        }
+
         [UnityTest]
         public IEnumerator Run_Active_DoesNotAlsoFocusThePressedControl()
         {

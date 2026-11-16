@@ -72,7 +72,8 @@ kit and the profile's lists in step.
 
 - The capture renders every job (viewport, state, class, pseudo-state, list sample, animation sample) on a temporary copy
   of the project, never in the open Editor (`scripts/capture-on-copy.sh`: one capture at a time per machine, a free-disk
-  check, the open Editor's process and lock files left out of the copy).
+  check, the open Editor's process and lock files left out of the copy). A focused text input draws no caret in a
+  capture, as the design's capture shows none.
 - The comparison checks element boxes and text baselines (±1 device px), line breaks, where each line's first and last
   glyphs sit, text ink colour and amount, colours at sampled points, ring colour and width, per-element and whole-capture
   SSIM, shadows, the ellipsis glyph, and what a later element covers (text Unity draws over an element that covers it in
