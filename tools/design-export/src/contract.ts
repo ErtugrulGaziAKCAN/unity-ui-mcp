@@ -140,8 +140,11 @@ export function parseScreenContract(json: unknown): { contract: ScreenContract }
     if (!KINDS.includes(rk)) { problems.push(`removed[${i}]: kind must be one of ${KINDS.join(", ")}`); return; }
     if (typeof name !== "string" || !(rk === "text" ? KEY_PATTERN : ID_PATTERN).test(name)) { problems.push(`removed ${rk} ${JSON.stringify(name)} has a bad name`); return; }
     const scope = raw.repeat ?? raw.parent;
-    const repeat = typeof scope === "string" && ID_PATTERN.test(scope) ? scope : null;
-    if (scope !== undefined && scope !== null && repeat === null) problems.push(`removed ${rk} "${name}": repeat ${JSON.stringify(scope)} does not match ${ID_PATTERN.source}`);
+    let repeat: string | null = null;
+    // states and texts are screen-wide (their arrays have no scope field), so a removed one has no repeat either
+    if (scope !== undefined && scope !== null && (rk === "state" || rk === "text")) problems.push(`removed ${rk} "${name}" cannot have a repeat`);
+    else if (typeof scope === "string" && ID_PATTERN.test(scope)) repeat = scope;
+    else if (scope !== undefined && scope !== null) problems.push(`removed ${rk} "${name}": repeat ${JSON.stringify(scope)} does not match ${ID_PATTERN.source}`);
     if (!filled(raw.note)) { problems.push(`removed ${rk} "${name}" has no note`); return; }
     removed.push({ kind: rk, name, repeat, note: raw.note });
   });

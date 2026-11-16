@@ -66,9 +66,10 @@ export interface SnapElement {
    */
   enToks?: EnTok[]; enRendered?: string | null;
   /**
-   * On an element with `data-u-bind` or `data-u-arg`: the value it shows, as the browser renders it (`innerText`; a field
-   * its `value` attribute, a dropdown its selected option, as the IR's sample data reads them), or null when the element
-   * does not render. The screen contract's sample check (U-CON-005) compares it with the contract's samples.
+   * On an element with `data-u-bind` or `data-u-arg`: its sample value as the IR's sample data reads it (`plainText`):
+   * every descendant text node, a `<br>` as a line break, whatever CSS shows of it (visibility, text-transform); a field
+   * its `value` attribute, a dropdown its selected option. Null when the element does not render (no client rects).
+   * The screen contract's sample check (U-CON-005) compares it, normalized, with the contract's samples.
    */
   boundText?: string | null;
   /**
@@ -420,14 +421,20 @@ function pageCollect(arg: { props: string[]; pseudoProps: string[]; staticCss: s
       enToks = walk(el);
       enRendered = el.getClientRects().length ? (el as HTMLElement).innerText : null;
     }
-    // a bound value or a Smart String argument: the text it shows (a field its value, a dropdown its selected option)
+    // a bound value or a Smart String argument: its sample as the IR's sample data reads it (extract/text.ts plainText),
+    // the text of every descendant whatever CSS shows of it (innerText drops visibility: hidden text and applies
+    // text-transform); a field its value attribute, a dropdown its selected option (else its first)
     let boundText: string | null | undefined;
     if (el.hasAttribute("data-u-bind") || el.hasAttribute("data-u-arg")) {
+      const rawText = (n: Node): string => Array.from(n.childNodes).map((c) => c.nodeType === 3 ? (c as Text).data
+        : c.nodeType === 1 ? ((c as Element).localName === "br" && (c as Element).namespaceURI === "http://www.w3.org/1999/xhtml" ? "\n" : rawText(c)) : "").join("");
       if (!el.getClientRects().length) boundText = null;
       else if (el.localName === "input") boundText = el.getAttribute("value") ?? "";
-      else if (el.localName === "textarea") boundText = (el as HTMLTextAreaElement).value;
-      else if (el.localName === "select") boundText = ((el as HTMLSelectElement).selectedOptions[0] ?? (el as HTMLSelectElement).options[0])?.text ?? "";
-      else boundText = typeof (el as HTMLElement).innerText === "string" ? (el as HTMLElement).innerText : el.textContent ?? "";
+      else if (el.localName === "select") {
+        const opts = Array.from(el.children).filter((c) => c.localName === "option");
+        const o = opts.find((c) => c.hasAttribute("selected")) ?? opts[0];
+        boundText = o ? rawText(o) : "";
+      } else boundText = rawText(el);
     }
     out.elements.push({
       tag: el.localName, ns, attrs, parent: parentIdx, texts, rendered, box: rendered ? rect(el) : null, size, computed, pseudo, inline, vars,

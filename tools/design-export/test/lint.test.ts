@@ -224,6 +224,12 @@ describe("screen contract", () => {
       const c = json("U-CON-005.pass.contract.json");
       c.values.push({ name: "injury", repeat: "player", source: "the medical reader's current injury", samples: ["Hamstring"], origin: "existing" });
       expect(con(await lintFile(path.join(dir, "hidden.html"), kit, valid(c)))).toEqual([]);
+      // visibility: hidden keeps the element's box: its text is still its sample (as the IR's sample data reads it), and checked
+      fs.writeFileSync(path.join(dir, "invisible.html"), page.replaceAll('style="display: none"', 'style="visibility: hidden"'));
+      expect(con(await lintFile(path.join(dir, "invisible.html"), kit, valid(c)))).toEqual([]);
+      c.values.at(-1).samples = ["Ankle"];
+      expect(con(await lintFile(path.join(dir, "invisible.html"), kit, valid(c))))
+        .toEqual([`U-CON-005 ${ROW} > p[data-u-id=injury]: value "injury" in repeat "player" shows "Hamstring", not among the screen contract's samples`]);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 

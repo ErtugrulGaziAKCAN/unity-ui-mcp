@@ -79,6 +79,8 @@ describe("screen contract loader", () => {
     ["a removed entry with a bad kind", (j) => { j.removed[0].kind = "button"; }, "removed[0]: kind must be one of"],
     ["a removed entry with a bad name", (j) => { j.removed[0].name = "Refresh!"; }, 'removed action "Refresh!" has a bad name'],
     ["a removed entry without a note", (j) => { delete j.removed[0].note; }, 'removed action "refresh" has no note'],
+    ["a removed state with a repeat", (j) => { j.removed.push({ kind: "state", name: "error", repeat: "player", note: "n" }); }, 'removed state "error" cannot have a repeat'],
+    ["a removed text with a parent", (j) => { j.removed.push({ kind: "text", name: "club.overview.subtitle", parent: "player", note: "n" }); }, 'removed text "club.overview.subtitle" cannot have a repeat'],
     ["an item both listed and removed", (j) => { j.removed.push({ kind: "value", name: "club-name", note: "n" }); }, 'value "club-name" is both listed and removed'],
   ];
   it.each(cases)("names each problem: %s", (_n, mutate, message) => {

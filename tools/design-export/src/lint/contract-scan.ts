@@ -21,7 +21,7 @@ export interface DesignItem {
   repeat: string | null;
   /** Element paths of its occurrences, document order, for findings. */
   paths: string[];
-  /** Values: the normalized text every rendered occurrence shows (all sample rows); empty for other kinds. */
+  /** Values: the normalized sample text (boundText) of every rendered occurrence (all sample rows); empty for other kinds. */
   samples: string[];
   /** Texts: the English as U-MRK-014 reads it (data-en, or the visible text with the reference locale en), normalized. */
   en?: string;
@@ -32,18 +32,15 @@ export interface DesignItem {
 /** Contract text comparison: whitespace runs collapsed to one space, trimmed, NFC. */
 export const normalizeText = (t: string): string => t.normalize("NFC").replace(/\s+/g, " ").trim();
 
-/** States and texts are screen-wide: their scope is always the screen. */
-const scopeOf = (kind: ContractKind, repeat: string | null) => (kind === "state" || kind === "text" ? null : repeat);
-
-/** Kind, name and scope as one key: what matches a design item with a contract item or a removed entry. */
-export const itemKey = (x: { kind: ContractKind; name: string; repeat: string | null }): string =>
-  `${x.kind}\u0000${x.name}\u0000${scopeOf(x.kind, x.repeat) ?? ""}`;
+/**
+ * Kind, name and scope as one key: what matches a design item with a contract item or a removed entry. States and texts
+ * are screen-wide on both sides: the scan gives them no scope and the contract loader refuses one.
+ */
+export const itemKey = (x: { kind: ContractKind; name: string; repeat: string | null }): string => `${x.kind}\u0000${x.name}\u0000${x.repeat ?? ""}`;
 
 /** `value "title" in repeat "player"`: an item as findings name it. */
-export const describeItem = (x: { kind: ContractKind; name: string; repeat: string | null }): string => {
-  const scope = scopeOf(x.kind, x.repeat);
-  return `${x.kind} "${x.name}"${scope !== null ? ` in repeat "${scope}"` : ""}`;
-};
+export const describeItem = (x: { kind: ContractKind; name: string; repeat: string | null }): string =>
+  `${x.kind} "${x.name}"${x.repeat !== null ? ` in repeat "${x.repeat}"` : ""}`;
 
 /** The design's screen id: the data-u-screen of its one screen root; undefined when there is not exactly one (U-MRK-001). */
 export function screenId(s: DomSnapshot): string | undefined {
@@ -69,7 +66,8 @@ const cache = new WeakMap<DomSnapshot, Map<boolean, DesignItem[]>>();
  * Every value (data-u-bind, data-u-arg), action (data-u-action), state (data-u-state), repeat (data-u-repeat) and text
  * key (data-l10n, data-l10n-<attr>) of the design, outside external regions and non-design elements. The scope is the
  * repeat whose written-out item holds the element (for a repeat, its container's); the same kind, name and scope in
- * several sample rows is one item. Elements hidden in a sample row are items too; only rendered values give samples.
+ * several sample rows is one item. Elements hidden in a sample row are items too; values that render (visibility:
+ * hidden ones included) give samples.
  */
 export function designInventory(s: DomSnapshot, kit: KitConfig): DesignItem[] {
   const english = referenceIsEnglish(kit);
@@ -79,7 +77,7 @@ export function designInventory(s: DomSnapshot, kit: KitConfig): DesignItem[] {
   const add = (kind: ContractKind, name: string, repeat: string | null, i: number): DesignItem => {
     const key = itemKey({ kind, name, repeat });
     let it = items.get(key);
-    if (!it) { it = { kind, name, repeat: scopeOf(kind, repeat), paths: [], samples: [] }; items.set(key, it); }
+    if (!it) { it = { kind, name, repeat, paths: [], samples: [] }; items.set(key, it); }
     const path = s.elements[i].path;
     if (!it.paths.includes(path)) it.paths.push(path);
     return it;
