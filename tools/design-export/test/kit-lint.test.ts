@@ -47,6 +47,8 @@ const lintFile = async (file: string, k: KitConfig = kit): Promise<Finding[]> =>
 /** The fidelity fixtures are Turkish with English data-en: the suite runs them with the reference locale tr (FidelitySetup). */
 const turkish = (): KitConfig => ({ ...kit, locales: ["tr"] });
 const show = (f: Finding[]) => f.map((x) => `${x.severity} ${x.ruleId} ${x.path}: ${x.detail}`);
+/** These designs have no screen contract beside them: the one note lint gives (nothing else). */
+const NO_CONTRACT = "info I-CON-001 document: no screen.contract.json beside the design: it is not checked against what the game has for this screen";
 const html = (dir: string) => fs.readdirSync(dir).filter((f) => f.endsWith(".html")).sort().map((f) => path.join(dir, f));
 const components = html(path.join(KIT_DIR, "components"));
 const fixtures = html(path.join(KIT_DIR, "fixtures", "fidelity"));
@@ -57,7 +59,7 @@ describe("kit components lint clean", () => {
       ["button", "card", "dialog", "dropdown", "list-row", "scroll-area", "tabs", "text-field", "toggle"]);
   });
   for (const file of components) {
-    it(path.basename(file), async () => { expect(show(await lintFile(file))).toEqual([]); });
+    it(path.basename(file), async () => { expect(show(await lintFile(file))).toEqual([NO_CONTRACT]); });
   }
 });
 
@@ -70,7 +72,7 @@ describe("fidelity fixtures lint clean", () => {
     ]);
   });
   for (const file of fixtures.filter((f) => !PENDING[path.basename(f)])) {
-    it(path.basename(file), async () => { expect(show(await lintFile(file, turkish()))).toEqual([]); });
+    it(path.basename(file), async () => { expect(show(await lintFile(file, turkish()))).toEqual([NO_CONTRACT]); });
   }
 
   it("pending.json names only fixtures, each with a note", () => {
@@ -84,7 +86,7 @@ describe("fidelity fixtures lint clean", () => {
     const page = path.join(KIT_DIR, "fixtures", "lint", "filters-rejected.html");
     const found = await lintFile(page, turkish());
     const fns = ["blur", "contrast", "grayscale", "hue-rotate", "opacity", "sepia", "brightness", "saturate", "drop-shadow", "url"];
-    expect(found.map((f) => f.ruleId)).toEqual(fns.map(() => "U-CSS-015"));
+    expect(found.map((f) => f.ruleId)).toEqual([...fns.map(() => "U-CSS-015"), "I-CON-001"]);
     for (const fn of fns) {
       const f = found.find((x) => x.path.endsWith(`[data-u-id=tile-${fn}]`));
       expect(f, `${fn}: still rejected? (remove its tile once css-support.json enables it)`).toBeDefined();
@@ -214,13 +216,13 @@ describe("documented examples lint clean", () => {
     // the example names the base stylesheet shown above it instead of repeating it
     expect(md.split(fs.readFileSync(path.join(KIT_DIR, "base.css"), "utf8").trim())).toHaveLength(2);
     fs.writeFileSync(path.join(dir, "example.html"), exampleOf(md).replace(EXAMPLE_STYLESHEET_LINE("kit"), fs.readFileSync(path.join(KIT_DIR, "base.css"), "utf8").trim()));
-    expect(show(await lintFile(path.join(dir, "example.html")))).toEqual([]);
+    expect(show(await lintFile(path.join(dir, "example.html")))).toEqual([NO_CONTRACT]);
   });
 
   it("the Claude README example artboard (.dc.html)", async () => {
     const dir = tmp();
     fs.writeFileSync(path.join(dir, "example.dc.html"), exampleOf(renderRules(kit, "claude")).replace(EXAMPLE_STYLESHEET_LINE("claude"), kitStylesheet(kit)));
-    expect(show(await lintFile(path.join(dir, "example.dc.html")))).toEqual([]);
+    expect(show(await lintFile(path.join(dir, "example.dc.html")))).toEqual([NO_CONTRACT]);
   });
 
   it("a kit component written as a Claude artboard the README's way (kit stylesheet in <helmet>, markup in <x-dc>)", async () => {
@@ -233,6 +235,6 @@ describe("documented examples lint clean", () => {
       `<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":2560,"height":1440}}'>class Component extends DCLogic { renderVals(){ return {}; } }</script></body></html>`;
     const dir = tmp();
     fs.writeFileSync(path.join(dir, "button.dc.html"), dc);
-    expect(show(await lintFile(path.join(dir, "button.dc.html")))).toEqual([]);
+    expect(show(await lintFile(path.join(dir, "button.dc.html")))).toEqual([NO_CONTRACT]);
   });
 });

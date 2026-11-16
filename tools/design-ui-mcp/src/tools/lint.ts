@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { requireConfig, type ServerContext } from "../context.js";
 import { openDesignInput } from "../design.js";
-import { lint, openDesign, type Finding } from "../exporter.js";
+import { lint, openDesign, readScreenContract, type Finding } from "../exporter.js";
 import { guarded, Timings, toolResult } from "../result.js";
 
 const MAX_LISTED = 30;
@@ -37,17 +37,19 @@ export function registerLint(server: McpServer, ctx: ServerContext): void {
         const browser = await t.async("browser", () => ctx.runtime.browser());
         const d = await t.async("load", () => openDesign(input.entry, kit, kit.reference, browser));
         let findings: Finding[];
-        try { findings = await t.async("lint", () => lint(d, kit)); } finally { await d.close(); }
+        try { findings = await t.async("lint", () => lint(d, kit, undefined, readScreenContract(path.dirname(input.entry)))); } finally { await d.close(); }
         const errors = findings.filter((f) => f.severity === "error").length;
-        const warnings = findings.length - errors;
+        const notes = findings.filter((f) => f.severity === "info").length;
+        const warnings = findings.length - errors - notes;
+        const noteText = `${notes} note${notes === 1 ? "" : "s"}`;
         const shownEntry = input.zip
           ? `${input.zip} → ${path.basename(input.entry)}`
           : path.relative(cfg.designRoot, input.entry).startsWith("..") ? input.entry : path.relative(cfg.designRoot, input.entry);
         const head = errors
-          ? `Lint failed: ${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"} in ${shownEntry}. Fix these in the design:`
-          : `Lint passed: no errors${warnings ? `, ${warnings} warning${warnings === 1 ? "" : "s"}` : ""} in ${shownEntry}.`;
+          ? `Lint failed: ${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"}${notes ? `, ${noteText}` : ""} in ${shownEntry}. Fix these in the design:`
+          : `Lint passed: no errors${warnings ? `, ${warnings} warning${warnings === 1 ? "" : "s"}` : ""}${notes ? `, ${noteText}` : ""} in ${shownEntry}.`;
         return toolResult([head, ...formatFindings(findings)].join("\n"), {
-          design, entry: shownEntry, ok: errors === 0, errors, warnings, findings, timings: t.done(),
+          design, entry: shownEntry, ok: errors === 0, errors, warnings, notes, findings, timings: t.done(),
         }, errors > 0);
       } finally {
         input.cleanup();

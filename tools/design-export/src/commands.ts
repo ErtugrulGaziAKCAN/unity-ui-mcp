@@ -55,7 +55,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     .action(guard(async (dir: string, o: { kit: string }) => {
       const r = await lintScreen(dir, path.resolve(o.kit));
       for (const f of r.findings) io.out(line(f) + "\n");
-      io.out(`${r.errors} error${r.errors === 1 ? "" : "s"}, ${r.findings.length - r.errors} warning${r.findings.length - r.errors === 1 ? "" : "s"}\n`);
+      const warnings = r.findings.length - r.errors - r.notes;
+      io.out(`${r.errors} error${r.errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"}, ${r.notes} note${r.notes === 1 ? "" : "s"}\n`);
       return r.errors ? 1 : 0;
     }) as never);
 

@@ -19,6 +19,7 @@ import { validateIr } from "./ir/validate.js";
 import { readKit, type KitConfig } from "./kit.js";
 import { collectSnapshot, lint, type Finding } from "./lint/index.js";
 import { openDesign } from "./load.js";
+import { readScreenContract, type ContractLoad } from "./contract.js";
 
 export interface ExportResult {
   /** false when lint found errors: only lint-report.json was written. */
@@ -38,6 +39,8 @@ export interface ExportResult {
    * `hidden`): they have no golden, so a verify of this export is incomplete until the design shows them somewhere.
    */
   hidden: HiddenJob[];
+  /** The screen contract read beside the design (state "absent" when there is none). */
+  contract: ContractLoad;
 }
 
 /** The hidden jobs an export's goldens/matrix.json lists (none when it has none or cannot be read). */
@@ -60,7 +63,12 @@ export interface ExportOptions {
   lintReportFile?: string;
 }
 
-export interface LintOutcome { findings: Finding[]; errors: number }
+/** `notes` counts the info findings, which are neither errors nor warnings. */
+export interface LintOutcome { findings: Finding[]; errors: number; notes: number }
+
+/** The value export-report.json records for a screen contract: its content hash, or "none" without one. */
+const contractShaOf = (c: ContractLoad): string => (c.state === "absent" ? "none" : c.sha);
+const countOf = (findings: Finding[], severity: Finding["severity"]): number => findings.filter((f) => f.severity === severity).length;
 
 const REPORT_FILE = "report.html";
 /** Written into every folder this exporter creates; the only thing that marks a folder as a previous export. */
@@ -319,8 +327,8 @@ export async function lintScreen(input: string, kitIn: string | KitConfig, opts:
   return withBrowser(opts.browser, async (browser) => {
     const d = await openDesign(htmlPath, kit, kit.reference, browser);
     try {
-      const findings = await lint(d, kit);
-      return { findings, errors: findings.filter((f) => f.severity === "error").length };
+      const findings = await lint(d, kit, undefined, readScreenContract(path.dirname(htmlPath)));
+      return { findings, errors: countOf(findings, "error"), notes: countOf(findings, "info") };
     } finally { await d.close(); }
   });
 }
@@ -332,6 +340,8 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
   assertSafeOut(outDir, htmlPath); // before anything is read or written
   const kit = resolveKit(kitIn);
   const warnings: string[] = [];
+  const contract = readScreenContract(path.dirname(htmlPath));
+  const contractSha = contractShaOf(contract);
   const release = acquireLock(outDir);
   try {
     recoverAndSweep(outDir, warnings);
@@ -343,12 +353,12 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
     // schema, so an export of another IR version has another hash; the IR's own version is read as well, because a server
     // process older than its clone's files hashes the new schema while it writes its own IR version
     if (!opts.force) {
-      const prev = readJsonIf<{ ok: boolean; sourceSha: string; kitSha: string; toolSha: string; source: string }>(path.join(outDir, "export-report.json"));
-      if (prev?.ok && prev.sourceSha === sourceSha && prev.kitSha === kitSha && prev.toolSha === toolSha && prev.source === path.basename(htmlPath)
+      const prev = readJsonIf<{ ok: boolean; sourceSha: string; kitSha: string; toolSha: string; contractSha?: string; source: string }>(path.join(outDir, "export-report.json"));
+      if (prev?.ok && prev.sourceSha === sourceSha && prev.kitSha === kitSha && prev.toolSha === toolSha && prev.contractSha === contractSha && prev.source === path.basename(htmlPath)
         && OUTPUTS.every((f) => fs.existsSync(path.join(outDir, f))) && irVersionOf(path.join(outDir, "screen.ir.json")) === IR_VERSION) {
         const lintReport = readJsonIf<{ findings: Finding[] }>(path.join(outDir, "lint-report.json"));
         return {
-          ok: true, skipped: true, findings: lintReport?.findings ?? [], outDir, warnings, hidden: hiddenOf(outDir),
+          ok: true, skipped: true, findings: lintReport?.findings ?? [], outDir, warnings, hidden: hiddenOf(outDir), contract,
           timings: { load: 0, lint: 0, extract: 0, bake: 0, capture: 0, write: 0 }, totalMs: ms(t0),
         };
       }
@@ -368,11 +378,12 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
         try {
           lap("load");
           const snapshot = await collectSnapshot(d.page, d.cdp, kit);
-          const findings = await lint(d, kit, snapshot);
+          const findings = await lint(d, kit, snapshot, contract);
           lap("lint");
           const errors = findings.filter((f) => f.severity === "error");
+          const notes = countOf(findings, "info");
           const lintJson = stableStringify({
-            source: path.basename(htmlPath), errors: errors.length, warnings: findings.length - errors.length, findings,
+            source: path.basename(htmlPath), errors: errors.length, warnings: findings.length - errors.length - notes, notes, findings,
           });
           fs.writeFileSync(path.join(fresh, "lint-report.json"), lintJson);
           lap("write");
@@ -398,8 +409,8 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
           lap("capture");
 
           fs.writeFileSync(path.join(fresh, "export-report.json"), stableStringify({
-            ok: true, source: path.basename(htmlPath), sourceSha, kitSha, toolSha, screen: build.ir.screen,
-            warnings: findings.length, captures: matrix.jobs.length, hidden: matrix.hidden.length, timings, totalMs: ms(t0),
+            ok: true, source: path.basename(htmlPath), sourceSha, kitSha, toolSha, contractSha, screen: build.ir.screen,
+            warnings: findings.length - notes, notes, captures: matrix.jobs.length, hidden: matrix.hidden.length, timings, totalMs: ms(t0),
             detail: { extract: build.timings, capture: matrix.timings },
           }));
           lap("write");
@@ -411,11 +422,11 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
         fs.rmSync(fresh, { recursive: true, force: true });
         fs.mkdirSync(path.dirname(opts.lintReportFile), { recursive: true });
         fs.writeFileSync(opts.lintReportFile, result.lintJson);
-        return { ok: false, findings: result.findings, outDir, timings: result.timings, totalMs: ms(t0), warnings, hidden: [] };
+        return { ok: false, findings: result.findings, outDir, timings: result.timings, totalMs: ms(t0), warnings, hidden: [], contract };
       }
       replaceDir(fresh, outDir, warnings);
       if (result.ok && opts.lintReportFile) fs.rmSync(opts.lintReportFile, { force: true });
-      return { ok: result.ok, findings: result.findings, outDir, timings: result.timings, totalMs: ms(t0), warnings, hidden: result.hidden };
+      return { ok: result.ok, findings: result.findings, outDir, timings: result.timings, totalMs: ms(t0), warnings, hidden: result.hidden, contract };
     } catch (e) {
       fs.rmSync(fresh, { recursive: true, force: true });
       throw e;

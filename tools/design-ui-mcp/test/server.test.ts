@@ -251,6 +251,32 @@ describe("design_ui_lint", () => {
     expect(runtime.browserLaunches).toBe(launches);
   });
 
+  it("notes a design without a contract apart from warnings", async () => {
+    const p = tempProject();
+    p.addScreen("clean-screen", "clean-screen");
+    const r = await call(await serverFor(p.dir), "design_ui_lint", { design: "clean-screen" });
+    expect(r.isError).toBeFalsy();
+    expect(r.data).toMatchObject({ ok: true, errors: 0, warnings: 0, notes: 1 });
+    expect(r.data.findings.map((f: { ruleId: string }) => f.ruleId)).toContain("I-CON-001");
+    expect(r.text).toMatch(/^Lint passed: no errors, 1 note in clean-screen\/screen\.html\./);
+  });
+
+  it("checks the design against the contract beside it", async () => {
+    const p = tempProject();
+    const dir = p.addScreen("clean-screen", "clean-screen");
+    const file = path.join(dir, "screen.html");
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('<div class="g"', '<div class="g" data-u-id="go" data-u-action="open-it"'));
+    fs.writeFileSync(path.join(dir, "screen.contract.json"), JSON.stringify({
+      contract: 1, screen: "clean.screen", kind: "new", values: [], actions: [], states: [], repeats: [],
+      texts: [{ key: "clean.screen.title", en: "Title", origin: "existing" }],
+    }));
+    const r = await call(await serverFor(p.dir), "design_ui_lint", { design: "clean-screen" });
+    expect(r.isError).toBe(true);
+    expect(r.data.ok).toBe(false);
+    expect(r.data.findings.map((f: { ruleId: string }) => f.ruleId)).toContain("U-CON-002");
+    expect(r.data.notes).toBe(0);
+  });
+
   it("lints a ZIP and rejects one with ../evil.html", async () => {
     const p = tempProject();
     const html = fs.readFileSync(path.join(p.addScreen("clean-screen", "clean-screen"), "screen.html"), "utf8");

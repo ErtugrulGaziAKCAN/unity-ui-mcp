@@ -105,6 +105,38 @@ describe("exportScreen: inbox-mini", () => {
     expect((await exportScreen(design, KIT, o2, { browser })).skipped).toBe(true);
   }, 240_000);
 
+  it("exports again when the screen contract changes, and reports the contract it read", async () => {
+    const design = path.join(tmp(), "d");
+    fs.cpSync(fx("inbox-mini"), design, { recursive: true });
+    const o = path.join(tmp(), "out");
+    const first = await exportScreen(design, KIT, o, { browser });
+    expect(first.findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(first.contract.state).toBe("absent");
+    expect(readJson(o, "export-report.json").contractSha).toBe("none");
+    const contract = {
+      contract: 1, screen: "inbox-mini", kind: "new",
+      values: [
+        { name: "club", source: "the club reader", samples: ["Kartal", "Bursa"], origin: "existing" },
+        { name: "subject", repeat: "mails", source: "the inbox reader", samples: ["Hos geldin", "Fikstur"], origin: "existing" },
+      ],
+      actions: [], states: [],
+      repeats: [{ name: "mails", source: "the inbox reader", count: [0, 50], origin: "existing" }],
+      texts: [{ key: "inbox.title", en: "Inbox", origin: "existing" }, { key: "inbox.logo", en: "Logo", origin: "existing" }],
+    };
+    const file = path.join(design, "screen.contract.json");
+    fs.writeFileSync(file, JSON.stringify(contract));
+    const second = await exportScreen(design, KIT, o, { browser });
+    expect(second.findings.filter((f) => f.severity === "error")).toEqual([]);
+    expect(second.skipped).toBeFalsy();
+    expect(second.contract.state).not.toBe("absent");
+    const sha = readJson(o, "export-report.json").contractSha;
+    expect(sha).toBe((second.contract as { sha: string }).sha);
+    expect(sha).not.toBe("none");
+    expect((await exportScreen(design, KIT, o, { browser })).skipped).toBe(true);
+    fs.writeFileSync(file, JSON.stringify({ ...contract, values: [{ ...contract.values[0], samples: ["Kartal", "Izmir"] }] }));
+    expect((await exportScreen(design, KIT, o, { browser })).skipped).toBeFalsy();
+  }, 240_000);
+
   it("reports the jobs the design shows in no context (fresh and unchanged exports, export-report.json, the command line)", async () => {
     const design = path.join(tmp(), "d");
     fs.cpSync(fx("inbox-mini"), design, { recursive: true });
@@ -384,6 +416,11 @@ describe("cli", () => {
     const bad = await run("lint", fx("lint-error"), "--kit", KIT);
     expect(bad.code).toBe(1);
     expect(bad.stdout).toContain("U-CSS-001");
+  }, 120_000);
+
+  it("lint: a design folder without a contract prints one note", async () => {
+    const r = await run("lint", fx("inbox-mini"), "--kit", KIT);
+    expect(r.stdout).toMatch(/^0 errors, 0 warnings, 1 note$/m);
   }, 120_000);
 
   it("export: exit 0 and the layout, exit 1 on lint errors", async () => {
