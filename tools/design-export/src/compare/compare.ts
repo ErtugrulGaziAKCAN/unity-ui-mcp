@@ -535,25 +535,43 @@ export interface FragmentKey { em: number; deltaE: number; amount: number; byDir
  */
 export const FRAGMENT_DE_BOUND = SCALED_SMALL_INK_CAP + 0.4;
 
+/** Half a pixel of ink (the ink extent's own edge, samples.ts EDGE_INK): how much design ink marks a column as inked. */
+export const CUT_INK = 0.5;
+
 /**
  * Ruling R156: whether a cover or a clip cuts into a line's extent `ext` (what its own text cut leaves), seen through `shown`
  * (the window other clips leave): a column of `ext` is visible when it lies in `shown` and holds a pixel `hidden` does not
  * hide; the line is cut when no column is, when more than one column is lost at an end (one is the rounding of the
- * extent's own edge), or when a column inside is hidden.
+ * extent's own edge), or when a column inside is hidden. Ruling R159: a loss cuts only where it hides the design's ink:
+ * `hidden` is the design's covers exactly (a pixel whose centre lies in one, not the comparison's half-pixel margin), and
+ * `ink()` the design's visible ink under that mask (inkIn on the line's window); a lost end cuts when that ink's extent
+ * (`left`/`right`, where half a pixel of ink is reached) ends less than two columns from the lost part, a hidden run inside
+ * the line when one of the two visible columns on either side of it holds CUT_INK. A cover or clip over only the line
+ * box's empty part (trailing letter-spacing, side bearings, a word gap) cuts nothing, and the line keeps its ordinary limits.
  */
-export function cutInto(ext: Rect, shown: Rect, hidden: ((x: number, y: number) => boolean) | null): boolean {
+export function cutInto(ext: Rect, shown: Rect, hidden: ((x: number, y: number) => boolean) | null,
+  ink: () => Pick<Ink, "left" | "right" | "columns" | "x0"> | null): boolean {
   const L = Math.floor(ext.x), R = Math.ceil(ext.x + ext.w);
   const y0 = Math.floor(Math.max(ext.y, shown.y)), y1 = Math.ceil(Math.min(ext.y + ext.h, shown.y + shown.h));
-  let first = -1, last = -1, count = 0;
+  const visible: number[] = [];
   for (let x = L; x < R; x++) {
     if (x < shown.x - 1e-9 || x + 1 > shown.x + shown.w + 1e-9 || y1 <= y0) continue;
     let seen = !hidden;
     for (let y = y0; !seen && y < y1; y++) if (!hidden!(x, y)) seen = true;
-    if (!seen) continue;
-    if (first < 0) first = x;
-    last = x; count++;
+    if (seen) visible.push(x);
   }
-  return count === 0 || first - L > 1 || R - 1 - last > 1 || count < last - first + 1;
+  if (!visible.length) return true;
+  const first = visible[0], last = visible[visible.length - 1];
+  const lostLeft = first - L > 1, lostRight = R - 1 - last > 1;
+  const holes: [number, number][] = [];
+  for (let k = 1; k < visible.length; k++) if (visible[k] - visible[k - 1] > 1) holes.push([visible[k - 1], visible[k]]);
+  if (!lostLeft && !lostRight && !holes.length) return false;
+  const a = ink();
+  if (!a) return false;
+  const inked = (x: number) => (a.columns[x - a.x0] ?? 0) >= CUT_INK;
+  if (lostLeft && a.left < first + 2) return true;
+  if (lostRight && a.right > last - 1) return true;
+  return holes.some(([p, q]) => inked(p) || inked(p - 1) || inked(q) || inked(q + 1));
 }
 
 /** The columns of a window holding at least one pixel `hidden` does not hide (all of them without `hidden`). */
@@ -1260,14 +1278,16 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     /**
      * Whether a pixel of a text's line is hidden by a later element: one whose fill is opaque (CaptureContext.opaque), within
      * its painted shape (its box with its corner radii, half a pixel wider for the anti-aliased edge), on either side. A
-     * translucent scrim, a border-only box, a picture or a shadow hides nothing: the text under it is still judged.
+     * translucent scrim, a border-only box, a picture or a shadow hides nothing: the text under it is still judged. `exact`:
+     * the design's covers alone, a pixel whose centre lies in one (ruling R159: what a cover hides of the design's line).
      */
-    const hiddenBy = (id: string): ((x: number, y: number) => boolean) | null => {
+    const hiddenBy = (id: string, exact = false): ((x: number, y: number) => boolean) | null => {
       if (!ctx.opaque) return null;
       const shapes = coveringIds(id).filter((x) => ctx.opaque!.has(x))
-        .flatMap((x) => [g.elements[x], u.elements[x]].filter((e): e is Box => !!e && e.visible).map((b) => ({ b, r: ctx.radii?.[x] })));
+        .flatMap((x) => (exact ? [g.elements[x]] : [g.elements[x], u.elements[x]]).filter((e): e is Box => !!e && e.visible).map((b) => ({ b, r: ctx.radii?.[x] })));
       if (!shapes.length) return null;
-      return (x, y) => shapes.some(({ b, r }) => insideRounded(b, r, x + 0.5, y + 0.5, 0.5));
+      const grow = exact ? 0 : 0.5;
+      return (x, y) => shapes.some(({ b, r }) => insideRounded(b, r, x + 0.5, y + 0.5, grow));
     };
     const onText = (x: number, y: number) => {
       for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) if (textMask[yy * w + xx]) return true;
@@ -1544,7 +1564,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const scaledHairline = ctx.viewportClass === "scaled" && px < SCALED_HAIRLINE_BELOW_PX && ctx.scaleOnly?.(key) === true;
       const later = declared && (px <= HAIRLINE_MAX_PX || scaledHairline) && declared.alpha >= 1 - 1e-6 ? laterLayers(id, key) : null;
       const mayBeHairline = !!later;
-      const hidden = hiddenBy(id);
+      const hidden = hiddenBy(id), exactCover = hiddenBy(id, true);
       const clipG = clipOf(g, id, key), clipU = clipOf(u, id, key);
       let covered = 0, clipped = 0;
       ge.lines.forEach((gl, i) => {
@@ -1626,11 +1646,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         const glow = !!ctx.textShadows?.has(id), shadowed = glow || !!ctx.shadowedText?.has(id);
         // ruling R156: what the line's own text cut leaves of it (its own box's clip; an ellipsized line ends at its
         // ellipsis) is the whole; it is cut only by a cover or a clip other than its own, on the design's window (R157), each
-        // end within a column of the design's own rounding
+        // end within a column of the design's own rounding; ruling R159: only where it hides the design's ink (its visible ink
+        // reaches within a column of the lost part), never over the line box's empty part alone
         const ownClip = clipOf(g, id, key, (c) => c === id), otherClips = clipOf(g, id, key, (c) => c !== id);
         let ext: Rect = gl.ellipsis ? { ...gl, w: Math.min(gl.w, gl.ellipsis.at + gl.ellipsis.width - gl.x) } : gl;
         if (ownClip) ext = inBounds(ext, ownClip);
-        const cut = !shadowed && !empty(ext) && cutInto(ext, inBounds(margin, otherClips), hidden);
+        const cut = !shadowed && !empty(ext) && cutInto(ext, inBounds(margin, otherClips), exactCover,
+          () => (exactCover ? inkIn(gp, win, exactCover) : hidden ? inkIn(gp, win) : a));
         // the ink amount against the text colour on both sides (each pixel's distance from the background over the colour's),
         // not each side's own ink colour: a stroke drawn faint everywhere is little ink, not a full stroke of a lighter colour
         const sum = (x: Float64Array) => { let v = 0; for (const d of x) v += d; return v; };

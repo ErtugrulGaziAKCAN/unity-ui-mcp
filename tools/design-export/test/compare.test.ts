@@ -307,6 +307,34 @@ describe("compareCapture", () => {
       expect(label(compareCapture(short(false), short(true), [], repo, { ...ctx, order: ["root", "label"] })).map((i) => i.kind)).toContain("ink");
     });
 
+    it("R159: a cover over only a line's empty tail cuts nothing; a cover over its glyphs makes a fragment", () => {
+      // the fix-3 re-review's probe Q5: a 10 px line, stems 41–71, its line rect 40–76 (trailing letter-spacing), a later opaque
+      // badge from x 74 over the line's height; Unity draws the line 30 % dimmer
+      const right: Rgb = [185, 208, 214], bg: Rgb = [11, 31, 38];
+      const dim = [0, 1, 2].map((j) => Math.round(bg[j] + 0.7 * (right[j] - bg[j]))) as Rgb;
+      const tail = (colour: Rgb, badgeX: number | null) => {
+        const png = canvas(160, 80, bg);
+        glyphs(png, { x: 41, y: 30, w: 31, h: 11 }, colour);
+        const elements: CaptureBoxes["elements"] = { root: el(0, 0, 160, 80), label: el(40, 26, 36, 18, { text: true, lines: [{ x: 40, y: 27, w: 36, h: 16, baseline: 41 }] }) };
+        if (badgeX !== null) { fill(png, { x: badgeX, y: 20, w: 30, h: 30 }, [15, 42, 51]); elements.badge = el(badgeX, 20, 30, 30); }
+        return { png, boxes: { capture: "default@160x80", viewport: [160, 80], scale: 1, external: [], elements } as CaptureBoxes };
+      };
+      const c10: CaptureContext = { ...ctx, order: ["root", "label", "badge"], parent: new Map([["label", "root"], ["badge", "root"]]),
+        opaque: new Set(["badge"]), painters: new Set(["badge"]), backgrounds: new Set(["badge"]), fontPx: { label: 10 } };
+      // the badge over the empty tail: no fragment, the usual limits hold, as without the badge
+      for (const badgeX of [74, null]) {
+        const v = label(compareCapture(tail(right, badgeX), tail(dim, badgeX), [], repo, c10));
+        expect(v.map((i) => i.kind), `badge ${badgeX}`).toContain("ink");
+        expect(v.find((i) => i.kind === "ink")!.detail, `badge ${badgeX}`).not.toMatch(/a fragment of|a window of/);
+      }
+      // the same at 15 px (probe Q2): a colour ΔE2000 4.2 off, within the 2 em fragment key (6.15), fails at the usual limit 2
+      const q2 = label(compareCapture(tail(right, 74), tail([165, 195, 205], 74), [], repo, { ...c10, fontPx: { label: 15 } }));
+      expect(q2.find((i) => i.kind === "ink")?.detail).toMatch(/text colour ΔE2000 [\d.]+, .*\(limit 2 at 15 px\)$/);
+      // a badge over the line's glyphs (from x 60) still makes a fragment: a wrong hue fails on the fragment's direction
+      const v = label(compareCapture(tail(right, 60), tail([22, 194, 213], 60), [], repo, c10));
+      expect(v.find((i) => i.kind === "ink")?.detail).toMatch(/a fragment of [\d.]+ em/);
+    });
+
     it("gives no key to a whole line its own clip trims by rounding alone (a box on fractional device px)", () => {
       // a pilot screen's 12.5 px score "1 – 1" in its own overflow-hidden box at x 511.25–535.24 (Unity 511.67–535.00): the
       // clip, rounded inward to whole device px, takes a column at each end of the line's box but no glyph. Here four stems
