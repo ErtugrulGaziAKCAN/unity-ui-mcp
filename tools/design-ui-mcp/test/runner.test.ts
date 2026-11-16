@@ -217,6 +217,23 @@ describe("runUnity: command route", () => {
     });
   });
 
+  it("puts the server's own node first on the command's PATH and names it in DESIGN_UI_NODE (a client's minimal PATH)", async () => {
+    const p = tempProject({ prefer: "command" });
+    const cfg = readConfig(p.dir);
+    const seen = path.join(p.dir, "env.txt");
+    cfg.unityRunner.command.capture = ["sh", "-c", 'printf "%s\\n%s\\n%s\\n" "$PATH" "$DESIGN_UI_NODE" "$(command -v node)" > "$0"', seen];
+    // a GUI client that starts the server with the system PATH only (no node on it)
+    const before = process.env.PATH;
+    process.env.PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
+    try {
+      expect((await runUnity(cfg, "capture", { exportDir: "/x", outDir: "/y" }, fast)).code).toBe(0);
+    } finally { process.env.PATH = before; }
+    const [pathSeen, nodeSeen, found] = fs.readFileSync(seen, "utf8").split("\n");
+    expect(pathSeen.split(path.delimiter)).toEqual([path.dirname(process.execPath), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]);
+    expect(nodeSeen).toBe(process.execPath);
+    expect(found).toBe(path.join(path.dirname(process.execPath), "node"));
+  });
+
   it("returns the exit code of a failing command", async () => {
     const p = tempProject({ prefer: "command", exit: 3 });
     const r = await runUnity(readConfig(p.dir), "kitSync", {}, fast);

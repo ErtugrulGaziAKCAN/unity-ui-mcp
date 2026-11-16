@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
 import { BridgeHttpError, bridgeRequest, findBridge, REAL_CLOCK, type BridgeClock, type BridgeInfo } from "./bridge.js";
 import type { DesignUiConfig, RunnerRoute, UnityStep } from "./config.js";
 
@@ -297,6 +298,11 @@ async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<str
   for (const k of [...PLACEHOLDERS, "discardManualEdits", "importDone", "addProfileViewports"]) {
     if (vars[k]) env[`DESIGN_UI_${k.replace(/[A-Z]/g, (c) => "_" + c).toUpperCase()}`] = vars[k];
   }
+  // the server's own node, first on the command's PATH and named in DESIGN_UI_NODE: a GUI client may start the server with
+  // a minimal PATH (setup registers it by node's absolute path), and the capture script runs node
+  const pathKey = Object.keys(env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+  env[pathKey] = [path.dirname(process.execPath), env[pathKey]].filter((p) => !!p).join(path.delimiter);
+  env.DESIGN_UI_NODE = process.execPath;
   const timeoutMs = cfg.unityRunner.timeoutSec * 1000;
   return new Promise<RunResult>((resolve, reject) => {
     let log = "";

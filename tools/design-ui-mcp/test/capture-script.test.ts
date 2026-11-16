@@ -105,6 +105,26 @@ describe("scripts/capture-on-copy.sh", () => {
     });
   }
 
+  it("runs node from DESIGN_UI_NODE when node is not on PATH (the server names its own), and says so when neither has it", () => {
+    const s = setup(0);
+    // a Unity stand-in that needs no node: it keeps the copy's manifest, which the script rewrote with node
+    fs.writeFileSync(s.unity, `#!/bin/sh
+p=""; while [ $# -gt 0 ]; do [ "$1" = -projectPath ] && p="$2"; shift; done
+cp "$p/Packages/manifest.json" "${s.root}/copy-manifest.json"
+mkdir -p "$DESIGN_UI_OUT_DIR" && echo '{}' > "$DESIGN_UI_OUT_DIR/capture-done.json"
+`);
+    const bare = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
+    const r = spawnSync("/bin/bash", [SCRIPT, s.project, s.unity], { env: { ...s.env(), ...bare, DESIGN_UI_NODE: process.execPath }, encoding: "utf8" });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(JSON.parse(fs.readFileSync(path.join(s.root, "copy-manifest.json"), "utf8")).testables).toEqual(["com.ertugrulgaziakcan.design-ui"]);
+    // a machine with a node in the system folders finds it on the bare PATH: nothing to show there
+    if (!bare.PATH.split(":").some((d) => fs.existsSync(path.join(d, "node")))) {
+      const none = spawnSync("/bin/bash", [SCRIPT, s.project, s.unity], { env: { ...s.env(), ...bare, DESIGN_UI_NODE: "" }, encoding: "utf8" });
+      expect(none.status).toBe(2);
+      expect(none.stderr + none.stdout).toMatch(/node is required/);
+    }
+  });
+
   for (const mode of modes) {
     it(`deletes the open Editor's process and lock files from the copy before Unity starts (${mode})`, () => {
       const s = setup(0);

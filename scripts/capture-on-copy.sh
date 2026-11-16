@@ -34,7 +34,8 @@
 #                      CAPTURE_COPY_POLL_SEC     seconds between looks at the slots while waiting (default 5)
 #
 # Unity: the second argument, else UNITY_BIN, else the Unity Hub install of the project's version
-# (ProjectSettings/ProjectVersion.txt). design-ui.config.json:
+# (ProjectSettings/ProjectVersion.txt). node (step 4): DESIGN_UI_NODE, which the MCP server sets to its own node (a client
+# may start the server with a PATH without node), else node on PATH. design-ui.config.json:
 #   "unityRunner": { "captureVia": "command", "command": { "capture": ["<clone>/scripts/capture-on-copy.sh", "{projectDir}"] } }
 # A project with a runner of its own (one that already limits heavy Unity jobs) puts that runner's command there instead.
 set -euo pipefail
@@ -76,7 +77,10 @@ if [ -z "$UNITY" ]; then
   done
 fi
 [ -n "$UNITY" ] && [ -x "$UNITY" ] || die "no Unity binary (pass it as the second argument or set UNITY_BIN)"
-command -v node >/dev/null 2>&1 || die "node is required"
+# node: the MCP server's own (DESIGN_UI_NODE; a GUI client may start the server with a PATH without node), else PATH's
+NODE="${DESIGN_UI_NODE:-}"
+[ -n "$NODE" ] && [ -x "$NODE" ] || NODE="$(command -v node 2>/dev/null || true)"
+[ -n "$NODE" ] || die "node is required (on PATH, or DESIGN_UI_NODE naming it)"
 
 COPY=""
 SLOT=""
@@ -237,7 +241,7 @@ fi
 [ ! -e "$COPY/Library/ilpp.pid" ] || die "the copy still has Library/ilpp.pid; Unity was not started"
 
 # ---- 4. the copy's manifest ------------------------------------------------------------------------------------------
-node - "$COPY/Packages/manifest.json" "$PROJECT/Packages" "$PACKAGE" <<'NODE'
+"$NODE" - "$COPY/Packages/manifest.json" "$PROJECT/Packages" "$PACKAGE" <<'NODE'
 const fs = require("fs"), path = require("path");
 const [file, packagesDir, id] = process.argv.slice(2);
 const raw = fs.readFileSync(file, "utf8");
