@@ -127,7 +127,8 @@ function holds(key: string, file: string, m: any, now: number): boolean {
 export function markBusy(screenDir: string, what: "import" | "verify"): () => void {
   const dir = path.join(screenDir, BOOKKEEPING_DIR), file = path.join(dir, BUSY_FILE);
   fs.mkdirSync(dir, { recursive: true });
-  const key = folderKey(screenDir), screen = path.basename(key);
+  // the refusal names the folder as the caller wrote it (a symlink's own name, not its target's)
+  const key = folderKey(screenDir), screen = path.basename(path.resolve(screenDir));
   const mine = running.get(key);
   if (mine) throw new ScreenBusyError(screen, { what: mine.what, pid: process.pid, since: mine.since });
   const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;

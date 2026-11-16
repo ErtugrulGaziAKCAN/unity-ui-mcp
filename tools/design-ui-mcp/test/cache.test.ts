@@ -208,6 +208,22 @@ describe("bookkeeping cleanup", () => {
     try { expect(() => markBusy(variant, "import")).toThrow(ScreenBusyError); } finally { first(); }
   });
 
+  it("names the folder as the caller wrote it when the folder is a symlink", () => {
+    const d = designRoot();
+    const dir = d.screen("real-target");
+    const link = path.join(d.root, "linked-name");
+    fs.symlinkSync(dir, link, "dir");
+    const done = markBusy(link, "verify");
+    try {
+      let err: unknown;
+      try { markBusy(link, "import"); } catch (e) { err = e; }
+      expect(err).toBeInstanceOf(ScreenBusyError);
+      expect((err as ScreenBusyError).screen).toBe("linked-name");
+      expect((err as ScreenBusyError).message).toContain("of linked-name is running");
+      expect(isBusy(dir)).toBe(true);
+    } finally { done(); }
+  });
+
   it("treats a run marker of a process that is gone as left over", () => {
     const d = designRoot();
     const dir = d.screen("crashed");
