@@ -156,7 +156,7 @@ A prompt that works well:
 Any other AI that writes the HTML can read the same contract with the `design_ui_rules` tool.
 
 **Screen contract.** Instead of retyping the inventory into a prompt, have `/unity-ui-mcp` write it from the project as
-`<designRoot>/<screen-id>/screen.contract.json` and call `design_ui_brief { screen }` (or `design-export contract brief
+`<designRoot>/<screen-folder>/screen.contract.json` and call `design_ui_brief { screen }` (or `design-export contract brief
 <designDir> --kit <kitDir>`): the brief lists exactly what to draw, with real sample values and the game's texts, and
 paste it into the design tool. Lint then compares the design with the file (`U-CON-*`; without a file the screen gets the
 note `I-CON-001`, or an error when the kit's `screenContract` is `required`). A drop or an addition the user decided on

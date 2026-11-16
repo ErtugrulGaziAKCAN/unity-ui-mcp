@@ -168,11 +168,12 @@ generated file someone edited by hand.
 The inventory can be kept as `screen.contract.json` beside the design, written by your AI from the project (the tools
 check it; they never read your game code). It lists the values (with real `samples`), actions (with the handlers that
 run them), states, lists, texts (`en`, and `ref` for a non-English reference locale) and the items the user decided to
-drop (`removed`). Lint then fails a design that adds or lacks an item (`U-CON-001`…`U-CON-006`), `design_ui_brief`
-(`design-export contract brief <designDir> --kit <kitDir>`) turns the contract into the brief for the design tool, and
-the import result carries the wiring checklist the presenter is written from. The kit setting `screenContract` in
-`kit.config.json` is `optional` (default: a screen without a contract gets the info finding `I-CON-001`) or `required`
-(a missing contract blocks import); `kit upgrade` keeps it.
+drop (`removed`); the skill gives the format with an example. Lint then fails a design that adds or lacks an item
+(`U-CON-001`…`U-CON-006`), `design_ui_brief` (`design-export contract brief <designDir> --kit <kitDir>`) turns the
+contract into the brief for the design tool before anything is designed, and the import result carries the wiring
+checklist the presenter is written from. A ZIP design reads its contract from inside the ZIP, beside its page. The kit
+setting `screenContract` in `kit.config.json` is `optional` (default: a screen without a contract gets the info finding
+`I-CON-001`) or `required` (a missing contract blocks import); `kit upgrade` keeps it.
 
 ## What the generated view gives you
 

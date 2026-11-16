@@ -59,12 +59,54 @@ itself, never from the design:
   screen you hand over is this grounded one, not a quick draft. When you receive a design, compare it with the
   inventory before importing: an item it drops is a design-side fix, an item it adds without a source in the game is a
   named dependency to report, never data you invent.
-- Write the inventory as `<designRoot>/<screen-folder>/screen.contract.json` from the project (the format is in the
-  brief and the rules: values with real `samples`, actions with their handlers, states, repeats, texts, `removed`).
-  Then run `design_ui_brief { screen }` and show the brief to the user for the design tool, or use it yourself when you
-  design. A screen with a contract is linted against it (`U-CON-*`): those findings are design-side fixes, except an
-  incomplete or invalid contract, which you fix from the project. A contract change for a "requested" item needs the
-  user's words in its `note`. The kit setting `screenContract` (`design_ui_status`) says whether a contract is required.
+- Write the inventory as `<designRoot>/<screen-folder>/screen.contract.json` from the project, in the format below.
+  The folder needs no design yet: run `design_ui_brief { screen }` and show the brief to the user for the design tool,
+  or use it yourself when you design. A screen with a contract is linted against it (`U-CON-*`): those findings are
+  design-side fixes, except an incomplete or invalid contract, which you fix from the project. A contract change for a
+  "requested" item needs the user's words in its `note`. The kit setting `screenContract` (`design_ui_status`) says
+  whether a contract is required.
+
+**Contract format.** One JSON object; every list is optional, and a key not named here is an error (`U-CON-001` lists
+each problem). A ZIP design reads its contract from inside the ZIP, beside its page.
+
+| Key | Holds |
+|---|---|
+| `contract` | `1` |
+| `screen` | The design's `data-u-screen`. |
+| `kind` | `"update"` (a redesign of a UI the project has) or `"new"`. |
+| `replaces` | For `update`: the current UI in the project's own names (route, view, presenter). |
+| `values[]` | One per `data-u-bind` / `data-u-arg` name: `name`, `repeat` (the list it lives in; absent: the screen), `source` (where the game reads it), `samples` (real values as the game shows them, formatted), `image` (`true` for an image bind, which has no `samples`), `origin`, `note`. |
+| `actions[]` | One per `data-u-action`: `name`, `repeat`, `handler` (the code that runs it), `origin`, `note`. |
+| `states[]` | One per `data-u-state`: `name`, `when` (the game's condition), `origin`, `note`. |
+| `repeats[]` | One per `data-u-repeat`: `name`, `parent` (the list it is nested in; absent: the screen), `source`, `count` (`[min, max]` as the game produces it), `origin`, `note`. |
+| `texts[]` | One per `data-l10n` / `data-l10n-<attr>` key: `key`, `en` (the English String Table entry), `ref` (optional: the reference-locale text as the game has it), `origin`, `note`. |
+| `removed[]` | `update` only: items of the current UI the user decided to drop: `kind` (`value`, `action`, `state`, `repeat` or `text`), `name`, `repeat` (its list; `parent` also names it for a removed list), `note`. |
+
+Every item has an `origin`. `"existing"`: the game has it now, so its `source`, `handler` or `when` is required, and a
+value needs `samples` unless it is an image. `"requested"`: the user asked for it, so `note` says who asked, when and
+what; its `source`, `handler` or `when` may be `null` (a named dependency), and a requested value with a source needs
+`samples` too. Names follow U-MRK-005 (lowercase ids, case-sensitive text keys) and are unique per kind in their scope
+(the screen or one list). A minimal update contract:
+
+```json
+{
+  "contract": 1, "screen": "club.overview", "kind": "update",
+  "replaces": "The current club overview screen (its route, view and presenter as the project names them)",
+  "values": [
+    { "name": "club-name", "source": "the club service's current club name", "samples": ["Northbridge FC", "Real Club Deportivo de la Costa"], "origin": "existing" },
+    { "name": "club-crest", "source": "the club service's crest sprite", "image": true, "origin": "existing" },
+    { "name": "player-name", "repeat": "player", "source": "squad reader, player display name", "samples": ["A. Novak", "Jean-Baptiste Okonkwo-Lindqvist"], "origin": "existing" }
+  ],
+  "actions": [
+    { "name": "open-player", "repeat": "player", "handler": "player profile route with the row's player id", "origin": "existing" },
+    { "name": "compare-players", "handler": null, "origin": "requested", "note": "user, 2026-11-16: add a compare button" }
+  ],
+  "states": [{ "name": "loading", "when": "first read of the club data has not finished", "origin": "existing" }],
+  "repeats": [{ "name": "player", "source": "squad reader, first-team players", "count": [0, 40], "origin": "existing" }],
+  "texts": [{ "key": "club.overview.title", "en": "Club overview", "origin": "existing" }],
+  "removed": [{ "kind": "action", "name": "refresh", "note": "user, 2026-11-16: the screen refreshes by itself" }]
+}
+```
 
 ## 4. Claude Design canvases
 

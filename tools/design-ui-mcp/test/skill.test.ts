@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parseScreenContract } from "../../design-export/src/contract.js";
 import { TOOL_NAMES } from "../src/server.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -71,6 +72,24 @@ describe("skills/unity-ui-mcp/SKILL.md", () => {
     expect(text).toMatch(/user's words in its `note`/);
     expect(text).toMatch(/wiring checklist/i);
     expect(text).toMatch(/one row\s+per checklist entry/);
+  });
+
+  it("gives the contract format: every list with its keys, and an example the loader accepts", () => {
+    const format = /\*\*Contract format\.\*\*([\s\S]*?)```json\n([\s\S]*?)\n```/.exec(text);
+    expect(format, "a Contract format paragraph with a JSON example").toBeTruthy();
+    const parsed = parseScreenContract(JSON.parse(format![2]));
+    expect("problems" in parsed ? parsed.problems : []).toEqual([]);
+    const rows: Record<string, string[]> = {
+      "values[]": ["name", "repeat", "source", "samples", "image", "origin", "note"], "actions[]": ["name", "repeat", "handler", "origin", "note"],
+      "states[]": ["name", "when", "origin", "note"], "repeats[]": ["name", "parent", "source", "count", "origin", "note"],
+      "texts[]": ["key", "en", "ref", "origin", "note"], "removed[]": ["kind", "name", "repeat", "note"],
+    };
+    for (const [list, keys] of Object.entries(rows)) {
+      const row = new RegExp(`^\\| \`${list.replace(/[[\]]/g, "\\$&")}\` \\|(.*)$`, "m").exec(format![1]);
+      expect(row, list).toBeTruthy();
+      for (const k of keys) expect(row![1], `${list} ${k}`).toContain(`\`${k}\``);
+    }
+    expect(format![1]).toMatch(/A ZIP design reads its contract from inside the ZIP/);
   });
 
   it("has no local paths or private plan ids", () => {

@@ -52,5 +52,5 @@ measurement can be traced to the run it came from. Nothing depends on them; the 
 | D-160 | A line the design's opaque covers hide entirely must show the cover in Unity: it leaves the text masks, so the cover's SSIM and colour samples judge its pixels, and Unity's ink there that no colour the design shows within 2 device px explains (4 pixels or more) is an issue ("Unity draws text the design covers"); the cover's edge placed a pixel off, with its anti-aliasing, is explained, and another text's line box (the cover's own text) is left to that text's checks. Before, text drawn over a popup passed. |
 | D-161 | The contract is a file beside the design, written by the AI from the project; the tools check it, they never read game code. |
 | D-162 | Opt-in per kit, with the project-kept setting `screenContract` (`optional` by default, `required`). |
-| D-163 | Samples must be real values, enforced by U-CON-005. |
+| D-163 | Samples must be real values, enforced by U-CON-005, also for values that do not render (hidden, an inactive state): no invented value anywhere in a design. |
 | D-164 | Info findings are counted as notes, not warnings. |

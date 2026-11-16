@@ -83,11 +83,15 @@ folder–screen pair is unique.
 | `kind` | `"update"` (redesign of a UI the game has) or `"new"`. |
 | `replaces` | Required for `update`: what the current UI is, in the project's own names. |
 | `values[]` | One entry per `data-u-bind` and `data-u-arg` name, image binds included. `repeat` names the list the value lives in (absent: the screen itself). `samples` are real values as the game shows them, formatted. They are required, except for image binds and for requested values with no source yet. |
+| `image` | In a `values[]` entry: `true` marks an image bind (an `<img>` or an element that paints an image), which has no `samples`. |
 | `actions[]` | One entry per `data-u-action`, with `repeat` as above and `handler` (what runs it in the game). |
 | `states[]` | One entry per `data-u-state`, with `when`. |
 | `repeats[]` | One entry per `data-u-repeat`, with `parent` (a nesting list, absent at top), `source` and `count` `[min, max]` as the game produces it. |
 | `texts[]` | One entry per `data-l10n` and `data-l10n-<attr>` key, with the English text `en` (the String Table entry for an existing key) and optionally `ref`, the reference-locale text as the game has it (compared by U-CON-006 only when given, so a non-English reference locale is not invented by the design tool). |
-| `removed[]` | Items of the current UI the user decided to drop: `kind` (`value`, `action`, `state`, `repeat`, `text`), `name`, `note`. |
+| `removed[]` | Items of the current UI the user decided to drop: `kind` (`value`, `action`, `state`, `repeat`, `text`), `name`, `repeat` (its list, absent for the screen; a removed list may name it `parent`), `note`. |
+
+Entries have no keys other than those this section names (`origin` and `note` below included); any other key, a
+non-boolean `image` or a non-string `ref` is a format problem.
 
 **Origins.**
 
@@ -127,7 +131,7 @@ All are errors unless marked:
 | `U-CON-002` | The design has a value, action, state, list or text key, in a scope, that the contract lacks. | Remove it from the design, or add it to the contract: with its game source, or as requested with the user's note. |
 | `U-CON-003` | A contract item that is not in `removed` is missing from the design, in its scope. | Draw it, or record the user's decision in `removed`. |
 | `U-CON-004` | An item listed in `removed` is still in the design. | Remove it from the design. |
-| `U-CON-005` | A bound text's sample, in any sample row, is not one of the value's `samples`. Whitespace is collapsed; image binds are skipped; so are requested values with no source. | Use a real sample from the contract. If the game shows other values, add those real values to the contract. |
+| `U-CON-005` | A bound text's sample, in any sample row, is not one of the value's `samples`. Values that do not render (hidden, an inactive state) are checked too. Whitespace is collapsed; image binds are skipped; so are requested values with no source. | Use a real sample from the contract. If the game shows other values, add those real values to the contract. For an image the design binds to a value with samples: mark it `image: true`. |
 | `U-CON-006` | A text key's English (its `data-en`, or the visible text when the reference locale is `en`, as U-MRK-014 reads it) differs from the contract's `en`. | Use the game's text, or change the contract only when the user changed the text. |
 
 Scope comparison uses the element's nearest `data-u-repeat` ancestor, the same scope the generated view uses for item
@@ -136,7 +140,8 @@ views. A value bound in the screen and in a list are two different contract entr
 ## 6. Brief for the design tool
 
 `design-export contract brief <screen-folder>` (CLI) and `design_ui_brief { screen }` (MCP) turn a valid contract into
-Markdown that a design tool can take as its prompt. The brief contains:
+Markdown that a design tool can take as its prompt. The folder needs no design page (a page path names its folder; a ZIP
+design reads the contract inside it). The brief contains:
 
 - the screen id and the kit rule "draw exactly this";
 - for an update, what it replaces;

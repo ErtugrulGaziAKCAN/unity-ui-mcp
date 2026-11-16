@@ -14,7 +14,8 @@ numbers below are in [docs/findings/](docs/findings/); the decisions they cite (
   `design-export contract brief <designDir> --kit <kitDir>` turn it into the brief for the design tool; the import result
   lists the wiring checklist for the presenter; `design_ui_status` shows the kit setting and a screen's contract state.
   The kit setting `screenContract` (`optional` default, `required`) is kept by `kit upgrade` (D-162). Samples must be
-  real values (D-163); info findings count as notes, not warnings (D-164).
+  real values, shown or not (D-163); info findings count as notes, not warnings (D-164). The skill gives the contract
+  format; a key the format does not name is a problem.
 
 ### Changed
 
