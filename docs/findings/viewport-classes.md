@@ -867,8 +867,8 @@ test: the binding there writes through `text`, which sends the event; it stays a
 red test. The pilot's write path is not reproduced in Edit mode;
 whatever it is, the label repaints with the new text, which the repaint check covers.
 
-**The advanced generator's text (fix round 3, D-136-ar).** On 851cf10 the pilot switched an open calendar from Turkish to
-Arabic again: 18 to 21 of its 32 text-sized labels kept their Turkish widths, while Latin switches (Turkish to German and
+**The advanced generator's text (decision D-136, script locales).** On 851cf10 a real game screen, open, was switched
+from Turkish to Arabic again: 18 to 21 of its 32 text-sized labels kept their Turkish widths, while Latin switches (Turkish to German and
 back, Arabic to Turkish) left none. The fit did measure again (its count rose by 2), but the width it applied was the text
 handle's `MeasuredWidth`, still the Turkish one (249.75 and 79.2 panel px), where UI Toolkit's own measure gave the Arabic
 widths (169.33 and 106.67). The locale controller lays a script locale's text out with the advanced generator, and UI
