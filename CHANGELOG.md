@@ -5,6 +5,18 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 numbers below are in [docs/findings/](docs/findings/); the decisions they cite (`D-nnn`) are in
 [docs/decisions.md](docs/decisions.md).
 
+## Unreleased
+
+### Changed
+
+- Screens are designed from the game and finished in the game. The design rules (`design_ui_rules`, the kit's
+  `RULES.md` and the Claude Design System README), the `/unity-ui-mcp` skill and the MCP server's instructions now say:
+  take the screen's inventory from the project first (values and their sources, actions and their handlers, states,
+  lists, existing texts; for a redesign, everything the current screen does); design exactly that plus what the user
+  asked for, with sample data that looks like the game's; after import, a presenter connects the view to the same
+  sources and commands, and a redesign is done only when every inventory item works in Play mode at every viewport and
+  after a locale switch. Previously the skill stopped after verify and wrote presenters only on request.
+
 ## 0.1.0 - 2026-11-16
 
 The first release: a screen designed in Claude Design (or any HTML that follows the design kit's rules) becomes a working

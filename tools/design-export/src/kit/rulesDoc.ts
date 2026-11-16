@@ -255,6 +255,16 @@ export function renderRules(kit: KitConfig, audience: RulesAudience, opts: Rules
     "8. Every screen is linted before it goes to Unity (`design_ui_lint` in the MCP server, or `design-export lint <screen> --kit <kit>`); fix the design, never the generated Unity files.",
   );
 
+  h("Real screens, not mock-ups");
+  L.push(
+    "Players use these screens, so a screen is designed from the game it belongs to, never as a quick mock-up:",
+    "",
+    "- Before drawing, take the screen's inventory from the project (its code and data when you can read them, otherwise the brief the user gives; ask the user when neither tells you): every value the screen shows and where the game gets it, every action and the game code that runs it, its states, its lists and the texts it already has. When the screen redesigns one the game already has, the inventory is everything the current screen does.",
+    "- Draw exactly that inventory plus what the user explicitly asked for or the project's accepted requirements describe. No button, text, value, tab, badge or state that the game cannot back or nobody asked for. Nothing the current screen does is dropped silently: say so instead.",
+    "- Sample data looks like the real game's: the kinds of names it uses, its real ranges and formats, its longest texts and realistic list lengths. It stays sample data: the game fills bound values at run time.",
+    "- The first screen you hand over is this grounded one, not a quick draft to be replaced later.",
+  );
+
   h(claude ? "Claude Design artboards" : "Claude Design canvases");
   L.push(
     ...(claude ? [] : ["When a screen is drawn in Claude Design, the kit is attached as a Design System and each screen is one artboard:", ""]),

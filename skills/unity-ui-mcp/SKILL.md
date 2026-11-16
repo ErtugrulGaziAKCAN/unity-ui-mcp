@@ -43,6 +43,23 @@ available yet" (a tool that is not available returns an error with the reason). 
 Call `design_ui_rules` before you write or judge any HTML. It lists the attributes, text styles, fonts, allowed CSS
 and lint rules the design must follow.
 
+Players use these screens. Before a screen is designed, imported or judged, take its **inventory** from the project
+itself, never from the design:
+
+- Does the screen update a UI the project already has? Look for the same screen, route, view or presenter class,
+  prefab or localization table. Ask the user when it is unclear.
+- List every value the screen shows and where the game gets it, every action and the code that handles it, navigation
+  into and out of it, its states (loading, empty, error, disabled), input (shortcuts, Escape, focus, scrolling), sounds
+  and animations it triggers, settings it saves, what refreshes it, its localization entries and the tests that cover
+  it. For an update, this is everything the current UI does; for a new screen, the user's request and the existing
+  services that can feed it.
+- A design holds exactly the inventory plus what the user explicitly asked for (or the project's accepted requirements
+  describe): no button, text, value, tab, badge or state that the game cannot back or nobody asked for. Sample data
+  looks like the real game's (its kinds of names, real ranges and formats, longest texts). When you design, the first
+  screen you hand over is this grounded one, not a quick draft. When you receive a design, compare it with the
+  inventory before importing: an item it drops is a design-side fix, an item it adds without a source in the game is a
+  named dependency to report, never data you invent.
+
 ## 4. Claude Design canvases
 
 If the user gives a claude.ai artifact link of a Design canvas, and this client has an Artifact tool:
@@ -75,7 +92,19 @@ For each screen the user names:
    Through the open Editor it answers once the files are imported and, when generated C# changed, once Unity has
    compiled and reloaded the scripts; a compile that fails is an error with the compiler messages (report them).
 3. `design_ui_verify { screen }`. Report the verdict exactly as returned (`pass`, `fail` or `incomplete`), the report path and the top issues. `incomplete` means the design hides a job in every context (listed under hidden): it is not a pass. Pass `keepCaptures: true` only when the user wants to study a failure offline: the run's Unity captures then stay in `<screen>/.design-ui/kept-captures` until the next verify or `design_ui_clean`.
-4. Use `design_ui_status { screen }` for hashes, last import and last verdict when the user asks what changed.
+4. **The import is the visual half; a screen is done when it works in the game.** After `pass`:
+   - Write the presenter, the project's own code under its own rules (its AGENTS.md or CLAUDE.md, assembly layout,
+     test setup): it feeds the generated view from the same sources and runs the same commands as the inventory says.
+     For an update, point the existing route or host at the new screen and keep the old presentation reachable behind
+     a switch until the checks below pass.
+   - Prove it where the project runs its tests and Play checks: no compile errors; the old UI's tests and new
+     presenter tests pass; in Play mode every inventory item works (values fill from game data and refresh, every
+     action runs its handler, every state appears, input and navigation work) at every viewport of the profile and
+     after a locale switch, with no new console errors.
+   - Report the inventory as a table, each item passed, failed or not run. Any failed or not-run item, or a named
+     dependency with no source yet, means the screen is not done: say so. A new screen is wired the same way to the
+     services that can feed it.
+5. Use `design_ui_status { screen }` for hashes, last import and last verdict when the user asks what changed.
    `design_ui_kit_sync` refreshes the kit fonts and settings from Unity; run it when the user asks for it or when
    lint reports kit-related findings. When it refuses because the kit declares viewports the profile lacks (a profile
    saved before the six default viewports), tell the user which and offer `design_ui_kit_sync { addProfileViewports: true }`
@@ -94,11 +123,13 @@ files or font twins by hand.
 
 - Never edit generated files (the exported IR, goldens, UXML, USS, anything under `<screen>/.design-ui/` or in the
   Unity project that the tools produced). Fix the design and run the tools again.
-- Never invent presenters, bindings, game data or behavior. The import generates the screen and its view class
-  (`<Screen>View.g.cs`: setters, `<Action>Requested` events, states, repeats); the presenter that feeds it game data is
-  the project's own code, written only when the user asks for it, from the project's real services.
-- Never claim a pass that `design_ui_verify` did not return. If a check did not run, say so.
-- Do not change anything in the user's Unity project except through the tools, and never commit or push for the user.
+- Never invent game data, providers, commands or behavior. The import generates the screen and its view class
+  (`<Screen>View.g.cs`: setters, `<Action>Requested` events, states, repeats); the presenter (§5 step 4) connects it
+  only to sources and commands the project already has.
+- Never claim a pass that `design_ui_verify` did not return, and never call a screen done from `pass` alone. If a check
+  did not run, say so.
+- Change the user's Unity project only through the tools and the presenter wiring of §5 step 4, which follows the
+  project's own rules. Never commit or push for the user unless they ask.
 
 ## 7. Publishing the kit to Claude Design
 

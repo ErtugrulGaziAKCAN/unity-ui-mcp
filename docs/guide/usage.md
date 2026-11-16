@@ -137,9 +137,17 @@ Attach the kit's Design System to the canvas. Then:
 - **Parts the game already draws** (an existing top bar or side menu) are placeholders marked `data-u-external`: they
   keep their box, paint nothing in Unity and are masked in the comparison.
 
+**Design from the game, not as a mock-up.** Players use these screens. Before drawing, take the screen's inventory from
+the game: every value it shows and where the game gets it, every action and the code that runs it, its states, lists and
+the texts it already has (for a redesign, everything the current screen does). Draw exactly that plus what you ask for:
+no button, text or value the game cannot back. Sample data looks like the game's (its kinds of names, real ranges and
+formats, its longest texts); the game fills bound values at run time.
+
 A prompt that works well:
 
-> Use the attached design system and follow its README rules. Screen id `club.overview`, one 2560×1440 artboard.
+> Use the attached design system and follow its README rules. This screen redesigns the club overview; its inventory:
+> club name, budget and the player list (name, injury badge) from the club data, actions open-inbox and open-player,
+> states default and loading. Draw exactly that, nothing more. Screen id `club.overview`, one 2560×1440 artboard.
 > Write visible text in the reference locale the rules name, with a `data-l10n` English key and `data-en` English text on every text. Give every
 > button `data-u-id` and `data-u-action`. Use only the kit's text style classes (none smaller than caption) and tokens, flex layout only, no grid
 > or calc. Write the player list out as five sample rows with `data-u-repeat="player"` on the first. Mark the existing
@@ -185,7 +193,10 @@ lists it; move the change into the design, or pass `discardManualEdits` on purpo
 
 ## Wiring the screen in game code
 
-The generated view is the only code the game touches. A presenter (yours) gives it data and handles its events.
+The generated view is the only code the game touches. A presenter (your game's code) gives it data from the sources
+the inventory lists and runs the same commands from its events. A redesign is done when every inventory item works in
+Play mode at every viewport and after a locale switch, with no new console errors; `/unity-ui-mcp` reports each item
+as passed, failed or not run.
 
 **Showing the screen.** Put a `UIDocument` with the screen's `<Screen>.uxml` as its source and the profile's
 PanelSettings (the package's `DesignUiPanelSettings` by default) under your UI. Inside a uGUI shell, add

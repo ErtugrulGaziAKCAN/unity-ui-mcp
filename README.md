@@ -139,9 +139,12 @@ chat is visible only in chats started after it.
    component). It ships the font faces the kit's text styles and font tokens reach (`--all-faces`: every face of the
    kit's fonts) and leaves out any file over the Design System's 15 MiB file cap; it prints what it left out, and the
    README lists it. Ask `/unity-ui-mcp` to publish it, or publish that folder yourself; every canvas then attaches it.
-3. **Design.** In Claude Design, one artboard per screen, 2560×1440, with the design system attached. Ask for
-   variants, pick one, revise it. Visible text is written in the reference locale with an English key, controls get
-   ids and actions, repeated rows are written out as samples (the [usage guide](docs/guide/usage.md) has a prompt).
+3. **Design.** In Claude Design, one artboard per screen, 2560×1440, with the design system attached. Start from
+   the screen's inventory, taken from the game: the values it shows and their sources, its actions and the code that
+   runs them, its states, lists and existing texts (for a redesign, everything the current screen does). The design
+   holds exactly that plus what you ask for: no button, text or value the game cannot back, and sample data that looks
+   like the game's. Visible text is written in the reference locale with an English key, controls get ids and actions,
+   repeated rows are written out as samples (the [usage guide](docs/guide/usage.md) has a prompt).
 4. **Apply it.** In your AI client: `/unity-ui-mcp`, then give it the canvas link (or a folder under `designRoot`) and
    name the screen. It fetches the artboard, then runs:
    - **lint** (`design_ui_lint`): any finding is a design-side fix (rule id, element, fix); fix it in Claude Design.
@@ -149,8 +152,12 @@ chat is visible only in chats started after it.
      bridge. The screen appears without a manual refresh; Unity recompiles scripts only when the view class changed.
    - **verify** (`design_ui_verify`): renders the compiled screen in Unity on a copy of the project, compares every
      capture with the design and returns `pass`, `fail` or `incomplete` with `<screen>/report.html`.
-5. **Wire it in game code.** Write a presenter that feeds the generated view your game's data (below). The tools never
-   write presenters, invent data or edit your code.
+5. **Wire it and prove it in the game.** The import is the visual half. A presenter, your game's own code, feeds the
+   generated view from the sources and runs the commands the inventory lists (below); for a redesign it replaces the
+   old screen behind a switch. The screen is done when every inventory item works in Play mode at every viewport and
+   after a locale switch, with no new console errors. `/unity-ui-mcp` writes and checks the presenter from your
+   project's real services and reports each item; it never invents data, providers or commands, and the import itself
+   never edits your code.
 
 Changing the design later is the same loop: re-import regenerates only generated files and refuses to overwrite a
 generated file someone edited by hand.

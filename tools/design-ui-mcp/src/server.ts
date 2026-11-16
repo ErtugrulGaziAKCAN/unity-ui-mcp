@@ -52,6 +52,16 @@ export function instructions(ctx: ServerContext): string {
     "(dryRun first). Never delete <screen>/.design-ui, generated Unity files or font twins by hand.",
     "Rules: never edit generated Unity files; never claim a pass that design_ui_verify did not return.",
     "",
+    "Real screens: players use these screens.",
+    "- Design from the game, not as a mock-up: first take the screen's inventory from the project (every value and its source,",
+    "  every action and the code that runs it, states, lists, existing texts; for a redesign, everything the current screen does).",
+    "  The design holds exactly that plus what the user asked for: no button, text or value the game cannot back. Sample data",
+    "  looks like the real game's.",
+    "- An import is the visual half. When the screen updates a UI the project already has, it is done only when a presenter",
+    "  (the project's own code) connects the generated view to the same sources and commands, and every inventory item is",
+    "  proved in Play mode at every viewport and after a locale switch with no new console errors. Report each item as passed,",
+    "  failed or not run. Never invent data, providers or commands: an item with no source in the game is a named dependency.",
+    "",
     `Live in this version: ${live.join(", ")}.`,
     ...(editor.length
       ? ["Live while the Unity Editor bridge answers (otherwise they return isError: Editor not reachable, with the reason):", ...editor.map(([k, v]) => `- ${k}: ${v.note}`)]
