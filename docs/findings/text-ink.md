@@ -418,30 +418,33 @@ missed the nested copies of finding 1):
 So the URP game draws small text as the Built-in sample does; the one line over its usual limit is a fragment (below).
 A URP copy of the sample was not run: the game's own captures settle it.
 
-**What the fix round settled, and what stays failing, with its cause** (the kept captures compared again with the final
-comparison: 3840×2160, 2560×1440, 1920×1080 and 1366×768 pass all 157 captures, 1280×720 143, 1600×900 22):
+**What the fix rounds settled** (the kept captures compared again with the final comparison of fix round 2: every
+viewport passes all 157 captures; after fix round 1 1280×720 passed 143 and 1600×900 22):
 
 - *Half a device pixel* (section 9): at 1920×1080 the cards sit at x 304.5 (406 CSS px × 0.75); UI Toolkit puts a text's
   box on whole device pixels. A status chip that the open month picker covers but for its first four glyphs (39 px,
   2.6 em) measures ΔE2000 2.84 there (18 captures): too few stems to average the half-pixel shift out (the whole chip,
-  uncovered, passes). It passes now as a fragment within the measured noise of its width (section 12: 3.68 at 2.5 em).
-  The same cause at 1920×1080 `.is-untimed` (two section labels edge to edge) passes with ruling R150 (above).
+  uncovered, passes). It passes as a fragment within the measured noise of its width (section 12: 3.68 at 2.5 em). The
+  same cause at 1920×1080 `.is-untimed` (two section labels edge to edge) passes with ruling R150 (above).
 - *A fragment beside a menu*: a status chip the type menu covers but for its last few device px, 0.78× the ink against
   0.80 (1280×720, 14 captures). The design's ink in that window is 13.4 px, under the 16 px floor of the ink amount
-  (`MIN_INK_PX`) and of section 12's measurement, so the fragment key does not reach it: still failing.
-- *One-pixel strokes at the scaled root* (1600×900, 12.5 device px, whole lines, so no fragment): a status of two
-  one-stroke digits around a dash, ΔE2000 8.07 against 5.89 (135 captures), and a time cell's dash, 6.13 (5 of those
-  captures). Chromium draws each stroke on whole device pixels (the digits' stems one column at 203 of the green channel,
-  the dash one row at 203; the time's dash rows 124 and 208); UI Toolkit lays both text boxes 0.42 device px right and
-  down of the design's (x 511.67 against 511.25) and splits each stroke over two (stems 140 + 140 and 128 + 151, the dash
-  rows 92 + 168; the time's dash 185 + 144), so its most inked tenth is lighter. Both are the cause rulings R138 and R141
-  judge by the ink's colour direction, but above their 12 device px and with the design's strokes fully covered, so the
-  usual limit holds (ruling R126 keeps the scaled small-text key at the suite's measure). The status line was not judged
-  before review finding 1 (a nested copy); the dash was called "20" in the first report, which the pixels do not show.
+  (`MIN_INK_PX`) and of section 12's measurement. Since ruling R153 such a fragment is judged on its presence, its colour
+  direction (0.51° against R138's 0.66°) and R141's amount band, and counted (`fragmentsBelowDomain`: the 14 captures at
+  1280×720 and the same 14 at 1366×768, where it passed before at 0.05°).
+- *One-pixel strokes at the scaled root* (1600×900, 12.5 device px, whole lines): a status of two one-stroke digits around
+  a dash, ΔE2000 8.07 against 5.89 (135 captures; a status copy in a nested repeat that review finding 1 had left
+  unjudged), and a time cell's dash, 6.13 (5 of those captures). Chromium draws each stroke on whole device pixels (the
+  digits' stems one column at 203 of the green channel, the dash one row at 203; the time's dash rows 124 and 208); UI
+  Toolkit lays both text boxes 0.42 device px right and down of the design's (x 511.67 against 511.25) and splits each
+  stroke over two (stems 140 + 140 and 128 + 151, the dash rows 92 + 168; the time's dash 185 + 144), so its most inked
+  tenth is lighter. Since ruling R152 such a line, below 13 device px at a scaled viewport with Unity's render showing it
+  as a hairline line and the same text passing at every exact viewport, is judged by its colour direction: 0.03° for both
+  (`docs/findings/viewport-classes.md`, "Hairline lines"). The dash was called "20" in the first report, which the
+  pixels do not show.
 - *The ellipsis glyph below 16 device px*: judged by its dots since ruling R148; docs/findings/viewport-classes.md,
   "Ellipsized titles of a pilot screen".
 
-## 12. Text ink on few stems: the fragment key (ruling R149, Task 37 fix round 1)
+## 12. Text ink on few stems: the fragment key (rulings R149, R151, R153; Task 37 fix rounds 1 and 2)
 
 Where something covers or clips a line down to a few stems, the ink colour (the mean of its most inked tenth) and the ink
 amount rest on a handful of pixels, and the half-pixel layout differences of section 9 no longer average out (the status
@@ -458,7 +461,8 @@ device px; full: larger). A line another capture shows with the same pixels on b
 lines, 49,465 repeats, in the table below). The 6 captures of `clipped-text` were measured afterwards on their own (the
 first pass left out the compiler's removed wrappers, so they failed there and were skipped): 258 lines, every bucket's
 highest ΔE2000 and lowest amount inside the others' (full 0.5 em 11.39 / 0.832, small 0.5 em 14.52 / 0.749), so no row
-of the key changes.
+of the key changes. Fix round 2 measured again on a new suite run with the removed wrappers passed (2340 static captures,
+5190 distinct lines, `clipped-text` included) and found every row's highest ΔE2000 and lowest amount the same.
 
 | Width (em) | Small: windows | ΔE2000 p99 / max | Amount p1 / min | Full: windows | ΔE2000 p99 / max | Amount p1 / min |
 |---|---|---|---|---|---|---|
@@ -489,18 +493,48 @@ the measured highest ΔE2000 plus 0.4 (never below `textInkDeltaE`), the ink amo
 | 3.5 | 9.40 / 0.82 | 2.92 / 0.88 |
 
 The colour limit is the larger of the row's and the usual one, the amount's lower bound the smaller; the ink extent, the
-median check and the upper bound are unchanged. The key widens the limits a lot for small text below 2.5 em: a window of
-a stem or two cannot tell a colour from anti-aliasing, so a wrong colour on such a fragment is caught only far off (a
-test holds that one on a four-glyph fragment still fails).
+median check and the upper bound are unchanged.
+
+**Colour direction where ΔE2000 scatters (ruling R151, fix round 2).** A ΔE2000 key of 9 to 18.7 checks almost nothing: a
+window of a stem or two cannot tell a colour from anti-aliasing by its lightness. Where a width's measured highest ΔE2000
+exceeds R126's cap of 6.5 (every small row, full 0.5 to 1.5 em) the fragment's colour is judged by its ink's colour
+direction from the background instead (R138's measure: the angle between the two inks' sums of `p − b` in sRGB, which
+does not depend on coverage), within the highest direction measured on the same sliding windows plus R138's margin 0.4;
+the width's amount floor stays, the other widths keep their ΔE2000 key. Measured on fix round 2's run:
+
+| Width (em) | Small: direction p99 / max | Small: key | Full: direction p99 / max | Full: key |
+|---|---|---|---|---|
+| 0.5 | 0.90° / 20.07° | 20.48° | 0.52° / 9.49° | 9.90° |
+| 1 | 0.73° / 15.30° | 15.71° | 0.51° / 9.59° | 10.00° |
+| 1.5 | 0.71° / 14.14° | 14.55° | 0.52° / 4.84° | 5.25° |
+| 2 | 0.69° / 14.57° | 14.97° | 0.52° / 5.62° | (ΔE2000 6.15) |
+| 2.5 | 0.66° / 4.30° | 4.71° | 0.52° / 2.82° | (ΔE2000 3.68) |
+| 3 | 0.66° / 4.90° | 5.31° | 0.53° / 2.85° | (ΔE2000 3.29) |
+| 3.5 | 0.65° / 3.33° | 3.73° | 0.53° / 2.81° | (ΔE2000 2.92) |
+
+Every highest direction comes from one line: `text-shadow`'s small text with a hard shadow, whose offset copy of the
+glyphs in the shadow colour lies in the line's window (its glow is no blur, so it is not a glowing line); elsewhere the
+directions stay under a degree. Where a width's key would let a wrong hue pass, its colour would not be judged and the
+line would be counted (`fragmentColourNotJudged`): no key does today, all lie below the kit's hue swaps of ruling R138
+(the accent and warning colours in place of the secondary: 31–38° from surfaces 900 to 700), and a test fails both hues
+on a fragment of every width, small and full. What the direction does not see is a lightness-only error on such a
+fragment (the ruling's cost).
+
+**Below the measured domain (ruling R153, fix round 2).** A fragment whose design ink in what shows is under 16 px has no
+measured noise: it is judged on its presence (Unity draws none of it: an issue), its colour direction within R138's
+0.66° and R141's amount band 0.5–2× (both as each pixel's distance from the background, summed), and counted
+(`fragmentsBelowDomain`, named in the report). A sliver of another hue fails, so does a sliver Unity does not draw; a
+lightness-only error within the band passes.
 
 **Its domain.** Only a fragment takes the key: a line something covers (a later opaque element, `hidden`) or clips into,
 its visible columns more than two fewer than its line box's (both renders' boxes; a clip's inward rounding to whole device
 pixels takes at most a column at each end, as with a status in its own box at x 511.25 against 511.67). A whole short line
 keeps its limits (rulings R126, R133, R138 and R141 set them on whole lines; a test holds four stems that are the whole
-line to the usual limit). Neither does a window whose design ink is under 16 px (outside the measurement) nor a glowing
-line (its own check). On the pilot screen the key takes the month picker's chip (18 captures at 1920×1080: 2.84 at 2.6 em
-against 3.68) and nothing else; the type menu's chip (13.4 px of design ink) and the two whole lines at 1600×900 stay
-failing (section 11).
+line to the usual limit). A window whose design ink is under 16 px takes R153's checks (above), a glowing line its own.
+On the pilot screen the key takes the month picker's chip (18 captures at 1920×1080: 2.84 at 2.6 em against 3.68),
+and over the 942 captures 1343 fragment lines in all (989 judged by their colour direction under R151, the most at
+1920×1080, 354 by their ΔE2000 key), every one passing; the type menu's chip (13.4 px of design ink) is below the
+domain (R153), and the two whole lines at 1600×900 are no fragments (section 11).
 
 ## Reproduction
 

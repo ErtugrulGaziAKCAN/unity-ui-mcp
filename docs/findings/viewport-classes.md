@@ -780,6 +780,23 @@ Playwright do not colour-judge anti-aliased pixels either):
   900 to 700 fail; secondary against muted on surface-600 (0.29–0.33°) and primary against secondary on surface-500
   (0.81–0.89°, near the suite's 0.26° scatter) do not, or not reliably. The angle is that of the two colours seen from the
   background, so it depends on the surface's tint, not on how different the colours look.
+- **At scaled viewports (ruling R152, Task 37 fix round 2).** The root scale lays text boxes at fractional device pixels,
+  where Chromium still draws a one-pixel stroke on whole pixels: a pilot screen's 12.5 px status of two one-stroke digits
+  around a dash at 1600×900, its stems one column at 0.97 of the colour in the design, two at 0.54 + 0.54 and
+  0.46 + 0.62 in Unity (the box 0.42 px right and down), the dash one row against 0.22 + 0.73: ink colour ΔE2000 8.07
+  against R126's 5.89 (135 captures), a time cell's dash 6.13 (5). There the size bound is R126's domain, text below 13
+  device px (`SCALED_HAIRLINE_BELOW_PX`), and the line is a hairline line when either render shows it as one (fewer than 3
+  fully covered pixels, in the text colour's direction, a most covered pixel of at least half of it: here Unity's), with
+  R141's other conditions unchanged (opacity 1, nothing painted over it, the copy's own colour, no span of another
+  colour) and R126's scale-only evidence: the same text (element or copy, by its key) passes its ink checks at every exact
+  viewport of the run in the same state. `compareScreen` compares the exact viewports first and hands each scaled capture
+  that evidence (`CaptureContext.scaleOnly`); without it (a run without exact viewports, a text that fails at one, a lone
+  `compareCapture`) the usual checks stay. Exact viewports keep 12 device px and the design's render. Both pilot lines pass
+  at 0.03°. Not caught: a lightness-only error of such a line at a scaled viewport alone (one that shows at an exact
+  viewport takes that evidence away). Red tests (`compare.test.ts`, "R152"): the pilot pattern passes with the evidence
+  and fails without it or at an exact viewport; the accent and warning hues fail; text of 13 px keeps the usual checks;
+  the three 16 px probes of R141 still fail at a scaled viewport; a screen whose exact viewport draws the text in another
+  hue gives its scaled capture no evidence.
 
 Red tests (`compare.test.ts`, "R138"): the correct dash drawn by Unity over other pixel rows passes (it failed on ink colour
 and a 0.70× ink amount before); a dash in the accent or the warning colour fails on its direction; a normal line of fully
@@ -1185,6 +1202,6 @@ verified at the six viewports with the captures kept (`design_ui_verify { keepCa
   nested copies of review finding 1 are judged) both sides resolve into three on every line, at most 0.50 px off the pitch
   and 0.70 px off centre, none not judged. Tests with crops of correct dots at 10, 10.67, 12.5 and 15 device px pass; the
   suite's curve at 12 to 15 px and dots a row higher fail. R146's allowance applies where the dots pass, so at the scaled
-  viewports it reaches the one-grapheme cuts it was withheld from. The screen's verify, compared again offline: 1920×1080,
-  1366×768 and the two large viewports pass every capture; what stays failing at 1280×720 and 1600×900 is text ink, not
-  the ellipsis (`docs/findings/text-ink.md` section 11).
+  viewports it reaches the one-grapheme cuts it was withheld from. The screen's verify, compared again offline after fix
+  round 2: every viewport passes all 157 captures (after fix round 1 the residuals at 1280×720 and 1600×900 were text
+  ink, not the ellipsis; `docs/findings/text-ink.md` section 11).

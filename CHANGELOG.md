@@ -261,6 +261,23 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 - A line's ink window grows by a device pixel for anti-aliasing but no longer into another text's line box (ruling
   R150): two labels laid edge to edge took the next one's first stem into the first one's ink in Chromium only (ink
   extent −4.35 px).
+- Where a fragment's width has a measured ΔE2000 noise above 6.5 (ruling R151: every small width, full 0.5–1.5 em, keys of
+  9 to 18.7 that check almost nothing) the fragment's colour is judged by its ink's colour direction from the background
+  (R138's measure) within the highest direction measured on the same sliding windows plus 0.4 (small 3.73–20.48°, full
+  5.25–10°; the fourth entry of `textInkFragment`'s rows), its amount floor kept. A width whose direction key would let a
+  wrong hue pass leaves its colour not judged and counted (`fragmentColourNotJudged`): none today, every key lies below
+  the kit's hue swaps (31–38°). A lightness-only error on such a fragment is not caught (`docs/findings/text-ink.md`
+  section 12).
+- At a scaled viewport a one-stroke line below 13 device px is a hairline line when either render shows it as one
+  (ruling R152): the root scale's fractional boxes split strokes Chromium draws on whole pixels (a pilot screen's 12.5 px
+  status at 1600×900: ΔE2000 8.07 against 5.89). It needs R141's other conditions and R126's scale-only evidence, the same
+  text passing its ink checks at every exact viewport of the run: the comparison takes the exact viewports first and
+  hands each scaled capture that evidence. Exact viewports keep 12 device px and the design's render. A lightness-only
+  error of such a line at a scaled viewport alone is not caught (`docs/findings/viewport-classes.md`, "Hairline lines").
+- A fragment below the measured domain (ruling R153: the design's ink in what shows under 16 px) is judged on its
+  presence, its colour direction (R138's 0.66°) and R141's amount band 0.5–2×, and counted (`fragmentsBelowDomain` in the
+  verdict, named in the report); it was judged against the 16 px floor of the ink amount (a sliver of a chip beside a type
+  menu: 0.78× against 0.80).
 - An element counts as moving in an animation sample only when an animation of its geometry runs on it or an ancestor
   (ruling R132: the IR's animated properties, the transform and its parts, position, size and box-model lengths; not a
   colour, an opacity, a filter or a shadow). Every other element of a sample gets the static checks, its ring's colour and
@@ -315,13 +332,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
-- Task 37's fidelity run after its review fixes and rulings R148–R150 (4740 captures with the two new fixtures, 14 min
-  15 s): **every capture passes** at all six viewports (exact 3160, scaled 1580; the first run, 14 min 24 s, too). A
-  pilot screen's verify, its captures kept and compared again offline with this version: 3840×2160, 2560×1440, 1920×1080
-  and 1366×768 pass all 157 captures each, 1280×720 143 and 1600×900 22. What fails is text ink with a measured cause: a
-  fragment a type menu leaves of a status chip, under the fragment key's domain (1280×720, 14), and two whole 12.5 px
-  lines of one-pixel strokes UI Toolkit splits over two device pixels at the scaled root (1600×900, 135; a status copy
-  in a nested repeat that review finding 1 had left unjudged) (`docs/findings/text-ink.md` section 11).
+- Task 37's fidelity run after its second fix round (rulings R148–R153; 4740 captures with the two new fixtures, 14 min
+  9 s): **every capture passes** at all six viewports (exact 3160, scaled 1580; the first fix round's run, 14 min 15 s,
+  and the task's first run, 14 min 24 s, too). A pilot screen's verify, its captures kept and compared again offline with
+  this version: **all 942 captures pass**, 157 at each viewport. After the first fix round 1280×720 passed 143 and
+  1600×900 22: a status chip's sliver beside a type menu, under the fragment key's domain, now judged by ruling R153, and
+  two whole 12.5 px lines of one-pixel strokes UI Toolkit splits over two device pixels at the scaled root, now hairline
+  lines by ruling R152 (`docs/findings/text-ink.md` section 11).
 - The ellipsis point at the scaled viewports (task 36, ruling R146): a pilot's ellipsized titles at 1600×900 and
   1366×768 kept one grapheme more or fewer in Unity than in the design (the line's ink end +2.5 to +10.6 device px), where
   UI Toolkit decides its cut under the root scale; at every exact viewport its own elision cuts where Chromium does. The
