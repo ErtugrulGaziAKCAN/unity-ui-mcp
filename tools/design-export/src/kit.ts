@@ -26,6 +26,8 @@ export interface KitConfig {
    * Absent: none. Kit build warns about a step that draws a kit style below the readable-text floor.
    */
   textSizes?: { key: string; scale: number }[];
+  /** Whether a screen must have a `screen.contract.json`: `required` blocks a design without one. Absent: optional. */
+  screenContract?: "optional" | "required";
 }
 
 /** The locale code of English, the package's default reference locale (and the profile's default English locale). */
@@ -47,6 +49,8 @@ export function readKit(kitDir: string): KitConfig {
   if (raw.textSizes !== undefined && !(Array.isArray(raw.textSizes) && raw.textSizes.every((t: unknown) => typeof t === "object" && t !== null &&
     typeof (t as { key?: unknown }).key === "string" && typeof (t as { scale?: unknown }).scale === "number" && (t as { scale: number }).scale > 0)))
     throw new Error(`kit.config.json: "textSizes" must be a list of { "key": string, "scale": number above 0 }`);
+  if (raw.screenContract !== undefined && raw.screenContract !== "optional" && raw.screenContract !== "required")
+    throw new Error(`kit.config.json: "screenContract" must be "optional" or "required"`);
   const classed = parseViewports(raw.viewports);
   const ref = raw.reference as [number, number];
   if (classed.some((v) => v.class === "scaled" && v.size[0] === ref[0] && v.size[1] === ref[1]))

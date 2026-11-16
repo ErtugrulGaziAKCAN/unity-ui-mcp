@@ -131,6 +131,17 @@ describe("kit upgrade", () => {
     expect(fs.readdirSync(staging)).toEqual([]); // the staging copy is gone
   });
 
+  it("keeps the project's screenContract", () => {
+    const kit = oldProjectKit();
+    const cfgPath = path.join(kit, "kit.config.json");
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfgPath, "utf8")), screenContract: "required" }) + "\n");
+    expect(JSON.parse(fs.readFileSync(path.join(CLONE_KIT, "kit.config.json"), "utf8")).screenContract).toBe("optional");
+    const r = upgradeKit(kit, { from: CLONE_KIT, now: new Date("2026-11-15T10:00:00Z"), tmpRoot: tmp("kit-upgrade-staging-") });
+    expect(r.ok, r.errors.join("\n")).toBe(true);
+    expect(JSON.parse(fs.readFileSync(cfgPath, "utf8")).screenContract).toBe("required");
+    expect(r.kept.join("\n")).toMatch(/"screenContract": "required"/);
+  });
+
   it("--dry-run prints the plan and writes nothing: no file changes, no backup, no staging copy left", async () => {
     const kit = oldProjectKit();
     const before = tree(kit, "");

@@ -204,6 +204,20 @@ describe("kit build", () => {
     expect(() => buildKit(dir, { check: true })).toThrow(/"textSizes" must be a list/);
   });
 
+  it("reads screenContract: optional or required; absent is undefined; anything else is refused", () => {
+    expect(readKit(KIT_DIR).screenContract).toBe("optional");
+    const dir = kitCopy();
+    const cfg = path.join(dir, "kit.config.json");
+    const raw = JSON.parse(fs.readFileSync(cfg, "utf8"));
+    delete raw.screenContract;
+    fs.writeFileSync(cfg, JSON.stringify(raw));
+    expect(readKit(dir).screenContract).toBeUndefined();
+    fs.writeFileSync(cfg, JSON.stringify({ ...raw, screenContract: "required" }));
+    expect(readKit(dir).screenContract).toBe("required");
+    fs.writeFileSync(cfg, JSON.stringify({ ...raw, screenContract: "always" }));
+    expect(() => readKit(dir)).toThrow('kit.config.json: "screenContract" must be "optional" or "required"');
+  });
+
   it("fails when a --font-* token names a family fonts.css does not declare (both modes; letter case as lint compares it)", async () => {
     expect(buildKit(KIT_DIR, { check: true }).errors).toEqual([]);
     const dir = kitCopy();

@@ -14,8 +14,8 @@ import { parseViewports } from "../viewport.js";
  *   RULES.md, components, the text styles), and the configuration keys the clone defines.
  * - Merged: `text-styles.json` takes the clone's styles and keeps the project's own (names the clone does not define);
  *   `tokens.css` takes the clone's file and keeps every token the project changed or added; `kit.config.json` keeps the
- *   project's `locales`, `referenceLocale`, `reference`, `screenMatch` and `textSizes` (kit sync writes them from the
- *   profile), its own keys and paths, and the viewports are the clone's plus any the project declared besides.
+ *   project's `locales`, `referenceLocale`, `reference`, `screenMatch`, `textSizes` and `screenContract` (kit sync writes the
+ *   first ones from the profile), its own keys and paths, and the viewports are the clone's plus any the project declared besides.
  * - Kept as they are: the fonts folder (fonts CSS and JSON included) and every file the clone does not have.
  *
  * Everything is merged and built (`kit build`, then `kit build --check`) on a staging copy first: a merge that does not
@@ -211,7 +211,7 @@ function mergeComponents(clone: string, project: string | null, kept: string[], 
  * one it lacked said. Any other list (narrowed, or with no base) stays as it is, with the clone's entries it lacks said.
  */
 function mergeConfig(clone: Json, project: Json, history: Json[], base: Json | null, kept: string[], notes: string[]): Json {
-  const PROJECT_KEYS = ["locales", "referenceLocale", "reference", "screenMatch", "textSizes", "fontsCss", "tokensCss", "textStyles"];
+  const PROJECT_KEYS = ["locales", "referenceLocale", "reference", "screenMatch", "textSizes", "fontsCss", "tokensCss", "textStyles", "screenContract"];
   const out: Json = {};
   for (const [k, v] of Object.entries(clone)) out[k] = v;
   for (const k of PROJECT_KEYS) {
