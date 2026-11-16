@@ -324,8 +324,11 @@ Unity started and waits for them, then gives the slot back and removes the copy 
 capture keeps running next to the next one. Your project's manifest never lists the package's tests (that would put the
 package's own test suite, which switches project settings, into your Test Runner), and no scene, asset or helper file is
 ever added to your project. The server passes the export and output folders in the environment (`DESIGN_UI_EXPORT_DIR`,
-`DESIGN_UI_OUT_DIR`, also as the `{exportDir}` and `{outDir}` placeholders); the Unity binary is the Unity Hub install of
-the project's version, or `UNITY_BIN`. A script of your own works the same way, as long as it cleans up after itself.
+`DESIGN_UI_OUT_DIR`, also as the `{exportDir}` and `{outDir}` placeholders) and puts the folder of the node it runs on
+first on the command's `PATH`, with `DESIGN_UI_NODE` naming that node (the script runs node; a client may start the
+server with a `PATH` without it); the Unity binary is the Unity Hub install of the project's version, or `UNITY_BIN`. A
+script of your own works the same way, as long as it cleans up after itself. Windows has no default route (the script
+needs bash and `rsync`): use WSL, or a command of your own.
 
 Each capture is a heavy Unity job. The script's options go into the command template (the server passes none of its own
 `DESIGN_UI_*` environment variables on; the `CAPTURE_COPY_*` variables of the same names work too):
@@ -363,8 +366,9 @@ report's pictures, the newest three failed runs, the captures a verify kept on r
 `design-ui.config.json` (default 2048): over it, kept captures go first, then the exports of the screens least recently
 imported or verified, and the next import or verify exports them again (the captures a verify just kept, and the
 screen's export beside them, are never removed by that verify's own cleanup, so the offline comparison its answer prints
-works; a later cleanup over the budget may remove the captures, and the record and report then say so).
-Kept captures otherwise stay until the next verify that gives a verdict, an import that exports the screen again (they no
+works; a later cleanup over the budget may remove the captures, and the record and report then say so). Records,
+report pictures and each screen's newest three failed runs are never removed for the budget, so the bookkeeping can
+stay above it when they alone are larger. Kept captures otherwise stay until the next verify that gives a verdict, an import that exports the screen again (they no
 longer match its goldens) or `design_ui_clean`, which always removes them. Kit sync and every import remove font twins no text style, compiled screen or locale font uses.
 `design_ui_status` shows the bookkeeping per screen and in total, and `design_ui_clean` (`dryRun` to only report) runs the
 cleanup now. Do not delete these folders, generated files or font twins by hand.

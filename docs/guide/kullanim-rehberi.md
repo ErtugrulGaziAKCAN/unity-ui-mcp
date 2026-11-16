@@ -314,7 +314,10 @@ durdurulan bir yakalamanın Unity'si sonraki yakalamanın yanında çalışmaya 
 (listeleseydi, proje ayarlarını değiştiren paket testleri senin Test Runner'ına girerdi) ve projene hiçbir sahne, varlık
 ya da yardımcı dosya eklenmez. Sunucu dışa aktarım ve çıktı klasörlerini ortam değişkenleriyle verir
 (`DESIGN_UI_EXPORT_DIR`, `DESIGN_UI_OUT_DIR`; `{exportDir}` ve `{outDir}` yer tutucuları olarak da); Unity, Unity Hub'daki
-proje sürümüdür ya da `UNITY_BIN`. Kendi betiğin de aynı biçimde çalışır, yeter ki ardını temizlesin.
+proje sürümüdür ya da `UNITY_BIN`. Sunucu, komutun `PATH`'inin başına kendi çalıştığı node'un klasörünü koyar ve
+`DESIGN_UI_NODE` ile o node'u adlandırır (betik node çalıştırır; bir istemci sunucuyu node'suz bir `PATH` ile başlatabilir).
+Kendi betiğin de aynı biçimde çalışır, yeter ki ardını temizlesin. Windows'ta varsayılan yol yoktur (betik bash ve `rsync`
+ister): WSL ya da kendi komutunu kullan.
 
 Her yakalama ağır bir Unity işidir. Betiğin seçenekleri komut şablonuna yazılır (sunucu kendi ortamındaki `DESIGN_UI_*`
 değişkenlerini aktarmaz; aynı adlı `CAPTURE_COPY_*` değişkenleri de çalışır):
@@ -348,7 +351,8 @@ son raporun görselleri, en yeni üç başarısız çalışma, istek üzerine tu
 içindeki `cacheBudgetMB` sınırında tutar (varsayılan 2048): aşılırsa önce tutulan görüntüler, sonra en uzun süredir içe
 aktarılmamış ya da doğrulanmamış ekranların dışa aktarımları gider, sonraki içe aktarma ya da doğrulama onları yeniden
 üretir (bir doğrulamanın az önce tuttuğu görüntüleri o doğrulamanın kendi temizliği asla silmez; bütçe aşılınca sonraki
-bir temizlik silebilir, kayıt ve rapor bunu söyler). Tutulan görüntüler aksi halde sonraki doğrulamaya, ekranı yeniden dışa
+bir temizlik silebilir, kayıt ve rapor bunu söyler). Kayıtlar, rapor görselleri ve her ekranın en yeni üç başarısız
+çalışması bütçe için asla silinmez; yalnız onlar bütçeden büyükse kayıtlar bütçenin üstünde kalabilir. Tutulan görüntüler aksi halde sonraki doğrulamaya, ekranı yeniden dışa
 aktaran bir içe aktarmaya (artık altın görüntülerle eşleşmezler) ya da `design_ui_clean` çağrısına kadar kalır;
 `design_ui_clean` onları her zaman siler. Kit eşitleme ve her içe aktarma, hiçbir metin stilinin, derlenmiş
 ekranın ya da dil fontunun kullanmadığı font ikizlerini siler. `design_ui_status` kayıtların boyutunu ekran ekran ve toplam

@@ -14,7 +14,7 @@ is silently approximated.
 
 | Part | What it is |
 |---|---|
-| `packages/com.ertugrulgaziakcan.design-ui` | Unity package (Unity 6000.3 or later): compiler, generated views, runtime helpers, Editor bridge, verifier |
+| `packages/com.ertugrulgaziakcan.design-ui` | Unity package (Unity 6000.3): compiler, generated views, runtime helpers, Editor bridge, verifier |
 | `tools/design-ui-mcp` | MCP server (stdio) for any MCP client, one per Unity project |
 | `tools/design-export` | Node CLI behind the server: `lint`, `export`, `compare`, `kit build`, `kit claude` |
 | `skills/unity-ui-mcp` | The `/unity-ui-mcp` chat skill for Claude Code, Codex and Cursor |
@@ -23,11 +23,14 @@ is silently approximated.
 
 Guides: [usage guide](docs/guide/usage.md) · [Türkçe kullanım rehberi](docs/guide/kullanim-rehberi.md) ·
 [install guide for AI agents](INSTALL.md) · [design rules](design-kit/RULES.md) ·
-[spec](docs/spec/2026-11-12-design-to-uitoolkit-design.md) · [measurements](docs/findings/) · [changes](CHANGELOG.md)
+[spec](docs/spec/2026-11-12-design-to-uitoolkit-design.md) · [measurements](docs/findings/) · [decisions](docs/decisions.md) ·
+[changes and known limitations](CHANGELOG.md)
 
 ## Requirements
 
-- **Unity 6000.3** (Unity 6.3 LTS) or later. The package pulls in `com.unity.ugui` and Newtonsoft JSON.
+- **Unity 6000.3** (Unity 6.3 LTS); everything was measured on 6000.3.6f1 in the Editor (players and later Unity
+  versions are not verified: [known limitations](#known-limitations)). The package pulls in `com.unity.ugui` and
+  Newtonsoft JSON.
 - **Node.js 20** or later, `npm` and `git`, to build the MCP server from a clone. Playwright downloads its pinned
   Chromium once per machine.
 - `scripts/setup.sh` is bash: macOS or Linux; on Windows use WSL or Git Bash, or the manual steps in
@@ -63,7 +66,9 @@ Guides: [usage guide](docs/guide/usage.md) · [Türkçe kullanım rehberi](docs/
 
 [INSTALL.md](INSTALL.md) is the agent's guide, with every setup option and the manual route.
 
-**Upgrading.** Setup keeps a project's existing kit. After you pull a newer clone, bring the project's kit to the clone's
+**Upgrading.** Pull the clone and run setup again (it rebuilds the server), and move the Unity package to the same
+version (setup keeps an existing package entry: [INSTALL.md](INSTALL.md#updating) says how). Setup keeps a project's
+existing kit too. After you pull a newer clone, bring the project's kit to the clone's
 version with `npx design-export kit upgrade <kitDir> --dry-run` (in the clone; it prints what it would replace, keep and
 back up), then without `--dry-run`. It takes the clone's base stylesheet, rules, components, text styles and
 configuration keys and keeps the project's fonts, the tokens it changed or added (a value an earlier clone shipped takes
@@ -265,10 +270,13 @@ overwritten (move or animate a container instead). `design_ui_status`, `design_u
 class) and `Window > Design UI > Status` show each viewport's class.
 
 A line that does not wrap and ends in an ellipsis is cut by UI Toolkit's own elision, which matched Chromium's cut at
-every exact viewport (the fidelity suite's lines and a pilot's titles). At a scaled viewport it decides under the root scale and can keep one grapheme more or fewer when
-the box lies within about an advance of the threshold; verify allows exactly that there (decision D-146,
-`ellipsisGraphemes`): the line must start where the design's does and differ by at most one grapheme. At every viewport
-the line must end in the design's ellipsis glyph (decision D-147). The package never changes a label's text.
+every exact viewport (the fidelity suite's lines and a real game screen's titles). At a scaled viewport it decides under
+the root scale and can keep one grapheme more or fewer when the box lies within about an advance of the threshold; verify
+allows exactly that there ([D-146](docs/decisions.md), `ellipsisGraphemes`): the line must start where the design's does
+and differ by at most one grapheme. The line must end in the design's ellipsis glyph ([D-147](docs/decisions.md)): from
+16 device px its profile is compared with the design's; below that, three dots at the design's pitch and height
+([D-148](docs/decisions.md)), and a line whose design dots do not resolve into three is not judged (counted in the
+verdict as `ellipsisNotJudged`). The package never changes a label's text.
 
 Text-sized elements (a button or label whose width is its text's) lay out at the golden's width for their text: the
 golden ceils Chromium's text width to whole device pixels at the viewport's scale, UI Toolkit ceils on the grid of the
@@ -287,7 +295,7 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`):
 | Check | Limit |
 |---|---|
 | Element boxes | ±1 device px at every viewport, exact and scaled |
-| Text | same line count and breaks, baseline ±1 px, ink colour and amount per line, and where each line's first and last glyphs sit (and the width between them) ±1 px; the same for the text of a repeat's later items. A hairline line (text of at most 12 device px at opacity 1, all in its own recorded colour, with no element, repeat copy (in its own item's state) or shadow over it that both renderers paint after it, and fewer than 3 fully covered pixels in the design: an em dash, a "1" whose one stroke lies between two device pixels) is judged by its ink's colour direction from the background (0.66°, measured) and an ink amount of 0.5–2× the design's instead of its ink colour and amount: on such a line a lightness-only error within that amount is not caught |
+| Text | same line count and breaks, baseline ±1 px, ink colour and amount per line, and where each line's first and last glyphs sit (and the width between them) ±1 px; the same for the text of a repeat's later items. A hairline line (text of at most 12 device px at opacity 1, all in its own recorded colour, with no element, repeat copy (in its own item's state) or shadow over it that both renderers paint after it, and fewer than 3 fully covered pixels in the design: an em dash, a "1" whose one stroke lies between two device pixels) is judged by its ink's colour direction from the background (0.66°, measured) and an ink amount of 0.5–2× the design's instead of its ink colour and amount: on such a line a lightness-only error within that amount is not caught. At a scaled viewport the size bound is under 13 device px, with the same text judged and passing at every exact viewport, and a line only Unity's render shows as a hairline needs at least 0.84 of the design's summed ink ([D-152, D-158](docs/decisions.md)). A line the design's opaque covers hide entirely must show the cover in Unity |
 | Colours at sampled points | ΔE2000 ≤ 1 (the ring of a round element without text, at the middle of each border side of 2 device px or more: ≤ 3.1, measured; not where an animation sample moves the element, by an animation of its geometry; a ring thinner than 2 device px has no colour sample, and the sample, the best of ±1 px offsets, judges a ring's colour, not its width) |
 | Ring width | a round element without text: its ring's drawn width across the middle of each side and each round corner within 0.5 device px of the design's, unless an animation sample moves it. The check decides reliably from 0.75 device px: a ring 1 CSS px thinner at 1280×720 (0.5 device px) can pass |
 | Structure (SSIM, non-text) | ≥ 0.99 for the capture and for each element (small elements ≥ 0.984, pictures ≥ 0.985, rotated animation samples ≥ 0.975) |
@@ -295,8 +303,8 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`):
 | Anti-aliasing, every viewport | a round element without text, and in an animation sample an element moved to a fractional device offset, may meet 0.974 when its SSIM with the 1 device px edge band masked (its curves; for the moved element also its straight edges where both renderers put them) meets 0.99 and its other checks pass, with evidence at the level of pixels: outside the band every 8 px SSIM block meets 0.99 and every 3×3 window is within ΔE2000 1 of Unity's (best of ±1 px), and every border in the band keeps the design's width (±0.5 device px) and, unless an animation sample moves it, its centre colour (ΔE2000 3.1) |
 | Scaled viewports only | the same, except the anti-aliasing the root scale draws at the layout scale's pixel, each only with the same band evidence: any element with round shapes may meet 0.974 for its curves' band, a rounded-corner sample of an element that carries text, whose window reaches that band and whose window pixels outside it (at least 3, at one offset) match, may differ by ΔE2000 5.5; an element whose straight edges (box and border's inner edges, also of a repeat's later items) fall between device pixels may meet 0.97 for their band, a vector picture 0.975 for its drawn edges' band, a corner sample reaching straight edges between pixels ΔE2000 5.3; a raster picture drawn at another size than its own 0.95, its colour samples ΔE2000 5.89 (resampling, measured); text under 13 device px (the root scale draws 10.67, 12.5 and 12.8 px) takes the small-text ink limits, its colour ΔE2000 5.89 (measured, at most 6.5) |
 
-The fidelity suite (`scripts/fidelity.sh`: 22 fidelity fixtures and the 9 kit components at the kit's six viewports,
-4728 captures, about 14 minutes) passes every capture at all six viewports, exact and scaled (an unchecked radio's ring and
+The fidelity suite (`scripts/fidelity.sh`: 24 fidelity fixtures and the 9 kit components at the kit's six viewports,
+4740 captures, about 14 minutes) passes every capture at all six viewports, exact and scaled (an unchecked radio's ring and
 a transition sample at 1280×720 pass through the anti-aliasing edge band, and two one-glyph texts of a repeat's later items,
 an em dash and a "1" whose stroke lies between two device pixels, through the hairline rule;
 [docs/findings/viewport-classes.md](docs/findings/viewport-classes.md)). The measured scaled-class limits are the
@@ -323,11 +331,11 @@ Measured on the sample project (macOS, Apple silicon, warm browser):
 
 | Step | Time |
 |---|---|
-| Lint and export of one screen | 1.8 s (three viewports); 3.9–4.3 s with a fourth viewport and animation samples |
+| Lint and export of one screen | 1.3–1.8 s for a static screen at the six default viewports; 2–21 s with states, pseudo-states and animation samples (70 s for the transitions fixture's 210 captures) |
 | Import through the Editor bridge, view class unchanged | 0.2 s Unity request; 4.5 s for the whole tool call with its export |
 | Import that changes the view class | 1.8–3.3 s Unity step (script compile and domain reload); longer in a large project |
 | Unity capture | about 33 ms per capture job after one mount per viewport |
-| Fidelity suite Unity steps (31 screens, six viewports) | import 28 s, capture 198 s |
+| Fidelity suite Unity steps (33 screens, six viewports) | import 33 s, capture 200 s |
 
 ## MCP tools
 
@@ -340,6 +348,7 @@ Measured on the sample project (macOS, Apple silicon, warm browser):
 | `design_ui_verify` | Captures in Unity, compares, returns the verdict, the report path and the top issues |
 | `design_ui_status` | What this version supports and how each Unity step runs; or one screen's hashes, last import and verdict |
 | `design_ui_kit_sync` | Syncs fonts and settings from the Unity project into the kit; `addProfileViewports` adds the viewports the kit declares and the profile lacks |
+| `design_ui_clean` | Reports (`dryRun`) or runs the cleanup of the screens' bookkeeping that import and verify also run by themselves |
 
 Every result has a short text summary, the same data as JSON with per-step timings, and `isError` with the reason when
 a step fails. Verdicts: `pass`; `fail` (a capture failed or did not run); `incomplete` (the design hides a job in every
@@ -367,7 +376,9 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
 - `kitDir`: the project's design kit (setup copies the clone's `design-kit` there; kit sync writes the project's fonts
   into it, and refuses to write into a clone's own kit); `profileAsset`: the `DesignUiProfile`; `mcpServer`: the server
   path the Design UI window puts into its client snippets.
-- `cacheBudgetMB` (default 2048): the most the screens' bookkeeping may take; cleanup is automatic (see the
+- `cacheBudgetMB` (default 2048): the budget of the screens' derived files; over it the cleanup removes kept captures,
+  then the exports of the screens least recently imported or verified (records, report pictures and each screen's newest
+  three failed runs stay, so the bookkeeping can stay above it when they alone are larger). Cleanup is automatic (see the
   [usage guide](docs/guide/usage.md#disk-use)), and `design_ui_clean` runs it on request.
 - `unityRunner.prefer: "editor"` runs import and kit sync in the open Editor's bridge and fails if it does not answer
   (no silent fallback); `"command"` runs the argv templates instead.
@@ -379,7 +390,9 @@ Unity log in `<screen>/.design-ui/failed-<run>/`.
   its own heavy-job runner puts that runner's command there instead; see the
   [usage guide](docs/guide/usage.md#verification-captures).
 - Templates take `{projectDir}` `{profile}` `{exportDir}` `{outDir}` `{kitDir}`, also passed as `DESIGN_UI_*`
-  environment variables. They run as programs with your rights: only use a config you trust.
+  environment variables. The command's `PATH` starts with the folder of the node that runs the server, and
+  `DESIGN_UI_NODE` names that node (a client may start the server with a `PATH` without node). They run as programs with
+  your rights: only use a config you trust.
 - `timeoutSec` limits one Unity step (the script compile after an import included); while it runs, the server sends
   MCP progress notifications every 10 s.
 - The server reads the config when it starts: after editing it (or after setup configures a project), restart the MCP
@@ -422,11 +435,51 @@ npx design-export kit build design-kit --check      # RULES.md, base.css and the
 npx design-export kit upgrade <kitDir> --dry-run    # a project kit against this clone's (prints only)
 ```
 
+Versions: the Unity package and the Node tools share one version number (`package.json` of each). A change of the IR
+format (`tools/design-export/src/ir/schema.json`) after a release raises `irVersion` on both sides (the package's IR
+reader refuses another one, and the server stops an import when the bridge reports another one); any other change raises
+the version.
+
 Run these before a pull request. GitHub Actions (`.github/workflows/node.yml`) runs the same Node suites and type
 checks on Linux with Node 20 and 22 on every push and pull request. The Unity package tests
 (EditMode, in `samples/FidelityProject`) and the fidelity suite (`scripts/fidelity.sh`) need Unity and run locally:
 `samples/FidelityProject` references the package by a relative path, and `scripts/unity-check.sh` is the maintainer's
-wrapper for running them on an isolated copy.
+wrapper for running them on an isolated copy (it calls a clone tool that is not part of this repository).
+
+**Your own Unity runner** (`FIDELITY_UNITY_CHECK=<executable> scripts/fidelity.sh`). The suite calls the runner once per
+Unity step (setup and kit sync, import, capture, cleanup) as `<runner> --warm --wait --editmode "<regex>"`, with the
+step's `DESIGN_UI_*` variables in its environment. The runner must:
+
+- run the EditMode tests whose full names match the regex (Unity's `-testFilter`) in batchmode on a copy of
+  `samples/FidelityProject` whose manifest points the package's relative `file:` path at this clone, never in an open
+  Editor;
+- keep that copy between the calls of one run (setup writes the profile and fonts the import and capture use), and
+  pass the environment on to Unity;
+- exit 0 when the tests passed and non-zero otherwise; a line with `detay=<text> png=` in its output gives the summary
+  its detail (optional).
+
+A plain batchmode runner:
+
+```sh
+#!/usr/bin/env bash
+# fidelity-runner.sh: one persistent copy of samples/FidelityProject
+set -euo pipefail
+CLONE="$(cd "$(dirname "$0")/.." && pwd)" COPY="${FIDELITY_COPY:-$HOME/fidelity-copy}"
+filter=""; while [ $# -gt 0 ]; do [ "$1" = --editmode ] && filter="$2"; shift; done
+if [ ! -d "$COPY" ]; then
+  cp -R "$CLONE/samples/FidelityProject" "$COPY"
+  sed -i.bak "s#file:../../../packages/#file:$CLONE/packages/#" "$COPY/Packages/manifest.json"
+fi
+"$UNITY_BIN" -batchmode -projectPath "$COPY" -runTests -testPlatform EditMode -testFilter "$filter" \
+  -testResults "$COPY/results.xml" -logFile -
+```
+
+## Known limitations
+
+Measured on macOS (Apple silicon) with Unity 6000.3.6f1 in the Editor; player builds, later Unity versions and Windows
+are not verified, URP only in the Editor, and Windows has no default capture route (use WSL or a capture command of your
+own). The [changelog](CHANGELOG.md#known-limitations) lists every known limitation, including what the comparison does
+not catch.
 
 ## License
 

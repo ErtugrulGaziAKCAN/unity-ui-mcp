@@ -17,13 +17,16 @@ What gets installed:
 - **The `/unity-ui-mcp` skill**, linked into the skill folders of Claude Code, Codex and Cursor that exist.
 
 Platforms: `scripts/setup.sh` is a bash script (macOS, Linux). On Windows run it from WSL or Git Bash, or follow
-"Manual setup" below.
+"Manual setup" below. Verification's default capture command (`scripts/capture-on-copy.sh`) copies the project for each
+verify: an APFS clone on macOS (no copy of the data), an `rsync` copy of the whole project on Linux (its time and free disk
+grow with the project), and on Windows it does not run (Git Bash has no `rsync`): use WSL there, or a capture command of
+the user's own. Everything was measured on macOS with Unity 6000.3.6f1; tell a Windows or Linux user so.
 
 ## 1. Ask the user
 
 Ask these questions in one message and wait for the answers:
 
-1. The **Unity project folder** (the folder that contains `Assets/` and `Packages/`). Unity 6000.3 or later.
+1. The **Unity project folder** (the folder that contains `Assets/` and `Packages/`). Unity 6000.3 (measured on 6000.3.6f1; tell the user if theirs is another version).
 2. The **design folder** (`designRoot`): where design screens will live, one folder per screen. Relative to the Unity
    project or absolute. Suggest `Designs` (outside `Assets/`, so Unity does not import the HTML), or a folder outside
    the project if the user keeps designs out of the game's repository.
@@ -215,8 +218,19 @@ The README lists the snippets for Cursor, Codex and Claude Desktop. The Unity pa
 
 ## Updating
 
-`git -C <clone folder> pull --ff-only`, then run `scripts/setup.sh` again with the same arguments (it rebuilds the
-server when sources changed); new client sessions use the new server. Unity keeps the package commit it resolved in
-`packages-lock.json`: to update the package, remove its entry there (or add the git URL again). A project set up before
-0.1.0 lists the package under its old id (see CHANGELOG): setup replaces that entry with
+1. **The clone and the server.** `git -C <clone folder> pull --ff-only` (or check out a release tag), then run
+   `scripts/setup.sh` again with the same arguments: it rebuilds the server when sources changed. Always rebuild after a
+   pull: the built `dist/server.js` keeps the clone's paths and reads the exporter's data (schemas, the CSS whitelist,
+   thresholds) from the clone at run time, so a pull without a rebuild runs old code on new data. For the same reason,
+   run setup again after moving the clone. New client sessions use the new server.
+2. **The Unity package.** Setup keeps a package entry that is already in `Packages/manifest.json`; it does not move it
+   to the clone's version. Set the entry's revision to the clone's (`#<tag>` from
+   `git -C <clone folder> describe --tags --exact-match HEAD`, else `#<commit>` from `git -C <clone folder> rev-parse
+   HEAD`), or remove the entry and run setup again; if Unity keeps the commit it resolved, remove the package's entry from
+   `packages-lock.json` too.
+3. **Update both together.** The server checks the package's version and IR version through the bridge (another major
+   version or IR version stops an import, another minor version is a warning), but two builds of the same version, between
+   releases, cannot tell each other apart. From 0.1.0 on, a change of the IR format comes with a new IR version.
+
+A project set up before 0.1.0 lists the package under its old id (see CHANGELOG): setup replaces that entry with
 `com.ertugrulgaziakcan.design-ui` and its new git URL path (the dry run shows the replacement first).
