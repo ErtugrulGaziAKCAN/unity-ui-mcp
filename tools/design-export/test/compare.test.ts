@@ -260,6 +260,54 @@ describe("compareCapture", () => {
     expect(of(compareCapture(pair(false), pair(true, 4), [], T, ctx), "a")).toContain("inkExtent");
   });
 
+  describe("text ink on few stems (ruling R149): a window narrower than 4 em takes the measured noise for its width", () => {
+    // a 15 px label a later opaque menu covers but for its first four glyphs (33 px, 2.2 em): a pilot screen's status chip
+    // under a month picker. Stand-in glyphs: 1 px stems every 2 px
+    const chip = (unity: boolean, colour: Rgb = [185, 208, 214], menuX = 73) => {
+      const png = canvas(320, 80, [11, 31, 38]);
+      glyphs(png, { x: 41, y: 30, w: 158, h: 11 }, colour);
+      fill(png, { x: menuX, y: 0, w: 320 - menuX, h: 80 }, [15, 42, 51]);
+      return {
+        png,
+        boxes: { capture: "default@320x80", viewport: [320, 80], scale: 1, external: [],
+          elements: { root: el(0, 0, 320, 80), label: el(40, 26, 160, 18, { text: true, lines: [{ x: 40, y: 27, w: 160, h: 16, baseline: 41 }] }),
+            menu: el(menuX, 0, 320 - menuX, 80) } } as CaptureBoxes,
+      };
+    };
+    const ctx: CaptureContext = { order: ["root", "label", "menu"], parent: new Map([["label", "root"], ["menu", "root"]]), opaque: new Set(["menu"]),
+      painters: new Set(["menu"]), backgrounds: new Set(["menu"]), fontPx: { label: 15 } };
+    const repo = readThresholds();
+    const label = (v: CaptureVerdict) => v.issues.filter((i) => i.id === "label");
+
+    it("holds the file's key: rows by width up to 4 em for small and full text", () => {
+      expect(repo.textInkFragment?.em).toBe(4);
+      expect(repo.textInkFragment?.full.at(-1)![0]).toBeLessThan(4);
+    });
+
+    it("still fails a wrong colour on a four-glyph fragment", () => {
+      const v = compareCapture(chip(false), chip(true, [214, 150, 120]), [], repo, ctx);
+      expect(label(v).map((i) => i.kind)).toContain("ink");
+      expect(label(v).find((i) => i.kind === "ink")!.detail).toMatch(/a window of 2\.\d em/);
+      // the same text uncovered keeps the usual limit, the right colour on the fragment passes
+      expect(label(compareCapture(chip(false), chip(true), [], repo, ctx))).toEqual([]);
+    });
+
+    it("gives the key to a fragment only: a whole line as short keeps its usual limit", () => {
+      // a colour ΔE2000 4.2 off: within the 2 em fragment's measured noise (6.15), over the usual limit 2 of 15 px text
+      const off: Rgb = [165, 195, 205];
+      expect(label(compareCapture(chip(false), chip(true, off), [], repo, ctx))).toEqual([]);
+      // four stems that are the whole line (no cover): no fragment, the usual limit holds
+      const short = (unity: boolean) => {
+        const s = chip(unity, unity ? off : [185, 208, 214], 320);
+        fill(s.png, { x: 72, y: 26, w: 160, h: 18 }, [11, 31, 38]);
+        s.boxes.elements.label = el(40, 26, 32, 18, { text: true, lines: [{ x: 40, y: 27, w: 32, h: 16, baseline: 41 }] });
+        delete (s.boxes.elements as Record<string, unknown>).menu;
+        return s;
+      };
+      expect(label(compareCapture(short(false), short(true), [], repo, { ...ctx, order: ["root", "label"] })).map((i) => i.kind)).toContain("ink");
+    });
+  });
+
   describe("text an ancestor's overflow clips: only what both renders show is compared (scroll areas, clipped boxes)", () => {
     // a panel (y 0–100) holds a scroll area (y 20–80, overflow-y auto) with three rows; below the panel lies the game shell's
     // placeholder (an external element), which the design paints and Unity leaves to the capture's magenta backdrop (a pilot
@@ -2871,6 +2919,10 @@ describe("design-export compare", () => {
       // the scaled class's own keys (R121) off at exact viewports, measured at scaled ones
       ssimRoundEdge: 0.974, deltaE2000RoundEdge: 1, deltaE2000Ring: 3.1, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
       ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1,
+      // ruling R149: the measured noise of the ink statistic on fragments narrower than 4 em (docs/findings/text-ink.md §12)
+      textInkFragment: { em: 4,
+        small: [[0.5, 18.71, 0.65], [1, 15.43, 0.65], [1.5, 15.43, 0.65], [2, 15.43, 0.58], [2.5, 11.15, 0.8], [3, 10.13, 0.82], [3.5, 9.4, 0.82]],
+        full: [[0.5, 14.96, 0.43], [1, 9.88, 0.61], [1.5, 7.53, 0.81], [2, 6.15, 0.87], [2.5, 3.68, 0.88], [3, 3.29, 0.88], [3.5, 2.92, 0.88]] },
       // the scaled class: R109, R115, R121, and R125 (resampled pictures), R126 (small text ink, at most 6.5), R146 (an
       // ellipsized line's cut one grapheme off)
       scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, textInkSmallPx: 12.99, ssimFractionalEdge: 0.97, ssimVectorEdge: 0.975, deltaE2000FractionalEdge: 5.3,

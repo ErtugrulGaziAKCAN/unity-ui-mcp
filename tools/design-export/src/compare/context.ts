@@ -84,7 +84,16 @@ export interface CaptureContext {
    * nothing of the text outside it; the comparison judges a line's ink on what both show (absent: nothing clips it).
    */
   clips?: Record<string, ClipAncestor[]>;
+  /**
+   * A measurement hook, never set by verify: called for every text line the ink check judges as text (not hairline, not
+   * covered or clipped) with its window, what hides pixels of it, its device font size and both images
+   * (docs/findings/text-ink.md section 12: the fragment key's measurement).
+   */
+  inkProbe?: (line: InkProbeLine) => void;
 }
+
+/** What `inkProbe` gets per judged text line. */
+export interface InkProbeLine { key: string; line: number; px: number; window: Rect; hidden: ((x: number, y: number) => boolean) | null; design: import("../bake/png.js").Rgba; unity: import("../bake/png.js").Rgba; glow: boolean }
 
 /** An ancestor whose overflow clips a text: the axes it clips and its border widths (top, right, bottom, left, device px). */
 export interface ClipAncestor { id: string; x: boolean; y: boolean; inset: [number, number, number, number] }

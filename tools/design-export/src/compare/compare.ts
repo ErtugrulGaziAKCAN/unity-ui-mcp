@@ -213,11 +213,23 @@ export interface Thresholds {
    */
   ellipsisGraphemes: number;
   /**
+   * Text ink on few stems (ruling R149): a line whose visible ink window (after what covers and clips it) is narrower than
+   * `em` of its device font size takes, for its width, the measured noise of the ink statistic on known-correct text
+   * (docs/findings/text-ink.md section 12): rows `[width in em, ink colour ΔE2000, lowest ink amount]` by growing width, per
+   * size class (`small`: text of at most `textInkSmallPx` device px; `full`: larger). A window takes the row of the widest
+   * width it reaches (the narrowest row below that); the colour limit is the larger of the row's and its usual one, the ink
+   * amount's lower bound the smaller. Absent: no fragment key.
+   */
+  textInkFragment?: TextInkFragment;
+  /**
    * Measured limits for captures at scaled viewports (fidelity-thresholds.json `scaled`), which replace the file's own
    * values there; never the geometry limits. Absent: scaled viewports use the same thresholds.
    */
   scaled?: Partial<Omit<Thresholds, "scaled" | "boxPx" | "baselinePx">>;
 }
+
+/** Ruling R149's fragment key (Thresholds.textInkFragment). */
+export interface TextInkFragment { em: number; small: [number, number, number][]; full: [number, number, number][] }
 
 /** `tools/design-export/fidelity-thresholds.json`, the only place the thresholds live (keys starting with `$` are comments). */
 export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.json", import.meta.url));
@@ -280,8 +292,9 @@ export const HAIRLINE_INK_BAND: readonly [number, number] = [0.5, 2];
  * fixtures; 12 to 36 device px), the ellipsis matched on its own columns: the dots drawn right 0.06–0.34 (0.06–0.32 at the
  * exact viewports, 0.22–0.34 at the scaled ones), amount 1.08–1.31 (Unity's dots are a little heavier); a letter where the
  * dots are 0.65–1.30 and 3.5–4.1; the wrong glyph a twin without U+2026 drew (a curve) 0.95–1.67, amount 1.54–3.16.
- * Limits: shape 0.45, amount 0.8–1.6. Below 16 device px correct dots exceed them (a pilot screen's titles at 10 to 15 px:
- * shape up to 1.08, rows up to 0.78; docs/findings/viewport-classes.md, "Ellipsized titles of a pilot screen").
+ * Limits: shape 0.45, amount 0.8–1.6, from 16 device px. Below that size correct dots exceed them (a pilot screen's titles
+ * at 10 to 15 px: shape up to 1.08, rows up to 0.74; docs/findings/viewport-classes.md, "Ellipsized titles of a pilot
+ * screen"), and ruling R148 judges the dots by their structure there (ELLIPSIS_DOTS_BELOW_PX).
  */
 export const ELLIPSIS_SHAPE = 0.45;
 /**
@@ -296,7 +309,7 @@ export const ELLIPSIS_AMOUNT: readonly [number, number] = [0.8, 1.6];
 /**
  * Below this device font size the ellipsis glyph check is structural (ruling R148): its dots are one or two pixels, and
  * a fraction of a pixel's placement moves the profiles past R147's limits (a pilot screen's correct dots at 10 to 15 px:
- * shape up to 1.08, rows up to 0.78, where the wrong glyph measures 0.95–1.67 and 0.50–0.95). Unity's ellipsis must resolve
+ * shape up to 1.08, rows up to 0.74, where the wrong glyph measures 0.95–1.67 and 0.50–0.95). Unity's ellipsis must resolve
  * into three ink blobs (inkBlobs), each gap within ELLIPSIS_DOTS_PITCH of the design's dot pitch, their vertical ink centre
  * within ELLIPSIS_DOTS_CENTRE of the design's against each line's baseline. A line whose design dots do not resolve into
  * three is not judged and is counted (`ellipsisNotJudged`). Measured: the correct dots of the suite's text-spacing line and
@@ -389,8 +402,17 @@ function checkThresholds(raw: Record<string, unknown>, file: string, scaled = fa
   if (scaled && graphemes !== 0 && graphemes !== 1) throw new Error(`${file}: "ellipsisGraphemes" must be 0 or 1`);
   // ruling R126: the scaled class's small-text ink colour limit has a cap
   if (scaled && (raw.textInkDeltaEFirstSmall as number) > SCALED_SMALL_INK_CAP) throw new Error(`${file}: "textInkDeltaEFirstSmall" may not exceed ${SCALED_SMALL_INK_CAP}`);
+  // ruling R149: the fragment key, rows by growing width below its em, colour limits at least textInkDeltaE, amounts in (0, 1]
+  const frag = raw.textInkFragment as TextInkFragment | undefined;
+  if (frag !== undefined) {
+    const rowsOk = (r: unknown) => Array.isArray(r) && r.length > 0 && r.every((x, i, a) => Array.isArray(x) && x.length === 3 && x.every((v) => typeof v === "number" && Number.isFinite(v))
+      && x[0] > 0 && x[0] <= frag.em && x[1] >= (raw.textInkDeltaE as number) && x[2] > 0 && x[2] <= 1 && (i === 0 || x[0] > (a[i - 1] as number[])[0]));
+    if (!frag || typeof frag.em !== "number" || !(frag.em > 0) || !rowsOk(frag.small) || !rowsOk(frag.full))
+      throw new Error(`${file}: "textInkFragment" must be { em, small, full } with [width in em, ΔE2000, lowest ink amount] rows by growing width up to em`);
+  }
   return {
-    ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater" | "textInkBandSmall" | "scaled">),
+    ...(frag ? { textInkFragment: frag } : {}),
+    ...(Object.fromEntries(THRESHOLD_KEYS.map((k) => [k, raw[k] as number])) as Omit<Thresholds, "textInkDeltaESmall" | "ssimElementSmall" | "textInkDeltaELater" | "textInkBandSmall" | "scaled" | "textInkFragment">),
     textInkBandSmall: [bandSmall[0], bandSmall[1]],
     textInkDeltaESmall: (table as number[][]).map(([px, de]) => [px, de] as [number, number]),
     ssimElementSmall: (areas as number[][]).map(([a, v]) => [a, v] as [number, number]),
@@ -459,6 +481,28 @@ export function cornerInRoundBand(p: RingPoint, g: Rect, u: Rect, border: readon
 }
 
 /** The ink colour limit for text of `px` device px (font size); `line` counts from 0 (later lines of small text: textInkDeltaELater). */
+/**
+ * Ruling R149: the fragment key of a text window `em` wide (its visible columns over the device font size), or null when
+ * it is not narrower than the key's em (or there is no key). The row of the widest width the window reaches, the
+ * narrowest row below it.
+ */
+export function fragmentKey(t: Thresholds, px: number, em: number): { em: number; deltaE: number; amount: number } | null {
+  const f = t.textInkFragment;
+  if (!f || !(em < f.em)) return null;
+  const rows = px <= t.textInkSmallPx ? f.small : f.full;
+  const row = [...rows].reverse().find(([w]) => w <= em + 1e-9) ?? rows[0];
+  return { em, deltaE: row[1], amount: row[2] };
+}
+
+/** The columns of a window holding at least one pixel `hidden` does not hide (all of them without `hidden`). */
+export function visibleColumns(r: Rect, hidden: ((x: number, y: number) => boolean) | null): number {
+  const x0 = Math.floor(r.x), x1 = Math.ceil(r.x + r.w), y0 = Math.floor(r.y), y1 = Math.ceil(r.y + r.h);
+  if (!hidden) return Math.max(0, x1 - x0);
+  let n = 0;
+  for (let x = x0; x < x1; x++) for (let y = y0; y < y1; y++) if (!hidden(x, y)) { n++; break; }
+  return n;
+}
+
 export function inkColourLimit(t: Thresholds, px: number, line = 0): number {
   let usual = px >= t.textInkFullPx ? t.textInkDeltaE
     : (t.textInkDeltaESmall.find(([min]) => px >= min) ?? t.textInkDeltaESmall[t.textInkDeltaESmall.length - 1])[1];
@@ -1147,7 +1191,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return false;
     };
     /** `light`: the design's ink is lighter than its background (font smoothing thickens such text most). */
-    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean; later: boolean; small: boolean; glow: boolean }
+    interface InkLine { id: string; i: number; n: number; ratio: number | null; at: Rect; light: boolean; later: boolean; small: boolean; glow: boolean; fragment?: { em: number; deltaE: number; amount: number } }
     const inkLines: InkLine[] = [];
     const inImage = (p: RingPoint) => p.gx >= 0 && p.gy >= 0 && p.gx < w && p.gy < h && p.ux >= 0 && p.uy >= 0 && p.ux < w && p.uy < h;
     const usable = (p: RingPoint, cover: Rect[]) => inImage(p)
@@ -1396,7 +1440,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const inkCheck = (id: string, key: string, ge: TextBox, ue: TextBox, row: ElementRow) => {
       // the font size in device px: the IR's, else the line box over the kit's largest ratio (4/3), never more than the real size
       const px = ctx.fontPx?.[id] ?? ge.lines[0].h * 0.75;
-      let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number } | null = null, maxDe = 0;
+      let wDe: { de: number; i: number; a: number[]; b: number[]; limit: number; em?: number } | null = null, maxDe = 0;
       let wX: { i: number; dl: number; dr: number; dw: number; worst: number } | null = null;
       let wDir: { dir: number; i: number; a: number[]; b: number[] } | null = null, wAmount: { ratio: number; i: number } | null = null;
       // ruling R141: a hairline line is small text drawn in its own colour (the one the capture recorded for this element or
@@ -1480,11 +1524,19 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           if (off > EPS && (!wAmount || off > Math.max(HAIRLINE_INK_BAND[0] - wAmount.ratio, wAmount.ratio - HAIRLINE_INK_BAND[1]))) wAmount = { ratio, i };
           return;
         }
-        inkLines.push({ id: key, i, n: ge.lines.length, ratio: common ?? (b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null), at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow: !!ctx.textShadows?.has(id) });
+        // ruling R149: a fragment of few stems, a line something covers or clips down to a window narrower than the key's em,
+        // takes the measured noise of the statistic for its width (measured on windows cut anywhere along correct lines), in
+        // the measurement's domain (the design's ink at least MIN_INK_PX, the amount's floor; not a glowing line's). A whole
+        // short line is no fragment: its window holds whole glyphs and keeps its limits (rulings R126, R138, R141)
+        const glow = !!ctx.textShadows?.has(id);
+        const visible = visibleColumns(win, hidden), whole = Math.ceil(margin.x + margin.w) - Math.floor(margin.x);
+        const fragment = !glow && a.coverage >= MIN_INK_PX && visible < whole - 1 ? fragmentKey(t, px, visible / px) : null;
+        inkLines.push({ id: key, i, n: ge.lines.length, ratio: common ?? (b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null), at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow, ...(fragment ? { fragment } : {}) });
+        ctx.inkProbe?.({ key, line: i, px, window: win, hidden, design: gp, unity: up, glow });
         if (b) {
-          const de = deltaE2000(a.ink, b.ink), limit = inkColourLimit(t, px, i);
+          const de = deltaE2000(a.ink, b.ink), limit = Math.max(inkColourLimit(t, px, i), fragment?.deltaE ?? 0);
           maxDe = Math.max(maxDe, de);
-          if (!wDe || de - limit > wDe.de - wDe.limit) wDe = { de, i, a: a.ink, b: b.ink, limit };
+          if (!wDe || de - limit > wDe.de - wDe.limit) wDe = { de, i, a: a.ink, b: b.ink, limit, ...(fragment ? { em: fragment.em } : {}) };
         }
       });
       if (covered) row.lines = `${row.lines}, ${covered} not judged (covered)`;
@@ -1509,10 +1561,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         issue(key, "inkCoverage", `line ${x.i + 1} of ${ge.lines.length}: a hairline line: Unity draws ${x.ratio.toFixed(2)}× the design's text ink (expected ${HAIRLINE_INK_BAND[0]}–${HAIRLINE_INK_BAND[1]}×): glyphs missing, added or another size`, ge.lines[x.i]);
       }
       if (wDe) {
-        const x = wDe as { de: number; i: number; a: number[]; b: number[]; limit: number };
+        const x = wDe as { de: number; i: number; a: number[]; b: number[]; limit: number; em?: number };
         row.ink = r6(maxDe);
         if (x.de > x.limit + EPS) {
-          issue(key, "ink", `line ${x.i + 1} of ${ge.lines.length}: text colour ΔE2000 ${x.de.toFixed(2)}, design ${hex(x.a)}, Unity ${hex(x.b)} (limit ${x.limit} at ${Number(px.toFixed(2))} px${x.i >= 1 && px < t.textInkLaterBelowPx ? ", a later line" : ""})`, ge.lines[x.i]);
+          issue(key, "ink", `line ${x.i + 1} of ${ge.lines.length}: text colour ΔE2000 ${x.de.toFixed(2)}, design ${hex(x.a)}, Unity ${hex(x.b)} (limit ${x.limit} at ${Number(px.toFixed(2))} px${x.i >= 1 && px < t.textInkLaterBelowPx ? ", a later line" : ""}${x.em !== undefined ? `, a window of ${x.em.toFixed(1)} em` : ""})`, ge.lines[x.i]);
         }
       }
     };
@@ -1764,6 +1816,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       if (l.small) { lo = Math.min(lo, t.textInkBandSmall[0]); hi = Math.max(hi, t.textInkBandSmall[1]); }
       // a blurred text-shadow's glow inside the line counts as ink (measured)
       if (l.glow) hi = Math.max(hi, t.textInkShadowHigh);
+      // ruling R149: a window of few stems, the measured noise's lowest amount for its width
+      if (l.fragment) lo = Math.min(lo, l.fragment.amount);
       return { lo, hi };
     };
     const worstInk = new Map<string, { l: InkLine; score: number }>();
