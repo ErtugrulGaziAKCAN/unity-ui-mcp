@@ -498,7 +498,7 @@ describe("captures", () => {
       // an ellipsis line is one line, with the laid-out width of the whole text
       expect(b.elements.ellipsis.lines).toHaveLength(1);
       expect(b.elements.ellipsis.lines[0].w).toBeGreaterThan(b.elements.ellipsis.w);
-      // where Chromium put the ellipsis (ruling R146): the line's ink ends within the ellipsis's advance after `at`, so the
+      // where Chromium put the ellipsis (decision D-146): the line's ink ends within the ellipsis's advance after `at`, so the
       // recorded cut is the drawn one, also where the kept prefix's advance includes the kerning with the dropped "o"
       // ("Weekly T…", where the prefix measured alone would not fit), with letter-spacing (none on the ellipsis: "Weekl…")
       // and in a box narrower than one letter (the first letter stays: "W" and no ellipsis drawn past it)
@@ -677,7 +677,7 @@ describe("captures", () => {
     expect(items["day#2"]).toMatchObject({ x: day.x + 2 * pitch, y: day.y, w: day.w, h: day.h, visible: true, text: false, lines: [] });
     expect(items["more#1"].visible).toBe(false);
     expect(items["more#2"].visible).toBe(true);
-    // a copy of a text records its own lines as the IR element does (ruling R133), and its text-sized width is rounded up
+    // a copy of a text records its own lines as the IR element does (decision D-133), and its text-sized width is rounded up
     // to whole device pixels as UI Toolkit lays it out (the item template's text fit), as the IR element's is
     const date = boxes.elements.date;
     for (const [k, n] of [["date#1", 1], ["date#2", 2]] as const) {
@@ -691,7 +691,7 @@ describe("captures", () => {
       expect(c.w - c.lines[0].w, k).toBeLessThan(1);
     }
     expect(date.w).toBe(Math.round(date.w));
-    // and the colour each text is drawn in and the opacity it draws with, the copies' own (ruling R141)
+    // and the colour each text is drawn in and the opacity it draws with, the copies' own (decision D-141)
     expect(date).toMatchObject({ color: [255, 255, 255, 1], opacity: 1 });
     expect(items["date#2"]).toMatchObject({ color: [255, 255, 255, 1], opacity: 1 });
     expect(items["day#1"].color).toBeUndefined();

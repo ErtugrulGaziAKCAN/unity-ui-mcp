@@ -17,11 +17,11 @@
  *   picture drawn scaled `ssimPicture` (UI Toolkit filters it in linear light, Chromium in sRGB), and an element whose SSIM
  *   region is smaller than an area of `ssimElementSmall` that pair's limit (SSIM over a few 8-px blocks is dominated by
  *   anti-aliased edges); both measured on identical geometry (docs/findings/ssim-small-elements.md), never below 0.97 (a
- *   raster picture resampled at a scaled viewport: `ssimResampledPicture`, ruling R125). An edge-band limit (the anti-aliasing
+ *   raster picture resampled at a scaled viewport: `ssimResampledPicture`, decision D-125). An edge-band limit (the anti-aliasing
  *   of round shapes, moved edges, straight edges between device pixels, vector edges, and the corner samples next to them)
  *   needs its band's evidence too: outside the band every SSIM block and every 3×3 window match, and every border it masks
- *   has the design's width and, unless an animation sample moves it, its centre colour (evidenceOf; rulings R129, R130,
- *   R132: an animation counts as moving its element only when it changes geometry);
+ *   has the design's width and, unless an animation sample moves it, its centre colour (evidenceOf; decisions D-129, D-130,
+ *   D-132: an animation counts as moving its element only when it changes geometry);
  * - colour (samples.ts): elements that paint a background get a 5×3 grid of 3×3 means inside both boxes (inset 6 px;
  *   one centre sample under 16 px), skipping points under later elements that paint or on text lines; when every
  *   grid point is covered, samples just inside the border take over; an element left without any sample is listed
@@ -41,7 +41,7 @@
  * - shadow band: the mean colour of each active outer shadow's band (shadow rect minus element box), ΔE2000 ≤
  *   `deltaE2000`, so a faint missing shadow fails although SSIM dilutes it.
  * The copies of an element in a repeat's later written-out items (boxes `items`) that carry text get the same treatment as
- * the element's text (ruling R133): present and visible as in the design, the same line count, baselines and ink checks,
+ * the element's text (decision D-133): present and visible as in the design, the same line count, baselines and ink checks,
  * named by the copy (`row#3`), and their text masked like it; their boxes are not compared.
  * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows. The
  * pixel row or column of a painted edge the design draws off the device grid (Chromium snaps boxes to whole CSS px, UI
@@ -181,7 +181,7 @@ export interface Thresholds {
    */
   deltaE2000FractionalEdge: number;
   /**
-   * Element SSIM limit at a scaled viewport for a raster picture drawn at another size than its own (ruling R125): Chromium
+   * Element SSIM limit at a scaled viewport for a raster picture drawn at another size than its own (decision D-125): Chromium
    * filters it at a high quality when it downscales, UI Toolkit samples its top level bilinearly, so its block edges differ at
    * the fractional scales of that class. Only when the element's other checks pass. Equal to `ssimElement` (off) at exact
    * viewports, where the picture keeps `ssimPicture`; the scaled block holds the measured value, which may lie below the
@@ -189,12 +189,12 @@ export interface Thresholds {
    */
   ssimResampledPicture: number;
   /**
-   * The colour limit of a raster picture's colour samples at a scaled viewport (ruling R125, the same resampling: a sample
+   * The colour limit of a raster picture's colour samples at a scaled viewport (decision D-125, the same resampling: a sample
    * near a block edge of the picture). Equal to `deltaE2000` (off) at exact viewports; the scaled block holds the measured value.
    */
   deltaE2000ResampledPicture: number;
   /**
-   * The colour direction limit of a hairline line (ruling R138; degrees): a text line the design draws with fewer than
+   * The colour direction limit of a hairline line (decision D-138; degrees): a text line the design draws with fewer than
    * HAIRLINE_PIXELS fully covered pixels (an em dash or a "1" whose stroke lies between two device pixels), where the ink's
    * lightness and amount measure coverage, is judged by the angle between the design's and Unity's ink directions from the
    * background in sRGB (the renderers blend glyph coverage there, so a pixel's difference from the background points the same
@@ -202,7 +202,7 @@ export interface Thresholds {
    */
   textInkDirection: number;
   /**
-   * How many graphemes an ellipsized line's kept prefix may differ by from the design's (ruling R146): 0 (off) at exact
+   * How many graphemes an ellipsized line's kept prefix may differ by from the design's (decision D-146): 0 (off) at exact
    * viewports, where UI Toolkit's own elision cuts where Chromium does; the scaled block holds 1, where UI Toolkit decides the
    * cut under the root scale and keeps one grapheme more or fewer within about an advance of the threshold. Only on a line
    * the design cuts with an ellipsis (boxes `ellipsis`) and Unity ends in the design's ellipsis glyph (its column profile
@@ -213,13 +213,13 @@ export interface Thresholds {
    */
   ellipsisGraphemes: number;
   /**
-   * Text ink on few stems (ruling R149): a line whose visible ink window (after what covers and clips it) is narrower than
+   * Text ink on few stems (decision D-149): a line whose visible ink window (after what covers and clips it) is narrower than
    * `em` of its device font size takes, for its width, the measured noise of the ink statistic on known-correct text
    * (docs/findings/text-ink.md section 12): rows `[width in em, ink colour ΔE2000, lowest ink amount, colour direction or
    * null]` (FragmentRow) by growing width, per size class (`small`: text of at most `textInkSmallPx` device px; `full`:
    * larger). A window takes the row of the widest width it reaches (the narrowest row below that); the colour limit is the
    * larger of the row's and its usual one, the ink amount's lower bound the smaller; a row above FRAGMENT_DE_BOUND judges the
-   * colour direction instead (ruling R151). Absent: no fragment key.
+   * colour direction instead (decision D-151). Absent: no fragment key.
    */
   textInkFragment?: TextInkFragment;
   /**
@@ -229,12 +229,12 @@ export interface Thresholds {
   scaled?: Partial<Omit<Thresholds, "scaled" | "boxPx" | "baselinePx">>;
 }
 
-/** Ruling R149's fragment key (Thresholds.textInkFragment). */
+/** Decision D-149's fragment key (Thresholds.textInkFragment). */
 export interface TextInkFragment { em: number; small: FragmentRow[]; full: FragmentRow[] }
 /**
  * A width's row of the fragment key: `[width in em, ink colour ΔE2000, lowest ink amount, colour direction in degrees or
- * null]`. Ruling R151: a row whose ΔE2000 key is above FRAGMENT_DE_BOUND (its measured highest above R126's cap) judges the
- * fragment by its ink's colour direction from the background with the row's direction key (measured highest plus R138's
+ * null]`. Decision D-151: a row whose ΔE2000 key is above FRAGMENT_DE_BOUND (its measured highest above D-126's cap) judges the
+ * fragment by its ink's colour direction from the background with the row's direction key (measured highest plus D-138's
  * margin) instead; null there: the width's colour is not judged (its measured direction would let a wrong hue pass) and the
  * line is counted (`fragmentColourNotJudged`). A row at or below the bound has null and keeps its ΔE2000 key.
  */
@@ -264,16 +264,16 @@ export const ROUND_EDGE_KEPT = 3;
  */
 export const BORDER_SAMPLE_PX = 2;
 /**
- * The most a border's drawn width may differ between the design and Unity (device px, ruling R127): a text-less round
- * element's ring in every static capture, and every border an edge-band relaxation masks (ruling R129).
+ * The most a border's drawn width may differ between the design and Unity (device px, decision D-127): a text-less round
+ * element's ring in every static capture, and every border an edge-band relaxation masks (decision D-129).
  */
 export const RING_WIDTH_PX = 0.5;
-/** The lowest `ssimResampledPicture` the scaled block may hold (ruling R125: the measured 0.95284, rounded down to 0.01). */
+/** The lowest `ssimResampledPicture` the scaled block may hold (decision D-125: the measured 0.95284, rounded down to 0.01). */
 export const RESAMPLED_PICTURE_FLOOR = 0.95;
-/** The highest small-text ink colour limit the scaled block may hold (ruling R126); text measured above it keeps failing. */
+/** The highest small-text ink colour limit the scaled block may hold (decision D-126); text measured above it keeps failing. */
 export const SCALED_SMALL_INK_CAP = 6.5;
 /**
- * Hairline lines (ruling R138). A pixel of a text line is fully covered when its luma distance from the line's background is
+ * Hairline lines (decision D-138). A pixel of a text line is fully covered when its luma distance from the line's background is
  * at least HAIRLINE_FULL of the text colour's (the one the capture recorded for the text, over that background). A line
  * whose design shows fewer than HAIRLINE_PIXELS such pixels (the fewest the ink colour takes its median of), whose ink in the
  * design points the declared colour's way from the background (within HAIRLINE_SAME_COLOUR degrees: it is that colour at
@@ -287,37 +287,37 @@ export const HAIRLINE_PIXELS = 3;
 export const HAIRLINE_SAME_COLOUR = 2;
 export const HAIRLINE_PEAK = 0.5;
 /**
- * Ruling R141: only text of at most HAIRLINE_MAX_PX device px can be a hairline line (the suite's are 10 and 10.67), drawn at
+ * Decision D-141: only text of at most HAIRLINE_MAX_PX device px can be a hairline line (the suite's are 10 and 10.67), drawn at
  * full opacity in the colour the capture recorded for it (a copy's own) with no later layer over it; and its ink amount stays
  * within HAIRLINE_INK_BAND of the design's (the suite's 180 hairline lines: 0.86–1.01 by this sum, 0.69–1.17 by coverage).
  */
 export const HAIRLINE_MAX_PX = 12;
 export const HAIRLINE_INK_BAND: readonly [number, number] = [0.5, 2];
 /**
- * Ruling R152: at a scaled viewport the hairline size bound is ruling R126's domain, text below SCALED_HAIRLINE_BELOW_PX device
+ * Decision D-152: at a scaled viewport the hairline size bound is decision D-126's domain, text below SCALED_HAIRLINE_BELOW_PX device
  * px, where the root scale's fractional boxes split one-pixel strokes. Such a line is a hairline line when either render
  * shows it as one (its ink there has fewer than HAIRLINE_PIXELS fully covered pixels, in the declared colour's direction, a
- * most covered pixel of at least HAIRLINE_PEAK: Chromium puts a 12.5 px stroke on whole pixels, UI Toolkit splits it), R141's
- * other conditions hold, and the same text passes its ink checks at every exact viewport of the run (R126's scale-only
- * evidence, CaptureContext.scaleOnly). Ruling R155: when only Unity's render qualifies, Unity's ink summed against the text
- * colour must be at least SCALED_HAIRLINE_INK_FLOOR of the design's (ruling R158; dimming removes ink, a split keeps most of
+ * most covered pixel of at least HAIRLINE_PEAK: Chromium puts a 12.5 px stroke on whole pixels, UI Toolkit splits it), D-141's
+ * other conditions hold, and the same text passes its ink checks at every exact viewport of the run (D-126's scale-only
+ * evidence, CaptureContext.scaleOnly). Decision D-155: when only Unity's render qualifies, Unity's ink summed against the text
+ * colour must be at least SCALED_HAIRLINE_INK_FLOOR of the design's (decision D-158; dimming removes ink, a split keeps most of
  * it). Not caught: a lightness-only error of such a line at a scaled viewport alone where the design's render qualifies (a
  * darker or lighter colour along the same direction), or where Unity's summed ink stays at the floor or above (a dimming by
  * up to 16 %, a split that adds ink).
  */
 export const SCALED_HAIRLINE_BELOW_PX = 13;
 /**
- * Ruling R158 (R155's floor): when only Unity's render makes a scaled line a hairline line, Unity's ink summed against the
- * text colour (R141's measure: each ink pixel's luma distance from the background, summed) must be at least this share of
+ * Decision D-158 (D-155's floor): when only Unity's render makes a scaled line a hairline line, Unity's ink summed against the
+ * text colour (D-141's measure: each ink pixel's luma distance from the background, summed) must be at least this share of
  * the design's. 0.84 = the lowest of the suite's 180 correct hairline lines on that summed measure (0.86; they measure
- * 0.86–1.01) − 0.02, ruling R149's amount convention (lowest minus 0.02); not taken from the lines it concerns. Correct
+ * 0.86–1.01) − 0.02, decision D-149's amount convention (lowest minus 0.02); not taken from the lines it concerns. Correct
  * renders lose up to 14 % on this measure (a pilot screen's split strokes keep 0.983 and 0.993 of it, a split built from
  * their pixels 0.959); Unity's own dimming to 0.8 of the colour or less stays below the floor.
  */
 export const SCALED_HAIRLINE_INK_FLOOR = 0.84;
 /**
- * How far an ellipsized line's ellipsis may differ from the design's at any viewport (ruling R147; at a scaled viewport also
- * the condition of the one-grapheme allowance of ruling R146): the shape, as the L1 difference of the column profiles over the
+ * How far an ellipsized line's ellipsis may differ from the design's at any viewport (decision D-147; at a scaled viewport also
+ * the condition of the one-grapheme allowance of decision D-146): the shape, as the L1 difference of the column profiles over the
  * design's ellipsis mass, each scaled to the design's mass (ellipsisCut), and the ink amount, Unity's over the design's.
  * Measured on the crops of the fidelity suite's ellipsized text-spacing line at all six viewports (r147-* in the compare
  * fixtures; 12 to 36 device px), the ellipsis matched on its own columns: the dots drawn right 0.06–0.34 (0.06–0.32 at the
@@ -325,12 +325,12 @@ export const SCALED_HAIRLINE_INK_FLOOR = 0.84;
  * dots are 0.65–1.30 and 3.5–4.1; the wrong glyph a twin without U+2026 drew (a curve) 0.95–1.67, amount 1.54–3.16.
  * Limits: shape 0.45, amount 0.8–1.6, from 16 device px. Below that size correct dots exceed them (a pilot screen's titles
  * at 10 to 15 px: shape up to 1.08, rows up to 0.74; docs/findings/viewport-classes.md, "Ellipsized titles of a pilot
- * screen"), and ruling R148 judges the dots by their structure there (ELLIPSIS_DOTS_BELOW_PX).
+ * screen"), and decision D-148 judges the dots by their structure there (ELLIPSIS_DOTS_BELOW_PX).
  */
 export const ELLIPSIS_SHAPE = 0.45;
 /**
  * The most the ellipsis's row profile may differ from the design's, each side's rows counted from its line's baseline and
- * matched within ±1 device px, over the design's ellipsis mass (fix round 3, N9: the column profile alone passed dots at
+ * matched within ±1 device px, over the design's ellipsis mass (the column profile alone passed dots at
  * another height); the rows compared are whole pixel rows also when the baselines differ by a fraction. Measured on the same
  * crops: the dots 0.04–0.09 at the exact viewports, 0.07–0.29 at the scaled ones (one band for both); the curve 0.50–0.95;
  * dots 2 device px off 1.0, 4 px or more 2.0 (1 px off is within the match). Limit 0.4.
@@ -338,8 +338,8 @@ export const ELLIPSIS_SHAPE = 0.45;
 export const ELLIPSIS_ROWS = 0.4;
 export const ELLIPSIS_AMOUNT: readonly [number, number] = [0.8, 1.6];
 /**
- * Below this device font size the ellipsis glyph check is structural (ruling R148): its dots are one or two pixels, and
- * a fraction of a pixel's placement moves the profiles past R147's limits (a pilot screen's correct dots at 10 to 15 px:
+ * Below this device font size the ellipsis glyph check is structural (decision D-148): its dots are one or two pixels, and
+ * a fraction of a pixel's placement moves the profiles past D-147's limits (a pilot screen's correct dots at 10 to 15 px:
  * shape up to 1.08, rows up to 0.74, where the wrong glyph measures 0.95–1.67 and 0.50–0.95). Unity's ellipsis must resolve
  * into three ink blobs (inkBlobs), each gap within ELLIPSIS_DOTS_PITCH of the design's dot pitch, their vertical ink centre
  * within ELLIPSIS_DOTS_CENTRE of the design's against each line's baseline. A line whose design dots do not resolve into
@@ -419,24 +419,24 @@ function checkThresholds(raw: Record<string, unknown>, file: string, scaled = fa
   const fractionalDe = raw.deltaE2000FractionalEdge as number;
   if (!scaled && fractionalDe !== (raw.deltaE2000 as number)) throw new Error(`${file}: "deltaE2000FractionalEdge" must equal deltaE2000 (off): only "scaled" may raise it`);
   if (scaled && !(fractionalDe >= (raw.deltaE2000 as number))) throw new Error(`${file}: "deltaE2000FractionalEdge" must be at least deltaE2000`);
-  // ruling R125: a scaled-only key for raster pictures resampled at a fractional scale, its own floor
+  // decision D-125: a scaled-only key for raster pictures resampled at a fractional scale, its own floor
   const resampled = raw.ssimResampledPicture as number, resampledDe = raw.deltaE2000ResampledPicture as number;
   if (!scaled && !(resampled >= elementSsim && resampled <= 1)) throw new Error(`${file}: "ssimResampledPicture" must lie between ssimElement and 1 (off): only "scaled" may lower it`);
   if (scaled && !(resampled >= RESAMPLED_PICTURE_FLOOR && resampled <= 1)) throw new Error(`${file}: "ssimResampledPicture" must lie between ${RESAMPLED_PICTURE_FLOOR} and 1`);
   if (!scaled && resampledDe !== (raw.deltaE2000 as number)) throw new Error(`${file}: "deltaE2000ResampledPicture" must equal deltaE2000 (off): only "scaled" may raise it`);
   if (scaled && !(resampledDe >= (raw.deltaE2000 as number))) throw new Error(`${file}: "deltaE2000ResampledPicture" must be at least deltaE2000`);
-  // ruling R138: a hairline line's colour direction, in degrees
+  // decision D-138: a hairline line's colour direction, in degrees
   if (!((raw.textInkDirection as number) > 0 && (raw.textInkDirection as number) <= 10)) throw new Error(`${file}: "textInkDirection" must lie above 0 and at most 10 (degrees)`);
-  // ruling R146: an ellipsized line's cut may differ by one grapheme at scaled viewports only
+  // decision D-146: an ellipsized line's cut may differ by one grapheme at scaled viewports only
   const graphemes = raw.ellipsisGraphemes as number;
   if (!scaled && graphemes !== 0) throw new Error(`${file}: "ellipsisGraphemes" must be 0 (off): only "scaled" may allow a cut one grapheme off`);
   if (scaled && graphemes !== 0 && graphemes !== 1) throw new Error(`${file}: "ellipsisGraphemes" must be 0 or 1`);
-  // ruling R126: the scaled class's small-text ink colour limit has a cap
+  // decision D-126: the scaled class's small-text ink colour limit has a cap
   if (scaled && (raw.textInkDeltaEFirstSmall as number) > SCALED_SMALL_INK_CAP) throw new Error(`${file}: "textInkDeltaEFirstSmall" may not exceed ${SCALED_SMALL_INK_CAP}`);
-  // ruling R149: the fragment key, rows by growing width below its em, colour limits at least textInkDeltaE, amounts in (0, 1]
+  // decision D-149: the fragment key, rows by growing width below its em, colour limits at least textInkDeltaE, amounts in (0, 1]
   const frag = raw.textInkFragment as TextInkFragment | undefined;
   if (frag !== undefined) {
-    // ruling R151: a direction key only on a row whose ΔE2000 key is above FRAGMENT_DE_BOUND (null there: not judged)
+    // decision D-151: a direction key only on a row whose ΔE2000 key is above FRAGMENT_DE_BOUND (null there: not judged)
     const rowsOk = (r: unknown) => Array.isArray(r) && r.length > 0 && r.every((x, i, a) => Array.isArray(x) && x.length === 4 && x.slice(0, 3).every((v) => typeof v === "number" && Number.isFinite(v))
       && x[0] > 0 && x[0] <= frag.em && x[1] >= (raw.textInkDeltaE as number) && x[2] > 0 && x[2] <= 1 && (i === 0 || x[0] > (a[i - 1] as number[])[0])
       && (x[3] === null || (typeof x[3] === "number" && Number.isFinite(x[3]) && x[3] > 0 && x[1] > FRAGMENT_DE_BOUND)));
@@ -469,7 +469,7 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
   const own = Object.fromEntries(Object.entries(raw.scaled).filter(([k]) => !k.startsWith("$")));
   for (const k of Object.keys(own)) {
     if (GEOMETRY_KEYS.has(k)) throw new Error(`${file}: "scaled" cannot change "${k}": boxes and baselines stay within the same device px limit at every viewport`);
-    if (k === "deltaE2000Ring") throw new Error(`${file}: "scaled" cannot change "deltaE2000Ring": every edge-band relaxation needs a border's colour within the file's own (ruling R130)`);
+    if (k === "deltaE2000Ring") throw new Error(`${file}: "scaled" cannot change "deltaE2000Ring": every edge-band relaxation needs a border's colour within the file's own (decision D-130)`);
     if (!(k in base) || k === "scaled") throw new Error(`${file}: "scaled" has an unknown threshold key "${k}"`);
   }
   const merged = checkThresholds({ ...raw, ...own }, `${file} (scaled)`, true);
@@ -492,7 +492,7 @@ export function relaxedSsimLimit(t: Thresholds, areaPx2: number, picture: boolea
   const options = [
     ...(picture ? [{ limit: t.ssimPicture, why: "a raster picture drawn scaled" }] : []),
     // off (ssimElement) outside the scaled block
-    ...(picture ? [{ limit: t.ssimResampledPicture, why: "a raster picture resampled at a scaled viewport (ruling R125)" }] : []),
+    ...(picture ? [{ limit: t.ssimResampledPicture, why: "a raster picture resampled at a scaled viewport (decision D-125)" }] : []),
     ...(rotated ? [{ limit: t.ssimRotated, why: "an element an animation sample shows rotated off the axes" }] : []),
     ...(small ? [{ limit: small[1], why: `an element under ${small[0]} device px²` }] : []),
   ].filter((o) => o.limit < t.ssimElement);
@@ -514,7 +514,7 @@ export function cornerInRoundBand(p: RingPoint, g: Rect, u: Rect, border: readon
 }
 
 /**
- * Ruling R149: the fragment key of a text window `em` wide (its visible columns over the device font size), or null when
+ * Decision D-149: the fragment key of a text window `em` wide (its visible columns over the device font size), or null when
  * it is not narrower than the key's em (or there is no key). The row of the widest width the window reaches, the
  * narrowest row below it.
  */
@@ -526,11 +526,11 @@ export function fragmentKey(t: Thresholds, px: number, em: number): FragmentKey 
   return { em, deltaE: row[1], amount: row[2], byDirection: row[1] > FRAGMENT_DE_BOUND, direction: row[3] };
 }
 
-/** A fragment's key for its width (fragmentKey): by direction (ruling R151) when its ΔE2000 key is above FRAGMENT_DE_BOUND. */
+/** A fragment's key for its width (fragmentKey): by direction (decision D-151) when its ΔE2000 key is above FRAGMENT_DE_BOUND. */
 export interface FragmentKey { em: number; deltaE: number; amount: number; byDirection: boolean; direction: number | null }
 
 /**
- * Ruling R151: a fragment key row whose ΔE2000 key (measured highest plus 0.4) exceeds R126's cap plus that margin, so whose
+ * Decision D-151: a fragment key row whose ΔE2000 key (measured highest plus 0.4) exceeds D-126's cap plus that margin, so whose
  * measured highest exceeds the cap, does not judge the fragment by ΔE2000.
  */
 export const FRAGMENT_DE_BOUND = SCALED_SMALL_INK_CAP + 0.4;
@@ -539,10 +539,10 @@ export const FRAGMENT_DE_BOUND = SCALED_SMALL_INK_CAP + 0.4;
 export const CUT_INK = 0.5;
 
 /**
- * Ruling R156: whether a cover or a clip cuts into a line's extent `ext` (what its own text cut leaves), seen through `shown`
+ * Decision D-156: whether a cover or a clip cuts into a line's extent `ext` (what its own text cut leaves), seen through `shown`
  * (the window other clips leave): a column of `ext` is visible when it lies in `shown` and holds a pixel `hidden` does not
  * hide; the line is cut when no column is, when more than one column is lost at an end (one is the rounding of the
- * extent's own edge), or when a column inside is hidden. Ruling R159: a loss cuts only where it hides the design's ink:
+ * extent's own edge), or when a column inside is hidden. Decision D-159: a loss cuts only where it hides the design's ink:
  * `hidden` is the design's covers exactly (a pixel whose centre lies in one, not the comparison's half-pixel margin), and
  * `ink()` the design's visible ink under that mask (inkIn on the line's window); a lost end cuts when that ink's extent
  * (`left`/`right`, where half a pixel of ink is reached) ends less than two columns from the lost part, a hidden run inside
@@ -639,11 +639,11 @@ export interface ElementRow {
   ring?: number | null;
   /**
    * The largest difference (device px) between the design's and Unity's drawn width of a round element's ring without text,
-   * over the middle of its sides and its corners' diagonals (`RING_WIDTH_PX`, ruling R127; static captures).
+   * over the middle of its sides and its corners' diagonals (`RING_WIDTH_PX`, decision D-127; static captures).
    */
   ringWidth?: number | null;
   /**
-   * The evidence of the last edge-band relaxation the element was offered (rulings R129, R130): the lowest SSIM block and the
+   * The evidence of the last edge-band relaxation the element was offered (decisions D-129, D-130): the lowest SSIM block and the
    * largest pixel ΔE2000 outside the band, the largest border centre ΔE2000 and border width difference (null: no border).
    */
   bandEvidence?: { minBlock: number; maxDe: number; ring: number | null; width: number | null };
@@ -654,7 +654,7 @@ export interface ElementRow {
   /** Unity's text ink amount relative to the design's, for the element's worst line (0: no ink in Unity). */
   inkRatio: number | null;
   /**
-   * Largest angle (degrees) between the design's and Unity's ink directions over the element's hairline lines (ruling R138:
+   * Largest angle (degrees) between the design's and Unity's ink directions over the element's hairline lines (decision D-138:
    * lines with fewer than HAIRLINE_PIXELS fully covered pixels in the design, whose ink colour and amount are not judged);
    * absent when it has none.
    */
@@ -663,16 +663,16 @@ export interface ElementRow {
   inkExtent: number | null;
   /**
    * The shift of Unity's ellipsis against the design's (device px, +: Unity keeps more) on an ellipsized line whose kept
-   * prefix differs by one grapheme at a scaled viewport (ruling R146); absent when no line took that allowance.
+   * prefix differs by one grapheme at a scaled viewport (decision D-146); absent when no line took that allowance.
    */
   ellipsisCut?: number;
   /**
-   * The ellipsis Unity ends the element's ellipsized line in, against the design's (ruling R147): the column profile's shape
+   * The ellipsis Unity ends the element's ellipsized line in, against the design's (decision D-147): the column profile's shape
    * error and the ink amount ratio of the line with the largest shape error; absent when the design cuts no line.
    */
   ellipsisGlyph?: { shape: number; rows: number; amount: number };
   /**
-   * Below ELLIPSIS_DOTS_BELOW_PX (ruling R148): the blobs each render's ellipsis resolves into, Unity's largest gap off the
+   * Below ELLIPSIS_DOTS_BELOW_PX (decision D-148): the blobs each render's ellipsis resolves into, Unity's largest gap off the
    * design's pitch and its dots' centre against the design's (device px); absent at larger sizes.
    */
   ellipsisDots?: { design: number; unity: number; offPitch: number | null; centre: number | null };
@@ -716,16 +716,16 @@ export interface CaptureVerdict {
    */
   linesClipped?: string[];
   /**
-   * Ellipsized lines below ELLIPSIS_DOTS_BELOW_PX whose design dots do not resolve into three (ruling R148): their glyph is
-   * not judged (and they take no R146 allowance); `<key>: line <k> of <n>`.
+   * Ellipsized lines below ELLIPSIS_DOTS_BELOW_PX whose design dots do not resolve into three (decision D-148): their glyph is
+   * not judged (and they take no D-146 allowance); `<key>: line <k> of <n>`.
    */
   ellipsisNotJudged?: string[];
   /**
-   * Text fragments below the measured domain (ruling R153): a line something covers or clips down to a window where the
-   * design's ink is under MIN_INK_PX, judged on its presence, its colour direction and R141's amount band only.
+   * Text fragments below the measured domain (decision D-153): a line something covers or clips down to a window where the
+   * design's ink is under MIN_INK_PX, judged on its presence, its colour direction and D-141's amount band only.
    */
   fragmentsBelowDomain?: string[];
-  /** Text fragments whose width has no colour key (ruling R151): their ink colour is not judged; `<key>: line <k> of <n>`. */
+  /** Text fragments whose width has no colour key (decision D-151): their ink colour is not judged; `<key>: line <k> of <n>`. */
   fragmentColourNotJudged?: string[];
   /** Elements that paint a background but had no colour sample left (every point covered or on text). */
   notSampled: string[];
@@ -1010,7 +1010,7 @@ function difference(a: Rgba, b: Rgba, mask: Uint8Array, wantImage: boolean): { i
 /**
  * `judged`: per text key, how its lines' ink colour was judged in this capture: by ΔE2000 on at least one line, else only by
  * colour direction (a hairline line, a direction-keyed or below-domain fragment). Absent: no line judged (covered, clipped,
- * without ink). The scale-only evidence of ruling R152 reads it (review N7).
+ * without ink). The scale-only evidence of decision D-152 reads it.
  */
 interface Analysis { verdict: CaptureVerdict; heat: Rgba | null; judged: Map<string, "deltaE" | "direction"> }
 
@@ -1024,7 +1024,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   const linesCovered: string[] = [];
   /** Text lines the overflow clips around them hide in both renders: their ink is not judged (`<key>: line <k> of <n>`). */
   const linesClipped: string[] = [];
-  /** Ellipsized lines whose design dots do not resolve into three below ELLIPSIS_DOTS_BELOW_PX (ruling R148). */
+  /** Ellipsized lines whose design dots do not resolve into three below ELLIPSIS_DOTS_BELOW_PX (decision D-148). */
   const ellipsisNotJudged: string[] = [];
   const fragmentsBelowDomain: string[] = [];
   const judged = new Map<string, "deltaE" | "direction">();
@@ -1048,7 +1048,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     for (let x = ctx.parent?.get(id); x !== undefined; x = ctx.parent?.get(x)) if (ctx.repeats?.has(x)) out.unshift(x);
     return out;
   };
-  /** A key's repeat containers (outermost first) and its item in each (its suffix names them innermost first; ruling R133). */
+  /** A key's repeat containers (outermost first) and its item in each (its suffix names them innermost first; decision D-133). */
   const placeOf = (id: string, key: string): { cs: string[]; path: number[] } => {
     const cs = containersOf(id), path = cs.map(() => 0);
     key.slice(id.length).split("#").slice(1).forEach((k, j) => { const level = cs.length - 1 - j; if (level >= 0) path[level] = Number(k); });
@@ -1159,7 +1159,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     if (ge.text) lineCheck(id, ge, ue, row);
   }
 
-  // ---- the text of the IR elements' copies in later written-out repeat items (boxes `items`; ruling R133): the same text
+  // ---- the text of the IR elements' copies in later written-out repeat items (boxes `items`; decision D-133): the same text
   // checks as the IR element's (present, visible as in the design, line count, baselines, and below its ink), named by
   // the copy (`row#3`); their boxes are not compared (the edge bands use them)
   const textCopies: { key: string; id: string; g: ItemCopy; u: ItemCopy }[] = [];
@@ -1199,7 +1199,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
   let worst: { id: string; ssim: number } | null = null, maxDE: { id: string; deltaE: number } | null = null;
   if (sameSize) {
     const shown = (id: string) => !!g.elements[id]?.visible && !!u.elements[id]?.visible;
-    /** Whether an animation sample moves the element (an animation of geometry on it or an ancestor; ruling R132). */
+    /** Whether an animation sample moves the element (an animation of geometry on it or an ancestor; decision D-132). */
     const movesIn = (id: string) => !!ctx.anim && !!ctx.moving?.has(id);
     const paints = (id: string) => !ctx.painters || ctx.painters.has(id);
     const paintIndex = new Map(order.map((id, i) => [id, i]));
@@ -1221,7 +1221,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
      * Whether a pixel of a text's line is hidden by a later element: one whose fill is opaque (CaptureContext.opaque), within
      * its painted shape (its box with its corner radii, half a pixel wider for the anti-aliased edge), on either side. A
      * translucent scrim, a border-only box, a picture or a shadow hides nothing: the text under it is still judged. `exact`:
-     * the design's covers alone, a pixel whose centre lies in one (ruling R159: what a cover hides of the design's line).
+     * the design's covers alone, a pixel whose centre lies in one (decision D-159: what a cover hides of the design's line).
      */
     const hiddenBy = (id: string, exact = false): ((x: number, y: number) => boolean) | null => {
       if (!ctx.opaque) return null;
@@ -1238,7 +1238,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         return true;
       });
 
-    /** Every shown text line on both sides with the key of its element or copy (ruling R150: a window's margin stops at them). */
+    /** Every shown text line on both sides with the key of its element or copy (decision D-150: a window's margin stops at them). */
     const keyedLines: { key: string; r: Rect }[] = [];
     for (const [id, e] of Object.entries(g.elements)) {
       if (!e.text || !e.visible) continue;
@@ -1254,7 +1254,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     }
     /**
      * A line's window: its line rects (`own`, both sides) grown by a pixel for the anti-aliased edge, the margin stopping at
-     * another text's line box on either side (ruling R150): labels laid edge to edge put the next label's first stem in the
+     * another text's line box on either side (decision D-150): labels laid edge to edge put the next label's first stem in the
      * margin, in one renderer only when the boxes sit half a device pixel apart (a pilot screen's untimed section labels,
      * right Δ −4.35 px). A line box that overlaps `own` takes that side's margin away.
      */
@@ -1272,12 +1272,12 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     };
     /**
      * The window of a text's line i that the ink check judges (inkCheck): the line rects of both sides with their margin,
-     * within the design's overflow clips (ruling R157). Empty when the design's clips hide the line.
+     * within the design's overflow clips (decision D-157). Empty when the design's clips hide the line.
      */
     const lineWindow = (id: string, key: string, gl: Rect, ul: Rect): Rect => inBounds(marginWindow(key, unionRect(gl, ul)), clipOf(g, id, key));
     /**
      * The lines an opaque later element covers entirely (`${key}\n${i}`): the lines inkCheck lists as not judged (covered),
-     * of the texts it judges (both sides shown, the same line count). Ruling R160: such a line leaves the text masks, so
+     * of the texts it judges (both sides shown, the same line count). Decision D-160: such a line leaves the text masks, so
      * the cover's own SSIM, its colour samples and the whole capture's SSIM judge what Unity draws there, and inkCheck
      * holds Unity's window to the cover.
      */
@@ -1309,9 +1309,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       textLines.push(...mine.lines);
       if (theirs) { const m = textMaskOf(id, theirs, e); if (m.box) textBoxes.push(m.box); textLines.push(...m.lines); }
     }
-    // the text lines of the copies in later repeat items (ruling R133): their own checks judge them. Only the lines, not the
+    // the text lines of the copies in later repeat items (decision D-133): their own checks judge them. Only the lines, not the
     // copy's box: a copy has no element SSIM or colour samples of its own, so what it paints (a chip's background, a pill's
-    // border) stays in the whole capture's and its containers' SSIM (fix round 1, I-1). A copy without lines (a form
+    // border) stays in the whole capture's and its containers' SSIM. A copy without lines (a form
     // control's value) keeps its box masked, as the IR element's line mask does
     for (const [key, e] of Object.entries(g.items ?? {})) {
       if (!e.text || !e.visible) continue;
@@ -1409,10 +1409,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
      * band of their straight edges where `straight` says so: an edge an animation sample moves to a fractional device offset
      * (Chromium draws it from its resampled layer, UI Toolkit on whole pixels) and, with `statics`, an edge that lies between
      * two device pixels in a static capture at a scaled viewport (the box's edge and its border's inner edge, where Chromium
-     * covers the pixel partly), also of the later items of a repeat inside it (ruling R124: the boxes' `items`). A straight
+     * covers the pixel partly), also of the later items of a repeat inside it (decision D-124: the boxes' `items`). A straight
      * edge's band is every pixel whose centre lies within ROUND_EDGE_BAND of that edge in the design and in Unity: an edge
      * Unity draws a device pixel away from the design's is not in it. `moved` and `fractional`: whether such edges were
-     * added; `borders`: the borders whose band it masks (their colour and width are the relaxation's evidence, R129, R130).
+     * added; `borders`: the borders whose band it masks (their colour and width are the relaxation's evidence, D-129, D-130).
      */
     const bandOf = (owner: string, base: Uint8Array, region: Rect, statics = false): Band => {
       const out = base.slice();
@@ -1464,7 +1464,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     };
 
     /**
-     * The largest colour difference outside a band, as the element's colour limit measures it (ruling R129): the ΔE2000 of
+     * The largest colour difference outside a band, as the element's colour limit measures it (decision D-129): the ΔE2000 of
      * the design's 3×3 mean at every pixel of `region` whose window lies wholly outside `m`, against Unity's closest 3×3 mean
      * within 1 px (bestDeltaE). Every window counts, not a mean over the element.
      */
@@ -1487,7 +1487,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       }
       return best;
     };
-    /** What a relaxation's band leaves to show that the difference lies in it, and why not when it does not (rulings R129, R130). */
+    /** What a relaxation's band leaves to show that the difference lies in it, and why not when it does not (decisions D-129, D-130). */
     interface Evidence { ok: boolean; why: string; minBlock: number; maxDe: number; ring: number | null; width: number | null }
     /**
      * The evidence an edge-band relaxation needs, at every viewport: outside the band, every SSIM block of the region (each
@@ -1495,7 +1495,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
      * 1 px (pixel level, not the region's mean); every border the band masks has its centre pixel (each side of
      * BORDER_SAMPLE_PX or more) within the file's deltaE2000Ring, a side under that width giving no evidence, and its drawn
      * width within RING_WIDTH_PX of the design's. The centre colour is sampled as deltaE2000Ring samples it, except on a
-     * border an animation sample moves (ruling R132); there the width and the windows still hold.
+     * border an animation sample moves (decision D-132); there the width and the windows still hold.
      */
     const evidenceOf = (band: Band, region: Rect): Evidence => {
       const blocks = regionSsimShiftedBlocks(gp, up, band.mask, region, 1);
@@ -1507,7 +1507,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         const cover = covering(b.id);
         // the centre colour as deltaE2000Ring samples it, unless an animation sample moves the border (Chromium draws a
         // moving element from its resampled layer, whose border's centre pixel blends; its colour is judged in the static
-        // captures): an element a sample does not move gets the static checks (ruling R132)
+        // captures): an element a sample does not move gets the static checks (decision D-132)
         const moves = movesIn(b.id);
         const full = moves ? [0, 0, 0, 0] : b.widths.map((v) => (v >= BORDER_SAMPLE_PX ? v : 0));
         let any = moves;
@@ -1526,7 +1526,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
       }
       const ev = { minBlock: blocks.min, maxDe: px.de, ring: ring ? (ring as { de: number }).de : null, width: width ? (width as { d: number }).d : null };
-      // every condition that does not hold, not only the first (a failing capture shows all its causes; ruling R133)
+      // every condition that does not hold, not only the first (a failing capture shows all its causes; decision D-133)
       const r = ring as { de: number; where: string; a: number[]; b: number[] } | null, wd = width as { d: number; where: string; design: number; unity: number } | null;
       const why = [
         blocks.min < t.ssimElement - EPS ? `an SSIM block outside the band, the 8 px block at (${blocks.minAt[0]}, ${blocks.minAt[1]}), is ${blocks.min.toFixed(5)} (below ${t.ssimElement}: not confined to it)` : "",
@@ -1539,7 +1539,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     };
 
     /**
-     * What one later layer covers, on both sides (fix round 3 N-5, fix round 4 N-8): its box when it paints something, and
+     * What one later layer covers, on both sides: its box when it paints something, and
      * the reach of the outer shadows it casts, each placed by that side's own box. `rec` is the golden's record of what it
      * paints in this capture (boxes `paints`, `shadow`): an IR element's agrees with the IR's facts for the capture (either
      * counts); a copy's is in its own item's state (a job's hover or class on that item), so it replaces what its IR
@@ -1562,11 +1562,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       return out;
     };
     /**
-     * What paints after the text `key` of element `id` and may lie over its lines (ruling R141, fix round 3 N-5, fix round 4
-     * N-8): every IR element and every written-out repeat copy later in paint order that paints something or casts a shadow
+     * What paints after the text `key` of element `id` and may lie over its lines (decision D-141): every IR
+     * element and every written-out repeat copy later in paint order that paints something or casts a shadow
      * in the capture (`layerOf`), on both sides. A later item of a repeat paints after an earlier one; inside one item the
      * compiler's paint order holds (`ctx.order`: an absolute sibling the compiler moves after in-flow ones is later there,
-     * as CSS paints it, fix round 4 N-9). Null when the paint order is unknown.
+     * as CSS paints it). Null when the paint order is unknown.
      */
     const laterLayers = (id: string, key: string): Rect[] | null => {
       if (!paintIndex.has(id)) return null;
@@ -1589,10 +1589,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
 
 
     /**
-     * A text's ink per line (an IR element's, or its copy's in a later repeat item, `key` naming it; ruling R133): colour
+     * A text's ink per line (an IR element's, or its copy's in a later repeat item, `key` naming it; decision D-133): colour
      * and extent now, the amount after every line of the capture is measured. `id`: the IR element (its font size, its
      * text shadow and what is painted over it). A line is measured in the window its overflow clips leave (its line rects
-     * grown by a pixel short of other texts' line boxes, ruling R150): the rows both sides show, else the design's; a line
+     * grown by a pixel short of other texts' line boxes, decision D-150): the rows both sides show, else the design's; a line
      * both sides' clips hide is not judged (`linesClipped`), one only the design's clip hides that Unity draws is an issue.
      */
     const inkCheck = (id: string, key: string, ge: TextBox, ue: TextBox, row: ElementRow) => {
@@ -1602,13 +1602,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       let wX: { i: number; dl: number; dr: number; dw: number; worst: number } | null = null;
       let wFragDir: { dir: number; i: number; a: number[]; b: number[]; limit: number; em: number } | null = null;
       let wDir: { dir: number; i: number; a: number[]; b: number[]; scaled: boolean } | null = null, wAmount: { ratio: number; i: number } | null = null;
-      // ruling R141: a hairline line is small text drawn in its own colour (the one the capture recorded for this element or
+      // decision D-141: a hairline line is small text drawn in its own colour (the one the capture recorded for this element or
       // this copy) at full opacity (its own and its ancestors', an animation sample's running value included), all of the
-      // line in it (no span of another colour: fix round 3, N-6), and nothing painted later lies over it (a later element or
-      // copy, or the shadow it casts: N-5); then R138's conditions (isHairline)
+      // line in it (no span of another colour), and nothing painted later lies over it (a later element or
+      // copy, or the shadow it casts); then D-138's conditions (isHairline)
       const own = key === id ? g.elements[id] : g.items?.[key];
       const declared = own?.color && own.opacity !== undefined ? { rgb: own.color.slice(0, 3), alpha: own.color[3] * own.opacity } : undefined;
-      // ruling R152: at a scaled viewport, text below SCALED_HAIRLINE_BELOW_PX with the scale-only evidence
+      // decision D-152: at a scaled viewport, text below SCALED_HAIRLINE_BELOW_PX with the scale-only evidence
       const scaledHairline = ctx.viewportClass === "scaled" && px < SCALED_HAIRLINE_BELOW_PX && ctx.scaleOnly?.(key) === true;
       const later = declared && (px <= HAIRLINE_MAX_PX || scaledHairline) && declared.alpha >= 1 - 1e-6 ? laterLayers(id, key) : null;
       const mayBeHairline = !!later;
@@ -1616,7 +1616,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const clipG = clipOf(g, id, key), clipU = clipOf(u, id, key);
       let covered = 0, clipped = 0;
       ge.lines.forEach((gl, i) => {
-        // what each render shows of the line (review finding 2): the design's clip decides what must show. Both show some:
+        // what each render shows of the line: the design's clip decides what must show. Both show some:
         // the rows both show; only the design: its window (Unity's missing ink fails); only Unity: a line the design clips
         // away is drawn (an issue); neither: not judged
         const margin = marginWindow(key, unionRect(gl, ue.lines[i]));
@@ -1626,12 +1626,12 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           if (inkIn(up, uw, hidden ?? undefined)) issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: Unity draws text the design's overflow clips away (a box that should clip it does not, or is larger)`, gl);
           return;
         }
-        // ruling R157: the window is the design's visible window; Unity's clip never shrinks it
+        // decision D-157: the window is the design's visible window; Unity's clip never shrinks it
         const win = gw;
         if (coveredLines.has(`${key}\n${i}`)) {
           covered++;
           linesCovered.push(`${key}: line ${i + 1} of ${ge.lines.length}`);
-          // ruling R160: what the design's covers hide must be the cover in Unity too. Unity's ink in the window, on the
+          // decision D-160: what the design's covers hide must be the cover in Unity too. Unity's ink in the window, on the
           // pixels a pixel inside the design's covers, where the design shows none there, is text drawn over the cover (a
           // paint-order error, a host panel above a popup). Where the design shows the cover's own content there, the
           // cover's SSIM judges the window (the line is out of the text masks)
@@ -1671,10 +1671,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           const dl = endShift(a, b, a.left, a.left + em, b.left - a.left), dr = endShift(a, b, a.right - em, a.right, b.right - a.right);
           const dw = dr - dl;
           let worst = Math.max(Math.abs(dl), Math.abs(dr), Math.abs(dw));
-          // ruling R147 (every viewport): a line the design ends in an ellipsis ends in the design's ellipsis glyph in Unity,
+          // decision D-147 (every viewport): a line the design ends in an ellipsis ends in the design's ellipsis glyph in Unity,
           // its column profile and ink amount found next to the end of Unity's ink (a wrong glyph is a visible defect at any size)
           const cut = gl.ellipsis ? ellipsisCut(a, b, gl.ellipsis, { design: gl.baseline, unity: ue.lines[i].baseline }) : null;
-          // below ELLIPSIS_DOTS_BELOW_PX the dots are judged structurally (ruling R148), from that size on by their profiles
+          // below ELLIPSIS_DOTS_BELOW_PX the dots are judged structurally (decision D-148), from that size on by their profiles
           const structural = px < ELLIPSIS_DOTS_BELOW_PX;
           const d = cut?.dots;
           const notJudged = !!cut && structural && d!.design !== 3;
@@ -1690,7 +1690,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
             if (!row.ellipsisGlyph || cut.shape + cut.rows > row.ellipsisGlyph.shape + row.ellipsisGlyph.rows) row.ellipsisGlyph = { shape: r6(cut.shape), rows: r6(cut.rows), amount: r6(cut.amount) };
             if (!glyph) issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: the line does not end in the design's ellipsis: its shape differs by ${cut.shape.toFixed(2)} across (limit ${ELLIPSIS_SHAPE}) and ${cut.rows.toFixed(2)} up and down against the baseline (limit ${ELLIPSIS_ROWS}), its ink is ${cut.amount.toFixed(2)}× the design's (expected ${ELLIPSIS_AMOUNT[0]}–${ELLIPSIS_AMOUNT[1]}×): another glyph, another height or none`, gl);
           }
-          // ruling R146 (scaled viewports): Unity keeps one grapheme more or fewer before the design's ellipsis; its start is
+          // decision D-146 (scaled viewports): Unity keeps one grapheme more or fewer before the design's ellipsis; its start is
           // judged as before, its ellipsis is the design's glyph (above), and its end may move by that grapheme's advance
           if (cut && glyph && t.ellipsisGraphemes >= 1 && worst > t.boxPx + GEOMETRY_EPS && Math.abs(dl) <= t.boxPx + GEOMETRY_EPS &&
               cut.shift <= gl.ellipsis!.next + t.boxPx + GEOMETRY_EPS && cut.shift >= -(gl.ellipsis!.last + t.boxPx) - GEOMETRY_EPS) {
@@ -1700,17 +1700,17 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           }
           if (!wX || worst > wX.worst) wX = { i, dl, dr, dw, worst };
         }
-        // ruling R149: a fragment of few stems, a line something covers or clips down to a window narrower than the key's em,
+        // decision D-149: a fragment of few stems, a line something covers or clips down to a window narrower than the key's em,
         // takes the measured noise of the statistic for its width (measured on windows cut anywhere along correct lines), in
         // the measurement's domain (the design's ink at least MIN_INK_PX, the amount's floor; not a glowing line's). A whole
-        // short line is no fragment: its window holds whole glyphs and keeps its limits (rulings R126, R138, R141). What cuts a
-        // line: rulings R156 and R159 below (cutInto).
-        // Ruling R154: a text with a text-shadow, hard or blurred, is outside the measurement (the shadow's paint lies in the
+        // short line is no fragment: its window holds whole glyphs and keeps its limits (decisions D-126, D-138, D-141). What cuts a
+        // line: decisions D-156 and D-159 below (cutInto).
+        // Decision D-154: a text with a text-shadow, hard or blurred, is outside the measurement (the shadow's paint lies in the
         // window): its fragments take no key and keep the ordinary checks
         const glow = !!ctx.textShadows?.has(id), shadowed = glow || !!ctx.shadowedText?.has(id);
-        // ruling R156: what the line's own text cut leaves of it (its own box's clip; an ellipsized line ends at its
-        // ellipsis) is the whole; it is cut only by a cover or a clip other than its own, on the design's window (R157), each
-        // end within a column of the design's own rounding; ruling R159: only where it hides the design's ink (the design's
+        // decision D-156: what the line's own text cut leaves of it (its own box's clip; an ellipsized line ends at its
+        // ellipsis) is the whole; it is cut only by a cover or a clip other than its own, on the design's window (D-157), each
+        // end within a column of the design's own rounding; decision D-159: only where it hides the design's ink (the design's
         // covers taken exactly, its visible ink ending less than two columns from the lost part), never the box's empty part alone
         const ownClip = clipOf(g, id, key, (c) => c === id), otherClips = clipOf(g, id, key, (c) => c !== id);
         let ext: Rect = gl.ellipsis ? { ...gl, w: Math.min(gl.w, gl.ellipsis.at + gl.ellipsis.width - gl.x) } : gl;
@@ -1720,8 +1720,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // the ink amount against the text colour on both sides (each pixel's distance from the background over the colour's),
         // not each side's own ink colour: a stroke drawn faint everywhere is little ink, not a full stroke of a lighter colour
         const sum = (x: Float64Array) => { let v = 0; for (const d of x) v += d; return v; };
-        // ruling R153: a fragment below the measured domain (the design's ink under MIN_INK_PX, where no noise was measured) is
-        // judged on its presence, its colour direction (R138's limit) and R141's amount band, and counted
+        // decision D-153: a fragment below the measured domain (the design's ink under MIN_INK_PX, where no noise was measured) is
+        // judged on its presence, its colour direction (D-138's limit) and D-141's amount band, and counted
         if (cut && a.coverage < MIN_INK_PX) {
           fragmentsBelowDomain.push(`${key}: line ${i + 1} of ${ge.lines.length}`);
           const what = `line ${i + 1} of ${ge.lines.length}: a fragment below the measured domain (the design's ink here ${a.coverage.toFixed(1)} px, under ${MIN_INK_PX})`;
@@ -1734,11 +1734,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           row.inkDirection = r6(Math.max(row.inkDirection ?? 0, dir));
           return;
         }
-        // a hairline line (rulings R138, R141): its lightness measures coverage; its ink's colour direction is judged, and its
+        // a hairline line (decisions D-138, D-141): its lightness measures coverage; its ink's colour direction is judged, and its
         // ink amount only within HAIRLINE_INK_BAND (a stroke drawn a row off scatters, a missing or added glyph does not)
-        // ruling R152: at a scaled viewport (scaledHairline) either render may show the line as a hairline one
-        // ruling R155: when only Unity's render qualifies (the design's has fully covered pixels), Unity's ink, summed against the
-        // text colour, must be at least SCALED_HAIRLINE_INK_FLOOR of the design's (ruling R158): splitting a stroke over two
+        // decision D-152: at a scaled viewport (scaledHairline) either render may show the line as a hairline one
+        // decision D-155: when only Unity's render qualifies (the design's has fully covered pixels), Unity's ink, summed against the
+        // text colour, must be at least SCALED_HAIRLINE_INK_FLOOR of the design's (decision D-158): splitting a stroke over two
         // pixels keeps most of the ink (correct renders lose up to 14 %), dimming removes it
         const hairline = b && mayBeHairline && !gl.mixed && !later!.some((r) => r.x < win.x + win.w && r.x + r.w > win.x && r.y < win.y + win.h && r.y + r.h > win.y)
           ? (px <= HAIRLINE_MAX_PX && isHairline(a, declared!) ? "design"
@@ -1752,11 +1752,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           if (off > EPS && (!wAmount || off > Math.max(HAIRLINE_INK_BAND[0] - wAmount.ratio, wAmount.ratio - HAIRLINE_INK_BAND[1]))) wAmount = { ratio, i };
           return;
         }
-        // ruling R149 (above): a fragment in the measured domain takes the key of its width
+        // decision D-149 (above): a fragment in the measured domain takes the key of its width
         const fragment = cut ? fragmentKey(t, px, visibleColumns(win, hidden) / px) : null;
         inkLines.push({ id: key, i, n: ge.lines.length, ratio: common ?? (b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null), at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow, ...(fragment ? { fragment } : {}) });
         ctx.inkProbe?.({ key, line: i, px, window: win, hidden, design: gp, unity: up, glow, shadowed });
-        // ruling R151: a width whose ΔE2000 noise is above R126's cap judges the fragment's colour direction (R138's measure)
+        // decision D-151: a width whose ΔE2000 noise is above D-126's cap judges the fragment's colour direction (D-138's measure)
         // with the width's measured key; a width without one does not judge its colour, and the line is counted
         if (b && fragment?.byDirection) {
           if (fragment.direction === null) { fragmentColourNotJudged.push(`${key}: line ${i + 1} of ${ge.lines.length}`); return; }
@@ -1898,7 +1898,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       // a round element without text: the middle of each border side of 2 device px or more (its centre pixel covered on
       // both renderers): its ring lies in the edge band an edge-band relaxation masks, so a missing or wrong-colour ring
       // shows here (an element that carries text samples its border with its ring below), and its drawn width across the
-      // middle of each side and each round corner's diagonal (ruling R127; a ring a pixel thinner keeps its colour sample)
+      // middle of each side and each round corner's diagonal (decision D-127; a ring a pixel thinner keeps its colour sample)
       const sides = ctx.borders?.[id];
       if (!carriesText && ctx.radii?.[id] && paints(id) && sides && sides.some((v) => v > 0)) {
         let worst: { de: number; p: RingPoint; a: number[]; b: number[] } | null = null;
@@ -1943,7 +1943,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         if (bestS) {
           row.deltaE = r6(bestS.de);
           if (!maxDE || bestS.de > maxDE.deltaE) maxDE = { id, deltaE: r6(bestS.de) };
-          // a raster picture resampled at a scaled viewport (ruling R125; off elsewhere)
+          // a raster picture resampled at a scaled viewport (decision D-125; off elsewhere)
           const limit = ctx.pictures?.has(id) ? Math.max(t.deltaE2000, t.deltaE2000ResampledPicture) : t.deltaE2000;
           if (bestS.de > limit + EPS) {
             issue(id, "color", `ΔE2000 ${bestS.de.toFixed(2)} at ${bestS.p.where}: design ${hex(bestS.a)}, Unity ${hex(bestS.b)} (limit ${limit}${limit > t.deltaE2000 ? " for a raster picture resampled at a scaled viewport" : ""})`,
@@ -1998,7 +1998,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           maxRing = Math.max(maxRing, r.de);
           samples.push({ de: r.de, p, a: r.a, b: r.b, limit });
         }
-        // a corner that needs its relaxed limit needs the element's evidence too (rulings R129, R130): its pixels outside the
+        // a corner that needs its relaxed limit needs the element's evidence too (decisions D-129, D-130): its pixels outside the
         // edge bands of its class (round shapes; straight edges between device pixels at a scaled viewport, moved edges in an
         // animation sample), its border's centre colour and width
         let cornerWhy = "";
@@ -2036,7 +2036,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       }
     }
 
-    // the copies' text in later repeat items: the same ink checks as the IR element's (ruling R133)
+    // the copies' text in later repeat items: the same ink checks as the IR element's (decision D-133)
     for (const c of textCopies) if (c.g.lines.length && c.u.lines.length === c.g.lines.length) inkCheck(c.id, c.key, c.g, c.u, rowOf.get(c.key)!);
 
     // text ink amount: with smoothing-off designs Unity draws 0.92-1.08 of the design's ink for correct text
@@ -2056,7 +2056,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       if (l.small) { lo = Math.min(lo, t.textInkBandSmall[0]); hi = Math.max(hi, t.textInkBandSmall[1]); }
       // a blurred text-shadow's glow inside the line counts as ink (measured)
       if (l.glow) hi = Math.max(hi, t.textInkShadowHigh);
-      // ruling R149: a window of few stems, the measured noise's lowest amount for its width
+      // decision D-149: a window of few stems, the measured noise's lowest amount for its width
       if (l.fragment) lo = Math.min(lo, l.fragment.amount);
       return { lo, hi };
     };
@@ -2090,7 +2090,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       if (relaxed && !otherIssue.has(l.id) && l.best >= relaxed.limit - EPS) { row.ssimLimit = relaxed.limit; continue; }
       let roundWhy = "", fractionalWhy = "";
       const base = l.carriesText ? lineMask : mask;
-      /** A band's relaxation: its evidence (rulings R129, R130), recorded on the row; null when it holds. */
+      /** A band's relaxation: its evidence (decisions D-129, D-130), recorded on the row; null when it holds. */
       const withEvidence = (band: Band): string | null => {
         const ev = evidenceOf(band, l.region);
         row.bandEvidence = { minBlock: r6(ev.minBlock), maxDe: r6(ev.maxDe), ring: ev.ring === null ? null : r6(ev.ring), width: ev.width === null ? null : r6(ev.width) };
@@ -2315,8 +2315,8 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   if (opts.diffDir) fs.mkdirSync(opts.diffDir, { recursive: true });
   const results = new Map<string, CaptureVerdict>();
   const concurrency = opts.concurrency ?? Math.max(1, Math.min(4, os.availableParallelism?.() ?? 4));
-  // ruling R152: the exact viewports first, so that a scaled capture's text knows whether the same text passes its ink checks
-  // at every exact viewport of the run in the same state (R126's scale-only evidence)
+  // decision D-152: the exact viewports first, so that a scaled capture's text knows whether the same text passes its ink checks
+  // at every exact viewport of the run in the same state (D-126's scale-only evidence)
   const viewportOf = (name: string) => byName.get(name)?.viewport ?? goldenBoxes[name]?.viewport;
   const classOfName = (name: string) => viewportClassOf(ix?.scaledViewports, viewportOf(name) ?? [0, 0]);
   const exactViewports: number[][] = [];
@@ -2327,7 +2327,7 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   const TEXT_INK: readonly IssueKind[] = ["ink", "inkCoverage", "inkExtent"];
   const judgedIn = new Map<string, Map<string, "deltaE" | "direction">>();
   // the same text judged and passing at every exact viewport, by its ink colour (ΔE2000) at one of them at least: a line
-  // covered, clipped or without ink there is no evidence (review N7)
+  // covered, clipped or without ink there is no evidence
   const scaleOnlyOf = (name: string) => (key: string) => {
     const at = exactViewports.map((vp) => name.replace(/@\d+x\d+/, `@${vp[0]}x${vp[1]}`));
     return at.length > 0 && at.every((n) => {

@@ -297,7 +297,7 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
-        /// Ruling R134: a text whose font lacks its characters when the fit first measures it still lays out at the browser's
+        /// Decision D-134: a text whose font lacks its characters when the fit first measures it still lays out at the browser's
         /// width. The fit checks only the face that draws the text (<see cref="DesignText.DrawingFace"/>: the weight table's
         /// bold face for a bold text, the font itself for a normal one), so a face of the weight table that never draws it (the
         /// bold face under a normal text, which nothing ever gives the characters) does not hold it at UI Toolkit's width for
@@ -316,7 +316,7 @@ namespace DesignUi.Editor.Tests
                 if (regular.fontWeightTable[7].regularTypeface != bold) FontFixture.SetWeight(regular, 700, bold);
                 return FontTwinGenerator.GetOrCreateTwin(regular, FontFixture.KeptTwinFolder + "/R134");
             }
-            var twin = Twin("Kept R134");
+            var twin = Twin("Kept D-134");
             var boldTwin = twin.fontWeightTable[7].regularTypeface;
             Assert.IsNotNull(boldTwin, "the bold face in the twin's weight table");
             Assert.AreSame(boldTwin, DesignText.DrawingFace(twin, FontStyle.Bold));
@@ -359,7 +359,7 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(bold.Fit.Width, bold.layout.width, 1e-3, "laid out at it");
 
             // the same bold text on a twin whose faces got the characters and their pairs before it was laid out
-            var prepared = Twin("Kept R134 Prepared");
+            var prepared = Twin("Kept D-134 Prepared");
             DesignText.Prepare(prepared, text);
             Assert.IsTrue(DesignText.Drawable(prepared, FontStyle.Bold, text));
             var reference = Add(prepared, FontStyle.Bold, 300);
@@ -370,7 +370,7 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
-        /// Ruling R136 (a language switched while a screen is open kept its labels at their earlier text's width): a
+        /// Decision D-136 (a language switched while a screen is open kept its labels at their earlier text's width): a
         /// text-sized label measures its text again whenever the text changes after its first layout, however it is written
         /// (a <c>text</c> write, which sends a change event, and a write without one, as a binding or a list makes it), and
         /// when its font changes with it (a locale switch brings the locale's font and its text in one frame); nothing is
@@ -380,7 +380,7 @@ namespace DesignUi.Editor.Tests
         public IEnumerator AText_ChangedAfterItsFirstLayout_IsMeasuredAgain_HoweverItIsWritten()
         {
             var bold = BodyBold();
-            var regular = FontFixture.Kept(FontFixture.RegularTtf, "Kept R136 Regular");
+            var regular = FontFixture.Kept(FontFixture.RegularTtf, "Kept D-136 Regular");
             var regularTwin = FontTwinGenerator.GetOrCreateTwin(regular, FontFixture.KeptFolder + "/FitTwins", FontTwinGenerator.LineBox.For(24, 32));
             DesignText.Prepare(regularTwin, string.Concat(Words) + " ");
             var doc = Document(2560, 1440);
@@ -600,8 +600,8 @@ namespace DesignUi.Editor.Tests
         }
 
         /// <summary>
-        /// Fix round 3, R136-ar (found in the game: a calendar built in Turkish and switched to Arabic kept 18 to 21 of its 32
-        /// text-sized labels at their Turkish widths). The locale controller lays a script locale's text out with the advanced
+        /// Decision D-136, for a script locale (a screen built in a Latin locale and switched to Arabic kept 18 to 21 of its 32
+        /// text-sized labels at their Latin texts' widths). The locale controller lays a script locale's text out with the advanced
         /// generator, and UI Toolkit keeps that generator's measure in another member of the text handle: the standard one the
         /// fit read still held the previous text's width. A label whose text the advanced generator lays out keeps UI Toolkit's
         /// own width, as a label built that way did, never the previous text's; back on the standard generator it gets the
@@ -730,7 +730,7 @@ namespace DesignUi.Editor.Tests
         {
             // a twin of its own: the shared one can come from earlier tests with characters UI Toolkit added while laying text
             // out, whose kerning pairs came later, and UI Toolkit's own widths keep that unkerned layout (the fit measures the
-            // kerned text since ruling R134), so the plain row would not be UI Toolkit's own widths of the prepared text
+            // kerned text since decision D-134), so the plain row would not be UI Toolkit's own widths of the prepared text
             var font = BodyBold("Kept Tabs Bold");
             var doc = Document(1600, 900);
             yield return Frames(2);

@@ -52,7 +52,7 @@ export interface CaptureContext {
   /** Text elements whose `text-shadow` in this capture has a blur radius above 0 (a glow around the glyphs). */
   textShadows?: ReadonlySet<string>;
   /**
-   * Text elements with any `text-shadow` in this capture, hard or blurred (ruling R154): the shadow's paint lies in their ink
+   * Text elements with any `text-shadow` in this capture, hard or blurred (decision D-154): the shadow's paint lies in their ink
    * windows, outside the fragment key's measurement, so their fragments take no key (the ordinary checks).
    */
   shadowedText?: ReadonlySet<string>;
@@ -68,8 +68,8 @@ export interface CaptureContext {
    * animation counts when it changes geometry (GEOMETRY_PROPERTIES: transform and its parts, position and size; not a
    * colour, an opacity, a filter or a shadow; one whose properties the IR does not list counts too). A moved edge Chromium
    * draws from its resampled layer at a fractional device offset (`ssimRoundEdge`); such an element's ring and border
-   * centre colours are judged in static captures only. Every other element of a sample gets the static checks (ruling
-   * R132). Empty for static captures.
+   * centre colours are judged in static captures only. Every other element of a sample gets the static checks (decision
+   * D-132). Empty for static captures.
    */
   moving?: ReadonlySet<string>;
   /** Elements that draw a vector picture (IR kind `vector`): their edge band is the picture's drawn edges (`ssimVectorEdge`). */
@@ -78,7 +78,7 @@ export interface CaptureContext {
   viewportClass?: "exact" | "scaled";
   /**
    * At a scaled viewport: whether the same text (an element or a repeat copy, by its key) passes its ink checks at every
-   * exact viewport of the run in the same state (ruling R126's scale-only evidence, which ruling R152 requires). compareScreen
+   * exact viewport of the run in the same state (decision D-126's scale-only evidence, which decision D-152 requires). compareScreen
    * compares the exact viewports first and sets it; absent, no text has the evidence.
    */
   scaleOnly?: (key: string) => boolean;
@@ -137,7 +137,7 @@ interface LooseNode {
 }
 
 /**
- * The animated properties that move or resize an element's box (ruling R132): the transform and its parts, its position
+ * The animated properties that move or resize an element's box (decision D-132): the transform and its parts, its position
  * and its size, and the box-model lengths that place or size it. A colour, an opacity, a filter or a shadow does not.
  */
 export const GEOMETRY_PROPERTIES: ReadonlySet<string> = new Set([
@@ -182,7 +182,7 @@ function flexContainer(n: LooseNode): boolean {
 }
 
 /**
- * An element's children in the order the compiler paints them (fix round 4, N-9): lint/paint-order.ts `unityPaintOrder`,
+ * An element's children in the order the compiler paints them: lint/paint-order.ts `unityPaintOrder`,
  * the rule the compiler (Lowering.PaintOrder) and lint share, on the base layer's position and z-index: an absolute
  * sibling moves into the gap between in-flow siblings that gives it its CSS stacking level (a scrim written before the
  * caption it covers paints after it). Siblings the compiler rejects keep the DOM order.

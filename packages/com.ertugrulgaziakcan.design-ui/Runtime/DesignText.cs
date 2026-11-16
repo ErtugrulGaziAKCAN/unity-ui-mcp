@@ -299,7 +299,7 @@ namespace DesignUi
         /// in TextCore's queue (a glyph UI Toolkit added while it laid text out). A line-box variant shares its twin's feature
         /// table (<see cref="FontTwinLink"/>), and the twin and each variant can hold glyphs the other lacks (each adds what its
         /// own text needs at runtime): taking out the records of glyphs this one does not hold, as <see cref="CompleteFeatures"/>
-        /// does for a twin's file, would take the others' pairs away (fix round 3, N-7). TextCore's own queue adds them the same
+        /// does for a twin's file, would take the others' pairs away. TextCore's own queue adds them the same
         /// way, against every glyph of the font file; an import prunes a twin to its own glyphs' records (<see cref="CompleteFeatures"/>).
         /// </summary>
         internal static int AddFeatures(FontAsset font)

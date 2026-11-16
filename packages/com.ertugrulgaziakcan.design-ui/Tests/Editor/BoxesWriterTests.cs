@@ -244,7 +244,7 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.AreEquivalent(new[] { "x", "y", "w", "h", "visible", "text", "lines" }, ((JObject)items["row#1"]).Properties().Select(p => p.Name));
             Assert.IsFalse((bool)items["row#1"]["text"]);
             Assert.IsEmpty((JArray)items["cell#0#1"]["lines"]);
-            // a copy of a text has its own lines, measured as the IR element's (ruling R133): a pitch below the first row's
+            // a copy of a text has its own lines, measured as the IR element's (decision D-133): a pitch below the first row's
             var first = (JArray)capture["elements"]["label"]["lines"];
             var copy = (JArray)items["label#0#1"]["lines"];
             Assert.IsTrue((bool)items["label#0#1"]["text"]);

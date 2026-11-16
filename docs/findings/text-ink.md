@@ -1,5 +1,7 @@
 # Text ink at small sizes: cause and calibration
 
+Decisions cited as `D-nnn` are listed, each with what it decided and why, in [docs/decisions.md](../decisions.md).
+
 | | |
 |---|---|
 | Date | 2026-11-13 |
@@ -332,7 +334,7 @@ instead of looser checks for tiny text. No text may draw below 9 device px at an
   scatter of 12.8 px body text at 1366×768 is a separate case and stays reported as it is
   (docs/findings/viewport-classes.md, "Text ink at 1366×768").
 
-## 10. Lines without a fully covered pixel (rulings R138, R141, fix round 3)
+## 10. Lines without a fully covered pixel (decisions D-138, D-141, fix round 3)
 
 The ink colour (the median of a line's most inked tenth) and the ink amount assume that the stroke covers some pixels
 wholly. A text of one glyph of one stroke thinner than two device pixels, on a line the design puts between two device
@@ -380,7 +382,7 @@ and nothing bounded it by what clips the text:
 
 The context now lists, per text, the elements whose overflow clips it (its ancestors and itself, by axis, at their padding
 boxes), each side's clip rounded inwards to whole device pixels. The design's clip decides what must show (review
-finding 2, ruling R157): the window is the design's visible window, and Unity's clip never shrinks it. A part of it with
+finding 2, decision D-157): the window is the design's visible window, and Unity's clip never shrinks it. A part of it with
 the design's ink that Unity's clip hides beyond Unity's own rounding (a pixel at an edge) is missing ink, an issue that
 names the clipping box ("Unity's overflow clip (<box>) hides <w>×<h> device px of the text the design shows there"); the
 missing ink fails the amount and extent checks as well. Until fix round 3 the window was the rows both renders showed, so
@@ -399,7 +401,7 @@ lines in 918 of its 942 captures were not judged, lines the comparison before Ta
 capture now build the key with one function, a window that is not finite stops the comparison with an error, and every
 number in this section is measured with the fix.
 
-**Another text's line box (ruling R150).** A line's window is grown by a device pixel for anti-aliasing; at 1920×1080
+**Another text's line box (decision D-150).** A line's window is grown by a device pixel for anti-aliasing; at 1920×1080
 `.is-untimed` two section labels lie edge to edge at x 1387.5 and 1474.5, and the margin reached the next label's first
 stem in Chromium only (ink extent −4.35 px). The margin now stops at every other text's line box (both renders'); a
 line's own text keeps its whole window.
@@ -422,18 +424,18 @@ So the URP game draws small text as the Built-in sample does; the one line over 
 A URP copy of the sample was not run: the game's own captures settle it.
 
 **What the fix rounds settled** (the kept captures compared again with the final comparison: every viewport passes all
-157 captures (fix round 4, rulings R158 and R159); after fix round 1 1280×720 passed 143 and 1600×900 22, after fix round
+157 captures (fix round 4, decisions D-158 and D-159); after fix round 1 1280×720 passed 143 and 1600×900 22, after fix round
 2 every viewport all 157, after fix round 3 1600×900 22):
 
 - *Half a device pixel* (section 9): at 1920×1080 the cards sit at x 304.5 (406 CSS px × 0.75); UI Toolkit puts a text's
   box on whole device pixels. A status chip that the open month picker covers but for its first four glyphs (39 px,
   2.6 em) measures ΔE2000 2.84 there (18 captures): too few stems to average the half-pixel shift out (the whole chip,
   uncovered, passes). It passes as a fragment within the measured noise of its width (section 12: 3.68 at 2.5 em). The
-  same cause at 1920×1080 `.is-untimed` (two section labels edge to edge) passes with ruling R150 (above).
+  same cause at 1920×1080 `.is-untimed` (two section labels edge to edge) passes with decision D-150 (above).
 - *A fragment beside a menu*: a status chip the type menu covers but for its last few device px, 0.78× the ink against
   0.80 (1280×720, 14 captures). The design's ink in that window is 13.4 px, under the 16 px floor of the ink amount
-  (`MIN_INK_PX`) and of section 12's measurement. Since ruling R153 such a fragment is judged on its presence, its colour
-  direction (0.51° against R138's 0.66°) and R141's amount band, and counted (`fragmentsBelowDomain`: the 14 captures at
+  (`MIN_INK_PX`) and of section 12's measurement. Since decision D-153 such a fragment is judged on its presence, its colour
+  direction (0.51° against D-138's 0.66°) and D-141's amount band, and counted (`fragmentsBelowDomain`: the 14 captures at
   1280×720 and the same 14 at 1366×768, where it passed before at 0.05°).
 - *One-pixel strokes at the scaled root* (1600×900, 12.5 device px, whole lines): a status of two one-stroke digits around
   a dash, ΔE2000 8.07 against 5.89 (135 captures; a status copy in a nested repeat that review finding 1 had left
@@ -441,33 +443,33 @@ A URP copy of the sample was not run: the game's own captures settle it.
   digits' stems one column at 203 of the green channel, the dash one row at 203; the time's dash rows 124 and 208); UI
   Toolkit lays both text boxes 0.42 device px right and down of the design's (x 511.67 against 511.25) and splits each
   stroke over two (stems 140 + 140 and 128 + 151, the dash rows 92 + 168; the time's dash 185 + 144), so its most inked
-  tenth is lighter. Ruling R152 (fix round 2) judged such a line, below 13 device px at a scaled viewport with Unity's
+  tenth is lighter. Decision D-152 (fix round 2) judged such a line, below 13 device px at a scaled viewport with Unity's
   render showing it as a hairline line and the same text passing at every exact viewport, by its colour direction: 0.03°
-  for both. Ruling R155 (fix round 3) adds that when only Unity's render qualifies, Unity's ink summed against the text
+  for both. Decision D-155 (fix round 3) adds that when only Unity's render qualifies, Unity's ink summed against the text
   colour must be at least the design's, since dimming removes ink where a split keeps it. Here Unity's split keeps 0.983
   and 0.993 of the design's ink by that sum (the usual coverage ratio, which each render scales by its own most inked
-  tenth, is 1.22 and 1.18), so fix round 3 reported both lines again, 135 captures at 1600×900. Ruling R158 (fix round 4)
+  tenth, is 1.22 and 1.18), so fix round 3 reported both lines again, 135 captures at 1600×900. Decision D-158 (fix round 4)
   sets the floor at 0.84 of the design's ink (`SCALED_HAIRLINE_INK_FLOOR`): correct renders lose some ink on this sum,
-  the suite's 180 hairline lines down to 0.86, and the floor is that lowest minus 0.02 (ruling R149's amount convention),
+  the suite's 180 hairline lines down to 0.86, and the floor is that lowest minus 0.02 (decision D-149's amount convention),
   not taken from these lines. Both lines pass by direction again; Unity's own dimming to 0.8 of the colour or less still
   fails (`docs/findings/viewport-classes.md`, "Hairline lines"). The dash was called "20" in the first report, which the
   pixels do not show.
-- *The ellipsis glyph below 16 device px*: judged by its dots since ruling R148; docs/findings/viewport-classes.md,
+- *The ellipsis glyph below 16 device px*: judged by its dots since decision D-148; docs/findings/viewport-classes.md,
   "Ellipsized titles of a pilot screen".
 
-## 12. Text ink on few stems: the fragment key (rulings R149, R151, R153 to R157, R159; Task 37 fix rounds 1 to 4)
+## 12. Text ink on few stems: the fragment key (decisions D-149, D-151, D-153 to D-157, D-159; Task 37 fix rounds 1 to 4)
 
 Where something covers or clips a line down to a few stems, the ink colour (the mean of its most inked tenth) and the ink
 amount rest on a handful of pixels, and the half-pixel layout differences of section 9 no longer average out (the status
 chip of section 11: ΔE2000 2.84 on four glyphs, 0.00 on the whole chip). The key for such fragments is measured, not taken
 from the failures it concerns.
 
-**What a fragment is** (rulings R149, R156, R157, R159). A line whose ink the design shows is cut by a cover (a later opaque
+**What a fragment is** (decisions D-149, D-156, D-157, D-159). A line whose ink the design shows is cut by a cover (a later opaque
 element, `hidden`) or by an overflow clip other than its own text cut. Its own text cut is its own box's clip, and an
 ellipsized line ends at its ellipsis: such a line covered by nothing keeps its ordinary limits however short it is. The
 cut is measured on the design's visible window (Unity's clip never shrinks the window: section 11) against the line's own
 extent, each end within a column of the design's own rounding (`cutInto`); a column hidden inside the line cuts it too.
-A cover or clip cuts only where it hides the design's ink (ruling R159): the design's covers are taken exactly there (a
+A cover or clip cuts only where it hides the design's ink (decision D-159): the design's covers are taken exactly there (a
 pixel whose centre lies in one, not the comparison's half-pixel margin), and a lost end cuts when the design's visible ink
 ends less than two columns from it, a hidden run inside the line when a visible column on either side of it, or the one
 beyond, holds half a pixel of ink. A cover or clip over only the line box's empty part (trailing letter-spacing, side
@@ -476,11 +478,11 @@ empty tail (stems to x 72, its line rect to 76, the badge from 74) made it a fra
 passed by direction and a 15 px one ΔE2000 4.2 off by the 2 em key (fix-3 re-review F1). A cover or clip that starts in
 a word gap hides glyphs no visible ink stands next to: such a line keeps its ordinary limits (stricter; a failure is
 reported, never hidden).
-A whole short line keeps its limits (rulings R126, R133, R138 and R141 set them on whole lines). Fix round 1 measured the
+A whole short line keeps its limits (decisions D-126, D-133, D-138 and D-141 set them on whole lines). Fix round 1 measured the
 cut against the union of both renders' line boxes, so a line in its own box lost two columns at an end when the two boxes
 straddled a pixel (40.75 against 41.17: a colour error ΔE2000 4.20 passed as a 2 em fragment), and every ellipsized line
 under 4 em was a fragment (a 10 px label in the primary colour drawn in the secondary passed by direction, 3.2° against
-5.31°; re-review N2). Text with a text-shadow, hard or blurred, is no fragment (ruling R154: the shadow's paint lies in its
+5.31°; re-review N2). Text with a text-shadow, hard or blurred, is no fragment (decision D-154: the shadow's paint lies in its
 window): its ordinary checks hold.
 
 **Method.** A suite run's 2340 static captures (animation samples left out, every capture passing), each text line's
@@ -522,11 +524,11 @@ one, the amount's lower bound the smaller; the ink extent, the median check and 
 | 3 | (10.13) / 0.84 / 2.20° | 3.29 / 0.88 / – |
 | 3.5 | (9.40) / 0.84 / 1.84° | 2.92 / 0.88 / – |
 
-**Colour direction where ΔE2000 scatters (ruling R151).** A ΔE2000 key of 7.5 to 18.7 checks almost nothing: a window of
+**Colour direction where ΔE2000 scatters (decision D-151).** A ΔE2000 key of 7.5 to 18.7 checks almost nothing: a window of
 a stem or two cannot tell a colour from anti-aliasing by its lightness. Where a width's measured highest ΔE2000 exceeds
-R126's cap of 6.5 (every small row, full 0.5 to 1.5 em; in brackets above) the fragment's colour is judged by its ink's
-colour direction from the background instead (R138's measure: the angle between the two inks' sums of `p − b` in sRGB,
-which does not depend on coverage), within the highest direction measured on the same sliding windows plus R138's margin
+D-126's cap of 6.5 (every small row, full 0.5 to 1.5 em; in brackets above) the fragment's colour is judged by its ink's
+colour direction from the background instead (D-138's measure: the angle between the two inks' sums of `p − b` in sRGB,
+which does not depend on coverage), within the highest direction measured on the same sliding windows plus D-138's margin
 0.4°; the width's amount floor stays, the other widths keep their ΔE2000 key. The directions (p99 / highest, fix round 3;
 in brackets fix round 2's highest, with the text-shadow lines):
 
@@ -541,26 +543,26 @@ in brackets fix round 2's highest, with the text-shadow lines):
 | 3.5 | 0.55° / 1.43° (3.33°) | 0.44° / 0.72° (2.81°) |
 
 Fix round 2's highest directions all came from one line, `text-shadow`'s small text with a hard shadow, whose offset copy
-of the glyphs in the shadow colour lay in the line's window; since ruling R154 it is outside the measurement, and the
+of the glyphs in the shadow colour lay in the line's window; since decision D-154 it is outside the measurement, and the
 highest are now repeat items' weekday labels and card titles under a dialog's shadow at 10 px (small), and spaced text at
 30 px and a filtered label at 18 px (full). Where a width's key would let
 a wrong hue pass, its colour would not be judged and the line would be counted (`fragmentColourNotJudged`): no key does,
-all lie far below the kit's hue swaps of ruling R138 (the accent and warning colours in place of the secondary: 31–38° from
+all lie far below the kit's hue swaps of decision D-138 (the accent and warning colours in place of the secondary: 31–38° from
 surfaces 900 to 700), and a test fails both hues on a fragment of every width, small and full; another holds the
 not-judged path with a row without a key. What the direction does not see is a lightness-only error on such a fragment (the
 ruling's cost).
 
-**Below the measured domain (ruling R153).** A fragment whose design ink in what shows is under 16 px has no measured
-noise: it is judged on its presence (Unity draws none of it: an issue), its colour direction within R138's 0.66° and
-R141's amount band 0.5–2× (both as each pixel's distance from the background, summed), and counted
+**Below the measured domain (decision D-153).** A fragment whose design ink in what shows is under 16 px has no measured
+noise: it is judged on its presence (Unity draws none of it: an issue), its colour direction within D-138's 0.66° and
+D-141's amount band 0.5–2× (both as each pixel's distance from the background, summed), and counted
 (`fragmentsBelowDomain`, named in the report). A sliver of another hue fails, so does a sliver Unity does not draw; a
 lightness-only error within the band passes.
 
 **On the pilot screen** (the kept captures, final comparison): the month picker's chip (18 captures at 1920×1080: 2.84 at
 2.6 em against the full 2.5 em ΔE2000 key 3.68) passes; no fragment fails its colour or amount at any viewport with the
 keys of fix round 3, and no width's colour goes unjudged; the type menu's chip (13.4 px of design ink) is below the domain
-(R153, counted in 14 captures at 1280×720 and 14 at 1366×768); the two whole lines at 1600×900 are no fragments
-(section 11: they pass as hairline lines under ruling R158's ink floor, 0.84 of the design's summed ink).
+(D-153, counted in 14 captures at 1280×720 and 14 at 1366×768); the two whole lines at 1600×900 are no fragments
+(section 11: they pass as hairline lines under decision D-158's ink floor, 0.84 of the design's summed ink).
 
 ## Reproduction
 

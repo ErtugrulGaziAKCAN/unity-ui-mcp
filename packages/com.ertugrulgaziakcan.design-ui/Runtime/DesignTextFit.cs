@@ -47,10 +47,10 @@ namespace DesignUi
     /// box as wide as its text must not break it when the grid takes a fraction of a pixel off. It is measured again when
     /// the text, the element's styles (a state, the locale's fonts, a text size) or its geometry change, and once more after
     /// the next draw when the face that draws the text (<see cref="DesignText.DrawingFace"/>) lacked one of its characters
-    /// or had just gained them (ruling R134). A text, font, letter-spacing, word-spacing or font size that changes without an
+    /// or had just gained them (decision D-134). A text, font, letter-spacing, word-spacing or font size that changes without an
     /// event the fit hears (a write without a change event, a binding, a locale's font; a style change on an element without a
     /// custom property, which UI Toolkit tells nothing, under an exact width and height) shows in the next repaint, which
-    /// measures again (ruling R136, fix round 4 N-10). A text the design
+    /// measures again (decision D-136). A text the design
     /// lets wrap keeps wrapping where its line does not fit. In a row the layout shows that (it holds the element narrower
     /// than its text) and the inline width and white-space come off (UI Toolkit's own layout, which wraps it: a row that a
     /// column sizes to its content does not shrink an explicit flex basis, so the browser's width cannot stay as the basis).
@@ -66,8 +66,8 @@ namespace DesignUi
     /// when it is the width of the text just measured: the rounded width UI Toolkit returned for the text is that width
     /// ceiled on the panel's pixel grid. Text the advanced generator lays out (a script locale: the locale controller turns
     /// it on) keeps UI Toolkit's own width: UI Toolkit keeps that generator's measure in another member, and the standard
-    /// one still holds the width of the text measured before (fix round 3, R136-ar: a calendar switched from Turkish to
-    /// Arabic kept its labels at the Turkish texts' widths).</para>
+    /// one still holds the width of the text measured before (a screen switched from a Latin locale to Arabic kept its labels
+    /// at the Latin texts' widths).</para>
     /// </summary>
     public sealed class DesignTextFit
     {
@@ -124,7 +124,7 @@ namespace DesignUi
             element.RegisterCallback<ChangeEvent<string>>(e => { if (e.target == element) Update(); });
             // a text or font that changes without any of those events (a write without a change event, as a binding or a
             // list makes it; a font a locale switch brings with the text): the element repaints, and a repaint whose text or
-            // font is not the one the fit last looked at measures again at the next update (ruling R136)
+            // font is not the one the fit last looked at measures again at the next update (decision D-136)
             element.generateVisualContent += OnRepaint;
         }
 
@@ -142,10 +142,10 @@ namespace DesignUi
         static bool Same(float a, float b) => a == b || (float.IsNaN(a) && float.IsNaN(b));
 
         /// <summary>
-        /// Ruling R136: the text or the font changed since the fit last looked at them, with no event the fit hears (only a
+        /// Decision D-136: the text or the font changed since the fit last looked at them, with no event the fit hears (only a
         /// repaint follows a write without a change event): measure again at the panel's next update. So does the generator
         /// (a locale switch to or from a script locale changes it on the screen's root), and so do the font size, the
-        /// letter-spacing and the word-spacing (fix round 4, N-10: UI Toolkit sends a style change only to an element with a
+        /// letter-spacing and the word-spacing (UI Toolkit sends a style change only to an element with a
         /// custom property, and under an exact width and height it changes no geometry). A repaint of the same text in the same
         /// style compares cached values and does nothing else, so nothing is measured per frame.
         /// </summary>
@@ -191,7 +191,7 @@ namespace DesignUi
             var e = m_Element;
             var text = e.text;
             m_Lacking = null;
-            // what the repaint check compares, recorded together whatever this returns (an empty text too: fix round 1, I-2)
+            // what the repaint check compares, recorded together whatever this returns (an empty text too)
             var rs = e.resolvedStyle;
             var font = rs.unityFontDefinition.fontAsset;
             m_SeenText = text;
@@ -210,20 +210,20 @@ namespace DesignUi
             float size = rs.fontSize, letter = rs.letterSpacing, word = rs.wordSpacing, ppp = e.scaledPixelsPerPoint;
             var fontStyle = rs.unityFontStyleAndWeight;
             // the face that draws the text in its style (the weight table's bold or italic face, else the font): only its glyphs
-            // count (ruling R134; a face of the weight table that never draws this text never gets its characters). A face that
+            // count (decision D-134; a face of the weight table that never draws this text never gets its characters). A face that
             // gained characters since may have gained their kerning pairs too
             var face = DesignText.DrawingFace(font, fontStyle);
             // glyphs UI Toolkit added to the face while it laid text out (this label's own missing characters, or another
             // label's this frame) wait for their kerning pairs in TextCore's update queue, which runs when some text is next
-            // generated: give the face all its glyphs' pairs now, so the text is measured as it will draw (fix rounds 1 to 3,
-            // M-1; DesignText.AddFeatures also gives the pairs TextCore's own add leaves out, and removes none: a line-box
-            // variant shares its twin's table, N-7)
+            // generated: give the face all its glyphs' pairs now, so the text is measured as it will draw
+            // (DesignText.AddFeatures also gives the pairs TextCore's own add leaves out, and removes none: a line-box variant
+            // shares its twin's table)
             if (DesignText.FeaturesPending(face) == true && DesignText.CanCompleteFeatures)
             {
                 DesignText.AddFeatures(face);
                 DesignText.ClearPairFlags(face);
             }
-            // its glyphs and their kerning pairs (fix round 1, M-1: pairs that arrive later change no character count)
+            // its glyphs and their kerning pairs (pairs that arrive later change no character count)
             int characters = face.characterTable.Count, pairs = DesignText.PairCount(face);
             if (!float.IsNaN(m_Measured) && string.Equals(text, m_MeasuredText, StringComparison.Ordinal) && ReferenceEquals(font, m_MeasuredFont) && size == m_MeasuredSize &&
                 letter == m_MeasuredLetter && word == m_MeasuredWord && ppp == m_MeasuredPpp && fontStyle == m_MeasuredStyle && characters == m_MeasuredCharacters &&
@@ -275,7 +275,7 @@ namespace DesignUi
         IVisualElementScheduledItem m_AfterDraw;
 
         /// <summary>
-        /// Measures once more at the panel's next update, after this frame's draw (ruling R134), when the face that draws the
+        /// Measures once more at the panel's next update, after this frame's draw (decision D-134), when the face that draws the
         /// text lacked a character of it (UI Toolkit adds it to a dynamic face when it lays the text out or draws it, and a
         /// line-box variant's re-link, <see cref="FontTwinLink"/>, takes back characters the variant added itself), or, on a
         /// Unity version whose update queue the fit cannot complete, when the face just gained them. A face still lacking them is

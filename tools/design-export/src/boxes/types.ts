@@ -4,7 +4,7 @@ export type { BoxRect };
 /** A text line's box and baseline; `mixed`: design side only (schema.json). */
 export type TextLine = BoxRect & { baseline: number; mixed?: boolean; ellipsis?: LineEllipsis };
 /**
- * Design side only: where Chromium places the ellipsis of a line it cuts (ruling R146), device px: `at` the x where the kept
+ * Design side only: where Chromium places the ellipsis of a line it cuts (decision D-146), device px: `at` the x where the kept
  * prefix ends inside the whole line, `last` and `next` the in-line advances of the last kept and the first dropped grapheme,
  * `width` the ellipsis's own advance.
  */

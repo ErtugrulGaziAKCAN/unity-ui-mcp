@@ -227,7 +227,7 @@ export interface Ink {
   /**
    * The sum over the ink-side pixels of (pixel − background), in sRGB values (0–255): the ink's colour direction from the
    * background, whatever share of a pixel the glyphs cover (the renderers blend glyph coverage in sRGB, so a pixel's difference
-   * from the background points the same way at any coverage; ruling R138).
+   * from the background points the same way at any coverage; decision D-138).
    */
   dirSrgb: Rgb3;
   /** Each ink-side pixel's column, row and weight (the weight as in `columns`): where the ink sits in two dimensions. */
@@ -341,7 +341,7 @@ export function inkIn(img: Rgba, r: Rect, hidden?: (x: number, y: number) => boo
   const ink = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
   for (const k of top) { const o = off[k]; ink[0][d[o]]++; ink[1][d[o + 1]]++; ink[2][d[o + 2]]++; }
   const inkC: Rgb3 = [medianOf(ink[0], top.length), medianOf(ink[1], top.length), medianOf(ink[2], top.length)];
-  // the ink's distance from the background: against the plane where it varies (review finding 4: each pixel's weight is its
+  // the ink's distance from the background: against the plane where it varies (each pixel's weight is its
   // distance over this, so both must be measured from the same background), against the median where it is flat
   const topD = plane ? top.map((k) => Math.abs(dlOf(k))).sort((p, q) => p - q) : null;
   const inkD = Math.max(1, topD ? topD[topD.length >> 1] : Math.abs(0.299 * inkC[0] + 0.587 * inkC[1] + 0.114 * inkC[2] - bgL));
@@ -418,7 +418,7 @@ export function endShift(design: Ink, unity: Ink, from: number, to: number, arou
  * The centres of the ink blobs an ink's column profile resolves into over [a, b) (image px): its local maxima of at least
  * 0.2 of the highest column, a maximum at the range's edge only when it is higher than the column outside (the tail of
  * the glyph before is no blob), two maxima one blob unless the profile between them falls to half the lower of them; each
- * blob's centre is the mean column of its ink between the valleys (ruling R148: an ellipsis is three dots).
+ * blob's centre is the mean column of its ink between the valleys (decision D-148: an ellipsis is three dots).
  */
 export function inkBlobs(ink: Ink, a: number, b: number): number[] {
   const x0 = Math.floor(a), x1 = Math.ceil(b), p: number[] = [];
@@ -453,14 +453,14 @@ function inkRowCentre(ink: Ink, a: number, b: number): number {
 }
 
 /**
- * An ellipsis's dots in each render (ruling R148, below 16 device px): the blobs of the design's ellipsis advance and of
+ * An ellipsis's dots in each render (decision D-148, below 16 device px): the blobs of the design's ellipsis advance and of
  * Unity's at `shift`, the largest difference of Unity's two gaps from the design's dot pitch (null unless both draw three),
  * and how far Unity's dots' vertical ink centre lies from the design's, each against its line's baseline (+ lower).
  */
 export interface EllipsisDots { design: number; unity: number; offPitch: number | null; centre: number | null }
 
 /**
- * An ellipsized line whose cut may differ by one grapheme (ruling R146): where Unity's ellipsis sits against the design's
+ * An ellipsized line whose cut may differ by one grapheme (decision D-146): where Unity's ellipsis sits against the design's
  * and whether it is the design's ellipsis. `e` is the design's cut (boxes `ellipsis`, device px). Unity's ellipsis is found
  * by matching the column profile of the design's ellipsis ink (from `e.at` to the end of the line's ink) to Unity's near the
  * end of its ink (endShift, ±1 px around the ink extents' difference). Returns that shift (+: Unity keeps more), the
@@ -474,7 +474,7 @@ export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: num
   for (let x = from; x < to; x++) massA += columnAt(design, x + 0.5);
   if (!(massA > 0)) return null;
   // matched on the ellipsis alone: the margin endShift gives a line's end would reach the prefix's last glyph, which Unity
-  // places a grapheme earlier when it keeps one more (ruling R146), and pull the dots out of line (a pilot screen's title at
+  // places a grapheme earlier when it keeps one more (decision D-146), and pull the dots out of line (a pilot screen's title at
   // 1600×900: shift 2.57 against the dots' 3.3, shape 1.04)
   const shift = endShift(design, unity, e.at, to, unity.right - design.right, 1, 0);
   let massB = 0;
@@ -486,7 +486,7 @@ export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: num
   const end = e.at + Math.min(0, shift);
   let preA = 0, preB = 0;
   for (let x = Math.min(design.x0, unity.x0); x < Math.floor(end); x++) { preA += columnAt(design, x + 0.5); preB += columnAt(unity, x + 0.5); }
-  // the ellipsis's rows against each side's baseline (fix round 3, N9): its ink at the design's height, within a pixel
+  // the ellipsis's rows against each side's baseline: its ink at the design's height, within a pixel
   let rows = 0;
   if (baselines) {
     const profile = (k: Ink, a: number, b: number) => {
@@ -512,7 +512,7 @@ export function ellipsisCut(design: Ink, unity: Ink, e: { at: number; width: num
       rows = Math.min(rows, d / massA);
     }
   }
-  // the dots, structurally (ruling R148): the blobs of the ellipsis advance on each side, Unity's at the matched shift
+  // the dots, structurally (decision D-148): the blobs of the ellipsis advance on each side, Unity's at the matched shift
   // a blob centred in the advance's first half pixel is the prefix's last glyph reaching past its advance, not a dot (the
   // dots' centres lie a sixth of the advance and more inside it)
   const inside = (c: number, at: number) => c >= at + 0.5 && c <= at + e.width;

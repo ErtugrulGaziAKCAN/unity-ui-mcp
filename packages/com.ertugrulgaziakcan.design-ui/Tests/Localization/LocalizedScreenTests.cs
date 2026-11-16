@@ -245,10 +245,10 @@ namespace DesignUi.Localization.Tests
         }
 
         /// <summary>
-        /// A regression guard of the String Table binding path (ruling R136's context: a language switched while a screen is
+        /// A regression guard of the String Table binding path (decision D-136's context: a language switched while a screen is
         /// open): the screen's text-sized title follows a locale switch, which brings its text and its font in one frame
         /// through the binding and the locale controller, to the new text's width, and back. This path writes through
-        /// <c>text</c>, which sends a change event, so it held on 15fa093 too; R136's red test is
+        /// <c>text</c>, which sends a change event, so it held on 15fa093 too; D-136's red test is
         /// <c>TextFitTests.AText_ChangedAfterItsFirstLayout_IsMeasuredAgain_HoweverItIsWritten</c> (a write without a change event).
         /// </summary>
         [UnityTest]

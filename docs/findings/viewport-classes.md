@@ -1,5 +1,7 @@
 # Viewport classes: exact and scaled resolutions
 
+Decisions cited as `D-nnn` are listed, each with what it decided and why, in [docs/decisions.md](../decisions.md).
+
 | | |
 |---|---|
 | Date | 2026-11-14; the root scale, text widths and pictures 2026-11-15; edge-band evidence 2026-11-15 (round 5) |
@@ -225,11 +227,11 @@ lies in the edge band of round shapes (`compare.ts`, `fidelity-thresholds.json` 
   its 2.13 with a partly covered row along the curve). `deltaE2000RoundEdge` = 5.5, the highest plus 0.4.
 
 Outside the scaled block `deltaE2000RoundEdge` is off (`deltaE2000`); `ssimRoundEdge` applies at exact viewports too since
-ruling R119, to fewer elements (section "Edge bands at every viewport"). Crops of each kind
+decision D-119, to fewer elements (section "Edge bands at every viewport"). Crops of each kind
 (design, Unity, difference): the circle's difference is a ring along its edge, the focus ring's lies along the curve and
 the ring's own rows, the not-confined text field's and table's are glyphs.
 
-**Ring colour (ruling R117).** A ring on a round element without text (a radio, an avatar ring) lies wholly in the edge
+**Ring colour (decision D-117).** A ring on a round element without text (a radio, an avatar ring) lies wholly in the edge
 band at 2 device px or less, so neither SSIM nor a colour sample of the fill sees its colour. The middle of each border
 side of 2 device px or more (the ring's centre pixel, fully covered on both renderers) is now compared at every viewport
 (`deltaE2000Ring`). Measured over the suite (69 such elements, 12168 element samples of static captures): highest 2.67, a
@@ -238,12 +240,12 @@ scaled viewports 0.38 and 0.17). Limit 3.1, the highest plus 0.4. Animation samp
 moving element from its resampled layer, and a translated cell's 2 px border reaches 14.2 there. A ring of another hue at
 the same lightness keeps the element's SSIM at 0.99 or more and fails this check (`compare.test.ts`). A ring under 2 device
 px has no such sample: it gives the scaled class's SSIM relaxation no evidence, and the element is held to `ssimElement`
-there (a missing 1.25 px ring passed before). **What it admits** (ruling R123): a ring whose colour is within ΔE2000 3.1 of
+there (a missing 1.25 px ring passed before). **What it admits** (decision D-123): a ring whose colour is within ΔE2000 3.1 of
 the design's, judged only on rings of at least 2 device px; a ring thinner than that has no colour sample and is judged by
 SSIM alone. The sample takes the best of Unity's offsets up to 1 device px, so it sees a wrong colour, not a ring a device
-pixel thinner; the ring's drawn width is its own check since round 5 (ruling R127, section "Edge-band evidence").
+pixel thinner; the ring's drawn width is its own check since round 5 (decision D-127, section "Edge-band evidence").
 
-## Scaled-class residuals (ruling R121)
+## Scaled-class residuals (decision D-121)
 
 The scaled class's failures of round 3 (1600×900: 9, 1366×768: 33), per group, measured on a run of the suite on round 3's
 code (crops: design, Unity, difference). Each new key is scaled-only (off at exact viewports, where the file's own values
@@ -277,28 +279,28 @@ is the measured extreme plus the usual margin; every element it relaxed passes a
   without it and with a ring of another colour.
 - **Transitions at 1366×768** (5 samples, 0.97664–0.981): elements a running transition moves to a fractional offset,
   drawn by Chromium from its resampled layer (it spills about 8 % into the pixel past each edge); the moved-edge band of
-  ruling R119 confines them (0.99884–0.99904), and they pass at the scaled class's `ssimRoundEdge`.
+  decision D-119 confines them (0.99884–0.99904), and they pass at the scaled class's `ssimRoundEdge`.
 
 Left failing, with the cause:
 
 - **Dividers of repeated items** (`controls` table, 17 captures at 1366×768, 0.98639; `scroll-area` inbox at 1600×900,
   0.98955): the difference lies on the rows' bottom borders (straight edges between pixels), but the captures recorded a
   box only for a repeat's first item, so the band could not be placed on the other items' edges: band-masked 0.98789 and
-  0.98960. Round 5 records every item's box (ruling R124): the band confines them, and they kept failing on the glyphs of the
-  later rows' text (section "Edge-band evidence") until ruling R133 gave that text the first item's treatment (section
+  0.98960. Round 5 records every item's box (decision D-124): the band confines them, and they kept failing on the glyphs of the
+  later rows' text (section "Edge-band evidence") until decision D-133 gave that text the first item's treatment (section
   "Repeat items' text, the face that draws, what moves").
 - **Pictures drawn scaled** (`background-images`, 1 capture at each scaled viewport): a picture exported for 3840×2160 is
   drawn at 0.42 and 0.36 of its pixels; Chromium filters, UI Toolkit samples level 0, so block edges differ: element SSIM
   0.95284–0.96867 at 1600×900 (below the absolute floor of 0.97 no measured limit may go under) and 0.97866–0.97986 at
   1366×768, and colour samples on resampled edges (ΔE2000 3.22 at 1600×900, 1.64 and 5.49 at 1366×768). The raster
-  limitation of section "Raster pictures"; they pass since round 5 through the scaled-only key of ruling R125.
+  limitation of section "Raster pictures"; they pass since round 5 through the scaled-only key of decision D-125.
 - **Text ink at 10.67 px** (`stacked-text` value-12 at 1366×768, ΔE2000 5.49 against the small-text 4.5): the fractional
   size's ink scatter (section "Text ink at fractional sizes"; the measured maximum there was 4.29). It passes since round 5
-  through the scaled-only small-text key of ruling R126.
+  through the scaled-only small-text key of decision D-126.
 - **One letter-spaced box** (`letter-spacing` caps-label at 1366×768, Δw −1.30, and −0.996 at 1600×900): the box had UI
   Toolkit's own width there (150 px at 0.75, drawn ×0.711), not the text fit's. Seen in round 4's first run, again in round
   5's second and third full runs; what the trace found is in section "Edge-band evidence" ("Letter-spacing box"), the fix
-  (ruling R134) in section "Repeat items' text, the face that draws, what moves".
+  (decision D-134) in section "Repeat items' text, the face that draws, what moves".
 
 ## Text ink at 1366×768
 
@@ -329,7 +331,7 @@ stems shifts with a fractional text size and where the stems fall on the pixel g
 −31 to +8 from 12 to 12.8 px), the scatter the exact class allows for text of at most 12 device px (`text-ink.md` section 7:
 up to 4.5). The scaled class's body text is 12.8 px, above that size. These lines kept failing then; no limit changed.
 
-## Text ink at fractional sizes (ruling R115)
+## Text ink at fractional sizes (decision D-115)
 
 Measured on 7 fixtures and 5 components (`stacked-text`, `text-styles`, `text-row`, `text-spacing`, `letter-spacing`,
 `half-pixel-frame`, `controls`, card, list-row, button, tabs, text-field), the kit as it is and a kit copy with caption
@@ -477,7 +479,7 @@ fixed here: it is the main reason the scaled class fails (below). Text measuring
 UI Toolkit ceils a text's measured width to whole device pixels, so a row of text-sized buttons moves right by up to a
 pixel per button (3840×2160: +1.02 at the fourth).
 
-## Exact-class captures after the kit's raised text (ruling R114)
+## Exact-class captures after the kit's raised text (decision D-114)
 
 Raising caption and label to 20 px moved the fixtures' layout by whole device pixels and showed three differences the
 suite had passed by chance or not exercised; measured on the captures of round 3:
@@ -504,16 +506,16 @@ suite had passed by chance or not exercised; measured on the captures of round 3
   0.999, 8 below 0.984; the other nine samples of the same transition pass. UI Toolkit has no filtering for a translated
   element's straight edges. Left failing, for a decision.
 
-Both are anti-aliasing differences, which standard screenshot testing excludes; ruling R119 extends the edge-band rule to
+Both are anti-aliasing differences, which standard screenshot testing excludes; decision D-119 extends the edge-band rule to
 every viewport for exactly these two kinds (next section), and both pass.
 
-## Edge bands at every viewport (ruling R119)
+## Edge bands at every viewport (decision D-119)
 
 `ssimRoundEdge` (0.974) applies at every viewport, to two kinds of element and only with the same evidence as at a scaled
 viewport: its SSIM with the edge band masked meets `ssimElement` (0.99), its other checks pass, and its unmasked SSIM is at
 least 0.974.
 
-- **A round element without text** (a radio, an avatar ring, a dot): the band is the R109 one, every pixel within 1 device
+- **A round element without text** (a radio, an avatar ring, a dot): the band is the D-109 one, every pixel within 1 device
   px of a corner's outer curve or its border's inner curve, its own and its descendants'. The ring's colour is the
   evidence: the middle of each border side of 2 device px or more within `deltaE2000Ring` (3.1) at an exact viewport (the
   round-edge limit 5.5 at a scaled one); a thinner ring gives no evidence and keeps `ssimElement`.
@@ -522,9 +524,9 @@ least 0.974.
   edges, the box's four edges and its border's inner edges, each the pixels whose centre lies within 1 device px of that
   edge in the design **and** in Unity. An edge Unity draws a device pixel away from the design's is then outside the band.
   The ring's colour is not evidence in an animation sample (Chromium resamples the moving layer, so a border's centre pixel
-  blends; R117 already left animation samples out of the ring check); the middle of a moved straight border stays compared.
+  blends; D-117 already left animation samples out of the ring check); the middle of a moved straight border stays compared.
 
-Since round 5 every such relaxation also needs the pixel-level evidence of rulings R129 and R130, and the ring is judged at
+Since round 5 every such relaxation also needs the pixel-level evidence of decisions D-129 and D-130, and the ring is judged at
 3.1 at every viewport (section "Edge-band evidence").
 
 Measured on the suite's captures (provisional limit 0.97 to see every value):
@@ -547,12 +549,12 @@ masked); the same element in a static capture gets no moved-edge band. A round e
 curves, by at most SSIM 0.974 over its box, with its ring's colour within ΔE2000 3.1; an element in an animation sample whose
 pixels differ only within 1 device px of its curves and of its edges where both renderers put them, by at most 0.974.
 
-## Edge-band evidence (rulings R124 to R130)
+## Edge-band evidence (decisions D-124 to D-130)
 
 Round 5 (2026-11-15). Every edge-band relaxation needs its evidence at the level of pixels, a round element's ring has its
 width checked, a repeat's later items have boxes, and two residual kinds of the scaled class have their ruled keys.
 
-**Evidence (rulings R129, R130).** `ssimRoundEdge`, `ssimFractionalEdge`, `ssimVectorEdge` and the corner limits
+**Evidence (decisions D-129, D-130).** `ssimRoundEdge`, `ssimFractionalEdge`, `ssimVectorEdge` and the corner limits
 (`deltaE2000RoundEdge`, `deltaE2000FractionalEdge`) apply only when, besides their earlier conditions:
 
 - outside the band, every 8 px SSIM block of the element's region (each at its best offset of up to 1 px) meets
@@ -562,13 +564,13 @@ width checked, a repeat's later items have boxes, and two residual kinds of the 
   coverage step there), so 98 `keyframes` captures failed on ΔE2000 1.1–2.7 just past the 1 px band with nothing else
   differing; the windows that touch the band leave those pixels out;
 - every border the band masks (the element's own, its descendants', a repeat's later items'): its drawn width within 0.5
-  device px of the design's (R127's measure, below) and the centre pixel of each side of 2 device px or more within the
+  device px of the design's (D-127's measure, below) and the centre pixel of each side of 2 device px or more within the
   file's own `deltaE2000Ring` (3.1; the scaled block cannot change it, where a round element's ring was judged at 5.5
   before); a side under 2 device px gives no evidence. Where an animation sample moves the border's element the centre
   colour is not sampled: Chromium draws the moving element from its resampled layer, where a 2.13 device px border's centre
   pixel blends (ΔE2000 3.42–14.17 on three `transitions` samples at 1366×768 whose evidence otherwise holds); the static
   captures judge that border's colour, and the width and the windows count in the sample too (resampling keeps a border's
-  covered width). Since ruling R132 a sample moves only what an animation of geometry plays on (section "What moves in an
+  covered width). Since decision D-132 a sample moves only what an animation of geometry plays on (section "What moves in an
   animation sample"): every other element of a sample has its centre colour sampled as in a static capture;
 - the band reaches as far as the region's SSIM blocks: a moving edge's spill past its box lies in the region's last row of
   blocks (cut at the box, it left five `transitions` samples at 1366×768 with a block of 0.98993 outside the band).
@@ -582,7 +584,7 @@ windows match within 1 px, the width fails); the re-review's N4-3 box, its 2.13 
 outside the band reaches it; its centre fails); a corner sample of an element whose border is under 2 device px (no
 evidence: held to `deltaE2000`).
 
-**Ring width (ruling R127).** The drawn width of a border across the middle of each side of 2 device px or more and, on a
+**Ring width (decision D-127).** The drawn width of a border across the middle of each side of 2 device px or more and, on a
 round corner whose radius holds it, across its curve at 45°: along the normal every sample between the colour outside and
 the ring's counts as ring by its place on that segment, every sample between the ring's and the colour inside likewise (the
 ring's colour is the design's centre pixel, for both renderers, so a thinner ring in Unity counts as thinner). Exact to 0.01
@@ -591,40 +593,40 @@ without text fails in a static capture when the design's and Unity's widths diff
 Measured over the suite (11126 static element samples): largest difference 0.44 device px (a menu panel at 1280×720),
 nothing fails. The re-review's probe, an 80 and a 160 CSS px avatar whose ring Unity draws 3 CSS px wide instead of 4: both
 fail at 1920×1080, 2560×1440 and 3840×2160 (0.75, 1 and 1.5 device px thinner; before, the 160 px one passed at all three
-and the 80 px one at two). At 1280×720 the ring is 0.5 device px thinner, R127's own limit: the 160 px avatar passes there,
-as it did before ruling R119, and the 80 px one fails on its SSIM.
+and the 80 px one at two). At 1280×720 the ring is 0.5 device px thinner, D-127's own limit: the 160 px avatar passes there,
+as it did before decision D-119, and the 80 px one fails on its SSIM.
 
-**The width check's limit (ruling R135).** The check fails a ring whose drawn width differs by more than 0.5 device px
+**The width check's limit (decision D-135).** The check fails a ring whose drawn width differs by more than 0.5 device px
 ("> 0.5"), and it decides reliably from 0.75 device px. Below that the measure's own error decides: across a diagonal and at
 sub-pixel positions it reads up to 0.16 device px more on a thinner ring (a ring truly 0.5 device px thinner reads 0.498 to
 0.635 by where the grid falls on it, and a correct ring drawn with a harder ramp up to 0.506), so neither "> 0.5" nor
 "≥ 0.5" separates them. **A ring 1 CSS px thinner at 1280×720 (0.5 device px) can pass**: the re-review's 160 px avatar does
-at the grid position of the test (0.498). The red test of ruling R129 holds at every viewport where the thinning is 0.75
+at the grid position of the test (0.498). The red test of decision D-129 holds at every viewport where the thinning is 0.75
 device px or more (1920×1080, 2560×1440, 3840×2160); its 1280×720 case is this documented limit, not part of it.
 
-**Repeated items (ruling R124).** Both captures record the boxes of a repeat's later items (`items`: the IR id and the item
+**Repeated items (decision D-124).** Both captures record the boxes of a repeat's later items (`items`: the IR id and the item
 suffix the Unity capture names the copy with, `row#3`, `day#0#1`), and the band of straight edges between device pixels
 takes their edges. `controls` table at 1366×768: band-masked 0.98789 → 0.99432; `scroll-area` inbox at 1600×900: 0.98960
-→ 0.99339; the band confines both. They still fail (17 + 1 captures) on R129's evidence: an SSIM block outside the band of
+→ 0.99339; the band confines both. They still fail (17 + 1 captures) on D-129's evidence: an SSIM block outside the band of
 0.71900 (the table, block at 904, 312) and 0.51854 (the inbox, 576, 160), on the glyphs of a later row's text (12.8 and 12.5
 device px): the comparison masked the IR elements' own text, not their copies in later items, and at those fractional sizes
-the renderers' glyphs differ (section "Text ink at fractional sizes"; the crops show the same text). Ruling R133 gives the
+the renderers' glyphs differ (section "Text ink at fractional sizes"; the crops show the same text). Decision D-133 gives the
 copies' text the first item's treatment (section "Repeat items' text").
 
-**Resampled pictures (ruling R125).** Scaled only: an element that draws a raster picture at another size than its own may
+**Resampled pictures (decision D-125).** Scaled only: an element that draws a raster picture at another size than its own may
 meet `ssimResampledPicture` 0.95 when its other checks pass (measured lowest 0.95284, rounded down to 0.01: its own floor,
 below the general 0.97), and its colour samples `deltaE2000ResampledPicture` 5.89 (measured highest 5.49, plus 0.4). The
-pictures pass at every exact viewport of the same run; no cross-viewport check is built (ruling R130's reasoning: a defect
+pictures pass at every exact viewport of the same run; no cross-viewport check is built (decision D-130's reasoning: a defect
 that shows at an exact viewport fails there in the same run). Round 5 admits 6 picture elements in 2 captures (SSIM
 0.95284–0.97986) and 3 colour samples (ΔE2000 1.64–5.49).
 
-**Small text (ruling R126).** Scaled only: text of at most 12.99 device px takes the ink colour limit 5.89
+**Small text (decision D-126).** Scaled only: text of at most 12.99 device px takes the ink colour limit 5.89
 (`scaled.textInkDeltaEFirstSmall`): measured over the suite's 10746 element samples of such text at the scaled viewports
 (12.5 device px at 1600×900, 12.8 and 10.67 at 1366×768) the highest is 5.49 (`stacked-text` value-12 at 1366×768), then
 4.29 and 3.80; under the ruling's 6.5 cap. Every such text passes at every exact viewport. Round 5 admits one line above the
 earlier 4.5 (ΔE2000 5.49).
 
-**Letter-spacing box (ruling R128).** Seen in round 4's first run and in two of round 5's three full runs (caps-label
+**Letter-spacing box (decision D-128).** Seen in round 4's first run and in two of round 5's three full runs (caps-label
 Δw −1.30 at 1366×768 and −0.996 at 1600×900: UI Toolkit's own width, 200 design px, at both scaled viewports), in none of 7
 runs of the fixture alone (5 on the warm copy, 2 on a fresh one), each with the fit's width (Δw +0.122 and −0.163). A
 fourth full run traced every text-fit update of the label (a temporary trace, not committed) and failed the same way: all
@@ -636,14 +638,14 @@ Toolkit's own width at every viewport. At the exact viewports that width equals 
 202.438). Which face lacks which character, and why only in some full runs (the fixture alone never), is not found: the twins'
 characters are added at runtime and the run deletes the fonts at its end, so the next step is a trace that names the missing
 characters per face. A guard against a stale geometry report, written first for another explanation, did not change the
-outcome in the following run and was reverted. Ruling R134 fixes the fit's side of it (next section).
+outcome in the following run and was reverted. Decision D-134 fixes the fit's side of it (next section).
 
-## Repeat items' text, the face that draws, what moves (rulings R132 to R136)
+## Repeat items' text, the face that draws, what moves (decisions D-132 to D-136)
 
-Task 35 (2026-11-15) closes what round 5 left open. The width check's limit (ruling R135) is in section "Edge-band
+Task 35 (2026-11-15) closes what round 5 left open. The width check's limit (decision D-135) is in section "Edge-band
 evidence" ("The width check's limit").
 
-**What moves in an animation sample (ruling R132).** An element counts as moving in an animation sample only when a running
+**What moves in an animation sample (decision D-132).** An element counts as moving in an animation sample only when a running
 animation on it or an ancestor changes geometry: the IR's animated properties include the transform or one of its parts
 (`translate`, `rotate`, `scale`, `transform-origin`), a position (`left`, `top`, `right`, `bottom`, `inset`), a size (`width`,
 `height` and their limits, `flex-basis`, `flex-grow`, `flex-shrink`) or a box-model length (margins, paddings, border widths,
@@ -653,10 +655,10 @@ the static-only ring and border-centre checks are for. Every other element of a 
 colour and width and, for an edge-band relaxation, its borders' centre colour. Before, every element a running animation
 played on counted as moving, so a colour-only animation gave it the moved-edge band and skipped the centre colour: the
 re-review's 2.13 device px box at 1366×768 with its border ΔE2000 10 to 19 off passed in a sample. It now fails on its
-centre there; with an animation of its geometry it keeps the centre colour to the static captures (`compare.test.ts`, R130
-and R132; `captureContext` in "IR context").
+centre there; with an animation of its geometry it keeps the centre colour to the static captures (`compare.test.ts`, D-130
+and D-132; `captureContext` in "IR context").
 
-**Repeat items' text (ruling R133).** A later repeat item's copy of a text is recorded, masked and checked as the IR
+**Repeat items' text (decision D-133).** A later repeat item's copy of a text is recorded, masked and checked as the IR
 element's text:
 
 - both captures write each copy's `text` and its own `lines` in boxes `items` (schema, `contracts/boxes-sample.json`): the
@@ -674,7 +676,7 @@ element's text:
 - an edge-band relaxation that fails names every condition that does not hold (a block, a window, a border's colour
   evidence, its centre, its width), not only the first.
 
-Red tests (`compare.test.ts`, "R133"): the three-row table at 1366×768 of round 5 with a 10.67 device px text in each row,
+Red tests (`compare.test.ts`, "D-133"): the three-row table at 1366×768 of round 5 with a 10.67 device px text in each row,
 whose glyphs the renderers draw differently, passes with its dividers confined and each row's text checked (`name`,
 `name#1`, `name#2` with their ink); a later row's text in another colour fails its ink check (on 15fa093 nothing checked it:
 the capture failed only on the table's SSIM, with the right colour too); a copy on two lines or missing in Unity fails as an IR
@@ -687,7 +689,7 @@ rows' text masked the `controls` table's element SSIM at 1366×768 is 0.99195 an
 glyphs sit is within 0.45 device px everywhere (`controls` count#6 at 1600×900), its ink amount 0.75 to 1.17 of the design's.
 
 What the copies' checks found at first, 120 captures of `repeat-items`, each a text of one glyph whose only stroke is thinner
-than two device pixels, on a baseline the design puts between two device pixels (ruling R138 judges them since, next section):
+than two device pixels, on a baseline the design puts between two device pixels (decision D-138 judges them since, next section):
 
 | Viewport | Copy (its text) | Captures | Ink colour ΔE2000 (limit) | Ink amount (band) |
 |---|---|---|---|---|
@@ -711,12 +713,12 @@ at most 0.81 over every copy there) and at 1600×900 (at most 3.69); the IR elem
 (`day-number#6#1`, limit 4.5) and 4.96 at 1366×768 (limit 5.89). The exact class's small-text limit 4.5 was measured on the
 IR elements' text, which has no such glyph; no limit was changed for them.
 
-**Hairline lines (rulings R138, R141).** On a text line whose design has no fully covered pixels the ink's lightness and
+**Hairline lines (decisions D-138, D-141).** On a text line whose design has no fully covered pixels the ink's lightness and
 amount measure how the stroke falls on the pixel grid, not the text's colour, and the renderers put a stroke between two
 device pixels differently. Such a line is judged by its ink's colour direction from the background instead (pixelmatch and
 Playwright do not colour-judge anti-aliased pixels either):
 
-- **Which text can be one (ruling R141, fix round 3).** Text of at most 12 device px (`HAIRLINE_MAX_PX`; the suite's
+- **Which text can be one (decision D-141, fix round 3).** Text of at most 12 device px (`HAIRLINE_MAX_PX`; the suite's
   hairline lines are 10 and 10.67), drawn at opacity 1 (its own times its ancestors', an animation sample's running
   value included) in the colour the capture recorded for it, all of the line in it, and with nothing painted after it
   over its line (after it in the compiler's paint order, which both renderers follow: fix round 4). The golden records
@@ -729,13 +731,13 @@ Playwright do not colour-judge anti-aliased pixels either):
   and a later text's text shadow counts too (fix round 4, N-8). A later item of a repeat paints after an earlier one;
   inside an item the compiler's sibling order holds (lint/paint-order.ts, the rule the compiler and lint share: an
   absolute scrim written before the caption it covers paints after it, in CSS and in UI Toolkit; fix round 4, N-9).
-  Without a paint order no line is a hairline line. R138's first rule took the colour from the IR's static style and had
+  Without a paint order no line is a hairline line. D-138's first rule took the colour from the IR's static style and had
   no size, opacity or cover bound: any text whose design ink sat on that colour's ray nearer the background counted, and
   the fix round 1 re-review's probes passed at 16 px with Unity wrong: a label sampled mid-fade (design at opacity 0.6,
   Unity 0.8 or missing glyphs), text under a 30 % veil (Unity at 0.7 or missing glyphs), a muted copy drawn lighter or
-  missing glyphs. They fail now, and so do their 10 px versions (`compare.test.ts`, "R141"). The fix round 2 re-review
+  missing glyphs. They fail now, and so do their 10 px versions (`compare.test.ts`, "D-141"). The fix round 2 re-review
   found three more ways in: a later element's outer shadow (the kit's are black at up to 0.4, which dims a line along
-  nearly its colour's ray from surfaces 900 and 800; R141 took later elements' boxes only), another repeat item's copy
+  nearly its colour's ray from surfaces 900 and 800; D-141 took later elements' boxes only), another repeat item's copy
   over the line (only the same item's copies counted), and a rich span (`<p class="secondary"><span class="muted">…`: on
   surface-700 the muted run lies 1.37° off the secondary ray at 0.72 of its contrast). With Unity at 0.7 or two middle
   glyphs missing, 40 of 54 kit shadow cases (surfaces 900, 800, 700; primary, secondary, muted text; shadow 0.15, 0.25,
@@ -766,8 +768,8 @@ Playwright do not colour-judge anti-aliased pixels either):
   there: the sum of `p − b` over the line's ink pixels on each side, and the angle between the two.
 - **The limit** `textInkDirection` 0.66° (fidelity-thresholds.json): the suite's 180 hairline lines reach 0.26° (`row-time#2`
   at 1280×720), plus 0.4. A dash in the accent colour (#16c2d5) instead of the secondary text colour (#b9d0d6) is 38.0° off, in
-  the warning colour (#f2b544) 35.6°; the correct dash drawn over other pixel rows 0.11° (`compare.test.ts`, "R138").
-- **Its ink amount** (ruling R141): Unity's ink against the design's, both as each pixel's distance from the background
+  the warning colour (#f2b544) 35.6°; the correct dash drawn over other pixel rows 0.11° (`compare.test.ts`, "D-138").
+- **Its ink amount** (decision D-141): Unity's ink against the design's, both as each pixel's distance from the background
   summed over the line (so a stroke drawn faint everywhere is little ink), within 0.5 to 2 times (`HAIRLINE_INK_BAND`; the
   suite's 180 hairline lines measure 0.86 to 1.01 that way, 0.69 to 1.17 by the usual coverage ratio). A dash Unity draws
   at 12 % of one row (0.09 of the design's ink) fails.
@@ -780,43 +782,43 @@ Playwright do not colour-judge anti-aliased pixels either):
   900 to 700 fail; secondary against muted on surface-600 (0.29–0.33°) and primary against secondary on surface-500
   (0.81–0.89°, near the suite's 0.26° scatter) do not, or not reliably. The angle is that of the two colours seen from the
   background, so it depends on the surface's tint, not on how different the colours look.
-- **At scaled viewports (rulings R152, R155 and R158, Task 37 fix rounds 2 to 4).** The root scale lays text boxes at
+- **At scaled viewports (decisions D-152, D-155 and D-158, Task 37 fix rounds 2 to 4).** The root scale lays text boxes at
   fractional device pixels, where Chromium still draws a one-pixel stroke on whole pixels: a pilot screen's 12.5 px status
   of two one-stroke digits around a dash at 1600×900, its stems one column at 0.97 of the colour in the design, two at
   0.54 + 0.54 and 0.46 + 0.62 in Unity (the box 0.42 px right and down), the dash one row against 0.22 + 0.73: ink colour
-  ΔE2000 8.07 against R126's 5.89 (135 captures), a time cell's dash 6.13 (5). There the size bound is R126's domain, text
+  ΔE2000 8.07 against D-126's 5.89 (135 captures), a time cell's dash 6.13 (5). There the size bound is D-126's domain, text
   below 13 device px (`SCALED_HAIRLINE_BELOW_PX`), and the line is a hairline line when either render shows it as one
   (fewer than 3 fully covered pixels, in the text colour's direction, a most covered pixel of at least half of it), with
-  R141's other conditions unchanged (opacity 1, nothing painted over it, the copy's own colour, no span of another colour)
-  and R126's scale-only evidence: the same text (element or copy, by its key) judged and passing its ink checks at every
+  D-141's other conditions unchanged (opacity 1, nothing painted over it, the copy's own colour, no span of another colour)
+  and D-126's scale-only evidence: the same text (element or copy, by its key) judged and passing its ink checks at every
   exact viewport of the run in the same state, by its ink colour (ΔE2000) at one of them at least; a text covered, clipped
   or without ink at an exact viewport gives no evidence (re-review N7). `compareScreen` compares the exact viewports first
   and hands each scaled capture that evidence (`CaptureContext.scaleOnly`); without it (a run without exact viewports, a
   text that fails or is not judged at one, a lone `compareCapture`) the usual checks stay. The code checks no stroke
   structure: Unity's own dimming also leaves no fully covered pixel (twelve stems at 0.8 to 0.6 of the colour passed by
   direction at fix round 2, re-review N1). So when only Unity's render qualifies (the design's has fully covered pixels),
-  Unity's ink summed against the text colour (R141's measure: each ink pixel's luma distance from the background) must be
-  at least 0.84 of the design's (`SCALED_HAIRLINE_INK_FLOOR`; rulings R155 and R158): dimming removes ink in proportion
-  (the dimmed stems keep 0.80, 0.70 and 0.60 of it), a split keeps most of it. Fix round 3 asked for all of it (R155 as
+  Unity's ink summed against the text colour (D-141's measure: each ink pixel's luma distance from the background) must be
+  at least 0.84 of the design's (`SCALED_HAIRLINE_INK_FLOOR`; decisions D-155 and D-158): dimming removes ink in proportion
+  (the dimmed stems keep 0.80, 0.70 and 0.60 of it), a split keeps most of it. Fix round 3 asked for all of it (D-155 as
   first ruled: a split keeps or adds ink), but correct renders lose some on this sum: the suite's 180 hairline lines
-  measure 0.86–1.01, the pilot's two split lines 0.983 and 0.993, a split built from their pixels 0.959. R158's floor is
-  the suite's lowest minus 0.02 (ruling R149's amount convention), not taken from the pilot's lines; with it they pass by
+  measure 0.86–1.01, the pilot's two split lines 0.983 and 0.993, a split built from their pixels 0.959. D-158's floor is
+  the suite's lowest minus 0.02 (decision D-149's amount convention), not taken from the pilot's lines; with it they pass by
   direction again (fix round 3 reported them in 135 captures at 1600×900). (The coverage ratio,
   which each render scales by its own most inked tenth, 1.22 and 1.18 for the pilot's lines, does not see dimming: 1.000
   for the stems at 0.6.) Exact viewports keep 12 device px and the design's render. Not caught: a lightness-only error at a
   scaled viewport alone on a line the design's render qualifies, or one that leaves Unity at least 0.84 of the design's
-  summed ink (a dimming by up to 16 %, a split that adds ink). Red tests (`compare.test.ts`, "R152", "R155, R158",
-  "R158"): a split that keeps the ink passes with the evidence and fails without it or at an exact viewport; the accent
-  and warning hues fail; text of 13 and 16 px keeps the usual checks with either split; the three 16 px probes of R141
+  summed ink (a dimming by up to 16 %, a split that adds ink). Red tests (`compare.test.ts`, "D-152", "D-155, D-158",
+  "D-158"): a split that keeps the ink passes with the evidence and fails without it or at an exact viewport; the accent
+  and warning hues fail; text of 13 and 16 px keeps the usual checks with either split; the three 16 px probes of D-141
   still fail at a scaled viewport; the dimmed stems fail; the pilot's own pixels (0.959 of the ink) pass, as does that
   split scaled to 0.86, and at 0.82 it fails; a screen whose exact viewport draws the text in another hue, or shows it
   without ink, gives its scaled capture no evidence, whatever the matrix's order.
 
-Red tests (`compare.test.ts`, "R138"): the correct dash drawn by Unity over other pixel rows passes (it failed on ink colour
+Red tests (`compare.test.ts`, "D-138"): the correct dash drawn by Unity over other pixel rows passes (it failed on ink colour
 and a 0.70× ink amount before); a dash in the accent or the warning colour fails on its direction; a normal line of fully
 covered stems in a lighter colour fails its ink colour; without the recorded colour nothing is recognised.
 
-**The text fit's face (ruling R134).** The fit measures a text only when its characters are present, because a measure that
+**The text fit's face (decision D-134).** The fit measures a text only when its characters are present, because a measure that
 adds glyphs to a dynamic font queues its atlas update outside the panel's repaint and brings the new glyphs' kerning pairs
 only later. It asked that of the font and every face of its weight table (`DesignText.AllPresent`), but UI Toolkit draws a
 style with one face (`-unity-font-style` picks the 400 and 700 faces, upright and italic), and only that face gains a text's
@@ -848,24 +850,24 @@ compiler's path). In a test order where the shared tab twin's glyphs arrive whil
 measured that text before its kerning pairs (Vazgeç 88.00 panel px; 86.01 kerned): the tight-row test passed there only
 because the fit's widths were unkerned; it now uses a twin of its own.
 
-**Text changes after the first layout (ruling R136).** An in-game pilot switched a screen's language from Turkish to Arabic
+**Text changes after the first layout (decision D-136).** An in-game pilot switched a screen's language from Turkish to Arabic
 while it was open, and 20 to 23 of its 32 text-sized labels kept their Turkish widths for 15 s and more (a month title 250 px
 for 169 px of Arabic text, a status chip 80 px for 106 px, its text spilling out). The fit measured again on a change event,
 a style change (the locale's font) and a geometry change only. A text written without a change event (UI Toolkit's data
 binding, a list rebinding an item, `SetValueWithoutNotify`) under the label's explicit width changes none of them: the label
 keeps the earlier text's width. Measured (`TextFitTests.AText_ChangedAfterItsFirstLayout_IsMeasuredAgain_HoweverItIsWritten`,
-with 15fa093's fit and with R134's): a `text` write follows to the new width (it sends a change event), a write without one
+with 15fa093's fit and with D-134's): a `text` write follows to the new width (it sends a change event), a write without one
 stays at the first text's 518 px for "Geri" (49 px). The fit now also looks at every repaint of the label (a text written in
 any way repaints it, and so does a font change): when its text, font or style is not the one it last measured, it measures
 again at the panel's next update. A repaint of the same text measures nothing (the test repaints it on ten frames), so there
 is no per-frame measure. The second case, a locale switch through the String Table binding and the locale controller (the
 title's text and font in one frame, Turkish to a German text three times as long and back:
 `LocalizedScreenTests.ATextSizedTitle_FollowsALocaleSwitch_ToItsNewTextsWidth`), follows on 15fa093 already in the Editor
-test: the binding there writes through `text`, which sends the event; it stays as a regression guard of that path, not R136's
+test: the binding there writes through `text`, which sends the event; it stays as a regression guard of that path, not D-136's
 red test. The pilot's write path is not reproduced in Edit mode;
 whatever it is, the label repaints with the new text, which the repaint check covers.
 
-**The advanced generator's text (fix round 3, R136-ar).** On 851cf10 the pilot switched an open calendar from Turkish to
+**The advanced generator's text (fix round 3, D-136-ar).** On 851cf10 the pilot switched an open calendar from Turkish to
 Arabic again: 18 to 21 of its 32 text-sized labels kept their Turkish widths, while Latin switches (Turkish to German and
 back, Arabic to Turkish) left none. The fit did measure again (its count rose by 2), but the width it applied was the text
 handle's `MeasuredWidth`, still the Turkish one (249.75 and 79.2 panel px), where UI Toolkit's own measure gave the Arabic
@@ -892,7 +894,7 @@ while its face's new glyphs still waited for their kerning pairs in TextCore's u
 them that frame: 8 glyphs waiting when its text was set) kept that width, 262.23 panel px
 (`TextFitTests.ALabelMeasuredBeforeItsFacesKerningPairsArrive_IsMeasuredAgainWithThem`). Fix round 1 measured again after the
 next draw while the queue held the face's glyphs, at most four times; in one full Unity suite run the queue ran only after
-those four (when another label's text was generated) and the R134 test's bold label kept 295 against 287 panel px. Since
+those four (when another label's text was generated) and the D-134 test's bold label kept 295 against 287 panel px. Since
 fix round 2 the fit gives the face all its glyphs' kerning pairs itself before it measures whenever TextCore's newly added
 list holds glyphs (`DesignText.CompleteFeatures` and `ClearPairFlags`, the compiler's path), so the measure is kerned at
 once and nothing polls; the pairs are then the complete ones (248.54, where TextCore's queue alone gives a new glyph's pairs
@@ -919,7 +921,7 @@ word-spacing with the text and font it last measured, and the repaint compares t
 compares cached values only, and the measure (already keyed on them) runs only after a change. No
 CustomStyleResolvedEvent reached the label in the test.
 
-**Rebuilt twins' lookup (ruling R139).** The generator rebuilds a twin in place (a line-box variant with glyphs of its own,
+**Rebuilt twins' lookup (decision D-139).** The generator rebuilds a twin in place (a line-box variant with glyphs of its own,
 a twin whose source font or atlas settings changed) by copying a fresh asset's serialized fields over it. That replaces the
 character table but not TextCore's lookup built from it, which no save writes: the rebuilt font still looked up the
 characters it had lost, and `DesignText.Prepare`, which trusts the lookup, added none of them again. Measured
@@ -932,9 +934,9 @@ prepares text, so only a rebuilt plain twin (its source or atlas settings change
 import's prepare, and its screens' new characters reached it only when UI Toolkit drew them. The public
 `FontTwinGenerator.GetOrCreateTwin` without a run's link (the tight-row test's shared twin: 0 characters, a lookup of 199 to
 228) is the same state. It is not the letter-spacing flake's root: that label's font lacked a character in its lookup
-(`AllPresent` false), where a stale lookup holds extra ones; ruling R134's fix is that one.
+(`AllPresent` false), where a stale lookup holds extra ones; decision D-134's fix is that one.
 
-Suite: in each of five full runs (three with ruling R134's fit, one with R136's too, one with every change of the task) the
+Suite: in each of five full runs (three with decision D-134's fit, one with D-136's too, one with every change of the task) the
 `letter-spacing` caps label has the fit's width at all six viewports (Δw 0, −0.094, 0 and −0.188 device px at 2560×1440, 1920×1080, 1280×720 and 3840×2160,
 −0.163 at 1600×900 and +0.122 at 1366×768: the widths of round 5's passing run), where it had UI Toolkit's own in 2 of round
 5's 3 runs.
@@ -951,7 +953,7 @@ identical to this round's in every capture, row and issue: neither change alters
 letter-spaced caps label has the fit's width at all six viewports (Δw within 0.19 device px).
 
 **Task 35 (2026-11-15).** `scripts/fidelity.sh`, 22 fixtures and 9 components (4728 captures, 2400 of them
-animation samples), the final run on every change of Task 35 (rulings R131 to R141 and its fix rounds 1 to 3), 14 min 9 s
+animation samples), the final run on every change of Task 35 (decisions D-131 to D-141 and its fix rounds 1 to 3), 14 min 9 s
 (setup 15 s, exports 198 s, import 32 s, capture 205 s, comparisons 381 s, cleanup 15 s; the comparisons take about 17 s
 more than round 5's with the 30924 copies' texts checked; fix round 2's run took 15 min 10 s while the pilot's Unity window
 ran on the same machine): **4728 PASS, 0 FAIL**, nothing incomplete; animation samples 2400 / 0.
@@ -965,10 +967,10 @@ ran on the same machine): **4728 PASS, 0 FAIL**, nothing incomplete; animation s
 | 1600×900 | scaled | 788 | 0 |
 | 1366×768 | scaled | 788 | 0 |
 
-Before ruling R138 four full runs gave 4608 / 120 each (the hairline copies of `repeat-items`, 60 at 1280×720 and 60 at
+Before decision D-138 four full runs gave 4608 / 120 each (the hairline copies of `repeat-items`, 60 at 1280×720 and 60 at
 1366×768; section "Repeat items' text, the face that draws, what moves"); the 18 divider captures of round 5 and the
 letter-spaced label passed in all of them and pass here. What the keys admit in this run (the same elements and values as
-fix rounds 1 and 2's runs): the hairline path (rulings R138, R141, fix round 3) 180 lines (`row-time#2` at 1280×720 and 1366×768, `day-number#1`
+fix rounds 1 and 2's runs): the hairline path (decisions D-138, D-141, fix round 3) 180 lines (`row-time#2` at 1280×720 and 1366×768, `day-number#1`
 at 1366×768: 10 and 10.67 device px, opacity 1, all in their recorded colour, nothing painted later over them), colour
 direction at most 0.26° against 0.66°, ink amount 0.86–1.01 against 0.5–2 (fix round 2's run); `ssimRoundEdge` 17 elements at 1280×720 (lowest 0.98088) and 148 at the scaled viewports (lowest 0.97664);
 `ssimFractionalEdge` 4 (lowest 0.9735); `ssimVectorEdge` 10 (lowest 0.97875); the corner limits 20 samples at the scaled
@@ -977,7 +979,7 @@ colour samples (highest 5.49); the scaled small-text ink limit one line above 4.
 `ssimRotated` 19 elements at exact viewports (lowest 0.97792) and 46 at scaled ones (lowest 0.98433); `ssimElementSmall` 212
 and 894 (lowest 0.98509 and 0.98413), `ssimPicture` 2 (0.98866). Every admitted edge-band relaxation's evidence: lowest block
 outside its band 0.99428, largest 3×3 window ΔE2000 0.854, largest border centre ΔE2000 1.10, largest border width difference
-0.26 device px. Ruling R132's static checks in animation samples: 71940 element rows with a ring check of elements no
+0.26 device px. Decision D-132's static checks in animation samples: 71940 element rows with a ring check of elements no
 animation of geometry moves (ring colour ΔE2000 0 at most, ring width within 0.31 device px), 1320 of moving elements left
 to the static captures; static captures' rings at most 2.67. No box, baseline or line-extent check fails; the copies'
 glyphs sit within 0.45 device px of the design's; the letter-spaced label has the fit's width at all six viewports.
@@ -1012,7 +1014,7 @@ animation samples), 13 min 4 s (setup 18 s, exports 186 s, import 27 s, capture 
 | 3840×2160 | exact | 788 | 0 | |
 | 2560×1440 | exact | 788 | 0 | |
 | 1920×1080 | exact | 788 | 0 | |
-| 1280×720 | exact | 788 | 0 | (the radio and the transition sample pass through the edge band, ruling R119) |
+| 1280×720 | exact | 788 | 0 | (the radio and the transition sample pass through the edge band, decision D-119) |
 | 1600×900 | scaled | 786 | 2 | `background-images` (a picture drawn scaled: SSIM below the floor, a resampled edge's colour), `scroll-area` (repeated items' dividers) |
 | 1366×768 | scaled | 769 | 19 | 17 `controls` (repeated table rows' dividers), `background-images`, `stacked-text` (10.67 px ink, ΔE2000 5.49 against 4.5) |
 
@@ -1104,11 +1106,11 @@ ones; every other count is the table's (3840×2160 698/89, 2560×1440 and 1920×
 No scaled-class limit was recorded in `fidelity-thresholds.json`: the colour and SSIM differences at 1600×900 come with
 geometry failures that need a ruling first, and geometry limits stay ±1 device px.
 
-## Ellipsis point: one grapheme at the scaled viewports (ruling R146)
+## Ellipsis point: one grapheme at the scaled viewports (decision D-146)
 
 A pilot's verify at 1600×900 and 1366×768: ellipsized titles kept one grapheme more or fewer in Unity than in the design,
 the line's ink end +2.5 to +10.6 device px from the design's, each one grapheme's advance; at the exact viewports they
-matched. G8 is closed by R146 (it replaces R144, whose runtime cut was reverted: a TwoWay binding could write the cut back
+matched. G8 is closed by D-146 (it replaces D-144, whose runtime cut was reverted: a TwoWay binding could write the cut back
 to its source, a same-text rewrite lost it, shrinking titles were never cut, and it still differed from Chromium at the
 cut).
 
@@ -1124,7 +1126,7 @@ cut).
   generator at the layout scale and draws scaled; within about an advance of the threshold it keeps one grapheme more or
   fewer. Its elision point is not readable from code (`elidedText` stays empty), so the comparison allows the measured
   difference instead.
-- **R146, the comparison** (`ellipsisGraphemes`, scaled block 1, exact class 0; compare.ts `ELLIPSIS_SHAPE`,
+- **D-146, the comparison** (`ellipsisGraphemes`, scaled block 1, exact class 0; compare.ts `ELLIPSIS_SHAPE`,
   `ELLIPSIS_AMOUNT`): the golden capture records a cut line's `ellipsis` (the kept prefix's in-line end, the advances of
   the last kept and the first dropped grapheme, the ellipsis's width; capture.test.ts checks that the design's ink ends
   within the ellipsis's advance after it for the kerned, spaced and narrow cases). At a scaled viewport a line whose start
@@ -1141,8 +1143,8 @@ cut).
   and one 3840×2160 capture failed by 1.15 px. The import adds U+2026 to the twins of every screen with an ellipsized text
   (`ScreenCompilerTests.ScreenStrings_HoldTheEllipsis_WhenATextEndsInOne`); the dots then match the design's at all six
   viewports.
-- **R147, the glyph at every viewport**: a wrong ellipsis glyph is a visible defect at any size, so the glyph check of
-  R146 (shape error at most 0.45, ink amount 0.8–1.6) applies at the exact viewports too; a line that fails it is an `ink`
+- **D-147, the glyph at every viewport**: a wrong ellipsis glyph is a visible defect at any size, so the glyph check of
+  D-146 (shape error at most 0.45, ink amount 0.8–1.6) applies at the exact viewports too; a line that fails it is an `ink`
   issue ("does not end in the design's ellipsis"). Measured on crops of the text-spacing capture (`r147-*` in the
   compare fixtures, the ellipsis matched on its own columns since Task 37): the dots 0.06–0.32 and 1.08–1.26 at the exact
   viewports, 0.22–0.34 and 1.18–1.31 at the scaled ones (0.06–0.34 in all), so one band serves both classes; the curve
@@ -1174,7 +1176,7 @@ cut).
 A pilot screen's calendar cards (a 20/24 regular title after a bold time, ellipsized in a 48 px card; a status chip),
 verified at the six viewports with the captures kept (`design_ui_verify { keepCaptures: true }`) and compared again offline.
 
-- **The goldens had no ellipsis record.** The screen's export came from an extractor before rulings R146 and R147 and was
+- **The goldens had no ellipsis record.** The screen's export came from an extractor before decisions D-146 and D-147 and was
   reused (the extraction revision had stayed at 2): no line had a record, so neither the glyph check nor the allowance ran.
   The extraction revision is 3 and the tool hash covers the boxes schema; the next import exported it again.
 - **Rows at fractional baselines.** With the records, every ellipsized title failed the glyph check at every viewport
@@ -1185,7 +1187,7 @@ verified at the six viewports with the captures kept (`design_ui_verify { keepCa
   at 1600×900), the alignment window reached 4 px into the prefix, whose last glyph Unity draws at the same place: the
   dots were placed 0.7 px off (shift 2.57 against their 3.3) and their shape failed (1.04). The ellipsis is matched on
   its own columns now (0.51 for that title).
-- **R146's allowance takes exactly the one-grapheme cuts.** Over every scaled capture (5218 ellipsized lines), Unity kept
+- **D-146's allowance takes exactly the one-grapheme cuts.** Over every scaled capture (5218 ellipsized lines), Unity kept
   one grapheme more in 1287 (a cut shift of +2.65 to +9.76 device px, each within the design's next grapheme's advance
   plus 1 px), never one fewer and never two (0 outside the bound).
 - **The glyph check below 16 device px.** Correct dots (the twins hold U+2026; pixel dumps show the three dots on both
@@ -1203,18 +1205,18 @@ verified at the six viewports with the captures kept (`design_ui_verify { keepCa
 
   The suite's wrong glyph (the curve, 12 to 36 px) measures shape 0.95–1.67, rows 0.50–0.95, amount 1.54–3.16: below
   16 device px the bands of the correct dots and of the wrong glyph overlap on every measure, so no limit separates them
-  there, and R147's limits (0.45, 0.4) fail the correct dots. As R147 says, these fail and are reported: on the pilot
+  there, and D-147's limits (0.45, 0.4) fail the correct dots. As D-147 says, these fail and are reported: on the pilot
   screen they are most of the failures at 1920, 1600, 1366 and 1280 (2 of 3 ellipsized titles and status chips there),
-  and at the scaled viewports they withhold R146's allowance from 1152 of its 1287 cuts (only lines whose glyph check
+  and at the scaled viewports they withhold D-146's allowance from 1152 of its 1287 cuts (only lines whose glyph check
   passes get it). A wrong glyph at those sizes needs another measure (for example three separate ink blobs at the
   design's dot pitch); that is a decision for a ruling, not a limit change.
-- **Ruling R148: the dots below 16 device px.** Below 16 device px the ellipsis is now judged by its dots: Unity's ink
+- **Decision D-148: the dots below 16 device px.** Below 16 device px the ellipsis is now judged by its dots: Unity's ink
   after the prefix resolves into three peaks at the design's dot pitch (within 0.75 px) whose vertical ink centre lies
   within 1 px of the design's against each baseline; a line whose design dots do not resolve into three is not judged and
-  is counted (`ellipsisNotJudged`, named in the report). From 16 px on R147's profile check is unchanged. On the pilot
+  is counted (`ellipsisNotJudged`, named in the report). From 16 px on D-147's profile check is unchanged. On the pilot
   screen's kept captures (every ellipsized line of 1920×1080, 1600×900, 1366×768 and 1280×720, 2483 a viewport once the
   nested copies of review finding 1 are judged) both sides resolve into three on every line, at most 0.50 px off the pitch
   and 0.70 px off centre, none not judged. Tests with crops of correct dots at 10, 10.67, 12.5 and 15 device px pass; the
-  suite's curve at 12 to 15 px and dots a row higher fail. R146's allowance applies where the dots pass, so at the scaled
+  suite's curve at 12 to 15 px and dots a row higher fail. D-146's allowance applies where the dots pass, so at the scaled
   viewports it reaches the one-grapheme cuts it was withheld from. The screen's verify, compared again offline: no ellipsis
   check fails at any viewport since fix round 2 (`docs/findings/text-ink.md` section 11 for the text ink).

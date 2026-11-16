@@ -626,21 +626,21 @@ this section are in `docs/findings/animation.md`.
     between device pixels: those edges' band, the pixels within 1 device px of the edge in the design and in Unity, added),
     `ssimVectorEdge` 0.975 (a vector picture: the band of its drawn edges in the design, at least half its region left
     compared) and `deltaE2000FractionalEdge` 5.3 (a corner sample reaching such straight edges, its pixels outside them and
-    the round-edge band matching). At every viewport (ruling R119) `ssimRoundEdge` 0.974 also applies to a round element
+    the round-edge band matching). At every viewport (decision D-119) `ssimRoundEdge` 0.974 also applies to a round element
     without text (evidence: the ring's colour within `deltaE2000Ring` at an exact viewport) and, in an animation sample, to
     an element moved to a fractional device offset (its moved straight edges' band added; the ring's colour is not
-    evidence there). Every such relaxation needs evidence at the level of pixels (rulings R129, R130): outside its band
+    evidence there). Every such relaxation needs evidence at the level of pixels (decisions D-129, D-130): outside its band
     every 8 px SSIM block meets `ssimElement` and every 3×3 window is within `deltaE2000` of Unity's closest within 1 px,
     and every border the band masks (the element's, a descendant's, a repeat's later item's, rectangular ones too) keeps
     the design's drawn width within 0.5 device px and, in static captures, its centre colour within `deltaE2000Ring` (the
     file's own; a side under 2 device px gives no evidence). A round element without text also fails a static capture
-    whose ring is drawn more than 0.5 device px wider or thinner (ruling R127). The boxes' `items` (both sides) hold the
-    boxes of a repeat's later items, whose straight edges the band takes (ruling R124). Scaled-only measured keys for
+    whose ring is drawn more than 0.5 device px wider or thinner (decision D-127). The boxes' `items` (both sides) hold the
+    boxes of a repeat's later items, whose straight edges the band takes (decision D-124). Scaled-only measured keys for
     resampling and small text: `ssimResampledPicture` 0.95 and `deltaE2000ResampledPicture` 5.89 for a raster picture
-    drawn at another size than its own (ruling R125), and `textInkDeltaEFirstSmall` 5.89 for text under 13 device px
-    (ruling R126, at most 6.5), and `ellipsisGraphemes` 1 (ruling R146): a line the design cuts with an ellipsis may keep
+    drawn at another size than its own (decision D-125), and `textInkDeltaEFirstSmall` 5.89 for text under 13 device px
+    (decision D-126, at most 6.5), and `ellipsisGraphemes` 1 (decision D-146): a line the design cuts with an ellipsis may keep
     one grapheme more or fewer in Unity, its end within that grapheme's advance plus `boxPx`, when it ends in the
-    design's ellipsis glyph and starts within `boxPx`; that glyph is judged at every viewport (ruling R147: its column
+    design's ellipsis glyph and starts within `boxPx`; that glyph is judged at every viewport (decision D-147: its column
     profile and ink amount against the design's). Verdicts, the
     report, `design_ui_verify` and the fidelity summary count captures per class.
   - *Root scale at any other panel scale.* UI Toolkit puts font sizes, paddings, margins and border widths on whole

@@ -174,8 +174,8 @@ export function kitHash(kit: KitConfig): string {
 /**
  * Raised whenever the extraction writes something else for the same design and kit (an export of an older extractor is then
  * made again instead of reused). 2: keyed inline texts match their text style on line height too (caption 20/28 and label
- * 20/24 share size and weight). 3: the goldens record where Chromium cuts an ellipsized line (boxes `ellipsis`, rulings
- * R146 and R147) and its scale is exactly 1 without a transform; an export of revision 2 has no such record, so the
+ * 20/24 share size and weight). 3: the goldens record where Chromium cuts an ellipsized line (boxes `ellipsis`, decisions
+ * D-146 and D-147) and its scale is exactly 1 without a transform; an export of revision 2 has no such record, so the
  * comparison judged its ellipsized lines without the glyph check or the scaled-class allowance.
  */
 export const EXTRACT_REVISION = 3;

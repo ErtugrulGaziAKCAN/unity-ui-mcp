@@ -416,7 +416,7 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
     });
   };
   /**
-   * What the element paints of its own now, in its own state (a later item's copy in its item's: fix round 4, N-8): a
+   * What the element paints of its own now, in its own state (a later item's copy in its item's): a
    * background, a visible border side, a box shadow, or picture or vector content; and the rect (CSS px) its outer box
    * shadows and text shadows can reach (its border box moved by the offset, grown by the spread and 1.5 × the blur, where
    * a Gaussian of σ = blur / 2 fades out).
@@ -445,7 +445,7 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
     return { paints, reach };
   };
   /**
-   * Where Chromium places the ellipsis of a text element whose one line it cuts (ruling R146), in CSS px of the viewport: `at`
+   * Where Chromium places the ellipsis of a text element whose one line it cuts (decision D-146), in CSS px of the viewport: `at`
    * the end of the kept prefix (its advance inside the whole line, so the kerning with the first dropped grapheme counts),
    * `last` and `next` the in-line advances of the last kept and the first dropped grapheme, `width` the ellipsis's own
    * advance (no letter-spacing). Chromium keeps the longest prefix of whole graphemes whose in-line end plus that width fits
@@ -559,7 +559,7 @@ async function pageBoxes(arg: { items: [string, number, boolean][]; ir: number[]
         else lines.push({ ...f });
       }
       box.lines = lines.sort((p, q) => p.base - q.base).map((x) => ({ x: dev(x.l), y: dev(x.t), w: dev(x.r - x.l), h: dev(x.b - x.t), baseline: dev(x.base), ...(x.mixed ? { mixed: true } : {}) }));
-      // a cut line's ellipsis (ruling R146): only for one line of the element's own text
+      // a cut line's ellipsis (decision D-146): only for one line of the element's own text
       for (const x of Array.from(el.querySelectorAll("*"))) if (irEls.has(x)) nested = true;
       const cut = box.lines.length === 1 && !nested ? ellipsisOf(el, texts) : null;
       if (cut) box.lines[0].ellipsis = { at: dev(cut.at), last: dev(cut.last), next: dev(cut.next), width: dev(cut.width) };

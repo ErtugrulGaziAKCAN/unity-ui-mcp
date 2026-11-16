@@ -234,7 +234,7 @@ describe("compareCapture", () => {
     expect(short.issues[0].detail).toMatch(/right Δ -8\.\d\d px/);
   });
 
-  it("keeps a line's window margin out of another text line's box (labels laid edge to edge, ruling R150)", () => {
+  it("keeps a line's window margin out of another text line's box (labels laid edge to edge, decision D-150)", () => {
     // label a ends at x 120 in the design, 120.5 in Unity (a box on whole device px); label b starts right there, its first
     // stem at 121 in the design and 122 in Unity. A pixel of margin past a's lines took b's first stem into a's ink in the
     // design only (a pilot screen's untimed section labels at 1920×1080: right Δ −4.35 px)
@@ -260,7 +260,7 @@ describe("compareCapture", () => {
     expect(of(compareCapture(pair(false), pair(true, 4), [], T, ctx), "a")).toContain("inkExtent");
   });
 
-  describe("text ink on few stems (ruling R149): a window narrower than 4 em takes the measured noise for its width", () => {
+  describe("text ink on few stems (decision D-149): a window narrower than 4 em takes the measured noise for its width", () => {
     // a 15 px label a later opaque menu covers but for its first four glyphs (33 px, 2.2 em): a pilot screen's status chip
     // under a month picker. Stand-in glyphs: 1 px stems every 2 px
     const chip = (unity: boolean, colour: Rgb = [185, 208, 214], menuX = 73) => {
@@ -307,7 +307,7 @@ describe("compareCapture", () => {
       expect(label(compareCapture(short(false), short(true), [], repo, { ...ctx, order: ["root", "label"] })).map((i) => i.kind)).toContain("ink");
     });
 
-    it("R159: a cover over only a line's empty tail cuts nothing; a cover over its glyphs makes a fragment", () => {
+    it("D-159: a cover over only a line's empty tail cuts nothing; a cover over its glyphs makes a fragment", () => {
       // the fix-3 re-review's probe Q5: a 10 px line, stems 41–71, its line rect 40–76 (trailing letter-spacing), a later opaque
       // badge from x 74 over the line's height; Unity draws the line 30 % dimmer
       const right: Rgb = [185, 208, 214], bg: Rgb = [11, 31, 38];
@@ -335,7 +335,7 @@ describe("compareCapture", () => {
       expect(v.find((i) => i.kind === "ink")?.detail).toMatch(/a fragment of [\d.]+ em/);
     });
 
-    describe("ruling R156's cut: an ancestor's clip, the one-column rounding allowance, an ellipsized line's end (fix-3 re-review F2)", () => {
+    describe("decision D-156's cut: an ancestor's clip, the one-column rounding allowance, an ellipsized line's end (fix-3 re-review F2)", () => {
       // the chip's 15 px label (stems 41–199) without the menu, in a list that clips it (`list`: overflow hidden on x)
       const off: Rgb = [165, 195, 205];
       const inList = (unity: boolean, listW: number, lineW = 160) => {
@@ -402,7 +402,7 @@ describe("compareCapture", () => {
       const v = label(compareCapture(boxed(false), boxed(true), [], repo, own));
       expect(v.map((i) => i.kind)).toContain("ink");
       expect(v.find((i) => i.kind === "ink")!.detail).not.toMatch(/a window of/);
-      // ruling R156: the boxes straddling a pixel boundary (the re-review's 40.75 against 41.17) are no cut either: the line's
+      // decision D-156: the boxes straddling a pixel boundary (the re-review's 40.75 against 41.17) are no cut either: the line's
       // own box is its own text cut, and each render rounds its own edges
       const straddling = (unity: boolean) => {
         const s2 = boxed(unity);
@@ -415,7 +415,7 @@ describe("compareCapture", () => {
       expect(w2.find((i) => i.kind === "ink")!.detail).not.toMatch(/a window of/);
     });
 
-    it("gives no key to an ellipsized short line: its own text-overflow cut is no fragment (ruling R156)", () => {
+    it("gives no key to an ellipsized short line: its own text-overflow cut is no fragment (decision D-156)", () => {
       // the re-review's probe P5b: a 10 px label at 1280×720 in a 30 px box, its line rect the whole text's 120 px, cut by
       // its own text-overflow; Unity draws it in the secondary colour where the design has the primary
       const draw = (c: Rgb) => {
@@ -434,7 +434,7 @@ describe("compareCapture", () => {
       expect(v.map((i) => i.detail).join(" | ")).toMatch(/text colour ΔE2000 [\d.]+, design #ffffff/);
     });
 
-    it("gives no key to a fragment of a text with a text-shadow, hard or blurred (ruling R154): the ordinary checks", () => {
+    it("gives no key to a fragment of a text with a text-shadow, hard or blurred (decision D-154): the ordinary checks", () => {
       // a colour ΔE2000 4.2 off on the four-glyph fragment: within the 2 em key (6.15), over the usual limit 2 of 15 px text
       const off: Rgb = [165, 195, 205];
       expect(label(compareCapture(chip(false), chip(true, off), [], repo, ctx))).toEqual([]);
@@ -446,7 +446,7 @@ describe("compareCapture", () => {
       expect(v.fragmentsBelowDomain ?? []).toEqual([]);
     });
 
-    describe("ruling R151: a width whose measured ΔE2000 noise exceeds 6.5 judges the fragment's colour direction instead", () => {
+    describe("decision D-151: a width whose measured ΔE2000 noise exceeds 6.5 judges the fragment's colour direction instead", () => {
       // the chip covered at `x0 + w`: a fragment `w` device px wide, the glyphs 15 px (full) or 10 px (small) text
       const at = (unity: boolean, colour: Rgb, w: number) => chip(unity, colour, 40 + w);
       const of = (px: number) => ({ ...ctx, fontPx: { label: px } });
@@ -461,7 +461,7 @@ describe("compareCapture", () => {
       });
 
       it("fails a wrong-hue fragment in every bucket whose colour is judged; a bucket without a direction key is counted", () => {
-        // the wrong hues of the R138 tests: the kit's accent and warning colours in place of the secondary
+        // the wrong hues of the D-138 tests: the kit's accent and warning colours in place of the secondary
         const right: Rgb = [185, 208, 214];
         for (const wrong of [[22, 194, 213], [242, 181, 68]] as Rgb[]) for (const px of [15, 10]) for (const [em, de, , dir] of rowsOf(px)) {
           const w = Math.round((em + 0.25) * px), what = `${wrong.join()}, ${px} px, ${em} em`;
@@ -478,7 +478,7 @@ describe("compareCapture", () => {
       });
     });
 
-    it("R151: a width without a direction key leaves the fragment's colour not judged and counts it (review N5)", () => {
+    it("D-151: a width without a direction key leaves the fragment's colour not judged and counts it (review N5)", () => {
       // a thresholds object whose full 2 em row (ΔE2000 key above 6.9) has no direction key: the wrong colour is not judged
       const f = repo.textInkFragment!;
       const t2: Thresholds = { ...repo, textInkFragment: { ...f, full: f.full.map((r) => (r[0] === 2 ? [2, 9, r[2], null] : r)) as typeof f.full } };
@@ -487,7 +487,7 @@ describe("compareCapture", () => {
       expect(v.fragmentColourNotJudged).toEqual(["label: line 1 of 1"]);
     });
 
-    describe("ruling R153: a fragment below the measured domain (the design's ink under 16 px)", () => {
+    describe("decision D-153: a fragment below the measured domain (the design's ink under 16 px)", () => {
       // the menu covers the chip but for its first stem (11 px of ink): a pilot screen's chip the type menu leaves a sliver of
       // at 1280×720 (13.4 px of design ink there, 0.78× in Unity)
       const sliver = (unity: boolean, colour: Rgb = [185, 208, 214]) => chip(unity, colour, 43);
@@ -647,7 +647,7 @@ describe("compareCapture", () => {
         expect(of(v, "title#1")).toContain("inkCoverage");
       });
 
-      it("judges the design's window when Unity's clip shows less: the hidden part is missing ink, the clip named (ruling R157)", () => {
+      it("judges the design's window when Unity's clip shows less: the hidden part is missing ink, the clip named (decision D-157)", () => {
         // the re-review's probe P3: Unity lays the copy's own clipping box out 30 or 12 px wide (the design's 60) and draws its
         // title only inside it; the window was what both showed, so nothing judged the rest
         for (const w of [30, 12]) {
@@ -696,7 +696,7 @@ describe("compareCapture", () => {
     });
   });
 
-  describe("an ellipsized line at a scaled viewport (ruling R146: ellipsisGraphemes)", () => {
+  describe("an ellipsized line at a scaled viewport (decision D-146: ellipsisGraphemes)", () => {
     // a 160 px title cut with an ellipsis: stand-in glyphs 6 px wide on an 8 px advance from x 40, then three 2×2 dots on a
     // 12 px advance; the design keeps 8 glyphs, so its ellipsis is placed at 40 + 8 × 8 = 104
     const ADV = 8, DOTS = 12, X0 = 40;
@@ -1088,7 +1088,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(v.elements.find((r) => r.id === "label")!.lines).toBe("1/1, 1 not judged (covered)");
   });
 
-  it("fails text Unity draws over the element that covers it in the design, in its colour or another (ruling R160)", () => {
+  it("fails text Unity draws over the element that covers it in the design, in its colour or another (decision D-160)", () => {
     // the covered-label scene with the label's glyphs painted on top of the opaque sheet in the Unity image only: a
     // paint-order regression, or a host that puts a panel's text above a popup
     const ctx: CaptureContext = {
@@ -1406,7 +1406,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     // without radii the band is empty: the limit never applies
     expect(compareCapture(g, u, [], scaled).issues).toEqual([expect.objectContaining({ id: "knob", kind: "ssim" })]);
 
-    // at an exact viewport (ruling R119) only a round element without text and a moved edge get the band: the same knob
+    // at an exact viewport (decision D-119) only a round element without text and a moved edge get the band: the same knob
     // passes there, the same knob carrying a text line does not (it does at a scaled viewport)
     expect(compareCapture(g, u, [], scaled, { ...ctx, viewportClass: "exact" }).issues).toEqual([]);
     const withText = (s: ReturnType<typeof mk>) => ({ ...s, boxes: { ...s.boxes, elements: { ...s.boxes.elements, knob: el(100, 76, 40, 40, { text: true, lines: [{ x: 300, y: 4, w: 8, h: 8, baseline: 10 }] }) } } });
@@ -1416,13 +1416,13 @@ describe("compareCapture: edge, colour and ink checks", () => {
 
   it("the repository's thresholds: ssimRoundEdge at every viewport, the scaled class's own measured keys only in its block", () => {
     const t = readThresholds();
-    expect(t.ssimRoundEdge).toBe(0.974); // R119: the measured floor at every viewport
+    expect(t.ssimRoundEdge).toBe(0.974); // D-119: the measured floor at every viewport
     expect(t.deltaE2000RoundEdge).toBe(t.deltaE2000);
     for (const k of ["ssimFractionalEdge", "ssimVectorEdge"] as const) expect(t[k], k).toBe(t.ssimElement);
     expect(t.deltaE2000FractionalEdge).toBe(t.deltaE2000);
     expect(Object.keys(t.scaled ?? {}).sort()).toEqual(["deltaE2000FractionalEdge", "deltaE2000ResampledPicture", "deltaE2000RoundEdge", "ellipsisGraphemes", "ssimFractionalEdge", "ssimResampledPicture", "ssimRoundEdge",
       "ssimVectorEdge", "textInkDeltaEFirstSmall", "textInkSmallPx"]);
-    // ruling R146: an ellipsized line's cut one grapheme off only at scaled viewports
+    // decision D-146: an ellipsized line's cut one grapheme off only at scaled viewports
     expect(t.ellipsisGraphemes).toBe(0);
     expect(t.scaled?.ellipsisGraphemes).toBe(1);
     expect(t.ssimResampledPicture).toBe(t.ssimElement);
@@ -1448,13 +1448,13 @@ describe("compareCapture: edge, colour and ink checks", () => {
     const scaled: Thresholds = { ...T, ssimRoundEdge: 0.95, deltaE2000RoundEdge: 5.5 };
     const golden = { png: draw([150, 150, 150]), boxes };
     expect(compareCapture(golden, { png: draw([150, 150, 150]), boxes }, [], scaled, ctx).issues).toEqual([]);
-    // the ring missing: its colour check (deltaE2000Ring, every viewport) and its width check (ruling R127) fail, and the
+    // the ring missing: its colour check (deltaE2000Ring, every viewport) and its width check (decision D-127) fail, and the
     // element's SSIM, which masked would meet ssimRoundEdge, is held to ssimElement (its other checks fail)
     expect(compareCapture(golden, { png: draw(null), boxes }, [], scaled, ctx).issues).toEqual([
       expect.objectContaining({ id: "avatar", kind: "color", detail: expect.stringMatching(/^ring \w+ border: ΔE2000 [\d.]+, .*\(limit 1\.5\): the ring's colour differs/) }),
       expect.objectContaining({ id: "avatar", kind: "edge", detail: expect.stringMatching(/^ring \w+ border: drawn 0\.\d+ device px wide, the design's 2\.00 \(limit ±0\.5\): the ring's width differs/) }),
       expect.objectContaining({ id: "avatar", kind: "ssim", detail: expect.stringMatching(/needs its other checks to pass/) })]);
-    // another colour: the colour check fails; with no ring colour limit of its own the relaxation's evidence (ruling R130,
+    // another colour: the colour check fails; with no ring colour limit of its own the relaxation's evidence (decision D-130,
     // the file's deltaE2000Ring) still holds the element: the ring in the band is not the design's
     const blue = compareCapture(golden, { png: draw([96, 120, 168]), boxes }, [], scaled, ctx);
     expect(blue.issues.map((i) => i.kind)).toEqual(["color", "ssim"]);
@@ -1466,7 +1466,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(hue.issues).toEqual([expect.objectContaining({ id: "avatar", kind: "color", detail: expect.stringMatching(/^ring \w+ border: .*the ring's colour differs/) })]);
     expect(compareCapture(golden, { png: draw([150, 150, 150]), boxes }, [], T, ctx).elements.find((e) => e.id === "avatar")!.ring).toBe(0);
     // an animation sample that moves it is not judged for it (Chromium resamples the moving layer); the value is still
-    // recorded. One whose animation does not move it (a colour, an opacity) is judged as a static capture (ruling R132)
+    // recorded. One whose animation does not move it (a colour, an opacity) is judged as a static capture (decision D-132)
     const moving = compareCapture(golden, { png: draw([128, 154, 168]), boxes }, [], T, { ...ctx, anim: true, moving: new Set(["avatar"]) });
     expect(moving.issues).toEqual([]);
     expect(moving.elements.find((e) => e.id === "avatar")!.ring).toBeGreaterThan(1.5);
@@ -1482,7 +1482,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(compareCapture(golden, { png: draw(null), boxes }, [], T, ctx).issues.map((i) => i.kind)).toEqual(["color", "edge", "ssim"]);
   });
 
-  describe("the ellipsis glyph at every viewport (ruling R147): crops of the suite's text-spacing captures", () => {
+  describe("the ellipsis glyph at every viewport (decision D-147): crops of the suite's text-spacing captures", () => {
     // the end of the text-spacing fixture's ellipsized body line ("…kala…") at all six viewports, design and Unity, with the
     // boxes the captures recorded (in crop coordinates); `curve`: Unity's capture with the twin pre-add of U+2026 turned off,
     // where a line-box variant drew a curve in place of the dots
@@ -1518,9 +1518,9 @@ describe("compareCapture: edge, colour and ink checks", () => {
     });
   });
 
-  describe("the ellipsis glyph below 16 device px is structural (ruling R148): three dots at the design's pitch and height", () => {
+  describe("the ellipsis glyph below 16 device px is structural (decision D-148): three dots at the design's pitch and height", () => {
     // ellipsized 20/24 titles of a scratch fixture (r148-dots-*: 10, 10.67, 12.5 and 15 device px at 1280, 1366, 1600 and
-    // 1920), the dots drawn right on both sides a fraction of a pixel apart, where R147's profile check failed them (shape up
+    // 1920), the dots drawn right on both sides a fraction of a pixel apart, where D-147's profile check failed them (shape up
     // to 0.53, rows up to 0.65); and the suite's wrong glyph (the curve of r147-curve-*, 12 to 15 px)
     const dir = path.join(here, "fixtures", "compare");
     type Geo = { size: [number, number]; scale: number; viewport: [number, number]; fontPx?: number; element: { x: number; y: number; w: number; h: number };
@@ -1578,7 +1578,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     });
   });
 
-  describe("ssimRoundEdge at every viewport (ruling R119): crops of the suite's 1280×720 captures", () => {
+  describe("ssimRoundEdge at every viewport (decision D-119): crops of the suite's 1280×720 captures", () => {
     // the design's and Unity's pixels around two elements of the fidelity suite at 1280×720 (scale 0.5), with their boxes
     const crop = (name: string, side: "design" | "unity") => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r119-${name}.${side}.png`)));
     const at = (x: number, y: number, w: number, h: number, ox: number, oy: number) => el(x - ox, y - oy, w, h);
@@ -1642,7 +1642,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(Math.max(row.ssim!, row.ssimShifted!)).toBeCloseTo(0.98296, 4);
       expect(row.ssimRoundEdgeMasked).toBeGreaterThanOrEqual(0.99);
       // a static capture, or an element the sample does not move, gets no band for its straight edges (and, as in a static
-      // capture, its ring's colour is judged: this crop's moving layer blends the border's centre, ruling R132)
+      // capture, its ring's colour is judged: this crop's moving layer blends the border's centre, decision D-132)
       expect(issuesOf(compareCapture(design, unity, [], exact, { ...cellCtx, moving: new Set() }), "cell").map((i) => i.kind)).toEqual(["color", "ssim"]);
       expect(issuesOf(compareCapture(design, unity, [], exact, { ...cellCtx, anim: false, moving: new Set() }), "cell").map((i) => i.kind)).toEqual(["color", "ssim"]);
     });
@@ -1655,7 +1655,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     });
   });
 
-  describe("the scaled class's measured keys for straight edges, vectors and corners (ruling R121): crops of the suite's captures", () => {
+  describe("the scaled class's measured keys for straight edges, vectors and corners (decision D-121): crops of the suite's captures", () => {
     const crop = (name: string, side: "design" | "unity") => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r121-${name}.${side}.png`)));
     const boxesOf = (w: number, h: number, ox: number, oy: number, scale: number, id: string, b: Box): CaptureBoxes =>
       ({ capture: "c", viewport: [w, h], scale, external: [], elements: { root: el(0, 0, w, h), [id]: { ...b, x: b.x - ox, y: b.y - oy, lines: b.lines.map((l) => ({ ...l, x: l.x - ox, y: l.y - oy })) } } });
@@ -1723,7 +1723,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
     });
   });
 
-  describe("edge-band evidence and the scaled class's residual keys (rulings R124 to R130)", () => {
+  describe("edge-band evidence and the scaled class's residual keys (decisions D-124 to D-130)", () => {
     const repo = readThresholds();
     const exactT = thresholdsFor(repo, "exact"), scaledT = thresholdsFor(repo, "scaled");
     const issuesOf = (v: CaptureVerdict, id: string) => v.issues.filter((i) => i.id === id);
@@ -1743,7 +1743,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
       return png;
     };
 
-    it("R129, R127, R135: an avatar whose ring Unity draws 3 CSS px wide instead of 4 fails wherever that is 0.75 device px or more", () => {
+    it("D-129, D-127, D-135: an avatar whose ring Unity draws 3 CSS px wide instead of 4 fails wherever that is 0.75 device px or more", () => {
       // the re-review's probe (N4-1): a text-less avatar of 80 or 160 CSS px with a 4 CSS px ring at each exact scale, drawn
       // the same way on both sides but the ring's width; repository thresholds
       const ringC: Rgb = [22, 194, 213], fillC: Rgb = [60, 70, 80], bgC: Rgb = [11, 31, 38];
@@ -1766,8 +1766,8 @@ describe("compareCapture: edge, colour and ink checks", () => {
         const own = issuesOf(v, "avatar");
         at.push(`${css}@${scale}:${own.length ? own.map((i) => i.kind).join("+") : "pass"}`);
       }
-      // a ring 0.75 device px or more too thin fails its width (R127) and, with it, every relaxation (R129). At 1280×720 the
-      // ring is 0.5 device px thinner: the width check decides reliably from 0.75 device px only (ruling R135: its limit
+      // a ring 0.75 device px or more too thin fails its width (D-127) and, with it, every relaxation (D-129). At 1280×720 the
+      // ring is 0.5 device px thinner: the width check decides reliably from 0.75 device px only (decision D-135: its limit
       // stays "more than 0.5"; a correct ring can read up to 0.506 and a 0.5 px thinner one 0.498 to 0.635 by its grid
       // position), so a ring 1 CSS px thinner at 1280×720 can pass. The 160 px avatar does here (0.498 at this position;
       // its SSIM passes too), a documented limit, not part of this red test; the 80 px one fails on SSIM below the floor
@@ -1775,7 +1775,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
         expect.stringMatching(/^160@0\.5:(pass|edge\+ssim|edge)$/), "160@0.75:edge+ssim", "160@1:edge+ssim", "160@1.5:edge+ssim"]);
     });
 
-    it("R129: a relaxation needs every SSIM block and every 3×3 window outside its band to match, and its borders' widths", () => {
+    it("D-129: a relaxation needs every SSIM block and every 3×3 window outside its band to match, and its borders' widths", () => {
       // the 160 px avatar at 3840×2160 in an animation sample that moves it to a fractional offset (its own ring checks are
       // for static captures), with Unity's ring drawn by a coarser ramp (a few pixels along the curves differ, as between
       // the renderers): the band-masked mean (the earlier rule) meets 0.99 in each case below, the evidence does not
@@ -1806,7 +1806,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(d.row.ssimRoundEdgeMasked).toBeGreaterThanOrEqual(0.99);
       expect(issuesOf(d.v, "avatar")).toEqual([expect.objectContaining({ kind: "ssim", detail: expect.stringMatching(/masked, but an SSIM block outside the band, the 8 px block at \(\d+, \d+\), is 0\.\d+ \(below 0\.99: not confined to it\)/) })]);
       // the ring 4.5 device px instead of 6: its inner edge half a pixel past the band; Unity's colour within 1 px matches
-      // there (the box allowance), so the windows do not show it: its width does (R127)
+      // there (the box allowance), so the windows do not show it: its width does (D-127)
       const thin = run(coarse(4.5));
       expect(thin.row.ssimRoundEdgeMasked).toBeGreaterThanOrEqual(0.99);
       expect(thin.row.bandEvidence!.maxDe).toBeLessThanOrEqual(1);
@@ -1815,7 +1815,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
         detail: expect.stringMatching(/masked, but avatar \w+ (border|corner) is drawn 4\.\d+ device px wide, the design's 6\.\d+ \(limit ±0\.5\): the border in that band is not the design's/) })]);
     });
 
-    it("R130: a straight border of another colour in the band of straight edges gives no evidence (the re-review's N4-3 probe)", () => {
+    it("D-130: a straight border of another colour in the band of straight edges gives no evidence (the re-review's N4-3 probe)", () => {
       // a text-less 113 × 57 CSS px box with a 4 CSS px border at 1366×768 (2.13 device px), its edges between device pixels:
       // Chromium covers the edge pixels partly, UI Toolkit draws them whole at the nearest pixel
       const s0 = 0.533464, fillC: Rgb = [18, 60, 71], line: Rgb = [200, 210, 220], bgC: Rgb = [11, 31, 38], bw = 4 * s0;
@@ -1841,12 +1841,12 @@ describe("compareCapture: edge, colour and ink checks", () => {
       // the border ΔE2000 7 or more off: its SSIM with the band masked still meets 0.99; its centre's colour does not
       const wrong = compareCapture(golden, { png: draw(true, [216, 196, 168]), boxes: boxes(true) }, [], scaledT, ctx);
       expect(wrong.elements.find((e) => e.id === "box")!.ssimFractionalEdgeMasked).toBeGreaterThanOrEqual(0.99);
-      // no 3×3 window outside the band reaches the border (R129 sees nothing there): its centre's colour holds it (R130)
+      // no 3×3 window outside the band reaches the border (D-129 sees nothing there): its centre's colour holds it (D-130)
       expect(issuesOf(wrong, "box")).toEqual([expect.objectContaining({ kind: "ssim",
         detail: expect.stringMatching(/masked as well, but the centre of box \w+ border differs by ΔE2000 [\d.]+ \(design #\w+, Unity #\w+; limit 3\.1\): the border in that band is not the design's/) })]);
       expect(wrong.elements.find((e) => e.id === "box")!.bandEvidence!.maxDe).toBeLessThanOrEqual(1);
-      // R132 (the re-review's N5-2): in an animation sample whose animation does not move the box (a colour, an opacity)
-      // it gets the static checks, its centre colour too; one that moves it keeps R130 to static captures (Chromium draws
+      // D-132 (the re-review's N5-2): in an animation sample whose animation does not move the box (a colour, an opacity)
+      // it gets the static checks, its centre colour too; one that moves it keeps D-130 to static captures (Chromium draws
       // it from its resampled layer, where a correct 2.13 device px border's centre blends)
       const sample = (moving: string[]) => compareCapture(golden, { png: draw(true, [216, 196, 168]), boxes: boxes(true) }, [], scaledT, { ...ctx, anim: true, moving: new Set(moving) });
       expect(issuesOf(sample([]), "box")).toEqual([expect.objectContaining({ kind: "ssim",
@@ -1855,7 +1855,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(issuesOf(compareCapture(golden, { png: draw(true, line), boxes: boxes(true) }, [], scaledT, { ...ctx, anim: true, moving: new Set() }), "box")).toEqual([]);
     });
 
-    it("R124: the edge bands of a repeat's later items come from their boxes; a later item's wrong divider is not the design's", () => {
+    it("D-124: the edge bands of a repeat's later items come from their boxes; a later item's wrong divider is not the design's", () => {
       // a table at 1366×768: three rows of a repeat, each with a 2.13 device px bottom border between device pixels; the
       // captures hold the IR's first row, and the later ones in `items`
       const s0 = 0.533464, fillC: Rgb = [18, 60, 71], line: Rgb = [36, 90, 104], bgC: Rgb = [11, 31, 38], bw = 4 * s0;
@@ -1892,8 +1892,8 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(issuesOf(wrong, "table")).toEqual([expect.objectContaining({ kind: "ssim", detail: expect.stringMatching(/masked as well, but the centre of row#2 bottom border differs by ΔE2000/) })]);
     });
 
-    it("R133: a repeat's later items' text is masked as the IR elements' and gets their text checks", () => {
-      // the R124 table at 1366×768 with a text in each row (10.67 device px): the renderers' glyphs differ (the design's stems
+    it("D-133: a repeat's later items' text is masked as the IR elements' and gets their text checks", () => {
+      // the D-124 table at 1366×768 with a text in each row (10.67 device px): the renderers' glyphs differ (the design's stems
       // anti-aliased at a fractional x, Unity's whole pixels 0.3 px left), as the suite's 12.8 px rows do; the first row's
       // text is the IR element `name`, the later rows' its copies `name#1`, `name#2`
       const s0 = 0.533464, fillC: Rgb = [18, 60, 71], line: Rgb = [36, 90, 104], bgC: Rgb = [11, 31, 38], ink: Rgb = [240, 240, 240], bw = 4 * s0;
@@ -1986,7 +1986,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(wrong.elements.find((e) => e.id === "chip#2")).toMatchObject({ lines: "1/1" });
     });
 
-    it("R138: a hairline line (no fully covered pixel) is judged by its ink's colour direction, not its lightness or amount", () => {
+    it("D-138: a hairline line (no fully covered pixel) is judged by its ink's colour direction, not its lightness or amount", () => {
       // a 10 device px em dash in the secondary text colour on a row's fill (repeat-items row-time#2 at 1280×720): Chromium
       // splits its 1.2 px stroke over two pixel rows (covering 0.84 and 0.44 of each), UI Toolkit draws most of it in one
       const bgC: Rgb = [18, 60, 71], secondary: Rgb = [185, 208, 214];
@@ -2000,7 +2000,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
       };
       const design = draw([[6, 0.84], [7, 0.44]], secondary);
       const line = { x: 9, y: 2, w: 12, h: 10, baseline: 9 };
-      // the text's colour and opacity as the capture records them (ruling R141)
+      // the text's colour and opacity as the capture records them (decision D-141)
       const recorded = (color?: Rgb): CaptureBoxes => ({ capture: "c", viewport: [32, 16], scale: 0.5, external: [], elements: { root: el(0, 0, 32, 16),
         t: el(9, 2, 12, 10, { text: true, lines: [line], ...(color ? { color: [...color, 1] as [number, number, number, number], opacity: 1 } : {}) }) } });
       const boxes = recorded(secondary);
@@ -2030,7 +2030,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(compareCapture({ png: stems(secondary), boxes }, { png: stems(secondary), boxes }, [], exactT, ctx).issues).toEqual([]);
     });
 
-    describe("R141: a hairline line is only a small, unattenuated, uncovered text in its own colour", () => {
+    describe("D-141: a hairline line is only a small, unattenuated, uncovered text in its own colour", () => {
       // kit colours: rows on surface-700, secondary and muted text
       const bgC: Rgb = [18, 60, 71], secondary: Rgb = [185, 208, 214], muted: Rgb = [134, 167, 176], veilC: Rgb = [11, 31, 38];
       const exactT = thresholdsFor(readThresholds(), "exact");
@@ -2042,7 +2042,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
         if (veil) for (let p = 0; p < 48 * 24; p++) { const o = p * 4; for (let j = 0; j < 3; j++) png.data[o + j] = Math.round((1 - veil) * png.data[o + j] + veil * veilC[j]); }
         return png;
       };
-      /** The R138 dash: rows of coverage of the colour. */
+      /** The D-138 dash: rows of coverage of the colour. */
       const dash = (rows: [number, number][], c: Rgb) => {
         const png = canvas(48, 24, bgC);
         for (const [y, cov] of rows) for (let x = 10; x < 20; x++) { const o = (y * 48 + x) * 4; const m = mix(c, cov); for (let j = 0; j < 3; j++) png.data[o + j] = m[j]; }
@@ -2098,7 +2098,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
         expect(kinds(design, gb, dash([[6, 0.12]], secondary), c)).toEqual(["inkCoverage"]);
       });
 
-      it("R152: the three 16 px probes still fail at a scaled viewport, with the scale-only evidence given", () => {
+      it("D-152: the three 16 px probes still fail at a scaled viewport, with the scale-only evidence given", () => {
         const scaledT = thresholdsFor(readThresholds(), "scaled");
         const at = (c: CaptureContext): CaptureContext => ({ ...c, viewportClass: "scaled", scaleOnly: () => true });
         const scaledKinds = (gp: Rgba, gb: CaptureBoxes, up: Rgba, c: CaptureContext, id = "t") =>
@@ -2111,12 +2111,12 @@ describe("compareCapture: edge, colour and ink checks", () => {
       });
     });
 
-    describe("R152: at a scaled viewport a one-stroke line below 13 device px with scale-only evidence is a hairline line", () => {
+    describe("D-152: at a scaled viewport a one-stroke line below 13 device px with scale-only evidence is a hairline line", () => {
       // a pilot screen's 12.5 px status at 1600×900 (two one-stroke digits around a dash, the secondary colour on surface-700):
       // Chromium draws each stroke on whole device pixels (a stem one column at 0.97 with a 0.16 neighbour, the dash one
       // row), UI Toolkit's box lies 0.42 px right and down and splits each over two. `split`: Unity's two shares of the first
       // stem, the second stem and the dash; by default they keep the design's ink, `pilot` (the pilot's own pixels) keeps 0.96
-      // of it summed (rulings R155, R158: Unity's summed ink at least 0.84 of the design's when only Unity's render qualifies)
+      // of it summed (decisions D-155, D-158: Unity's summed ink at least 0.84 of the design's when only Unity's render qualifies)
       const bgC: Rgb = [18, 60, 71], secondary: Rgb = [185, 208, 214];
       const scaledT = thresholdsFor(readThresholds(), "scaled"), exactT = thresholdsFor(readThresholds(), "exact");
       const keeps = [0.58, 0.57, 0.5, 0.65, 0.25, 0.74], pilot = [0.54, 0.54, 0.46, 0.62, 0.22, 0.73];
@@ -2140,7 +2140,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
         expect(issues(one(secondary, true), ctx())).toEqual([]);
       });
 
-      it("R155, R158: only Unity's render qualifies, so Unity's ink must be at least 0.84 of the design's: a dimmed line fails", () => {
+      it("D-155, D-158: only Unity's render qualifies, so Unity's ink must be at least 0.84 of the design's: a dimmed line fails", () => {
         // the re-review's probe P1: twelve one-pixel stems and a bar, fully covered in the design, Unity at 0.8 to 0.6 of the
         // colour (no fully covered pixel there, the colour's direction): dimming removes ink, a split keeps most of it
         const word = (k: number) => {
@@ -2156,7 +2156,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
         }
       });
 
-      it("R158: a split that loses a little ink passes: the pilot's own pixels, and a split at the suite's lowest 0.86", () => {
+      it("D-158: a split that loses a little ink passes: the pilot's own pixels, and a split at the suite's lowest 0.86", () => {
         // the pilot's own pixels lose 4 % of the ink in the split (0.54 + 0.54 against 0.97 + 0.16; summed 0.96 of the design's)
         expect(issues(one(secondary, true, pilot), ctx())).toEqual([]);
         // the same split scaled to 0.86 of the design's summed ink (the lowest of the suite's 180 correct hairline lines) passes,
@@ -2327,8 +2327,8 @@ describe("compareCapture: edge, colour and ink checks", () => {
       });
     });
 
-    it("R133: the evidence names every condition that does not hold, not only the first", () => {
-      // the R129 avatar in an animation sample that moves it: a dent outside the band and a ring 1.5 device px thinner
+    it("D-133: the evidence names every condition that does not hold, not only the first", () => {
+      // the D-129 avatar in an animation sample that moves it: a dent outside the band and a ring 1.5 device px thinner
       const ringC: Rgb = [240, 240, 240], fillC: Rgb = [20, 24, 28], bgC: Rgb = [0, 0, 0], outer = 240, W = 272, x0 = 16.4;
       const boxes: CaptureBoxes = { capture: "c", viewport: [W, W], scale: 1.5, external: [], elements: { root: el(0, 0, W, W), avatar: el(x0, x0, outer, outer) } };
       const ctx: CaptureContext = { borders: { avatar: [6, 6, 6, 6] }, radii: { avatar: [120, 120, 120, 120] }, backgrounds: new Set(["avatar"]), painters: new Set(["avatar"]),
@@ -2348,7 +2348,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
         detail: expect.stringMatching(/masked, but an SSIM block outside the band, .* \(below 0\.99: not confined to it\), and .*avatar \w+ (border|corner) is drawn 4\.\d+ device px wide, the design's 6\.\d+ \(limit ±0\.5\)/) })]);
     });
 
-    it("R125: a raster picture resampled at a scaled viewport meets ssimResampledPicture and its colour limit, nowhere else", () => {
+    it("D-125: a raster picture resampled at a scaled viewport meets ssimResampledPicture and its colour limit, nowhere else", () => {
       // background-images root__1__0 at 1600×900: a 225 × 135 device px picture exported for 3840×2160 drawn at 0.42 of its
       // pixels (crop of the suite's capture, on the 8 px block grid)
       const crop = (side: string) => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r125-picture-1600.${side}.png`)));
@@ -2368,7 +2368,7 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(issuesOf(v({ ...scaledT, ssimResampledPicture: 0.96 }), "pic")).toEqual([expect.objectContaining({ kind: "ssim" })]);
     });
 
-    it("R126: text under 13 device px at a scaled viewport takes the measured small-text ink limit, capped at 6.5", () => {
+    it("D-126: text under 13 device px at a scaled viewport takes the measured small-text ink limit, capped at 6.5", () => {
       // stacked-text value-12 at 1366×768: a 10.67 device px line, ink colour ΔE2000 5.49 (crop of the suite's capture)
       const crop = (side: string) => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `r126-ink-1366.${side}.png`)));
       const line = (x: number, w: number) => ({ x: x - 792, y: 206.983854 - 200, w, h: 12.803125, baseline: 217.119662 - 200 });
@@ -2661,7 +2661,7 @@ describe("IR context", () => {
     expect([...captureContext(ix, { state: "default", viewport: [1280, 720], apply: [] }, b).rotated!]).toEqual([]);
   });
 
-  it("counts an element as moving in an animation sample only when an animation that runs changes its geometry (ruling R132)", () => {
+  it("counts an element as moving in an animation sample only when an animation that runs changes its geometry (decision D-132)", () => {
     const animated = indexIr({ ...ir, root: { ...ir.root, children: [{ ...ir.root.children[0], anims: [
       { kind: "transition", properties: ["background-color", "border-top-color", "opacity"] },
       { kind: "keyframes", properties: ["background-color", "translate"] },
@@ -2709,7 +2709,7 @@ describe("IR context", () => {
     const at = (apply: CaptureJob["apply"]) => [...captureContext(shadowed, { state: "default", viewport: [1280, 720], apply }, b).textShadows!].sort();
     expect(at([])).toEqual(["soft"]);
     expect(at([{ kind: "pseudo", pseudo: "hover", elementId: "hover" }])).toEqual(["hover", "soft"]);
-    // ruling R154: every text with a text-shadow, hard or blurred, in the capture
+    // decision D-154: every text with a text-shadow, hard or blurred, in the capture
     const any = (apply: CaptureJob["apply"]) => [...captureContext(shadowed, { state: "default", viewport: [1280, 720], apply }, b).shadowedText!].sort();
     expect(any([])).toEqual(["hard", "soft"]);
     expect(any([{ kind: "pseudo", pseudo: "hover", elementId: "hover" }])).toEqual(["hard", "hover", "soft"]);
@@ -2766,7 +2766,7 @@ describe("IR context", () => {
     expect(run(2, 5, false, T).issues).toEqual([expect.objectContaining({ id: "btn", detail: expect.stringMatching(/top-left corner, 4 px in: .*\(limit 1\)/) })]);
     // the same corner where the pixels outside the band differ too (at every offset): not the ramp, held to deltaE2000
     expect(run(2, 5, true, scaled).issues).toEqual([expect.objectContaining({ id: "btn", detail: expect.stringMatching(/top-left corner, \d+ px in: .*\(limit 1/) })]);
-    // a border under 2 device px has no centre pixel to show its colour (ruling R130): no evidence, held to deltaE2000
+    // a border under 2 device px has no centre pixel to show its colour (decision D-130): no evidence, held to deltaE2000
     expect(run(1.5, 5, false, scaled).issues).toEqual([expect.objectContaining({ id: "btn",
       detail: expect.stringMatching(/top-left corner, 4 px in: .*\(limit 1; the corner limits of edge bands need the evidence: the border of btn \(a side under 2 device px/) })]);
     // border 2.5, radius 6: the window keeps at most 2 pixels outside the band at any offset, too few to show where its
@@ -3054,9 +3054,9 @@ describe("compareScreen", () => {
     expect(v.captures[0].issues.filter((i) => i.id === "card").map((i) => i.kind)).toContain("shadow");
   });
 
-  it("gives a scaled capture's text ruling R152's path only when the same text passes at every exact viewport (R126's evidence)", async () => {
+  it("gives a scaled capture's text decision D-152's path only when the same text passes at every exact viewport (D-126's evidence)", async () => {
     // a 20 px status: 12.5 device px at the scaled 40×24 capture (scale 0.625), 10 at the exact 32×20 one (scale 0.5); the
-    // scaled capture's Unity render splits its strokes over two pixels (the pilot pattern of the R152 tests)
+    // scaled capture's Unity render splits its strokes over two pixels (the pilot pattern of the D-152 tests)
     const bgC: Rgb = [18, 60, 71], secondary: Rgb = [185, 208, 214];
     const draw = (c: Rgb, split: boolean) => {
       const png = canvas(40, 24, bgC);
@@ -3066,7 +3066,7 @@ describe("compareScreen", () => {
       return png;
     };
     // `exactDraws`: the exact capture draws the status (true), nothing (false) or a one-stroke version the design draws without a
-    // fully covered pixel ("hairline": stems at 0.8 of the colour, judged by its colour direction there, rulings R138, R141)
+    // fully covered pixel ("hairline": stems at 0.8 of the colour, judged by its colour direction there, decisions D-138, D-141)
     const hairline = (c: Rgb) => {
       const png = canvas(40, 24, bgC);
       for (const x of [8, 24]) fill(png, { x, y: 6, w: 1, h: 10 }, [0, 1, 2].map((j) => Math.round(bgC[j] + 0.8 * (c[j] - bgC[j]))) as Rgb);
@@ -3317,28 +3317,28 @@ describe("design-export compare", () => {
       ssimElementSmall: [[32768, 0.984]], ssimPicture: 0.985, textInkDeltaELater: [[9, 4.5], [8, 6]], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
       textInkSmallPx: 12, textInkDeltaEFirstSmall: 4.5, textInkBandSmall: [0.8, 1.25], textInkMedianToleranceSmall: 0.25, textInkShadowHigh: 1.15,
       ssimRotated: ROTATED,
-      // edge bands (docs/findings/viewport-classes.md): ssimRoundEdge at every viewport (R119); the round-edge corner limit and
-      // the scaled class's own keys (R121) off at exact viewports, measured at scaled ones
+      // edge bands (docs/findings/viewport-classes.md): ssimRoundEdge at every viewport (D-119); the round-edge corner limit and
+      // the scaled class's own keys (D-121) off at exact viewports, measured at scaled ones
       ssimRoundEdge: 0.974, deltaE2000RoundEdge: 1, deltaE2000Ring: 3.1, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
       ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1,
-      // ruling R149: the measured noise of the ink statistic on fragments narrower than 4 em (docs/findings/text-ink.md §12);
-      // ruling R151: the colour direction's measured noise where the ΔE2000 key exceeds 6.5 + 0.4; ruling R154: without text
+      // decision D-149: the measured noise of the ink statistic on fragments narrower than 4 em (docs/findings/text-ink.md §12);
+      // decision D-151: the colour direction's measured noise where the ΔE2000 key exceeds 6.5 + 0.4; decision D-154: without text
       // that has a text-shadow
       textInkFragment: { em: 4,
         small: [[0.5, 18.71, 0.65, 4.08], [1, 15.43, 0.65, 3.66], [1.5, 15.43, 0.65, 3.88], [2, 15.43, 0.58, 3.71], [2.5, 11.15, 0.83, 2.05], [3, 10.13, 0.84, 2.2], [3.5, 9.4, 0.84, 1.84]],
         full: [[0.5, 14.96, 0.43, 3.64], [1, 9.88, 0.61, 2.18], [1.5, 7.53, 0.81, 1.64], [2, 6.15, 0.88, null], [2.5, 3.68, 0.88, null], [3, 3.29, 0.88, null], [3.5, 2.92, 0.88, null]] },
-      // the scaled class: R109, R115, R121, and R125 (resampled pictures), R126 (small text ink, at most 6.5), R146 (an
+      // the scaled class: D-109, D-115, D-121, and D-125 (resampled pictures), D-126 (small text ink, at most 6.5), D-146 (an
       // ellipsized line's cut one grapheme off)
       scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, textInkSmallPx: 12.99, ssimFractionalEdge: 0.97, ssimVectorEdge: 0.975, deltaE2000FractionalEdge: 5.3,
         ssimResampledPicture: 0.95, deltaE2000ResampledPicture: 5.89, textInkDeltaEFirstSmall: 5.89, ellipsisGraphemes: 1 },
     });
-    // ruling R151: a colour direction key only on a row whose ΔE2000 key exceeds 6.5 + 0.4
+    // decision D-151: a colour direction key only on a row whose ΔE2000 key exceeds 6.5 + 0.4
     for (const full of [[[2, 6.15, 0.87, 3]], [[2, 6.15, 0.87]]]) {
       const f = path.join(tmp(), "d.json");
       fs.writeFileSync(f, JSON.stringify({ ...T, textInkFragment: { em: 4, small: [[1, 15.43, 0.65, 15.71]], full } }));
       expect(() => readThresholds(f), JSON.stringify(full)).toThrow(/a direction only where the ΔE2000 key exceeds 6\.9/);
     }
-    // ruling R146: the exact class keeps the design's cut; the scaled block may allow one grapheme, no more
+    // decision D-146: the exact class keeps the design's cut; the scaled block may allow one grapheme, no more
     for (const [v, where, msg] of [[1, "", /"ellipsisGraphemes" must be 0 \(off\)/], [2, "scaled", /"ellipsisGraphemes" must be 0 or 1/]] as const) {
       const f = path.join(tmp(), "e.json");
       fs.writeFileSync(f, JSON.stringify(where ? { ...T, scaled: { ellipsisGraphemes: v } } : { ...T, ellipsisGraphemes: v }));
@@ -3369,7 +3369,7 @@ describe("design-export compare", () => {
     expect(small({ ssimRotated: 0.96 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
     expect(small({ ssimRotated: 0.995 })).toThrow(/"ssimRotated" must lie between 0.97 and ssimElement/);
     // the round-edge limits are off in the file's own values (they apply at exact viewports): only "scaled" may hold measured ones
-    // ssimRoundEdge applies at every viewport (ruling R119), never below the floor; the scaled class's own keys stay off here
+    // ssimRoundEdge applies at every viewport (decision D-119), never below the floor; the scaled class's own keys stay off here
     expect(small({ ssimRoundEdge: 0.974 })()).toMatchObject({ ssimRoundEdge: 0.974 });
     expect(small({ ssimRoundEdge: 0.96 })).toThrow(/"ssimRoundEdge" must lie between 0\.97 and 1/);
     for (const k of ["ssimFractionalEdge", "ssimVectorEdge"])
@@ -3378,12 +3378,12 @@ describe("design-export compare", () => {
     expect(small({ deltaE2000RoundEdge: 2 })).toThrow(/"deltaE2000RoundEdge" must equal deltaE2000 \(off\): only "scaled" may raise it/);
     expect(small({ scaled: { ssimRoundEdge: 0.96 } })).toThrow(/\(scaled\): "ssimRoundEdge" must lie between 0.97 and 1/);
     expect(small({ scaled: { deltaE2000RoundEdge: 0.5 } })).toThrow(/\(scaled\): "deltaE2000RoundEdge" must be at least deltaE2000/);
-    // R125: the resampled-picture keys are off in the file's own values; the scaled block's SSIM floor is 0.95
+    // D-125: the resampled-picture keys are off in the file's own values; the scaled block's SSIM floor is 0.95
     expect(small({ ssimResampledPicture: 0.95 })).toThrow(/"ssimResampledPicture" must lie between ssimElement and 1 \(off\): only "scaled" may lower it/);
     expect(small({ deltaE2000ResampledPicture: 5 })).toThrow(/"deltaE2000ResampledPicture" must equal deltaE2000 \(off\)/);
     expect(small({ scaled: { ssimResampledPicture: 0.95, deltaE2000ResampledPicture: 5.89 } })()).toMatchObject({ scaled: { ssimResampledPicture: 0.95, deltaE2000ResampledPicture: 5.89 } });
     expect(small({ scaled: { ssimResampledPicture: 0.94 } })).toThrow(/\(scaled\): "ssimResampledPicture" must lie between 0\.95 and 1/);
-    // R126: the scaled class's small-text ink limit, at most 6.5; R130: the scaled block cannot change the ring limit
+    // D-126: the scaled class's small-text ink limit, at most 6.5; D-130: the scaled block cannot change the ring limit
     expect(small({ scaled: { textInkDeltaEFirstSmall: 6.6 } })).toThrow(/\(scaled\): "textInkDeltaEFirstSmall" may not exceed 6\.5/);
     expect(small({ scaled: { deltaE2000Ring: 5.5 } })).toThrow(/"scaled" cannot change "deltaE2000Ring"/);
     expect(small({ scaled: { ssimRoundEdge: 0.975, deltaE2000RoundEdge: 4 } })()).toMatchObject({ ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, scaled: { ssimRoundEdge: 0.975, deltaE2000RoundEdge: 4 } });

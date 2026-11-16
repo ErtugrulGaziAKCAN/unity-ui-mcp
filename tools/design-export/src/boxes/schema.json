@@ -88,7 +88,7 @@
             "additionalProperties": false,
             "required": ["at", "last", "next", "width"],
             "properties": { "at": { "type": "number" }, "last": { "type": "number", "minimum": 0 }, "next": { "type": "number", "minimum": 0 }, "width": { "type": "number", "minimum": 0 } },
-            "description": "Design side only, optional: the element's one line ends in an ellipsis Chromium placed where its kept prefix ends (ruling R146). `at`: that x inside the whole line; `last`, `next`: the in-line advances of the last kept and the first dropped grapheme; `width`: the ellipsis's own advance. Unity captures do not write it."
+            "description": "Design side only, optional: the element's one line ends in an ellipsis Chromium placed where its kept prefix ends (decision D-146). `at`: that x inside the whole line; `last`, `next`: the in-line advances of the last kept and the first dropped grapheme; `width`: the ellipsis's own advance. Unity captures do not write it."
           }
         }
       }
