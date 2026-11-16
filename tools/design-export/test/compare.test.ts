@@ -1088,6 +1088,34 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(v.elements.find((r) => r.id === "label")!.lines).toBe("1/1, 1 not judged (covered)");
   });
 
+  it("fails text Unity draws over the element that covers it in the design, in its colour or another (ruling R160)", () => {
+    // the covered-label scene with the label's glyphs painted on top of the opaque sheet in the Unity image only: a
+    // paint-order regression, or a host that puts a panel's text above a popup
+    const ctx: CaptureContext = {
+      order: ["root", "card", "label", "panel", "sheet"], backgrounds: new Set(["root", "card", "panel", "sheet"]),
+      painters: new Set(["root", "card", "panel", "sheet"]), opaque: new Set(["root", "card", "panel", "sheet"]), fontPx: { label: 16 },
+    };
+    const sheet = (s: ReturnType<typeof scene>) => { fill(s.png, { x: 40, y: 40, w: 110, h: 40 }, [20, 40, 52]); s.boxes.elements.sheet = el(40, 40, 110, 40); return s; };
+    const over = (text: Rgb) => { const s = sheet(scene()); glyphs(s.png, { x: 50, y: 52, w: 80, h: 12 }, text); return s; };
+    const g = sheet(scene());
+    for (const text of [[250, 250, 250], [250, 210, 60]] as Rgb[]) {
+      const v = compareCapture(g, over(text), [], T, ctx);
+      expect(v.pass).toBe(false);
+      const ink = v.issues.filter((i) => i.id === "label" && i.kind === "ink");
+      expect(ink).toHaveLength(1);
+      expect(ink[0].detail).toMatch(/^line 1 of 1: Unity draws text the design covers/);
+      // the line is still counted as covered (its own ink checks do not apply), and it leaves the text masks: the
+      // cover's pixels are judged by the whole capture's SSIM
+      expect(v.linesCovered).toEqual(["label: line 1 of 1"]);
+      expect(v.masked.some((r) => r.x < 132 && r.x + r.w > 50 && r.y < 66 && r.y + r.h > 50)).toBe(false);
+      expect(v.ssim!).toBeLessThan(T.ssimNonText);
+    }
+    // the cover drawn as the design draws it passes, with nothing masked there
+    const same = compareCapture(g, sheet(scene()), [], T, ctx);
+    expect(same.pass).toBe(true);
+    expect(same.masked).toEqual([]);
+  });
+
   it("checks the text ink: colour and amount", () => {
     expect(compareCapture(badge(), badge(), [], T, bctx).elements.find((r) => r.id === "badge")).toMatchObject({ ink: 0, inkRatio: 1 });
     const colour = compareCapture(badge(), badge({ text: [250, 210, 60] }), [], T, bctx);

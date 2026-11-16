@@ -1201,16 +1201,113 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const shown = (id: string) => !!g.elements[id]?.visible && !!u.elements[id]?.visible;
     /** Whether an animation sample moves the element (an animation of geometry on it or an ancestor; ruling R132). */
     const movesIn = (id: string) => !!ctx.anim && !!ctx.moving?.has(id);
-    const textBoxes: Rect[] = [], textLines: Rect[] = [];
+    const paints = (id: string) => !ctx.painters || ctx.painters.has(id);
+    const paintIndex = new Map(order.map((id, i) => [id, i]));
+    /**
+     * Boxes painted over the element on either side: later elements in paint order (the compiler's, `ctx.order`) that
+     * paint something (IR), else the elements it contains. A point under one of them on either side is not this element's
+     * colour.
+     */
+    const coveringIds = (id: string): string[] => {
+      const ge = g.elements[id];
+      return paintIndex.has(id)
+        ? order.slice(paintIndex.get(id)! + 1).filter((x) => paints(x))
+        : Object.entries(g.elements).filter(([x, e]) => x !== id && e.visible && e.w * e.h < ge.w * ge.h
+          && e.x >= ge.x && e.y >= ge.y && e.x + e.w <= ge.x + ge.w && e.y + e.h <= ge.y + ge.h).map(([x]) => x);
+    };
+    const covering = (id: string): Rect[] =>
+      coveringIds(id).flatMap((x) => [g.elements[x], u.elements[x]]).filter((e): e is Box => !!e && e.visible);
+    /**
+     * Whether a pixel of a text's line is hidden by a later element: one whose fill is opaque (CaptureContext.opaque), within
+     * its painted shape (its box with its corner radii, half a pixel wider for the anti-aliased edge), on either side. A
+     * translucent scrim, a border-only box, a picture or a shadow hides nothing: the text under it is still judged. `exact`:
+     * the design's covers alone, a pixel whose centre lies in one (ruling R159: what a cover hides of the design's line).
+     */
+    const hiddenBy = (id: string, exact = false): ((x: number, y: number) => boolean) | null => {
+      if (!ctx.opaque) return null;
+      const shapes = coveringIds(id).filter((x) => ctx.opaque!.has(x))
+        .flatMap((x) => (exact ? [g.elements[x]] : [g.elements[x], u.elements[x]]).filter((e): e is Box => !!e && e.visible).map((b) => ({ b, r: ctx.radii?.[x] })));
+      if (!shapes.length) return null;
+      const grow = exact ? 0 : 0.5;
+      return (x, y) => shapes.some(({ b, r }) => insideRounded(b, r, x + 0.5, y + 0.5, grow));
+    };
+    /** The pixels whose 3×3 neighbourhood a cover test holds entirely: off the cover's anti-aliased edge in either renderer. */
+    const deepInside = (cover: ((x: number, y: number) => boolean) | null): ((x: number, y: number) => boolean) | null =>
+      cover && ((x, y) => {
+        for (let yy = y - 1; yy <= y + 1; yy++) for (let xx = x - 1; xx <= x + 1; xx++) if (!cover(xx, yy)) return false;
+        return true;
+      });
+
     /** Every shown text line on both sides with the key of its element or copy (ruling R150: a window's margin stops at them). */
     const keyedLines: { key: string; r: Rect }[] = [];
     for (const [id, e] of Object.entries(g.elements)) {
       if (!e.text || !e.visible) continue;
-      textBoxes.push(e);
-      textLines.push(...(e.lines.length ? e.lines : [e]));
       for (const r of e.lines) keyedLines.push({ key: id, r });
       const o = u.elements[id];
-      if (o && shown(id)) { textBoxes.push(o); textLines.push(...(o.lines.length ? o.lines : [o])); for (const r of o.lines) keyedLines.push({ key: id, r }); }
+      if (o && shown(id)) for (const r of o.lines) keyedLines.push({ key: id, r });
+    }
+    for (const [key, e] of Object.entries(g.items ?? {})) {
+      if (!e.text || !e.visible) continue;
+      for (const r of e.lines) keyedLines.push({ key, r });
+      const o = u.items?.[key];
+      if (o?.visible) for (const r of o.lines) keyedLines.push({ key, r });
+    }
+    /**
+     * A line's window: its line rects (`own`, both sides) grown by a pixel for the anti-aliased edge, the margin stopping at
+     * another text's line box on either side (ruling R150): labels laid edge to edge put the next label's first stem in the
+     * margin, in one renderer only when the boxes sit half a device pixel apart (a pilot screen's untimed section labels,
+     * right Δ −4.35 px). A line box that overlaps `own` takes that side's margin away.
+     */
+    const marginWindow = (key: string, own: Rect): Rect => {
+      let x0 = own.x - 1, y0 = own.y - 1, x1 = own.x + own.w + 1, y1 = own.y + own.h + 1;
+      const ox1 = own.x + own.w, oy1 = own.y + own.h, cx = own.x + own.w / 2, cy = own.y + own.h / 2;
+      for (const { key: k, r } of keyedLines) {
+        if (k === key || r.x >= x1 || r.x + r.w <= x0 || r.y >= y1 || r.y + r.h <= y0) continue;
+        const across = r.y < oy1 && r.y + r.h > own.y, along = r.x < ox1 && r.x + r.w > own.x;
+        if (across || !along) {
+          if (r.x + r.w / 2 >= cx) x1 = Math.min(x1, Math.max(ox1, r.x)); else x0 = Math.max(x0, Math.min(own.x, r.x + r.w));
+        } else if (r.y + r.h / 2 >= cy) y1 = Math.min(y1, Math.max(oy1, r.y)); else y0 = Math.max(y0, Math.min(own.y, r.y + r.h));
+      }
+      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    };
+    /**
+     * The window of a text's line i that the ink check judges (inkCheck): the line rects of both sides with their margin,
+     * within the design's overflow clips (ruling R157). Empty when the design's clips hide the line.
+     */
+    const lineWindow = (id: string, key: string, gl: Rect, ul: Rect): Rect => inBounds(marginWindow(key, unionRect(gl, ul)), clipOf(g, id, key));
+    /**
+     * The lines an opaque later element covers entirely (`${key}\n${i}`): the lines inkCheck lists as not judged (covered),
+     * of the texts it judges (both sides shown, the same line count). Ruling R160: such a line leaves the text masks, so
+     * the cover's own SSIM, its colour samples and the whole capture's SSIM judge what Unity draws there, and inkCheck
+     * holds Unity's window to the cover.
+     */
+    const coveredLines = new Set<string>();
+    const findCovered = (id: string, key: string, ge: TextBox, ue: TextBox) => {
+      if (!ge.lines.length || ue.lines.length !== ge.lines.length) return;
+      const hidden = hiddenBy(id);
+      if (!hidden) return;
+      ge.lines.forEach((gl, i) => {
+        const win = lineWindow(id, key, gl, ue.lines[i]);
+        if (!empty(win) && everyPixel(win, w, h, hidden)) coveredLines.add(`${key}\n${i}`);
+      });
+    };
+    for (const id of compared) if (!g.external.includes(id) && g.elements[id].text) findCovered(id, id, g.elements[id], u.elements[id]);
+    for (const c of textCopies) findCovered(c.id, c.key, c.g, c.u);
+    /** A text's box and lines for the masks, without the lines its covers hide entirely (none left: no box either). */
+    const textMaskOf = (key: string, e: Rect & { lines: readonly Rect[] }, other: { lines: readonly Rect[] } | undefined): { box: Rect | null; lines: Rect[] } => {
+      if (!e.lines.length || !other || other.lines.length !== e.lines.length) return { box: e, lines: e.lines.length ? [...e.lines] : [e] };
+      const lines = e.lines.filter((_, i) => !coveredLines.has(`${key}\n${i}`));
+      return { box: lines.length ? e : null, lines };
+    };
+
+    const textBoxes: Rect[] = [], textLines: Rect[] = [];
+    for (const [id, e] of Object.entries(g.elements)) {
+      if (!e.text || !e.visible) continue;
+      const o = u.elements[id], theirs = o && shown(id) ? o : undefined;
+      const mine = textMaskOf(id, e, theirs);
+      if (mine.box) textBoxes.push(mine.box);
+      textLines.push(...mine.lines);
+      if (theirs) { const m = textMaskOf(id, theirs, e); if (m.box) textBoxes.push(m.box); textLines.push(...m.lines); }
     }
     // the text lines of the copies in later repeat items (ruling R133): their own checks judge them. Only the lines, not the
     // copy's box: a copy has no element SSIM or colour samples of its own, so what it paints (a chip's background, a pill's
@@ -1218,12 +1315,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     // control's value) keeps its box masked, as the IR element's line mask does
     for (const [key, e] of Object.entries(g.items ?? {})) {
       if (!e.text || !e.visible) continue;
-      const own = e.lines.length ? e.lines : [e];
+      const o = u.items?.[key], theirs = o?.visible ? o : undefined;
+      const own = textMaskOf(key, e, theirs).lines;
       textBoxes.push(...own);
       textLines.push(...own);
-      for (const r of e.lines) keyedLines.push({ key, r });
-      const o = u.items?.[key];
-      if (o?.visible) { const theirs = o.lines.length ? o.lines : [o]; textBoxes.push(...theirs); textLines.push(...theirs); for (const r of o.lines) keyedLines.push({ key, r }); }
+      if (theirs) { const m = textMaskOf(key, theirs, e).lines; textBoxes.push(...m); textLines.push(...m); }
     }
     const externalBoxes = g.external.flatMap((id) => [g.elements[id], u.external.includes(id) ? u.elements[id] : undefined]).filter((e): e is Box => !!e);
     const mask = maskRects(w, h, [...textBoxes, ...externalBoxes], 2);
@@ -1259,36 +1355,6 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     ssim = wholeSsim(map);
     if (ssim < t.ssimNonText - EPS) issue(WHOLE, "ssim", `whole-capture SSIM ${ssim.toFixed(5)} (limit ${t.ssimNonText})`);
 
-    const paints = (id: string) => !ctx.painters || ctx.painters.has(id);
-    const paintIndex = new Map(order.map((id, i) => [id, i]));
-    /**
-     * Boxes painted over the element on either side: later elements in paint order (the compiler's, `ctx.order`) that
-     * paint something (IR), else the elements it contains. A point under one of them on either side is not this element's
-     * colour.
-     */
-    const coveringIds = (id: string): string[] => {
-      const ge = g.elements[id];
-      return paintIndex.has(id)
-        ? order.slice(paintIndex.get(id)! + 1).filter((x) => paints(x))
-        : Object.entries(g.elements).filter(([x, e]) => x !== id && e.visible && e.w * e.h < ge.w * ge.h
-          && e.x >= ge.x && e.y >= ge.y && e.x + e.w <= ge.x + ge.w && e.y + e.h <= ge.y + ge.h).map(([x]) => x);
-    };
-    const covering = (id: string): Rect[] =>
-      coveringIds(id).flatMap((x) => [g.elements[x], u.elements[x]]).filter((e): e is Box => !!e && e.visible);
-    /**
-     * Whether a pixel of a text's line is hidden by a later element: one whose fill is opaque (CaptureContext.opaque), within
-     * its painted shape (its box with its corner radii, half a pixel wider for the anti-aliased edge), on either side. A
-     * translucent scrim, a border-only box, a picture or a shadow hides nothing: the text under it is still judged. `exact`:
-     * the design's covers alone, a pixel whose centre lies in one (ruling R159: what a cover hides of the design's line).
-     */
-    const hiddenBy = (id: string, exact = false): ((x: number, y: number) => boolean) | null => {
-      if (!ctx.opaque) return null;
-      const shapes = coveringIds(id).filter((x) => ctx.opaque!.has(x))
-        .flatMap((x) => (exact ? [g.elements[x]] : [g.elements[x], u.elements[x]]).filter((e): e is Box => !!e && e.visible).map((b) => ({ b, r: ctx.radii?.[x] })));
-      if (!shapes.length) return null;
-      const grow = exact ? 0 : 0.5;
-      return (x, y) => shapes.some(({ b, r }) => insideRounded(b, r, x + 0.5, y + 0.5, grow));
-    };
     const onText = (x: number, y: number) => {
       for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) if (textMask[yy * w + xx]) return true;
       return false;
@@ -1521,24 +1587,6 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     };
 
 
-    /**
-     * A line's window: its line rects (`own`, both sides) grown by a pixel for the anti-aliased edge, the margin stopping at
-     * another text's line box on either side (ruling R150): labels laid edge to edge put the next label's first stem in the
-     * margin, in one renderer only when the boxes sit half a device pixel apart (a pilot screen's untimed section labels,
-     * right Δ −4.35 px). A line box that overlaps `own` takes that side's margin away.
-     */
-    const marginWindow = (key: string, own: Rect): Rect => {
-      let x0 = own.x - 1, y0 = own.y - 1, x1 = own.x + own.w + 1, y1 = own.y + own.h + 1;
-      const ox1 = own.x + own.w, oy1 = own.y + own.h, cx = own.x + own.w / 2, cy = own.y + own.h / 2;
-      for (const { key: k, r } of keyedLines) {
-        if (k === key || r.x >= x1 || r.x + r.w <= x0 || r.y >= y1 || r.y + r.h <= y0) continue;
-        const across = r.y < oy1 && r.y + r.h > own.y, along = r.x < ox1 && r.x + r.w > own.x;
-        if (across || !along) {
-          if (r.x + r.w / 2 >= cx) x1 = Math.min(x1, Math.max(ox1, r.x)); else x0 = Math.max(x0, Math.min(own.x, r.x + r.w));
-        } else if (r.y + r.h / 2 >= cy) y1 = Math.min(y1, Math.max(oy1, r.y)); else y0 = Math.max(y0, Math.min(own.y, r.y + r.h));
-      }
-      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-    };
 
     /**
      * A text's ink per line (an IR element's, or its copy's in a later repeat item, `key` naming it; ruling R133): colour
@@ -1580,7 +1628,23 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
         // ruling R157: the window is the design's visible window; Unity's clip never shrinks it
         const win = gw;
-        if (hidden && everyPixel(win, w, h, hidden)) { covered++; linesCovered.push(`${key}: line ${i + 1} of ${ge.lines.length}`); return; }
+        if (coveredLines.has(`${key}\n${i}`)) {
+          covered++;
+          linesCovered.push(`${key}: line ${i + 1} of ${ge.lines.length}`);
+          // ruling R160: what the design's covers hide must be the cover in Unity too. Unity's ink in the window, on the
+          // pixels a pixel inside the design's covers, where the design shows none there, is text drawn over the cover (a
+          // paint-order error, a host panel above a popup). Where the design shows the cover's own content there, the
+          // cover's SSIM judges the window (the line is out of the text masks)
+          const deep = deepInside(exactCover);
+          if (deep) {
+            const outside = (x: number, y: number) => !deep(x, y);
+            const drawn = inkIn(up, win, outside);
+            if (drawn && !inkIn(gp, win, outside)) {
+              issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: Unity draws text the design covers (ink ${hex(drawn.ink)} on the cover's ${hex(drawn.bg)}, ${drawn.coverage.toFixed(1)} px of ink; the design shows only the cover there)`, gl);
+            }
+          }
+          return;
+        }
         const a = inkIn(gp, win, hidden ?? undefined);
         if (!a) return;
         // a part of it with the design's ink that Unity's clip hides beyond Unity's own rounding (a pixel at an edge) is missing
