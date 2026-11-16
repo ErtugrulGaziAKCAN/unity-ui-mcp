@@ -72,7 +72,7 @@ describe("server surface", () => {
     const client = await serverFor(p.dir);
     const instructions = client.getInstructions() ?? "";
     expect(instructions).toMatch(/design_ui_rules[\s\S]*design_ui_lint[\s\S]*design_ui_import[\s\S]*design_ui_verify/);
-    expect(instructions).toMatch(/Live in this version: .*design_ui_import.*design_ui_verify.*design_ui_kit_sync/);
+    expect(instructions).toMatch(/Live in this version: .*design_ui_import.*design_ui_verify.*design_ui_kit_sync.*design_ui_clean/);
     expect(instructions).not.toMatch(/not available yet/i);
     expect(client.getServerVersion()).toMatchObject({ name: "design-ui", version: VERSION });
   });

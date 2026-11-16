@@ -63,6 +63,7 @@ export function availability(ctx: ServerContext, bridge?: BridgeStatus | null): 
         : kit.needsEditor
           ? { available: false, needsEditor: true, note: `${kit.how}; kit sync needs the open Unity Editor with the com.ertugrulgaziakcan.design-ui bridge` }
           : { available: false, note: `the Unity kit sync cannot run: ${kit.how}` },
+    design_ui_clean: { available: true, note: "live (reports with dryRun, or runs, the cleanup of the screens' bookkeeping that import and verify also run by themselves)" },
   };
 }
 
