@@ -335,6 +335,56 @@ describe("compareCapture", () => {
       expect(v.find((i) => i.kind === "ink")?.detail).toMatch(/a fragment of [\d.]+ em/);
     });
 
+    describe("ruling R156's cut: an ancestor's clip, the one-column rounding allowance, an ellipsized line's end (fix-3 re-review F2)", () => {
+      // the chip's 15 px label (stems 41–199) without the menu, in a list that clips it (`list`: overflow hidden on x)
+      const off: Rgb = [165, 195, 205];
+      const inList = (unity: boolean, listW: number, lineW = 160) => {
+        const s = chip(unity, unity ? off : [185, 208, 214], 320);
+        s.boxes.elements.label = el(40, 26, lineW, 18, { text: true, lines: [{ x: 40, y: 27, w: lineW, h: 16, baseline: 41 }] });
+        s.boxes.elements.list = el(0, 0, listW, 80);
+        delete (s.boxes.elements as Record<string, unknown>).menu;
+        return s;
+      };
+      const listCtx = (clipId: string): CaptureContext => ({ ...ctx, order: ["root", "list", "label"], parent: new Map([["list", "root"], ["label", "list"]]),
+        opaque: new Set(), painters: new Set(), backgrounds: new Set(), clips: { label: [{ id: clipId, x: true, y: false, inset: [0, 0, 0, 0] }] } });
+
+      it("an ancestor's clip through the glyphs makes a fragment; the line's own box at the same edge does not (probe Q1)", () => {
+        // the list's clip at x 73 leaves 33 px (2.2 em) of the line: a fragment, ΔE2000 4.2 within the 2 em key 6.15
+        expect(label(compareCapture(inList(false, 73), inList(true, 73), [], repo, listCtx("list")))).toEqual([]);
+        // the label's own box ending at x 73 (its own text cut): no fragment, the usual limit 2 holds
+        const own = (unity: boolean) => inList(unity, 320, 33);
+        const v = label(compareCapture(own(false), own(true), [], repo, listCtx("label")));
+        expect(v.find((i) => i.kind === "ink")?.detail).toMatch(/text colour ΔE2000 [\d.]+, .*\(limit 2 at 15 px\)$/);
+      });
+
+      it("an ancestor's clip that takes one column of a whole line by rounding cuts nothing (the allowance)", () => {
+        // the line 32.5 px wide (40–72.5, stems 41–71), the list's clip at 72.5: whole device px keep columns to 71, one column
+        // of the line's extent (72) goes, which is the rounding of its own edge, not a cut; the usual limit holds
+        const whole = (unity: boolean) => { const s = inList(unity, 72.5, 32.5); fill(s.png, { x: 73, y: 26, w: 160, h: 18 }, [11, 31, 38]); return s; };
+        const v = label(compareCapture(whole(false), whole(true), [], repo, listCtx("list")));
+        expect(v.find((i) => i.kind === "ink")?.detail).toMatch(/text colour ΔE2000 [\d.]+, .*\(limit 2 at 15 px\)$/);
+      });
+
+      it("ends an ellipsized line's extent at its ellipsis: a cover past it over the box's rest cuts nothing", () => {
+        // probe P5b's 10 px label (its box 40–70 its own clip, the ellipsis ending at 68.5), a later opaque badge from 68.5 over
+        // the box's last columns past the ellipsis; Unity draws the secondary colour where the design has the primary
+        const draw = (c: Rgb) => {
+          const png = canvas(200, 60, [16, 24, 32]);
+          for (let x = 41; x < 60; x += 2) fill(png, { x, y: 32, w: 1, h: 10 }, c);
+          for (const x of [61, 64, 67]) fill(png, { x, y: 40, w: 1, h: 2 }, c);
+          fill(png, { x: 69, y: 20, w: 40, h: 30 }, [40, 40, 40]);
+          return png;
+        };
+        const boxes: CaptureBoxes = { capture: "c", viewport: [200, 60], scale: 0.5, external: [], elements: { root: el(0, 0, 200, 60),
+          label: el(40, 30, 30, 14, { text: true, lines: [{ x: 40, y: 30, w: 120, h: 14, baseline: 42, ellipsis: { at: 60.5, last: 4, next: 5, width: 8 } }] }),
+          badge: el(68.5, 20, 40, 30) } };
+        const c: CaptureContext = { order: ["root", "label", "badge"], root: "root", fontPx: { label: 10 }, viewportClass: "exact",
+          opaque: new Set(["badge"]), painters: new Set(["badge"]), backgrounds: new Set(["badge"]), clips: { label: [{ id: "label", x: true, y: true, inset: [0, 0, 0, 0] }] } };
+        const v = label(compareCapture({ png: draw([255, 255, 255]), boxes }, { png: draw([185, 208, 214]), boxes }, [], thresholdsFor(repo, "exact"), c));
+        expect(v.map((i) => i.detail).join(" | ")).toMatch(/text colour ΔE2000 [\d.]+, design #ffffff/);
+      });
+    });
+
     it("gives no key to a whole line its own clip trims by rounding alone (a box on fractional device px)", () => {
       // a pilot screen's 12.5 px score "1 – 1" in its own overflow-hidden box at x 511.25–535.24 (Unity 511.67–535.00): the
       // clip, rounded inward to whole device px, takes a column at each end of the line's box but no glyph. Here four stems
@@ -2987,7 +3037,14 @@ describe("compareScreen", () => {
       for (let x = 13; x < 20; x++) { if (split) { put(x, 10, 0.25); put(x, 11, 0.74); } else put(x, 10, 0.97); }
       return png;
     };
-    const run = async (exactUnity: Rgb, exactDraws = true) => {
+    // `exactDraws`: the exact capture draws the status (true), nothing (false) or a one-stroke version the design draws without a
+    // fully covered pixel ("hairline": stems at 0.8 of the colour, judged by its colour direction there, rulings R138, R141)
+    const hairline = (c: Rgb) => {
+      const png = canvas(40, 24, bgC);
+      for (const x of [8, 24]) fill(png, { x, y: 6, w: 1, h: 10 }, [0, 1, 2].map((j) => Math.round(bgC[j] + 0.8 * (c[j] - bgC[j]))) as Rgb);
+      return png;
+    };
+    const run = async (exactUnity: Rgb, exactDraws: boolean | "hairline" = true) => {
       const root = tmp(), exportDir = path.join(root, "export"), unityDir = path.join(root, "unity");
       fs.mkdirSync(path.join(exportDir, "goldens"), { recursive: true });
       fs.mkdirSync(unityDir, { recursive: true });
@@ -2997,7 +3054,7 @@ describe("compareScreen", () => {
       const entries = [{ name: "default@40x24", ...job("default", [40, 24]) }, { name: "default@32x20", ...job("default", [32, 20]) }];
       const g = { "default@32x20": boxes("default@32x20", [32, 20], 0.5), "default@40x24": boxes("default@40x24", [40, 24], 0.625) };
       const blank = canvas(40, 24, bgC);
-      const pngs: Record<string, [Rgba, Rgba]> = { "default@32x20": exactDraws ? [draw(secondary, false), draw(exactUnity, false)] : [blank, blank], "default@40x24": [draw(secondary, false), draw(secondary, true)] };
+      const pngs: Record<string, [Rgba, Rgba]> = { "default@32x20": exactDraws === "hairline" ? [hairline(secondary), hairline(exactUnity)] : exactDraws ? [draw(secondary, false), draw(exactUnity, false)] : [blank, blank], "default@40x24": [draw(secondary, false), draw(secondary, true)] };
       for (const e of entries) {
         fs.writeFileSync(path.join(exportDir, "goldens", `${e.name}.png`), encodePng(pngs[e.name][0]));
         fs.writeFileSync(path.join(unityDir, `${e.name}.png`), encodePng(pngs[e.name][1]));
@@ -3021,6 +3078,11 @@ describe("compareScreen", () => {
     const none = await run(secondary, false);
     expect(none["default@32x20"]).toEqual([]);
     expect(none["default@40x24"]).toContain("ink");
+    // the text judged and passing at the exact viewport by its colour direction only (a hairline line there): no evidence,
+    // which needs its ink colour (ΔE2000) judged at one exact viewport at least (review N7, the park ruling; fix-3 re-review F2)
+    const direction = await run(secondary, "hairline");
+    expect(direction["default@32x20"]).toEqual([]);
+    expect(direction["default@40x24"]).toContain("ink");
   });
 });
 
