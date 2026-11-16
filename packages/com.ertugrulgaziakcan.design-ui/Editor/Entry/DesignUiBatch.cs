@@ -48,7 +48,7 @@ namespace DesignUi.Editor
             "Exit codes: 0 ok, 1 failed, 2 usage.";
 
         /// <summary><c>-executeMethod DesignUi.Editor.DesignUiBatch.KitSync</c>: <see cref="DesignUiOps.KitSync"/>, then exits.</summary>
-        public static void KitSync() => Exit(Run(KitSyncCommand, Environment.GetCommandLineArgs()));
+        public static void KitSync() => Exit(Run(KitSyncCommand, Environment.GetCommandLineArgs(), Environment.GetEnvironmentVariable(KitSyncDoneVariable)));
 
         /// <summary><c>-executeMethod DesignUi.Editor.DesignUiBatch.Import</c>: <see cref="DesignUiOps.Import"/> per export folder, then exits.</summary>
         public static void Import() => Exit(Run(ImportCommand, Environment.GetCommandLineArgs(), Environment.GetEnvironmentVariable(ImportDoneVariable)));
@@ -66,14 +66,17 @@ namespace DesignUi.Editor
         /// </summary>
         public static OpResult Run(string command, string[] args) => Run(command, args, null);
 
-        /// <summary><see cref="Run(string, string[])"/>; an import writes <paramref name="importDone"/> (see <see cref="ImportEach"/>).</summary>
-        static OpResult Run(string command, string[] args, string importDone)
+        /// <summary>
+        /// <see cref="Run(string, string[])"/>; an import writes the done marker <paramref name="done"/> (see <see cref="ImportEach"/>),
+        /// a kit sync its own (<see cref="KitSyncWithDone"/>).
+        /// </summary>
+        static OpResult Run(string command, string[] args, string done)
         {
-            try { return RunUnguarded(command, args, importDone); }
+            try { return RunUnguarded(command, args, done); }
             catch (Exception e) { return OpResult.Failure(1, "Design UI " + command + " stopped: " + e.GetType().Name + ": " + e.Message); }
         }
 
-        static OpResult RunUnguarded(string command, string[] args, string importDone)
+        static OpResult RunUnguarded(string command, string[] args, string done)
         {
             var allowed = command == ImportCommand ? new[] { Profile, Export, Discard }
                 : command == KitSyncCommand ? new[] { Profile, Kit, AddViewports }
@@ -97,10 +100,33 @@ namespace DesignUi.Editor
                 if (!values.ContainsKey(required)) return UsageError("missing " + required);
 
             if (command == KitSyncCommand)
-                return DesignUiOps.KitSync(values[Profile], values[Kit], values.ContainsKey(AddViewports) || Environment.GetEnvironmentVariable(AddProfileViewportsVariable) == "true");
+                return KitSyncWithDone(values[Profile], values[Kit], values.ContainsKey(AddViewports) || Environment.GetEnvironmentVariable(AddProfileViewportsVariable) == "true", done);
             var exports = PathList(values[Export]);
             if (exports.Count == 0) return UsageError(Export + " needs a value");
-            return ImportEach(values[Profile], exports, values.ContainsKey(Discard), null, importDone);
+            return ImportEach(values[Profile], exports, values.ContainsKey(Discard), null, done);
+        }
+
+        /// <summary>The environment variable naming the kit-sync done marker a command runner checks (see <see cref="KitSyncWithDone"/>).</summary>
+        public const string KitSyncDoneVariable = "DESIGN_UI_KIT_SYNC_DONE";
+
+        /// <summary>
+        /// <see cref="DesignUiOps.KitSync(string, string, bool)"/>, then, when <paramref name="doneFile"/> is given (a command
+        /// runner's <c>DESIGN_UI_KIT_SYNC_DONE</c>), the done marker written last: <c>{ "kitSync": { kitDir, code } }</c>, so the
+        /// runner knows this run synced that kit and how it ended (an exit code alone does not tell a kit sync from another
+        /// command that exits 0).
+        /// </summary>
+        public static OpResult KitSyncWithDone(string profilePath, string kitDir, bool addProfileViewports, string doneFile)
+        {
+            var r = DesignUiOps.KitSync(profilePath, kitDir, addProfileViewports);
+            if (!string.IsNullOrEmpty(doneFile))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(doneFile)));
+                var marker = new Newtonsoft.Json.Linq.JObject { ["kitSync"] = new Newtonsoft.Json.Linq.JObject { ["kitDir"] = kitDir, ["code"] = r.Code } };
+                File.WriteAllText(doneFile + ".tmp", marker.ToString() + "\n");
+                if (File.Exists(doneFile)) File.Delete(doneFile);
+                File.Move(doneFile + ".tmp", doneFile);
+            }
+            return r;
         }
 
         /// <summary>The environment variable naming the import done marker a command runner checks (see <see cref="ImportEach"/>).</summary>

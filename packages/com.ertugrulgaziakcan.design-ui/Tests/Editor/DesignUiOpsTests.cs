@@ -78,7 +78,10 @@ namespace DesignUi.Editor.Tests
             if (kit == null) Assert.Pass("not configured; nothing synced (set DESIGN_UI_KIT_DIR and DESIGN_UI_PROFILE)");
             var profile = Env("DESIGN_UI_PROFILE");
             Assert.IsNotNull(profile, "DESIGN_UI_PROFILE names the DesignUiProfile asset (Assets/…)");
-            var r = DesignUiOps.KitSync(profile, kit);
+            // DESIGN_UI_KIT_SYNC_DONE: the done marker with the kit folder and the code, for a runner that checks what ran;
+            // DESIGN_UI_ADD_PROFILE_VIEWPORTS=true adds the kit's viewports to the profile first
+            var add = string.Equals(Env(DesignUiBatch.AddProfileViewportsVariable), "true", StringComparison.OrdinalIgnoreCase);
+            var r = DesignUiBatch.KitSyncWithDone(profile, kit, add, Env(DesignUiBatch.KitSyncDoneVariable));
             Debug.Log("Design UI kit sync (code " + r.Code + "):\n" + r.Log);
             Assert.AreEqual(0, r.Code, r.Log);
         }

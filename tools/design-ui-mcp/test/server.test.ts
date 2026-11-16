@@ -1125,6 +1125,14 @@ describe("design_ui_kit_sync", () => {
     expect(r.isError).toBeFalsy();
     expect(p.runnerCalls()[0]).toMatch(/^kitSync\|/);
   });
+
+  it("through the command route counts only a kit sync Unity confirms in its done marker (an exit code alone proves nothing)", async () => {
+    const p = tempProject({ prefer: "command", kitSyncDone: "none" });
+    const r = await call(await serverFor(p.dir), "design_ui_kit_sync");
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/^Kit sync \(via command\) exited 0 but did not confirm it: no kit-sync done marker/);
+    expect(r.text).toContain("DesignUiOpsTests.KitSyncFromEnv or DesignUiBatch.KitSync");
+  });
 });
 
 describe("design_ui_verify", () => {

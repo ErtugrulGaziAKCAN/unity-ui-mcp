@@ -295,7 +295,7 @@ async function runCommand(cfg: DesignUiConfig, step: UnityStep, vars: Record<str
   for (const [k, v] of Object.entries(process.env)) if (!k.startsWith("DESIGN_UI_")) env[k] = v;
   // the same values as environment variables (DESIGN_UI_EXPORT_DIR, …), for runners such as an EditMode capture test
   // DESIGN_UI_IMPORT_DONE: where the import writes its done marker (the IR SHA-256 it imported), checked by design_ui_import
-  for (const k of [...PLACEHOLDERS, "discardManualEdits", "importDone", "addProfileViewports"]) {
+  for (const k of [...PLACEHOLDERS, "discardManualEdits", "importDone", "kitSyncDone", "addProfileViewports"]) {
     if (vars[k]) env[`DESIGN_UI_${k.replace(/[A-Z]/g, (c) => "_" + c).toUpperCase()}`] = vars[k];
   }
   // the server's own node, first on the command's PATH and named in DESIGN_UI_NODE: a GUI client may start the server with

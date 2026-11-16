@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { requireConfig, withProgress, type ServerContext } from "../context.js";
@@ -29,13 +32,16 @@ export function registerKitSync(server: McpServer, ctx: ServerContext): void {
       if (isCloneKit(cfg.kitDir)) {
         return toolResult(`Kit sync not run: ${cloneKitMessage(cfg.kitDir, cfg.designRoot, cfg.configPath)}.`, { kitDir: cfg.kitDir, timings: t.done() }, true);
       }
-      let run;
+      // the command route's done marker: Unity names the kit it synced and its code (a command's exit code alone proves nothing)
+      const doneDir = fs.mkdtempSync(path.join(os.tmpdir(), "design-ui-kit-sync-")), doneFile = path.join(doneDir, "kit-sync-done.json");
+      let run, confirmed: boolean;
       try {
-        run = await t.async("unity", () => runUnity(cfg, "kitSync", { addProfileViewports: args.addProfileViewports ? "true" : "false" }, withProgress(ctx, extra)));
+        run = await t.async("unity", () => runUnity(cfg, "kitSync", { addProfileViewports: args.addProfileViewports ? "true" : "false", kitSyncDone: doneFile }, withProgress(ctx, extra)));
+        confirmed = confirmsKitSync(doneFile, cfg.kitDir);
       } catch (e) {
         if (!(e instanceof UnityRunnerError)) throw e;
         return toolResult(`Kit sync not run: ${e.message}`, { kitDir: cfg.kitDir, timings: t.done() }, true);
-      }
+      } finally { fs.rmSync(doneDir, { recursive: true, force: true }); }
       ctx.runtime.invalidateKits();
       const data = {
         kitDir: cfg.kitDir, via: run.via, code: run.code, warnings: run.warnings, errors: run.errors, logTail: run.logTail,
@@ -52,7 +58,21 @@ export function registerKitSync(server: McpServer, ctx: ServerContext): void {
         const text = [withIssues(`Kit sync failed (exit ${run.code}, via ${run.via}).`, run, false), ...viewports, ...(run.logTail ? [`Log tail:\n${run.logTail}`] : [])];
         return toolResult(text.join("\n"), data, true);
       }
+      if (run.via === "command" && !confirmed) {
+        return toolResult(withIssues(`Kit sync (via command) exited 0 but did not confirm it: no kit-sync done marker for ${cfg.kitDir} with code 0 ` +
+          "(the kit sync command must run DesignUiOpsTests.KitSyncFromEnv or DesignUiBatch.KitSync, which write it to DESIGN_UI_KIT_SYNC_DONE). " +
+          "The kit may not be synced.", run), data, true);
+      }
       return toolResult(withIssues(`Kit synced into ${cfg.kitDir} via ${run.via}.`, run), data);
     });
   });
+}
+
+/** Whether the command route's kit-sync done marker confirms a successful sync of this kit folder. */
+function confirmsKitSync(file: string, kitDir: string): boolean {
+  const real = (p: string) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  try {
+    const done = JSON.parse(fs.readFileSync(file, "utf8"))?.kitSync;
+    return done?.code === 0 && typeof done.kitDir === "string" && real(done.kitDir) === real(kitDir);
+  } catch { return false; }
 }

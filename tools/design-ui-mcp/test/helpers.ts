@@ -29,15 +29,16 @@ export interface TempProject {
 
 /**
  * A temp Unity project folder with design-ui.config.json, a designs folder and a stub command runner log. `importDone`:
- * what the stub's import writes as import-done.json (default: a confirmation of the export's IR).
+ * what the stub's import writes as import-done.json (default: a confirmation of the export's IR); `kitSyncDone`: whether
+ * its kit sync writes its done marker (default: it does).
  */
-export function tempProject(opts: { prefer?: "editor" | "command"; exit?: number; importDone?: "ok" | "none" | "wrong" } = {}): TempProject {
+export function tempProject(opts: { prefer?: "editor" | "command"; exit?: number; importDone?: "ok" | "none" | "wrong"; kitSyncDone?: "ok" | "none" } = {}): TempProject {
   const dir = tempDir();
   fs.mkdirSync(path.join(dir, "Assets"));
   const designRoot = path.join(dir, "Designs");
   fs.mkdirSync(designRoot);
   const runnerLog = path.join(dir, "runner.log");
-  const stub = (exit: number) => ["sh", STUB_RUNNER, "--log", runnerLog, "--exit", String(exit), "--import-done", opts.importDone ?? "ok"];
+  const stub = (exit: number) => ["sh", STUB_RUNNER, "--log", runnerLog, "--exit", String(exit), "--import-done", opts.importDone ?? "ok", "--kit-sync-done", opts.kitSyncDone ?? "ok"];
   const p: TempProject = {
     dir, designRoot, runnerLog,
     writeConfig(extra = {}) {

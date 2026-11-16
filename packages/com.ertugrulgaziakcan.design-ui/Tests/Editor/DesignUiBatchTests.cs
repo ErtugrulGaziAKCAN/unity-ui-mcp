@@ -136,6 +136,20 @@ namespace DesignUi.Editor.Tests
         }
 
         [Test]
+        public void KitSync_WritesTheDoneMarker_WithTheKitFolderAndItsCode()
+        {
+            // a command runner checks the marker, not the exit code: a kit sync that failed records its code
+            var kit = TempDir("kit");
+            var done = Path.Combine(TempDir("done"), "sub", "kit-sync-done.json");
+            var r = DesignUiBatch.KitSyncWithDone("Assets/Nope.asset", kit, false, done);
+            Assert.AreEqual(1, r.Code, r.Log);
+            var o = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(done));
+            Assert.AreEqual(kit, o["kitSync"].Value<string>("kitDir"));
+            Assert.AreEqual(1, o["kitSync"].Value<int>("code"));
+            Assert.IsFalse(File.Exists(done + ".tmp"));
+        }
+
+        [Test]
         public void Import_DiscardManualEdits_OverwritesAHandEditedFile()
         {
             var output = TempDir("out");
