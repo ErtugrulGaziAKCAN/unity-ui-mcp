@@ -69,6 +69,7 @@ describe("runUnity: editor route", () => {
     expect(r.answer).toEqual({
       changed: ["/p/Assets/UI/Generated/A/A.uss"], imported: ["Assets/UI/Generated/A/A.uss"], compiled: [], compiling: false, compileId: null, ms: 40,
       scriptsFailed: null, // this answer does not say
+      output: null, // nor where the screen was written
     });
     expect(r.compile).toBeUndefined();
     expect(bridge.requests.filter((q) => q.path === "/status")).toHaveLength(0);
@@ -213,7 +214,7 @@ describe("runUnity: command route", () => {
     const r = await runUnity(readConfig(p.dir), "import", { exportDir, importDone: done }, fast);
     expect(r.code).toBe(0);
     expect(JSON.parse(fs.readFileSync(done, "utf8"))).toEqual({
-      imports: [{ exportDir, code: 0, irSha: "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a" }],
+      imports: [{ exportDir, code: 0, irSha: "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", output: "Assets/UI/Generated/CleanScreen" }],
     });
   });
 
