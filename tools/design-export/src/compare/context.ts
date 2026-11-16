@@ -52,6 +52,11 @@ export interface CaptureContext {
   /** Text elements whose `text-shadow` in this capture has a blur radius above 0 (a glow around the glyphs). */
   textShadows?: ReadonlySet<string>;
   /**
+   * Text elements with any `text-shadow` in this capture, hard or blurred (ruling R154): the shadow's paint lies in their ink
+   * windows, outside the fragment key's measurement, so their fragments take no key (the ordinary checks).
+   */
+  shadowedText?: ReadonlySet<string>;
+  /**
    * Elements an animation sample shows rotated off the axes: the design's rotation on the screen (golden boxes
    * `rotation`) is not a multiple of 90°. Empty for static captures.
    */
@@ -99,7 +104,7 @@ export interface CaptureContext {
 }
 
 /** What `inkProbe` gets per judged text line. */
-export interface InkProbeLine { key: string; line: number; px: number; window: Rect; hidden: ((x: number, y: number) => boolean) | null; design: import("../bake/png.js").Rgba; unity: import("../bake/png.js").Rgba; glow: boolean }
+export interface InkProbeLine { key: string; line: number; px: number; window: Rect; hidden: ((x: number, y: number) => boolean) | null; design: import("../bake/png.js").Rgba; unity: import("../bake/png.js").Rgba; glow: boolean; shadowed: boolean }
 
 /** An ancestor whose overflow clips a text: the axes it clips and its border widths (top, right, bottom, left, device px). */
 export interface ClipAncestor { id: string; x: boolean; y: boolean; inset: [number, number, number, number] }
@@ -274,7 +279,7 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
   const borders: Record<string, [number, number, number, number]> = {};
   const fontPx: Record<string, number> = {};
   const radii: Record<string, [number, number, number, number]> = {};
-  const pictures = new Set<string>(), textShadows = new Set<string>(), rotated = new Set<string>(), opaque = new Set<string>(), vectors = new Set<string>();
+  const pictures = new Set<string>(), textShadows = new Set<string>(), shadowedText = new Set<string>(), rotated = new Set<string>(), opaque = new Set<string>(), vectors = new Set<string>();
   const repeats = new Set<string>();
   const opacity = new Map<string, number>();
   const opacityOf = (id: string, holds: (key: string) => boolean): number => {
@@ -316,7 +321,9 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
       const size = parseFloat(styleValue(n, "font-size", holds) ?? "");
       if (Number.isFinite(size) && size > 0) fontPx[id] = size * golden.scale;
       // offset-x offset-y blur: the third length (the colour may come first or last)
-      const lengths = (styleValue(n, "text-shadow", holds) ?? "none").replace(/(rgba?|hsla?)\([^)]*\)|#[0-9a-f]+/gi, " ").match(/-?(?:\d+\.?\d*|\.\d+)(?:px)?(?=\s|$)/g) ?? [];
+      const textShadow = (styleValue(n, "text-shadow", holds) ?? "none").trim();
+      if (textShadow !== "" && textShadow !== "none") shadowedText.add(id);
+      const lengths = textShadow.replace(/(rgba?|hsla?)\([^)]*\)|#[0-9a-f]+/gi, " ").match(/-?(?:\d+\.?\d*|\.\d+)(?:px)?(?=\s|$)/g) ?? [];
       if (lengths.length >= 3 && parseFloat(lengths[2]) > 0) textShadows.add(id);
     }
     if (backgrounds.has(id) || borders[id] || sh || inset || n.asset || n.kind === "image" || n.kind === "vector") painters.add(id);
@@ -365,5 +372,5 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     return movesBox(Array.isArray(anims) && typeof r.index === "number" ? anims[r.index] : undefined) ? r.elementId : null;
   }).filter((x): x is string => x !== null));
   if (runIds.size) for (const id of ix.order) for (let x: string | undefined = id; x !== undefined; x = ix.parent.get(x)) if (runIds.has(x)) { moving.add(id); break; }
-  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, rotated, clips };
+  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, shadowedText, rotated, clips };
 }

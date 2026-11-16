@@ -1556,13 +1556,15 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // takes the measured noise of the statistic for its width (measured on windows cut anywhere along correct lines), in
         // the measurement's domain (the design's ink at least MIN_INK_PX, the amount's floor; not a glowing line's). A whole
         // short line is no fragment: its window holds whole glyphs and keeps its limits (rulings R126, R138, R141). The cut is
-        // measured on the line's own box (both renders'), a clip's inward rounding to whole device px (a column at each end) no cut
-        const glow = !!ctx.textShadows?.has(id);
+        // measured on the line's own box (both renders'), a clip's inward rounding to whole device px (a column at each end) no cut.
+        // Ruling R154: a text with a text-shadow, hard or blurred, is outside the measurement (the shadow's paint lies in the
+        // window): its fragments take no key and keep the ordinary checks
+        const glow = !!ctx.textShadows?.has(id), shadowed = glow || !!ctx.shadowedText?.has(id);
         const lineBox = unionRect(gl, ue.lines[i]);
         const shown = inBounds(lineBox, { x0: win.x, y0: win.y, x1: win.x + win.w, y1: win.y + win.h });
         const whole = Math.ceil(lineBox.x + lineBox.w) - Math.floor(lineBox.x);
         const visible = empty(shown) ? 0 : visibleColumns(shown, hidden);
-        const cut = !glow && visible < whole - 2;
+        const cut = !shadowed && visible < whole - 2;
         // the ink amount against the text colour on both sides (each pixel's distance from the background over the colour's),
         // not each side's own ink colour: a stroke drawn faint everywhere is little ink, not a full stroke of a lighter colour
         const sum = (x: Float64Array) => { let v = 0; for (const d of x) v += d; return v; };
@@ -1595,7 +1597,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         // ruling R149 (above): a fragment in the measured domain takes the key of its width
         const fragment = cut ? fragmentKey(t, px, visibleColumns(win, hidden) / px) : null;
         inkLines.push({ id: key, i, n: ge.lines.length, ratio: common ?? (b ? b.coverage / Math.max(a.coverage, MIN_INK_PX) : null), at: gl, light: lumaOf(a.ink) > lumaOf(a.bg), later: i >= 1 && px < t.textInkLaterBelowPx, small: px <= t.textInkSmallPx, glow, ...(fragment ? { fragment } : {}) });
-        ctx.inkProbe?.({ key, line: i, px, window: win, hidden, design: gp, unity: up, glow });
+        ctx.inkProbe?.({ key, line: i, px, window: win, hidden, design: gp, unity: up, glow, shadowed });
         // ruling R151: a width whose ΔE2000 noise is above R126's cap judges the fragment's colour direction (R138's measure)
         // with the width's measured key; a width without one does not judge its colour, and the line is counted
         if (b && fragment?.byDirection) {

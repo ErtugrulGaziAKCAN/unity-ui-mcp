@@ -326,6 +326,18 @@ describe("compareCapture", () => {
       expect(v.find((i) => i.kind === "ink")!.detail).not.toMatch(/a window of/);
     });
 
+    it("gives no key to a fragment of a text with a text-shadow, hard or blurred (ruling R154): the ordinary checks", () => {
+      // a colour ΔE2000 4.2 off on the four-glyph fragment: within the 2 em key (6.15), over the usual limit 2 of 15 px text
+      const off: Rgb = [165, 195, 205];
+      expect(label(compareCapture(chip(false), chip(true, off), [], repo, ctx))).toEqual([]);
+      const shadowed = label(compareCapture(chip(false), chip(true, off), [], repo, { ...ctx, shadowedText: new Set(["label"]) }));
+      expect(shadowed.map((i) => i.kind)).toContain("ink");
+      expect(shadowed.find((i) => i.kind === "ink")!.detail).not.toMatch(/a window of|fragment/);
+      // nor below the domain: a shadowed sliver keeps the ordinary checks and is not counted
+      const v = compareCapture(chip(false, [185, 208, 214], 43), chip(true, [185, 208, 214], 43), [], repo, { ...ctx, shadowedText: new Set(["label"]) });
+      expect(v.fragmentsBelowDomain ?? []).toEqual([]);
+    });
+
     describe("ruling R151: a width whose measured ΔE2000 noise exceeds 6.5 judges the fragment's colour direction instead", () => {
       // the chip covered at `x0 + w`: a fragment `w` device px wide, the glyphs 15 px (full) or 10 px (small) text
       const at = (unity: boolean, colour: Rgb, w: number) => chip(unity, colour, 40 + w);
@@ -2505,6 +2517,10 @@ describe("IR context", () => {
     const at = (apply: CaptureJob["apply"]) => [...captureContext(shadowed, { state: "default", viewport: [1280, 720], apply }, b).textShadows!].sort();
     expect(at([])).toEqual(["soft"]);
     expect(at([{ kind: "pseudo", pseudo: "hover", elementId: "hover" }])).toEqual(["hover", "soft"]);
+    // ruling R154: every text with a text-shadow, hard or blurred, in the capture
+    const any = (apply: CaptureJob["apply"]) => [...captureContext(shadowed, { state: "default", viewport: [1280, 720], apply }, b).shadowedText!].sort();
+    expect(any([])).toEqual(["hard", "soft"]);
+    expect(any([{ kind: "pseudo", pseudo: "hover", elementId: "hover" }])).toEqual(["hard", "hover", "soft"]);
   });
 
   it("knows each element's corner radii in device px in the capture", () => {
