@@ -11,8 +11,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
   done marker) in `<screen>/.design-ui/kept-captures/` once the verdict is written, so a failure can be compared again
   offline (`design-export compare <export> --unity <kept-captures> --report <file>`) without another Unity run. The answer
   and `last-verify.json` name the folder; the report says the captures were kept. They count toward `cacheBudgetMB`
-  (over the budget they go before any export), the next verify that gives a verdict replaces or removes them, and
+  (over the budget they go before any export, but never in the cleanup of the verify that kept them; when a later cleanup
+  removes them, `last-verify.json` drops them and the report says so), the next verify that gives a verdict replaces or
+  removes them, an import that exports the screen again removes them (they no longer match its goldens) and says so, and
   `design_ui_clean` always removes them. Default off: a verify still deletes its captures.
+- A verify warns when the screen's export was made by another version of the exporter (`export-report.json`'s tool hash):
+  after a package update with an unchanged IR it compared against goldens of an older extraction (without the ellipsis
+  record, rulings R146 and R147 silently off). Import the screen again to refresh them.
 - Fidelity fixtures `shadowed-text` (card titles under a dialog's `0 24px 64px` shadow that run on past their clipping
   boxes) and `clipped-text` (a scroll area's entries below its bottom, across the frame's edge onto an external host
   shell, one title cut by the edge, in a list Unity virtualizes). Both join the suite.
@@ -241,6 +246,21 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Changed
 
+- Below 16 device px a line's ellipsis is judged by its dots (ruling R148): Unity's ink after the prefix resolves into
+  three peaks at the design's dot pitch (within 0.75 px) whose vertical ink centre lies within 1 px of the design's
+  against each baseline. A line whose design dots do not resolve into three is not judged and is counted
+  (`ellipsisNotJudged` in the verdict, named in the report). R147's profile check is unchanged from 16 px on, and R146's
+  allowance applies where the dots pass. Correct dots at 10 to 15 px measured R147's shape and rows in the wrong glyph's
+  range; the curve and dots a row higher fail (`docs/findings/viewport-classes.md`, "Ellipsized titles of a pilot screen").
+- A fragment of a text line takes the measured noise of its width (ruling R149, `textInkFragment`): a line something
+  covers or clips into (more than a column at each end of its line box) down to a window narrower than 4 em has the ink
+  colour limit and the ink amount's lower bound measured on windows of that width sliding along the suite's passing lines
+  (highest ΔE2000 plus 0.4, lowest amount minus 0.02, by size class), where the design's ink in the window is at least
+  16 px. A whole short line keeps its limits. A status chip a month picker covers but for four glyphs (ΔE2000 2.84 on
+  15 px text against 2) passes; a wrong colour on such a fragment still fails (`docs/findings/text-ink.md` section 12).
+- A line's ink window grows by a device pixel for anti-aliasing but no longer into another text's line box (ruling
+  R150): two labels laid edge to edge took the next one's first stem into the first one's ink in Chromium only (ink
+  extent −4.35 px).
 - An element counts as moving in an animation sample only when an animation of its geometry runs on it or an ancestor
   (ruling R132: the IR's animated properties, the transform and its parts, position, size and box-model lengths; not a
   colour, an opacity, a filter or a shadow). Every other element of a sample gets the static checks, its ring's colour and
@@ -295,11 +315,13 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Verification
 
-- Task 37's fidelity run (4740 captures with the two new fixtures, 14 min 24 s): **every capture passes** at all six
-  viewports (exact 3160, scaled 1580). A pilot screen's verify, its captures kept and compared again with this version:
-  2560×1440 and 3840×2160 pass every capture (they failed 22 each on the shadowed title and the clipped rows); at
-  1920×1080, 1600×900, 1366×768 and 1280×720 the ellipsis glyph check below 16 device px fails correct dots, and the
-  residuals are named in `docs/findings/text-ink.md` section 11.
+- Task 37's fidelity run after its review fixes and rulings R148–R150 (4740 captures with the two new fixtures, 14 min
+  15 s): **every capture passes** at all six viewports (exact 3160, scaled 1580; the first run, 14 min 24 s, too). A
+  pilot screen's verify, its captures kept and compared again offline with this version: 3840×2160, 2560×1440, 1920×1080
+  and 1366×768 pass all 157 captures each, 1280×720 143 and 1600×900 22. What fails is text ink with a measured cause: a
+  fragment a type menu leaves of a status chip, under the fragment key's domain (1280×720, 14), and two whole 12.5 px
+  lines of one-pixel strokes UI Toolkit splits over two device pixels at the scaled root (1600×900, 135; a status copy
+  in a nested repeat that review finding 1 had left unjudged) (`docs/findings/text-ink.md` section 11).
 - The ellipsis point at the scaled viewports (task 36, ruling R146): a pilot's ellipsized titles at 1600×900 and
   1366×768 kept one grapheme more or fewer in Unity than in the design (the line's ink end +2.5 to +10.6 device px), where
   UI Toolkit decides its cut under the root scale; at every exact viewport its own elision cuts where Chromium does. The
@@ -346,26 +368,37 @@ Unity package (`com.ertugrulgaziakcan.design-ui`) and the Node tools share the v
 
 ### Fixed
 
+- Comparison, copies in nested repeats: a copy's overflow clips were looked up by a key that wrote every repeat level's
+  item, where the capture leaves out an outer level whose item is 0 (`title#1`, not `title#1#0`). The lookup missed, the
+  clip came out infinite and the line's window NaN, and the line counted as covered without a check: 18,360 lines of a
+  pilot screen's 942 captures. The comparison builds the key with the capture's own function, and a window that is not
+  finite stops the comparison with an error.
+- Comparison, a line only Unity's clip hides: it counted as clipped and was not judged. The design's clip decides what
+  must show: a line the design shows is judged on the design's window (Unity's missing ink fails), a line the design's clip
+  hides that Unity draws is an issue, and only a line both clips hide is not judged (`linesClipped`).
+- Comparison, ink against a varying background: each ink pixel's weight and the ink's colour direction were measured
+  against the window's median while the pixels were found against the fitted plane; both use the plane now.
 - Comparison, text ink under a shadow: a line's ink is measured against its background where it is. Against the window's
   median, a background a later element's box shadow (or a gradient) darkens from one end of the line to the other counted
   as faint ink in every column, and the ink extent ran on to the card's edge on one side only (a pilot screen's card title
   under a month picker "ended 4.48 / 10.17 device px early" at 2560×1440 / 3840×2160). Where the background varies by a
   level or more across the window, a plane fitted to it is the background at each pixel; a flat background keeps its
   median (`docs/findings/text-ink.md` section 11).
-- Comparison, clipped text: a line is judged on what both renders show inside the overflow clips around it (its ancestors'
-  and its own, by axis, at the padding box, rounded inwards to whole device pixels). Rows a scroll area clips were judged
+- Comparison, clipped text: a line is judged on what the overflow clips around it show (its ancestors' and its own, by
+  axis, at the padding box, rounded inwards to whole device pixels; the design's clip decides what must show). Rows a scroll area clips were judged
   on what lay there (the host shell in the design, the capture's magenta backdrop in Unity: ΔE2000 41.72); an ellipsized
   title's line rect, as wide as its whole text, took a neighbouring cell's cyan bar into its ink (ΔE2000 2.98); a label
-  cut by a scroll area's edge between two pixels drew one row more in Chromium (0.73× the ink). A line the clips hide
-  entirely is not judged (`linesClipped` in the verdict, named in the report), and a later repeat item's copy the
+  cut by a scroll area's edge between two pixels drew one row more in Chromium (0.73× the ink). A line both sides' clips
+  hide entirely is not judged (`linesClipped` in the verdict, named in the report), and a later repeat item's copy the
   design's clip hides entirely is not missing when Unity did not make it (a list in a scroll area makes only the items
   its viewport shows).
 - Comparison, the ellipsis glyph check (rulings R146, R147): its rows were compared at fractional positions when the two
   baselines differ by a fraction (every ellipsized title of a pilot screen failed with rows 1.00 though its dots lay on
   the same pixel rows), and the dots were matched with the prefix's last glyph in the window, which pulled them out of
   line when Unity kept a narrow grapheme more (shape 1.04). The rows are whole ones now and the ellipsis is matched on its
-  own columns; raised dots and a wrong glyph still fail. Below 16 device px correct dots still exceed R147's limits, where
-  they overlap the wrong glyph's measures (`docs/findings/viewport-classes.md`, "Ellipsized titles of a pilot screen").
+  own columns; raised dots and a wrong glyph still fail. Below 16 device px, where correct dots overlap the wrong glyph's
+  measures, ruling R148 judges the dots instead (Changed; `docs/findings/viewport-classes.md`, "Ellipsized titles of a
+  pilot screen").
 - Export: an export made by an extractor whose goldens lack the ellipsis cut record (boxes `ellipsis`, rulings R146 and
   R147) was reused, because the extraction revision stayed at 2 when the record was added; a project exported before
   then had its ellipsized lines judged without the glyph check and without the scaled-class allowance. The extraction

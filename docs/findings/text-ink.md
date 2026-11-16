@@ -360,11 +360,13 @@ against 771.67 without the picker); Unity's shadow is a level weaker there and i
 fits a plane to the background where it varies across the window by a level or more (least squares on the pixels within
 2 levels of it, refitted four times; kept only when it explains as many pixels as the median does) and measures each
 pixel against it: 771.67 on both sides. A flat background keeps its median, so nothing else moves. Tests: a synthetic
-card under a shadow passes and the same line one glyph shorter fails (compare.test.ts); the suite's `shadowed-text`
-fixture (titles under a dialog's shadow that run on past their clipping boxes) failed 4 of its 6 viewports with the
-earlier measure and passes all six.
+card under a shadow passes and the same line one glyph shorter fails (compare.test.ts), and a heading at either end of a
+gradient weighs the same (each ink pixel's weight and the ink's colour direction are measured against the plane too:
+review finding 4). The suite's `shadowed-text` fixture (titles under a dialog's shadow that run on past their clipping
+boxes) failed 4 of its 6 viewports before Task 37 and passes all six; its titles' own clips end their windows before the
+shadowed tail, so it passes with the plane off as well, and the unit test is what holds the plane.
 
-**Overflow clips (rule since Task 37: what both renders show).** A line's window is its line rects grown by a pixel,
+**Overflow clips (rule since Task 37: what the design's clip shows).** A line's window is its line rects grown by a pixel,
 and nothing bounded it by what clips the text:
 
 - rows of the day panel's scroll area below its bottom (y 1362–1392 at 2560×1440, the scroll area ending at 1292) lay
@@ -377,41 +379,128 @@ and nothing bounded it by what clips the text:
   did not, 0.73× (and 0.69× at 1366×768) the ink.
 
 The context now lists, per text, the elements whose overflow clips it (its ancestors and itself, by axis, at their padding
-boxes), and the window is the line's rects within those clips on both sides, rounded inwards to whole device pixels; a
-line they hide entirely is not judged (`linesClipped` in the verdict, named in the report), and a later repeat item's copy
-the design's clip hides entirely is not missing when Unity did not make it (a list in a scroll area makes only the items
-its viewport shows). Tests: compare.test.ts (a copy below a scroll area across an external region, a line cut by the clip
-on whole rows, an ellipsized title's neighbour, a virtualized list); the suite's `clipped-text` fixture failed all six
+boxes), each side's clip rounded inwards to whole device pixels. The design's clip decides what must show (review
+finding 2): where both renders show some of the line, the window is the rows both show; where only the design shows it,
+the design's window (Unity's missing ink fails); a line the design's clip hides that Unity draws is an issue ("Unity draws
+text the design's overflow clips away"); a line both clips hide is not judged (`linesClipped` in the verdict, named in
+the report). A later repeat item's copy the design's clip hides entirely is not missing when Unity did not make it (a
+list in a scroll area makes only the items its viewport shows). Tests: compare.test.ts (a copy below a scroll area across
+an external region, a line cut by the clip on whole rows, an ellipsized title's neighbour, a virtualized list, a line only
+Unity's clip hides, a line Unity draws where the design clips it); the suite's `clipped-text` fixture failed all six
 viewports before and passes all six.
+
+**Copies in nested repeats (review finding 1).** A copy's clips were first looked up by a key that wrote every repeat
+level's item; the capture's boxes leave out an outer level whose item is 0 (`title#1`, not `title#1#0`). The lookup
+missed, the clip came out infinite and the window NaN, and the line counted as covered: on the pilot screen 18,360 text
+lines in 918 of its 942 captures were not judged, lines the comparison before Task 37 did judge. The comparison and the
+capture now build the key with one function, a window that is not finite stops the comparison with an error, and every
+number in this section is measured with the fix.
+
+**Another text's line box (ruling R150).** A line's window is grown by a device pixel for anti-aliasing; at 1920×1080
+`.is-untimed` two section labels lie edge to edge at x 1387.5 and 1474.5, and the margin reached the next label's first
+stem in Chromium only (ink extent −4.35 px). The margin now stops at every other text's line box (both renders'); a
+line's own text keeps its whole window.
 
 **The game's render path and font twins are not the cause.** The capture renders the panel into its own target whatever
 the project's pipeline. The game's twins are the kit's (the same Inter 18pt files, byte for byte; sampling point size 72,
 padding 7, SDFAA, 1024 atlases). On the pilot screen's captures, with the windows above, the ink colour of every text
-line of the exact viewports' default, picker, related-file and untimed states (1688 lines):
+line of the exact viewports' default, picker, related-file and untimed states (1965 lines; the 1688 first reported
+missed the nested copies of finding 1):
 
 | Device px | Lines | Ink colour ΔE2000 median / p90 / max | Its limit |
 |---|---|---|---|
-| 10 (1280×720) | 252 | 0.25 / 1.15 / 3.84 | 4.5 |
-| 12 (1280×720) | 158 | 0.00 / 0.79 / 3.38 | 4.5 |
-| 15 (1920×1080) | 256 | 0.00 / 0.00 / 2.84 | 2 |
-| 18 (1920×1080, 1280×720) | 167 | 0.00 / 0.00 / 0.76 | 2 |
-| 20 to 54 (2560×1440, 3840×2160) | 855 | 0.00 / 0.00 / 0.84 | 2 |
+| 10 (1280×720) | 295 | 0.25 / 1.15 / 3.84 | 4.5 |
+| 12 (1280×720) | 179 | 0.00 / 0.72 / 3.38 | 4.5 |
+| 15 (1920×1080) | 306 | 0.00 / 0.00 / 2.84 | 2 (a fragment: section 12) |
+| 18 (1920×1080, 1280×720) | 188 | 0.00 / 0.00 / 0.76 | 2 |
+| 20 to 54 (1920×1080 to 3840×2160) | 997 | 0.00 / 0.00 / 0.84 | 2 |
 
-So the URP game draws small text as the Built-in sample does; the one line over its limit is below. A URP copy of the
-sample was not run: the game's own captures settle it.
+So the URP game draws small text as the Built-in sample does; the one line over its usual limit is a fragment (below).
+A URP copy of the sample was not run: the game's own captures settle it.
 
-**What stays failing, with its cause:**
+**What the fix round settled, and what stays failing, with its cause** (the kept captures compared again with the final
+comparison: 3840×2160, 2560×1440, 1920×1080 and 1366×768 pass all 157 captures, 1280×720 143, 1600×900 22):
 
-- *Half a device pixel* (section 9): at 1920×1080 the cards sit at x 304.5 (406 CSS px × 0.75); UI Toolkit puts a text's box
-  on whole device pixels. A status chip that the open month picker covers but for its first four glyphs (39 px)
-  measures ΔE2000 2.84 there (18 captures): too few stems to average the half-pixel shift out (the whole chip, uncovered,
-  passes). The same cause at 1920×1080 `.is-untimed`: two section labels laid edge to edge at x 1387.5 and 1474.5, the
-  window's one-pixel margin reaching the next label's first stem in Chromium only (ink extent −4.35 px, 1 capture).
-- *A fragment beside a menu*: a status chip the type menu covers but for its last 6 device px, 0.79× the ink against 0.80
-  (1280×720, 14 captures).
-- *Scaled small text above the measured key* (ruling R126): "20" at 12.5 device px (1600×900), ΔE2000 6.13 against 5.89;
-  raising the key to this line's 6.13 + 0.4 would pass 6.5, where R126 keeps it failing (5 captures).
-- *The ellipsis glyph below 16 device px*: docs/findings/viewport-classes.md, "Ellipsized titles of a pilot screen".
+- *Half a device pixel* (section 9): at 1920×1080 the cards sit at x 304.5 (406 CSS px × 0.75); UI Toolkit puts a text's
+  box on whole device pixels. A status chip that the open month picker covers but for its first four glyphs (39 px,
+  2.6 em) measures ΔE2000 2.84 there (18 captures): too few stems to average the half-pixel shift out (the whole chip,
+  uncovered, passes). It passes now as a fragment within the measured noise of its width (section 12: 3.68 at 2.5 em).
+  The same cause at 1920×1080 `.is-untimed` (two section labels edge to edge) passes with ruling R150 (above).
+- *A fragment beside a menu*: a status chip the type menu covers but for its last few device px, 0.78× the ink against
+  0.80 (1280×720, 14 captures). The design's ink in that window is 13.4 px, under the 16 px floor of the ink amount
+  (`MIN_INK_PX`) and of section 12's measurement, so the fragment key does not reach it: still failing.
+- *One-pixel strokes at the scaled root* (1600×900, 12.5 device px, whole lines, so no fragment): a status of two
+  one-stroke digits around a dash, ΔE2000 8.07 against 5.89 (135 captures), and a time cell's dash, 6.13 (5 of those
+  captures). Chromium draws each stroke on whole device pixels (the digits' stems one column at 203 of the green channel,
+  the dash one row at 203; the time's dash rows 124 and 208); UI Toolkit lays both text boxes 0.42 device px right and
+  down of the design's (x 511.67 against 511.25) and splits each stroke over two (stems 140 + 140 and 128 + 151, the dash
+  rows 92 + 168; the time's dash 185 + 144), so its most inked tenth is lighter. Both are the cause rulings R138 and R141
+  judge by the ink's colour direction, but above their 12 device px and with the design's strokes fully covered, so the
+  usual limit holds (ruling R126 keeps the scaled small-text key at the suite's measure). The status line was not judged
+  before review finding 1 (a nested copy); the dash was called "20" in the first report, which the pixels do not show.
+- *The ellipsis glyph below 16 device px*: judged by its dots since ruling R148; docs/findings/viewport-classes.md,
+  "Ellipsized titles of a pilot screen".
+
+## 12. Text ink on few stems: the fragment key (ruling R149, Task 37 fix round 1)
+
+Where something covers or clips a line down to a few stems, the ink colour (the mean of its most inked tenth) and the ink
+amount rest on a handful of pixels, and the half-pixel layout differences of section 9 no longer average out (the status
+chip of section 11: ΔE2000 2.84 on four glyphs, 0.00 on the whole chip). The key for such fragments is measured, not taken
+from the failures it concerns.
+
+**Method.** The suite's 4740 captures with this round's windows (every capture passing; the 2340 static ones measured,
+animation samples left out), each text line's window as the comparison takes it (after clips and covers; glowing lines
+left out). On every line, windows 0.5, 1, 1.5, … 4 em wide
+slide along it (a quarter em apart, at most 60 positions per width); each window is measured as the comparison measures a
+line (`inkIn` on both renders, the design's ink at least `MIN_INK_PX`, 16 px, the ink amount's own floor) and bucketed by
+its visible width (the columns nothing covers) in half em steps and by size class (small: at most `textInkSmallPx`, 12
+device px; full: larger). A line another capture shows with the same pixels on both sides is measured once (4931 distinct
+lines, 49,465 repeats, in the table below). The 6 captures of `clipped-text` were measured afterwards on their own (the
+first pass left out the compiler's removed wrappers, so they failed there and were skipped): 258 lines, every bucket's
+highest ΔE2000 and lowest amount inside the others' (full 0.5 em 11.39 / 0.832, small 0.5 em 14.52 / 0.749), so no row
+of the key changes.
+
+| Width (em) | Small: windows | ΔE2000 p99 / max | Amount p1 / min | Full: windows | ΔE2000 p99 / max | Amount p1 / min |
+|---|---|---|---|---|---|---|
+| 0.5 | 23,810 | 8.68 / 18.30 | 0.848 / 0.671 | 54,743 | 2.93 / 14.56 | 0.913 / 0.455 |
+| 1 | 29,096 | 6.94 / 15.03 | 0.875 / 0.671 | 49,294 | 1.95 / 9.48 | 0.942 / 0.637 |
+| 1.5 | 26,108 | 5.69 / 15.03 | 0.885 / 0.671 | 43,397 | 1.53 / 7.12 | 0.951 / 0.836 |
+| 2 | 23,346 | 4.95 / 15.03 | 0.891 / 0.601 | 38,410 | 1.24 / 5.75 | 0.956 / 0.899 |
+| 2.5 | 20,921 | 4.70 / 10.74 | 0.894 / 0.825 | 34,296 | 1.03 / 3.28 | 0.958 / 0.902 |
+| 3 | 18,684 | 4.44 / 9.73 | 0.896 / 0.847 | 30,477 | 0.98 / 2.88 | 0.960 / 0.905 |
+| 3.5 | 16,780 | 4.35 / 9.00 | 0.897 / 0.846 | 27,185 | 0.83 / 2.51 | 0.961 / 0.907 |
+| 4 | 15,123 | 4.28 / 9.00 | 0.900 / 0.850 | 24,392 | 0.79 / 2.51 | 0.962 / 0.910 |
+
+The highest values come from windows of a stem or two (in `text-spacing`, `toggle`, `letter-spacing`, `repeat-items`,
+`shadowed-text` and `text-shadow`), where a column more or less of anti-aliasing is the whole statistic.
+
+**The key** (`textInkFragment` in fidelity-thresholds.json), per size class and width below 4 em: the ink colour limit is
+the measured highest ΔE2000 plus 0.4 (never below `textInkDeltaE`), the ink amount's lower bound the measured lowest minus
+0.02; a window takes the row of the widest width it reaches.
+
+| Width (em) | Small: ΔE2000 / lowest amount | Full: ΔE2000 / lowest amount |
+|---|---|---|
+| 0.5 | 18.71 / 0.65 | 14.96 / 0.43 |
+| 1 | 15.43 / 0.65 | 9.88 / 0.61 |
+| 1.5 | 15.43 / 0.65 | 7.53 / 0.81 |
+| 2 | 15.43 / 0.58 | 6.15 / 0.87 |
+| 2.5 | 11.15 / 0.80 | 3.68 / 0.88 |
+| 3 | 10.13 / 0.82 | 3.29 / 0.88 |
+| 3.5 | 9.40 / 0.82 | 2.92 / 0.88 |
+
+The colour limit is the larger of the row's and the usual one, the amount's lower bound the smaller; the ink extent, the
+median check and the upper bound are unchanged. The key widens the limits a lot for small text below 2.5 em: a window of
+a stem or two cannot tell a colour from anti-aliasing, so a wrong colour on such a fragment is caught only far off (a
+test holds that one on a four-glyph fragment still fails).
+
+**Its domain.** Only a fragment takes the key: a line something covers (a later opaque element, `hidden`) or clips into,
+its visible columns more than two fewer than its line box's (both renders' boxes; a clip's inward rounding to whole device
+pixels takes at most a column at each end, as with a status in its own box at x 511.25 against 511.67). A whole short line
+keeps its limits (rulings R126, R133, R138 and R141 set them on whole lines; a test holds four stems that are the whole
+line to the usual limit). Neither does a window whose design ink is under 16 px (outside the measurement) nor a glowing
+line (its own check). On the pilot screen the key takes the month picker's chip (18 captures at 1920×1080: 2.84 at 2.6 em
+against 3.68) and nothing else; the type menu's chip (13.4 px of design ink) and the two whole lines at 1600×900 stay
+failing (section 11).
 
 ## Reproduction
 

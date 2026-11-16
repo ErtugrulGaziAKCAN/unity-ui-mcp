@@ -1177,3 +1177,14 @@ verified at the six viewports with the captures kept (`design_ui_verify { keepCa
   and at the scaled viewports they withhold R146's allowance from 1152 of its 1287 cuts (only lines whose glyph check
   passes get it). A wrong glyph at those sizes needs another measure (for example three separate ink blobs at the
   design's dot pitch); that is a decision for a ruling, not a limit change.
+- **Ruling R148: the dots below 16 device px.** Below 16 device px the ellipsis is now judged by its dots: Unity's ink
+  after the prefix resolves into three peaks at the design's dot pitch (within 0.75 px) whose vertical ink centre lies
+  within 1 px of the design's against each baseline; a line whose design dots do not resolve into three is not judged and
+  is counted (`ellipsisNotJudged`, named in the report). From 16 px on R147's profile check is unchanged. On the pilot
+  screen's kept captures (every ellipsized line of 1920×1080, 1600×900, 1366×768 and 1280×720, 2483 a viewport once the
+  nested copies of review finding 1 are judged) both sides resolve into three on every line, at most 0.50 px off the pitch
+  and 0.70 px off centre, none not judged. Tests with crops of correct dots at 10, 10.67, 12.5 and 15 device px pass; the
+  suite's curve at 12 to 15 px and dots a row higher fail. R146's allowance applies where the dots pass, so at the scaled
+  viewports it reaches the one-grapheme cuts it was withheld from. The screen's verify, compared again offline: 1920×1080,
+  1366×768 and the two large viewports pass every capture; what stays failing at 1280×720 and 1600×900 is text ink, not
+  the ellipsis (`docs/findings/text-ink.md` section 11).

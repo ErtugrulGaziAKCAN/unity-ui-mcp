@@ -1434,8 +1434,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     /**
      * A text's ink per line (an IR element's, or its copy's in a later repeat item, `key` naming it; ruling R133): colour
      * and extent now, the amount after every line of the capture is measured. `id`: the IR element (its font size, its
-     * text shadow and what is painted over it). A line is measured in the window both renders show it in: its line rects
-     * and inside the overflow clips around it on both sides; a line they clip away entirely is not judged.
+     * text shadow and what is painted over it). A line is measured in the window its overflow clips leave (its line rects
+     * grown by a pixel short of other texts' line boxes, ruling R150): the rows both sides show, else the design's; a line
+     * both sides' clips hide is not judged (`linesClipped`), one only the design's clip hides that Unity draws is an issue.
      */
     const inkCheck = (id: string, key: string, ge: TextBox, ue: TextBox, row: ElementRow) => {
       // the font size in device px: the IR's, else the line box over the kit's largest ratio (4/3), never more than the real size
