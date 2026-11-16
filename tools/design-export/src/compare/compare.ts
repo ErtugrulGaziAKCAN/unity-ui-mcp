@@ -830,6 +830,55 @@ function insideRounded(b: Rect, r: readonly number[] | undefined, x: number, y: 
   return true;
 }
 
+/**
+ * How far (levels, each sRGB channel and luma) a Unity pixel may lie outside the colours the design shows near it, and from
+ * Unity's own background in the window, before it counts as ink the design does not have (`inkIn`'s ink threshold).
+ */
+const STRAY_LEVELS = 8;
+/** The design's neighbourhood (device px each way) whose colours explain a Unity pixel: an edge placed off by the box limit, with its anti-aliasing. */
+const STRAY_REACH = 2;
+/** The fewest stray pixels that are text drawn over the design's cover (decision D-160). */
+const STRAY_MIN_PX = 4;
+
+/**
+ * Unity's pixels in a window (those `judged`) that nothing the design shows there explains (decision D-160): each is ink in
+ * Unity (its luma more than STRAY_LEVELS from Unity's median in the window, so a uniform shift of a cover's colour is no
+ * ink) and one of its channels lies outside the range of the design's colours within STRAY_REACH px, widened by
+ * STRAY_LEVELS. A cover's edge Unity places a pixel or two off, and its anti-aliasing, lie within that range; glyphs drawn
+ * over a flat cover do not. Null when no pixel is judged; `ink` is the stray pixels' mean colour, `bg` Unity's background's.
+ */
+function strayInk(design: Rgba, unity: Rgba, r: Rect, judged: (x: number, y: number) => boolean): { px: number; ink: number[]; bg: number[] } | null {
+  const x0 = Math.max(0, Math.floor(r.x)), x1 = Math.min(unity.w, Math.ceil(r.x + r.w));
+  const y0 = Math.max(0, Math.floor(r.y)), y1 = Math.min(unity.h, Math.ceil(r.y + r.h));
+  const xs: number[] = [], ys: number[] = [], lum: number[] = [];
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    if (!judged(x, y)) continue;
+    const o = (y * unity.w + x) * 4;
+    xs.push(x); ys.push(y); lum.push(0.299 * unity.data[o] + 0.587 * unity.data[o + 1] + 0.114 * unity.data[o + 2]);
+  }
+  if (!lum.length) return null;
+  const median = [...lum].sort((a, b) => a - b)[lum.length >> 1];
+  const ink = [0, 0, 0], bg = [0, 0, 0];
+  let px = 0, nb = 0;
+  for (let k = 0; k < lum.length; k++) {
+    const o = (ys[k] * unity.w + xs[k]) * 4;
+    if (Math.abs(lum[k] - median) <= STRAY_LEVELS) { for (let c = 0; c < 3; c++) bg[c] += unity.data[o + c]; nb++; continue; }
+    const lo = [255, 255, 255], hi = [0, 0, 0];
+    for (let y = Math.max(0, ys[k] - STRAY_REACH); y <= Math.min(design.h - 1, ys[k] + STRAY_REACH); y++) {
+      for (let x = Math.max(0, xs[k] - STRAY_REACH); x <= Math.min(design.w - 1, xs[k] + STRAY_REACH); x++) {
+        const p = (y * design.w + x) * 4;
+        for (let c = 0; c < 3; c++) { if (design.data[p + c] < lo[c]) lo[c] = design.data[p + c]; if (design.data[p + c] > hi[c]) hi[c] = design.data[p + c]; }
+      }
+    }
+    let stray = false;
+    for (let c = 0; c < 3; c++) if (unity.data[o + c] < lo[c] - STRAY_LEVELS || unity.data[o + c] > hi[c] + STRAY_LEVELS) stray = true;
+    if (!stray) continue;
+    for (let c = 0; c < 3; c++) ink[c] += unity.data[o + c];
+    px++;
+  }
+  return { px, ink: px ? ink.map((v) => Math.round(v / px)) : ink, bg: nb ? bg.map((v) => Math.round(v / nb)) : bg };
+}
+
 /** Whether every pixel of a window inside the image is hidden. */
 function everyPixel(r: Rect, w: number, h: number, hidden: (x: number, y: number) => boolean): boolean {
   if (![r.x, r.y, r.w, r.h].every(Number.isFinite)) throw new Error(`everyPixel: the window is not finite (${r.x}, ${r.y}, ${r.w}, ${r.h})`);
@@ -1641,10 +1690,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           if (deep) {
             const own = new Set<Rect>([gl, ue.lines[i]]);
             const others = keyedLines.filter(({ r }) => !own.has(r) && r.x - 1 < win.x + win.w && r.x + r.w + 1 > win.x && r.y - 1 < win.y + win.h && r.y + r.h + 1 > win.y);
-            const outside = (x: number, y: number) => !deep(x, y) || others.some(({ r }) => inside(r, x + 0.5, y + 0.5, 1));
-            const drawn = inkIn(up, win, outside);
-            if (drawn && !inkIn(gp, win, outside)) {
-              issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: Unity draws text the design covers (ink ${hex(drawn.ink)} on the cover's ${hex(drawn.bg)}, ${drawn.coverage.toFixed(1)} px of ink; the design shows only the cover there)`, gl);
+            const judged = (x: number, y: number) => deep(x, y) && !others.some(({ r }) => inside(r, x + 0.5, y + 0.5, 1));
+            const stray = strayInk(gp, up, win, judged);
+            if (stray && stray.px >= STRAY_MIN_PX) {
+              issue(key, "ink", `line ${i + 1} of ${ge.lines.length}: Unity draws text the design covers (${stray.px} px of ink ${hex(stray.ink)} on the cover's ${hex(stray.bg)} that no colour the design shows within ${STRAY_REACH} px explains)`, gl);
             }
           }
           return;

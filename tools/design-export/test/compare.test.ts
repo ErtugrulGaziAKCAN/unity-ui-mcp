@@ -1116,6 +1116,32 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(same.masked).toEqual([]);
   });
 
+  it("does not take the cover's edge a pixel off in Unity, or its anti-aliasing, for text drawn over the cover (decision D-160)", () => {
+    // a real screen at a scaled viewport: the cover's top edge a device pixel lower in Unity, its anti-aliased row inside the
+    // covered line's window (luma 126 against the cover's 145), the design's edge row partly covered
+    const ctx: CaptureContext = {
+      order: ["root", "card", "label", "panel", "sheet"], backgrounds: new Set(["root", "card", "panel", "sheet"]),
+      painters: new Set(["root", "card", "panel", "sheet"]), opaque: new Set(["root", "card", "panel", "sheet"]), fontPx: { label: 16 },
+    };
+    const sheet = (top: number, edge: Rgb) => {
+      const s = scene();
+      fill(s.png, { x: 40, y: top, w: 110, h: 80 - top }, [20, 40, 52]);
+      fill(s.png, { x: 40, y: top, w: 110, h: 1 }, edge);
+      s.boxes.elements.sheet = el(40, top, 110, 80 - top);
+      return s;
+    };
+    // the design's edge row at y 48 (a sliver of the card's red), Unity's at y 49, inside the label's window (49 to 67)
+    const v = compareCapture(sheet(48, [150, 55, 56]), sheet(49, [70, 48, 54]), [], T, ctx);
+    expect(v.linesCovered).toEqual(["label: line 1 of 1"]);
+    // the ink check finds nothing there (the cover's edge, judged by the boxes and SSIM, is no text)
+    expect(v.issues.filter((i) => i.id === "label" && i.kind === "ink")).toEqual([]);
+    // text over that edge still fails
+    const over = sheet(49, [70, 48, 54]);
+    glyphs(over.png, { x: 50, y: 52, w: 80, h: 12 }, [250, 250, 250]);
+    expect(compareCapture(sheet(48, [150, 55, 56]), over, [], T, ctx).issues.filter((i) => i.id === "label" && i.kind === "ink").map((i) => i.detail))
+      .toEqual([expect.stringMatching(/^line 1 of 1: Unity draws text the design covers \(480 px of ink #fafafa on the cover's #142834/)]);
+  });
+
   it("does not take the cover's own text for text drawn over the cover: another text's line box is that text's (decision D-160)", () => {
     // the sheet's own note, whose line box reaches into the covered label's window: Unity draws its last glyph a pixel
     // further right (a scaled viewport's fractional box), into the label's window
