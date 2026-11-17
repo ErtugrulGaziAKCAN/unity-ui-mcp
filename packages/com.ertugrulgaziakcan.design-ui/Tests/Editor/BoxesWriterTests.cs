@@ -12,7 +12,7 @@ using FontAsset = UnityEngine.TextCore.Text.FontAsset;
 
 namespace DesignUi.Editor.Tests
 {
-    /// <summary>Unity boxes in the exporter's boxes.json schema (device px, visibility rule, text lines with baselines).</summary>
+    /// <summary>Unity boxes in the exporter's boxes schema (device px, visibility rule, text lines with baselines), a line per capture in boxes.jsonl.</summary>
     public class BoxesWriterTests
     {
         GameObject _go;
@@ -33,23 +33,29 @@ namespace DesignUi.Editor.Tests
         [OneTimeTearDown]
         public void DeleteFonts() => FontFixture.Delete();
 
-        /// <summary>A write goes to a temporary file first: one that fails (or a run killed midway) leaves the previous file whole.</summary>
+        /// <summary>A removal goes through a temporary file: one that fails leaves the previous file whole.</summary>
         [Test]
-        public void WriteAll_ThatFailsMidway_LeavesThePreviousFileWhole()
+        public void Remove_ThatFailsMidway_LeavesThePreviousFileWhole()
         {
             _temp = Path.Combine(Path.GetTempPath(), "design-ui-boxes-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(_temp);
             var path = Path.Combine(_temp, BoxesWriter.FileName);
-            BoxesWriter.WriteAll(path, new JObject { ["a"] = new JObject { ["capture"] = "a" } });
+            BoxesWriter.Merge(path, Capture("a@10x10", 1));
+            BoxesWriter.Merge(path, Capture("b@10x10", 2));
             var before = File.ReadAllText(path);
             Directory.CreateDirectory(path + ".tmp"); // the temporary file cannot be written
-            Assert.Catch(() => BoxesWriter.WriteAll(path, new JObject { ["b"] = new JObject { ["capture"] = "b" } }));
+            Assert.Catch(() => BoxesWriter.Remove(path, "a@10x10"));
             Assert.AreEqual(before, File.ReadAllText(path), "the previous file, whole");
             Directory.Delete(path + ".tmp");
-            BoxesWriter.WriteAll(path, new JObject { ["b"] = new JObject { ["capture"] = "b" } });
-            StringAssert.Contains("\"b\"", File.ReadAllText(path));
+            BoxesWriter.Remove(path, "a@10x10");
+            CollectionAssert.AreEqual(new[] { "b@10x10" }, BoxesWriter.ReadAll(path).Properties().Select(p => p.Name));
             Assert.IsFalse(File.Exists(path + ".tmp"), "no temporary file left");
         }
+
+        static JObject Capture(string name, double x) => new JObject
+        {
+            ["viewport"] = new JArray(10, 10), ["scale"] = 1.0, ["external"] = new JArray(), ["capture"] = name,
+            ["elements"] = new JObject { ["root"] = new JObject { ["y"] = 0.0, ["x"] = x, ["w"] = 10.0, ["h"] = 10.0, ["visible"] = true, ["text"] = false, ["lines"] = new JArray() } },
+        };
 
         [TestCase(2560, 1440, 1.0)]
         [TestCase(1920, 1080, 0.75)]
@@ -282,27 +288,56 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual(17 * ratio, (double)lines[1]["baseline"] - (double)lines[0]["baseline"], 0.01);
         }
 
+        /// <summary>
+        /// The exporter's boxes.jsonl (tools/design-export/src/boxes/file.ts): a capture's line is appended when it is
+        /// merged, compact JSON with sorted keys and \n; a later line of a name replaces an earlier one; a removal drops
+        /// every line of a name.
+        /// </summary>
         [Test]
-        public void Merge_KeepsOtherCaptures_ReplacesTheSameName_AndRemoveDeletesOne()
+        public void Merge_AppendsALinePerCapture_ALaterLineReplacesTheSameName_AndRemoveDeletesOne()
         {
             _temp = Path.Combine(Path.GetTempPath(), "design-ui-boxes-" + Guid.NewGuid().ToString("N"));
-            var file = Path.Combine(_temp, "boxes.json");
-            JObject Capture(string name, double x) => new JObject
-            {
-                ["capture"] = name, ["viewport"] = new JArray(10, 10), ["scale"] = 1.0, ["external"] = new JArray(),
-                ["elements"] = new JObject { ["root"] = new JObject { ["x"] = x, ["y"] = 0.0, ["w"] = 10.0, ["h"] = 10.0, ["visible"] = true, ["text"] = false, ["lines"] = new JArray() } },
-            };
+            var file = Path.Combine(_temp, BoxesWriter.FileName);
+            Assert.AreEqual("boxes.jsonl", BoxesWriter.FileName);
             BoxesWriter.Merge(file, Capture("b@10x10", 1));
-            BoxesWriter.Merge(file, Capture("a@10x10", 2));
+            BoxesWriter.Merge(file, Capture("a@10x10.is-ünï", 2));
             BoxesWriter.Merge(file, Capture("b@10x10", 3));
-            var all = JObject.Parse(File.ReadAllText(file));
-            CollectionAssert.AreEqual(new[] { "a@10x10", "b@10x10" }, all.Properties().Select(p => p.Name), "sorted keys");
-            Assert.AreEqual(3.0, (double)all["b@10x10"]["elements"]["root"]["x"]);
-            Assert.AreEqual(2.0, (double)all["a@10x10"]["elements"]["root"]["x"]);
-            StringAssert.DoesNotContain("\r", File.ReadAllText(file));
+            var lines = File.ReadAllText(file).Split('\n');
+            CollectionAssert.AreEqual(new[]
+            {
+                "{\"capture\":\"b@10x10\",\"elements\":{\"root\":{\"h\":10.0,\"lines\":[],\"text\":false,\"visible\":true,\"w\":10.0,\"x\":1.0,\"y\":0.0}},\"external\":[],\"scale\":1.0,\"viewport\":[10,10]}",
+                "{\"capture\":\"a@10x10.is-ünï\",\"elements\":{\"root\":{\"h\":10.0,\"lines\":[],\"text\":false,\"visible\":true,\"w\":10.0,\"x\":2.0,\"y\":0.0}},\"external\":[],\"scale\":1.0,\"viewport\":[10,10]}",
+                "{\"capture\":\"b@10x10\",\"elements\":{\"root\":{\"h\":10.0,\"lines\":[],\"text\":false,\"visible\":true,\"w\":10.0,\"x\":3.0,\"y\":0.0}},\"external\":[],\"scale\":1.0,\"viewport\":[10,10]}",
+                "",
+            }, lines, "one compact line per capture, sorted keys, \\n endings, UTF-8");
+            Assert.AreNotEqual(0xEF, File.ReadAllBytes(file)[0], "no byte order mark");
 
-            BoxesWriter.Remove(file, "a@10x10");
-            CollectionAssert.AreEqual(new[] { "b@10x10" }, JObject.Parse(File.ReadAllText(file)).Properties().Select(p => p.Name));
+            var all = BoxesWriter.ReadAll(file);
+            CollectionAssert.AreEqual(new[] { "b@10x10", "a@10x10.is-ünï" }, all.Properties().Select(p => p.Name), "the order written, a name in its first place");
+            Assert.AreEqual(3.0, (double)all["b@10x10"]["elements"]["root"]["x"], "the later line");
+            Assert.IsTrue(JToken.DeepEquals(Capture("a@10x10.is-ünï", 2), all["a@10x10.is-ünï"]), "read back as merged");
+
+            BoxesWriter.Remove(file, "b@10x10");
+            CollectionAssert.AreEqual(new[] { "a@10x10.is-ünï" }, BoxesWriter.ReadAll(file).Properties().Select(p => p.Name), "both lines of the name go");
+            var unchanged = File.GetLastWriteTimeUtc(file);
+            BoxesWriter.Remove(file, "missing@1x1");
+            Assert.AreEqual(unchanged, File.GetLastWriteTimeUtc(file), "a file without the name is left as it is");
+            Assert.IsFalse(File.Exists(file + ".tmp"));
+        }
+
+        /// <summary>A run stopped while writing a line (a killed Unity) leaves the captures before it readable.</summary>
+        [Test]
+        public void ReadAll_AfterARunStoppedMidwayThroughALine_ReadsTheCapturesBeforeIt()
+        {
+            _temp = Path.Combine(Path.GetTempPath(), "design-ui-boxes-" + Guid.NewGuid().ToString("N"));
+            var file = Path.Combine(_temp, BoxesWriter.FileName);
+            for (int i = 0; i < 5; i++) BoxesWriter.Merge(file, Capture("c@10x10.n" + i, i));
+            var next = BoxesWriter.Line(Capture("c@10x10.n5", 5));
+            File.AppendAllText(file, next.Substring(0, next.Length / 2));
+            CollectionAssert.AreEqual(Enumerable.Range(0, 5).Select(i => "c@10x10.n" + i), BoxesWriter.ReadAll(file).Properties().Select(p => p.Name));
+            // a broken line that is not the last is an error, not something to guess around
+            File.AppendAllText(file, "\n" + BoxesWriter.Line(Capture("c@10x10.n6", 6)) + "\n");
+            Assert.Throws<InvalidDataException>(() => BoxesWriter.ReadAll(file));
         }
     }
 }

@@ -268,7 +268,10 @@ namespace DesignUi.Editor.Tests
 
         static string Hex(Color32 c) => "#" + c.r.ToString("x2") + c.g.ToString("x2") + c.b.ToString("x2");
 
-        static JObject Boxes(CaptureRequest req) => (JObject)JObject.Parse(File.ReadAllText(Path.Combine(req.OutDir, "boxes.json")))[req.CaptureName];
+        static JObject Boxes(CaptureRequest req) => (JObject)BoxesIn(req.OutDir)[req.CaptureName];
+
+        /// <summary>Every capture of a folder's boxes.jsonl, by name.</summary>
+        static JObject BoxesIn(string outDir) => BoxesWriter.ReadAll(Path.Combine(outDir, BoxesWriter.FileName));
 
         // ---- capture -----------------------------------------------------------------------------------------
 
@@ -764,7 +767,7 @@ namespace DesignUi.Editor.Tests
             yield return DesignCapture.CaptureAll(export, screen, profile, outAll, result);
             Assert.IsEmpty(result.Errors, string.Join("\n", result.Errors));
             Assert.AreEqual(jobs.Length, result.Captured.Count, string.Join("\n", result.NotCaptured.Select(n => n.Capture + ": " + n.Reason)));
-            var all = JObject.Parse(File.ReadAllText(Path.Combine(outAll, BoxesWriter.FileName)));
+            var all = BoxesIn(outAll);
             foreach (var job in CaptureJob.ReadMatrix(Path.Combine(export, DesignCapture.MatrixPath)))
             {
                 var one = new CaptureRequest
@@ -880,7 +883,7 @@ namespace DesignUi.Editor.Tests
             // the class goes on the item the list shows now
             var one = Request(export, screen, "default@320x180.is-on.row", 320, 180, CaptureApply.Class("is-on", "row"));
             yield return DesignCapture.Run(one, profile);
-            var shared = (JObject)JObject.Parse(File.ReadAllText(Path.Combine(outAll, BoxesWriter.FileName)))["default@320x180.is-on.row"];
+            var shared = (JObject)BoxesIn(outAll)["default@320x180.is-on.row"];
             Assert.IsTrue(JToken.DeepEquals(Boxes(one), shared), "the boxes of a fresh mount:\n" + Boxes(one)["elements"]?["row"] + "\nvs\n" + shared["elements"]?["row"]);
             var tex = new Texture2D(2, 2);
             _objects.Add(tex);
@@ -890,7 +893,7 @@ namespace DesignUi.Editor.Tests
         }
 
         [UnityTest]
-        public IEnumerator CaptureAll_KeepsBoxesAndTheMetaFileUpToDate_SoARunStoppedMidwayLeavesItsCaptures()
+        public IEnumerator CaptureAll_AppendsEachCapturesBoxes_AndKeepsTheMetaFileUpToDate_SoARunStoppedMidwayLeavesItsCaptures()
         {
             // every other job opens the panel, so each job takes editor frames (the run yields between jobs)
             var export = Export(Small(BlackRoot(Box("panel", "#0f2a33").With("class:is-open", ("background-color", "#216372")))), null,
@@ -900,7 +903,8 @@ namespace DesignUi.Editor.Tests
             var profile = Profile(new Vector2Int(320, 180), 0.5f);
             var screen = Compile(export, profile);
             var outDir = TempDir();
-            var run = DesignCapture.CaptureAll(export, screen, profile, outDir, new CaptureResult());
+            var result = new CaptureResult();
+            var run = DesignCapture.CaptureAll(export, screen, profile, outDir, result);
             JObject meta = null;
             try
             {
@@ -921,8 +925,11 @@ namespace DesignUi.Editor.Tests
             Assert.GreaterOrEqual(captured, 24);
             Assert.Less(captured, 40);
             Assert.IsFalse(File.Exists(Path.Combine(outDir, DesignCapture.DoneFileName)), "a stopped run has no done marker");
-            var boxes = JObject.Parse(File.ReadAllText(Path.Combine(outDir, BoxesWriter.FileName)));
-            Assert.AreEqual(captured, boxes.Count, "the captures so far are in boxes.json, as the meta file lists them");
+            // every capture finished so far has its line, the ones the meta file lists and any captured after its last write
+            var boxes = BoxesIn(outDir);
+            CollectionAssert.AreEqual(result.Captured, boxes.Properties().Select(p => p.Name), "the N captures the run finished, a line each");
+            CollectionAssert.IsSubsetOf(((JArray)meta["captured"]).Select(c => (string)c), result.Captured);
+            Assert.AreEqual(result.Captured.Count, File.ReadAllLines(Path.Combine(outDir, BoxesWriter.FileName)).Length);
             Assert.IsTrue(File.Exists(Path.Combine(outDir, "default@320x180.n0.png")));
         }
 
@@ -1419,8 +1426,8 @@ namespace DesignUi.Editor.Tests
             Assert.IsEmpty(result.Errors, string.Join("\n", result.Errors));
             Assert.IsEmpty(result.NotCaptured.Select(n => n.Capture + ": " + n.Reason));
             Assert.AreEqual(8, result.Captured.Count);
-            var boxes = JObject.Parse(File.ReadAllText(Path.Combine(outDir, "boxes.json")));
-            CollectionAssert.AreEquivalent(result.Captured, boxes.Properties().Select(p => p.Name), "boxes.json holds every capture");
+            var boxes = BoxesIn(outDir);
+            CollectionAssert.AreEquivalent(result.Captured, boxes.Properties().Select(p => p.Name), "boxes.jsonl holds every capture");
             Assert.AreEqual(0.5, (double)boxes["loading@160x90"]["scale"], 1e-9);
             double DotX(string capture) => (double)boxes[capture]["elements"]["dot"]["x"];
             Assert.AreEqual(100, DotX("default@320x180") - DotX("default@320x180.anim.dot.0"), 0.51, "a static capture shows the slide's end frame (the golden's freeze)");
@@ -1466,7 +1473,7 @@ namespace DesignUi.Editor.Tests
             yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result);
             Assert.IsEmpty(result.Errors, string.Join("\n", result.Errors));
             Assert.IsEmpty(result.NotCaptured.Select(n => n.Capture + ": " + n.Reason));
-            var boxes = JObject.Parse(File.ReadAllText(Path.Combine(outDir, "boxes.json")));
+            var boxes = BoxesIn(outDir);
             double X(string capture) => (double)boxes[capture]["elements"]["panel"]["x"];
             Assert.AreEqual(0, X("default@320x180"), 0.51, "the screen starts open, nothing running");
             Assert.AreEqual(-50, X("default@320x180.anim.panel.0"), 0.51, "entering again: half way in at 100 of 200 ms");
@@ -1506,7 +1513,7 @@ namespace DesignUi.Editor.Tests
         /// <summary>
         /// A job whose name is longer than a file name may be (fourteen classes and a hover on one element) is written to the
         /// short file matrix.json gives it; the value is the exporter's captureFile of the name (test/capture.test.ts pins
-        /// it). boxes.json and the result keep the name. An animation sample is written to its file too, and a job without a
+        /// it). boxes.jsonl and the result keep the name. An animation sample is written to its file too, and a job without a
         /// file (an export from before files were recorded) to its name.
         /// </summary>
         [UnityTest]
@@ -1532,8 +1539,8 @@ namespace DesignUi.Editor.Tests
             Assert.IsEmpty(result.NotCaptured.Select(n => n.Capture + ": " + n.Reason));
             CollectionAssert.AreEquivalent(new[] { "default@320x180", name, "default@320x180.anim.tile.0" }, result.Captured);
             CollectionAssert.AreEquivalent(new[] { "default@320x180.png", file + ".png", "sample-file.png" }, Directory.GetFiles(outDir, "*.png").Select(Path.GetFileName));
-            var boxes = JObject.Parse(File.ReadAllText(Path.Combine(outDir, BoxesWriter.FileName)));
-            CollectionAssert.AreEquivalent(result.Captured, boxes.Properties().Select(p => p.Name), "boxes.json keys each capture by its name");
+            var boxes = BoxesIn(outDir);
+            CollectionAssert.AreEquivalent(result.Captured, boxes.Properties().Select(p => p.Name), "boxes.jsonl keys each capture by its name");
             Assert.AreEqual(name, (string)boxes[name]["capture"]);
             var tex = new Texture2D(2, 2);
             _objects.Add(tex);
@@ -1559,6 +1566,7 @@ namespace DesignUi.Editor.Tests
                     ["capture"] = stale, ["viewport"] = new JArray(10, 10), ["scale"] = 1.0, ["external"] = new JArray(), ["elements"] = new JObject(),
                 });
             }
+            File.WriteAllText(Path.Combine(outDir, BoxesWriter.LegacyFileName), "{ \"old@10x10\": {} }"); // an earlier version's boxes
             File.WriteAllText(Path.Combine(outDir, "notes.txt"), "a file the capture does not own");
             File.WriteAllText(Path.Combine(outDir, DesignCapture.DoneFileName), "{ \"runId\": \"old\" }");
 
@@ -1568,7 +1576,8 @@ namespace DesignUi.Editor.Tests
             CollectionAssert.AreEqual(new[] { "default@320x180" }, result.Captured);
             StringAssert.Contains("ghost", result.Errors.Single(), "a class on an element the screen does not have is an error");
             CollectionAssert.AreEquivalent(new[] { "default@320x180.png" }, Directory.GetFiles(outDir, "*.png").Select(Path.GetFileName), "no PNG of an earlier run");
-            CollectionAssert.AreEqual(new[] { "default@320x180" }, JObject.Parse(File.ReadAllText(Path.Combine(outDir, BoxesWriter.FileName))).Properties().Select(p => p.Name));
+            CollectionAssert.AreEqual(new[] { "default@320x180" }, BoxesIn(outDir).Properties().Select(p => p.Name));
+            Assert.IsFalse(File.Exists(Path.Combine(outDir, BoxesWriter.LegacyFileName)), "no boxes.json of an earlier version");
             Assert.IsTrue(File.Exists(Path.Combine(outDir, "notes.txt")), "files the capture does not own stay");
             var meta = JObject.Parse(File.ReadAllText(Path.Combine(outDir, DesignCapture.MetaFileName)));
             Assert.AreEqual("complete", (string)meta["status"]);

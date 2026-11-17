@@ -15,6 +15,7 @@
  * panel scale; a line's baseline is its top plus the font's ascent at the rendered size, measured once per font with
  * an inline-block probe (Chromium rounds the ascent). Values are rounded to 1e-6 device px so output is byte-stable.
  */
+import { appendBoxes, BOXES_FILE, LEGACY_BOXES_FILE, orderBoxes } from "../boxes/file.js";
 import { itemSuffix } from "../boxes/items.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -45,7 +46,15 @@ export interface HiddenJob { name: string; reason: string }
  * the later written-out repeat items the job moved into (outermost first), when only those show its elements.
  */
 export interface JobContext { state: string; apply: CaptureApply[]; item?: number[] }
-export interface MatrixResult { jobs: CaptureJob[]; boxes: Record<string, CaptureBoxes>; timings: MatrixTimings; hidden: HiddenJob[]; contexts: Record<string, JobContext> }
+/**
+ * The boxes a capture run writes, estimated before it starts: `elements` per capture (every IR element and its copies in the
+ * written-out repeat items), `bytes` of boxes.jsonl for every capture (boxesVolume).
+ */
+export interface BoxesVolume { captures: number; elements: number; bytes: number }
+/** What stopped a capture run: the error and what the run was doing (opening a viewport, capturing a job, writing a file). */
+interface Failure { error: unknown; doing: string }
+/** `volume`: the estimate printed before capturing (boxesVolume). The boxes are in `<goldensDir>/boxes.jsonl`. */
+export interface MatrixResult { jobs: CaptureJob[]; timings: MatrixTimings; hidden: HiddenJob[]; contexts: Record<string, JobContext>; volume: BoxesVolume }
 export interface MatrixOptions {
   /** Browser to open pages in (else one is launched and closed). */
   browser?: Browser;
@@ -55,6 +64,8 @@ export interface MatrixOptions {
   open?: LoadedDesign[];
   /** Viewports captured at the same time, one page each (default 4); the output does not depend on it. */
   concurrency?: number;
+  /** Gets the lines the capture prints before it starts: the number of captures and the estimated size of their boxes. */
+  log?: (line: string) => void;
 }
 
 const ms = (t0: number) => Math.round((performance.now() - t0) * 10) / 10;
@@ -1092,31 +1103,61 @@ export function checkCapturePaths(goldensDir: string, names: readonly string[], 
   }
 }
 
-function writeBoxes(goldensDir: string, boxes: Record<string, CaptureBoxes>): void {
-  fs.mkdirSync(goldensDir, { recursive: true });
-  fs.writeFileSync(path.join(goldensDir, "boxes.json"), stableStringify(boxes));
+/**
+ * Bytes of boxes.jsonl per measured element of a capture (a box, its flags, a text line or two): the kit's fidelity
+ * fixtures and components measure 110 to 245, most of them 115 to 170 (a dense repeat screen 116).
+ */
+export const BOXES_BYTES_PER_ELEMENT = 150;
+/** Over this estimate of boxes.jsonl the capture warns before it starts. */
+export const BOXES_WARN_BYTES = 200 * 1024 * 1024;
+
+/**
+ * An estimate of the boxes `captures` jobs write: each capture measures every IR element and its copy in each later
+ * written-out item of the repeats around it (the IR's item counts), BOXES_BYTES_PER_ELEMENT bytes each.
+ */
+export function boxesVolume(ir: IrScreen, captures: number): BoxesVolume {
+  let elements = 0;
+  const walk = (n: IrNode, copies: number) => {
+    elements += copies;
+    const inside = n.repeat ? copies * Math.max(1, n.repeat.count) : copies;
+    for (const c of n.children) walk(c, inside);
+  };
+  walk(ir.root, 1);
+  return { captures, elements, bytes: captures * elements * BOXES_BYTES_PER_ELEMENT };
+}
+
+const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${Math.round(bytes / (1024 * 1024))} MB`);
+/** What the capture prints before it starts: the captures and the boxes' estimated size; over BOXES_WARN_BYTES, a warning too. */
+export function volumeLines(v: BoxesVolume): { line: string; warning: string | null } {
+  const line = `capturing ${v.captures} capture${v.captures === 1 ? "" : "s"} of ${v.elements} measured element${v.elements === 1 ? "" : "s"} each: ` +
+    `boxes.jsonl about ${size(v.bytes)}`;
+  const warning = v.bytes <= BOXES_WARN_BYTES ? null
+    : `the boxes are estimated at ${size(v.bytes)} (${v.captures} captures × ${v.elements} measured elements), over ${size(BOXES_WARN_BYTES)}: ` +
+      "the export and every comparison read that much; fewer viewports, states, classes or written-out repeat items make it smaller";
+  return { line, warning };
 }
 
 /**
- * Captures one job on an open page (rendering the job's viewport): writes `<goldensDir>/<file>.png` and merges its
- * boxes into `<goldensDir>/boxes.json`. `elements` comes from `buildIr` (the DOM element of every IR id).
+ * Captures one job on an open page (rendering the job's viewport): writes `<goldensDir>/<file>.png` and appends its
+ * boxes to `<goldensDir>/boxes.jsonl` (a capture of a name already there replaces it for every reader). `elements`
+ * comes from `buildIr` (the DOM element of every IR id).
  */
 export async function runCapture(d: LoadedDesign, ir: IrScreen, job: CaptureJob, goldensDir: string, elements: ElementMap): Promise<CaptureBoxes> {
   const s = await CaptureSession.open(d, ir, elements, job.viewport);
   let boxes: CaptureBoxes;
   try { boxes = await s.capture(job, goldensDir); } finally { await s.close(); }
-  const file = path.join(goldensDir, "boxes.json");
-  const all: Record<string, CaptureBoxes> = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
-  all[boxes.capture] = boxes;
-  writeBoxes(goldensDir, all);
+  appendBoxes(goldensDir, boxes);
   return boxes;
 }
 
 /**
  * Captures the whole matrix: one page per viewport (opened from `htmlPath`, or taken from `opts.open`), its jobs in
- * order on that page. Writes every PNG (`<file>.png`, captureFile), `boxes.json` (all captures, by name) and
+ * order on that page. Writes every PNG (`<file>.png`, captureFile), `boxes.jsonl` (a line per capture, appended as the
+ * capture finishes, so a run that stops leaves the captures it finished; put in the matrix's order at the end) and
  * `matrix.json` (the jobs with their names, files, sample times and coverage marks, the animations not sampled, the
- * Chromium build and platform, findings O-14). Paths that cannot be written are refused first (checkCapturePaths).
+ * Chromium build and platform, findings O-14). Paths that cannot be written are refused first (checkCapturePaths). Before
+ * capturing it prints (`opts.log`) the number of captures and the estimated size of their boxes (boxesVolume), and warns
+ * over BOXES_WARN_BYTES. A failure names what failed and how many captures were finished.
  */
 export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScreen, elements: ElementMap, goldensDir: string, opts: MatrixOptions = {}): Promise<MatrixResult> {
   const t0 = performance.now();
@@ -1125,12 +1166,19 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
   }
   const jobs = opts.jobs ?? buildMatrix(ir);
   checkCapturePaths(goldensDir, jobs.map(captureName));
+  const volume = boxesVolume(ir, jobs.length);
+  const said = volumeLines(volume);
+  opts.log?.(said.line);
+  if (said.warning) opts.log?.(`warning: ${said.warning}`);
+  // this run's boxes only: each capture's line is appended as it finishes
+  fs.mkdirSync(goldensDir, { recursive: true });
+  fs.rmSync(path.join(goldensDir, LEGACY_BOXES_FILE), { force: true });
+  fs.writeFileSync(path.join(goldensDir, BOXES_FILE), "");
   const groups = new Map<string, CaptureJob[]>();
   for (const j of jobs) { const k = vpName(j.viewport); groups.set(k, [...(groups.get(k) ?? []), j]); }
   const browser = opts.browser ?? opts.open?.[0]?.browser ?? (await launchChromium());
   const ownBrowser = !opts.browser && !opts.open?.length;
   const timings: MatrixTimings = { totalMs: 0, viewports: {}, jobs: {} };
-  const boxes: Record<string, CaptureBoxes> = {};
   const frozen = new Map<string, [string, string][]>();
   // per original job name: the job captured for it (in a context where its elements show), or null when none shows them
   const outcome = new Map<string, { job: CaptureJob; context: JobContext | null } | null>();
@@ -1144,9 +1192,14 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
     }
     return undefined;
   };
-  /** The first error of any viewport; the others stop at their next job. */
-  let failure: { error: unknown } | null = null;
-  const runGroup = async (key: string, list: CaptureJob[]) => {
+  /** The first error of any viewport and what that viewport was doing; the others stop at their next job. */
+  let failure: Failure | null = null;
+  /** Captures whose boxes are in boxes.jsonl. */
+  let finished = 0;
+  const stopped = (f: Failure) => new Error(`capture failed while ${f.doing}, after ${finished} of ${jobs.length} captures were finished: ` +
+    `${f.error instanceof Error ? f.error.message : String(f.error)}`, { cause: f.error });
+  const runGroup = async (key: string, list: CaptureJob[], step: { doing: string }) => {
+    step.doing = `opening viewport ${key}`;
     const t1 = performance.now();
     const vp = list[0].viewport;
     const given = await reusable(vp);
@@ -1156,6 +1209,7 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
       const t2 = performance.now();
       const s = await CaptureSession.open(d, ir, elements, vp);
       try {
+        step.doing = `finding the contexts of the jobs at ${key}`;
         const r = await resolveContexts(s, ir, list);
         hidden.push(...r.hidden);
         // a job moved into a context has a longer name, so possibly another file
@@ -1169,12 +1223,15 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
           const j = o.job;
           done.add(captureName(j));
           const t3 = performance.now();
+          step.doing = `capturing ${captureName(j)}`;
           const b = await s.capture(j, goldensDir);
-          boxes[b.capture] = b;
+          appendBoxes(goldensDir, b);
+          finished++;
           const f = s.frozen.get(b.capture);
           if (f?.length) frozen.set(b.capture, f);
           timings.jobs[b.capture] = ms(t3);
         }
+        step.doing = `closing viewport ${key}`;
       } finally { await s.close(); }
       timings.viewports[key] = { openMs, captureMs: ms(t2), jobs: list.length };
     } finally { if (!given) await d.close(); }
@@ -1184,12 +1241,14 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
     // browser and no rejection is left unhandled
     const queue = Array.from(groups.entries());
     const workers = Array.from({ length: Math.max(1, Math.min(opts.concurrency ?? 4, queue.length)) }, async () => {
+      const step = { doing: "" };
       for (let next = queue.shift(); next && !failure; next = queue.shift()) {
-        try { await runGroup(next[0], next[1]); } catch (e) { failure ??= { error: e }; }
+        try { await runGroup(next[0], next[1], step); } catch (e) { failure ??= { error: e, doing: step.doing }; }
       }
     });
     await Promise.allSettled(workers);
-    if (failure) throw (failure as { error: unknown }).error;
+    const failed = failure as Failure | null;
+    if (failed) throw stopped(failed);
     // the jobs as captured, in the matrix's order: a job moved into a context takes its place, one already there is kept once
     const captured: CaptureJob[] = [];
     const contexts: Record<string, JobContext> = {};
@@ -1200,22 +1259,27 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
       if (o.context) contexts[captureName(o.job)] = o.context;
     }
     hidden.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    writeBoxes(goldensDir, boxes);
-    fs.writeFileSync(path.join(goldensDir, "matrix.json"), stableStringify({
-      chromium: browser.version(),
-      platform: `${process.platform}-${process.arch}`,
-      // frozen: the keyframe animations a static capture shows at their frozen end frame (the Unity capture writes that frame);
-      // context: what a job of a hidden element got so that it shows (its state and the items added to its apply);
-      // file: the name of its PNGs without .png (captureFile), which every reader takes from here
-      captures: captured.map((j) => {
-        const name = captureName(j), f = frozen.get(name), c = contexts[name];
-        return { name, file: captureFile(name), ...j, ...(f ? { frozen: f } : {}), ...(c ? { context: c } : {}) };
-      }),
-      // hidden: static jobs whose elements no state or class context shows (not captured)
-      ...(hidden.length ? { hidden } : {}),
-      unsampled: unsampledAnims(ir),
-    }));
+    let doing = "putting boxes.jsonl in the matrix's order";
+    try {
+      // the viewports' captures finished in any order: the file takes the matrix's, so an export is the same at any concurrency
+      await orderBoxes(goldensDir, captured.map(captureName));
+      doing = "writing matrix.json";
+      fs.writeFileSync(path.join(goldensDir, "matrix.json"), stableStringify({
+        chromium: browser.version(),
+        platform: `${process.platform}-${process.arch}`,
+        // frozen: the keyframe animations a static capture shows at their frozen end frame (the Unity capture writes that frame);
+        // context: what a job of a hidden element got so that it shows (its state and the items added to its apply);
+        // file: the name of its PNGs without .png (captureFile), which every reader takes from here
+        captures: captured.map((j) => {
+          const name = captureName(j), f = frozen.get(name), c = contexts[name];
+          return { name, file: captureFile(name), ...j, ...(f ? { frozen: f } : {}), ...(c ? { context: c } : {}) };
+        }),
+        // hidden: static jobs whose elements no state or class context shows (not captured)
+        ...(hidden.length ? { hidden } : {}),
+        unsampled: unsampledAnims(ir),
+      }));
+    } catch (e) { throw stopped({ error: e, doing }); }
     timings.totalMs = ms(t0);
-    return { jobs: captured, boxes, timings, hidden, contexts };
+    return { jobs: captured, timings, hidden, contexts, volume };
   } finally { if (ownBrowser) await browser.close(); }
 }

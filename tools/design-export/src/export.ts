@@ -10,8 +10,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { chromium, type Browser } from "playwright";
+import { BOXES_FILE } from "./boxes/file.js";
 import { CHROMIUM_ARGS, launchChromium } from "./browser.js";
-import { captureMatrix, type HiddenJob } from "./capture/capture.js";
+import { captureMatrix, volumeLines, type HiddenJob } from "./capture/capture.js";
 import { buildIr } from "./extract/tree.js";
 import { stableStringify } from "./ir/stableStringify.js";
 import { IR_VERSION } from "./ir/types.js";
@@ -56,6 +57,8 @@ export interface ExportOptions {
   force?: boolean;
   /** Viewports captured at the same time. */
   concurrency?: number;
+  /** Gets the lines the export prints while it runs: before capturing, the number of captures and the estimated size of their boxes. */
+  log?: (line: string) => void;
   /**
    * When set and lint finds errors, the lint report goes to this file and the previous export folder is left as it
    * is (instead of being replaced by a lint-only folder). A successful export removes the file.
@@ -80,7 +83,7 @@ export const hasMarker = (dir: string): boolean => {
     return m.generator === MARKER.generator && m.format === MARKER.format;
   } catch { return false; }
 };
-const OUTPUTS = ["screen.ir.json", "lint-report.json", "fixtures/sample-data.json", "goldens/matrix.json", "goldens/boxes.json"];
+const OUTPUTS = ["screen.ir.json", "lint-report.json", "fixtures/sample-data.json", "goldens/matrix.json", `goldens/${BOXES_FILE}`];
 const sha256 = (b: Buffer | string) => crypto.createHash("sha256").update(b).digest("hex");
 /** The top-level `irVersion` of an IR file (only the root object has that key; a text's quotes are escaped), or null. */
 const irVersionOf = (file: string): number | null => {
@@ -404,9 +407,11 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
           lap("write");
 
           const matrix = await captureMatrix(htmlPath, kit, build.ir, build.elements, path.join(fresh, "goldens"), {
-            browser, open: [d], concurrency: opts.concurrency,
+            browser, open: [d], concurrency: opts.concurrency, log: opts.log,
           });
           lap("capture");
+          const volume = volumeLines(matrix.volume).warning;
+          if (volume) warnings.push(volume);
 
           fs.writeFileSync(path.join(fresh, "export-report.json"), stableStringify({
             ok: true, source: path.basename(htmlPath), sourceSha, kitSha, toolSha, contractSha, screen: build.ir.screen,

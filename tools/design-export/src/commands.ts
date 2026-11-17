@@ -67,7 +67,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   program.command("export").allowExcessArguments(false).argument("<designDir>").requiredOption("--kit <kitDir>").requiredOption("--out <dir>")
     .option("--force", "export even when the design and kit are unchanged").description("Export a design")
     .action(guard(async (dir: string, o: { kit: string; out: string; force?: boolean }) => {
-      const r = await exportScreen(dir, path.resolve(o.kit), path.resolve(o.out), { force: o.force });
+      const r = await exportScreen(dir, path.resolve(o.kit), path.resolve(o.out), { force: o.force, log: (l) => io.out(`${l}\n`) });
       if (r.skipped) io.out(`unchanged since the last export: ${r.outDir}\n`);
       else if (!r.ok) {
         for (const f of r.findings) io.out(line(f) + "\n");

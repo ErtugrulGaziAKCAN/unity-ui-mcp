@@ -54,8 +54,8 @@ namespace DesignUi.Editor
     /// its <c>from</c> setup that way, then plays, applies the change at time 0 and steps the clock to each sample time
     /// (<see cref="RunSeries"/>). Class items marked <c>absent</c> take a markup class off.</item>
     /// <item>Output: <c>&lt;OutDir&gt;/&lt;CaptureFile&gt;.png</c> (the RenderTexture bytes unchanged, exactly the viewport's size;
-    /// the job's matrix.json <c>file</c>, a long name's short file) and the capture's entry, by its name, in
-    /// <c>&lt;OutDir&gt;/boxes.json</c> (<see cref="BoxesWriter"/>).</item>
+    /// the job's matrix.json <c>file</c>, a long name's short file) and the capture's entry, by its name, appended as a line
+    /// to <c>&lt;OutDir&gt;/boxes.jsonl</c> (<see cref="BoxesWriter"/>).</item>
     /// </list>
     /// Frames: 20 editor updates after mounting, 5 after each change and pointer event, 2 after each animation sample.
     /// <para><see cref="CaptureAll"/> mounts a viewport's screen once and moves it from job to job, as the golden capture moves
@@ -68,7 +68,7 @@ namespace DesignUi.Editor
     /// </summary>
     public static class DesignCapture
     {
-        /// <summary>Next to boxes.json: what the run did not capture and why (boxes.json itself holds only captures).</summary>
+        /// <summary>Next to boxes.jsonl: what the run did not capture and why (boxes.jsonl itself holds only captures).</summary>
         public const string MetaFileName = "boxes.meta.json";
         /// <summary>
         /// Written last by a capture run that went through every job: the run id, the job count and the captured and
@@ -164,7 +164,10 @@ namespace DesignUi.Editor
             }
         }
 
-        /// <summary>Jobs of one capture run between flushes of boxes.json and the meta file (a stopped run keeps what it captured).</summary>
+        /// <summary>
+        /// Jobs of one capture run between writes of the meta file (boxes.jsonl gets each capture's line as it finishes): a
+        /// stopped run keeps what it captured.
+        /// </summary>
         const int FlushEveryJobs = 25;
         const double FlushEverySeconds = 10;
 
@@ -251,9 +254,10 @@ namespace DesignUi.Editor
         /// <summary>
         /// Captures every job of <c>&lt;exportDir&gt;/goldens/matrix.json</c> into <paramref name="outDir"/> with the goldens'
         /// files (<see cref="CaptureJob.File"/>) and names, copies the compiled <c>.design-ui.json</c> (removed wrappers) next to them and writes
-        /// <see cref="MetaFileName"/>. The files a capture owns (PNGs, boxes.json, the meta file, the copied manifest, the done
-        /// marker) are deleted first, so nothing of an earlier run can be compared; the meta file says <c>running</c> until the
-        /// run completes, and <see cref="DoneFileName"/> is written last. Animation samples are captured series by series
+        /// <see cref="MetaFileName"/>. The files a capture owns (PNGs, boxes.jsonl and an earlier version's boxes.json, the meta
+        /// file, the copied manifest, the done marker) are deleted first, so nothing of an earlier run can be compared. Each
+        /// capture's boxes line is appended to boxes.jsonl as it finishes; the meta file says <c>running</c> until the run
+        /// completes, and <see cref="DoneFileName"/> is written last. Animation samples are captured series by series
         /// (<see cref="RunSeries"/>). A job that cannot be made, or fails, is listed with its reason and leaves no PNG or boxes
         /// entry behind.
         /// </summary>
@@ -270,7 +274,9 @@ namespace DesignUi.Editor
             var manifest = Path.Combine(screenFolder, ScreenCompiler.ManifestFileName);
             if (!File.Exists(manifest)) throw new InvalidOperationException("'" + screenFolder + "' is not a compiled screen (no " + ScreenCompiler.ManifestFileName + ")");
             File.Copy(manifest, Path.Combine(outDir, ScreenCompiler.ManifestFileName), true);
-            var boxes = new JObject(); // written with the meta file now and then (a stopped run keeps what it captured), and before the done marker
+            var boxesPath = Path.Combine(outDir, BoxesWriter.FileName);
+            File.WriteAllText(boxesPath, ""); // each capture's line is appended as it finishes (a stopped run keeps what it captured)
+            var dropped = new HashSet<string>(StringComparer.Ordinal); // captures not made: their boxes lines go before the done marker
             // the export and the compiled screen are read once for every job (when that fails, every job fails with the reason)
             Screen screen = null;
             try { screen = LoadScreen(exportDir, screenFolder, profile); }
@@ -283,12 +289,11 @@ namespace DesignUi.Editor
             double flushMs = 0;
             void Flush(bool force)
             {
-                // every 25 jobs, but a flush rewrites the whole boxes.json (megabytes for a thousand animation samples): the
+                // every 25 jobs, but a flush rewrites the whole meta file (its capture lists and times grow with the run): the
                 // next one waits ten times as long as the last one took, so flushing stays a small part of the run
                 bool due = sinceFlush >= FlushEveryJobs && flushed.Elapsed.TotalMilliseconds >= 10 * flushMs;
                 if (!force && !due && flushed.Elapsed.TotalSeconds < FlushEverySeconds) return;
                 var took = Stopwatch.StartNew();
-                BoxesWriter.WriteAll(Path.Combine(outDir, BoxesWriter.FileName), boxes);
                 WriteMeta(outDir, exportDir, screenFolder, profile, result, run, "running", total.Elapsed.TotalMilliseconds);
                 flushMs = took.Elapsed.TotalMilliseconds;
                 sinceFlush = 0;
@@ -312,7 +317,7 @@ namespace DesignUi.Editor
                     var sreq = new CaptureRequest
                     {
                         ExportDir = exportDir, ScreenFolder = screenFolder, State = job.State, Viewport = job.Viewport, Apply = job.Apply,
-                        OutDir = outDir, CaptureName = job.Name, CaptureFile = job.File, Boxes = boxes,
+                        OutDir = outDir, CaptureName = job.Name, CaptureFile = job.File,
                     };
                     var progress = new SeriesProgress();
                     var swatch = Stopwatch.StartNew();
@@ -349,12 +354,12 @@ namespace DesignUi.Editor
                         {
                             result.Errors.Add(name + ": " + sfailure);
                             NotCaptured(result, outDir, name, file, "error: " + sfailure);
-                            boxes.Remove(name);
+                            dropped.Add(name);
                         }
                         else
                         {
                             NotCaptured(result, outDir, name, file, sskipped ?? "the animation series stopped before this sample");
-                            boxes.Remove(name);
+                            dropped.Add(name);
                         }
                     }
                     sinceFlush += series.Count - 1; // every sample is a job for the periodic flush
@@ -363,7 +368,7 @@ namespace DesignUi.Editor
                 var req = new CaptureRequest
                 {
                     ExportDir = exportDir, ScreenFolder = screenFolder, State = job.State, Viewport = job.Viewport, Apply = job.Apply,
-                    Frozen = job.Frozen, OutDir = outDir, CaptureName = job.Name, CaptureFile = job.File, Boxes = boxes,
+                    Frozen = job.Frozen, OutDir = outDir, CaptureName = job.Name, CaptureFile = job.File,
                 };
                 var watch = Stopwatch.StartNew();
                 var capture = RunShared(shared, req, profile, screen, pngs);
@@ -397,12 +402,12 @@ namespace DesignUi.Editor
                 {
                     result.Errors.Add(job.Name + ": " + failure);
                     NotCaptured(result, outDir, job.Name, job.File, "error: " + failure);
-                    boxes.Remove(job.Name);
+                    dropped.Add(job.Name);
                 }
                 else if (skipped != null)
                 {
                     NotCaptured(result, outDir, job.Name, job.File, skipped);
-                    boxes.Remove(job.Name);
+                    dropped.Add(job.Name);
                 }
                 else
                 {
@@ -425,10 +430,11 @@ namespace DesignUi.Editor
                     result.Captured.Remove(name);
                     result.Errors.Add(name + ": writing the PNG failed: " + why);
                     NotCaptured(result, outDir, name, file, "error: writing the PNG failed: " + why);
-                    boxes.Remove(name);
+                    dropped.Add(name);
                 }
             }
-            BoxesWriter.WriteAll(Path.Combine(outDir, BoxesWriter.FileName), boxes);
+            // a capture that was not made leaves no boxes entry behind (one pass over the file, only when it has such a line)
+            BoxesWriter.Remove(boxesPath, dropped);
             WriteMeta(outDir, exportDir, screenFolder, profile, result, run, "complete", total.Elapsed.TotalMilliseconds);
             WriteJson(Path.Combine(outDir, DoneFileName), new JObject
             {
@@ -1122,12 +1128,8 @@ namespace DesignUi.Editor
                 return png;
             }
 
-            void WriteBoxes(string name)
-            {
-                var boxes = BoxesWriter.Measure(name, Named, m_Req.Viewport, m_Scale, Screen.Ir, DocRoot);
-                if (m_Req.Boxes != null) m_Req.Boxes[name] = boxes;
-                else BoxesWriter.Merge(Path.Combine(m_Req.OutDir, BoxesWriter.FileName), boxes);
-            }
+            void WriteBoxes(string name) =>
+                BoxesWriter.Merge(Path.Combine(m_Req.OutDir, BoxesWriter.FileName), BoxesWriter.Measure(name, Named, m_Req.Viewport, m_Scale, Screen.Ir, DocRoot));
 
             public void Dispose() => Mount.Dispose();
         }
@@ -1587,7 +1589,7 @@ namespace DesignUi.Editor
         {
             Directory.CreateDirectory(outDir);
             foreach (var png in Directory.GetFiles(outDir, "*.png")) File.Delete(png);
-            foreach (var name in new[] { DoneFileName, BoxesWriter.FileName, MetaFileName, ScreenCompiler.ManifestFileName })
+            foreach (var name in new[] { DoneFileName, BoxesWriter.FileName, BoxesWriter.LegacyFileName, MetaFileName, ScreenCompiler.ManifestFileName })
             {
                 var path = Path.Combine(outDir, name);
                 if (File.Exists(path)) File.Delete(path);
@@ -1595,12 +1597,12 @@ namespace DesignUi.Editor
             }
         }
 
+        /// <summary>Lists the capture as not made and deletes its PNG; <see cref="CaptureAll"/> removes its boxes line before the done marker.</summary>
         static void NotCaptured(CaptureResult result, string outDir, string name, string file, string reason)
         {
             result.NotCaptured.Add(new NotCaptured { Capture = name, Reason = reason });
             var png = Path.Combine(outDir, file + ".png");
             if (File.Exists(png)) File.Delete(png);
-            BoxesWriter.Remove(Path.Combine(outDir, BoxesWriter.FileName), name);
         }
 
         static void WriteMeta(string outDir, string exportDir, string screenFolder, DesignUiProfile profile, CaptureResult result, RunInfo run, string status, double totalMs)

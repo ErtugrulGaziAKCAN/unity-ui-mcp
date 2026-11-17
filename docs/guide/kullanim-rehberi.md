@@ -175,7 +175,7 @@ klasörü göster). Skill araçları ve Unity köprüsünü kontrol eder, kurall
    çözünürlük, durum, sınıf, etkileşim durumu, liste örneği ve animasyon örneği) ve tasarımla karşılaştırır. Sonuç
    `pass`, `fail` ya da `incomplete` olur; rapor `<designRoot>/<ekran-id>/report.html` dosyasındadır.
    `keepCaptures: true` ile çalışmanın Unity görüntüleri sonuç yazıldıktan sonra `<ekran-id>/.design-ui/kept-captures/`
-   içinde kalır (yakalama klasörünün tamamı: PNG'ler, `boxes.json`, `boxes.meta.json`); bir hata yeni bir Unity çalışması
+   içinde kalır (yakalama klasörünün tamamı: PNG'ler, `boxes.jsonl`, `boxes.meta.json`); bir hata yeni bir Unity çalışması
    olmadan yeniden karşılaştırılabilir: `design-export compare <ekran-id>/.design-ui/export --unity
    <ekran-id>/.design-ui/kept-captures --report <dosya.html>`. `cacheBudgetMB` sınırına sayılırlar; sonraki doğrulama
    (bir sonuç verdiğinde), ekranı yeniden dışa aktaran bir içe aktarma ve `design_ui_clean` onları siler. Ekranın dışa
@@ -367,8 +367,12 @@ Ağır Unity işleri için kendi çalıştırıcısı olan bir proje (makine ça
 `DESIGN_UI_EXPORT_DIR` / `DESIGN_UI_OUT_DIR` değişkenlerini alır, yukarıdaki EditMode testini kendi kopyasında çalıştırır
 (paketi o kopyanın `testables` listesine yazarak), `DESIGN_UI_OUT_DIR`'e yazar ve kopyasını siler.
 
-Yakalama, çıktı klasörüne her iş için bir PNG, `boxes.json`, `boxes.meta.json` ve en son `capture-done.json` yazar;
-sunucu ardından karşılaştırır ve raporu yazar. Başarısız olan, zaman aşımına uğrayan ya da bitmeyen bir çalışma, yarım
+Yakalama, çıktı klasörüne her iş için bir PNG, `boxes.jsonl`, `boxes.meta.json` ve en son `capture-done.json` yazar;
+sunucu ardından karşılaştırır ve raporu yazar. `boxes.jsonl` (dışa aktarıcının `goldens/boxes.jsonl` dosyası da) her
+yakalama için bir satır tutar ve satır, yakalama bittiğinde eklenir: binlerce yakalamalı bir ekran tek bir dev metin
+gerektirmez, durdurulan bir çalışma bitirdiği yakalamaları korur. Karşılaştırma dosyayı satır satır okur ve eski bir dışa
+aktarmanın ya da yakalamanın `boxes.json` dosyasını da okur. `design-export export` yakalamaya başlamadan önce yakalama
+sayısını ve kutuların tahmini boyutunu yazar, 200 MB'ı aşınca uyarır. Başarısız olan, zaman aşımına uğrayan ya da bitmeyen bir çalışma, yarım
 kalan görüntülerini, meta dosyasını ve Unity günlüğünü `<designRoot>/<ekran-id>/.design-ui/failed-<run>/` altında tutar
 (en yeni üçünü). Komut senin yetkilerinle bir program olarak çalışır; yalnız güvendiğin ayar dosyalarını kullan.
 

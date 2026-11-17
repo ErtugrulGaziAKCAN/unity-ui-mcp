@@ -12,9 +12,10 @@ import { collectSnapshot } from "../src/lint/index.js";
 import { buildIr, type IrBuild } from "../src/extract/tree.js";
 import type { IrAnim, IrNode, IrScreen } from "../src/ir/types.js";
 import { validateBoxes } from "../src/boxes/validate.js";
+import { BOXES_FILE, openBoxes } from "../src/boxes/file.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
 import { breakpointsHold, scaleStep, buildMatrix, captureFile, captureName, sampleTimes, unsampledAnims, type CaptureApply, type CaptureJob } from "../src/capture/matrix.js";
-import { CaptureSession, captureMatrix, checkCapturePaths, itemSuffix, runCapture, TEXT_CEIL_TOLERANCE, type ElementMap } from "../src/capture/capture.js";
+import { BOXES_BYTES_PER_ELEMENT, BOXES_WARN_BYTES, boxesVolume, CaptureSession, captureMatrix, checkCapturePaths, itemSuffix, runCapture, TEXT_CEIL_TOLERANCE, volumeLines, type ElementMap } from "../src/capture/capture.js";
 import { logicalViewport } from "../src/viewport.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -24,6 +25,12 @@ const kit: KitConfig = readKit(path.join(here, "fixtures", "extract", "kit"));
 const tmpDirs: string[] = [];
 const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), "capture-")); tmpDirs.push(d); return d; };
 afterAll(() => { for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });
+/** Every capture of a folder's boxes.jsonl, by name (a test's folder is small). */
+const boxesIn = async (dir: string): Promise<Record<string, CaptureBoxes>> => {
+  const r = await openBoxes(dir, "design");
+  if (!r) throw new Error(`no boxes in ${dir}`);
+  return Object.fromEntries(await Promise.all(r.names.map(async (n) => [n, await r.read(n)] as const)));
+};
 
 // ---- synthetic IR -----------------------------------------------------------------------------------------------
 const node = (id: string, o: Partial<IrNode> = {}): IrNode => ({
@@ -329,6 +336,26 @@ const centre = (png: ReturnType<typeof decodePng>, b: CaptureBoxes, id: string) 
 };
 const job = (o: Partial<CaptureJob>): CaptureJob => ({ state: "default", viewport: [2560, 1440], pseudo: null, apply: [], coverage: null, anim: null, ...o });
 
+describe("the boxes' volume", () => {
+  it("counts every IR element and its copy in each later written-out item of the repeats around it", () => {
+    // root > list (4 rows) > row > [cell, days (3 days) > day]: root, title and list once, row, cell and days 4 times, day 12 times
+    const ir = screen(node("root", { children: [node("title"), node("list", { repeat: { name: "rows", mode: "inline", count: 4 }, children: [
+      node("row", { children: [node("cell"), node("days", { repeat: { name: "days", mode: "list", count: 3 }, children: [node("day")] })] }),
+    ] })] }));
+    expect(boxesVolume(ir, 10)).toEqual({ captures: 10, elements: 3 + 3 * 4 + 12, bytes: 10 * 27 * BOXES_BYTES_PER_ELEMENT });
+  });
+
+  it("prints the captures and the estimate, and warns over 200 MB", () => {
+    expect(volumeLines({ captures: 1, elements: 1, bytes: 150 })).toEqual({ line: "capturing 1 capture of 1 measured element each: boxes.jsonl about 1 KB", warning: null });
+    expect(volumeLines({ captures: 9, elements: 40, bytes: 3 * 1024 * 1024 }).line).toBe("capturing 9 captures of 40 measured elements each: boxes.jsonl about 3 MB");
+    expect(volumeLines({ captures: 2000, elements: 600, bytes: BOXES_WARN_BYTES }).warning).toBeNull();
+    const over = volumeLines({ captures: 2000, elements: 700, bytes: BOXES_WARN_BYTES + 1 });
+    expect(over.line).toBe("capturing 2000 captures of 700 measured elements each: boxes.jsonl about 200 MB");
+    expect(over.warning).toBe("the boxes are estimated at 200 MB (2000 captures × 700 measured elements), over 200 MB: the export and every " +
+      "comparison read that much; fewer viewports, states, classes or written-out repeat items make it smaller");
+  });
+});
+
 describe("captures", () => {
   let browser: Browser;
   let built: IrBuild;
@@ -364,7 +391,8 @@ describe("captures", () => {
     expect(boxes.elements.box).toMatchObject({ x: 0, y: 0, w: 75, h: 30, visible: true, text: false, lines: [] });
     expect(boxes.elements.root).toMatchObject({ x: 0, y: 0, w: 1920, h: 1080 });
     expect(Object.keys(boxes.elements).sort()).toEqual(Object.keys(built.elements).sort());
-    expect(JSON.parse(fs.readFileSync(path.join(dir, "boxes.json"), "utf8"))).toEqual({ "default@1920x1080": boxes });
+    expect(await boxesIn(dir)).toEqual({ "default@1920x1080": boxes });
+    expect(fs.readFileSync(path.join(dir, BOXES_FILE), "utf8").split("\n")).toHaveLength(2); // one line and its newline
   });
 
   it("reports hidden elements as not visible, and their state as visible", async () => {
@@ -419,7 +447,7 @@ describe("captures", () => {
     } finally { await d.close(); }
     const fresh = await capture(job({}));
     expect(fs.readFileSync(path.join(dir, "default@2560x1440.png")).equals(fresh.png)).toBe(true);
-    expect(JSON.parse(fs.readFileSync(path.join(dir, "boxes.json"), "utf8"))["default@2560x1440"]).toEqual(fresh.boxes);
+    expect((await boxesIn(dir))["default@2560x1440"]).toEqual(fresh.boxes);
   });
 
   it("an ancestor's pseudo-state reaches the descendant's layer", async () => {
@@ -457,7 +485,8 @@ describe("captures", () => {
     const jobs = buildMatrix(clock.ir).filter((j) => j.anim && j.viewport[0] === 2560);
     const dir = tmp();
     const r = await captureMatrix(fx("clock.html"), kit, clock.ir, clock.elements, dir, { browser, jobs });
-    const px = (name: string, id: string) => centre(decodePng(fs.readFileSync(path.join(dir, `${name}.png`))), r.boxes[name], id);
+    const rb = await boxesIn(dir);
+    const px = (name: string, id: string) => centre(decodePng(fs.readFileSync(path.join(dir, `${name}.png`))), rb[name], id);
     // card (400 ms) and its dot (100 ms) start with the same hover: at 200 ms the card is half way, the dot has arrived
     const at = (id: string, time: number, enter = true) => captureName(jobs.find((j) => j.anim!.sampled[0].elementId === id && j.anim!.time === time && (j.apply.length > 0) === enter)!);
     expect(near(px(at("card", 200), "card"), [20, 127, 142])).toBe(true);
@@ -482,7 +511,8 @@ describe("captures", () => {
     const dir = tmp();
     // a's series runs first and ends every animation; b's series (fill none, delay 100 ms) starts again at 0
     const r = await captureMatrix(fx("load-series.html"), kit, b.ir, b.elements, dir, { browser, jobs });
-    const x = (j: CaptureJob, id: string) => r.boxes[captureName(j)].elements[id].x;
+    const rb = await boxesIn(dir);
+    const x = (j: CaptureJob, id: string) => rb[captureName(j)].elements[id].x;
     const own = x(series("a")[0], "b");
     expect(series("b").map((j) => x(j, "b") - own)).toEqual([0, 0, 50, 100, 150, 0]); // before its delay and after its end: no effect
     expect(series("b").map((j) => x(j, "a") - x(series("a")[0], "a"))).toEqual([0, 50, 75, 100, 125, 150]); // a runs on the same clock
@@ -502,8 +532,9 @@ describe("captures", () => {
     expect(series("panel", false)[0].anim!.from).toEqual({ state: "default", apply: [open] });
     expect(series("menu", true)).toHaveLength(5);
     const dir = tmp();
-    const r = await captureMatrix(fx("initial-trigger.html"), kit, b.ir, b.elements, dir, { browser, jobs }); // did not start: an error before the fix
-    const x = (name: string, id: string) => r.boxes[name].elements[id].x, y = (name: string, id: string) => r.boxes[name].elements[id].y;
+    await captureMatrix(fx("initial-trigger.html"), kit, b.ir, b.elements, dir, { browser, jobs }); // did not start: an error before the fix
+    const rb = await boxesIn(dir);
+    const x = (name: string, id: string) => rb[name].elements[id].x, y = (name: string, id: string) => rb[name].elements[id].y;
     expect(x("default@2560x1440", "panel")).toBe(0); // the static screen: open, nothing running
     expect(series("panel", true).map((j) => x(captureName(j), "panel"))).toEqual([-300, -225, -150, -75, 0]);
     expect(series("panel", false).map((j) => x(captureName(j), "panel"))).toEqual([0, -75, -150, -225, -300]);
@@ -526,15 +557,16 @@ describe("captures", () => {
     const jobs = buildMatrix(b.ir).filter((j) => j.viewport[0] === 2560 && (!j.anim || j.anim.time === 250));
     const dir = tmp();
     const r = await captureMatrix(fx("rotation.html"), kit, b.ir, b.elements, dir, { browser, jobs });
-    const still = r.boxes["default@2560x1440"].elements;
-    expect(validateBoxes(r.boxes["default@2560x1440"])).toEqual([]);
+    const rb = await boxesIn(dir);
+    const still = rb["default@2560x1440"].elements;
+    expect(validateBoxes(rb["default@2560x1440"])).toEqual([]);
     expect(still.plain.rotation).toBeUndefined();
     expect(still.tilt.rotation).toBeCloseTo(10, 4);
     expect(still.wrap.rotation).toBeCloseTo(-30, 4);
     expect(still.inner.rotation).toBeCloseTo(-30, 4);
     expect(still.quarter.rotation).toBeCloseTo(90, 4);
     expect(still.spin.rotation).toBeCloseTo(90, 4); // static captures show an animation's end
-    const sample = Object.values(r.boxes).find((x) => x.capture.includes(".anim.spin."))!;
+    const sample = Object.values(rb).find((x) => x.capture.includes(".anim.spin."))!;
     expect(sample.elements.spin.rotation).toBeCloseTo(22.5, 4);
   });
 
@@ -702,6 +734,7 @@ describe("captures", () => {
     expect(names(jobs)).toEqual(expect.arrayContaining(["default@1280x720.hover.option", "default@1280x720.hover.link", "default@1280x720.hover.drawer-btn",
       "default@1280x720.hover.retry", "default@1280x720.hover.ghost", "default@1280x720.is-selected.option"]));
     const r = await captureMatrix(fx("hidden-contexts.html"), kit, b.ir, b.elements, dir, { browser, jobs });
+    const rb = await boxesIn(dir);
     const got = names(r.jobs);
     // a closed popup, a collapsed row, a zero-width clipping drawer, a state's content: the context each layer gives
     expect(got).toEqual(expect.arrayContaining([
@@ -723,8 +756,8 @@ describe("captures", () => {
     expect(matrix.captures.find((c: { name: string }) => c.name === "default@1280x720.hover.plain").context).toBeUndefined();
     for (const n of ["default@1280x720.is-open.menu.hover.option", "default@1280x720.hover.link.is-expanded.row", "default@1280x720.is-open.drawer.hover.drawer-btn", "busy@1280x720.hover.retry"]) {
       const target = /hover\.([a-z-]+)/.exec(n)![1];
-      expect(r.boxes[n].elements[target].visible, n).toBe(true);
-      expect(r.boxes[n].elements[target].w, n).toBeGreaterThan(0);
+      expect(rb[n].elements[target].visible, n).toBe(true);
+      expect(rb[n].elements[target].w, n).toBeGreaterThan(0);
       expect(fs.existsSync(path.join(dir, `${n}.png`))).toBe(true);
     }
     expect(fs.existsSync(path.join(dir, "default@1280x720.hover.ghost.png"))).toBe(false);
@@ -737,7 +770,7 @@ describe("captures", () => {
     expect(fs.existsSync(path.join(dir, "default@1280x720.hover.more~2.png"))).toBe(true);
     // every capture records the boxes of the later written-out items, named as the Unity capture names their copies: the
     // days a pitch apart, a hidden "more" not visible, the shown one visible
-    const boxes = r.boxes["default@1280x720.hover.plain"];
+    const boxes = rb["default@1280x720.hover.plain"];
     expect(validateBoxes(boxes)).toEqual([]);
     expect(Object.keys(boxes.items ?? {}).sort()).toEqual(["date#1", "date#2", "day#1", "day#2", "more#1", "more#2", "option#1"]);
     const day = boxes.elements.day, items = boxes.items!;
@@ -771,7 +804,7 @@ describe("captures", () => {
     expect(items).toMatchObject({ "day#1": { paints: true }, "date#1": { paints: false }, "more#2": { paints: true } });
     expect(items["more#1"].paints).toBeUndefined();
     for (const b of [boxes.elements.day, items["more#2"]]) expect(b.shadow).toBeUndefined();
-    const hovered = r.boxes["default@1280x720.hover.more~2"].items!["more#2"];
+    const hovered = rb["default@1280x720.hover.more~2"].items!["more#2"];
     expect(hovered.paints).toBe(true);
     for (const [k, v] of Object.entries({ x: hovered.x - 7, y: hovered.y - 5, w: hovered.w + 14, h: hovered.h + 14 })) expect(hovered.shadow![k as "x"], k).toBeCloseTo(v, 5);
     expect(itemSuffix([0, 2])).toBe("#2");
@@ -779,18 +812,40 @@ describe("captures", () => {
     expect(itemSuffix([3, 1])).toBe("#1#3");
   }, 60000);
 
-  it("a failing viewport stops the others and fails the matrix once every page is closed", async () => {
+  it("a failing viewport stops the others and fails the matrix once every page is closed, saying what failed and how far it got", async () => {
     const all = buildMatrix(built.ir);
     const bad = job({ apply: [{ kind: "pseudo", pseudo: "hover", elementId: "ghost" }] });
     const jobs = [bad, ...all.filter((j) => j.viewport[0] === 1920)];
     const dir = tmp();
     const contextsBefore = browser.contexts().length;
-    await expect(captureMatrix(fx("screen.html"), kit, built.ir, built.elements as ElementMap, dir, { browser, jobs, concurrency: 2 })).rejects.toThrow(/ghost/);
+    const error = await captureMatrix(fx("screen.html"), kit, built.ir, built.elements as ElementMap, dir, { browser, jobs, concurrency: 2 }).then(() => null, (e: Error) => e);
+    expect(error?.message).toMatch(new RegExp(`^capture failed while .*, after (\\d+) of ${jobs.length} captures were finished: .*ghost`));
     expect(browser.contexts().length).toBe(contextsBefore);
     const files = fs.readdirSync(dir).length;
     await new Promise((r) => setTimeout(r, 300));
     expect(fs.readdirSync(dir).length).toBe(files);
-    expect(fs.existsSync(path.join(dir, "boxes.json"))).toBe(false);
+    // the captures finished before the stop are readable, one line each, every one with its PNG
+    const finished = Number(/after (\d+) of/.exec(error!.message)![1]);
+    const left = await openBoxes(dir, "design");
+    expect(left!.names).toHaveLength(finished);
+    for (const n of left!.names) {
+      expect(validateBoxes(await left!.read(n)), n).toEqual([]);
+      expect(fs.existsSync(path.join(dir, `${captureFile(n)}.png`)), n).toBe(true);
+    }
+    expect(fs.readdirSync(dir).filter((f) => f.endsWith(".png"))).toHaveLength(finished);
+    expect(fs.existsSync(path.join(dir, "matrix.json"))).toBe(false);
+  });
+
+  it("a run stopped after N captures leaves those N captures readable in boxes.jsonl", async () => {
+    const done = buildMatrix(built.ir).filter((j) => j.viewport[0] === 1920);
+    const bad = job({ apply: [{ kind: "pseudo", pseudo: "hover", elementId: "ghost" }] }); // its viewport runs after 1920's
+    const dir = tmp();
+    await expect(captureMatrix(fx("screen.html"), kit, built.ir, built.elements, dir, { browser, jobs: [...done, bad], concurrency: 1 }))
+      .rejects.toThrow(`capture failed while finding the contexts of the jobs at 2560x1440, after ${done.length} of ${done.length + 1} captures were finished: unknown IR element ghost`);
+    const left = (await openBoxes(dir, "design"))!;
+    expect(left.notes).toEqual([]);
+    expect(left.names).toEqual(names(done));
+    for (const n of left.names) expect(validateBoxes(await left.read(n)), n).toEqual([]);
   });
 
   it("writes a long-named job's PNG to its short file and records the file in matrix.json; boxes keep the name", async () => {
@@ -805,13 +860,14 @@ describe("captures", () => {
     expect(file.length).toBeLessThanOrEqual(81);
     const dir = tmp();
     const r = await captureMatrix(fx("screen.html"), kit, built.ir, built.elements, dir, { browser, jobs: [short, long] });
-    expect(fs.readdirSync(dir).sort()).toEqual(["boxes.json", "default@1280x720.png", `${file}.png`, "matrix.json"].sort());
+    const rb = await boxesIn(dir);
+    expect(fs.readdirSync(dir).sort()).toEqual([BOXES_FILE, "default@1280x720.png", `${file}.png`, "matrix.json"].sort());
     const png = fs.readFileSync(path.join(dir, `${file}.png`));
     expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1280, 720]);
     const matrix = JSON.parse(fs.readFileSync(path.join(dir, "matrix.json"), "utf8"));
     expect(matrix.captures.map((c: { name: string; file: string }) => [c.name, c.file])).toEqual([["default@1280x720", "default@1280x720"], [name, file]]);
-    expect(Object.keys(JSON.parse(fs.readFileSync(path.join(dir, "boxes.json"), "utf8"))).sort()).toEqual(["default@1280x720", name].sort());
-    expect(r.boxes[name].capture).toBe(name);
+    expect(Object.keys(rb).sort()).toEqual(["default@1280x720", name].sort());
+    expect(rb[name].capture).toBe(name);
   });
 
   it("refuses a capture file that cannot be written before capturing anything", async () => {
@@ -833,17 +889,18 @@ describe("captures", () => {
       await captureMatrix(fx("screen.html"), kit, built.ir, built.elements, dirB, { browser, concurrency: 2 });
     }, 120000);
 
-    it("captures every job: exact PNG sizes, boxes for every capture, the job list with sample times", () => {
+    it("captures every job: exact PNG sizes, boxes for every capture, the job list with sample times", async () => {
       const jobs = buildMatrix(built.ir);
       const all = names(jobs);
       const files = fs.readdirSync(dirA).sort();
-      expect(files).toEqual([...all.map((n) => `${n}.png`), "boxes.json", "matrix.json"].sort());
+      expect(files).toEqual([...all.map((n) => `${n}.png`), BOXES_FILE, "matrix.json"].sort());
       for (const j of jobs) {
         const png = fs.readFileSync(path.join(dirA, `${captureName(j)}.png`));
         expect([png.readUInt32BE(16), png.readUInt32BE(20)], captureName(j)).toEqual(j.viewport);
       }
-      const boxes = JSON.parse(fs.readFileSync(path.join(dirA, "boxes.json"), "utf8")) as Record<string, CaptureBoxes>;
-      expect(Object.keys(boxes)).toEqual([...all].sort());
+      const boxes = await boxesIn(dirA);
+      // one line per capture, in the matrix's order
+      expect(Object.keys(boxes)).toEqual(all);
       for (const [n, b] of Object.entries(boxes)) expect(validateBoxes(b), n).toEqual([]);
       const matrix = JSON.parse(fs.readFileSync(path.join(dirA, "matrix.json"), "utf8"));
       expect(matrix.captures.map((c: { name: string }) => c.name)).toEqual(all);
@@ -865,7 +922,7 @@ describe("captures", () => {
         `per viewport ${JSON.stringify(runA.timings.viewports)}`);
     });
 
-    it("is deterministic, whatever the concurrency: byte-identical PNGs, boxes.json and matrix.json (1 vs 2 pages at a time)", () => {
+    it("is deterministic, whatever the concurrency: byte-identical PNGs, boxes.jsonl and matrix.json (1 vs 2 pages at a time)", () => {
       const files = fs.readdirSync(dirA).sort();
       expect(fs.readdirSync(dirB).sort()).toEqual(files);
       const differ = files.filter((f) => !fs.readFileSync(path.join(dirA, f)).equals(fs.readFileSync(path.join(dirB, f))));
@@ -881,8 +938,8 @@ describe("captures", () => {
       }
       const differ = jobs.map(captureName).filter((n) => !fs.readFileSync(path.join(dir, `${n}.png`)).equals(fs.readFileSync(path.join(dirA, `${n}.png`))));
       expect(differ).toEqual([]);
-      const fresh = JSON.parse(fs.readFileSync(path.join(dir, "boxes.json"), "utf8"));
-      const reused = JSON.parse(fs.readFileSync(path.join(dirA, "boxes.json"), "utf8"));
+      const fresh = await boxesIn(dir);
+      const reused = await boxesIn(dirA);
       for (const n of jobs.map(captureName)) expect(fresh[n], n).toEqual(reused[n]);
     }, 120000);
   });

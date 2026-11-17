@@ -8,7 +8,12 @@ function sortKeys(value: unknown): unknown {
   return value;
 }
 
-/** Sorted keys, 2-space indent, trailing newline. Deterministic IR/boxes output. */
+/** Sorted keys on one line, without a newline: one record of a JSON Lines file (a capture's line in boxes.jsonl). */
+export function stableLine(value: unknown): string {
+  return JSON.stringify(sortKeys(value));
+}
+
+/** Sorted keys, 2-space indent, trailing newline. Deterministic IR and matrix output. */
 export function stableStringify(value: unknown): string {
   return JSON.stringify(sortKeys(value), null, 2) + "\n";
 }

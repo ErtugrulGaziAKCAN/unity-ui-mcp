@@ -77,7 +77,7 @@ namespace DesignUi.Editor
         /// <summary>Keyframe animations the golden shows frozen at their end frame (<see cref="FrozenFrames"/>).</summary>
         public List<FrozenAnimation> Frozen = new List<FrozenAnimation>();
         public string OutDir;
-        /// <summary>The capture's name: its key in boxes.json, the meta file and the result.</summary>
+        /// <summary>The capture's name: its key in boxes.jsonl, the meta file and the result.</summary>
         public string CaptureName;
         /// <summary>
         /// The file name of the capture's PNG without <c>.png</c> (the job's matrix.json <c>file</c>, a long name's short
@@ -93,11 +93,6 @@ namespace DesignUi.Editor
         public readonly List<string> Notes = new List<string>();
         /// <summary>Tests: called with the screen root after the capture is written, before the panel is destroyed.</summary>
         internal Action<VisualElement> Inspect;
-        /// <summary>
-        /// A run's boxes in memory (capture name → entry), written once at its end; null merges each capture into the
-        /// file at once (a run of a thousand animation samples would rewrite a file of megabytes each time).
-        /// </summary>
-        internal Newtonsoft.Json.Linq.JObject Boxes;
     }
 
     /// <summary>An IR animation: <c>node(ElementId).anims[Index]</c>.</summary>
@@ -143,7 +138,7 @@ namespace DesignUi.Editor
         /// <summary>
         /// The file name of the job's PNG without <c>.png</c> (matrix.json <c>file</c>: the exporter gives a long name a
         /// short, deterministic file); <see cref="Name"/> when the matrix has none (an export from before files were recorded).
-        /// The name stays the job's key in boxes.json, the meta file and the result.
+        /// The name stays the job's key in boxes.jsonl, the meta file and the result.
         /// </summary>
         public string File
         {

@@ -371,7 +371,12 @@ sync and the status window's Text section name the chosen faces and count the ot
    `data-u-state` × each `is-*` class layer × each pseudo-state used by the design (forced through CDP
    `CSS.forcePseudoState`), capture a golden PNG, every element's box, and every text node's line boxes (to compare
    line breaks), plus each animation's samples (§11). A job whose elements the design does not show in its own setup
-   is captured in the context that shows them (§15, hidden elements).
+   is captured in the context that shows them (§15, hidden elements). Before capturing, the exporter prints the number
+   of captures and an estimate of their boxes (captures × measured elements, the IR's elements and their copies in
+   written-out repeat items), and warns above 200 MB. Each capture's boxes are appended to `goldens/boxes.jsonl` as one
+   line when it finishes (put in the matrix's order at the end): nothing builds the whole set as one string, which a
+   dense screen of thousands of captures would not fit in. A failed capture names what failed and how many captures
+   were finished.
 4. **Styles.** Per element, record **specified** values from matched rules (`CSS.getMatchedStylesForNode`), which
    keep `%`, `auto` and flex intent and drive compilation, and **computed** values, which are used only for
    verification. Record pseudo-state, breakpoint and state deltas, transitions and keyframes.
@@ -398,7 +403,8 @@ Output per screen:
   screen.ir.json
   goldens/<file>.png           the capture name, e.g. default@1920x1080.is-open.menu.hover.option, default@1920x1080.hover.row-flag~2;
                                a name over 100 characters: its first 64, a dot and 16 hex of its SHA-256 (matrix.json file)
-  goldens/boxes.json           every element's box and text lines per capture (by name)
+  goldens/boxes.jsonl          every element's box and text lines, one line per capture (compact JSON with its name);
+                               readers stream it, and read an older export's boxes.json when there is no boxes.jsonl
   goldens/matrix.json          the jobs: names, files, applied state/classes/items, context, hidden jobs, animation samples
   assets/                      baked shadows, gradients, images, icons (named by content hash)
   fixtures/sample-data.json    bound values, repeat items with their classes, states and hiding
@@ -683,7 +689,7 @@ this section are in `docs/findings/animation.md`.
     at the design's size (the panel's target over the actual scale). Picking, pointer events (hover, active, clicks,
     wheel, drags in local coordinates), the gamma composite's texture and pointer mapping and `DesignUiPanelRegion`
     frames follow the transform (`RootScaleTests`). The capture is the game's path: its PanelSettings copy gets the same
-    factor and `boxes.json` records the scale the panel lays out at. Measured: docs/findings/viewport-classes.md.
+    factor and its boxes record the scale the panel lays out at. Measured: docs/findings/viewport-classes.md.
   - *Text widths.* The golden lays a text-sized box out with Chromium's text width ceiled to whole device pixels at the
     viewport's scale (the exporter's pageTextCeil; a 69.469 px text makes its button 70 px of content at 2560×1440, 105
     device px at 3840×2160); UI Toolkit ceils on the grid of the scale it lays out at and with no tolerance (a text of 86 px
@@ -837,8 +843,9 @@ The route and setup measured in M0 (`docs/findings/m0.md`):
 - **One mount per viewport.** A capture run mounts a viewport's screen once and moves it from job to job: state,
   classes, disabled and checked values, pointer, press, focus, picking modes and scroll offsets are given back after
   each job, and a job that leaves something behind (an overlay) makes the next job mount again (a fresh mount and a
-  kept one give the same pixels, tested). PNGs are encoded off the main thread, at most 8 pending. `boxes.json` and
-  `boxes.meta.json` are rewritten atomically every 25 jobs or 10 s, so a stopped run leaves what it captured;
+  kept one give the same pixels, tested). PNGs are encoded off the main thread, at most 8 pending. Each capture's line is
+  appended to `boxes.jsonl` when it finishes and `boxes.meta.json` is rewritten atomically every 25 jobs or 10 s, so a
+  stopped run leaves what it captured (a last line it stopped writing is left out with a note);
   `capture-done.json`, written last, marks a finished run. The test's time limit is 120 s + 2 s per job.
 - **Readback.** `ReadPixels` into a linear `RGBA32` texture or `AsyncGPUReadback`, written to the PNG unchanged; no
   colour conversion. Gamma-space blending on a UNorm target reproduces the browser's colours (ΔE2000 ≤ 0.72 with

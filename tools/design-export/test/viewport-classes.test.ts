@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { chromium } from "playwright";
 import { exportScreen } from "../src/export.js";
+import { openBoxes } from "../src/boxes/file.js";
 import { buildMatrix } from "../src/capture/matrix.js";
 import { inkColourLimit, readThresholds, thresholdsFor } from "../src/compare/compare.js";
 import { exactViewports, readKit } from "../src/kit.js";
@@ -160,7 +161,8 @@ describe("the golden's nested borders (docs/findings/viewport-classes.md, nested
       const kit = kitWith(JSON.parse(fs.readFileSync(path.join(kitDir, "kit.config.json"), "utf8")).viewports, { locales: ["tr"] });
       const r = await exportScreen(page, kit, out, { browser });
       expect(r.ok, JSON.stringify(r.findings)).toBe(true);
-      boxes = JSON.parse(fs.readFileSync(path.join(out, "goldens", "boxes.json"), "utf8"));
+      const golden = (await openBoxes(path.join(out, "goldens"), "design"))!;
+      boxes = Object.fromEntries(await Promise.all(golden.names.map(async (n) => [n, await golden.read(n)] as const)));
     } finally { await browser.close(); }
   }, 120_000);
 

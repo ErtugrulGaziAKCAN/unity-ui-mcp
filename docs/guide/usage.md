@@ -187,7 +187,7 @@ In your AI client, type `/unity-ui-mcp`, give it the canvas link and name the ar
    (each viewport, state, class, pseudo-state, list sample and animation sample) and compares it with the design. The
    verdict is `pass`, `fail` or `incomplete`; the report is `<designRoot>/<screen-id>/report.html`. With
    `keepCaptures: true` the run's Unity captures stay in `<screen-id>/.design-ui/kept-captures/` once the verdict is
-   written (the whole capture folder: PNGs, `boxes.json`, `boxes.meta.json`), so a failure can be compared again
+   written (the whole capture folder: PNGs, `boxes.jsonl`, `boxes.meta.json`), so a failure can be compared again
    offline without another Unity run: `design-export compare <screen-id>/.design-ui/export --unity
    <screen-id>/.design-ui/kept-captures --report <file.html>`. They count toward `cacheBudgetMB`, and the next verify
    (when it gives a verdict), an import that exports the screen again and `design_ui_clean` remove them. A verify of an
@@ -377,8 +377,12 @@ command into `command.capture` instead: it gets the same `{projectDir}`, `{expor
 `DESIGN_UI_EXPORT_DIR` / `DESIGN_UI_OUT_DIR`, runs the EditMode test above on its copy (listing the package in that copy's
 `testables`), writes into `DESIGN_UI_OUT_DIR` and removes its copy.
 
-The capture writes a PNG per job, `boxes.json`, `boxes.meta.json` and, last, `capture-done.json` into the output folder;
-the server then compares and writes the report. A run that fails, times out or does not finish keeps its partial
+The capture writes a PNG per job, `boxes.jsonl`, `boxes.meta.json` and, last, `capture-done.json` into the output folder;
+the server then compares and writes the report. `boxes.jsonl` (the exporter's `goldens/boxes.jsonl` too) holds one line
+per capture, appended when the capture finishes, so a screen of thousands of captures never needs one huge string and a
+stopped run keeps the captures it finished; the comparison reads it line by line, and still reads the `boxes.json` of an
+older export or capture. Before capturing, `design-export export` prints the number of captures and an estimate of their
+boxes, and warns above 200 MB. A run that fails, times out or does not finish keeps its partial
 captures, the meta file and the Unity log in `<designRoot>/<screen-id>/.design-ui/failed-<run>/` (the newest three). The
 command runs as a program with your rights; use only configs you trust.
 

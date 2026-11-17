@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { requireConfig, withProgress, type ServerContext } from "../context.js";
 import { designPath, exportedPage, resolveScreen, sha256, sourceSha } from "../design.js";
-import { classLines, toolHash } from "../exporter.js";
+import { BOXES_FILE, classLines, LEGACY_BOXES_FILE, toolHash } from "../exporter.js";
 import { MISSING, unityStep } from "../pipeline.js";
 import { bytesOf, FAILED_RUNS_KEPT as KEPT, mb } from "../cache.js";
 import { guarded, Timings, toolResult } from "../result.js";
@@ -26,7 +26,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
     inputSchema: {
       screen: z.string().min(1).describe(SCREEN_ARG),
       keepCaptures: z.boolean().optional().describe(
-        "Keep this run's Unity captures (PNGs, boxes.json, boxes.meta.json) in <screen>/.design-ui/kept-captures once the verdict is " +
+        "Keep this run's Unity captures (PNGs, boxes.jsonl, boxes.meta.json) in <screen>/.design-ui/kept-captures once the verdict is " +
         "written, for an offline comparison (design-export compare <export> --unity <kept-captures> --report <file>), instead of " +
         "deleting them (default false). They count toward cacheBudgetMB; the next verify that gives a verdict, an import that exports the " +
         "screen again, a later cleanup over the budget and design_ui_clean remove them."),
@@ -135,14 +135,14 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
         try {
           v = await t.async("compare", () => compareScreen(exportDir, staging, reportPath, { timings: steps, unityDir, keepCaptures: keepCaptures === true }));
         } catch (e) {
-          const evidence = keep(`the comparison failed: ${(e as Error).message}`, run); // e.g. an unreadable boxes.json
+          const evidence = keep(`the comparison failed: ${(e as Error).message}`, run); // e.g. an unreadable boxes.jsonl
           return toolResult(`Comparison of ${screen} failed: ${(e as Error).message}; no verdict.${kept(evidence)}`, { screen, verdict: null, evidence, timings: t.done() }, true);
         }
         if (v.compared === 0) {
           const unfinished = !fs.existsSync(path.join(staging, "capture-done.json"));
-          const none = !unfinished && !fs.existsSync(path.join(staging, "boxes.json"));
+          const none = !unfinished && ![BOXES_FILE, LEGACY_BOXES_FILE].some((f) => fs.existsSync(path.join(staging, f)));
           v.discard?.();
-          const what = unfinished ? "did not finish (no capture-done.json)" : none ? "wrote no boxes.json" : "produced none of the design's captures";
+          const what = unfinished ? "did not finish (no capture-done.json)" : none ? `wrote no ${BOXES_FILE}` : "produced none of the design's captures";
           const evidence = keep(`Unity capture ${what}`, run);
           return toolResult(`Unity capture of ${screen} (via ${run.via}) ${what}; no verdict. ` +
             `The previous report and verdict are unchanged.${kept(evidence)}`, { screen, verdict: null, notRun: v.notRun, logTail: run.logTail, evidence, timings: t.done() }, true);

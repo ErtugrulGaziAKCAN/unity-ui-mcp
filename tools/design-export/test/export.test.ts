@@ -8,6 +8,7 @@ import { runCli } from "../src/commands.js";
 import { exportScreen, designHash, MARKER_FILE, toolHashInputs } from "../src/export.js";
 import crypto from "node:crypto";
 import { validateBoxes } from "../src/boxes/validate.js";
+import { BOXES_FILE, openBoxes } from "../src/boxes/file.js";
 import { validateIr } from "../src/ir/validate.js";
 import { readKit } from "../src/kit.js";
 
@@ -31,26 +32,36 @@ const tree = (dir: string, rel = ""): string[] =>
 describe("exportScreen: inbox-mini", () => {
   let out: string;
   let res: Awaited<ReturnType<typeof exportScreen>>;
+  const logged: string[] = [];
   beforeAll(async () => {
     out = path.join(tmp(), "out");
-    res = await exportScreen(fx("inbox-mini"), KIT, out, { browser });
+    res = await exportScreen(fx("inbox-mini"), KIT, out, { browser, log: (l) => logged.push(l) });
   }, 120_000);
 
-  it("writes the five outputs and a valid IR", () => {
+  it("writes the five outputs and a valid IR", async () => {
     expect(res.ok).toBe(true);
     expect(res.skipped).toBeFalsy();
     expect(res.outDir).toBe(out);
-    for (const f of ["screen.ir.json", "lint-report.json", "export-report.json", "fixtures/sample-data.json", "goldens/boxes.json", "goldens/matrix.json"]) {
+    for (const f of ["screen.ir.json", "lint-report.json", "export-report.json", "fixtures/sample-data.json", `goldens/${BOXES_FILE}`, "goldens/matrix.json"]) {
       expect(fs.existsSync(path.join(out, f)), f).toBe(true);
     }
+    expect(fs.existsSync(path.join(out, "goldens", "boxes.json"))).toBe(false);
     expect(validateIr(readJson(out, "screen.ir.json"))).toEqual([]);
-    for (const b of Object.values(readJson(out, "goldens", "boxes.json"))) expect(validateBoxes(b)).toEqual([]);
+    const boxes = (await openBoxes(path.join(out, "goldens"), "design"))!;
+    for (const n of boxes.names) expect(validateBoxes(await boxes.read(n)), n).toEqual([]);
     const files = tree(out);
     expect(files.filter((f) => f.startsWith("assets/") && f.endsWith(".png"))).toHaveLength(1);
     const matrix = readJson(out, "goldens", "matrix.json");
+    expect(boxes.names).toEqual(matrix.captures.map((c: { name: string }) => c.name));
     for (const c of matrix.captures) expect(files, c.name).toContain(path.join("goldens", `${c.name}.png`));
     expect(files.filter((f) => f.startsWith("goldens/") && f.endsWith(".png"))).toHaveLength(matrix.captures.length);
     expect(files.some((f) => f.includes(".tmp-"))).toBe(false);
+  });
+
+  it("prints the number of captures and the estimated size of their boxes before capturing, and warns only over 200 MB", () => {
+    const matrix = readJson(out, "goldens", "matrix.json");
+    expect(logged).toEqual([expect.stringMatching(new RegExp(`^capturing ${matrix.captures.length} captures of \\d+ measured elements each: boxes\\.jsonl about \\d+ KB$`))]);
+    expect(res.warnings).toEqual([]);
   });
 
   it("writes sample data for binds and repeats", () => {
@@ -84,7 +95,7 @@ describe("exportScreen: inbox-mini", () => {
     expect(r2.ok).toBe(true);
     const same = (f: string) => expect(fs.readFileSync(path.join(other, f), "utf8")).toBe(fs.readFileSync(path.join(out, f), "utf8"));
     same("screen.ir.json");
-    same(path.join("goldens", "boxes.json"));
+    same(path.join("goldens", BOXES_FILE));
     same(path.join("fixtures", "sample-data.json"));
     expect(tree(other, "assets")).toEqual(tree(out, "assets"));
   }, 120_000);
@@ -157,6 +168,10 @@ describe("exportScreen: inbox-mini", () => {
     const out: string[] = [];
     expect(await runCli(["export", design, "--kit", KIT, "--out", o], { out: (x) => out.push(x), err: () => {} })).toBe(0);
     expect(out.join("")).toContain("hidden in the design (not captured, a verify is incomplete): default@1280x720.hover.ghost");
+    // a fresh export prints the captures and their boxes' size before capturing
+    out.length = 0;
+    expect(await runCli(["export", design, "--kit", KIT, "--out", o, "--force"], { out: (x) => out.push(x), err: () => {} })).toBe(0);
+    expect(out[0]).toMatch(/^capturing \d+ captures of \d+ measured elements each: boxes\.jsonl about \d+ KB\n$/);
     expect((await exportScreen(fx("inbox-mini"), KIT, path.join(tmp(), "o"), { browser })).hidden).toEqual([]);
   }, 240_000);
 

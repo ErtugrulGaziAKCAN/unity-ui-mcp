@@ -11,7 +11,7 @@ using UnityEngine.UIElements;
 namespace DesignUi.Editor
 {
     /// <summary>
-    /// Boxes of a Unity capture in the exporter's <c>boxes.json</c> schema (<c>tools/design-export/src/boxes/schema.json</c>),
+    /// Boxes of a Unity capture in the exporter's boxes schema (<c>tools/design-export/src/boxes/schema.json</c>),
     /// so the comparison reads both sides alike: one entry per IR element Unity has (compiler-removed wrappers are left
     /// out), in device pixels (panel px times the panel's scale, which the capture measures), rounded to 1e-6.
     /// <list type="bullet">
@@ -28,10 +28,18 @@ namespace DesignUi.Editor
     /// Text fields and
     /// dropdowns report no lines (the golden's form controls have none), nor does empty text or text without a font asset.</item>
     /// </list>
+    /// The file (<see cref="FileName"/>, read by <c>tools/design-export/src/boxes/file.ts</c>) holds one line per capture,
+    /// appended when the capture finishes: nothing builds the whole set as one string, which thousands of dense captures
+    /// would not fit in.
     /// </summary>
     public static class BoxesWriter
     {
-        public const string FileName = "boxes.json";
+        /// <summary>A capture folder's boxes: one line per capture, its entry as compact JSON with sorted keys and <c>\n</c>.</summary>
+        public const string FileName = "boxes.jsonl";
+        /// <summary>The boxes file of earlier versions (one JSON object of every capture by name), which a capture run deletes.</summary>
+        public const string LegacyFileName = "boxes.json";
+
+        static readonly UTF8Encoding Utf8 = new UTF8Encoding(false);
 
         /// <summary>
         /// Device pixels per panel pixel of Scale With Screen Size (match width or height) as UI Toolkit resolves it
@@ -133,53 +141,117 @@ namespace DesignUi.Editor
             return true;
         }
 
-        /// <summary>Measures one capture and merges it into <paramref name="boxesJsonPath"/>.</summary>
-        public static void Merge(string boxesJsonPath, string captureName, VisualElement root, Vector2Int viewport, double scale, IrScreen ir) =>
-            Merge(boxesJsonPath, Measure(captureName, root, viewport, scale, ir));
+        /// <summary>Measures one capture and merges it into <paramref name="boxesPath"/>.</summary>
+        public static void Merge(string boxesPath, string captureName, VisualElement root, Vector2Int viewport, double scale, IrScreen ir) =>
+            Merge(boxesPath, Measure(captureName, root, viewport, scale, ir));
 
-        /// <summary>Adds or replaces the capture (its <c>capture</c> name is the key); other captures stay. Sorted keys, \n endings.</summary>
-        public static void Merge(string boxesJsonPath, JObject capture)
+        /// <summary>
+        /// Adds or replaces the capture (its <c>capture</c> name is the key) by appending it as one line: compact JSON, sorted
+        /// keys, <c>\n</c>. Other captures stay; a later line of a name replaces an earlier one for every reader. The file is
+        /// never read or rewritten, so a run that stops keeps every capture it finished.
+        /// </summary>
+        public static void Merge(string boxesPath, JObject capture)
         {
             var name = (string)capture?["capture"];
             if (string.IsNullOrEmpty(name)) throw new ArgumentException("the capture has no name", nameof(capture));
-            var all = Read(boxesJsonPath);
-            all[name] = capture;
-            Write(boxesJsonPath, all);
+            var dir = Path.GetDirectoryName(boxesPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            File.AppendAllText(boxesPath, Line(capture) + "\n", Utf8);
         }
 
         /// <summary>Removes a capture from the file (nothing happens when the file or the entry does not exist).</summary>
-        public static void Remove(string boxesJsonPath, string captureName)
+        public static void Remove(string boxesPath, string captureName) => Remove(boxesPath, new HashSet<string> { captureName });
+
+        /// <summary>
+        /// Removes every line of these captures: the other lines are copied one at a time to <c>&lt;path&gt;.tmp</c>, which
+        /// then replaces the file; a file without them is left as it is.
+        /// </summary>
+        internal static void Remove(string boxesPath, ICollection<string> captureNames)
         {
-            if (!File.Exists(boxesJsonPath)) return;
-            var all = Read(boxesJsonPath);
-            if (all.Remove(captureName)) Write(boxesJsonPath, all);
+            if (captureNames.Count == 0 || !File.Exists(boxesPath)) return;
+            var tmp = boxesPath + ".tmp";
+            int removed = 0;
+            using (var reader = new StreamReader(boxesPath, Utf8))
+            using (var writer = new StreamWriter(tmp, false, Utf8))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    var name = NameOf(line);
+                    if (name != null && captureNames.Contains(name)) { removed++; continue; }
+                    writer.Write(line);
+                    writer.Write('\n');
+                }
+            }
+            if (removed == 0) File.Delete(tmp);
+            else Replace(tmp, boxesPath);
+        }
+
+        /// <summary>
+        /// Every capture of a boxes file by name, a later line of a name replacing an earlier one; a last line a stopped run
+        /// left incomplete is left out. It holds the whole file: for tests and small folders.
+        /// </summary>
+        internal static JObject ReadAll(string boxesPath)
+        {
+            var all = new JObject();
+            if (!File.Exists(boxesPath)) return all;
+            bool complete;
+            using (var f = File.OpenRead(boxesPath))
+            {
+                if (f.Length > 0) f.Seek(-1, SeekOrigin.End);
+                complete = f.Length == 0 || f.ReadByte() == '\n';
+            }
+            using (var reader = new StreamReader(boxesPath, Utf8))
+            {
+                string line;
+                for (int n = 1; (line = reader.ReadLine()) != null; n++)
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    JObject entry;
+                    try { entry = Parse(line); }
+                    catch (JsonException e)
+                    {
+                        if (reader.EndOfStream && !complete) break;
+                        throw new InvalidDataException("'" + boxesPath + "' line " + n + " is not JSON: " + e.Message, e);
+                    }
+                    all[(string)entry["capture"] ?? throw new InvalidDataException("'" + boxesPath + "' line " + n + " has no capture name")] = entry;
+                }
+            }
+            return all;
         }
 
         /// <summary>The element named <paramref name="name"/>: <paramref name="root"/> itself or its first descendant of that name.</summary>
         internal static VisualElement Find(VisualElement root, string name) => root.name == name ? root : root.Q(name);
 
-        static JObject Read(string path)
+        /// <summary>A capture's line: compact JSON with sorted keys, without its newline.</summary>
+        internal static string Line(JObject capture) => Sort(capture).ToString(Formatting.None);
+
+        /// <summary>A line's capture entry (strings stay strings: a name is never read as a date).</summary>
+        static JObject Parse(string line)
         {
-            if (!File.Exists(path)) return new JObject();
-            var text = File.ReadAllText(path);
-            if (string.IsNullOrWhiteSpace(text)) return new JObject();
-            try { return JObject.Parse(text); }
-            catch (JsonException e) { throw new InvalidDataException("'" + path + "' is not a boxes file: " + e.Message, e); }
+            using (var reader = new JsonTextReader(new StringReader(line)) { DateParseHandling = DateParseHandling.None })
+                return JObject.Load(reader);
         }
 
-        /// <summary>Writes every capture of <paramref name="all"/> (capture name → entry) as the boxes file, replacing it.</summary>
-        internal static void WriteAll(string boxesJsonPath, JObject all) => Write(boxesJsonPath, all);
-
-        static void Write(string path, JObject all)
+        /// <summary>The <c>capture</c> name of a line, read up to that property (null when the line has none or is not JSON).</summary>
+        static string NameOf(string line)
         {
-            var dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            using (var sw = new StringWriter { NewLine = "\n" })
+            try
             {
-                using (var writer = new JsonTextWriter(sw) { Formatting = Formatting.Indented, Indentation = 2 })
-                    Sort(all).WriteTo(writer);
-                WriteText(path, sw.ToString().Replace("\r\n", "\n") + "\n");
+                using (var r = new JsonTextReader(new StringReader(line)) { DateParseHandling = DateParseHandling.None })
+                {
+                    if (!r.Read() || r.TokenType != JsonToken.StartObject) return null;
+                    while (r.Read() && r.TokenType == JsonToken.PropertyName)
+                    {
+                        var key = (string)r.Value;
+                        if (!r.Read()) return null;
+                        if (key == "capture") return r.TokenType == JsonToken.String ? (string)r.Value : null;
+                        r.Skip();
+                    }
+                }
             }
+            catch (JsonException) { }
+            return null;
         }
 
         /// <summary>
@@ -189,7 +261,12 @@ namespace DesignUi.Editor
         internal static void WriteText(string path, string text)
         {
             var tmp = path + ".tmp";
-            File.WriteAllText(tmp, text, new UTF8Encoding(false));
+            File.WriteAllText(tmp, text, Utf8);
+            Replace(tmp, path);
+        }
+
+        static void Replace(string tmp, string path)
+        {
             if (File.Exists(path)) File.Replace(tmp, path, null);
             else File.Move(tmp, path);
         }

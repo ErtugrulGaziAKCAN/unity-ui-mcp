@@ -771,7 +771,7 @@ describe("design_ui_import", () => {
     const r = await call(client, "design_ui_import", { design: "inbox-mini" });
     expect(r.isError).toBeFalsy();
     const exportDir = path.join(dir, ".design-ui", "export");
-    for (const f of ["screen.ir.json", "lint-report.json", "export-report.json", "fixtures/sample-data.json", "goldens/boxes.json", "goldens/matrix.json"]) {
+    for (const f of ["screen.ir.json", "lint-report.json", "export-report.json", "fixtures/sample-data.json", "goldens/boxes.jsonl", "goldens/matrix.json"]) {
       expect(fs.existsSync(path.join(exportDir, f)), f).toBe(true);
     }
     expect(fs.readdirSync(path.join(exportDir, "assets")).some((f) => f.endsWith(".png"))).toBe(true);
@@ -1363,18 +1363,18 @@ describe("design_ui_verify", () => {
     expect(runs).not.toContain(path.basename(r.data.evidence));
   }, 30_000);
 
-  it("keeps the evidence when the comparison itself fails (an unreadable boxes.json), with no verdict", async () => {
+  it("keeps the evidence when the comparison itself fails (an unreadable boxes.jsonl), with no verdict", async () => {
     const p = tempProject({ prefer: "command" });
     p.addScreen("clean-screen", "clean-screen");
-    const bad = 'mkdir -p "$0" && printf png > "$0/default@320x180.png" && printf "{not json" > "$0/boxes.json" && echo "{}" > "$0/capture-done.json"';
+    const bad = 'mkdir -p "$0" && printf png > "$0/default@320x180.png" && printf "{not json\\n{}\\n" > "$0/boxes.jsonl" && echo "{}" > "$0/capture-done.json"';
     p.writeConfig({ unityRunner: { prefer: "command", command: { import: CONFIRMING_IMPORT, capture: ["sh", "-c", bad, "{outDir}"], kitSync: [] } } });
-    const pipeline = { ...stubPipeline(), unityCapture: true, compareScreen: async () => { throw new Error("boxes.json is not JSON"); } };
+    const pipeline = { ...stubPipeline(), unityCapture: true, compareScreen: async () => { throw new Error("boxes.jsonl line 1 is not JSON"); } };
     const client = await serverFor(p.dir, pipeline);
     await call(client, "design_ui_import", { design: "clean-screen" });
     const r = await call(client, "design_ui_verify", { screen: "clean-screen" });
     expect(r.isError).toBe(true);
-    expect(r.text).toMatch(/^Comparison of clean\.screen failed: boxes\.json is not JSON; no verdict\. Partial captures and logs kept in .*failed-/);
-    expect(fs.readFileSync(path.join(r.data.evidence, "boxes.json"), "utf8")).toBe("{not json");
+    expect(r.text).toMatch(/^Comparison of clean\.screen failed: boxes\.jsonl line 1 is not JSON; no verdict\. Partial captures and logs kept in .*failed-/);
+    expect(fs.readFileSync(path.join(r.data.evidence, "boxes.jsonl"), "utf8")).toBe("{not json\n{}\n");
     expect(r.data.verdict).toBeNull();
   });
 
@@ -1521,13 +1521,13 @@ function goldenPipeline(): Pipeline {
       const w = 64, h = 48, data = new Uint8Array(w * h * 4);
       for (let p = 0; p < w * h; p++) data.set(p % w >= 16 && p % w < 48 && p / w >= 8 && p / w < 40 ? [200, 60, 60, 255] : [20, 30, 40, 255], p * 4);
       const el = (x: number, y: number, ww: number, hh: number) => ({ x, y, w: ww, h: hh, visible: true, text: false, lines: [] });
-      const boxes: Record<string, unknown> = {};
+      const boxes: string[] = [];
       const captures = ["default@64x48", "hover@64x48"].map((name) => {
         fs.writeFileSync(path.join(g, `${name}.png`), encodePng({ w, h, data }));
-        boxes[name] = { capture: name, viewport: [w, h], scale: 1, external: [], elements: { root: el(0, 0, w, h), card: el(16, 8, 32, 32) } };
+        boxes.push(`${JSON.stringify({ capture: name, viewport: [w, h], scale: 1, external: [], elements: { root: el(0, 0, w, h), card: el(16, 8, 32, 32) } })}\n`);
         return { name, state: name.split("@")[0], viewport: [w, h], pseudo: null, apply: [], coverage: null, anim: null };
       });
-      fs.writeFileSync(path.join(g, "boxes.json"), JSON.stringify(boxes));
+      fs.writeFileSync(path.join(g, "boxes.jsonl"), boxes.join(""));
       fs.writeFileSync(path.join(g, "matrix.json"), JSON.stringify({ chromium: "test", platform: "test", captures, unsampled: [] }));
       fs.writeFileSync(path.join(outDir, "screen.ir.json"), JSON.stringify({ irVersion: 2, screen: "clean-screen", root: { id: "root", children: [{ id: "card", children: [] }] } }));
       fs.writeFileSync(path.join(outDir, "export-report.json"), JSON.stringify({ screen: "clean-screen", timings: { lint: 11 }, totalMs: 99 }));
@@ -1543,7 +1543,7 @@ const copyCapture = (without: string[] = []) => ({
     prefer: "command",
     command: {
       import: CONFIRMING_IMPORT,
-      capture: ["sh", "-c", `mkdir -p "$1" && cp "$0"/goldens/*.png "$0"/goldens/boxes.json "$1"/ && echo '{"runId":"t","jobs":2,"captured":2,"notCaptured":0}' > "$1"/capture-done.json && rm -f ${without.map((f) => `"$1/${f}"`).join(" ") || '"$1/none"'}`, "{exportDir}", "{outDir}"],
+      capture: ["sh", "-c", `mkdir -p "$1" && cp "$0"/goldens/*.png "$0"/goldens/boxes.jsonl "$1"/ && echo '{"runId":"t","jobs":2,"captured":2,"notCaptured":0}' > "$1"/capture-done.json && rm -f ${without.map((f) => `"$1/${f}"`).join(" ") || '"$1/none"'}`, "{exportDir}", "{outDir}"],
       kitSync: ["sh", "-c", "exit 0"],
     },
   },
@@ -1635,7 +1635,7 @@ describe("design_ui_verify with the installed comparison", () => {
     const r = await call(client, "design_ui_verify", { screen: "clean-screen", keepCaptures: true });
     expect(r.text).toMatch(/^PASS: clean-screen/);
     // the whole capture folder, so the comparison can run again offline (design-export compare <export> --unity <kept>)
-    expect(fs.readdirSync(kept).sort()).toEqual(["boxes.json", "capture-done.json", "default@64x48.png", "hover@64x48.png"]);
+    expect(fs.readdirSync(kept).sort()).toEqual(["boxes.jsonl", "capture-done.json", "default@64x48.png", "hover@64x48.png"]);
     expect(r.data.keptCaptures).toEqual({ dir: kept, bytes: expect.any(Number) });
     expect(r.text).toContain(`Unity captures kept in ${kept}`);
     expect(r.text).toMatch(/design-export compare .*--unity/);
@@ -1675,7 +1675,7 @@ describe("design_ui_verify with the installed comparison", () => {
     expect(fs.existsSync(kept)).toBe(true);
     expect(String(r.data.cleanup ?? "")).not.toContain("kept-captures");
     // nor the export the offline comparison the answer prints needs (re-review N4)
-    expect(fs.existsSync(path.join(dir, ".design-ui", "export", "goldens", "boxes.json"))).toBe(true);
+    expect(fs.existsSync(path.join(dir, ".design-ui", "export", "goldens", "boxes.jsonl"))).toBe(true);
     expect(String(r.data.cleanup ?? "")).not.toContain(".design-ui/export");
     // the next cleanup may remove them: the record and the report stop naming them
     const clean = await call(client, "design_ui_clean", { screen: "clean-screen" });
@@ -1738,12 +1738,12 @@ describe("design_ui_verify with the installed comparison", () => {
 
     const report = fs.readFileSync(path.join(dir, "report.html"));
     const lastVerify = fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json"));
-    p.writeConfig(copyCapture(["default@64x48.png", "hover@64x48.png", "boxes.json"]));
+    p.writeConfig(copyCapture(["default@64x48.png", "hover@64x48.png", "boxes.jsonl"]));
     const client2 = await serverFor(p.dir, goldenPipeline());
     const none = await call(client2, "design_ui_verify", { screen: "clean-screen" });
     expect(none.isError).toBe(true);
     expect(none.data.verdict).toBeNull();
-    expect(none.text).toMatch(/wrote no boxes\.json; no verdict\. The previous report and verdict are unchanged/);
+    expect(none.text).toMatch(/wrote no boxes\.jsonl; no verdict\. The previous report and verdict are unchanged/);
     // the earlier report and verdict stay exactly as they were
     expect(fs.readFileSync(path.join(dir, "report.html")).equals(report)).toBe(true);
     expect(fs.readFileSync(path.join(dir, ".design-ui", "last-verify.json")).equals(lastVerify)).toBe(true);
@@ -1769,7 +1769,7 @@ describe("design_ui_verify keeps what its report shows and nothing else", () => 
         prefer: "command",
         command: {
           import: CONFIRMING_IMPORT,
-          capture: ["sh", "-c", `mkdir -p "$1" && cp "$0"/goldens/*.png "$0"/goldens/boxes.json "$1"/ && cp "$2" "$1"/default@64x48.png && echo '{"runId":"t","jobs":2,"captured":2,"notCaptured":0}' > "$1"/capture-done.json`,
+          capture: ["sh", "-c", `mkdir -p "$1" && cp "$0"/goldens/*.png "$0"/goldens/boxes.jsonl "$1"/ && cp "$2" "$1"/default@64x48.png && echo '{"runId":"t","jobs":2,"captured":2,"notCaptured":0}' > "$1"/capture-done.json`,
             "{exportDir}", "{outDir}", path.join(FIXTURES, "red-64x48.png")],
           kitSync: ["sh", "-c", "exit 0"],
         },

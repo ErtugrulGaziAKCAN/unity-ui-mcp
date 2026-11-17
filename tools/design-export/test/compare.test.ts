@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodePng, type Rgba } from "../src/bake/png.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
+import { BOXES_FILE, boxesLine, LEGACY_BOXES_FILE } from "../src/boxes/file.js";
 import { captureFile, type CaptureJob } from "../src/capture/matrix.js";
 import { deltaE2000, deltaE2000Lab, isTransparentColor } from "../src/compare/color.js";
 import { classLines, compareCapture, compareScreen, cornerInRoundBand, inkColourLimit, readThresholds, summarizeIssues, thresholdsFor, WHOLE, type CaptureContext, type CaptureVerdict, type Thresholds } from "../src/compare/compare.js";
@@ -2884,6 +2885,12 @@ describe("IR context", () => {
 // ---- screen: export and Unity folders on disk -------------------------------------------------------------------
 
 interface Fixture { exportDir: string; unityDir: string; names: string[] }
+/** Writes captures as a folder's boxes.jsonl, a line each, named by their key. */
+const putBoxes = (dir: string, boxes: Record<string, CaptureBoxes>) =>
+  fs.writeFileSync(path.join(dir, BOXES_FILE), Object.entries(boxes).map(([name, b]) => boxesLine({ ...b, capture: name })).join(""));
+/** A folder's boxes.jsonl, by capture name. */
+const getBoxes = (dir: string): Record<string, CaptureBoxes> => Object.fromEntries(fs.readFileSync(path.join(dir, BOXES_FILE), "utf8").split("\n")
+  .filter(Boolean).map((l) => { const b = JSON.parse(l) as CaptureBoxes; return [b.capture, b]; }));
 const job = (state: string, viewport: [number, number], anim: CaptureJob["anim"] = null): CaptureJob => ({ state, viewport, pseudo: null, apply: [], coverage: null, anim });
 
 /** An export folder with three captures (default, busy, one animation sample pair) and a Unity folder with the given ones. */
@@ -2906,10 +2913,10 @@ function screenFixture(unity: (name: string, s: ReturnType<typeof scene>) => Ret
     const us = unity(e.name, scene(e.name));
     if (us) { uBoxes[e.name] = us.boxes; fs.writeFileSync(path.join(unityDir, `${e.name}.png`), encodePng(us.png)); }
   }
-  fs.writeFileSync(path.join(exportDir, "goldens", "boxes.json"), JSON.stringify(gBoxes));
+  putBoxes(path.join(exportDir, "goldens"), gBoxes);
   fs.writeFileSync(path.join(exportDir, "goldens", "matrix.json"), JSON.stringify({ chromium: "158.0.8127.18", platform: "darwin-arm64", captures: entries, unsampled: [] }));
   fs.writeFileSync(path.join(exportDir, "export-report.json"), JSON.stringify({ ok: true, screen: "inbox", timings: { load: 50, lint: 120, extract: 80, bake: 0, capture: 400, write: 10 }, totalMs: 700 }));
-  fs.writeFileSync(path.join(unityDir, "boxes.json"), JSON.stringify(uBoxes));
+  putBoxes(unityDir, uBoxes);
   fs.writeFileSync(path.join(unityDir, "capture-done.json"), JSON.stringify({ runId: "r1", jobs: entries.length, captured: Object.keys(uBoxes).length, notCaptured: 0 }));
   return { exportDir, unityDir, names: entries.map((e) => e.name) };
 }
@@ -2921,8 +2928,8 @@ function screenFixture(unity: (name: string, s: ReturnType<typeof scene>) => Ret
 function renameCapture(f: Fixture, from: string, to: string, file?: string): void {
   const goldens = path.join(f.exportDir, "goldens");
   for (const dir of [goldens, f.unityDir]) {
-    const bf = path.join(dir, "boxes.json"), boxes = JSON.parse(fs.readFileSync(bf, "utf8"));
-    if (boxes[from]) { boxes[to] = { ...boxes[from], capture: to }; delete boxes[from]; fs.writeFileSync(bf, JSON.stringify(boxes)); }
+    const boxes = getBoxes(dir);
+    if (boxes[from]) putBoxes(dir, Object.fromEntries(Object.entries(boxes).map(([k, b]) => (k === from ? [to, { ...b, capture: to }] : [k, b]))));
     if (fs.existsSync(path.join(dir, `${from}.png`))) fs.renameSync(path.join(dir, `${from}.png`), path.join(dir, `${file ?? to}.png`));
   }
   const mf = path.join(goldens, "matrix.json"), m = JSON.parse(fs.readFileSync(mf, "utf8"));
@@ -3044,7 +3051,7 @@ describe("compareScreen", () => {
 
   it("does not run anything when the Unity folder is empty", async () => {
     const f = screenFixture(() => null);
-    fs.rmSync(path.join(f.unityDir, "boxes.json"));
+    fs.rmSync(path.join(f.unityDir, BOXES_FILE));
     const v = await compareScreen(f.exportDir, f.unityDir, T);
     expect(v.notRun).toEqual(f.names);
     expect(v).toMatchObject({ pass: false, captures: [] });
@@ -3103,26 +3110,55 @@ describe("compareScreen", () => {
 
   it("reads the compiler-removed elements from the generated manifest in the Unity folder", async () => {
     const f = screenFixture((_, s) => s);
-    const gb = JSON.parse(fs.readFileSync(path.join(f.exportDir, "goldens", "boxes.json"), "utf8"));
+    const gb = getBoxes(path.join(f.exportDir, "goldens"));
     for (const n of f.names) gb[n].elements.wrapper = el(32, 32, 128, 96);
-    fs.writeFileSync(path.join(f.exportDir, "goldens", "boxes.json"), JSON.stringify(gb));
+    putBoxes(path.join(f.exportDir, "goldens"), gb);
     expect((await compareScreen(f.exportDir, f.unityDir, T)).pass).toBe(false);
     fs.writeFileSync(path.join(f.unityDir, ".design-ui.json"), JSON.stringify({ removedElements: ["wrapper"] }));
     const v = await compareScreen(f.exportDir, f.unityDir, T);
     expect(v).toMatchObject({ pass: true, removed: ["wrapper"] });
   });
 
-  it("rejects an invalid Unity boxes.json instead of guessing", async () => {
+  it("rejects an invalid Unity boxes.jsonl, or boxes.json of an earlier version, instead of guessing", async () => {
     const f = screenFixture((_, s) => s);
-    fs.writeFileSync(path.join(f.unityDir, "boxes.json"), JSON.stringify({ "default@320x192": { capture: "x" } }));
-    await expect(compareScreen(f.exportDir, f.unityDir, T)).rejects.toThrow(/Unity boxes\.json .*default@320x192 is invalid/);
+    fs.writeFileSync(path.join(f.unityDir, BOXES_FILE), `${JSON.stringify({ capture: "default@320x192" })}\n`);
+    await expect(compareScreen(f.exportDir, f.unityDir, T)).rejects.toThrow(/^Unity boxes\.jsonl \(.*\) line 1: capture default@320x192 is invalid/);
+    fs.rmSync(path.join(f.unityDir, BOXES_FILE));
+    fs.writeFileSync(path.join(f.unityDir, LEGACY_BOXES_FILE), JSON.stringify({ "default@320x192": { capture: "x" } }));
+    await expect(compareScreen(f.exportDir, f.unityDir, T)).rejects.toThrow(/^Unity boxes\.json \(.*\): capture default@320x192 is invalid/);
+  });
+
+  it("reads the boxes.json of an earlier export and Unity capture when there is no boxes.jsonl, with the same verdict", async () => {
+    const f = screenFixture((name, s) => (name === "busy@320x192" ? null : s));
+    const lines = await compareScreen(f.exportDir, f.unityDir, T);
+    for (const dir of [path.join(f.exportDir, "goldens"), f.unityDir]) {
+      fs.writeFileSync(path.join(dir, LEGACY_BOXES_FILE), JSON.stringify(getBoxes(dir)));
+      fs.rmSync(path.join(dir, BOXES_FILE));
+    }
+    const legacy = await compareScreen(f.exportDir, f.unityDir, T);
+    const strip = (v: typeof lines) => ({ ...v, timings: {}, captures: v.captures.map((c) => ({ ...c, ms: 0 })) });
+    expect(strip(legacy)).toEqual(strip(lines));
+    expect(legacy.notRunReasons).toEqual({ "busy@320x192": "no Unity capture PNG" });
+    expect(legacy.captures.map((c) => c.capture).sort()).toEqual(f.names.filter((n) => n !== "busy@320x192").sort());
+    fs.rmSync(path.join(f.exportDir, "goldens", LEGACY_BOXES_FILE));
+    await expect(compareScreen(f.exportDir, f.unityDir, T)).rejects.toThrow(/is not a design export \(no goldens\/boxes\.jsonl or goldens\/boxes\.json\)/);
+  });
+
+  it("compares the captures before an incomplete last line of a boxes.jsonl, with a note", async () => {
+    const f = screenFixture((_, s) => s);
+    const half = boxesLine(getBoxes(f.unityDir)["default@320x192"]);
+    fs.appendFileSync(path.join(f.unityDir, BOXES_FILE), half.slice(0, half.length >> 1));
+    const v = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(v.notes).toContain(`Unity ${BOXES_FILE} (${path.join(f.unityDir, BOXES_FILE)}): its last line is incomplete (a run stopped while writing it) and was left out; the 4 captures before it are read`);
+    expect(v.captures.map((c) => c.capture).sort()).toEqual([...f.names].sort());
+    expect(v.pass).toBe(true);
   });
 
   it("refuses capture names that could leave the folders", async () => {
     const f = screenFixture((_, s) => s);
-    const gb = JSON.parse(fs.readFileSync(path.join(f.exportDir, "goldens", "boxes.json"), "utf8"));
+    const gb = getBoxes(path.join(f.exportDir, "goldens"));
     gb["../evil"] = gb["default@320x192"];
-    fs.writeFileSync(path.join(f.exportDir, "goldens", "boxes.json"), JSON.stringify(gb));
+    putBoxes(path.join(f.exportDir, "goldens"), gb);
     await expect(compareScreen(f.exportDir, f.unityDir, T)).rejects.toThrow(/invalid capture name "\.\.\/evil"/);
   });
 
@@ -3187,11 +3223,11 @@ describe("compareScreen", () => {
         fs.writeFileSync(path.join(exportDir, "goldens", `${e.name}.png`), encodePng(pngs[e.name][0]));
         fs.writeFileSync(path.join(unityDir, `${e.name}.png`), encodePng(pngs[e.name][1]));
       }
-      fs.writeFileSync(path.join(exportDir, "goldens", "boxes.json"), JSON.stringify(g));
+      putBoxes(path.join(exportDir, "goldens"), g);
       fs.writeFileSync(path.join(exportDir, "goldens", "matrix.json"), JSON.stringify({ chromium: "1", platform: "p", captures: entries, unsampled: [] }));
       fs.writeFileSync(path.join(exportDir, "screen.ir.json"), JSON.stringify({ irVersion: 2, screen: "s", referenceViewport: [64, 38], viewports: [[32, 20], [40, 24]], scaledViewports: [[40, 24]],
         screenMatch: 0.5, breakpoints: [], root: { id: "root", kind: "container", style: { base: {} }, children: [{ id: "t", kind: "text", style: { base: { "font-size": "20px" } }, children: [] }] } }));
-      fs.writeFileSync(path.join(unityDir, "boxes.json"), JSON.stringify(g));
+      putBoxes(unityDir, g);
       fs.writeFileSync(path.join(unityDir, "capture-done.json"), JSON.stringify({ runId: "r", jobs: 2, captured: 2, notCaptured: 0 }));
       const v = await compareScreen(exportDir, unityDir, readThresholds());
       return Object.fromEntries(v.captures.map((c) => [c.capture, c.issues.filter((i) => i.id === "t").map((i) => i.kind)]));

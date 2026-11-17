@@ -65,7 +65,7 @@ import { fileURLToPath } from "node:url";
 import type { Rgba } from "../bake/png.js";
 import type { CaptureBoxes, LineEllipsis } from "../boxes/types.js";
 import { itemSuffix } from "../boxes/items.js";
-import { validateBoxes } from "../boxes/validate.js";
+import { BOXES_FILE, LEGACY_BOXES_FILE, openBoxes } from "../boxes/file.js";
 import type { CaptureApply, CaptureJob } from "../capture/matrix.js";
 import { viewportClassOf, type ViewportClass } from "../viewport.js";
 import { deltaE2000, hex } from "./color.js";
@@ -2250,17 +2250,6 @@ export function captureFiles(exportDir: string): (name: string) => string {
   return filesOf(matrixEntries(tryJson(path.join(exportDir, "goldens", "matrix.json"))));
 }
 
-function readBoxesFile(file: string, side: string): Record<string, CaptureBoxes> {
-  let json: unknown;
-  try { json = readJson(file); } catch (e) { throw new Error(`${side} boxes.json (${file}) cannot be read: ${(e as Error).message}`); }
-  if (!isObj(json)) throw new Error(`${side} boxes.json (${file}) is not an object of captures`);
-  for (const [name, b] of Object.entries(json)) {
-    const errs = validateBoxes(b);
-    if (errs.length) throw new Error(`${side} boxes.json (${file}): capture ${name} is invalid: ${errs.slice(0, 3).join("; ")}`);
-  }
-  return json as Record<string, CaptureBoxes>;
-}
-
 async function pool<T>(items: T[], n: number, fn: (item: T) => Promise<void>): Promise<void> {
   const queue = [...items];
   let failure: { e: unknown } | null = null;
@@ -2288,13 +2277,6 @@ function animationStrips(entries: MatrixEntry[]): AnimStrip[] {
   return [...strips.values()];
 }
 
-/**
- * Compares every golden capture of an export folder (`<exportDir>/goldens/<file>.png` + `boxes.json`) with the
- * Unity capture folder, which mirrors it (`<unityDir>/<file>.png` + `boxes.json` with the same keys); a capture's file is
- * its matrix.json `file` (captureFiles), boxes and verdicts are keyed by its name. A golden
- * capture without a Unity one is not run (the screen does not pass); Unity captures without a golden are listed as
- * extra. Captures are compared in parallel.
- */
 /** The `notCaptured` entries of a Unity capture's boxes.meta.json: capture name -> reason (empty when absent or unreadable). */
 function readNotCaptured(file: string): Record<string, string> {
   const meta = tryJson(file);
@@ -2326,21 +2308,28 @@ export const LINEAR_PANEL_WARNING = "Linear colour space, colour path Linear Pan
   "the design in sRGB, so they differ from the design (up to ΔE2000 22 measured); to show them as designed, render the panel " +
   "through DesignUiGammaComposite and set the profile's colour path to Gamma Composite";
 
+/**
+ * Compares every golden capture of an export folder (`<exportDir>/goldens/<file>.png` + `boxes.jsonl`) with the
+ * Unity capture folder, which mirrors it (`<unityDir>/<file>.png` + `boxes.jsonl` with the same names); a capture's file
+ * is its matrix.json `file` (captureFiles), boxes and verdicts are keyed by its name. Either folder may hold the
+ * boxes.json of an earlier version instead (boxes/file.ts). The boxes files are indexed, not loaded: a capture's boxes
+ * are read when it is compared. A golden capture without a Unity one is not run (the screen does not pass); Unity
+ * captures without a golden are listed as extra. Captures are compared in parallel.
+ */
 export async function compareScreen(exportDir: string, unityDir: string, t: Thresholds, opts: CompareOptions = {}): Promise<ScreenVerdict> {
   const t0 = performance.now();
   const goldensDir = path.join(exportDir, "goldens");
-  const goldenBoxesFile = path.join(goldensDir, "boxes.json");
-  if (!fs.existsSync(goldenBoxesFile)) throw new Error(`${exportDir} is not a design export (no goldens/boxes.json)`);
-  const goldenBoxes = readBoxesFile(goldenBoxesFile, "design");
-  const notes: string[] = [], warnings: string[] = [];
+  const golden = await openBoxes(goldensDir, "design");
+  if (!golden) throw new Error(`${exportDir} is not a design export (no goldens/${BOXES_FILE} or goldens/${LEGACY_BOXES_FILE})`);
+  const notes: string[] = [...golden.notes], warnings: string[] = [];
 
   const matrix = tryJson(path.join(goldensDir, "matrix.json"));
   const entries = matrixEntries(matrix);
   if (!entries.length) notes.push("goldens/matrix.json not found: captures in name order, no animation strips");
   const byName = new Map(entries.map((e) => [e.name, e]));
   const names = entries.length
-    ? [...entries.map((e) => e.name).filter((n) => n in goldenBoxes), ...Object.keys(goldenBoxes).filter((n) => !byName.has(n)).sort()]
-    : Object.keys(goldenBoxes).sort();
+    ? [...entries.map((e) => e.name).filter((n) => golden.has(n)), ...golden.names.filter((n) => !byName.has(n)).sort()]
+    : [...golden.names].sort();
   const unsafe = (n: string) => !/^[^/\\\0]+$/.test(n) || n.includes("..");
   const bad = names.find(unsafe);
   if (bad !== undefined) throw new Error(`invalid capture name ${JSON.stringify(bad)} in the design export: capture names never contain path separators or ".."`);
@@ -2366,8 +2355,8 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
 
   // a Unity capture folder counts only with the capture-done marker, which Unity writes last
   const finished = fs.existsSync(path.join(unityDir, "capture-done.json"));
-  const unityBoxesFile = path.join(unityDir, "boxes.json");
-  const unityBoxes = finished && fs.existsSync(unityBoxesFile) ? readBoxesFile(unityBoxesFile, "Unity") : {};
+  const unity = finished ? await openBoxes(unityDir, "Unity") : null;
+  if (unity) notes.push(...unity.notes);
   const unityNotCaptured = finished ? readNotCaptured(path.join(unityDir, "boxes.meta.json")) : {};
   const meta = readColour(path.join(unityDir, "boxes.meta.json"));
   const colour = meta ? { space: meta.space, path: meta.path } : null;
@@ -2381,20 +2370,20 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
     else if (!finished) notRunReasons[name] = "Unity capture did not finish";
     else if (unityNotCaptured[name] !== undefined) notRunReasons[name] = unityNotCaptured[name];
     else if (!fs.existsSync(path.join(unityDir, png))) notRunReasons[name] = "no Unity capture PNG";
-    else if (!unityBoxes[name]) notRunReasons[name] = "no entry in the Unity boxes.json";
+    else if (!unity?.has(name)) notRunReasons[name] = `no entry in the Unity ${unity ? path.basename(unity.file) : BOXES_FILE}`;
     else runnable.push(name);
   }
   const known = new Set(names), knownFiles = new Set(names.map(fileOf));
   // a Unity PNG is extra when it is no golden capture's file; a boxes entry when it is no golden capture's name
   const unityPngs = finished && fs.existsSync(unityDir) ? fs.readdirSync(unityDir).filter((f) => f.endsWith(".png")).map((f) => f.slice(0, -4)) : [];
-  const extra = Array.from(new Set([...Object.keys(unityBoxes).filter((n) => !known.has(n)), ...unityPngs.filter((f) => !knownFiles.has(f))])).sort();
+  const extra = Array.from(new Set([...(unity?.names ?? []).filter((n) => !known.has(n)), ...unityPngs.filter((f) => !knownFiles.has(f))])).sort();
 
   if (opts.diffDir) fs.mkdirSync(opts.diffDir, { recursive: true });
   const results = new Map<string, CaptureVerdict>();
   const concurrency = opts.concurrency ?? Math.max(1, Math.min(4, os.availableParallelism?.() ?? 4));
   // decision D-152: the exact viewports first, so that a scaled capture's text knows whether the same text passes its ink checks
   // at every exact viewport of the run in the same state (D-126's scale-only evidence)
-  const viewportOf = (name: string) => byName.get(name)?.viewport ?? goldenBoxes[name]?.viewport;
+  const viewportOf = (name: string) => byName.get(name)?.viewport ?? golden.viewport(name);
   const classOfName = (name: string) => viewportClassOf(ix?.scaledViewports, viewportOf(name) ?? [0, 0]);
   const exactViewports: number[][] = [];
   for (const n of names) {
@@ -2414,19 +2403,21 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   };
   const compareOne = async (name: string) => {
     const c0 = performance.now();
-    const [gpng, upng] = await Promise.all([
+    // one capture's boxes at a time: the files are only indexed
+    const [gpng, upng, gb, ub] = await Promise.all([
       fs.promises.readFile(path.join(goldensDir, `${fileOf(name)}.png`)).then(decodePngAsync),
       fs.promises.readFile(path.join(unityDir, `${fileOf(name)}.png`)).then(decodePngAsync),
+      golden.read(name),
+      unity!.read(name),
     ]);
     const entry = byName.get(name);
-    const gb = goldenBoxes[name];
     const ctx: CaptureContext = ix
       ? captureContext(ix, entry ?? { state: name.split("@")[0], viewport: gb.viewport, apply: [] }, gb)
       : {};
     const cls = viewportClassOf(ix?.scaledViewports, entry?.viewport ?? gb.viewport);
     ctx.viewportClass = cls;
     if (cls === "scaled") ctx.scaleOnly = scaleOnlyOf(name);
-    const { verdict, heat, judged } = analyze({ png: gpng, boxes: gb }, { png: upng, boxes: unityBoxes[name] }, removed!, thresholdsFor(t, cls), ctx, !!opts.diffDir);
+    const { verdict, heat, judged } = analyze({ png: gpng, boxes: gb }, { png: upng, boxes: ub }, removed!, thresholdsFor(t, cls), ctx, !!opts.diffDir);
     judgedIn.set(name, judged);
     verdict.info = entry ? {
       state: entry.state, viewport: entry.viewport, viewportClass: cls, apply: entry.apply,
@@ -2463,7 +2454,7 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   // per viewport class: a capture's viewport from its matrix entry, else from its golden boxes
   const byClass: Partial<Record<ViewportClass, ClassSummary>> = {};
   const count = (name: string, what: "pass" | "fail" | "notRun") => {
-    const vp = byName.get(name)?.viewport ?? goldenBoxes[name]?.viewport;
+    const vp = viewportOf(name);
     if (!vp) return;
     const cls = viewportClassOf(ix?.scaledViewports, vp);
     const c = (byClass[cls] ??= { viewports: [], pass: 0, fail: 0, notRun: 0 });
