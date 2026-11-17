@@ -184,6 +184,42 @@ describe("exportScreen: inbox-mini", () => {
   }, 120_000);
 });
 
+describe("exportScreen: image binds in repeat items", () => {
+  it("writes every written-out item's image to assets/ and references it from the sample data", async () => {
+    const out = path.join(tmp(), "out");
+    const r = await exportScreen(path.join(here, "fixtures", "extract", "repeat-images.html"), KIT, out, { browser });
+    expect(r.ok).toBe(true);
+    const sample = readJson(out, "fixtures", "sample-data.json");
+    const images: { file: string; sha256: string; width: number; height: number }[] = [];
+    let none = 0;
+    const walk = (v: unknown) => {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === "object") {
+        for (const [k, x] of Object.entries(v)) {
+          if (k !== "$image") walk(x);
+          else if (x === null) none++;
+          else images.push(x as (typeof images)[number]);
+        }
+      }
+    };
+    walk(sample);
+    // the screen's logo, five rows' crests and flags (two crests and a flag show none), five badges, three list entries
+    expect(images).toHaveLength(1 + 3 + 4 + 5 + 3);
+    expect(none).toBe(3);
+    for (const i of images) {
+      expect(Object.keys(i).sort(), i.file).toEqual(["file", "height", "sha256", "width"]);
+      expect(i.file).toBe(`assets/${i.sha256}${path.extname(i.file)}`);
+      expect(crypto.createHash("sha256").update(fs.readFileSync(path.join(out, i.file))).digest("hex"), i.file).toBe(i.sha256);
+    }
+    // seven distinct pictures, all in assets/; the IR's own nodes reference four of them
+    const files = Array.from(new Set(images.map((i) => i.file)));
+    expect(files).toHaveLength(7);
+    expect(tree(out, "assets")).toHaveLength(7);
+    const ir = fs.readFileSync(path.join(out, "screen.ir.json"), "utf8");
+    expect(files.filter((f) => ir.includes(f))).toHaveLength(4);
+  }, 120_000);
+});
+
 describe("exportScreen: failures", () => {
   it("lint errors write only lint-report.json, replacing an earlier export", async () => {
     const out = path.join(tmp(), "out");
@@ -384,7 +420,7 @@ describe("skip hash", () => {
     const schema = fs.readFileSync(path.join(here, "..", "src", "boxes", "schema.json"));
     const inputs = toolHashInputs();
     expect(inputs).toContain(`boxes ${crypto.createHash("sha256").update(schema).digest("hex")}`);
-    expect(inputs).toContain("extract 3");
+    expect(inputs).toContain("extract 4");
   });
 
   it("an export of IR version 1 is made again: its tool hash names the version-1 schema, and its IR's version is read too", async () => {

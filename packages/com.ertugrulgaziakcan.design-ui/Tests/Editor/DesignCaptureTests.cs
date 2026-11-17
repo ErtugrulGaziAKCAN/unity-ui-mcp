@@ -1059,6 +1059,246 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("#16c2d5", Hex(Pixel(Png(req), 90, (int)(double)els["row"]["y"] + 2)));
         }
 
+        // ---- image samples --------------------------------------------------------------------------------------
+
+        /// <summary>An export's image file: its IR asset (<c>assets/&lt;sha256&gt;.&lt;ext&gt;</c>, as the exporter names it) and bytes.</summary>
+        sealed class Picture
+        {
+            public IrAsset Asset;
+            public byte[] Bytes;
+            /// <summary>The name Unity gives the imported texture or vector image (its file name, the sha256).</summary>
+            public string Name => Asset.Sha256;
+        }
+
+        /// <summary>A flat 4×4 PNG of one colour.</summary>
+        static Picture FlatPng(string color)
+        {
+            Assert.IsTrue(ColorUtility.TryParseHtmlString(color, out var c));
+            var tex = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            tex.SetPixels32(Enumerable.Repeat((Color32)c, 16).ToArray());
+            var png = tex.EncodeToPNG();
+            UnityEngine.Object.DestroyImmediate(tex);
+            var sha = Sha256(png);
+            return new Picture { Asset = new IrAsset { Kind = "image", File = "assets/" + sha + ".png", Sha256 = sha, Width = 4, Height = 4 }, Bytes = png };
+        }
+
+        static string Sha256(byte[] bytes)
+        {
+            using (var sha = System.Security.Cryptography.SHA256.Create()) return string.Concat(sha.ComputeHash(bytes).Select(b => b.ToString("x2")));
+        }
+
+        /// <summary>An image bind's sample as the exporter writes it: the image's file, hash and size, or none.</summary>
+        static string ImageSample(Picture p) => p == null ? "{ \"$image\": null }"
+            : "{ \"$image\": { \"file\": \"" + p.Asset.File + "\", \"sha256\": \"" + p.Asset.Sha256 + "\", \"width\": " + p.Asset.Width + ", \"height\": " + p.Asset.Height + " } }";
+
+        static void WriteImages(string export, params Picture[] pictures)
+        {
+            Directory.CreateDirectory(Path.Combine(export, "assets"));
+            foreach (var p in pictures) File.WriteAllBytes(Path.Combine(export, p.Asset.File), p.Bytes);
+        }
+
+        /// <summary>The picture an element paints now: its texture's or vector image's name (the imported file's sha256), or null for none.</summary>
+        static string Painted(VisualElement e)
+        {
+            var b = e.resolvedStyle.backgroundImage;
+            return b.texture != null ? b.texture.name : b.vectorImage != null ? b.vectorImage.name : b.sprite != null ? b.sprite.name : b.renderTexture != null ? b.renderTexture.name : null;
+        }
+
+        static List<string> FilesOf(string folder) =>
+            Directory.GetFiles(folder).Where(f => !f.EndsWith(".meta", StringComparison.Ordinal)).Select(f => Path.GetFileName(f)).OrderBy(f => f, StringComparer.Ordinal).ToList();
+
+        /// <summary>
+        /// Every written-out item shows its own sample image (report #1: every row showed the first row's): the capture
+        /// imports the sample images into a temporary folder of the project and assigns them as the generated view's
+        /// Set&lt;Name&gt;(Background) does, on the element that paints the picture (the crest paints a background image of its
+        /// own, so its picture is on its __image child); an item without one shows none (the crest's own background stays),
+        /// a later row's nested items show theirs. The folder is gone after the capture, and the screen's _assets holds only
+        /// the compiled images.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Run_RepeatItems_ShowTheirOwnSampleImages_InNestedRepeats_AndAnItemWithoutOneShowsNone()
+        {
+            Picture teal = FlatPng("#16c2d5"), coral = FlatPng("#f0605d"), amber = FlatPng("#f2b544"), white = FlatPng("#ffffff");
+            var svg = System.Text.Encoding.UTF8.GetBytes("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 20 20\"><rect width=\"20\" height=\"20\" fill=\"#123456\"/></svg>");
+            var background = new Picture { Asset = new IrAsset { Kind = "svg", File = "assets/" + Sha256(svg) + ".svg", Sha256 = Sha256(svg), Width = 20, Height = 20 }, Bytes = svg };
+            var crest = Node("crest", "image", ("width", "20px"), ("height", "20px"), ("flex-shrink", "0"), ("margin-right", "10px"));
+            crest.Bind = "row.crest";
+            crest.Asset = teal.Asset.Copy();
+            crest.Background = background.Asset.Copy();
+            var badge = Node("badge", "image", ("width", "10px"), ("height", "10px"), ("flex-shrink", "0"), ("margin-right", "4px"));
+            badge.Bind = "badge.icon";
+            badge.Asset = amber.Asset.Copy();
+            var badges = Node("badges", "container", ("display", "flex"), ("flex-direction", "row"), ("flex-shrink", "0")).Add(badge);
+            badges.Repeat = new IrRepeat { Name = "badges", Mode = "inline", Count = 1 };
+            var row = Node("row", "container", ("display", "flex"), ("flex-direction", "row"), ("align-items", "center"), ("height", "30px"), ("flex-shrink", "0"),
+                ("background-color", "#0f2a33")).Add(crest, badges);
+            var rows = Node("rows", "container", ("display", "flex"), ("flex-direction", "column"), ("flex-shrink", "0")).Add(row);
+            rows.Repeat = new IrRepeat { Name = "rows", Mode = "inline", Count = 3 };
+            var export = Export(Small(BlackRoot(rows)), "{ \"rows\": [ " +
+                "{ \"row.crest\": " + ImageSample(teal) + ", \"badges\": [ { \"badge.icon\": " + ImageSample(amber) + " } ] }, " +
+                "{ \"row.crest\": " + ImageSample(coral) + ", \"badges\": [ { \"badge.icon\": " + ImageSample(white) + " }, { \"badge.icon\": " + ImageSample(teal) + " } ] }, " +
+                "{ \"row.crest\": " + ImageSample(null) + ", \"badges\": [] } ] }");
+            WriteImages(export, teal, coral, amber, white, background);
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var shared = Out + "/" + DesignAssetImporter.SharedFolderName;
+            var compiled = FilesOf(shared);
+            CollectionAssert.AreEquivalent(new[] { Path.GetFileName(teal.Asset.File), Path.GetFileName(amber.Asset.File), Path.GetFileName(background.Asset.File), DesignAssetImporter.ManifestFileName },
+                compiled, "the compiled screen's images: the first row's");
+
+            var req = Request(export, screen, "default@320x180", 320, 180);
+            var crests = new List<Rect>();
+            req.Inspect = tree =>
+            {
+                Assert.IsTrue(AssetDatabase.IsValidFolder(SampleImages.Root), "the sample images are imported while the capture runs");
+                var items = tree.Q("rows").Children().ToList();
+                Assert.AreEqual(3, items.Count);
+                var painters = new[] { tree.Q("crest__image"), tree.Q("crest__image#1"), tree.Q("crest__image#2") };
+                CollectionAssert.AreEqual(new[] { teal.Name, coral.Name, null }, painters.Select(Painted), "each row's own crest, the third none (not the compiled one)");
+                Assert.AreEqual(background.Name, Painted(tree.Q("crest#2")), "the crest keeps its own background");
+                CollectionAssert.AreEqual(new[] { amber.Name }, items[0].Q("badges").Children().Select(Painted), "the first row's badge");
+                CollectionAssert.AreEqual(new[] { white.Name, teal.Name }, items[1].Q("badges#1").Children().Select(Painted), "a later row's nested items, each its own");
+                Assert.AreEqual(DisplayStyle.None, items[2].Q("badges#2").Children().Single().resolvedStyle.display, "the third row has no badges");
+                crests.AddRange(painters.Select(p => p.worldBound));
+            };
+            yield return DesignCapture.Run(req, profile);
+            Assert.AreEqual(3, crests.Count);
+            var tex = Png(req);
+            AssertNear("#16c2d5", Pixel(tex, (int)crests[0].center.x, (int)crests[0].center.y), 2, "the first row's crest");
+            AssertNear("#f0605d", Pixel(tex, (int)crests[1].center.x, (int)crests[1].center.y), 2, "the second row's own crest, not the first's");
+            AssertNear("#123456", Pixel(tex, (int)crests[2].center.x, (int)crests[2].center.y), 2, "no crest in the third row: the crest's own background shows");
+            Assert.IsFalse(AssetDatabase.IsValidFolder(SampleImages.Root), "the capture deleted its sample images");
+            CollectionAssert.AreEqual(compiled, FilesOf(shared), "the screen's _assets holds only the compiled images");
+        }
+
+        /// <summary>
+        /// A virtualized list (a list repeat of twelve items, three rows showing): every bind fills the slot anew, so a slot
+        /// the list recycles while it scrolls shows its new item's own image, or none (item 10), never the one it showed
+        /// before; scrolled back for the next job, the rows show their own images in the capture, as in the first job's.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator CaptureAll_AListsRecycledRows_ShowTheirOwnItemsImages()
+        {
+            var pictures = new[] { FlatPng("#16c2d5"), FlatPng("#f0605d"), FlatPng("#f2b544"), FlatPng("#ffffff") };
+            Picture Of(int i) => i == 2 || i == 10 ? null : pictures[i % pictures.Length];
+            var logo = Node("logo", "image", ("width", "16px"), ("height", "16px"), ("flex-shrink", "0"), ("margin-left", "8px"));
+            logo.Bind = "entry.logo";
+            logo.Asset = pictures[0].Asset.Copy();
+            var entry = Node("entry", "container", ("display", "flex"), ("flex-direction", "row"), ("align-items", "center"), ("height", "20px"), ("flex-shrink", "0"),
+                ("background-color", "#0f2a33")).Add(logo);
+            var list = Node("list", "list", ("display", "flex"), ("flex-direction", "column"), ("width", "200px"), ("height", "60px"), ("flex-shrink", "0"),
+                ("overflow-y", "auto")).Add(entry);
+            list.Repeat = new IrRepeat { Name = "entries", Mode = "list", Count = 12 };
+            string J(string name, string apply) => "{ \"name\": \"" + name + "\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [" + apply + "] }";
+            var export = Export(Small(Root(Box("top", "#222222"), list)),
+                "{ \"entries\": [ " + string.Join(", ", Enumerable.Range(0, 12).Select(i => "{ \"entry.logo\": " + ImageSample(Of(i)) + " }")) + " ] }",
+                "{ \"captures\": [" + J("default@320x180.a", "") + ", " + J("default@320x180.hover.top", Pseudo("hover", "top")) + ", " + J("default@320x180.c", "") + "] }");
+            WriteImages(export, pictures);
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outAll = TempDir();
+            var result = new CaptureResult();
+
+            // the items the list shows now (item i's logo is named logo#i, the first item's logo): each with its own image
+            List<int> Shown(VisualElement root)
+            {
+                var shown = new List<int>();
+                for (int i = 0; i < 12; i++)
+                {
+                    var e = root.Q(i == 0 ? "logo" : "logo#" + i);
+                    if (e == null) continue;
+                    Assert.AreEqual(Of(i)?.Name, Painted(e), "item " + i + " shows its own image");
+                    shown.Add(i);
+                }
+                return shown;
+            }
+            var run = DesignCapture.CaptureAll(export, screen, profile, outAll, result);
+            List<int> before = null, after = null;
+            try
+            {
+                while (run.MoveNext())
+                {
+                    yield return run.Current;
+                    if (after != null || result.Captured.Count != 1) continue;
+                    // while the second job runs: the list scrolls to its end and binds its slots to the last items
+                    var doc = Resources.FindObjectsOfTypeAll<UIDocument>().FirstOrDefault(d => d.name == "DesignCapture" && d.rootVisualElement?.panel != null);
+                    Assert.IsNotNull(doc, "the run's mounted screen");
+                    before = Shown(doc.rootVisualElement);
+                    // the ListView extends its scroll range as it scrolls: down to its end a step at a time, each step binding
+                    // recycled slots to later items (each checked on the way)
+                    var scroll = doc.rootVisualElement.Q<ListView>("list").Q<ScrollView>();
+                    for (int step = 0; step < 20 && doc.rootVisualElement.Q("logo#11") == null; step++)
+                    {
+                        scroll.scrollOffset = new Vector2(0f, scroll.verticalScroller.highValue);
+                        for (int f = 0; f < 3; f++) yield return null;
+                        Shown(doc.rootVisualElement);
+                    }
+                    after = Shown(doc.rootVisualElement);
+                }
+            }
+            finally { (run as IDisposable)?.Dispose(); }
+            Assert.AreEqual(3, result.Captured.Count, string.Join("\n", result.NotCaptured.Select(n => n.Capture + ": " + n.Reason)));
+            Assert.IsNotNull(after, "the list was scrolled while the second job ran");
+            var seen = "shown before scrolling: " + string.Join(", ", before) + "; after: " + string.Join(", ", after);
+            CollectionAssert.Contains(before, 0, seen);
+            Assert.Less(before.Count, 12, "a virtualized list binds only the rows it shows; " + seen);
+            CollectionAssert.DoesNotContain(after, 0, "the first item's slot was recycled; " + seen);
+            CollectionAssert.IsSubsetOf(new[] { 10, 11 }, after, "the last items, item 10 without an image, in recycled slots; " + seen);
+            // the next job scrolls the list back: its capture shows each row's own image, as the first job's does
+            var tex = new Texture2D(2, 2);
+            _objects.Add(tex);
+            var boxes = BoxesIn(outAll);
+            foreach (var job in new[] { "default@320x180.a", "default@320x180.c" })
+            {
+                Assert.IsTrue(tex.LoadImage(File.ReadAllBytes(Path.Combine(outAll, job + ".png"))));
+                var at = (JObject)boxes[job]["elements"]["logo"];
+                Assert.IsNotNull(at, job + " measures the first item's logo the list shows again (" + string.Join(", ", ((JObject)boxes[job]["elements"]).Properties().Select(p => p.Name)) + ")");
+                int x = (int)(double)at["x"] + 8, y = (int)(double)at["y"] + 8;
+                AssertNear("#16c2d5", Pixel(tex, x, y), 2, job + ": item 0");
+                AssertNear("#f0605d", Pixel(tex, x, y + 20), 2, job + ": item 1");
+                AssertNear("#0f2a33", Pixel(tex, x, y + 40), 2, job + ": item 2 has no image");
+            }
+            Assert.IsFalse(AssetDatabase.IsValidFolder(SampleImages.Root), "the run deleted its sample images");
+        }
+
+        /// <summary>
+        /// A sample image the export does not have is an error naming the file and the capture, never the template's image:
+        /// the single capture throws, and a capture run lists every job as failed with it. No sample image stays in the
+        /// project.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Run_ASampleImageTheExportDoesNotHave_FailsNamingTheFileAndTheCapture()
+        {
+            Picture teal = FlatPng("#16c2d5"), coral = FlatPng("#f0605d");
+            var crest = Node("crest", "image", ("width", "20px"), ("height", "20px"), ("flex-shrink", "0"));
+            crest.Bind = "row.crest";
+            crest.Asset = teal.Asset.Copy();
+            var row = Node("row", "container", ("display", "flex"), ("height", "30px"), ("flex-shrink", "0")).Add(crest);
+            var rows = Node("rows", "container", ("display", "flex"), ("flex-direction", "column"), ("flex-shrink", "0")).Add(row);
+            rows.Repeat = new IrRepeat { Name = "rows", Mode = "inline", Count = 2 };
+            var export = Export(Small(BlackRoot(rows)), "{ \"rows\": [ { \"row.crest\": " + ImageSample(teal) + " }, { \"row.crest\": " + ImageSample(coral) + " } ] }",
+                "{ \"captures\": [" + Job("default@320x180", "default", 320, 180) + ", " + Job("default@160x90", "default", 160, 90) + "] }");
+            WriteImages(export, teal); // the second row's image is not in the export
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+
+            var run = DesignCapture.Run(Request(export, screen, "default@320x180", 320, 180), profile);
+            var e = Assert.Throws<InvalidOperationException>(() => { while (run.MoveNext()) { } });
+            StringAssert.Contains("capture 'default@320x180'", e.Message);
+            StringAssert.Contains("'" + coral.Asset.File + "'", e.Message);
+            StringAssert.Contains("fixtures/sample-data.json /rows[1]/row.crest", e.Message);
+            StringAssert.Contains("missing in the export folder", e.Message);
+            Assert.IsFalse(AssetDatabase.IsValidFolder(SampleImages.Root), "the image that was there is not left in the project");
+
+            var result = new CaptureResult();
+            yield return DesignCapture.CaptureAll(export, screen, profile, TempDir(), result);
+            CollectionAssert.IsEmpty(result.Captured);
+            Assert.AreEqual(2, result.Errors.Count, string.Join("\n", result.Errors));
+            foreach (var error in result.Errors) StringAssert.Contains("'" + coral.Asset.File + "'", error);
+            StringAssert.Contains("capture 'default@160x90'", result.Errors[1]);
+            Assert.IsFalse(AssetDatabase.IsValidFolder(SampleImages.Root));
+        }
+
         [UnityTest]
         public IEnumerator Run_StatesClassesAndPseudoStates_AreAppliedLikeTheGoldens()
         {

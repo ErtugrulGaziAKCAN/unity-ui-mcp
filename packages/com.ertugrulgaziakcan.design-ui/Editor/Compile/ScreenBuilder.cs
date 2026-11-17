@@ -96,7 +96,7 @@ namespace DesignUi.Editor
         /// <summary>Suffix of the inset-shadow overlay Lowering makes the first child of an element.</summary>
         const string InsetSuffix = "__inset";
         /// <summary>Suffix of the child that takes an element's content image when the element paints something under it.</summary>
-        const string ImageSuffix = "__image";
+        internal const string ImageSuffix = "__image";
         const string ContentSuffix = ">content";
 
         static readonly Regex ClassIdent = new Regex(@"^-?[A-Za-z_][A-Za-z0-9_-]*$", RegexOptions.Compiled);

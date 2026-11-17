@@ -397,6 +397,10 @@ sync and the status window's Text section name the chosen faces and count the ot
    so a written-out item whose own root its markup hides is refused (lint U-MRK-013 and the exporter). A later
    written-out item may leave a nested repeat empty (no item of it written out; the template item needs one): its
    sample data records the repeat with no items (`"events": []`), and the capture shows none, as `SetItems(0)` does.
+   An image bind (an `<img data-u-bind>`, or an element painted only by a bound url() image) records the image its
+   item shows as `{ "$image": { "file": "assets/<sha256>.<ext>", "sha256", "width", "height" } }`, the fields of an IR
+   asset, written to `assets/` for every written-out item, in nested repeats too; `{ "$image": null }` when the item
+   shows none (no source, or hidden by its markup). The repeat's first item, the IR's template, needs an image.
 
 Output per screen:
 
@@ -409,7 +413,7 @@ Output per screen:
                                readers stream it, and read an older export's boxes.json when there is no boxes.jsonl
   goldens/matrix.json          the jobs: names, files, applied state/classes/items, context, hidden jobs, animation samples
   assets/                      baked shadows, gradients, images, icons (named by content hash)
-  fixtures/sample-data.json    bound values, repeat items with their classes, states and hiding
+  fixtures/sample-data.json    bound values and images, repeat items with their classes, states and hiding
   lint-report.json
   export-report.json           source, kit and tool hashes; an unchanged design is not exported again
 ```
@@ -820,9 +824,14 @@ A large project's script reload takes longer than the sample project's.
 
 **Unity capture.** A verification entry point loads the compiled screen into a PanelSettings rendering to a
 RenderTexture of the viewport size, fills it from `fixtures/sample-data.json` (each repeat item with its own classes,
-disabled and checked states and hidden elements), sets each state and class, and produces hover/active/focus by
+disabled and checked states, hidden elements and images), sets each state and class, and produces hover/active/focus by
 dispatching real pointer and focus events, so the real pseudo-class rules are exercised. It records the PNG, every
-element's `worldBound`, and text line information. A localized screen is captured with the IR's reference text. In a
+element's `worldBound`, and text line information. A localized screen is captured with the IR's reference text. The
+sample images are imported into a temporary folder of the project the capture runs in (always a copy; never the
+screens' `_assets`), deleted when the capture ends, and assigned with `DesignView.SetImage` on the element that paints
+the picture, as the generated view's `Set<Name>(Background)` does; `$image: null` clears it. A list row is filled anew
+on every bind, so a row the ListView recycles keeps nothing of the item before. A sample image missing from the export
+fails each capture, naming the file and the capture. In a
 project whose Editor stays open it runs on an isolated copy of the project, never in the user's open Editor: the MCP
 server runs it as a command (`unityRunner.captureVia: "command"`), and the package has no capture inside the open
 Editor.

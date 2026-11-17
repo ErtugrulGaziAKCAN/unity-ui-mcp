@@ -43,13 +43,22 @@ import { attrTexts, irText, plainText, sequencesNeeded } from "./text.js";
 export { repeatSamples };
 
 /**
- * Sample values of the design (verification only): bind and Smart String argument names → text, repeat name → one
- * object per item. Per item, by template element id: `$classes` the is-* classes that item shows, `$states` its
- * controls' disabled/checked where they differ from the template's (the states that are on), `$hidden` true for an
- * element its own markup hides (hidden attribute, inline display: none) in this item and shows in another: that
- * hiding is sample data, the template compiles shown (`itemVisibility`) and the item view shows or hides it.
+ * Sample values of the design (verification only): bind and Smart String argument names → text, an image bind's name
+ * → `{ $image }` (ImageSample), repeat name → one object per item. Per item, by template element id: `$classes` the
+ * is-* classes that item shows, `$states` its controls' disabled/checked where they differ from the template's (the
+ * states that are on), `$hidden` true for an element its own markup hides (hidden attribute, inline display: none) in
+ * this item and shows in another: that hiding is sample data, the template compiles shown (`itemVisibility`) and the
+ * item view shows or hides it.
  */
-export interface SampleData { [name: string]: string | SampleData[] | Record<string, string[]> | Record<string, boolean> }
+export interface SampleData { [name: string]: string | ImageSample | SampleData[] | Record<string, string[]> | Record<string, boolean> }
+/** An image file of the export (`assets/<sha256>.<ext>`) with the fields of an IR node's asset. */
+export interface SampleImage { file: string; sha256: string; width: number; height: number }
+/**
+ * The sample of an image bind (an `<img data-u-bind>`, or an element painted only by a bound url() image): the image
+ * that item shows, written to assets/ like the IR's own; null when it shows none (no source, or hidden by the item's
+ * markup). The Unity capture assigns it as the generated view's `Set<Name>(Background)` does; null clears the image.
+ */
+export interface ImageSample { $image: SampleImage | null }
 /** `elements`: IR id → index of its DOM element in document order (`[body, ...body.querySelectorAll("*")]`), for captures. */
 export interface IrBuild { ir: IrScreen; fixtures: SampleData; timings: Record<string, number>; elements: Record<string, number> }
 
@@ -197,6 +206,26 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     if (a["data-u-bind"] !== undefined || a["data-u-arg"] !== undefined) valueEls.push(i);
   }
   const textEls = plans.filter(textual).map((p) => p.i);
+  // the IR's template of each repeat (the first item of its first container): every written-out item, in whichever
+  // container, is recorded by the ids of the template element at the same place (a nested repeat's later containers
+  // hold items that are not in the IR)
+  const irTemplate = new Map<string, number>();
+  for (const p of plans) { const name = el(p.i).attrs["data-u-repeat"]; if (name !== undefined && !irTemplate.has(name)) irTemplate.set(name, p.i); }
+  // image binds: a bound element whose IR element (itself, or the one at its place in its repeat's template item) is an
+  // image; every written-out item's image is sample data, read from the page like the IR's own
+  const irElementOf = new Map<number, number>();
+  const pairItem = (x: number, t: number) => {
+    irElementOf.set(x, t);
+    const kx = itemChildren(s, el(x)), kt = itemChildren(s, el(t));
+    kx.forEach((k, n) => { if (kt[n] !== undefined && el(k).attrs["data-u-repeat"] === undefined) pairItem(k, kt[n]); });
+  };
+  for (const e of s.elements) {
+    const name = e.attrs["data-u-repeat"];
+    const t = name === undefined || nonDesign(s)[e.index] ? undefined : irTemplate.get(name);
+    if (t !== undefined) for (const x of repeatSamples(s, e.index)) pairItem(x, t);
+  }
+  const kindOf = new Map(plans.map((p) => [p.i, p.kind] as const));
+  const imageBinds = new Set(valueEls.filter((i) => el(i).attrs["data-u-bind"] !== undefined && kindOf.get(irElementOf.get(i) ?? i) === "image"));
   const vectors = plans.filter((p) => p.kind === "vector");
   for (const p of vectors) if (el(p.i).svgPaint === "mixed") throw new Error(`${describeAt(s, p.i)}: the inline SVG paints some shapes with currentColor and others with fixed colours`);
   const urlsOf = (value: string, base: string | undefined) => Array.from(value.matchAll(URL_RE), (m) => new URL((m[1] ?? m[2] ?? m[3]).trim(), base ?? docUrl).href);
@@ -205,11 +234,13 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     for (const layer of ex.raw(p.i).values()) { const en = layer.get("background-image"); if (en) urlsOf(en.value, en.base).forEach((u) => bgUrls.add(u)); }
     if (p.kind === "image" && el(p.i).tag !== "img") { const u = backgroundUrl(el(p.i).computed["background-image"]); if (u) bgUrls.add(u); }
   }
+  for (const i of imageBinds) if (el(i).tag !== "img") { const u = backgroundUrl(el(i).computed["background-image"]); if (u) bgUrls.add(u); }
+  const imgs = new Set([...plans.filter((p) => p.kind === "image" && el(p.i).tag === "img").map((p) => p.i), ...Array.from(imageBinds).filter((i) => el(i).tag === "img")]);
   const page = await collectPageData(d.page, {
     seqs: sequencesNeeded(s, [...textEls, ...valueEls]),
     texts: Array.from(new Set([...textEls, ...valueEls])).sort((a, b) => a - b),
     svgs: vectors.map((p) => ({ i: p.i, tint: el(p.i).svgPaint === "current" })),
-    imgs: plans.filter((p) => p.kind === "image" && el(p.i).tag === "img").map((p) => p.i),
+    imgs: Array.from(imgs).sort((a, b) => a - b),
     bgUrls: Array.from(bgUrls).sort(), root, states: stateList,
   });
   lap("page");
@@ -225,6 +256,16 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
     return ext === "svg" ? writeAsset(outDir, Buffer.from(pinViewBox(bytes.toString("utf8")), "utf8"), ext, "svg", size.w, size.h)
       : writeAsset(outDir, bytes, ext, "image", size.w, size.h);
   };
+  /** The image an element draws (an `<img>`'s source, else its url() background image), written to assets/; null without one. */
+  const imageAsset = (i: number): IrAsset | null => {
+    const e = el(i);
+    if (e.tag !== "img") { const u = backgroundUrl(e.computed["background-image"]); return u ? urlAsset(u) : null; }
+    const img = page.imgs.get(i);
+    if (!img?.src) return null;
+    const { bytes, ext } = readImageUrl(img.src, designDir, kit);
+    return ext === "svg" ? writeAsset(outDir, Buffer.from(pinViewBox(bytes.toString("utf8")), "utf8"), ext, "svg", img.w, img.h)
+      : writeAsset(outDir, bytes, ext, "image", img.w, img.h);
+  };
   const assetOf = (p: Plan): IrNode["asset"] => {
     const e = el(p.i);
     if (p.kind === "vector") {
@@ -233,11 +274,9 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
       return writeAsset(outDir, Buffer.from(pinViewBox(xml), "utf8"), "svg", "svg", sz.w, sz.h, e.svgPaint === "current");
     }
     if (p.kind !== "image") return null;
-    if (e.tag !== "img") { const u = backgroundUrl(e.computed["background-image"]); if (!u) throw new Error(`${e.path}: image without a source`); return urlAsset(u); }
-    const img = page.imgs.get(p.i)!;
-    const { bytes, ext } = readImageUrl(img.src, designDir, kit);
-    return ext === "svg" ? writeAsset(outDir, Buffer.from(pinViewBox(bytes.toString("utf8")), "utf8"), ext, "svg", img.w, img.h)
-      : writeAsset(outDir, bytes, ext, "image", img.w, img.h);
+    const asset = imageAsset(p.i);
+    if (!asset) throw new Error(`${e.path}: image without a source${p.inTemplate ? " (the first written-out item of a repeat is its template and needs one; a later item may show none)" : ""}`);
+    return asset;
   };
   const nodeAnims = new Map<number, IrAnim[]>();
   let bakeMs = 0;
@@ -305,12 +344,17 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
 
   // ---- 6. fixtures, fonts, tokens -----------------------------------------------------------------------------
   const sample = (i: number) => (el(i).tag === "select" ? irText(s, i, page.seqs, styles, page.rendered)?.ref ?? "" : plainText(s, i, page.seqs, page.rendered));
+  // an image bind's sample: the image its item shows; none when it has no source or the item's markup hides it (or an
+  // element around it) as sample data
+  const hiddenInItem = (i: number) => {
+    for (let a = i; a >= 0; a = el(a).parent) if (sampled.has(a) && markupHidden(s, a)) return true;
+    return false;
+  };
+  const imageSample = (i: number): ImageSample => {
+    const a = hiddenInItem(i) ? null : imageAsset(i);
+    return { $image: a && { file: a.file, sha256: a.sha256, width: a.width, height: a.height } };
+  };
   const isClasses = (i: number) => (el(i).attrs.class ?? "").split(/\s+/).filter((c) => /^is-./.test(c));
-  // the IR's template of each repeat (the first item of its first container): every written-out item, in whichever
-  // container, is recorded by the ids of the template element at the same place (a nested repeat's later containers
-  // hold items that are not in the IR)
-  const irTemplate = new Map<string, number>();
-  for (const p of plans) { const name = el(p.i).attrs["data-u-repeat"]; if (name !== undefined && !irTemplate.has(name)) irTemplate.set(name, p.i); }
   // what an item's own markup sets on a control: disabled and checked (an IR node's `initial` holds the template's)
   const controlStates = (i: number): string[] | null => {
     const e = el(i);
@@ -339,7 +383,10 @@ async function build(d: LoadedDesign, s: DomSnapshot, kit: KitConfig, outDir: st
   const collect = (i: number, out: SampleData) => {
     if (nonDesign(s)[i]) return;
     const e = el(i);
-    for (const a of ["data-u-bind", "data-u-arg"]) { const name = e.attrs[a]; if (name !== undefined && !(name in out)) out[name] = sample(i); }
+    for (const a of ["data-u-bind", "data-u-arg"]) {
+      const name = e.attrs[a];
+      if (name !== undefined && !(name in out)) out[name] = a === "data-u-bind" && imageBinds.has(i) ? imageSample(i) : sample(i);
+    }
     if (e.attrs["data-u-external"] !== undefined) return;
     for (let k = 0; k < e.children.length; k++) {
       const c = e.children[k];

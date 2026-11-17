@@ -193,9 +193,11 @@ export function kitHash(kit: KitConfig): string {
  * made again instead of reused). 2: keyed inline texts match their text style on line height too (caption 20/28 and label
  * 20/24 share size and weight). 3: the goldens record where Chromium cuts an ellipsized line (boxes `ellipsis`, decisions
  * D-146 and D-147) and its scale is exactly 1 without a transform; an export of revision 2 has no such record, so the
- * comparison judged its ellipsized lines without the glyph check or the scaled-class allowance.
+ * comparison judged its ellipsized lines without the glyph check or the scaled-class allowance. 4: an image bind's
+ * sample is the image its item shows (`$image`, written to assets/ for every written-out item); revision 3 wrote an empty
+ * text, so the Unity capture showed the template's image in every item.
  */
-export const EXTRACT_REVISION = 3;
+export const EXTRACT_REVISION = 4;
 
 /**
  * What the tool hash covers: exporter package version, extraction revision, the IR schema, the goldens' record schema

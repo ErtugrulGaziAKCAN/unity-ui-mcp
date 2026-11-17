@@ -290,6 +290,88 @@ describe("buildIr: repeats", () => {
   });
 });
 
+describe("buildIr: image samples", () => {
+  let r: IrBuild & { outDir: string };
+  beforeAll(async () => { r = await build(fx("repeat-images.html")); });
+  type Img = { $image: { file: string; sha256: string; width: number; height: number } | null };
+  const sha = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
+  /** The sample an image bind gets for a design file: its export path, hash and natural size, the file written to assets/. */
+  const image = (file: string, width: number, height: number): Img => {
+    const bytes = fs.readFileSync(fx(file));
+    const hash = sha(bytes);
+    return { $image: { file: `assets/${hash}${path.extname(file)}`, sha256: hash, width, height } };
+  };
+  const ofNode = (id: string): Img => {
+    const a = byId(r.ir.root, id).asset!;
+    return { $image: { file: a.file, sha256: a.sha256, width: a.width, height: a.height } };
+  };
+  const rows = () => r.fixtures.rows as Record<string, unknown>[];
+
+  it("records every item's own <img> and url() image as a typed reference with the IR asset's fields", () => {
+    expect(validateIr(r.ir)).toEqual([]);
+    expect(rows().map((x) => x["row.name"])).toEqual(["Bir", "İki", "Üç", "Dört", "Beş"]);
+    // the first item's samples are the IR's own assets
+    expect(rows()[0]["row.crest"]).toEqual(ofNode("crest"));
+    expect(rows()[0]["row.flag"]).toEqual(ofNode("flag"));
+    expect(rows()[0]["row.crest"]).toEqual(image("assets/crest-a.png", 4, 4));
+    // a later item's <img> (its natural size) and url() image (the image's size, as the IR's url() assets)
+    expect(rows()[1]["row.crest"]).toEqual(image("assets/crest-b.png", 6, 4));
+    expect(rows()[1]["row.flag"]).toEqual(image("assets/flag-b.png", 6, 4));
+    expect(byId(r.ir.root, "flag").kind).toBe("image");
+    // the screen's own image bind
+    expect(r.fixtures.logo).toEqual(ofNode("logo"));
+  });
+
+  it("records no image for an item without a source or whose markup hides it", () => {
+    expect(rows()[2]["row.crest"]).toEqual({ $image: null });
+    expect(rows()[2]["row.flag"]).toEqual({ $image: null });
+    expect(rows()[3]["row.crest"]).toEqual({ $image: null });
+    expect(rows()[3].$hidden).toEqual({ crest: true });
+    expect(rows()[3]["row.flag"]).toEqual(image("assets/flag-a.png", 6, 4));
+  });
+
+  it("writes an svg <img> pinned like the IR's own svg images", () => {
+    const s = rows()[4]["row.crest"] as Img;
+    expect(s.$image!.file).toMatch(/^assets\/[0-9a-f]{64}\.svg$/);
+    expect(s.$image!.width).toBe(8);
+    const svg = fs.readFileSync(path.join(r.outDir, s.$image!.file), "utf8");
+    expect(svg).toBe(pinViewBox(fs.readFileSync(fx("assets/crest-c.svg"), "utf8")));
+    expect(sha(Buffer.from(svg, "utf8"))).toBe(s.$image!.sha256);
+  });
+
+  it("records the images of nested repeats in later items and of a list, every file in assets/", () => {
+    expect(rows().map((x) => (x.badges as Record<string, unknown>[]).map((b) => b["badge.icon"]))).toEqual([
+      [image("assets/badge-a.png", 2, 2)],
+      [image("assets/badge-b.png", 2, 2), image("assets/badge-a.png", 2, 2)],
+      [],
+      [image("assets/badge-b.png", 2, 2)],
+      [image("assets/badge-a.png", 2, 2)],
+    ]);
+    expect(byId(r.ir.root, "list").repeat).toEqual({ name: "entries", mode: "list", count: 3 });
+    expect((r.fixtures.entries as Record<string, unknown>[]).map((x) => x["entry.crest"])).toEqual(
+      [image("assets/crest-b.png", 6, 4), image("assets/crest-a.png", 4, 4), image("assets/crest-b.png", 6, 4)]);
+    const files = new Set<string>();
+    const walk = (v: unknown) => {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) if (k === "$image" && x) files.add((x as { file: string }).file); else walk(x);
+    };
+    walk(r.fixtures);
+    expect(files.size).toBe(7);
+    for (const f of files) expect(sha(fs.readFileSync(path.join(r.outDir, f))), f).toBe(path.basename(f).split(".")[0]);
+    // a text bind keeps its text
+    expect(rows()[1]["row.name"]).toBe("İki");
+  });
+
+  it("refuses a repeat template item without an image: the IR's element needs one", async () => {
+    const html = fs.readFileSync(fx("repeat-images.html"), "utf8").replace('data-u-bind="row.crest" src="assets/crest-a.png">', 'data-u-bind="row.crest">');
+    const dir = tmp();
+    fs.cpSync(fx("assets"), path.join(dir, "assets"), { recursive: true });
+    const file = path.join(dir, "template-without-image.html");
+    fs.writeFileSync(file, html);
+    await expect(build(file)).rejects.toThrow(/image without a source \(the first written-out item of a repeat is its template and needs one; a later item may show none\)/);
+  });
+});
+
 describe("buildIr: animations", () => {
   let r: IrBuild;
   beforeAll(async () => { r = await build(fx("anims.html")); });

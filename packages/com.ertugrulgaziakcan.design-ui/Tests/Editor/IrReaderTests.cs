@@ -402,5 +402,43 @@ namespace DesignUi.Editor.Tests
                 finally { File.Delete(p); }
             }
         }
+
+        [Test]
+        public void Fixtures_ImageSamples_AreExportFilesOrNone()
+        {
+            var sha = new string('a', 64);
+            var path = WriteTemp("{\"logo\":{\"$image\":{\"file\":\"assets/" + sha + ".png\",\"sha256\":\"" + sha + "\",\"width\":72,\"height\":48}}," +
+                                 "\"rows\":[{\"crest\":{\"$image\":{\"file\":\"assets/" + sha + ".svg\",\"sha256\":\"" + sha + "\",\"width\":8.5,\"height\":8}},\"name\":\"Bir\"}," +
+                                 "{\"crest\":{\"$image\":null},\"name\":\"İki\"}]}");
+            try
+            {
+                var f = IrFixtures.Read(path);
+                var logo = f.Images["logo"];
+                Assert.AreEqual(("image", "assets/" + sha + ".png", sha, 72f, 48f), (logo.Kind, logo.File, logo.Sha256, logo.Width, logo.Height));
+                Assert.IsNull(logo.Slice);
+                Assert.IsFalse(logo.Tint);
+                Assert.IsFalse(f.Values.ContainsKey("logo"), "an image is not a text");
+                var rows = f.Repeats["rows"];
+                Assert.AreEqual(("svg", 8.5f), (rows[0].Images["crest"].Kind, rows[0].Images["crest"].Width));
+                Assert.IsTrue(rows[1].Images.ContainsKey("crest"));
+                Assert.IsNull(rows[1].Images["crest"], "an item that shows no image");
+                Assert.AreEqual("İki", rows[1].Values["name"]);
+            }
+            finally { File.Delete(path); }
+
+            foreach (var bad in new[]
+                     {
+                         "{\"logo\":{}}", "{\"logo\":{\"$image\":null,\"x\":1}}", "{\"logo\":{\"image\":null}}", "{\"logo\":{\"$image\":\"a.png\"}}",
+                         "{\"logo\":{\"$image\":{\"file\":\"assets/a.png\",\"sha256\":\"a\",\"width\":1}}}",
+                         "{\"logo\":{\"$image\":{\"file\":\"../a.png\",\"sha256\":\"a\",\"width\":1,\"height\":1}}}",
+                         "{\"logo\":{\"$image\":{\"file\":\"/tmp/a.png\",\"sha256\":\"a\",\"width\":1,\"height\":1}}}",
+                         "{\"logo\":{\"$image\":{\"file\":\"\",\"sha256\":\"a\",\"width\":1,\"height\":1}}}",
+                     })
+            {
+                var p = WriteTemp(bad);
+                try { Assert.Throws<IrFormatException>(() => IrFixtures.Read(p), bad); }
+                finally { File.Delete(p); }
+            }
+        }
     }
 }

@@ -40,9 +40,11 @@ namespace DesignUi.Editor
     /// <item>Screen: the compiled UXML, the reference locale's class on the screen root and the shared <c>DesignFonts.uss</c>;
     /// the runtime wiring of the generated view (a Clickable on the manifest's elements, a PseudoStateMirror from an element
     /// to its shadow host); sample data from <c>fixtures/sample-data.json</c> by element name: bound texts, Smart String
-    /// arguments, and repeat items (their count, their texts, their <c>$classes</c>, their controls' <c>$states</c> and the
-    /// elements their markup hides, <c>$hidden</c>, applied as the generated view applies classes, enabled state and
-    /// visibility; inline items are cloned from the repeat's item template, as the view clones them, and renamed, so only the
+    /// arguments, bound images (each item's own picture, imported from the export into a temporary folder of the project
+    /// (<see cref="SampleImages"/>) and assigned through <see cref="DesignUi.DesignView.SetImage"/>, as the generated
+    /// view's setter assigns it; an item without one shows none), and repeat items (their count, their texts, their
+    /// <c>$classes</c>, their controls' <c>$states</c> and the elements their markup hides, <c>$hidden</c>, applied as the
+    /// generated view applies classes, enabled state and visibility; inline items are cloned from the repeat's item template, as the view clones them, and renamed, so only the
     /// first item carries the design ids, as in the golden; list items fill the ListView's slots). A localized text (a screen compiled with the profile's localization: a String Table binding
     /// and no text in the UXML) shows the design's reference text, the IR's <c>tr</c> with its arguments from the sample
     /// data, exactly as the golden shows it; its binding is taken off first, so no table can replace it.</item>
@@ -191,40 +193,57 @@ namespace DesignUi.Editor
         /// </summary>
         static IEnumerator RunShared(SharedSession shared, CaptureRequest req, DesignUiProfile profile, Screen screen, List<(string, string, Task)> pngs)
         {
-            screen = screen ?? Prepare(req, profile); // the run could not read it: this job fails with the reason
-            CheckRequest(req, screen);
-            if (shared.Session != null && shared.Session.Viewport != req.Viewport) shared.Drop();
-            if (shared.Session == null)
+            Screen own = null;
+            if (screen == null)
             {
-                var opened = new Session(req, profile, screen) { Shared = true };
-                shared.Session = opened; // before mounting: a failure while mounting still destroys the panel
-                foreach (var f in opened.Open(DefaultState, true)) yield return f;
+                // the run could not read it: this job reads it again (and fails with the reason) and mounts it alone
+                shared.Drop();
+                screen = own = Prepare(req, profile);
             }
-            var session = shared.Session;
-            session.Begin(req);
-            foreach (var f in session.RestoreScroll()) yield return f;
-            foreach (var f in session.GoTo(req.State, Applied(req))) yield return f;
-            bool dirty = false;
-            if (req.Frozen != null && req.Frozen.Count > 0)
+            try
             {
-                if (session.Player == null)
+                CheckRequest(req, screen);
+                if (shared.Session != null && shared.Session.Viewport != req.Viewport) shared.Drop();
+                if (shared.Session == null)
                 {
-                    FrozenFrames.ApplyAll(session.DocRoot, session.Screen.Ir, req.Frozen);
-                    req.Notes.Add("keyframe animations shown at their frozen end frame, as in the golden (the compiled screen has no animation player): " + string.Join(", ", req.Frozen));
-                    for (int i = 0; i < ChangeFrames; i++) yield return null;
-                    dirty = true;
+                    var opened = new Session(req, profile, screen) { Shared = true };
+                    shared.Session = opened; // before mounting: a failure while mounting still destroys the panel
+                    foreach (var f in opened.Open(DefaultState, true)) yield return f;
                 }
-                else
+                var session = shared.Session;
+                session.Begin(req);
+                foreach (var f in session.RestoreScroll()) yield return f;
+                foreach (var f in session.GoTo(req.State, Applied(req))) yield return f;
+                bool dirty = false;
+                if (req.Frozen != null && req.Frozen.Count > 0)
                 {
-                    var missing = req.Frozen.Where(f => !session.Plays(f.ElementId, f.Name)).ToList();
-                    if (missing.Count > 0) req.Notes.Add("the golden shows these keyframe animations at their end frame, the player does not play them: " + string.Join(", ", missing));
+                    if (session.Player == null)
+                    {
+                        FrozenFrames.ApplyAll(session.DocRoot, session.Screen.Ir, req.Frozen);
+                        req.Notes.Add("keyframe animations shown at their frozen end frame, as in the golden (the compiled screen has no animation player): " + string.Join(", ", req.Frozen));
+                        for (int i = 0; i < ChangeFrames; i++) yield return null;
+                        dirty = true;
+                    }
+                    else
+                    {
+                        var missing = req.Frozen.Where(f => !session.Plays(f.ElementId, f.Name)).ToList();
+                        if (missing.Count > 0) req.Notes.Add("the golden shows these keyframe animations at their end frame, the player does not play them: " + string.Join(", ", missing));
+                    }
+                }
+                pngs.Add((req.CaptureName, req.CaptureFile, session.Write(req.CaptureName, req.CaptureFile, true)));
+                BoundPngBacklog(pngs);
+                req.Inspect?.Invoke(session.Root);
+                // an overlay the job opened (a dropdown's menu) stays open: the next job mounts the screen again
+                if (dirty || session.Overlaid()) shared.Drop();
+            }
+            finally
+            {
+                if (own != null)
+                {
+                    shared.Drop();
+                    own.Dispose();
                 }
             }
-            pngs.Add((req.CaptureName, req.CaptureFile, session.Write(req.CaptureName, req.CaptureFile, true)));
-            BoundPngBacklog(pngs);
-            req.Inspect?.Invoke(session.Root);
-            // an overlay the job opened (a dropdown's menu) stays open: the next job mounts the screen again
-            if (dirty || session.Overlaid()) shared.Drop();
         }
 
         /// <summary>PNGs encoded at the same time at most: each holds a whole frame (14.7 MB at 2560×1440) until it is on disk.</summary>
@@ -419,6 +438,7 @@ namespace DesignUi.Editor
             finally
             {
                 shared.Drop(); // an abandoned run still destroys its panel
+                screen?.Dispose(); // and deletes the sample images it imported
             }
             // every PNG is on disk before the boxes and the done marker say the run went through
             foreach (var (name, file, task) in pngs)
@@ -519,7 +539,8 @@ namespace DesignUi.Editor
 
         // ---- request -------------------------------------------------------------------------------------------
 
-        internal sealed class Screen
+        /// <summary>A capture's export and compiled screen; <see cref="Dispose"/> deletes the sample images it imported.</summary>
+        internal sealed class Screen : IDisposable
         {
             public IrScreen Ir;
             public IrFixtures Fixtures;
@@ -529,6 +550,10 @@ namespace DesignUi.Editor
             public string Folder;
             /// <summary>The reference locale's primary twins (plain and line-box variants): a bound text's characters go there first.</summary>
             public List<UnityEngine.TextCore.Text.FontAsset> TextFonts = new List<UnityEngine.TextCore.Text.FontAsset>();
+            /// <summary>The images of the sample data's image binds, imported into a temporary folder of the project.</summary>
+            public SampleImages Images = SampleImages.None;
+
+            public void Dispose() => Images.Dispose();
         }
 
         static Screen Prepare(CaptureRequest req, DesignUiProfile profile)
@@ -537,11 +562,19 @@ namespace DesignUi.Editor
             if (profile == null) throw new ArgumentNullException(nameof(profile));
             if (string.IsNullOrEmpty(req.ExportDir)) throw new ArgumentException("capture '" + req.CaptureName + "' has no export folder");
             var screen = LoadScreen(req.ExportDir, req.ScreenFolder, profile);
-            CheckRequest(req, screen);
+            try { CheckRequest(req, screen); }
+            catch
+            {
+                screen.Dispose();
+                throw;
+            }
             return screen;
         }
 
-        /// <summary>What a capture needs of its request: a file name, a viewport, an output folder and a state the screen declares.</summary>
+        /// <summary>
+        /// What a capture needs of its request: a file name, a viewport, an output folder, a state the screen declares and
+        /// every sample image the export's sample data shows (a missing one would leave the template's image in its item).
+        /// </summary>
         static void CheckRequest(CaptureRequest req, Screen screen)
         {
             if (req == null) throw new ArgumentNullException(nameof(req));
@@ -551,9 +584,18 @@ namespace DesignUi.Editor
             if (string.IsNullOrEmpty(req.OutDir)) throw new ArgumentException("capture '" + req.CaptureName + "' has no output folder");
             if (req.State != DefaultState && !(screen.Ir.States ?? new string[0]).Contains(req.State))
                 throw new InvalidOperationException("capture '" + req.CaptureName + "' asks for state '" + req.State + "', which the screen does not declare");
+            var missing = screen.Images.Missing;
+            if (missing.Count > 0)
+                throw new InvalidOperationException("capture '" + req.CaptureName + "' shows the sample image '" + missing[0].File + "' (" + FixturesPath + " " + missing[0].Where +
+                                                    "), which is missing in the export folder '" + req.ExportDir + "'" +
+                                                    (missing.Count > 1 ? " (with " + (missing.Count - 1) + " more: " + string.Join(", ", missing.Skip(1).Select(m => m.File)) + ")" : "") +
+                                                    "; export the screen again");
         }
 
-        /// <summary>The export's IR and sample data and the compiled screen (UXML, manifest, fonts), read once per capture run.</summary>
+        /// <summary>
+        /// The export's IR and sample data (its sample images imported into the project) and the compiled screen (UXML,
+        /// manifest, fonts), read once per capture run; the caller disposes it.
+        /// </summary>
         static Screen LoadScreen(string exportDir, string screenFolder, DesignUiProfile profile)
         {
             if (profile == null) throw new ArgumentNullException(nameof(profile));
@@ -575,15 +617,17 @@ namespace DesignUi.Editor
                 throw new InvalidOperationException("'" + folder + "' holds screen '" + manifest.screen + "', not the export's '" + ir.Screen + "'");
             var uxml = folder + "/" + Path.GetFileName(folder) + ".uxml";
             var tree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(uxml) ?? throw new InvalidOperationException("no compiled UXML at '" + uxml + "'");
-            var fixtures = Path.Combine(exportDir, FixturesPath);
+            var fixturesPath = Path.Combine(exportDir, FixturesPath);
+            var fixtures = File.Exists(fixturesPath) ? IrFixtures.Read(fixturesPath) : new IrFixtures();
             return new Screen
             {
-                Ir = ir, Manifest = manifest, Tree = tree, Folder = folder,
-                Fixtures = File.Exists(fixtures) ? IrFixtures.Read(fixtures) : new IrFixtures(),
+                Ir = ir, Manifest = manifest, Tree = tree, Folder = folder, Fixtures = fixtures,
                 Fonts = AssetDatabase.LoadAssetAtPath<StyleSheet>(Path.GetDirectoryName(folder)?.Replace('\\', '/') + "/" + FontMap.FileName),
                 // the compiled screens' font set (DesignFonts.asset next to DesignFonts.uss): the reference locale's twins
                 TextFonts = AssetDatabase.LoadAssetAtPath<DesignUi.DesignFontSet>(Path.GetDirectoryName(folder)?.Replace('\\', '/') + "/" + DesignUi.DesignFontSet.FileName)
                     ?.FontsFor(profile.referenceLocale).ToList() ?? new List<UnityEngine.TextCore.Text.FontAsset>(),
+                // last: a screen that cannot be read leaves no folder behind
+                Images = SampleImages.Import(exportDir, fixtures, profile),
             };
         }
 
@@ -756,11 +800,18 @@ namespace DesignUi.Editor
             /// <summary>The panel's and the document's top elements after mounting: one added later is an overlay (an open dropdown menu).</summary>
             readonly HashSet<VisualElement> m_Tops = new HashSet<VisualElement>();
 
+            /// <summary>The session read its screen itself (no screen given): disposing the session disposes the screen.</summary>
+            readonly bool m_OwnsScreen;
+
             public Session(CaptureRequest req, DesignUiProfile profile, Screen screen = null)
             {
                 m_Req = req;
                 m_Profile = profile;
-                if (screen == null) Screen = Prepare(req, profile);
+                if (screen == null)
+                {
+                    Screen = Prepare(req, profile);
+                    m_OwnsScreen = true;
+                }
                 else
                 {
                     CheckRequest(req, screen);
@@ -790,12 +841,13 @@ namespace DesignUi.Editor
 
             VisualElement Named(string id)
             {
-                if (m_Named.TryGetValue(id, out var e))
+                if (m_Named.TryGetValue(id, out var e) && e != null)
                 {
-                    if (e == null || e.panel != null) return e;
+                    if (e.panel != null) return e;
                     // an element left the tree (a list bound its slots again and cloned new items): every lookup is stale
                     m_Named.Clear();
                 }
+                // not looked up yet, or not there when it was (a list item a scrolled list had not bound): looked up now
                 e = BoxesWriter.Find(DocRoot, id);
                 m_Named[id] = e;
                 return e;
@@ -1131,7 +1183,11 @@ namespace DesignUi.Editor
             void WriteBoxes(string name) =>
                 BoxesWriter.Merge(Path.Combine(m_Req.OutDir, BoxesWriter.FileName), BoxesWriter.Measure(name, Named, m_Req.Viewport, m_Scale, Screen.Ir, DocRoot));
 
-            public void Dispose() => Mount.Dispose();
+            public void Dispose()
+            {
+                Mount.Dispose();
+                if (m_OwnsScreen) Screen.Dispose(); // after the panel that showed its sample images
+            }
         }
 
         /// <summary>
@@ -1251,6 +1307,14 @@ namespace DesignUi.Editor
 
             public string Value(string name) => name != null && Data.Values.TryGetValue(name, out var v) ? v : _parent?.Value(name);
 
+            /// <summary>Whether the scope (or an enclosing one) has an image sample of that name; its image, null for none.</summary>
+            public bool Image(string name, out IrAsset image)
+            {
+                image = null;
+                if (name == null) return false;
+                return Data.Images.TryGetValue(name, out image) || _parent != null && _parent.Image(name, out image);
+            }
+
             public List<IrFixtures> Items(string repeat) => repeat != null && Data.Repeats.TryGetValue(repeat, out var items) ? items : _parent?.Items(repeat);
         }
 
@@ -1342,6 +1406,7 @@ namespace DesignUi.Editor
                 {
                     FillLocalized(node, el);
                     FillText(node, el, scope);
+                    FillImage(node, el, scope);
                 }
                 if (node.Repeat != null)
                 {
@@ -1409,6 +1474,18 @@ namespace DesignUi.Editor
                 }
                 PrepareFonts(text);
                 SetText(el, text, node.Text.Rich);
+            }
+
+            /// <summary>
+            /// A bound image's sample: its item's own picture, assigned as the generated view's <c>Set&lt;Name&gt;(Background)</c>
+            /// assigns it (<see cref="DesignUi.DesignView.SetImage"/> on the element that paints the picture, its
+            /// <c>&lt;id&gt;__image</c> child when it has one); a sample without an image clears the compiled one.
+            /// </summary>
+            void FillImage(IrNode node, VisualElement el, Scope scope)
+            {
+                if (!scope.Image(node.Bind, out var image)) return;
+                var painter = BoxesWriter.Find(el, node.Id + ScreenBuilder.ImageSuffix) ?? el;
+                DesignUi.DesignView.SetImage(painter, _screen.Images.Get(image));
             }
 
             void PrepareFonts(string text)
@@ -1496,6 +1573,8 @@ namespace DesignUi.Editor
                 var template = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(path) ?? throw new InvalidOperationException("no item template at '" + path + "'");
                 // a slot of the fixed item height holds one item: the item keeps its own height and margins
                 list.makeItem = () => new VisualElement();
+                // every bind fills the slot anew from its item's sample (a fresh clone: image, texts, classes, states and
+                // visibility), so a slot the list recycles while scrolling keeps nothing of the item it showed before
                 list.bindItem = (slot, i) =>
                 {
                     slot.Clear();

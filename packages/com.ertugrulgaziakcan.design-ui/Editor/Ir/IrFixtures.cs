@@ -9,7 +9,9 @@ namespace DesignUi.Editor
 {
     /// <summary>
     /// The sample values of a design (<c>fixtures/sample-data.json</c>, spec 7), used only by verification and never by
-    /// game data or saves: bind and Smart String argument names map to text, a repeat name maps to one object per item.
+    /// game data or saves: bind and Smart String argument names map to text, an image bind's name maps to
+    /// <c>{ "$image": { "file", "sha256", "width", "height" } }</c> (the export's image file that item shows, with the fields
+    /// of an IR asset) or <c>{ "$image": null }</c> (it shows none), a repeat name maps to one object per item.
     /// Per item, by template element id: <c>$classes</c> the <c>is-*</c> classes that item shows, <c>$states</c> the
     /// states of its controls that are on (<c>disabled</c>, <c>checked</c>) where they differ from the template's, and
     /// <c>$hidden</c> the elements the item's own markup hides (true) where other items show them: sample data, which the
@@ -21,9 +23,15 @@ namespace DesignUi.Editor
         public const string ClassesKey = "$classes";
         public const string StatesKey = "$states";
         public const string HiddenKey = "$hidden";
+        public const string ImageKey = "$image";
 
         /// <summary>Bind and argument name to sample text.</summary>
         public readonly Dictionary<string, string> Values = new Dictionary<string, string>(StringComparer.Ordinal);
+        /// <summary>
+        /// Image bind name to the image the sample shows: an export file (<see cref="IrAsset.Kind"/> <c>svg</c> for an
+        /// <c>.svg</c>, else <c>image</c>; no slice or tint), or null when it shows none.
+        /// </summary>
+        public readonly Dictionary<string, IrAsset> Images = new Dictionary<string, IrAsset>(StringComparer.Ordinal);
         /// <summary>Repeat name to its items, in design order.</summary>
         public readonly Dictionary<string, List<IrFixtures>> Repeats = new Dictionary<string, List<IrFixtures>>(StringComparer.Ordinal);
         /// <summary>Repeat items only: template element id to the <c>is-*</c> classes this item shows (empty when none).</summary>
@@ -102,11 +110,38 @@ namespace DesignUi.Editor
                         }
                         result.Repeats[p.Name] = items;
                         break;
+                    case JTokenType.Object:
+                        result.Images[p.Name] = ParseImage((JObject)p.Value, at);
+                        break;
                     default:
-                        throw new IrFormatException("fixtures " + at + " must be text or a list of repeat items");
+                        throw new IrFormatException("fixtures " + at + " must be text, an image or a list of repeat items");
                 }
             }
             return result;
+        }
+
+        /// <summary><c>{ "$image": { "file", "sha256", "width", "height" } }</c> or <c>{ "$image": null }</c>.</summary>
+        static IrAsset ParseImage(JObject obj, string at)
+        {
+            if (obj.Count != 1 || !obj.TryGetValue(ImageKey, out var value))
+                throw new IrFormatException("fixtures " + at + " must be text, an image ({ \"" + ImageKey + "\": … }) or a list of repeat items");
+            at += "/" + ImageKey;
+            if (value.Type == JTokenType.Null) return null;
+            if (!(value is JObject image)) throw new IrFormatException("fixtures " + at + " must be an image file of the export or null");
+            string Text(string key) =>
+                image[key]?.Type == JTokenType.String && !string.IsNullOrEmpty((string)image[key]) ? (string)image[key]
+                    : throw new IrFormatException("fixtures " + at + "/" + key + " must be a text");
+            float Number(string key) =>
+                image[key]?.Type == JTokenType.Integer || image[key]?.Type == JTokenType.Float ? (float)image[key]
+                    : throw new IrFormatException("fixtures " + at + "/" + key + " must be a number");
+            var file = Text("file");
+            if (Path.IsPathRooted(file) || file.Split('/', '\\').Any(part => part == ".." || part == ""))
+                throw new IrFormatException("fixtures " + at + "/file '" + file + "' is not a file of the export (assets/<sha256>.<ext>)");
+            return new IrAsset
+            {
+                Kind = Path.GetExtension(file).Equals(".svg", StringComparison.OrdinalIgnoreCase) ? "svg" : "image",
+                File = file, Sha256 = Text("sha256"), Width = Number("width"), Height = Number("height"),
+            };
         }
     }
 }
