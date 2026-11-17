@@ -10,6 +10,7 @@ import { compareScreen, readThresholds } from "../src/compare/compare.js";
 import crypto from "node:crypto";
 import { validateBoxes } from "../src/boxes/validate.js";
 import { BOXES_FILE, openBoxes } from "../src/boxes/file.js";
+import { captureFile } from "../src/capture/matrix.js";
 import { validateIr } from "../src/ir/validate.js";
 import { readKit } from "../src/kit.js";
 
@@ -281,16 +282,20 @@ describe("exportScreen: failures", () => {
     expect(finished).toBeGreaterThan(0);
     expect(fs.existsSync(out)).toBe(false);
     expect(fs.readdirSync(path.dirname(out)).filter((n) => n.includes(".tmp-"))).toEqual([]);
-    // the folder holds the IR, the N finished captures (PNG and boxes line each) and why it failed; it is no export
-    expect(readJson(failed, "export-failure.json")).toEqual({ ok: false, stage: "capture", doing: expect.stringMatching(/^opening viewport /), finished, captures: 9,
-      error: expect.stringMatching(/^capture failed while opening viewport .*: the browser is gone$/) });
+    // the folder holds the IR, the N finished captures (PNG and boxes line each) and why it failed, with each finished
+    // capture's file (no matrix.json records it); it is no export
+    const why = readJson(failed, "export-failure.json") as { files: Record<string, string> };
+    expect(why).toEqual({ ok: false, stage: "capture", doing: expect.stringMatching(/^opening viewport /), finished, captures: 9,
+      error: expect.stringMatching(/^capture failed while opening viewport .*: the browser is gone$/), files: expect.any(Object) });
     expect(fs.existsSync(path.join(failed, "screen.ir.json"))).toBe(true);
     expect(fs.existsSync(path.join(failed, "export-report.json"))).toBe(false);
+    expect(fs.existsSync(path.join(failed, "goldens", "matrix.json"))).toBe(false);
     const boxes = (await openBoxes(path.join(failed, "goldens"), "design"))!;
     expect(boxes.names).toHaveLength(finished);
+    expect(why.files).toEqual(Object.fromEntries(boxes.names.map((n) => [n, captureFile(n)])));
     for (const n of boxes.names) {
       expect(validateBoxes(await boxes.read(n)), n).toEqual([]);
-      expect(fs.existsSync(path.join(failed, "goldens", `${n}.png`)), n).toBe(true);
+      expect(fs.existsSync(path.join(failed, "goldens", `${why.files[n]}.png`)), n).toBe(true);
     }
     expect(fs.readdirSync(path.join(failed, "goldens")).filter((f) => f.endsWith(".png"))).toHaveLength(finished);
     await expect(compareScreen(failed, failed, readThresholds())).rejects.toThrow(/is the folder of an export whose capture failed/);

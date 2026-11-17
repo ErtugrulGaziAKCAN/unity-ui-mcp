@@ -5,5 +5,8 @@
  * export-report.json, the comparison refuses it, and nothing reads it as one.
  */
 export const failedExportDir = (outDir: string): string => `${outDir}.failed`;
-/** Written into the kept folder: what failed, the error and how many captures were finished. */
+/**
+ * Written into the kept folder: what failed, the error, how many captures were finished and, as `files`, each finished
+ * capture's name → its PNG file without `.png` (the folder has no matrix.json, which records it for an export).
+ */
 export const EXPORT_FAILURE_FILE = "export-failure.json";

@@ -377,8 +377,9 @@ sync and the status window's Text section name the chosen faces and count the ot
    line when it finishes (put in the matrix's order at the end): nothing builds the whole set as one string, which a
    dense screen of thousands of captures would not fit in. A failed capture names what failed and how many captures
    were finished, and the export keeps its folder (the IR and the finished goldens) as `<out>.failed` with
-   `export-failure.json`: one per output folder, replaced by the next failure, removed by a successful export, never
-   read as an export. A matrix capture without golden boxes is not run, so the screen cannot pass.
+   `export-failure.json` (what failed, and `files`: each finished capture's name → its PNG file, as matrix.json's
+   `file`, which the folder lacks): one per output folder, replaced by the next failure, removed by a successful
+   export, never read as an export. A matrix capture without golden boxes is not run, so the screen cannot pass.
 4. **Styles.** Per element, record **specified** values from matched rules (`CSS.getMatchedStylesForNode`), which
    keep `%`, `auto` and flex intent and drive compilation, and **computed** values, which are used only for
    verification. Record pseudo-state, breakpoint and state deltas, transitions and keyframes.
@@ -408,7 +409,8 @@ Output per screen:
 <designRoot>/<screen-id>/.design-ui/export/
   screen.ir.json
   goldens/<file>.png           the capture name, e.g. default@1920x1080.is-open.menu.hover.option, default@1920x1080.hover.row-flag~2;
-                               a name over 100 characters: its first 64, a dot and 16 hex of its SHA-256 (matrix.json file)
+                               a name over 100 characters: its first 64 without trailing . ~ ! -, a dot and the first
+                               16 hex of its SHA-256 (matrix.json file); two files that differ only in case are refused
   goldens/boxes.jsonl          every element's box and text lines, one line per capture (compact JSON with its name);
                                readers stream it, and read an older export's boxes.json when there is no boxes.jsonl
   goldens/matrix.json          the jobs: names, files, applied state/classes/items, context, hidden jobs, animation samples

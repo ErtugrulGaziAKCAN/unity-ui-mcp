@@ -385,10 +385,11 @@ string and a stopped run keeps the captures it finished; the comparison reads it
 of their boxes (`design-export export` on its output, `design_ui_import` as a progress message and as `captureEstimate`)
 and warns above 200 MB (the import's answer shows the warning). An export whose capture fails keeps the captures it
 finished in `<designRoot>/<screen-id>/.design-ui/export.failed/` (`<out>.failed` for `design-export export`), with
-`export-failure.json` saying why, and its error names that folder; the next failure replaces it, a successful export
-removes it, and nothing uses it as an export. A run that fails, times out or does not finish keeps its partial captures,
-the meta file and the Unity log in `<designRoot>/<screen-id>/.design-ui/failed-<run>/` (the newest three). The command
-runs as a program with your rights; use only configs you trust.
+`export-failure.json` saying why and giving each finished capture's PNG file, and its error names that folder; the next
+failure replaces it, a successful export removes it, and nothing uses it as an export. A run that fails, times out or
+does not finish keeps its partial captures, the meta file and the Unity log in
+`<designRoot>/<screen-id>/.design-ui/failed-<run>/` (the newest three). The command runs as a program with your rights;
+use only configs you trust.
 
 ## Disk use
 

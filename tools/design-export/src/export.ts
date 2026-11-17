@@ -451,8 +451,9 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
 
 /**
  * Keeps the folder of an export whose capture failed as `<outDir>.failed` (failed-export.ts), replacing an earlier one,
- * with export-failure.json saying what failed and how many captures were finished; returns the error naming the folder.
- * When it cannot be kept, the folder goes and the error says so.
+ * with export-failure.json saying what failed, how many captures were finished and each finished capture's PNG file
+ * (`files`: name → file without .png, as matrix.json's `file`, which the folder does not have); returns the error naming
+ * the folder. When it cannot be kept, the folder goes and the error says so.
  */
 function keepFailed(fresh: string, outDir: string, e: unknown): Error {
   const failed = failedExportDir(outDir);
@@ -460,7 +461,7 @@ function keepFailed(fresh: string, outDir: string, e: unknown): Error {
   try {
     fs.writeFileSync(path.join(fresh, EXPORT_FAILURE_FILE), stableStringify({
       ok: false, stage: "capture", error: message,
-      ...(e instanceof CaptureFailed ? { doing: e.doing, finished: e.finished, captures: e.total } : {}),
+      ...(e instanceof CaptureFailed ? { doing: e.doing, finished: e.finished, captures: e.total, files: e.files } : {}),
     }));
     fs.rmSync(failed, { recursive: true, force: true });
     fs.renameSync(fresh, failed);

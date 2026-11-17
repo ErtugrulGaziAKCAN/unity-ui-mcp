@@ -15,7 +15,7 @@ import { validateBoxes } from "../src/boxes/validate.js";
 import { BOXES_FILE, openBoxes } from "../src/boxes/file.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
 import { breakpointsHold, scaleStep, buildMatrix, captureFile, captureName, sampleTimes, unsampledAnims, type CaptureApply, type CaptureJob } from "../src/capture/matrix.js";
-import { BOXES_BYTES_PER_ELEMENT, BOXES_WARN_BYTES, boxesVolume, CaptureSession, captureMatrix, checkCapturePaths, itemSuffix, runCapture, TEXT_CEIL_TOLERANCE, volumeLines, type ElementMap } from "../src/capture/capture.js";
+import { BOXES_BYTES_PER_ELEMENT, BOXES_WARN_BYTES, boxesVolume, CaptureFailed, CaptureSession, captureMatrix, checkCapturePaths, itemSuffix, runCapture, TEXT_CEIL_TOLERANCE, volumeLines, type ElementMap } from "../src/capture/capture.js";
 import { logicalViewport } from "../src/viewport.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -284,14 +284,33 @@ describe("checkCapturePaths", () => {
   const long = captureName(denseRowJob());
 
   it("on Windows, refuses a path over 250 characters, naming the longest and asking for a shorter output folder", () => {
-    const dir = path.resolve("/x", "d".repeat(160));
-    // the long name's file is 81 characters: 163 + 1 + 81 + 4 = 249 fits
-    expect(() => checkCapturePaths(dir, ["default@2560x1440", long], "win32")).not.toThrow();
-    const deeper = path.join(dir, "export");
-    const longest = path.join(deeper, `${captureFile(long)}.png`);
-    expect(() => checkCapturePaths(deeper, ["default@2560x1440", long], "win32")).toThrow(`the capture path ${longest} is ${longest.length} characters, over the 250 Windows allows: use a shorter output folder`);
+    // the folder is padded from this host's own resolved root (/x, or C:\x on Windows), so the long name's path is
+    // exactly 250 characters, then 251
+    const base = path.resolve("/x"), file = `${captureFile(long)}.png`;
+    const fits = path.join(base, "d".repeat(250 - base.length - 2 - file.length));
+    expect(path.resolve(fits, file)).toHaveLength(250);
+    expect(() => checkCapturePaths(fits, ["default@2560x1440", long], "win32")).not.toThrow();
+    const over = `${fits}d`, longest = path.resolve(over, file);
+    expect(longest).toHaveLength(251);
+    expect(() => checkCapturePaths(over, ["default@2560x1440", long], "win32")).toThrow(`the capture path ${longest} is 251 characters, over the 250 Windows allows: use a shorter output folder`);
     // elsewhere the path length is the platform's own
-    expect(() => checkCapturePaths(deeper, ["default@2560x1440", long], "linux")).not.toThrow();
+    expect(() => checkCapturePaths(over, ["default@2560x1440", long], "linux")).not.toThrow();
+  });
+
+  it("refuses two captures whose files differ only in case on every platform, naming both", () => {
+    // classes that differ only in case: one file on a volume that ignores case (Windows, macOS), where an export made
+    // elsewhere may be captured or compared
+    const a = "default@1280x720.is-Open.menu", b = "default@1280x720.is-open.menu";
+    for (const platform of ["darwin", "linux", "win32"] as const) {
+      expect(() => checkCapturePaths("/x", ["default@1280x720", a, "default@1280x720.hover.menu", b], platform))
+        .toThrow(`captures ${a} and ${b} would write one file on a volume that ignores case (Windows, macOS): ${a}.png and ${b}.png; their names must differ in more than case`);
+    }
+    // a name given twice is one capture (two jobs moved into one context)
+    expect(() => checkCapturePaths("/x", [a, "default@1280x720", a], "darwin")).not.toThrow();
+    // long names whose kept starts differ only in case still get different hashes
+    const upper = long.replace("is-selected", "is-Selected");
+    expect(captureFile(upper).toLowerCase()).not.toBe(captureFile(long).toLowerCase());
+    expect(() => checkCapturePaths("/x", [long, upper], "darwin")).not.toThrow();
   });
 
   it("refuses a file name over 255 bytes on every platform", () => {
@@ -846,6 +865,23 @@ describe("captures", () => {
     expect(left.notes).toEqual([]);
     expect(left.names).toEqual(names(done));
     for (const n of left.names) expect(validateBoxes(await left.read(n)), n).toEqual([]);
+  });
+
+  it("a failed run gives each finished capture's file, which no matrix.json records", async () => {
+    // a short and a long-named job at 1280, then a job that fails at 2560
+    const apply: CaptureApply[] = Array.from({ length: 14 }, (_, k): CaptureApply => ({ kind: "class", name: `is-variant-${String(k + 1).padStart(2, "0")}`, elementId: "tab" }));
+    const short = job({ viewport: [1280, 720] }), long = job({ viewport: [1280, 720], apply });
+    const bad = job({ apply: [{ kind: "pseudo", pseudo: "hover", elementId: "ghost" }] });
+    const name = captureName(long);
+    expect(captureFile(name)).not.toBe(name);
+    const dir = tmp();
+    const e = await captureMatrix(fx("screen.html"), kit, built.ir, built.elements, dir, { browser, jobs: [short, long, bad], concurrency: 1 }).then(() => null, (x: unknown) => x);
+    expect(e).toBeInstanceOf(CaptureFailed);
+    const failed = e as CaptureFailed;
+    expect(failed.finished).toBe(2);
+    expect(failed.files).toEqual({ "default@1280x720": "default@1280x720", [name]: captureFile(name) });
+    for (const file of Object.values(failed.files)) expect(fs.existsSync(path.join(dir, `${file}.png`)), file).toBe(true);
+    expect(fs.existsSync(path.join(dir, "matrix.json"))).toBe(false);
   });
 
   it("writes a long-named job's PNG to its short file and records the file in matrix.json; boxes keep the name", async () => {

@@ -55,10 +55,11 @@ export interface BoxesVolume { captures: number; elements: number; bytes: number
 interface Failure { error: unknown; doing: string }
 /**
  * A capture run that failed: what it was doing, how many of its captures were finished (their PNGs and boxes.jsonl lines
- * are written) and how many it planned; `cause` is the error.
+ * are written) and how many it planned; `cause` is the error. `files` gives each finished capture's file (its name →
+ * `<file>` of `<file>.png`, captureFile), which matrix.json, written only by a run that went through, would record.
  */
 export class CaptureFailed extends Error {
-  constructor(readonly doing: string, readonly finished: number, readonly total: number, cause: unknown) {
+  constructor(readonly doing: string, readonly finished: number, readonly total: number, cause: unknown, readonly files: Readonly<Record<string, string>> = {}) {
     super(`capture failed while ${doing}, after ${finished} of ${total} captures were finished: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
 }
@@ -1096,14 +1097,24 @@ async function resolveContexts(s: CaptureSession, ir: IrScreen, list: CaptureJob
 
 /**
  * Refuses capture PNG paths that cannot be written, before anything is captured: on every platform a file name
- * (`<file>.png`) over 255 UTF-8 bytes, and on Windows a path over 250 characters (the longest is named).
+ * (`<file>.png`) over 255 UTF-8 bytes and two captures whose files are one file on a volume that ignores case (Windows,
+ * macOS; both names are given), and on Windows a path over 250 characters (the longest is named). A name given twice
+ * is one capture.
  */
 export function checkCapturePaths(goldensDir: string, names: readonly string[], platform: NodeJS.Platform = process.platform): void {
   let longest = "";
+  /** Each file seen, lower-cased, and the capture that writes it. */
+  const owners = new Map<string, { name: string; file: string }>();
   for (const name of names) {
     const file = `${captureFile(name)}.png`;
     const bytes = Buffer.byteLength(file, "utf8");
     if (bytes > 255) throw new Error(`capture ${name}: its file name ${file} is ${bytes} bytes, over the 255 a file name can have`);
+    const other = owners.get(file.toLowerCase());
+    if (other && other.name !== name) {
+      throw new Error(`captures ${other.name} and ${name} would write one file on a volume that ignores case (Windows, macOS): ` +
+        `${other.file} and ${file}; their names must differ in more than case`);
+    }
+    owners.set(file.toLowerCase(), { name, file });
     const full = path.resolve(goldensDir, file);
     if (full.length > longest.length) longest = full;
   }
@@ -1203,9 +1214,10 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
   };
   /** The first error of any viewport and what that viewport was doing; the others stop at their next job. */
   let failure: Failure | null = null;
-  /** Captures whose boxes are in boxes.jsonl. */
+  /** Captures whose boxes are in boxes.jsonl, and their files (name → captureFile). */
   let finished = 0;
-  const stopped = (f: Failure) => new CaptureFailed(f.doing, finished, jobs.length, f.error);
+  const files: Record<string, string> = {};
+  const stopped = (f: Failure) => new CaptureFailed(f.doing, finished, jobs.length, f.error, { ...files });
   const runGroup = async (key: string, list: CaptureJob[], step: { doing: string }) => {
     step.doing = `opening viewport ${key}`;
     const t1 = performance.now();
@@ -1234,6 +1246,7 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
           step.doing = `capturing ${captureName(j)}`;
           const b = await s.capture(j, goldensDir);
           appendBoxes(goldensDir, b);
+          files[b.capture] = captureFile(b.capture);
           finished++;
           const f = s.frozen.get(b.capture);
           if (f?.length) frozen.set(b.capture, f);

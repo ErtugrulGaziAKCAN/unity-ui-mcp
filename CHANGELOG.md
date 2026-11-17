@@ -31,15 +31,17 @@ numbers below are in [docs/findings/](docs/findings/); the decisions they cite (
   of captures and an estimate of their boxes and warns above 200 MB (`design_ui_import` shows the warning and sends the
   estimate as a progress message). A capture that fails names what it was doing and how many captures were finished, and
   the export keeps the captures it finished in `<out>.failed` (`.design-ui/export.failed` for the MCP server) with
-  `export-failure.json`: a newer failure replaces it, a successful export removes it, the cleanup counts it and
+  `export-failure.json` (what failed, and each finished capture's PNG file as `files`, name → file, since the folder
+  has no `matrix.json`): a newer failure replaces it, a successful export removes it, the cleanup counts it and
   `design_ui_clean` removes it. `boxes.meta.json` is unchanged.
 - Captures with long names: a capture name over 100 characters (many classes and pseudo-states, often in written-out
-  repeat items) gets a short, deterministic file, its first 64 characters, a dot and 16 hex characters of the name's
-  SHA-256, recorded as `file` in `goldens/matrix.json`. The golden, the Unity capture, the difference image and the
-  report use that file; boxes, reports and verdicts keep the name. Before, the name was the PNG's file name, so the
-  export failed on Windows (path too long) or over 255 bytes. The export now refuses, before capturing, a path over 250
-  characters on Windows (it names the path and asks for a shorter output folder) and a file name over 255 bytes. An
-  older `matrix.json` without `file` still finds its PNGs by name.
+  repeat items) gets a short, deterministic file: its first 64 characters without trailing `.`, `~`, `!` or `-`, a dot
+  and the first 16 hex characters of the name's SHA-256, recorded as `file` in `goldens/matrix.json`. The golden, the
+  Unity capture, the difference image and the report use that file; boxes, reports and verdicts keep the name. Before,
+  the name was the PNG's file name, so the export failed on Windows (path too long) or over 255 bytes. The export now
+  refuses, before capturing, a path over 250 characters on Windows (it names the path and asks for a shorter output
+  folder), a file name over 255 bytes, and two captures whose files differ only in case, one file on Windows and macOS
+  volumes (it names both). An older `matrix.json` without `file` still finds its PNGs by name.
 - A String Table import that creates a collection saves the Addressables group schemas it changed (the schema assets
   Localization creates with a new locale's group), asset by asset. Before, they stayed unsaved and the next import that
   created a collection was refused for unsaved work. A schema that was already unsaved is still left alone and noted.

@@ -375,11 +375,12 @@ dışa aktarmanın ya da yakalamanın `boxes.json` dosyasını da okur. Dışa a
 sayısını ve kutuların tahmini boyutunu yazar (`design-export export` çıktısında, `design_ui_import` bir ilerleme
 mesajında ve `captureEstimate` alanında) ve 200 MB'ı aşınca uyarır (içe aktarmanın yanıtı uyarıyı gösterir). Yakalaması
 başarısız olan bir dışa aktarma, bitirdiği yakalamaları `<designRoot>/<ekran-id>/.design-ui/export.failed/` altında
-tutar (`design-export export` için `<out>.failed`), nedenini `export-failure.json` yazar ve hatası bu klasörü
-adlandırır; sonraki başarısızlık onu değiştirir, başarılı bir dışa aktarma onu siler ve hiçbir şey onu dışa aktarma
-olarak kullanmaz. Başarısız olan, zaman aşımına uğrayan ya da bitmeyen bir çalışma, yarım kalan görüntülerini, meta
-dosyasını ve Unity günlüğünü `<designRoot>/<ekran-id>/.design-ui/failed-<run>/` altında tutar (en yeni üçünü). Komut
-senin yetkilerinle bir program olarak çalışır; yalnız güvendiğin ayar dosyalarını kullan.
+tutar (`design-export export` için `<out>.failed`), nedenini ve biten her yakalamanın PNG dosyasını
+`export-failure.json` dosyasına yazar ve hatası bu klasörü adlandırır; sonraki başarısızlık onu değiştirir, başarılı bir
+dışa aktarma onu siler ve hiçbir şey onu dışa aktarma olarak kullanmaz. Başarısız olan, zaman aşımına uğrayan ya da
+bitmeyen bir çalışma, yarım kalan görüntülerini, meta dosyasını ve Unity günlüğünü
+`<designRoot>/<ekran-id>/.design-ui/failed-<run>/` altında tutar (en yeni üçünü). Komut senin yetkilerinle bir program
+olarak çalışır; yalnız güvendiğin ayar dosyalarını kullan.
 
 ## Disk kullanımı
 
