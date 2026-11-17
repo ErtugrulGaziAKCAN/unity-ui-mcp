@@ -9,6 +9,8 @@ numbers below are in [docs/findings/](docs/findings/); the decisions they cite (
 
 ### Fixed
 
+- SVG icons no longer get a square frame in Unity: the invisible extent rect that pins the viewBox now sets
+  `stroke="none"` (and an inline `stroke:none`), so it cannot inherit a root `stroke="currentColor"` or other root stroke.
 - Verification on a project without the Unity Test Framework: the capture is an EditMode test, so the temporary copy now
   gets the Test Framework built into its Unity when the project has none (in its manifest or `packages-lock.json`), and
   says so; the project is not changed. Before, the copy failed to compile the package's tests. The README and INSTALL.md

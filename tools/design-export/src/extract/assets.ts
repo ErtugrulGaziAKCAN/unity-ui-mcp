@@ -333,7 +333,8 @@ export function svgSize(xml: string, fallback: Size | null): { w: number; h: num
  * Pins an svg's viewBox with a transparent rect as its first shape: Unity's importer sizes a VectorImage by its shapes'
  * bounds (its PreserveViewport does not apply to VectorImage), so without the pin an icon drawn with a margin inside its
  * viewBox would be stretched over the whole element. The rect covers the viewBox (else width × height); an svg with
- * neither is returned unchanged.
+ * neither is returned unchanged. The rect declares `stroke="none"` and an inline `stroke:none` so it never inherits the
+ * root's stroke (e.g. `stroke="currentColor"`), which Unity would draw as a frame around the icon.
  */
 export function pinViewBox(xml: string): string {
   const open = /<svg\b[^>]*>/i.exec(xml);
@@ -346,7 +347,7 @@ export function pinViewBox(xml: string): string {
   else { const w = num(attr("width")), h = num(attr("height")); if (w && h) box = [0, 0, w, h]; }
   if (!box) return xml;
   const at = open.index + open[0].length;
-  return `${xml.slice(0, at)}<rect x="${box[0]}" y="${box[1]}" width="${box[2]}" height="${box[3]}" fill="#000000" fill-opacity="0"/>${xml.slice(at)}`;
+  return `${xml.slice(0, at)}<rect x="${box[0]}" y="${box[1]}" width="${box[2]}" height="${box[3]}" fill="#000000" fill-opacity="0" stroke="none" style="stroke:none"/>${xml.slice(at)}`;
 }
 
 /** First url(...) of a computed background-image. */

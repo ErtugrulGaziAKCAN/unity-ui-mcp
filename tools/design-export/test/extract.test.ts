@@ -214,16 +214,35 @@ describe("buildIr: kinds, assets and external regions", () => {
     expect(svg).toContain("stroke-width: 2");
     expect(svg).toMatch(/^<svg xmlns="http:\/\/www.w3.org\/2000\/svg"/);
     // the viewBox is pinned by a transparent rect, so Unity's VectorImage spans it (not just the shapes' bounds)
-    expect(svg).toMatch(/^<svg[^>]*><rect x="0" y="0" width="24" height="24" fill="#000000" fill-opacity="0"\/>/);
+    expect(svg).toMatch(/^<svg[^>]*><rect x="0" y="0" width="24" height="24" fill="#000000" fill-opacity="0" stroke="none" style="stroke:none"\/>/);
     expect(icon.style.base.color).toBe("#16c2d5");
   });
 
   it("pins an svg's viewBox (else its width and height) with a transparent first rect", () => {
     expect(pinViewBox('<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 1 20 10"><path d="M0 0"/></svg>'))
-      .toBe('<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 1 20 10"><rect x="-2" y="1" width="20" height="10" fill="#000000" fill-opacity="0"/><path d="M0 0"/></svg>');
+      .toBe('<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 1 20 10"><rect x="-2" y="1" width="20" height="10" fill="#000000" fill-opacity="0" stroke="none" style="stroke:none"/><path d="M0 0"/></svg>');
     expect(pinViewBox('<svg width="48px" height="24"><path d="M0 0"/></svg>')).toContain('<svg width="48px" height="24"><rect x="0" y="0" width="48" height="24"');
     expect(pinViewBox("<svg><path/></svg>")).toBe("<svg><path/></svg>");
     expect(pinViewBox("<svg/>")).toBe("<svg/>");
+  });
+
+  it("keeps the extent rect from inheriting the root's stroke, opacity or transform", () => {
+    const roots = [
+      'stroke="currentColor" stroke-width="2"',
+      'style="stroke:red;stroke-width:4"',
+      'stroke="#fff" stroke-width="40" stroke-opacity="0.5"',
+      'opacity="0.4"',
+      'transform="translate(3 3)"',
+    ];
+    for (const r of roots) {
+      const out = pinViewBox(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 1 20 10" ${r}><path d="M0 0"/></svg>`);
+      const rect = /<rect\b[^>]*\/>/.exec(out)![0];
+      expect(rect).toContain('stroke="none"');
+      expect(rect).toContain('style="stroke:none"');
+      expect(rect).toContain('fill-opacity="0"');
+      expect(rect).toContain('x="-2" y="1" width="20" height="10"');
+      expect(out.indexOf("<rect")).toBeLessThan(out.indexOf("<path"));
+    }
   });
 
   it("keeps a data-u-external region as one node without children", () => {
