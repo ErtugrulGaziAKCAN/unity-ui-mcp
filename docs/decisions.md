@@ -54,3 +54,5 @@ measurement can be traced to the run it came from. Nothing depends on them; the 
 | D-162 | Opt-in per kit, with the project-kept setting `screenContract` (`optional` by default, `required`). |
 | D-163 | Samples must be real values, enforced by U-CON-005, also for values that do not render (hidden, an inactive state): no invented value anywhere in a design. |
 | D-164 | Info findings are counted as notes, not warnings. |
+| D-165 | A repeat's later items' copies of an element that paints a picture (a content image or vector, a url() background image) get the first item's element SSIM and colour samples with its limits, named by the copy: verify judged only the first item's picture, so a wrong picture in a later item passed whenever its container's SSIM diluted it. |
+| D-166 | A picture whose own element SSIM judges it, the first item's or a copy's, is masked by its box from its ancestors' SSIM and colour samples and from the whole capture's SSIM, so a container judges what its items paint around their pictures, not the pictures' resampling a second time at the general limit. |

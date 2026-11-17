@@ -47,8 +47,18 @@ export interface CaptureContext {
   fontPx?: Record<string, number>;
   /** Corner radii per element in device px (top-left, top-right, bottom-right, bottom-left); absent: square corners. */
   radii?: Record<string, [number, number, number, number]>;
-  /** Elements that draw a raster picture (IR asset kind `image`) at another size than its own, in device px. */
+  /**
+   * Elements that draw a raster picture (IR asset kind `image`) at another size than its own, in device px, and the keys of
+   * their copies in a repeat's later items (boxes `items`) that do, each decided from its own box (decision D-165).
+   */
   pictures?: ReadonlySet<string>;
+  /**
+   * Elements that paint a picture in this capture (decision D-165): a content image or vector (IR `asset`: an `<img>`, an
+   * inline svg) or a url() background image (`background-image` in this capture). Their copies in a repeat's later items get
+   * the element's SSIM and colour checks, and a picture with an element SSIM of its own is masked from its ancestors' SSIM
+   * and colour checks (decision D-166).
+   */
+  paintsPicture?: ReadonlySet<string>;
   /** Text elements whose `text-shadow` in this capture has a blur radius above 0 (a glow around the glyphs). */
   textShadows?: ReadonlySet<string>;
   /**
@@ -92,7 +102,8 @@ export interface CaptureContext {
    * (an ellipsized title's line rect runs on to the whole text's width, past its box). An overflow that is not `visible` on
    * an axis (`x`, `y`; `visible` beside `hidden`, `auto` or `scroll` computes to `auto`, as CSS has it) clips at the
    * element's padding box (its box less `inset`, its border widths in device px, transparent ones too). Both renderers draw
-   * nothing of the text outside it; the comparison judges a line's ink on what both show (absent: nothing clips it).
+   * nothing of the text outside it; the comparison judges a line's ink on what both show (absent: nothing clips it). A
+   * picture element (`paintsPicture`) has its clips too: a later item's copy the design's clips hide entirely is not shown.
    */
   clips?: Record<string, ClipAncestor[]>;
   /**
@@ -280,7 +291,9 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
   const fontPx: Record<string, number> = {};
   const radii: Record<string, [number, number, number, number]> = {};
   const pictures = new Set<string>(), textShadows = new Set<string>(), shadowedText = new Set<string>(), rotated = new Set<string>(), opaque = new Set<string>(), vectors = new Set<string>();
-  const repeats = new Set<string>();
+  const repeats = new Set<string>(), paintsPicture = new Set<string>();
+  /** Per raster `<img>`, its picture's size; the url() background images drawn at another size than their own. */
+  const rasterSize = new Map<string, { w: number; h: number }>(), resampledBackground = new Set<string>();
   const opacity = new Map<string, number>();
   const opacityOf = (id: string, holds: (key: string) => boolean): number => {
     if (opacity.has(id)) return opacity.get(id)!;
@@ -327,17 +340,29 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
       if (lengths.length >= 3 && parseFloat(lengths[2]) > 0) textShadows.add(id);
     }
     if (backgrounds.has(id) || borders[id] || sh || inset || n.asset || n.kind === "image" || n.kind === "vector") painters.add(id);
+    // a picture: a content image or vector, or a url() background image (decision D-165)
+    if (isObj(n.asset) || n.kind === "vector" || (image !== undefined && /url\(/i.test(image))) paintsPicture.add(id);
     // a raster picture is resampled unless its element box is its own size in device px
-    if (isObj(n.asset) && n.asset.kind === "image" && b && (Math.abs(b.w - Number(n.asset.width)) > 0.5 || Math.abs(b.h - Number(n.asset.height)) > 0.5)) pictures.add(id);
+    if (isObj(n.asset) && n.asset.kind === "image") {
+      const size = { w: Number(n.asset.width), h: Number(n.asset.height) };
+      rasterSize.set(id, size);
+      if (b && (Math.abs(b.w - size.w) > 0.5 || Math.abs(b.h - size.h) > 0.5)) pictures.add(id);
+    }
     // so is a url() background image unless it is drawn at its own size (background-size auto or its px size, scale 1)
     if (isObj(n.background) && n.background.kind === "image") {
       const size = (styleValue(n, "background-size", holds) ?? "auto").trim().split(/\s+/);
       const own = size.every((x) => x === "auto") || (size.length === 2 && parseFloat(size[0]) === Number(n.background.width) && parseFloat(size[1]) === Number(n.background.height));
-      if (!own || Math.abs(golden.scale - 1) > 1e-9) pictures.add(id);
+      if (!own || Math.abs(golden.scale - 1) > 1e-9) { pictures.add(id); resampledBackground.add(id); }
     }
     if (setup.anim && b && typeof b.rotation === "number" && !axisAligned(b.rotation)) rotated.add(id);
     if (n.kind === "vector") vectors.add(id);
     if (isObj(n.repeat)) repeats.add(id);
+  }
+  // a later item's copy of a raster picture by its own box: an `<img>` against its picture's size, a url() background image
+  // as its IR element (decision D-165)
+  for (const [key, c] of Object.entries(golden.items ?? {})) {
+    const id = key.slice(0, key.indexOf("#")), size = rasterSize.get(id);
+    if (resampledBackground.has(id) || (size && (Math.abs(c.w - size.w) > 0.5 || Math.abs(c.h - size.h) > 0.5))) pictures.add(key);
   }
   // the overflow clips around each text: the ancestors whose overflow is not visible on an axis (pre-order: a parent first)
   const ownClip = new Map<string, ClipAncestor>(), around = new Map<string, ClipAncestor[]>();
@@ -361,7 +386,7 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     around.set(id, outer);
     // a text's own overflow clips its own text too (an ellipsized title's line runs on past its box, to the whole text's width)
     const all = ownClip.has(id) ? [...outer, ownClip.get(id)!] : outer;
-    if ((n.kind === "text" || n.text) && all.length) clips[id] = all;
+    if ((n.kind === "text" || n.text || paintsPicture.has(id)) && all.length) clips[id] = all;
   }
   // the elements the sample's running animations move (an animation of geometry), and everything inside them
   const moving = new Set<string>();
@@ -372,5 +397,5 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     return movesBox(Array.isArray(anims) && typeof r.index === "number" ? anims[r.index] : undefined) ? r.elementId : null;
   }).filter((x): x is string => x !== null));
   if (runIds.size) for (const id of ix.order) for (let x: string | undefined = id; x !== undefined; x = ix.parent.get(x)) if (runIds.has(x)) { moving.add(id); break; }
-  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, textShadows, shadowedText, rotated, clips };
+  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, paintsPicture, textShadows, shadowedText, rotated, clips };
 }

@@ -42,7 +42,11 @@
  *   `deltaE2000`, so a faint missing shadow fails although SSIM dilutes it.
  * The copies of an element in a repeat's later written-out items (boxes `items`) that carry text get the same treatment as
  * the element's text (decision D-133): present and visible as in the design, the same line count, baselines and ink checks,
- * named by the copy (`row#3`), and their text masked like it; their boxes are not compared.
+ * named by the copy (`row#3`), and their text masked like it; their boxes are not compared. The copies of an element that
+ * paints a picture (a content image or vector, a url() background image) get the element's SSIM and colour samples with its
+ * limits, named by the copy, present and visible by the same rules (decision D-165). A picture with an element SSIM of its
+ * own, the IR element's or a copy's, is masked (its box on both sides) from its ancestors' SSIM and colour samples and from
+ * the whole capture's SSIM: its own check judges it (decision D-166); what an item paints around it stays theirs.
  * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows. The
  * pixel row or column of a painted edge the design draws off the device grid (Chromium snaps boxes to whole CSS px, UI
  * Toolkit to whole device px) is copied from the design too, unless it would be the whole of a thin element; the box
@@ -732,7 +736,10 @@ export interface CaptureVerdict {
   notSampled: string[];
   /** Unity pixels with alpha below 255 (compared premultiplied). */
   translucent: number;
-  /** Regions copied from the design before the pinned SSIM (text element boxes, external; inflated by 2 px). */
+  /**
+   * Regions copied from the design before the pinned SSIM (text element boxes, external; inflated by 2 px) and the boxes of the
+   * pictures their own element SSIM judges (decision D-166; not inflated).
+   */
   masked: Rect[];
   /** Painted edge rows or columns the design draws off the device grid, copied from the design before SSIM (offGridEdges). */
   offGridEdges: number;
@@ -910,6 +917,11 @@ const grow = (r: Rect, d: number): Rect => ({ x: r.x - d, y: r.y - d, w: r.w + 2
 type Box = CaptureBoxes["elements"][string];
 type ItemCopy = NonNullable<CaptureBoxes["items"]>[string];
 interface Side { png: Rgba; boxes: CaptureBoxes }
+/**
+ * What the element checks judge, with its boxes on both sides: an IR element (`key` is its id) or its copy in a repeat's later
+ * item (`copy`; `key` names the copy, `id` is its IR element, whose IR facts it takes; decision D-165).
+ */
+interface Subject { key: string; id: string; g: Box | ItemCopy; u: Box | ItemCopy; copy: boolean }
 
 /** The image with every pixel premultiplied by its alpha (a translucent pixel as its colour over black). */
 function opaque(img: Rgba): { img: Rgba; translucent: number } {
@@ -1236,6 +1248,37 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     textCopies.push({ key, id, g: gc, u: uc });
   }
 
+  // ---- the pictures of the IR elements' copies in later written-out repeat items (decision D-165): the IR element's SSIM and
+  // colour samples (below), named by the copy, present and visible as in the design by the text copies' rules (a copy that
+  // carries text has them above). A copy the design's overflow clips hide entirely is not shown there: it is not judged, and
+  // Unity may not have made it (a list that makes only the items its viewport shows)
+  const pictureCopies: Subject[] = [];
+  for (const [key, gc] of Object.entries(g.items ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    const id = key.slice(0, key.indexOf("#"));
+    if (!ctx.paintsPicture?.has(id)) continue;
+    const uc = u.items?.[key], away = clippedAway(g, id, key, { ...gc, lines: [] });
+    if (gc.text) {
+      if (uc && gc.visible && uc.visible && !away) pictureCopies.push({ key, id, g: gc, u: uc, copy: true });
+      continue;
+    }
+    const row = newRow(key);
+    rows.push(row);
+    rowOf.set(key, row);
+    if (!uc) {
+      if (gc.visible && !away) { row.status = "missing"; issue(key, "missing", "a copy in a later repeat item of an element that paints a picture, in the design, but not in the Unity capture", gc); }
+      else row.status = "hidden";
+      continue;
+    }
+    if (!gc.visible && !uc.visible) { row.status = "hidden"; continue; }
+    if (gc.visible !== uc.visible) {
+      row.status = "fail";
+      issue(key, "visibility", gc.visible ? "visible in the design, hidden in Unity" : "hidden in the design, visible in Unity", gc.visible ? gc : uc);
+      continue;
+    }
+    if (away) { row.status = "hidden"; continue; }
+    pictureCopies.push({ key, id, g: gc, u: uc, copy: true });
+  }
+
   // ---- what Unity shows that the design does not have
   for (const [id, ue] of Object.entries(u.elements).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (id in g.elements || !ue.visible) continue;
@@ -1360,9 +1403,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       if (theirs) { const m = textMaskOf(id, theirs, e); if (m.box) textBoxes.push(m.box); textLines.push(...m.lines); }
     }
     // the text lines of the copies in later repeat items (decision D-133): their own checks judge them. Only the lines, not the
-    // copy's box: a copy has no element SSIM or colour samples of its own, so what it paints (a chip's background, a pill's
-    // border) stays in the whole capture's and its containers' SSIM. A copy without lines (a form
-    // control's value) keeps its box masked, as the IR element's line mask does
+    // copy's box: what a copy paints around them (a chip's background, a pill's border) stays in the whole capture's and its
+    // containers' SSIM (a picture copy's box leaves them only where its own checks judge it, decision D-166). A copy without
+    // lines (a form control's value) keeps its box masked, as the IR element's line mask does
     for (const [key, e] of Object.entries(g.items ?? {})) {
       if (!e.text || !e.visible) continue;
       const o = u.items?.[key], theirs = o?.visible ? o : undefined;
@@ -1380,8 +1423,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const edgeBand = new Uint8Array(w * h);
     // the anti-aliased pixel row or column of a painted edge Chromium draws off the device grid: it snaps a box to whole
     // CSS px, so at scale 0.75 an edge can fall at x.25, x.5 or x.75 device px, where UI Toolkit puts it on a whole pixel
-    // (Yoga); the box check measures where the edge is (findings: pixel grid)
-    const offGrid = offGridEdges(compared.filter((id) => !ctx.painters || ctx.painters.has(id)).map((id) => g.elements[id]), g.scale);
+    // (Yoga); the box check measures where the edge is (findings: pixel grid); a picture copy's too, as its IR element's
+    // (decision D-165)
+    const offGrid = offGridEdges([...compared.filter((id) => paints(id)).map((id) => g.elements[id]), ...pictureCopies.filter((c) => paints(c.id)).map((c) => c.g)], g.scale);
     for (const m of [mask, lineMask, edgeBand]) maskRects(w, h, offGrid, 0, m);
     edgeMasked = offGrid.length;
     // outside the screen root nothing is designed: a breakpoint's coverage viewport of another aspect shows the page's
@@ -1397,12 +1441,39 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       for (const m of [mask, lineMask, edgeBand]) maskRects(w, h, outside, 0, m);
       outsideScreen = outside.length > 0;
     }
-    masked = [...textBoxes, ...externalBoxes].filter((r) => r.w > 0 && r.h > 0).map((r) => ({ x: r6(r.x - 2), y: r6(r.y - 2), w: r6(r.w + 4), h: r6(r.h + 4) }));
     const external = new Set(g.external);
-    const fullViewport = (e: Box) => e.x <= 0 && e.y <= 0 && e.x + e.w >= w && e.y + e.h >= h;
+    const fullViewport = (e: Rect) => e.x <= 0 && e.y <= 0 && e.x + e.w >= w && e.y + e.h >= h;
+    const irSubject = (id: string): Subject => ({ key: id, id, g: g.elements[id], u: u.elements[id], copy: false });
+    /** A subject's active baked outer shadow (IR, golden device px): a copy's is its IR element's placed by its own box. */
+    const shadowOf = (s: Subject): Rect | undefined => {
+      const sh = ctx.shadows?.[s.id], ir = g.elements[s.id];
+      if (!s.copy || !sh) return sh;
+      return ir ? { x: s.g.x + sh.x - ir.x, y: s.g.y + sh.y - ir.y, w: s.g.w + sh.w - ir.w, h: s.g.h + sh.h - ir.h } : undefined;
+    };
+    /** Whether a subject gets an element SSIM of its own (as `elementChecks` measures it: a region over at least one full block). */
+    const ownSsim = (s: Subject): boolean => {
+      const b = s.g;
+      if (external.has(s.id) || (b.text && !b.lines.length) || b.w < MIN_ELEMENT || b.h < MIN_ELEMENT || s.key === ctx.root || fullViewport(b)) return false;
+      const sh = shadowOf(s), r = sh ? unionRect(b, sh) : b;
+      return Math.max(0, Math.floor(r.x / 8)) < Math.min(Math.floor(w / 8), Math.ceil((r.x + r.w) / 8))
+        && Math.max(0, Math.floor(r.y / 8)) < Math.min(Math.floor(h / 8), Math.ceil((r.y + r.h) / 8));
+    };
+    /**
+     * The pictures whose own element SSIM judges them (decision D-166), IR elements and later items' copies: their boxes, on both
+     * sides, leave the whole capture's SSIM and their ancestors' SSIM and colour samples (`picturesIn`).
+     */
+    const judgedPictures = [...compared.filter((id) => !!ctx.paintsPicture?.has(id)).map(irSubject), ...pictureCopies].filter(ownSsim);
+    const pictureBoxes = (ps: readonly Subject[]): Rect[] => ps.flatMap((p) => [p.g, p.u]);
+    masked = [
+      ...[...textBoxes, ...externalBoxes].filter((r) => r.w > 0 && r.h > 0).map((r) => ({ x: r6(r.x - 2), y: r6(r.y - 2), w: r6(r.w + 4), h: r6(r.h + 4) })),
+      ...pictureBoxes(judgedPictures).filter((r) => r.w > 0 && r.h > 0).map((r) => ({ x: r6(r.x), y: r6(r.y), w: r6(r.w), h: r6(r.h) })),
+    ];
 
     const map = blockSsimMap(gp, up, mask);
-    ssim = wholeSsim(map);
+    // the blocks with the judged pictures masked as well: the whole capture's SSIM, and an element's whose blocks hold no judged
+    // picture but those inside it (onlyPictures: the same blocks as its own mask gives)
+    const pictureMap = judgedPictures.length ? blockSsimMap(gp, up, maskRects(w, h, pictureBoxes(judgedPictures), 0, mask.slice())) : map;
+    ssim = wholeSsim(pictureMap);
     if (ssim < t.ssimNonText - EPS) issue(WHOLE, "ssim", `whole-capture SSIM ${ssim.toFixed(5)} (limit ${t.ssimNonText})`);
 
     const onText = (x: number, y: number) => {
@@ -1433,23 +1504,55 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     };
     type ItemBox = Rect & { visible: boolean };
     /**
-     * The later written-out repeat items' copies (boxes `items`, both sides shown) of the elements inside `owner`: a copy in a
+     * Whether the copy `key` of element `id` in a later written-out repeat item lies inside the IR element `owner`: a copy in a
      * later item of a repeat lies inside `owner` only when `owner` is that repeat's container or outside it (an element inside
-     * the first item holds that item's elements only). Their key's suffix names the item of each repeat, innermost first.
+     * the first item holds that item's elements only). The key's suffix names the item of each repeat, innermost first.
      */
+    const copyInside = (key: string, id: string, owner: string): boolean => {
+      if (!within(id, owner)) return false;
+      const { cs, path } = placeOf(id, key);
+      return !cs.some((c, j) => path[j] !== 0 && c !== owner && within(owner, c));
+    };
+    /** Whether the copy `key` of element `id` lies inside a later item's copy `owner`: in its subtree, in the same item (D-165). */
+    const inCopy = (key: string, id: string, owner: Subject): boolean => {
+      if (!within(id, owner.id)) return false;
+      const at = placeOf(id, key).path;
+      return placeOf(owner.id, owner.key).path.every((k, j) => at[j] === k);
+    };
+    /** The later written-out repeat items' copies (boxes `items`, both sides shown) of the elements inside `owner` (copyInside). */
     const itemsWithin = (owner: string): { key: string; id: string; g: ItemBox; u: ItemBox }[] => {
       const out: { key: string; id: string; g: ItemBox; u: ItemBox }[] = [];
       for (const [key, gb] of Object.entries(g.items ?? {})) {
         const ub = u.items?.[key];
         if (!ub || !gb.visible || !ub.visible) continue;
-        const [id, ...parts] = key.split("#");
-        if (!within(id, owner)) continue;
-        const cs = containersOf(id), path = cs.map(() => 0);
-        parts.forEach((k, j) => { const level = cs.length - 1 - j; if (level >= 0) path[level] = Number(k); });
-        if (cs.some((c, j) => path[j] !== 0 && c !== owner && within(owner, c))) continue;
-        out.push({ key, id, g: gb, u: ub });
+        const id = key.slice(0, key.indexOf("#"));
+        if (copyInside(key, id, owner)) out.push({ key, id, g: gb, u: ub });
       }
       return out;
+    };
+    /** A later item's copy and the copies in its subtree in its own item, both sides shown (decision D-165). */
+    const copiesIn = (owner: Subject): Subject[] => Object.entries(g.items ?? {}).flatMap(([key, gb]) => {
+      const ub = u.items?.[key], id = key.slice(0, key.indexOf("#"));
+      return ub && gb.visible && ub.visible && inCopy(key, id, owner) ? [{ key, id, g: gb, u: ub, copy: true }] : [];
+    });
+    /**
+     * The pictures with an element SSIM of their own inside a subject (decision D-166), never itself: for an IR element the IR
+     * pictures in its subtree and the copies inside it (copyInside), for a later item's copy the copies in its subtree in its
+     * item. Their boxes leave its SSIM (`withPictures`) and its colour samples.
+     */
+    const picturesIn = (s: Subject): Subject[] => judgedPictures.filter((p) => p.key !== s.key
+      && (s.copy ? p.copy && inCopy(p.key, p.id, s) : p.copy ? copyInside(p.key, p.id, s.id) : within(p.id, s.id)));
+    /** A subject's SSIM mask: `base` with the boxes of the pictures inside it (picturesIn) on both sides, uninflated; else `base`. */
+    const withPictures = (s: Subject, base: Uint8Array): Uint8Array => {
+      const ps = picturesIn(s);
+      return ps.length ? maskRects(w, h, pictureBoxes(ps), 0, base.slice()) : base;
+    };
+    /** Whether the blocks over `region` hold no judged picture's masked pixels but those of `inner` (`pictureMap` measures it then). */
+    const onlyPictures = (region: Rect, inner: readonly Subject[]): boolean => {
+      const x0 = Math.floor(region.x / 8) * 8, x1 = Math.ceil((region.x + region.w) / 8) * 8, y0 = Math.floor(region.y / 8) * 8, y1 = Math.ceil((region.y + region.h) / 8) * 8;
+      const keys = new Set(inner.map((p) => p.key));
+      return judgedPictures.every((p) => keys.has(p.key)
+        || [p.g, p.u].every((b) => Math.floor(b.x) >= x1 || Math.ceil(b.x + b.w) <= x0 || Math.floor(b.y) >= y1 || Math.ceil(b.y + b.h) <= y0));
     };
     /** A border an edge band masks (an element's own, a descendant's or a later repeat item's), where each renderer draws it. */
     interface BandBorder { id: string; label: string; g: Rect; u: Rect; widths: readonly number[]; radii?: readonly number[] }
@@ -1463,8 +1566,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
      * edge's band is every pixel whose centre lies within ROUND_EDGE_BAND of that edge in the design and in Unity: an edge
      * Unity draws a device pixel away from the design's is not in it. `moved` and `fractional`: whether such edges were
      * added; `borders`: the borders whose band it masks (their colour and width are the relaxation's evidence, D-129, D-130).
+     * A later item's copy (decision D-165) takes its own and its subtree's copies in its item as an IR element its subtree.
      */
-    const bandOf = (owner: string, base: Uint8Array, region: Rect, statics = false): Band => {
+    const bandOf = (owner: Subject, base: Uint8Array, region: Rect, statics = false): Band => {
       const out = base.slice();
       let moved = false, fractional = false;
       const borders: BandBorder[] = [];
@@ -1476,19 +1580,20 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const rx0 = Math.max(0, Math.floor(region.x / 8) * 8), rx1 = Math.min(w, Math.ceil((region.x + region.w) / 8) * 8);
       const ry0 = Math.max(0, Math.floor(region.y / 8) * 8), ry1 = Math.min(h, Math.ceil((region.y + region.h) / 8) * 8);
       const r = { x0: rx0, x1: rx1, y0: ry0, y1: ry1 };
-      for (const id of compared) {
-        if (!within(id, owner)) continue;
-        const isMoved = movedAtFraction(id);
-        if (!isMoved && !(statics && paints(id))) continue;
+      // the owner and its subtree: IR elements, or a later item's copies in its item
+      const own: Subject[] = owner.copy ? copiesIn(owner) : compared.filter((id) => within(id, owner.id)).map(irSubject);
+      for (const m of own) {
+        const isMoved = movedAt(m);
+        if (!isMoved && !(statics && paints(m.id))) continue;
         // a moved edge lies where the sample's transform puts the box; a static one where Chromium paints it (whole CSS px)
-        const gb = isMoved ? g.elements[id] : paintedRect(g.elements[id], g.scale), ub = u.elements[id];
+        const gb = isMoved ? m.g : paintedRect(m.g, g.scale), ub = m.u;
         if (!ub?.visible) continue;
-        const added = markBoxEdges(out, w, h, gb, ub, ctx.borders?.[id], r);
+        const added = markBoxEdges(out, w, h, gb, ub, ctx.borders?.[m.id], r);
         if (added && isMoved) moved = true;
         else if (added) fractional = true;
-        addBorder(id, id, gb, ub);
+        addBorder(m.id, m.key, gb, ub);
       }
-      const items = itemsWithin(owner);
+      const items = owner.copy ? [] : itemsWithin(owner.id);
       if (statics) for (const it of items) {
         if (!paints(it.id)) continue;
         const gb = paintedRect(it.g, g.scale);
@@ -1508,7 +1613,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
         if (placed && ubox) addBorder(id, label, placed, ubox);
       };
-      for (const id of compared) if (within(id, owner)) curves(id, id, g.elements[id]?.visible ? g.elements[id] : null, u.elements[id]?.visible ? u.elements[id] : null, movedAtFraction(id));
+      for (const m of own) curves(m.id, m.key, m.g.visible ? m.g : null, m.u.visible ? m.u : null, movedAt(m));
       for (const it of items) curves(it.id, it.key, it.g, it.u);
       return { mask: out, moved, fractional, borders };
     };
@@ -1863,8 +1968,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       }
     };
 
-    /** Elements below ssimElement, judged after every other check (a measured lower limit needs those to pass). */
-    const lowSsim: { id: string; s0: number; best: number; region: Rect; carriesText: boolean; shadow: boolean }[] = [];
+    /**
+     * Elements below ssimElement, judged after every other check (a measured lower limit needs those to pass), with the mask
+     * their SSIM was measured with (`base`: the text or line mask with the pictures inside them, decision D-166).
+     */
+    const lowSsim: { s: Subject; base: Uint8Array; s0: number; best: number; region: Rect; carriesText: boolean; shadow: boolean }[] = [];
     // ssimRoundEdge: at a scaled viewport any element with round shapes in its region (the layout scale's ramp); at every
     // viewport a round element without text (a radio, an avatar ring) and, in an animation sample, an element that moves at a
     // fractional device offset (Chromium draws it from its resampled layer); a round element's border side samples, worst
@@ -1872,30 +1980,41 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     const edgeLimit = t.ssimRoundEdge < t.ssimElement - EPS;
     const roundEdge = edgeLimit && !!ctx.radii;
     const scaledClass = ctx.viewportClass === "scaled";
-    const movedAtFraction = (id: string) => movesIn(id) && !!g.elements[id] && fractionalBox(g.elements[id]);
-    const roundWithoutText = (id: string) => !!ctx.radii?.[id] && !(g.elements[id]?.text && g.elements[id].lines.length > 0);
-    const edgeScope = (id: string) => edgeLimit && (scaledClass ? roundEdge || movedAtFraction(id) : roundWithoutText(id) || movedAtFraction(id));
-    for (const id of compared) {
-      const ge = g.elements[id], ue = u.elements[id], row = rowOf.get(id)!;
-      if (external.has(id)) continue;
-      const shadow = ctx.shadows?.[id];
+    /** An animation sample moves the subject (its IR element) to a fractional device offset, by its own box. */
+    const movedAt = (s: Subject) => movesIn(s.id) && fractionalBox(s.g);
+    const roundWithoutText = (s: Subject) => !!ctx.radii?.[s.id] && !(s.g.text && s.g.lines.length > 0);
+    const edgeScope = (s: Subject) => edgeLimit && (scaledClass ? roundEdge || movedAt(s) : roundWithoutText(s) || movedAt(s));
+    /**
+     * The element checks of an IR element or of a later item's picture copy (decision D-165; a copy takes its IR element's
+     * facts, its own boxes, issues and row): element SSIM, colour samples, a round element's ring, the background, border and
+     * corners around the text of one that carries text and paints, the shadow band, and an IR element's text ink (a copy's
+     * text is judged with the copies' text). What paints over a copy is what paints after it (`laterLayers`).
+     */
+    const elementChecks = (s: Subject) => {
+      const { key, id } = s, ge = s.g, ue = s.u, row = rowOf.get(key)!;
+      if (external.has(id)) return;
+      const shadow = shadowOf(s);
       const carriesText = ge.text && ge.lines.length > 0;
 
-      // element SSIM over box ∪ shadow rect (a text element without lines, i.e. an input or select, keeps its box masked)
-      if ((!ge.text || carriesText) && ge.w >= MIN_ELEMENT && ge.h >= MIN_ELEMENT && id !== ctx.root && !fullViewport(ge)) {
+      // element SSIM over box ∪ shadow rect (a text element without lines, i.e. an input or select, keeps its box masked); the
+      // pictures inside it that their own SSIM judges are masked (decision D-166)
+      if ((!ge.text || carriesText) && ge.w >= MIN_ELEMENT && ge.h >= MIN_ELEMENT && key !== ctx.root && !fullViewport(ge)) {
         const region = shadow ? unionRect(ge, shadow) : ge;
-        const m0 = carriesText ? lineMask : mask;
-        const s0 = carriesText ? regionSsimShifted(gp, up, lineMask, region, 0) : regionSsim(map, region);
+        const inner = picturesIn(s), base = carriesText ? lineMask : mask;
+        let m0: Uint8Array | null = inner.length ? null : base;
+        const maskOf = () => (m0 ??= maskRects(w, h, pictureBoxes(inner), 0, base.slice()));
+        const s0 = carriesText ? regionSsimShifted(gp, up, maskOf(), region, 0)
+          : !inner.length ? regionSsim(map, region) : onlyPictures(region, inner) ? regionSsim(pictureMap, region) : regionSsimShifted(gp, up, maskOf(), region, 0);
         if (!Number.isNaN(s0)) {
           row.ssim = r6(s0);
           let best = s0;
-          if (s0 < t.ssimElement - EPS) { const s1 = regionSsimShifted(gp, up, m0, region, 1); row.ssimShifted = r6(s1); best = Math.max(s0, s1); }
-          if (!worst || best < worst.ssim) worst = { id, ssim: r6(best) };
-          if (best < t.ssimElement - EPS) lowSsim.push({ id, s0, best, region, carriesText, shadow: !!shadow });
+          if (s0 < t.ssimElement - EPS) { const s1 = regionSsimShifted(gp, up, maskOf(), region, 1); row.ssimShifted = r6(s1); best = Math.max(s0, s1); }
+          if (!worst || best < worst.ssim) worst = { id: key, ssim: r6(best) };
+          if (best < t.ssimElement - EPS) lowSsim.push({ s, base: maskOf(), s0, best, region, carriesText, shadow: !!shadow });
         }
       }
 
-      const cover = covering(id);
+      const cover = [...(s.copy ? laterLayers(id, key) ?? [] : covering(id)), ...pictureBoxes(picturesIn(s))];
       // the golden's painted rect (Chromium snaps a box to whole CSS px) places the ring samples and the corner curves
       const gPaint = paintedRect(ge, g.scale);
       // grid and centre-line points off the rounded corners' anti-aliased curves (outer, and inner inside a border)
@@ -1908,7 +2027,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         const horizontal = gPaint.h <= gPaint.w;
         const gThick = horizontal ? gPaint.h : gPaint.w, uThick = horizontal ? ue.h : ue.w;
         if (gThick >= 0.5 && uThick < 0.5) {
-          issue(id, "box", `a line ${Number(gThick.toFixed(2))} device px thick in the design is ${Number(uThick.toFixed(2))} px in Unity (UI Toolkit snaps its edges to whole device px)`, ge);
+          issue(key, "box", `a line ${Number(gThick.toFixed(2))} device px thick in the design is ${Number(uThick.toFixed(2))} px in Unity (UI Toolkit snaps its edges to whole device px)`, ge);
         }
         const centre = (a: number, len: number) => Math.floor(a + len / 2 + 1e-6);
         // along the line on a pixel the renderer covers fully (the line's ends may be off the grid too)
@@ -1932,7 +2051,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         });
         // covered by later elements, it shows nothing to compare; otherwise a line left without a sample is a failure
         if (painted && !use.length && covered < pts.length) {
-          issue(id, "color", `a line ${Number(gThick.toFixed(2))} device px thick: no colour sample left on its centre line (on text, an off-grid edge or a curve)`, ge);
+          issue(key, "color", `a line ${Number(gThick.toFixed(2))} device px thick: no colour sample left on its centre line (on text, an off-grid edge or a curve)`, ge);
         }
       } else if (solid) {
         // background colour: the grid, then the ring inside the border, never silently nothing
@@ -1968,7 +2087,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         if (worst) {
           row.ring = r6(worst.de);
           if (!movesIn(id) && worst.de > t.deltaE2000Ring + EPS) {
-            issue(id, "color", `ring ${worst.p.where}: ΔE2000 ${worst.de.toFixed(2)}, design ${hex(worst.a)}, Unity ${hex(worst.b)} (limit ${t.deltaE2000Ring}): the ring's colour differs`,
+            issue(key, "color", `ring ${worst.p.where}: ΔE2000 ${worst.de.toFixed(2)}, design ${hex(worst.a)}, Unity ${hex(worst.b)} (limit ${t.deltaE2000Ring}): the ring's colour differs`,
               { x: worst.p.gx - 1, y: worst.p.gy - 1, w: 3, h: 3 });
           }
         }
@@ -1982,13 +2101,13 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
           row.ringWidth = r6(thick.d);
           // not where a sample moves it: Chromium draws a moving element from its resampled layer
           if (!movesIn(id) && thick.d > RING_WIDTH_PX + EPS) {
-            issue(id, "edge", `ring ${thick.where}: drawn ${thick.unity.toFixed(2)} device px wide, the design's ${thick.design.toFixed(2)} (limit ±${RING_WIDTH_PX}): the ring's width differs`, ge);
+            issue(key, "edge", `ring ${thick.where}: drawn ${thick.unity.toFixed(2)} device px wide, the design's ${thick.design.toFixed(2)} (limit ±${RING_WIDTH_PX}): the ring's width differs`, ge);
           }
         }
       }
       if (use) {
         row.samples = use.length;
-        if (!use.length) notSampled.push(id);
+        if (!use.length) notSampled.push(key);
         let bestS: { de: number; p: RingPoint; a: number[]; b: number[] } | null = null;
         for (const p of use) {
           const r = bestDeltaE(gp, p.gx, p.gy, up, p.ux, p.uy, p.win);
@@ -1996,11 +2115,11 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         }
         if (bestS) {
           row.deltaE = r6(bestS.de);
-          if (!maxDE || bestS.de > maxDE.deltaE) maxDE = { id, deltaE: r6(bestS.de) };
+          if (!maxDE || bestS.de > maxDE.deltaE) maxDE = { id: key, deltaE: r6(bestS.de) };
           // a raster picture resampled at a scaled viewport (decision D-125; off elsewhere)
-          const limit = ctx.pictures?.has(id) ? Math.max(t.deltaE2000, t.deltaE2000ResampledPicture) : t.deltaE2000;
+          const limit = ctx.pictures?.has(key) ? Math.max(t.deltaE2000, t.deltaE2000ResampledPicture) : t.deltaE2000;
           if (bestS.de > limit + EPS) {
-            issue(id, "color", `ΔE2000 ${bestS.de.toFixed(2)} at ${bestS.p.where}: design ${hex(bestS.a)}, Unity ${hex(bestS.b)} (limit ${limit}${limit > t.deltaE2000 ? " for a raster picture resampled at a scaled viewport" : ""})`,
+            issue(key, "color", `ΔE2000 ${bestS.de.toFixed(2)} at ${bestS.p.where}: design ${hex(bestS.a)}, Unity ${hex(bestS.b)} (limit ${limit}${limit > t.deltaE2000 ? " for a raster picture resampled at a scaled viewport" : ""})`,
               { x: bestS.p.gx - 1, y: bestS.p.gy - 1, w: 3, h: 3 });
           }
         }
@@ -2058,7 +2177,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         let cornerWhy = "";
         if (samples.some((x) => x.limit > t.deltaE2000 && x.de > t.deltaE2000 + EPS)) {
           const region = shadow ? unionRect(ge, shadow) : ge;
-          const ev = evidenceOf(bandOf(id, lineMask, region, scaledClass), region);
+          const ev = evidenceOf(bandOf(s, withPictures(s, lineMask), region, scaledClass), region);
           row.bandEvidence = { minBlock: r6(ev.minBlock), maxDe: r6(ev.maxDe), ring: ev.ring === null ? null : r6(ev.ring), width: ev.width === null ? null : r6(ev.width) };
           if (!ev.ok) { cornerWhy = ev.why; for (const x of samples) x.limit = t.deltaE2000; }
         }
@@ -2070,14 +2189,14 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
             const band = bestR.limit === t.deltaE2000 ? (cornerWhy ? `; the corner limits of edge bands need the evidence: ${cornerWhy}` : "")
               : bestR.limit === t.deltaE2000RoundEdge ? ` for a corner in the edge band of round shapes`
               : ` for a corner in the band of straight edges between device pixels`;
-            issue(id, "edge", `${bestR.p.where}: ΔE2000 ${bestR.de.toFixed(2)}, design ${hex(bestR.a)}, Unity ${hex(bestR.b)} (limit ${bestR.limit}${band}): background, border or corner shape differs`,
+            issue(key, "edge", `${bestR.p.where}: ΔE2000 ${bestR.de.toFixed(2)}, design ${hex(bestR.a)}, Unity ${hex(bestR.b)} (limit ${bestR.limit}${band}): background, border or corner shape differs`,
               { x: bestR.p.gx - 2, y: bestR.p.gy - 2, w: 5, h: 5 });
           }
         }
       }
 
-      // text ink per line: colour now; the amount after all lines of the capture are measured
-      if (carriesText && ue.lines.length === ge.lines.length) inkCheck(id, id, ge, ue, row);
+      // text ink per line: colour now; the amount after all lines of the capture are measured (a copy's with the copies' text)
+      if (!s.copy && carriesText && ue.lines.length === ge.lines.length) inkCheck(id, id, ge, ue, row);
 
       // shadow band
       if (shadow) {
@@ -2085,13 +2204,16 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         if (a && b) {
           const de = deltaE2000(a, b);
           row.band = r6(de);
-          if (de > t.deltaE2000 + EPS) issue(id, "shadow", `shadow band ΔE2000 ${de.toFixed(2)}: design ${hex(a)}, Unity ${hex(b)} (limit ${t.deltaE2000})`, shadow);
+          if (de > t.deltaE2000 + EPS) issue(key, "shadow", `shadow band ΔE2000 ${de.toFixed(2)}: design ${hex(a)}, Unity ${hex(b)} (limit ${t.deltaE2000})`, shadow);
         }
       }
-    }
+    };
+    for (const id of compared) elementChecks(irSubject(id));
 
     // the copies' text in later repeat items: the same ink checks as the IR element's (decision D-133)
     for (const c of textCopies) if (c.g.lines.length && c.u.lines.length === c.g.lines.length) inkCheck(c.id, c.key, c.g, c.u, rowOf.get(c.key)!);
+    // the pictures of the copies in later repeat items: the IR element's element checks (decision D-165)
+    for (const c of pictureCopies) elementChecks(c);
 
     // text ink amount: with smoothing-off designs Unity draws 0.92-1.08 of the design's ink for correct text
     // (docs/findings/text-ink.md; with macOS font smoothing on it was 0.69-1.03, more for light text). A line's ratio
@@ -2139,66 +2261,66 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     // element SSIM below ssimElement: a measured lower limit when the element's every other check passed
     const otherIssue = new Set(issues.filter((i) => i.kind !== "ssim").map((i) => i.id));
     for (const l of lowSsim) {
-      const row = rowOf.get(l.id)!;
-      const relaxed = relaxedSsimLimit(t, l.region.w * l.region.h, !!ctx.pictures?.has(l.id), !!ctx.rotated?.has(l.id));
-      if (relaxed && !otherIssue.has(l.id) && l.best >= relaxed.limit - EPS) { row.ssimLimit = relaxed.limit; continue; }
+      const { key, id } = l.s, row = rowOf.get(key)!;
+      const relaxed = relaxedSsimLimit(t, l.region.w * l.region.h, !!ctx.pictures?.has(key), !!ctx.rotated?.has(id));
+      if (relaxed && !otherIssue.has(key) && l.best >= relaxed.limit - EPS) { row.ssimLimit = relaxed.limit; continue; }
       let roundWhy = "", fractionalWhy = "";
-      const base = l.carriesText ? lineMask : mask;
+      const base = l.base;
       /** A band's relaxation: its evidence (decisions D-129, D-130), recorded on the row; null when it holds. */
       const withEvidence = (band: Band): string | null => {
         const ev = evidenceOf(band, l.region);
         row.bandEvidence = { minBlock: r6(ev.minBlock), maxDe: r6(ev.maxDe), ring: ev.ring === null ? null : r6(ev.ring), width: ev.width === null ? null : r6(ev.width) };
         return ev.ok ? null : ev.why;
       };
-      if (edgeScope(l.id)) {
-        const band = bandOf(l.id, base, l.region);
+      if (edgeScope(l.s)) {
+        const band = bandOf(l.s, base, l.region);
         const banded = regionSsimShifted(gp, up, band.mask, l.region, 1);
         row.ssimRoundEdgeMasked = r6(banded);
         const confined = banded >= t.ssimElement - EPS;
         let failed: string | null = null;
-        if (confined && !otherIssue.has(l.id) && l.best >= t.ssimRoundEdge - EPS) {
+        if (confined && !otherIssue.has(key) && l.best >= t.ssimRoundEdge - EPS) {
           failed = withEvidence(band);
           if (failed === null) { row.ssimLimit = t.ssimRoundEdge; continue; }
         }
         roundWhy = `; ${banded.toFixed(5)} with the edge band of round shapes${band.moved ? " and moved edges" : ""} masked` + (!confined ? ` (below ${t.ssimElement}: not confined to that band)`
-          : failed !== null ? `, but ${failed}` : otherIssue.has(l.id) ? `, the limit ${t.ssimRoundEdge} for it needs its other checks to pass` : `, below ${t.ssimRoundEdge} unmasked`);
+          : failed !== null ? `, but ${failed}` : otherIssue.has(key) ? `, the limit ${t.ssimRoundEdge} for it needs its other checks to pass` : `, below ${t.ssimRoundEdge} unmasked`);
       }
       // at a scaled viewport: the straight edges that lie between two device pixels as well (ssimFractionalEdge)
       if (scaledClass && t.ssimFractionalEdge < t.ssimElement - EPS) {
-        const wide = bandOf(l.id, base, l.region, true);
+        const wide = bandOf(l.s, base, l.region, true);
         if (wide.fractional) {
           const fs = regionSsimShifted(gp, up, wide.mask, l.region, 1);
           row.ssimFractionalEdgeMasked = r6(fs);
           let failed: string | null = null;
-          if (fs >= t.ssimElement - EPS && !otherIssue.has(l.id) && l.best >= t.ssimFractionalEdge - EPS) {
+          if (fs >= t.ssimElement - EPS && !otherIssue.has(key) && l.best >= t.ssimFractionalEdge - EPS) {
             failed = withEvidence(wide);
             if (failed === null) { row.ssimLimit = t.ssimFractionalEdge; continue; }
           }
           fractionalWhy = `; ${fs.toFixed(5)} with the straight edges between device pixels masked as well` + (fs < t.ssimElement - EPS ? ` (below ${t.ssimElement}: not confined to them)`
-            : failed !== null ? `, but ${failed}` : otherIssue.has(l.id) ? `, the limit ${t.ssimFractionalEdge} for it needs its other checks to pass` : `, below ${t.ssimFractionalEdge} unmasked`);
+            : failed !== null ? `, but ${failed}` : otherIssue.has(key) ? `, the limit ${t.ssimFractionalEdge} for it needs its other checks to pass` : `, below ${t.ssimFractionalEdge} unmasked`);
         }
       }
       // at a scaled viewport: a vector picture's drawn edges (ssimVectorEdge)
       let vectorWhy = "";
-      if (scaledClass && t.ssimVectorEdge < t.ssimElement - EPS && ctx.vectors?.has(l.id)) {
+      if (scaledClass && t.ssimVectorEdge < t.ssimElement - EPS && ctx.vectors?.has(id)) {
         const vmask = base.slice();
         const kept = markVectorEdges(vmask, gp, l.region);
         if (kept.kept >= VECTOR_KEPT * kept.all) {
           const vs = regionSsimShifted(gp, up, vmask, l.region, 1);
           row.ssimVectorEdgeMasked = r6(vs);
           let failed: string | null = null;
-          if (vs >= t.ssimElement - EPS && !otherIssue.has(l.id) && l.best >= t.ssimVectorEdge - EPS) {
-            const bw = ctx.borders?.[l.id];
+          if (vs >= t.ssimElement - EPS && !otherIssue.has(key) && l.best >= t.ssimVectorEdge - EPS) {
+            const bw = ctx.borders?.[id];
             failed = withEvidence({ mask: vmask, moved: false, fractional: false,
-              borders: bw ? [{ id: l.id, label: l.id, g: paintedRect(g.elements[l.id], g.scale), u: u.elements[l.id], widths: bw, radii: ctx.radii?.[l.id] }] : [] });
+              borders: bw ? [{ id, label: key, g: paintedRect(l.s.g, g.scale), u: l.s.u, widths: bw, radii: ctx.radii?.[id] }] : [] });
             if (failed === null) { row.ssimLimit = t.ssimVectorEdge; continue; }
           }
           vectorWhy = `; ${vs.toFixed(5)} with the vector's edge band masked` + (vs < t.ssimElement - EPS ? ` (below ${t.ssimElement}: not confined to it)`
-            : failed !== null ? `, but ${failed}` : otherIssue.has(l.id) ? `, the limit ${t.ssimVectorEdge} for it needs its other checks to pass` : `, below ${t.ssimVectorEdge} unmasked`);
+            : failed !== null ? `, but ${failed}` : otherIssue.has(key) ? `, the limit ${t.ssimVectorEdge} for it needs its other checks to pass` : `, below ${t.ssimVectorEdge} unmasked`);
         } else vectorWhy = `; its edge band leaves ${kept.kept} of ${kept.all} pixels compared (under half): no evidence for ${t.ssimVectorEdge}`;
       }
-      const why = relaxed ? (otherIssue.has(l.id) ? `; the limit ${relaxed.limit} for ${relaxed.why} needs its other checks to pass` : `; ${relaxed.limit} for ${relaxed.why}`) : "";
-      issue(l.id, "ssim", `element SSIM ${l.s0.toFixed(5)} (${row.ssimShifted!.toFixed(5)} with offsets up to 1 px) over the ${l.carriesText ? "box with its text lines copied from the design" : "box"}${l.shadow ? " and baked shadow" : ""} (limit ${t.ssimElement}${why}${roundWhy}${fractionalWhy}${vectorWhy})`, l.region);
+      const why = relaxed ? (otherIssue.has(key) ? `; the limit ${relaxed.limit} for ${relaxed.why} needs its other checks to pass` : `; ${relaxed.limit} for ${relaxed.why}`) : "";
+      issue(key, "ssim", `element SSIM ${l.s0.toFixed(5)} (${row.ssimShifted!.toFixed(5)} with offsets up to 1 px) over the ${l.carriesText ? "box with its text lines copied from the design" : "box"}${l.shadow ? " and baked shadow" : ""} (limit ${t.ssimElement}${why}${roundWhy}${fractionalWhy}${vectorWhy})`, l.region);
     }
 
     const diff = difference(gp, up, mask, wantHeat);

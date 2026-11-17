@@ -910,7 +910,9 @@ best value with the Unity image offset by up to 1 px in x and y (a moved edge or
 missing shadow, another shape or a dashed border still does), and every colour sample is compared with the closest
 Unity colour within 1 px. An element that carries its own text (a button, a badge) is measured with only its text lines
 copied from the design, plus samples of its background, border and corner diagonals; elements that paint a background
-but leave no sample point are reported as "not sampled".
+but leave no sample point are reported as "not sampled". A repeat's later items' copies of an element that paints a
+picture (a content image or vector, a url() background image) get the element's SSIM and colour samples with its limits,
+named by the copy (decision D-165; a copy's text gets the element's text checks, decision D-133).
 
 SSIM is the mean over non-overlapping 8×8 blocks of BT.601 luma with `C1 = (0.01·255)²`, `C2 = (0.03·255)²`
 (implemented in `tools/design-export/src/compare/ssim.ts`, defined and calibrated in M0 findings §11). For an element it is the mean over the blocks that overlap the
@@ -918,7 +920,9 @@ bounding box of its golden box and, when it has one, its baked-shadow rect from 
 (`x + offset.x`, `y + offset.y`, `w + offset.w`, `h + offset.h`: offset x/y is the shadow image's top-left relative to
 the element's border box, offset w/h is the image size minus the element size). Glyph rasterization differences are
 tolerated only inside text boxes: pixels inside text boxes (inflated by 2 px) are copied from the golden before the
-SSIM is computed. Regions marked `data-u-external` are masked the same way. Limitation: SSIM is averaged over the
+SSIM is computed. Regions marked `data-u-external` are masked the same way. A picture with an element SSIM of its own (also
+a later item's copy) is masked by its box, both sides, from the whole capture's SSIM and from its ancestors' SSIM and colour
+samples: its own check judges it (decision D-166). Limitation: SSIM is averaged over the
 region, so small or faint defects are diluted; a missing 24 px soft shadow at 50 % black on a dark background still
 scores 0.994, and a defect counts against the element that owns it rather than its larger ancestors.
 A screen is **verified** (verdict `pass`) only when every viewport × state × class × pseudo-state capture and every

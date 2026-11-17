@@ -82,7 +82,7 @@ function outlines(issues: ElementIssue[], size: [number, number]): string {
   return issues.filter((i) => i.at).map((i) => `<div class="outline" style="${pct(i.at!, size, 2)}" title="${esc(`${i.id}: ${i.detail}`)}"></div>`).join("");
 }
 
-/** The masked regions (text, external) as translucent boxes. */
+/** The masked regions (text, external, pictures their own SSIM judges) as translucent boxes. */
 function maskBoxes(c: CaptureVerdict): string {
   return c.masked.map((r) => `<div class="maskbox" style="${pct(r, c.size)}"></div>`).join("");
 }
@@ -324,7 +324,7 @@ ${classSection(v)}<div class="grid2">
 </div>
 <section><h2>Notes</h2><ul>
   <li>Goldens: ${v.platform ? `Chromium ${esc(v.platform.chromium)} on ${esc(v.platform.platform)}` : "platform not recorded"}; compare with captures of the same platform (goldens are platform-specific).</li>
-  <li>Before the whole-capture SSIM, the boxes of text elements and external regions (inflated by 2 px) are copied from the design. An element that carries text is measured with only its lines copied, plus samples of its background, border and corners; its text is checked by line count, baselines, ink colour and ink amount, and where each line's first and last glyphs sit (from the ink, not the line rects). The text of an element's copies in a repeat's later items is masked and checked the same way, named by the copy (<code>row#3</code>).</li>
+  <li>Before the whole-capture SSIM, the boxes of text elements and external regions (inflated by 2 px) are copied from the design. An element that carries text is measured with only its lines copied, plus samples of its background, border and corners; its text is checked by line count, baselines, ink colour and ink amount, and where each line's first and last glyphs sit (from the ink, not the line rects). The text of an element's copies in a repeat's later items is masked and checked the same way, named by the copy (<code>row#3</code>). A picture (an image, a vector, a url() background image) is judged by its own SSIM and colour samples, in every repeat item too (named by the copy), and the box of one with its own SSIM is copied from the design for the whole-capture SSIM and its containers' checks; what an item paints around it stays in them.</li>
   ${linesNot.length ? `<li>Lines not compared (text not in DOM text): ${linesNot.map((x) => `<code>${esc(x)}</code>`).join(", ")}</li>` : ""}
   ${covered ? `<li>Text lines not judged (covered by an opaque later element): ${covered}, listed with their capture</li>` : ""}
   ${v.removed.length ? `<li>Removed by the compiler (no Unity box by design): ${v.removed.map((x) => `<code>${esc(x)}</code>`).join(", ")}</li>` : ""}

@@ -620,6 +620,29 @@ pictures pass at every exact viewport of the same run; no cross-viewport check i
 that shows at an exact viewport fails there in the same run). Round 5 admits 6 picture elements in 2 captures (SSIM
 0.95284–0.97986) and 3 colour samples (ΔE2000 1.64–5.49).
 
+**Repeat items' pictures (decisions D-165, D-166).** Since the capture shows each repeat item's own sample image, a later
+item's picture can be wrong on its own; the comparison judged only the IR element's picture (the first item), so a wrong
+picture in a later item passed whenever its container's SSIM diluted it. `repeat-images` with flat one-colour pictures and
+the capture's old defect simulated (every later item's image sample set to the template's, so Unity shows the first item's
+picture in every item) passed all six captures on 5d98958. Now every later item's copy of an element that paints a picture
+(a content image or vector, a url() background image) gets the IR element's SSIM and colour samples with its limits (a raster
+picture's resampling decided from the copy's own box; at a scaled viewport D-125's keys, under D-125's run-level condition as
+for the IR element), named by the copy, present and visible by D-133's rules (a copy the design's scroll area clips away may
+be absent in Unity). The same simulation fails all six captures: `flag#1` and `flag#2` (url() background images: colour
+ΔE2000 54.51 and 59.20, SSIM 0.12–0.98) and `badge#0#1` (SSIM 0.81–0.92). A picture its own element SSIM judges, the IR
+element's or a copy's, leaves its ancestors' SSIM and colour samples and the whole capture's SSIM (its box on both sides, not
+inflated); what an item paints around it stays theirs (`compare.test.ts`, "D-166": a chip of another colour around a right
+picture fails the list). The fixture's list of twelve rows, 720 px wide beside the rows as first written, failed its own SSIM
+at 1366×768 (0.98801, its crests' resampling) although every crest passed D-125's check, and was widened; it is back beside
+the rows and passes at all six viewports (0.99091 at 1366×768). The default suite passes as before (4746 captures), and the
+comparison's time is unchanged within noise (eight fixtures with pictures and vectors, each compared alone: −15 to +10 %).
+
+Limit: an `<img>` or a vector paints no background, so it has no colour samples, and its SSIM (on luma) judges its picture
+alone: a flat picture of another hue at about the same lightness passes, the IR element's as before and now a copy's. In the
+simulation `crest#1` (Unity's teal-blue where the design is coral, luma 145 against 139) measures 0.9979–0.9991, the entry
+crests 0.9905–0.9983 and `badge#1` (sky for amber) 0.9836–0.9897: all pass, above 0.99 or above the small-element limit 0.984
+(at a scaled viewport D-125's 0.95).
+
 **Small text (decision D-126).** Scaled only: text of at most 12.99 device px takes the ink colour limit 5.89
 (`scaled.textInkDeltaEFirstSmall`): measured over the suite's 10746 element samples of such text at the scaled viewports
 (12.5 device px at 1600×900, 12.8 and 10.67 at 1366×768) the highest is 5.49 (`stacked-text` value-12 at 1366×768), then

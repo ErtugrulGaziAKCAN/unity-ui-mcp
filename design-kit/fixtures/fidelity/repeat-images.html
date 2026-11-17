@@ -34,15 +34,15 @@ textarea { resize: none; }
 /* kit-base: end */
 .screen { display: flex; flex-direction: column; width: 2560px; height: 1440px; position: relative; padding: 48px; background-color: var(--color-surface-900); }
 .title { margin-bottom: 32px; }
-.content { display: flex; flex-direction: column; align-items: flex-start; }
-.clubs { display: flex; flex-direction: column; width: 1200px; flex-shrink: 0; margin-bottom: 16px; }
+.content { display: flex; flex-direction: row; align-items: flex-start; }
+.clubs { display: flex; flex-direction: column; width: 1200px; flex-shrink: 0; margin-right: 48px; }
 .club { display: flex; flex-direction: row; align-items: center; height: 96px; flex-shrink: 0; margin-bottom: 16px; padding: 0 24px; border-radius: 8px; background-color: var(--color-surface-700); }
 .crest { width: 48px; height: 48px; flex-shrink: 0; margin-right: 24px; }
 .club-name { width: 440px; flex-shrink: 0; }
 .flag { width: 48px; height: 32px; flex-shrink: 0; margin-right: 24px; background-size: 48px 32px; background-repeat: no-repeat; }
 .badges { display: flex; flex-direction: row; align-items: center; flex-shrink: 0; }
 .badge { width: 32px; height: 32px; flex-shrink: 0; margin-right: 12px; }
-.board { display: flex; flex-direction: column; width: 1200px; height: 340px; flex-shrink: 0; overflow-y: auto; border-radius: 16px; background-color: var(--color-surface-800); }
+.board { display: flex; flex-direction: column; width: 720px; height: 340px; flex-shrink: 0; overflow-y: auto; border-radius: 16px; background-color: var(--color-surface-800); }
 .entry { display: flex; flex-direction: row; align-items: center; height: 68px; flex-shrink: 0; padding: 0 24px; border-bottom: 4px solid var(--color-surface-900); }
 </style>
 </head>
@@ -52,8 +52,8 @@ textarea { resize: none; }
        (flag) and the images of its nested repeat (badges); an item may show none (no source, or hidden by its markup).
        Pictures are two flat halves or four quadrants (another item's picture differs in structure, not only in colour), with
        as many pixels as 3840×2160 draws (lint W-IMG-001), the edges through the middle on whole device pixels at every
-       exact viewport; the scaled viewports resample them (Unity and Chromium differently), so the list is as wide as the
-       rows above and its pictures stay a small part of its box -->
+       exact viewport; the scaled viewports resample them (Unity and Chromium differently): each picture's own check judges
+       that (decision D-125), not the narrow list beside the rows, whose SSIM they would lower (decision D-166) -->
   <h1 class="title text-title-bold" data-l10n="fidelity.repeat-images.title" data-en="Images in repeat items">Tekrar öğelerinde görseller</h1>
   <div class="content">
     <div class="clubs" data-u-id="clubs">

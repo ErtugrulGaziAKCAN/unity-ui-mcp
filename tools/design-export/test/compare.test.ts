@@ -2435,6 +2435,109 @@ describe("compareCapture: edge, colour and ink checks", () => {
     });
   });
 
+  describe("the pictures of a repeat's later items (decisions D-165, D-166)", () => {
+    const repo = readThresholds();
+    const exactT = thresholdsFor(repo, "exact"), scaledT = thresholdsFor(repo, "scaled");
+    const issuesOf = (v: CaptureVerdict, id: string) => v.issues.filter((i) => i.id === id);
+    const kinds = (v: CaptureVerdict) => v.issues.map((i) => `${i.id} ${i.kind}`);
+    const rowOf = (v: CaptureVerdict, id: string) => v.elements.find((e) => e.id === id);
+    // a list of three rows (IR `row`, copies `row#1`, `row#2`), each with a 24×24 picture of one flat colour (IR `pic`) on a
+    // 32×32 chip (IR `chip`): the IR elements are the first item; each item shows its own picture
+    const bgC: Rgb = [16, 24, 32], rowC: Rgb = [30, 44, 56], chipC: Rgb = [60, 80, 96];
+    const teal: Rgb = [0, 150, 136], green: Rgb = [80, 170, 70], coral: Rgb = [240, 120, 80];
+    const right = [teal, green, coral];
+    const at = (k: number) => ({ row: el(8, 8 + 48 * k, 240, 40), chip: el(20, 12 + 48 * k, 32, 32), pic: el(24, 16 + 48 * k, 24, 24) });
+    const draw = (pics: Rgb[], chip2: Rgb = chipC) => {
+      const png = canvas(256, 152, bgC);
+      pics.forEach((c, k) => { const b = at(k); fill(png, b.row, rowC); fill(png, b.chip, k === 2 ? chip2 : chipC); fill(png, b.pic, c); });
+      return png;
+    };
+    const boxes = (o: { drop?: string[]; hide?: string[] } = {}): CaptureBoxes => {
+      const items: Record<string, Box> = {};
+      for (const k of [1, 2]) for (const [id, b] of Object.entries(at(k))) items[`${id}#${k}`] = b;
+      for (const key of o.drop ?? []) delete items[key];
+      for (const key of o.hide ?? []) items[key] = { ...items[key], visible: false };
+      return { capture: "c", viewport: [256, 152], scale: 1, external: [], elements: { root: el(0, 0, 256, 152), list: el(8, 8, 240, 136), ...at(0) }, items };
+    };
+    const ctx: CaptureContext = { backgrounds: new Set(["row", "chip"]), painters: new Set(["row", "chip", "pic"]), paintsPicture: new Set(["pic"]),
+      order: ["root", "list", "row", "chip", "pic"], root: "root", parent: new Map([["list", "root"], ["row", "list"], ["chip", "row"], ["pic", "chip"]]),
+      repeats: new Set(["list"]), viewportClass: "exact" };
+    const run = (unity: Rgb[], c: CaptureContext = ctx, chip2?: Rgb, ub: CaptureBoxes = boxes()) =>
+      compareCapture({ png: draw(right), boxes: boxes() }, { png: draw(unity, chip2), boxes: ub }, [], exactT, c);
+
+    it("D-165: a later item's picture of another flat colour fails, named by its copy; the first item's picture is judged as before", () => {
+      const ok = run(right);
+      expect(ok.issues).toEqual([]);
+      for (const k of ["pic", "pic#1", "pic#2"]) expect(rowOf(ok, k), k).toMatchObject({ status: "ok", ssim: 1 });
+      // the old capture's defect: every item shows the first item's picture (the template's)
+      const template = run([teal, teal, teal]);
+      expect(kinds(template)).toEqual(["pic#1 ssim", "pic#2 ssim"]);
+      expect(issuesOf(template, "pic#2")[0].detail).toMatch(/^element SSIM 0\.93\d+ .* \(limit 0\.99; 0\.984 for an element under 32768 device px²\)$/);
+      expect(rowOf(template, "pic#1")).toMatchObject({ status: "fail" });
+      // without the pictures' facts (before decision D-165) the same input passes: the copies had no checks of their own, and
+      // their containers' SSIM dilutes a 24 px picture
+      expect(run([teal, teal, teal], { ...ctx, paintsPicture: undefined }).issues).toEqual([]);
+      // the first item's picture: the same row and issues with the pictures' facts and without them
+      for (const unity of [right, [coral, green, coral]]) {
+        const a = run(unity), b = run(unity, { ...ctx, paintsPicture: undefined });
+        expect(rowOf(a, "pic")).toEqual(rowOf(b, "pic"));
+        expect(issuesOf(a, "pic")).toEqual(issuesOf(b, "pic"));
+      }
+      expect(kinds(run([coral, green, coral]))).toEqual(["pic ssim"]);
+    });
+
+    it("D-165: a picture copy Unity lacks or shows otherwise is an issue as a text copy's; one the design's clips hide may be absent", () => {
+      expect(kinds(run(right, ctx, undefined, boxes({ drop: ["pic#2"] })))).toEqual(["pic#2 missing"]);
+      expect(kinds(run(right, ctx, undefined, boxes({ hide: ["pic#1"] })))).toEqual(["pic#1 visibility"]);
+      const hidden = compareCapture({ png: draw(right), boxes: boxes({ hide: ["pic#1"] }) }, { png: draw(right), boxes: boxes({ hide: ["pic#1"] }) }, [], exactT, ctx);
+      expect(hidden.issues).toEqual([]);
+      expect(rowOf(hidden, "pic#1")).toMatchObject({ status: "hidden" });
+      // a virtualized list: the third item lies below the scroll area, which clips it away in the design; Unity made no copy
+      const clipped: CaptureContext = { ...ctx, clips: { pic: [{ id: "list", x: true, y: true, inset: [0, 0, 0, 0] }] } };
+      const short = (b: CaptureBoxes): CaptureBoxes => ({ ...b, elements: { ...b.elements, list: el(8, 8, 240, 96) } });
+      const v = compareCapture({ png: draw(right), boxes: short(boxes()) }, { png: draw(right), boxes: short(boxes({ drop: ["pic#2"] })) }, [], exactT, clipped);
+      expect(v.issues).toEqual([]);
+      expect(rowOf(v, "pic#2")).toMatchObject({ status: "hidden" });
+    });
+
+    it("D-166: a later item whose picture is right but whose chip around it is not fails through its container", () => {
+      const v = run(right, ctx, [240, 200, 60]);
+      expect(kinds(v)).toContain("list ssim");
+      // the picture's own check passes: only its box is masked from the list, not what its item paints around it
+      expect(issuesOf(v, "pic#2")).toEqual([]);
+      expect(rowOf(v, "pic#2")).toMatchObject({ status: "ok", ssim: 1 });
+    });
+
+    it("D-166: at a scaled viewport a narrow list of resampled pictures that pass decision D-125 no longer fails its own SSIM", () => {
+      // three items of a narrow list, each the D-125 crop (1600×900: a 225 × 135 device px picture drawn at 0.42 of its
+      // pixels): every picture passes its own check at ssimResampledPicture, and together they are most of the list's box
+      const crop = (side: string) => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `d125-picture-1600.${side}.png`)));
+      const stack = (side: string) => {
+        const c = crop(side), png = canvas(256, 504, [0, 0, 0]);
+        expect([c.w, c.h]).toEqual([256, 168]);
+        for (let k = 0; k < 3; k++) png.data.set(c.data, k * 168 * 256 * 4);
+        return png;
+      };
+      const pic = (k: number) => el(14, 16 + 168 * k, 225, 135);
+      const b: CaptureBoxes = { capture: "c", viewport: [256, 504], scale: 0.625, external: [], elements: { root: el(0, 0, 256, 504), board: el(8, 8, 240, 488), pic: pic(0) },
+        items: { "pic#1": pic(1), "pic#2": pic(2) } };
+      const c: CaptureContext = { pictures: new Set(["pic", "pic#1", "pic#2"]), backgrounds: new Set(["pic"]), painters: new Set(["pic"]), paintsPicture: new Set(["pic"]),
+        order: ["root", "board", "pic"], root: "root", parent: new Map([["board", "root"], ["pic", "board"]]), repeats: new Set(["board"]), viewportClass: "scaled" };
+      const v = (x: CaptureContext) => compareCapture({ png: stack("design"), boxes: b }, { png: stack("unity"), boxes: b }, [], scaledT, x);
+      const now = v(c);
+      expect(now.issues).toEqual([]);
+      for (const k of ["pic", "pic#1", "pic#2"]) {
+        const row = rowOf(now, k)!, best = Math.max(row.ssim!, row.ssimShifted!);
+        expect(row.ssimLimit, k).toBe(0.95);
+        expect(best, k).toBeGreaterThan(0.95);
+        expect(best, k).toBeLessThan(0.97);
+      }
+      expect(rowOf(now, "board")!.ssim).toBeGreaterThan(0.999);
+      // before decision D-166 the list judged its pictures again, at the general limit
+      expect(issuesOf(v({ ...c, paintsPicture: undefined }), "board")).toEqual([expect.objectContaining({ kind: "ssim" })]);
+    });
+  });
+
   it("masks for ssimRoundEdge the edge band of the element's own and its descendants' round shapes, not of others", () => {
     // a square card 64 px wide with a round 40 px knob over it, drawn with a ramp of 0.5 px in the design and 2.5 in Unity
     const bg: Rgb = [30, 30, 30], cardC: Rgb = [60, 70, 80], knob: Rgb = [240, 240, 240];
@@ -2699,6 +2802,36 @@ describe("IR context", () => {
     // at another scale than the reference every background image is resampled
     const half = captureContext(pic, { state: "default", viewport: [1280, 720], apply: [] }, { ...b, scale: 0.5 });
     expect([...half.pictures!].sort()).toEqual(["cover", "hover-size", "own", "photo", "tiled"]);
+  });
+
+  it("knows which elements paint a picture, and decides a later item's copy of a raster picture by its own box (decision D-165)", () => {
+    const list = indexIr({ ...ir, root: { ...ir.root, children: [
+      { id: "list", kind: "scroll", repeat: { name: "rows", mode: "list", count: 3 }, style: { base: { "overflow-y": "auto" } }, children: [
+        { id: "row", kind: "container", style: { base: {} }, children: [
+          { id: "photo", kind: "image", style: { base: {} }, asset: { kind: "image", width: 48, height: 48 }, children: [] },
+          { id: "logo", kind: "image", style: { base: {} }, asset: { kind: "svg", width: 24, height: 24 }, children: [] },
+          { id: "icon", kind: "vector", style: { base: {} }, asset: { kind: "svg", width: 24, height: 24 }, children: [] },
+          { id: "flag", kind: "container", style: { base: { "background-image": 'url("assets/f.png")', "background-size": "40px 24px" } }, background: { kind: "image", width: 40, height: 24 }, children: [] },
+          { id: "banner", kind: "container", style: { base: { "background-image": 'url("assets/b.png")', "background-size": "cover" } }, background: { kind: "image", width: 40, height: 24 }, children: [] },
+          { id: "hover-flag", kind: "container", style: { base: {}, hover: { "background-image": 'url("assets/f.png")' } }, children: [] },
+          { id: "gradient", kind: "container", style: { base: {} }, background: { kind: "svg", width: 0, height: 0 }, children: [] },
+          { id: "label", kind: "text", text: { en: "x" }, style: { base: {} }, children: [] },
+        ] },
+      ] },
+    ] } });
+    const b: CaptureBoxes = { ...boxes, scale: 1,
+      elements: { root: el(0, 0, 1280, 720), list: el(0, 0, 400, 300), row: el(0, 0, 400, 100), photo: el(0, 0, 48, 48), flag: el(100, 0, 40, 24), banner: el(150, 0, 40, 24) },
+      items: { "row#1": el(0, 100, 400, 100), "photo#1": el(0, 100, 32, 32), "photo#2": el(0, 200, 48, 48), "flag#1": el(100, 100, 40, 24), "banner#1": el(150, 100, 40, 24), "icon#1": el(200, 100, 24, 24) } };
+    const ctx = captureContext(list, { state: "default", viewport: [2560, 1440], apply: [] }, b);
+    // content images (raster or svg), vectors and url() background images; not a gradient, a text or a container
+    expect([...ctx.paintsPicture!].sort()).toEqual(["banner", "flag", "icon", "logo", "photo"]);
+    // an `<img>` copy by its own box against its picture's size; a url() background image's copy as its IR element
+    expect([...ctx.pictures!].sort()).toEqual(["banner", "banner#1", "photo#1"]);
+    // a background image only a layer sets paints a picture while that layer holds
+    const hovered = captureContext(list, { state: "default", viewport: [2560, 1440], apply: [{ kind: "pseudo", pseudo: "hover", elementId: "hover-flag" }] }, b);
+    expect(hovered.paintsPicture!.has("hover-flag")).toBe(true);
+    // a picture has its clips, as a text: a later item the scroll area clips away is not shown in the design
+    expect(ctx.clips?.photo).toEqual([{ id: "list", x: true, y: true, inset: [0, 0, 0, 0] }]);
   });
 
   it("knows which elements an animation sample shows rotated off the axes (the design's rotation on the screen)", () => {

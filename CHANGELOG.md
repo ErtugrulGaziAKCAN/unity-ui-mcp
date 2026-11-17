@@ -9,6 +9,15 @@ numbers below are in [docs/findings/](docs/findings/); the decisions they cite (
 
 ### Fixed
 
+- Verify judges every repeat item's picture. A later written-out item's copy of an element that paints a picture (an
+  `<img>`, an inline svg, a url() background image) gets the element's own SSIM and colour samples with its limits (a
+  picture drawn at another size than its own decided from the copy's box, at a scaled viewport the resampled-picture
+  limits of decision D-125), named by the copy (`crest#2`), and is present and visible by the rules of a copy's text
+  (decision D-165). Before, only the first item's picture had checks of its own: a later item showing another picture
+  passed whenever its container's SSIM diluted it. A picture with an element SSIM of its own, the first item's too, is
+  masked by its box from its containers' SSIM and colour samples and from the whole capture's SSIM (decision D-166), so a
+  narrow list of resampled pictures that pass their own checks no longer fails its own SSIM; what an item paints around
+  its picture (a chip's background, a row's divider) stays judged there.
 - Repeat items show their own sample images in verify. An image bind's sample (an `<img data-u-bind>`, or an element
   painted only by a bound url() image) is now the image that item shows, `{ "$image": { "file", "sha256", "width",
   "height" } }` in `fixtures/sample-data.json`, or `{ "$image": null }` when it shows none (no source, or hidden by the
