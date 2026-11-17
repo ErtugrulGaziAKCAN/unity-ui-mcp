@@ -15,6 +15,7 @@
  * capture or by its markup) is never focused or pressed, so such captures are not made. Captures with the same state, viewport and applied set are one
  * capture.
  */
+import crypto from "node:crypto";
 import type { IrAnim, IrNode, IrScreen } from "../ir/types.js";
 import { dimKind, dimsOf } from "../extract/layers.js";
 import { logicalViewport, viewportClassOf } from "../viewport.js";
@@ -87,6 +88,19 @@ export function captureName(job: CaptureJob): string {
   const base = `${job.state}@${job.viewport[0]}x${job.viewport[1]}`;
   if (job.anim) return `${base}.anim.${job.anim.sampled[0].elementId}.${job.anim.sample}`;
   return base + job.apply.map((a) => `.${applyLabel(a)}.${a.elementId}${itemLabel(a)}`).join("");
+}
+
+/**
+ * The file name, without `.png`, of a capture's PNGs (the golden, the Unity capture, the difference image), recorded
+ * as `file` in matrix.json: the capture name when it is at most 100 characters; else its first 64 characters without
+ * trailing `.`, `~`, `!` or `-`, a dot and the first 16 hex characters of the SHA-256 of the UTF-8 name. A name of many
+ * classes and pseudo-states stays a short path on every platform, the same on every run; two names that share their
+ * first 64 characters still get different files. The name stays the capture's key everywhere else (boxes, verdicts).
+ */
+export function captureFile(name: string): string {
+  if (name.length <= 100) return name;
+  const hash = crypto.createHash("sha256").update(name, "utf8").digest("hex").slice(0, 16);
+  return `${name.slice(0, 64).replace(/[.~!-]+$/, "")}.${hash}`;
 }
 
 /**

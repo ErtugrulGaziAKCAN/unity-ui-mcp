@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodePng, type Rgba } from "../src/bake/png.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
-import type { CaptureJob } from "../src/capture/matrix.js";
+import { captureFile, type CaptureJob } from "../src/capture/matrix.js";
 import { deltaE2000, deltaE2000Lab, isTransparentColor } from "../src/compare/color.js";
 import { classLines, compareCapture, compareScreen, cornerInRoundBand, inkColourLimit, readThresholds, summarizeIssues, thresholdsFor, WHOLE, type CaptureContext, type CaptureVerdict, type Thresholds } from "../src/compare/compare.js";
 import { captureContext, indexIr } from "../src/compare/context.js";
@@ -2914,6 +2914,26 @@ function screenFixture(unity: (name: string, s: ReturnType<typeof scene>) => Ret
   return { exportDir, unityDir, names: entries.map((e) => e.name) };
 }
 
+/**
+ * Renames a fixture capture (boxes on both sides, its matrix entry) and moves its PNGs to `file`, which the matrix records
+ * as the capture's `file`; without it (an export from before files were recorded) the PNGs take the new name.
+ */
+function renameCapture(f: Fixture, from: string, to: string, file?: string): void {
+  const goldens = path.join(f.exportDir, "goldens");
+  for (const dir of [goldens, f.unityDir]) {
+    const bf = path.join(dir, "boxes.json"), boxes = JSON.parse(fs.readFileSync(bf, "utf8"));
+    if (boxes[from]) { boxes[to] = { ...boxes[from], capture: to }; delete boxes[from]; fs.writeFileSync(bf, JSON.stringify(boxes)); }
+    if (fs.existsSync(path.join(dir, `${from}.png`))) fs.renameSync(path.join(dir, `${from}.png`), path.join(dir, `${file ?? to}.png`));
+  }
+  const mf = path.join(goldens, "matrix.json"), m = JSON.parse(fs.readFileSync(mf, "utf8"));
+  m.captures = m.captures.map((e: { name: string }) => (e.name === from ? { ...e, name: to, ...(file !== undefined ? { file } : {}) } : e));
+  fs.writeFileSync(mf, JSON.stringify(m));
+  f.names[f.names.indexOf(from)] = to;
+}
+
+/** A dense row's capture name: classes and pseudo-states of written-out repeat items, 337 characters. */
+const LONG_BUSY = `busy@320x192${".is-selected.list-row~2.is-expanded.list-row~2.hover.row-action~2".repeat(5)}`;
+
 describe("compareScreen", () => {
   it("passes when every golden capture has an identical Unity capture, and writes difference images", async () => {
     // busy: 2×2 px off by 2 levels (within every threshold), so it passes and has a difference image
@@ -2936,6 +2956,39 @@ describe("compareScreen", () => {
     expect(v.animations).toEqual([{ element: "panel", sampled: ["panel"], viewport: [320, 192], frames: [
       { capture: "default@320x192.anim.panel.0", time: 0 }, { capture: "default@320x192.anim.panel.1", time: 150 },
     ] }]);
+  });
+
+  it("reads a long-named capture's PNGs by its matrix.json file and writes its difference image there; the verdict keeps the name", async () => {
+    const f = screenFixture((name, s) => (name === "busy@320x192" ? { ...s, png: fill(s.png, { x: 100, y: 150, w: 2, h: 2 }, [16, 24, 40]) } : s));
+    const file = captureFile(LONG_BUSY);
+    renameCapture(f, "busy@320x192", LONG_BUSY, file);
+    const diffDir = path.join(tmp(), "diff");
+    const v = await compareScreen(f.exportDir, f.unityDir, T, { diffDir });
+    expect(v).toMatchObject({ pass: true, notRun: [], extra: [] });
+    expect(v.captures.map((c) => c.capture)).toEqual(f.names);
+    const busy = v.captures.find((c) => c.capture === LONG_BUSY)!;
+    expect(busy.diff).toBe(path.join(diffDir, `${file}.png`));
+    expect(fs.existsSync(busy.diff!)).toBe(true);
+    // its Unity PNG is the file: gone, the capture does not run (the name is no fallback when the matrix gives a file)
+    fs.rmSync(path.join(f.unityDir, `${file}.png`));
+    const missing = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(missing.notRunReasons[LONG_BUSY]).toBe("no Unity capture PNG");
+    // a file the matrix gives must stay in the folder
+    const mf = path.join(f.exportDir, "goldens", "matrix.json"), m = JSON.parse(fs.readFileSync(mf, "utf8"));
+    m.captures.find((e: { name: string }) => e.name === LONG_BUSY).file = "../busy";
+    fs.writeFileSync(mf, JSON.stringify(m));
+    await expect(compareScreen(f.exportDir, f.unityDir, T)).rejects.toThrow(/invalid capture file "\.\.\/busy"/);
+  });
+
+  it("an older export's matrix.json without files: the PNGs and difference images are named by the capture", async () => {
+    const f = screenFixture((name, s) => (name === "busy@320x192" ? { ...s, png: fill(s.png, { x: 100, y: 150, w: 2, h: 2 }, [16, 24, 40]) } : s));
+    const name = LONG_BUSY.slice(0, 150); // a name its platform can still write
+    renameCapture(f, "busy@320x192", name);
+    fs.writeFileSync(path.join(f.unityDir, "stray@320x192.png"), encodePng(canvas(4, 4, [0, 0, 0])));
+    const diffDir = path.join(tmp(), "diff");
+    const v = await compareScreen(f.exportDir, f.unityDir, T, { diffDir });
+    expect(v).toMatchObject({ pass: true, notRun: [], extra: ["stray@320x192"] });
+    expect(v.captures.find((c) => c.capture === name)!.diff).toBe(path.join(diffDir, `${name}.png`));
   });
 
   it("reports each capture's viewport class and the captures per class (an IR without scaledViewports: all exact)", async () => {
@@ -3204,6 +3257,31 @@ describe("writeReport and writeVerdict", () => {
     const crop = await decodePngAsync(fs.readFileSync(busy.crops[0].unity));
     expect(crop.w).toBeLessThanOrEqual(640);
     expect(crop.w).toBeGreaterThan(96);
+  });
+
+  it("shows a long-named capture's design, Unity and difference images from its matrix.json file, with and without kept pictures", async () => {
+    // busy fails (its panel 3 px off) and has a difference image (2×2 px off by 2 levels)
+    const f = screenFixture((name, s) => {
+      if (name !== "busy@320x192") return s;
+      s.boxes.elements.panel.x += 3;
+      return { ...s, png: fill(s.png, { x: 100, y: 150, w: 2, h: 2 }, [16, 24, 40]) };
+    });
+    const file = captureFile(LONG_BUSY);
+    renameCapture(f, "busy@320x192", LONG_BUSY, file);
+    const out = tmp(), report = path.join(out, "report.html"), diffDir = path.join(out, "diff");
+    const v = await compareScreen(f.exportDir, f.unityDir, T, { diffDir });
+    expect(v.captures.find((c) => c.capture === LONG_BUSY)!.pass).toBe(false);
+    writeReport(v, f.exportDir, f.unityDir, report);
+    const srcs = (html: string) => Array.from(html.matchAll(/src="([^"]+)"/g)).map((m) => path.resolve(out, decodeURIComponent(m[1])));
+    const linked = srcs(fs.readFileSync(report, "utf8"));
+    for (const s of linked) expect(fs.existsSync(s), s).toBe(true);
+    expect(linked).toEqual(expect.arrayContaining([path.join(f.exportDir, "goldens", `${file}.png`), path.join(f.unityDir, `${file}.png`), path.join(diffDir, `${file}.png`)]));
+    const kept = await writeReportPictures(v, f.exportDir, f.unityDir, path.join(out, ".pics"));
+    const pics = kept.get(LONG_BUSY)!;
+    expect(pics.design && pics.unity && pics.diff).toBeTruthy();
+    expect(pics.crops.length).toBeGreaterThan(0);
+    writeReport(v, f.exportDir, f.unityDir, report, kept);
+    expect(fs.readFileSync(report, "utf8")).toContain(LONG_BUSY);
   });
 
   it("writes one self-contained HTML naming every capture, FAIL for failing ones, with relative image paths", async () => {

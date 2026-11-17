@@ -77,7 +77,18 @@ namespace DesignUi.Editor
         /// <summary>Keyframe animations the golden shows frozen at their end frame (<see cref="FrozenFrames"/>).</summary>
         public List<FrozenAnimation> Frozen = new List<FrozenAnimation>();
         public string OutDir;
+        /// <summary>The capture's name: its key in boxes.json, the meta file and the result.</summary>
         public string CaptureName;
+        /// <summary>
+        /// The file name of the capture's PNG without <c>.png</c> (the job's matrix.json <c>file</c>, a long name's short
+        /// file); <see cref="CaptureName"/> when none is given.
+        /// </summary>
+        public string CaptureFile
+        {
+            get => string.IsNullOrEmpty(m_CaptureFile) ? CaptureName : m_CaptureFile;
+            set => m_CaptureFile = value;
+        }
+        string m_CaptureFile;
         /// <summary>Filled by the capture: how it was made where that differs from the plain route (written to the meta file).</summary>
         public readonly List<string> Notes = new List<string>();
         /// <summary>Tests: called with the screen root after the capture is written, before the panel is destroyed.</summary>
@@ -129,6 +140,17 @@ namespace DesignUi.Editor
     public sealed class CaptureJob
     {
         public string Name;
+        /// <summary>
+        /// The file name of the job's PNG without <c>.png</c> (matrix.json <c>file</c>: the exporter gives a long name a
+        /// short, deterministic file); <see cref="Name"/> when the matrix has none (an export from before files were recorded).
+        /// The name stays the job's key in boxes.json, the meta file and the result.
+        /// </summary>
+        public string File
+        {
+            get => string.IsNullOrEmpty(m_File) ? Name : m_File;
+            set => m_File = value;
+        }
+        string m_File;
         public string State;
         public Vector2Int Viewport;
         public List<CaptureApply> Apply = new List<CaptureApply>();
@@ -143,7 +165,7 @@ namespace DesignUi.Editor
         public static List<CaptureJob> ReadMatrix(string matrixJsonPath)
         {
             JObject obj;
-            try { obj = JObject.Parse(File.ReadAllText(matrixJsonPath)); }
+            try { obj = JObject.Parse(System.IO.File.ReadAllText(matrixJsonPath)); }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is JsonException)
             {
                 throw new IrFormatException("cannot read the capture matrix '" + matrixJsonPath + "': " + e.Message, e);
@@ -154,12 +176,16 @@ namespace DesignUi.Editor
             {
                 var name = (string)c["name"];
                 if (!ValidName(name)) throw new IrFormatException("'" + matrixJsonPath + "': capture name '" + name + "' is not a file name");
+                var file = c["file"];
+                if (file != null && file.Type != JTokenType.Null && (file.Type != JTokenType.String || !ValidName((string)file)))
+                    throw new IrFormatException("'" + matrixJsonPath + "': capture '" + name + "' has a file '" + file + "' that is not a file name");
                 var vp = c["viewport"] as JArray;
                 if (vp == null || vp.Count != 2 || vp.Any(v => v.Type != JTokenType.Integer || (int)v < 1))
                     throw new IrFormatException("'" + matrixJsonPath + "': capture '" + name + "' has no viewport [width, height]");
                 var job = new CaptureJob
                 {
                     Name = name,
+                    File = (string)file,
                     State = (string)c["state"] ?? "default",
                     Viewport = new Vector2Int((int)vp[0], (int)vp[1]),
                     Animation = c["anim"] != null && c["anim"].Type != JTokenType.Null,

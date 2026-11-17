@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Rgba } from "../bake/png.js";
-import type { CaptureVerdict, ScreenVerdict } from "./compare.js";
+import { captureFiles, type CaptureVerdict, type ScreenVerdict } from "./compare.js";
 import { decodePngAsync, encodePngAsync } from "./png.js";
 import type { Rect } from "./ssim.js";
 
@@ -93,6 +93,7 @@ export async function writeReportPictures(v: ScreenVerdict, exportDir: string, u
   const failing = v.captures.map((c, i) => [c, i] as const).filter(([c]) => !c.pass);
   if (!failing.length) return pictures;
   fs.mkdirSync(outDir, { recursive: true });
+  const fileOf = captureFiles(exportDir);
   const write = async (name: string, img: Rgba) => {
     const file = path.join(outDir, name);
     fs.writeFileSync(file, await encodePngAsync(img));
@@ -111,7 +112,7 @@ export async function writeReportPictures(v: ScreenVerdict, exportDir: string, u
     let design: Rgba | null = null, unity: Rgba | null = null, diff: Rgba | null = null;
     if (wantThumbs || newCrops) {
       [design, unity, diff] = await Promise.all([
-        read(path.join(exportDir, "goldens", `${c.capture}.png`)), read(path.join(unityDir, `${c.capture}.png`)), read(c.diff ?? null),
+        read(path.join(exportDir, "goldens", `${fileOf(c.capture)}.png`)), read(path.join(unityDir, `${fileOf(c.capture)}.png`)), read(c.diff ?? null),
       ]);
       if (!design || !unity) continue;
     }

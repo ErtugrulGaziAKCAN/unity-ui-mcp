@@ -13,8 +13,8 @@ import { buildIr, type IrBuild } from "../src/extract/tree.js";
 import type { IrAnim, IrNode, IrScreen } from "../src/ir/types.js";
 import { validateBoxes } from "../src/boxes/validate.js";
 import type { CaptureBoxes } from "../src/boxes/types.js";
-import { breakpointsHold, scaleStep, buildMatrix, captureName, sampleTimes, unsampledAnims, type CaptureJob } from "../src/capture/matrix.js";
-import { CaptureSession, captureMatrix, itemSuffix, runCapture, TEXT_CEIL_TOLERANCE, type ElementMap } from "../src/capture/capture.js";
+import { breakpointsHold, scaleStep, buildMatrix, captureFile, captureName, sampleTimes, unsampledAnims, type CaptureApply, type CaptureJob } from "../src/capture/matrix.js";
+import { CaptureSession, captureMatrix, checkCapturePaths, itemSuffix, runCapture, TEXT_CEIL_TOLERANCE, type ElementMap } from "../src/capture/capture.js";
 import { logicalViewport } from "../src/viewport.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -224,6 +224,75 @@ describe("buildMatrix", () => {
     expect(() => buildMatrix(screen(node("root", { children: [node("x", { style: layers("state:nope") })] })))).toThrow(/state nope/);
     expect(() => buildMatrix(screen(node("root", { children: [node("x", { style: layers("anc(ghost):hover") })] })))).toThrow(/ghost/);
     expect(() => buildMatrix(screen(node("root", { children: [node("x", { style: layers("bp:ghost") })] })))).toThrow(/breakpoint ghost/);
+  });
+});
+
+/** A dense repeat row's capture: three classes and a hover on elements of the first, third and a nested later item (290 characters). */
+function denseRowJob(): CaptureJob {
+  const apply: CaptureApply[] = [];
+  for (const item of [undefined, [2], [3, 1]]) {
+    for (const c of ["is-selected", "is-expanded", "is-highlighted"]) apply.push({ kind: "class", name: c, elementId: "list-row", ...(item ? { item } : {}) });
+    apply.push({ kind: "pseudo", pseudo: "hover", elementId: "row-action", ...(item ? { item } : {}) });
+  }
+  return { state: "default", viewport: [2560, 1440], pseudo: null, apply, coverage: null, anim: null };
+}
+
+describe("captureFile", () => {
+  it("keeps a name of up to 100 characters as its file", () => {
+    for (const n of ["default@2560x1440", "default@1920x1080.hover.open-btn", `default@1280x720.${"x".repeat(83)}`]) expect(captureFile(n)).toBe(n);
+    expect(captureFile(`default@1280x720.${"x".repeat(84)}`)).not.toBe(`default@1280x720.${"x".repeat(84)}`);
+  });
+
+  it("gives a name of combined classes and pseudo-states over 250 characters a short file, the same on every run", () => {
+    const name = captureName(denseRowJob());
+    expect(name.length).toBeGreaterThan(250);
+    // its first 64 characters, a dot and the first 16 hex characters of the name's SHA-256: a value, so every run, the
+    // Unity capture and the comparison give the same file
+    expect(captureFile(name)).toBe("default@2560x1440.is-selected.list-row.is-expanded.list-row.is-h.9f6dba0bc2de1da7");
+    expect(captureFile(captureName(denseRowJob()))).toBe(captureFile(name));
+    // the long-named job of the Unity capture test (DesignCaptureTests): trailing -, ., ~ and ! of the kept start are dropped
+    let unity = "default@320x180";
+    for (let k = 1; k <= 14; k++) unity += `.is-variant-${String(k).padStart(2, "0")}.tile`;
+    expect(captureFile(`${unity}.hover.tile`)).toBe("default@320x180.is-variant-01.tile.is-variant-02.tile.is-variant.9339cd979b1e2ea0");
+  });
+
+  it("gives two long names that share their first 64 characters different files", () => {
+    const a = captureName(denseRowJob());
+    const b = a.replace(/~3-1$/, "~3-2");
+    expect(b.slice(0, 64)).toBe(a.slice(0, 64));
+    expect(captureFile(a)).not.toBe(captureFile(b));
+    expect(captureFile(a).slice(0, -17)).toBe(captureFile(b).slice(0, -17));
+  });
+
+  it("drops every trailing ., ~, ! and - of the kept start", () => {
+    for (const tail of [".", "~", "!", "-", ".~!-"]) {
+      const head = `default@1280x720.${"a".repeat(64 - 17 - tail.length)}${tail}`;
+      expect(head.length).toBe(64);
+      expect(captureFile(`${head}${"z".repeat(50)}`)).toMatch(new RegExp(`^default@1280x720\\.a{${47 - tail.length}}\\.[0-9a-f]{16}$`));
+    }
+  });
+});
+
+describe("checkCapturePaths", () => {
+  const long = captureName(denseRowJob());
+
+  it("on Windows, refuses a path over 250 characters, naming the longest and asking for a shorter output folder", () => {
+    const dir = path.resolve("/x", "d".repeat(160));
+    // the long name's file is 81 characters: 163 + 1 + 81 + 4 = 249 fits
+    expect(() => checkCapturePaths(dir, ["default@2560x1440", long], "win32")).not.toThrow();
+    const deeper = path.join(dir, "export");
+    const longest = path.join(deeper, `${captureFile(long)}.png`);
+    expect(() => checkCapturePaths(deeper, ["default@2560x1440", long], "win32")).toThrow(`the capture path ${longest} is ${longest.length} characters, over the 250 Windows allows: use a shorter output folder`);
+    // elsewhere the path length is the platform's own
+    expect(() => checkCapturePaths(deeper, ["default@2560x1440", long], "linux")).not.toThrow();
+  });
+
+  it("refuses a file name over 255 bytes on every platform", () => {
+    const name = `default@1x1.${"界".repeat(80)}`; // 92 characters, kept as its file; 256 bytes with .png
+    for (const platform of ["darwin", "linux", "win32"] as const) {
+      expect(() => checkCapturePaths("/x", [name], platform)).toThrow(`capture ${name}: its file name ${name}.png is 256 bytes, over the 255 a file name can have`);
+    }
+    expect(() => checkCapturePaths("/x", [name.slice(0, -1)], "linux")).not.toThrow();
   });
 });
 
@@ -724,6 +793,37 @@ describe("captures", () => {
     expect(fs.existsSync(path.join(dir, "boxes.json"))).toBe(false);
   });
 
+  it("writes a long-named job's PNG to its short file and records the file in matrix.json; boxes keep the name", async () => {
+    // fourteen classes on the tab and a hover on the button: a name of 290 characters, longer than a file name may be
+    const apply: CaptureApply[] = [
+      ...Array.from({ length: 14 }, (_, k): CaptureApply => ({ kind: "class", name: `is-variant-${String(k + 1).padStart(2, "0")}`, elementId: "tab" })),
+      { kind: "pseudo", pseudo: "hover", elementId: "btn" },
+    ];
+    const long = job({ viewport: [1280, 720], apply }), short = job({ viewport: [1280, 720] });
+    const name = captureName(long), file = captureFile(name);
+    expect(name.length).toBeGreaterThan(255);
+    expect(file.length).toBeLessThanOrEqual(81);
+    const dir = tmp();
+    const r = await captureMatrix(fx("screen.html"), kit, built.ir, built.elements, dir, { browser, jobs: [short, long] });
+    expect(fs.readdirSync(dir).sort()).toEqual(["boxes.json", "default@1280x720.png", `${file}.png`, "matrix.json"].sort());
+    const png = fs.readFileSync(path.join(dir, `${file}.png`));
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1280, 720]);
+    const matrix = JSON.parse(fs.readFileSync(path.join(dir, "matrix.json"), "utf8"));
+    expect(matrix.captures.map((c: { name: string; file: string }) => [c.name, c.file])).toEqual([["default@1280x720", "default@1280x720"], [name, file]]);
+    expect(Object.keys(JSON.parse(fs.readFileSync(path.join(dir, "boxes.json"), "utf8"))).sort()).toEqual(["default@1280x720", name].sort());
+    expect(r.boxes[name].capture).toBe(name);
+  });
+
+  it("refuses a capture file that cannot be written before capturing anything", async () => {
+    const name = `is-${"界".repeat(76)}`; // a class whose capture name is at most 100 characters, its file name over 255 bytes
+    const bad = job({ viewport: [1280, 720], apply: [{ kind: "class", name, elementId: "tab" }] });
+    expect(captureName(bad).length).toBeLessThanOrEqual(100);
+    const dir = tmp();
+    await expect(captureMatrix(fx("screen.html"), kit, built.ir, built.elements, dir, { browser, jobs: [job({ viewport: [1280, 720] }), bad] }))
+      .rejects.toThrow(/over the 255 a file name can have/);
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
   describe("the whole matrix", () => {
     let dirA: string, dirB: string;
     let runA: Awaited<ReturnType<typeof captureMatrix>>;
@@ -747,6 +847,7 @@ describe("captures", () => {
       for (const [n, b] of Object.entries(boxes)) expect(validateBoxes(b), n).toEqual([]);
       const matrix = JSON.parse(fs.readFileSync(path.join(dirA, "matrix.json"), "utf8"));
       expect(matrix.captures.map((c: { name: string }) => c.name)).toEqual(all);
+      for (const c of matrix.captures) expect(c.file, c.name).toBe(captureFile(c.name));
       expect(matrix.captures.find((c: { name: string }) => c.name === "default@2560x1440.anim.btn.2").anim.time).toBe(100);
       expect(matrix.chromium).toBe(browser.version());
       // the breakpoint layer got its own viewport

@@ -396,9 +396,10 @@ Output per screen:
 ```
 <designRoot>/<screen-id>/.design-ui/export/
   screen.ir.json
-  goldens/<capture>.png        e.g. default@1920x1080.is-open.menu.hover.option, default@1920x1080.hover.row-flag~2
-  goldens/boxes.json           every element's box and text lines per capture
-  goldens/matrix.json          the jobs: names, applied state/classes/items, context, hidden jobs, animation samples
+  goldens/<file>.png           the capture name, e.g. default@1920x1080.is-open.menu.hover.option, default@1920x1080.hover.row-flag~2;
+                               a name over 100 characters: its first 64, a dot and 16 hex of its SHA-256 (matrix.json file)
+  goldens/boxes.json           every element's box and text lines per capture (by name)
+  goldens/matrix.json          the jobs: names, files, applied state/classes/items, context, hidden jobs, animation samples
   assets/                      baked shadows, gradients, images, icons (named by content hash)
   fixtures/sample-data.json    bound values, repeat items with their classes, states and hiding
   lint-report.json

@@ -53,8 +53,9 @@ namespace DesignUi.Editor
     /// reduced motion, so every animation shows the frame the golden's freeze shows; an animation series opens the screen at
     /// its <c>from</c> setup that way, then plays, applies the change at time 0 and steps the clock to each sample time
     /// (<see cref="RunSeries"/>). Class items marked <c>absent</c> take a markup class off.</item>
-    /// <item>Output: <c>&lt;OutDir&gt;/&lt;CaptureName&gt;.png</c> (the RenderTexture bytes unchanged, exactly the viewport's size)
-    /// and the capture's entry in <c>&lt;OutDir&gt;/boxes.json</c> (<see cref="BoxesWriter"/>).</item>
+    /// <item>Output: <c>&lt;OutDir&gt;/&lt;CaptureFile&gt;.png</c> (the RenderTexture bytes unchanged, exactly the viewport's size;
+    /// the job's matrix.json <c>file</c>, a long name's short file) and the capture's entry, by its name, in
+    /// <c>&lt;OutDir&gt;/boxes.json</c> (<see cref="BoxesWriter"/>).</item>
     /// </list>
     /// Frames: 20 editor updates after mounting, 5 after each change and pointer event, 2 after each animation sample.
     /// <para><see cref="CaptureAll"/> mounts a viewport's screen once and moves it from job to job, as the golden capture moves
@@ -113,7 +114,7 @@ namespace DesignUi.Editor
                         if (missing.Count > 0) req.Notes.Add("the golden shows these keyframe animations at their end frame, the player does not play them: " + string.Join(", ", missing));
                     }
                 }
-                session.Write(req.CaptureName);
+                session.Write(req.CaptureName, req.CaptureFile);
                 req.Inspect?.Invoke(session.Root);
             }
             finally
@@ -153,7 +154,7 @@ namespace DesignUi.Editor
                     session.Clock.Milliseconds = job.Anim.Time;
                     session.Player.Tick();
                     for (int i = 0; i < SampleFrames; i++) yield return null;
-                    session.Write(job.Name);
+                    session.Write(job.Name, job.File);
                     done.Count++;
                 }
             }
@@ -185,7 +186,7 @@ namespace DesignUi.Editor
         /// A job whose frozen frames the screen can only show as inline styles (no animation player) leaves the screen
         /// changed, so the next job mounts it again.
         /// </summary>
-        static IEnumerator RunShared(SharedSession shared, CaptureRequest req, DesignUiProfile profile, Screen screen, List<(string, Task)> pngs)
+        static IEnumerator RunShared(SharedSession shared, CaptureRequest req, DesignUiProfile profile, Screen screen, List<(string, string, Task)> pngs)
         {
             screen = screen ?? Prepare(req, profile); // the run could not read it: this job fails with the reason
             CheckRequest(req, screen);
@@ -216,7 +217,7 @@ namespace DesignUi.Editor
                     if (missing.Count > 0) req.Notes.Add("the golden shows these keyframe animations at their end frame, the player does not play them: " + string.Join(", ", missing));
                 }
             }
-            pngs.Add((req.CaptureName, session.Write(req.CaptureName, true)));
+            pngs.Add((req.CaptureName, req.CaptureFile, session.Write(req.CaptureName, req.CaptureFile, true)));
             BoundPngBacklog(pngs);
             req.Inspect?.Invoke(session.Root);
             // an overlay the job opened (a dropdown's menu) stays open: the next job mounts the screen again
@@ -233,7 +234,7 @@ namespace DesignUi.Editor
         static int s_PendingPeak;
 
         /// <summary>Waits for the oldest PNGs still being encoded while more than <see cref="MaxPendingPngs"/> are (their errors are read at the end of the run).</summary>
-        static void BoundPngBacklog(List<(string name, Task task)> pngs)
+        static void BoundPngBacklog(List<(string name, string file, Task task)> pngs)
         {
             var pending = pngs.Where(p => !p.task.IsCompleted).Select(p => p.task).ToList();
             s_PendingPeak = Math.Max(s_PendingPeak, pending.Count);
@@ -249,7 +250,7 @@ namespace DesignUi.Editor
 
         /// <summary>
         /// Captures every job of <c>&lt;exportDir&gt;/goldens/matrix.json</c> into <paramref name="outDir"/> with the goldens'
-        /// names, copies the compiled <c>.design-ui.json</c> (removed wrappers) next to them and writes
+        /// files (<see cref="CaptureJob.File"/>) and names, copies the compiled <c>.design-ui.json</c> (removed wrappers) next to them and writes
         /// <see cref="MetaFileName"/>. The files a capture owns (PNGs, boxes.json, the meta file, the copied manifest, the done
         /// marker) are deleted first, so nothing of an earlier run can be compared; the meta file says <c>running</c> until the
         /// run completes, and <see cref="DoneFileName"/> is written last. Animation samples are captured series by series
@@ -275,7 +276,7 @@ namespace DesignUi.Editor
             try { screen = LoadScreen(exportDir, screenFolder, profile); }
             catch (Exception e) when (!(e is ArgumentNullException)) { UnityEngine.Debug.LogWarning("Design UI capture: " + e.Message); }
             var shared = new SharedSession();
-            var pngs = new List<(string name, Task task)>();
+            var pngs = new List<(string name, string file, Task task)>();
             s_PendingPeak = 0;
             var flushed = Stopwatch.StartNew();
             int sinceFlush = 0;
@@ -311,7 +312,7 @@ namespace DesignUi.Editor
                     var sreq = new CaptureRequest
                     {
                         ExportDir = exportDir, ScreenFolder = screenFolder, State = job.State, Viewport = job.Viewport, Apply = job.Apply,
-                        OutDir = outDir, CaptureName = job.Name, Boxes = boxes,
+                        OutDir = outDir, CaptureName = job.Name, CaptureFile = job.File, Boxes = boxes,
                     };
                     var progress = new SeriesProgress();
                     var swatch = Stopwatch.StartNew();
@@ -337,6 +338,7 @@ namespace DesignUi.Editor
                     for (int k = 0; k < series.Count; k++)
                     {
                         var name = series[k].Name;
+                        var file = series[k].File;
                         run.Times[name] = each;
                         if (k < progress.Count)
                         {
@@ -346,12 +348,12 @@ namespace DesignUi.Editor
                         else if (sfailure != null)
                         {
                             result.Errors.Add(name + ": " + sfailure);
-                            NotCaptured(result, outDir, name, "error: " + sfailure);
+                            NotCaptured(result, outDir, name, file, "error: " + sfailure);
                             boxes.Remove(name);
                         }
                         else
                         {
-                            NotCaptured(result, outDir, name, sskipped ?? "the animation series stopped before this sample");
+                            NotCaptured(result, outDir, name, file, sskipped ?? "the animation series stopped before this sample");
                             boxes.Remove(name);
                         }
                     }
@@ -361,7 +363,7 @@ namespace DesignUi.Editor
                 var req = new CaptureRequest
                 {
                     ExportDir = exportDir, ScreenFolder = screenFolder, State = job.State, Viewport = job.Viewport, Apply = job.Apply,
-                    Frozen = job.Frozen, OutDir = outDir, CaptureName = job.Name, Boxes = boxes,
+                    Frozen = job.Frozen, OutDir = outDir, CaptureName = job.Name, CaptureFile = job.File, Boxes = boxes,
                 };
                 var watch = Stopwatch.StartNew();
                 var capture = RunShared(shared, req, profile, screen, pngs);
@@ -387,19 +389,19 @@ namespace DesignUi.Editor
                 if (failure != null || skipped != null)
                 {
                     shared.Drop();
-                    foreach (var (_, task) in pngs.Where(p => p.name == job.Name).ToList()) try { task.Wait(); } catch (AggregateException) { }
+                    foreach (var (_, _, task) in pngs.Where(p => p.name == job.Name).ToList()) try { task.Wait(); } catch (AggregateException) { }
                     pngs.RemoveAll(p => p.name == job.Name);
                 }
                 run.Times[job.Name] = Math.Round(watch.Elapsed.TotalMilliseconds, 1);
                 if (failure != null)
                 {
                     result.Errors.Add(job.Name + ": " + failure);
-                    NotCaptured(result, outDir, job.Name, "error: " + failure);
+                    NotCaptured(result, outDir, job.Name, job.File, "error: " + failure);
                     boxes.Remove(job.Name);
                 }
                 else if (skipped != null)
                 {
-                    NotCaptured(result, outDir, job.Name, skipped);
+                    NotCaptured(result, outDir, job.Name, job.File, skipped);
                     boxes.Remove(job.Name);
                 }
                 else
@@ -414,7 +416,7 @@ namespace DesignUi.Editor
                 shared.Drop(); // an abandoned run still destroys its panel
             }
             // every PNG is on disk before the boxes and the done marker say the run went through
-            foreach (var (name, task) in pngs)
+            foreach (var (name, file, task) in pngs)
             {
                 try { task.Wait(); }
                 catch (AggregateException e)
@@ -422,7 +424,7 @@ namespace DesignUi.Editor
                     var why = e.InnerException?.Message ?? e.Message;
                     result.Captured.Remove(name);
                     result.Errors.Add(name + ": writing the PNG failed: " + why);
-                    NotCaptured(result, outDir, name, "error: writing the PNG failed: " + why);
+                    NotCaptured(result, outDir, name, file, "error: writing the PNG failed: " + why);
                     boxes.Remove(name);
                 }
             }
@@ -538,6 +540,7 @@ namespace DesignUi.Editor
         {
             if (req == null) throw new ArgumentNullException(nameof(req));
             if (!CaptureJob.ValidName(req.CaptureName)) throw new ArgumentException("capture name '" + req.CaptureName + "' is not a file name");
+            if (!CaptureJob.ValidName(req.CaptureFile)) throw new ArgumentException("capture '" + req.CaptureName + "' has a file '" + req.CaptureFile + "' that is not a file name");
             if (req.Viewport.x < 1 || req.Viewport.y < 1) throw new ArgumentException("capture '" + req.CaptureName + "' has no viewport");
             if (string.IsNullOrEmpty(req.OutDir)) throw new ArgumentException("capture '" + req.CaptureName + "' has no output folder");
             if (req.State != DefaultState && !(screen.Ir.States ?? new string[0]).Contains(req.State))
@@ -1097,24 +1100,24 @@ namespace DesignUi.Editor
                 return null;
             }
 
-            /// <summary>Writes the capture's PNG and its boxes entry.</summary>
-            public void Write(string name)
+            /// <summary>Writes the capture's PNG (<c>&lt;file&gt;.png</c>) and its boxes entry (by its name).</summary>
+            public void Write(string name, string file)
             {
                 Directory.CreateDirectory(m_Req.OutDir);
-                File.WriteAllBytes(Path.Combine(m_Req.OutDir, name + ".png"), Mount.ReadPng());
+                File.WriteAllBytes(Path.Combine(m_Req.OutDir, file + ".png"), Mount.ReadPng());
                 WriteBoxes(name);
             }
 
             /// <summary>Writes the capture's boxes entry now and its PNG on a worker thread (the task ends once the PNG is on disk).</summary>
-            public Task Write(string name, bool encodeOffThread)
+            public Task Write(string name, string file, bool encodeOffThread)
             {
                 if (!encodeOffThread)
                 {
-                    Write(name);
+                    Write(name, file);
                     return Task.CompletedTask;
                 }
                 Directory.CreateDirectory(m_Req.OutDir);
-                var png = Mount.WritePngAsync(Path.Combine(m_Req.OutDir, name + ".png"));
+                var png = Mount.WritePngAsync(Path.Combine(m_Req.OutDir, file + ".png"));
                 WriteBoxes(name);
                 return png;
             }
@@ -1592,10 +1595,10 @@ namespace DesignUi.Editor
             }
         }
 
-        static void NotCaptured(CaptureResult result, string outDir, string name, string reason)
+        static void NotCaptured(CaptureResult result, string outDir, string name, string file, string reason)
         {
             result.NotCaptured.Add(new NotCaptured { Capture = name, Reason = reason });
-            var png = Path.Combine(outDir, name + ".png");
+            var png = Path.Combine(outDir, file + ".png");
             if (File.Exists(png)) File.Delete(png);
             BoxesWriter.Remove(Path.Combine(outDir, BoxesWriter.FileName), name);
         }

@@ -806,7 +806,7 @@ export interface ScreenVerdict {
 export interface CompareOptions {
   /** Compiler-removed elements; default: `removedElements` of `<unityDir>/.design-ui.json` (the generated manifest), else none. */
   removed?: string[];
-  /** Write a difference image into this folder (`<capture>.png`) for every capture with pixels off by more than 3. */
+  /** Write a difference image into this folder (`<file>.png`, the capture's file) for every capture with pixels off by more than 3. */
   diffDir?: string;
   /** Step timings measured by the caller (import, compile, capture …), merged into the verdict's timings. */
   timings?: Record<string, number>;
@@ -2228,10 +2228,27 @@ export function compareCapture(golden: Side, unity: Side, removed: string[], t: 
 
 // ---- screen ------------------------------------------------------------------------------------------------------
 
-type MatrixEntry = CaptureJob & { name: string };
+type MatrixEntry = CaptureJob & { name: string; file?: string };
 const readJson = (file: string): unknown => JSON.parse(fs.readFileSync(file, "utf8"));
 const tryJson = (file: string): unknown => { try { return readJson(file); } catch { return undefined; } };
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+const matrixEntries = (matrix: unknown): MatrixEntry[] => (isObj(matrix) && Array.isArray(matrix.captures) ? (matrix.captures as MatrixEntry[]) : []);
+
+/** Capture name -> the file of its PNGs without `.png` (matrix.json `file`; the name in a matrix from before files were recorded). */
+function filesOf(entries: readonly MatrixEntry[]): (name: string) => string {
+  const files = new Map<string, string>();
+  for (const e of entries) if (isObj(e) && typeof e.name === "string" && typeof e.file === "string") files.set(e.name, e.file);
+  return (name) => files.get(name) ?? name;
+}
+
+/**
+ * The file (without `.png`) of each capture's PNGs in an export, its goldens/matrix.json `file`: the golden
+ * `goldens/<file>.png`, the Unity capture `<file>.png` and the difference image. A capture the matrix has no file for
+ * (an export from before files were recorded, or no matrix) uses its name.
+ */
+export function captureFiles(exportDir: string): (name: string) => string {
+  return filesOf(matrixEntries(tryJson(path.join(exportDir, "goldens", "matrix.json"))));
+}
 
 function readBoxesFile(file: string, side: string): Record<string, CaptureBoxes> {
   let json: unknown;
@@ -2272,8 +2289,9 @@ function animationStrips(entries: MatrixEntry[]): AnimStrip[] {
 }
 
 /**
- * Compares every golden capture of an export folder (`<exportDir>/goldens/<capture>.png` + `boxes.json`) with the
- * Unity capture folder, which mirrors it (`<unityDir>/<capture>.png` + `boxes.json` with the same keys). A golden
+ * Compares every golden capture of an export folder (`<exportDir>/goldens/<file>.png` + `boxes.json`) with the
+ * Unity capture folder, which mirrors it (`<unityDir>/<file>.png` + `boxes.json` with the same keys); a capture's file is
+ * its matrix.json `file` (captureFiles), boxes and verdicts are keyed by its name. A golden
  * capture without a Unity one is not run (the screen does not pass); Unity captures without a golden are listed as
  * extra. Captures are compared in parallel.
  */
@@ -2317,14 +2335,18 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   const notes: string[] = [], warnings: string[] = [];
 
   const matrix = tryJson(path.join(goldensDir, "matrix.json"));
-  const entries: MatrixEntry[] = isObj(matrix) && Array.isArray(matrix.captures) ? (matrix.captures as MatrixEntry[]) : [];
+  const entries = matrixEntries(matrix);
   if (!entries.length) notes.push("goldens/matrix.json not found: captures in name order, no animation strips");
   const byName = new Map(entries.map((e) => [e.name, e]));
   const names = entries.length
     ? [...entries.map((e) => e.name).filter((n) => n in goldenBoxes), ...Object.keys(goldenBoxes).filter((n) => !byName.has(n)).sort()]
     : Object.keys(goldenBoxes).sort();
-  const bad = names.find((n) => !/^[^/\\\0]+$/.test(n) || n.includes(".."));
+  const unsafe = (n: string) => !/^[^/\\\0]+$/.test(n) || n.includes("..");
+  const bad = names.find(unsafe);
   if (bad !== undefined) throw new Error(`invalid capture name ${JSON.stringify(bad)} in the design export: capture names never contain path separators or ".."`);
+  const fileOf = filesOf(entries);
+  const badFile = names.find((n) => unsafe(fileOf(n)));
+  if (badFile !== undefined) throw new Error(`invalid capture file ${JSON.stringify(fileOf(badFile))} of ${badFile} in the design export's matrix.json: capture files never contain path separators or ".."`);
   const platform = isObj(matrix) && typeof matrix.chromium === "string" ? { chromium: matrix.chromium, platform: String(matrix.platform ?? "") } : null;
 
   let ix: IrIndex | null = null;
@@ -2354,16 +2376,18 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   const notRunReasons: Record<string, string> = {};
   const runnable: string[] = [];
   for (const name of names) {
-    if (!fs.existsSync(path.join(goldensDir, `${name}.png`))) notRunReasons[name] = "the design capture PNG is missing from the export";
+    const png = `${fileOf(name)}.png`;
+    if (!fs.existsSync(path.join(goldensDir, png))) notRunReasons[name] = "the design capture PNG is missing from the export";
     else if (!finished) notRunReasons[name] = "Unity capture did not finish";
     else if (unityNotCaptured[name] !== undefined) notRunReasons[name] = unityNotCaptured[name];
-    else if (!fs.existsSync(path.join(unityDir, `${name}.png`))) notRunReasons[name] = "no Unity capture PNG";
+    else if (!fs.existsSync(path.join(unityDir, png))) notRunReasons[name] = "no Unity capture PNG";
     else if (!unityBoxes[name]) notRunReasons[name] = "no entry in the Unity boxes.json";
     else runnable.push(name);
   }
-  const known = new Set(names);
+  const known = new Set(names), knownFiles = new Set(names.map(fileOf));
+  // a Unity PNG is extra when it is no golden capture's file; a boxes entry when it is no golden capture's name
   const unityPngs = finished && fs.existsSync(unityDir) ? fs.readdirSync(unityDir).filter((f) => f.endsWith(".png")).map((f) => f.slice(0, -4)) : [];
-  const extra = Array.from(new Set([...Object.keys(unityBoxes), ...unityPngs])).filter((n) => !known.has(n)).sort();
+  const extra = Array.from(new Set([...Object.keys(unityBoxes).filter((n) => !known.has(n)), ...unityPngs.filter((f) => !knownFiles.has(f))])).sort();
 
   if (opts.diffDir) fs.mkdirSync(opts.diffDir, { recursive: true });
   const results = new Map<string, CaptureVerdict>();
@@ -2391,8 +2415,8 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   const compareOne = async (name: string) => {
     const c0 = performance.now();
     const [gpng, upng] = await Promise.all([
-      fs.promises.readFile(path.join(goldensDir, `${name}.png`)).then(decodePngAsync),
-      fs.promises.readFile(path.join(unityDir, `${name}.png`)).then(decodePngAsync),
+      fs.promises.readFile(path.join(goldensDir, `${fileOf(name)}.png`)).then(decodePngAsync),
+      fs.promises.readFile(path.join(unityDir, `${fileOf(name)}.png`)).then(decodePngAsync),
     ]);
     const entry = byName.get(name);
     const gb = goldenBoxes[name];
@@ -2410,7 +2434,7 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
     } : null;
     verdict.diff = null;
     if (heat && opts.diffDir) {
-      const file = path.join(opts.diffDir, `${name}.png`);
+      const file = path.join(opts.diffDir, `${fileOf(name)}.png`);
       await fs.promises.writeFile(file, await encodePngAsync(heat));
       verdict.diff = file;
     }

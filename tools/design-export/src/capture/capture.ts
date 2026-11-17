@@ -26,7 +26,7 @@ import { stableStringify } from "../ir/stableStringify.js";
 import type { KitConfig } from "../kit.js";
 import { openDesign, type LoadedDesign } from "../load.js";
 import { logicalViewport } from "../viewport.js";
-import { buildMatrix, captureName, contextCandidates, jobInContext, jobInItem, unsampledAnims, type AnimRef, type CaptureApply, type CaptureJob, type ScreenSetup } from "./matrix.js";
+import { buildMatrix, captureFile, captureName, contextCandidates, jobInContext, jobInItem, unsampledAnims, type AnimRef, type CaptureApply, type CaptureJob, type ScreenSetup } from "./matrix.js";
 
 /** IR id → index of its DOM element in `[body, ...body.querySelectorAll("*")]` (from `buildIr`). */
 export type ElementMap = Record<string, number>;
@@ -926,7 +926,7 @@ export class CaptureSession {
     return this.d.page.evaluate(pageVisible, { items: ids.map(where), root: this.elements[this.ir.root.id] });
   }
 
-  /** Captures one job: writes `<goldensDir>/<name>.png` and returns its boxes. */
+  /** Captures one job: writes `<goldensDir>/<file>.png` (captureFile of its name) and returns its boxes. */
   async capture(job: CaptureJob, goldensDir: string): Promise<CaptureBoxes> {
     if (job.viewport[0] !== this.viewport[0] || job.viewport[1] !== this.viewport[1]) throw new Error(`${captureName(job)}: this page renders viewport ${vpName(this.viewport)}`);
     const name = captureName(job);
@@ -959,7 +959,7 @@ export class CaptureSession {
     // a copy's own text leaves out the text of the copies nested in it, as an IR element's leaves out nested IR elements'
     const copies = this.itemCopies.length ? await this.d.page.evaluate(pageBoxes, { items: this.itemCopies, ir: this.nestIndices, scale: this.scale }) : [];
     fs.mkdirSync(goldensDir, { recursive: true });
-    fs.writeFileSync(path.join(goldensDir, `${name}.png`), png);
+    fs.writeFileSync(path.join(goldensDir, `${captureFile(name)}.png`), png);
     const boxes: CaptureBoxes = { capture: name, viewport: [job.viewport[0], job.viewport[1]], scale: this.scale, elements: Object.fromEntries(els), external: [...this.external] };
     if (copies.length) boxes.items = Object.fromEntries(copies.map(([k, b]) => [k, { x: b.x, y: b.y, w: b.w, h: b.h, visible: b.visible, text: b.text, lines: b.lines,
       ...(b.color ? { color: b.color } : {}), ...(b.opacity !== undefined ? { opacity: b.opacity } : {}),
@@ -1074,13 +1074,31 @@ async function resolveContexts(s: CaptureSession, ir: IrScreen, list: CaptureJob
   return { resolved, hidden };
 }
 
+/**
+ * Refuses capture PNG paths that cannot be written, before anything is captured: on every platform a file name
+ * (`<file>.png`) over 255 UTF-8 bytes, and on Windows a path over 250 characters (the longest is named).
+ */
+export function checkCapturePaths(goldensDir: string, names: readonly string[], platform: NodeJS.Platform = process.platform): void {
+  let longest = "";
+  for (const name of names) {
+    const file = `${captureFile(name)}.png`;
+    const bytes = Buffer.byteLength(file, "utf8");
+    if (bytes > 255) throw new Error(`capture ${name}: its file name ${file} is ${bytes} bytes, over the 255 a file name can have`);
+    const full = path.resolve(goldensDir, file);
+    if (full.length > longest.length) longest = full;
+  }
+  if (platform === "win32" && longest.length > 250) {
+    throw new Error(`the capture path ${longest} is ${longest.length} characters, over the 250 Windows allows: use a shorter output folder`);
+  }
+}
+
 function writeBoxes(goldensDir: string, boxes: Record<string, CaptureBoxes>): void {
   fs.mkdirSync(goldensDir, { recursive: true });
   fs.writeFileSync(path.join(goldensDir, "boxes.json"), stableStringify(boxes));
 }
 
 /**
- * Captures one job on an open page (rendering the job's viewport): writes `<goldensDir>/<name>.png` and merges its
+ * Captures one job on an open page (rendering the job's viewport): writes `<goldensDir>/<file>.png` and merges its
  * boxes into `<goldensDir>/boxes.json`. `elements` comes from `buildIr` (the DOM element of every IR id).
  */
 export async function runCapture(d: LoadedDesign, ir: IrScreen, job: CaptureJob, goldensDir: string, elements: ElementMap): Promise<CaptureBoxes> {
@@ -1096,8 +1114,9 @@ export async function runCapture(d: LoadedDesign, ir: IrScreen, job: CaptureJob,
 
 /**
  * Captures the whole matrix: one page per viewport (opened from `htmlPath`, or taken from `opts.open`), its jobs in
- * order on that page. Writes every PNG, `boxes.json` (all captures) and `matrix.json` (the jobs with their names,
- * sample times and coverage marks, the animations not sampled, the Chromium build and platform, findings O-14).
+ * order on that page. Writes every PNG (`<file>.png`, captureFile), `boxes.json` (all captures, by name) and
+ * `matrix.json` (the jobs with their names, files, sample times and coverage marks, the animations not sampled, the
+ * Chromium build and platform, findings O-14). Paths that cannot be written are refused first (checkCapturePaths).
  */
 export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScreen, elements: ElementMap, goldensDir: string, opts: MatrixOptions = {}): Promise<MatrixResult> {
   const t0 = performance.now();
@@ -1105,6 +1124,7 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
     throw new Error("the kit's reference viewport or screen match differs from the IR's");
   }
   const jobs = opts.jobs ?? buildMatrix(ir);
+  checkCapturePaths(goldensDir, jobs.map(captureName));
   const groups = new Map<string, CaptureJob[]>();
   for (const j of jobs) { const k = vpName(j.viewport); groups.set(k, [...(groups.get(k) ?? []), j]); }
   const browser = opts.browser ?? opts.open?.[0]?.browser ?? (await launchChromium());
@@ -1138,6 +1158,8 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
       try {
         const r = await resolveContexts(s, ir, list);
         hidden.push(...r.hidden);
+        // a job moved into a context has a longer name, so possibly another file
+        checkCapturePaths(goldensDir, Array.from(r.resolved.values(), (o) => captureName(o.job)));
         const done = new Set<string>();
         for (const original of list) {
           if (failure) return;
@@ -1183,10 +1205,11 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
       chromium: browser.version(),
       platform: `${process.platform}-${process.arch}`,
       // frozen: the keyframe animations a static capture shows at their frozen end frame (the Unity capture writes that frame);
-      // context: what a job of a hidden element got so that it shows (its state and the items added to its apply)
+      // context: what a job of a hidden element got so that it shows (its state and the items added to its apply);
+      // file: the name of its PNGs without .png (captureFile), which every reader takes from here
       captures: captured.map((j) => {
         const name = captureName(j), f = frozen.get(name), c = contexts[name];
-        return { name, ...j, ...(f ? { frozen: f } : {}), ...(c ? { context: c } : {}) };
+        return { name, file: captureFile(name), ...j, ...(f ? { frozen: f } : {}), ...(c ? { context: c } : {}) };
       }),
       // hidden: static jobs whose elements no state or class context shows (not captured)
       ...(hidden.length ? { hidden } : {}),

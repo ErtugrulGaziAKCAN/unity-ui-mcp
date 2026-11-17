@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { viewportLabel } from "../viewport.js";
-import type { CaptureVerdict, ElementIssue, ScreenVerdict, Thresholds } from "./compare.js";
+import { captureFiles, type CaptureVerdict, type ElementIssue, type ScreenVerdict, type Thresholds } from "./compare.js";
 import { MAX_THUMB_CAPTURES, type ReportPictures } from "./pictures.js";
 
 const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -246,8 +246,9 @@ export function writeReport(v: ScreenVerdict, exportDir: string, unityDir: strin
   // the crop limit the pictures were made with: the count of distinct crops when some were skipped
   const cropLimit = pictures && [...pictures.values()].some((p) => p.cropsSkipped) ? new Set([...pictures.values()].flatMap((p) => p.crops.map((c) => c.design))).size : 0;
   const dir = path.dirname(path.resolve(outFile));
-  const golden = (n: string) => rel(dir, path.join(path.resolve(exportDir), "goldens", `${n}.png`));
-  const unity = (n: string) => rel(dir, path.join(path.resolve(unityDir), `${n}.png`));
+  const fileOf = captureFiles(exportDir);
+  const golden = (n: string) => rel(dir, path.join(path.resolve(exportDir), "goldens", `${fileOf(n)}.png`));
+  const unity = (n: string) => rel(dir, path.join(path.resolve(unityDir), `${fileOf(n)}.png`));
   const kept = (n: string) => pictures?.get(n);
   const passed = v.captures.filter((c) => c.pass).length, failed = v.captures.length - passed;
   const hidden = v.hidden ?? [];

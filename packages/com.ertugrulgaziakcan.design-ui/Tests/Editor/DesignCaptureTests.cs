@@ -639,6 +639,24 @@ namespace DesignUi.Editor.Tests
             Assert.AreEqual("more#3", new CaptureApply { ElementId = "more", Item = new[] { 0, 3 } }.Target);
         }
 
+        [Test]
+        public void ReadMatrix_TakesEachJobsFileFromTheMatrix_AndTheNameFromAnOlderOne()
+        {
+            var dir = TempDir();
+            Directory.CreateDirectory(Path.Combine(dir, "goldens"));
+            var path = Path.Combine(dir, DesignCapture.MatrixPath);
+            File.WriteAllText(path, "{ \"captures\": [ " + WithFile(Job("default@320x180.hover.tile", "default", 320, 180, Pseudo("hover", "tile")), "short") + ", " +
+                                    Job("default@320x180", "default", 320, 180) + " ] }");
+            var jobs = CaptureJob.ReadMatrix(path);
+            Assert.AreEqual(("default@320x180.hover.tile", "short"), (jobs[0].Name, jobs[0].File));
+            Assert.AreEqual(("default@320x180", "default@320x180"), (jobs[1].Name, jobs[1].File), "a job without a file (an older export): its name");
+            foreach (var bad in new[] { "\"../up\"", "\"a/b\"", "\"\"", "3" })
+            {
+                File.WriteAllText(path, "{ \"captures\": [ " + Job("default@320x180", "default", 320, 180).Replace("{ \"name\"", "{ \"file\": " + bad + ", \"name\"") + " ] }");
+                StringAssert.Contains("is not a file name", Assert.Throws<IrFormatException>(() => CaptureJob.ReadMatrix(path), bad).Message, bad);
+            }
+        }
+
         [UnityTest]
         public IEnumerator Run_ALocalizingProfileWithIndexedArguments_FillsTheArgumentsFromTheSampleData()
         {
@@ -1481,6 +1499,48 @@ namespace DesignUi.Editor.Tests
         static string Pseudo(string pseudo, string id) => "{ \"kind\": \"pseudo\", \"pseudo\": \"" + pseudo + "\", \"elementId\": \"" + id + "\" }";
 
         static string ClassApply(string name, string id) => "{ \"kind\": \"class\", \"name\": \"" + name + "\", \"elementId\": \"" + id + "\" }";
+
+        /// <summary>A matrix job (<see cref="Job"/>, <see cref="AnimJob"/>) with its matrix.json <c>file</c>.</summary>
+        static string WithFile(string job, string file) => "{ \"file\": \"" + file + "\", " + job.Substring(job.IndexOf('{') + 1).TrimStart();
+
+        /// <summary>
+        /// A job whose name is longer than a file name may be (fourteen classes and a hover on one element) is written to the
+        /// short file matrix.json gives it; the value is the exporter's captureFile of the name (test/capture.test.ts pins
+        /// it). boxes.json and the result keep the name. An animation sample is written to its file too, and a job without a
+        /// file (an export from before files were recorded) to its name.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator CaptureAll_ALongNamedJob_WritesItsPngToTheShortFileOfTheMatrix()
+        {
+            var classes = Enumerable.Range(1, 14).Select(k => "is-variant-" + k.ToString("00")).ToList();
+            var name = "default@320x180" + string.Concat(classes.Select(c => "." + c + ".tile")) + ".hover.tile";
+            const string file = "default@320x180.is-variant-01.tile.is-variant-02.tile.is-variant.9339cd979b1e2ea0";
+            Assert.Greater((name + ".png").Length, 255, "longer than a file name may be");
+            var hover = Pseudo("hover", "tile");
+            var matrix = "{ \"captures\": [" + Job("default@320x180", "default", 320, 180) + ", " +
+                         WithFile(Job(name, "default", 320, 180, classes.Select(c => ClassApply(c, "tile")).Append(hover).ToArray()), file) + ", " +
+                         WithFile(AnimJob("default@320x180.anim.tile.0", "default", 320, 180, hover, Ref("tile", 0), Ref("tile", 0), "{ \"state\": \"default\", \"apply\": [] }", 0, 400),
+                             "sample-file") + "], \"unsampled\": [] }";
+            var export = Export(AnimatedSmall(), null, matrix);
+            var profile = Profile(new Vector2Int(320, 180), 0.5f);
+            var screen = Compile(export, profile);
+            var outDir = TempDir();
+            var result = new CaptureResult();
+            yield return DesignCapture.CaptureAll(export, screen, profile, outDir, result);
+
+            Assert.IsEmpty(result.Errors, string.Join("\n", result.Errors));
+            Assert.IsEmpty(result.NotCaptured.Select(n => n.Capture + ": " + n.Reason));
+            CollectionAssert.AreEquivalent(new[] { "default@320x180", name, "default@320x180.anim.tile.0" }, result.Captured);
+            CollectionAssert.AreEquivalent(new[] { "default@320x180.png", file + ".png", "sample-file.png" }, Directory.GetFiles(outDir, "*.png").Select(Path.GetFileName));
+            var boxes = JObject.Parse(File.ReadAllText(Path.Combine(outDir, BoxesWriter.FileName)));
+            CollectionAssert.AreEquivalent(result.Captured, boxes.Properties().Select(p => p.Name), "boxes.json keys each capture by its name");
+            Assert.AreEqual(name, (string)boxes[name]["capture"]);
+            var tex = new Texture2D(2, 2);
+            _objects.Add(tex);
+            Assert.IsTrue(tex.LoadImage(File.ReadAllBytes(Path.Combine(outDir, file + ".png"))));
+            var tile = (JObject)boxes[name]["elements"]["tile"];
+            AssertNear("#445566", Pixel(tex, (int)((double)tile["x"] + 10), (int)((double)tile["y"] + 10)), 1, "the long-named job's PNG shows its hovered tile");
+        }
 
         [UnityTest]
         public IEnumerator CaptureAll_ClearsThePreviousRun_SoAJobThatFailsNowLeavesNothingStale()
