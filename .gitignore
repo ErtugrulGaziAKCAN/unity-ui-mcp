@@ -22,3 +22,6 @@ samples/FidelityProject/Designs/**/report.html
 
 # a test fixture folder (a system font copied for the Arabic shaping test; deleted after the test)
 samples/FidelityProject/Assets/DesignUiLocaleFixture*
+
+# the capture's temporary sample-image folder (imported while a capture runs; deleted when it ends)
+samples/FidelityProject/Assets/DesignUiCaptureSamples*

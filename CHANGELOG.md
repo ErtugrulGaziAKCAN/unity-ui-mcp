@@ -15,13 +15,13 @@ numbers below are in [docs/findings/](docs/findings/); the decisions they cite (
   item's markup), and every written-out item's image, in nested repeats too, is written to the export's `assets/`.
   Before, the sample was an empty text and only the first item's image was exported, so the Unity capture showed it in
   every item. The capture imports the sample images into a temporary folder of the project it runs in (deleted when the
-  capture ends, never the screens' `_assets`) and assigns them with `DesignView.SetImage`, as the generated view's
-  `Set<Name>(Background)` does; an item without one shows none, and a ListView fills a row anew on every bind, so a
-  recycled row keeps nothing of the item before. A job after a list scrolled back measures the rows it shows again (an
-  element not found once, an item the list had not bound, was never looked up again). A sample image missing from the
-  export fails each capture, naming the file and the capture. Earlier exports are made again (extraction revision 4),
-  and a repeat whose first item shows no image is refused with that reason instead of `Invalid URL`. The generated
-  setters and compiled images are unchanged.
+  capture ends, also when its panel fails to close, never the screens' `_assets`) and assigns them with
+  `DesignView.SetImage`, as the generated view's `Set<Name>(Background)` does; an item without one shows none, and a
+  ListView fills a row anew on every bind, so a recycled row keeps nothing of the item before. A job after a list
+  scrolled back measures the rows it shows again (an element not found once, an item the list had not bound, was never
+  looked up again). A sample image missing from the export fails each capture, naming the file and the capture. Earlier
+  exports are made again (extraction revision 4), and a repeat whose first item shows no image is refused with that
+  reason instead of `Invalid URL`. The generated setters and compiled images are unchanged.
 - Dense screens with thousands of captures: the exporter and the Unity capture write their boxes to `boxes.jsonl`, one
   compact line per capture appended when the capture finishes, instead of one `boxes.json` built as a single string,
   which a screen of thousands of dense captures made too long for Node (`RangeError: Invalid string length`). The

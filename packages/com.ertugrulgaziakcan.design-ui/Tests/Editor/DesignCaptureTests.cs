@@ -1108,8 +1108,8 @@ namespace DesignUi.Editor.Tests
             Directory.GetFiles(folder).Where(f => !f.EndsWith(".meta", StringComparison.Ordinal)).Select(f => Path.GetFileName(f)).OrderBy(f => f, StringComparer.Ordinal).ToList();
 
         /// <summary>
-        /// Every written-out item shows its own sample image (report #1: every row showed the first row's): the capture
-        /// imports the sample images into a temporary folder of the project and assigns them as the generated view's
+        /// Every written-out item shows its own sample image (the defect: repeat items showed the first item's image): the
+        /// capture imports the sample images into a temporary folder of the project and assigns them as the generated view's
         /// Set&lt;Name&gt;(Background) does, on the element that paints the picture (the crest paints a background image of its
         /// own, so its picture is on its __image child); an item without one shows none (the crest's own background stays),
         /// a later row's nested items show theirs. The folder is gone after the capture, and the screen's _assets holds only
@@ -1173,25 +1173,29 @@ namespace DesignUi.Editor.Tests
 
         /// <summary>
         /// A virtualized list (a list repeat of twelve items, three rows showing): every bind fills the slot anew, so a slot
-        /// the list recycles while it scrolls shows its new item's own image, or none (item 10), never the one it showed
-        /// before; scrolled back for the next job, the rows show their own images in the capture, as in the first job's.
+        /// the list recycles while it scrolls shows its new item's own image, or none (item 10), and its own name, never
+        /// what it showed before; scrolled back for the next job, the rows show their own images in the capture, as in the
+        /// first job's.
         /// </summary>
         [UnityTest]
-        public IEnumerator CaptureAll_AListsRecycledRows_ShowTheirOwnItemsImages()
+        public IEnumerator CaptureAll_AListsRecycledRows_ShowTheirOwnItemsImagesAndTexts()
         {
             var pictures = new[] { FlatPng("#16c2d5"), FlatPng("#f0605d"), FlatPng("#f2b544"), FlatPng("#ffffff") };
             Picture Of(int i) => i == 2 || i == 10 ? null : pictures[i % pictures.Length];
+            string NameOf(int i) => "Entry " + (i + 1);
             var logo = Node("logo", "image", ("width", "16px"), ("height", "16px"), ("flex-shrink", "0"), ("margin-left", "8px"));
             logo.Bind = "entry.logo";
             logo.Asset = pictures[0].Asset.Copy();
+            var title = Words("title", "Entry", ("margin-left", "8px"));
+            title.Bind = "entry.name";
             var entry = Node("entry", "container", ("display", "flex"), ("flex-direction", "row"), ("align-items", "center"), ("height", "20px"), ("flex-shrink", "0"),
-                ("background-color", "#0f2a33")).Add(logo);
+                ("background-color", "#0f2a33")).Add(logo, title);
             var list = Node("list", "list", ("display", "flex"), ("flex-direction", "column"), ("width", "200px"), ("height", "60px"), ("flex-shrink", "0"),
                 ("overflow-y", "auto")).Add(entry);
             list.Repeat = new IrRepeat { Name = "entries", Mode = "list", Count = 12 };
             string J(string name, string apply) => "{ \"name\": \"" + name + "\", \"state\": \"default\", \"viewport\": [320, 180], \"apply\": [" + apply + "] }";
             var export = Export(Small(Root(Box("top", "#222222"), list)),
-                "{ \"entries\": [ " + string.Join(", ", Enumerable.Range(0, 12).Select(i => "{ \"entry.logo\": " + ImageSample(Of(i)) + " }")) + " ] }",
+                "{ \"entries\": [ " + string.Join(", ", Enumerable.Range(0, 12).Select(i => "{ \"entry.logo\": " + ImageSample(Of(i)) + ", \"entry.name\": \"" + NameOf(i) + "\" }")) + " ] }",
                 "{ \"captures\": [" + J("default@320x180.a", "") + ", " + J("default@320x180.hover.top", Pseudo("hover", "top")) + ", " + J("default@320x180.c", "") + "] }");
             WriteImages(export, pictures);
             var profile = Profile(new Vector2Int(320, 180), 0.5f);
@@ -1200,6 +1204,7 @@ namespace DesignUi.Editor.Tests
             var result = new CaptureResult();
 
             // the items the list shows now (item i's logo is named logo#i, the first item's logo): each with its own image
+            // and its own name
             List<int> Shown(VisualElement root)
             {
                 var shown = new List<int>();
@@ -1208,6 +1213,10 @@ namespace DesignUi.Editor.Tests
                     var e = root.Q(i == 0 ? "logo" : "logo#" + i);
                     if (e == null) continue;
                     Assert.AreEqual(Of(i)?.Name, Painted(e), "item " + i + " shows its own image");
+                    var text = root.Q<Label>(i == 0 ? "title" : "title#" + i);
+                    Assert.IsNotNull(text, "item " + i + " has its name");
+                    Assert.AreEqual(NameOf(i), text.text, "item " + i + " shows its own name");
+                    Assert.AreSame(e.parent, text.parent, "item " + i + "'s name is in its row");
                     shown.Add(i);
                 }
                 return shown;

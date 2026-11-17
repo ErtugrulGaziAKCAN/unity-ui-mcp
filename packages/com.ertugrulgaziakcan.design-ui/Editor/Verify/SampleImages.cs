@@ -12,9 +12,12 @@ namespace DesignUi.Editor
     /// export's files are copied into a temporary folder of the project the capture runs in (a temporary copy of the
     /// project, by contract), <c>Assets/DesignUiCaptureSamples/&lt;run&gt;/_assets/</c>, never into the screens'
     /// <c>_assets</c>, and imported with the settings of the design's own assets (<see cref="AssetPlan"/>: kind, extension
-    /// and recorded hash checked). <see cref="Dispose"/> deletes the folder when the capture ends; one a stopped capture
-    /// left is deleted by the next. A file the export does not have is listed in <see cref="Missing"/>, so each capture
-    /// fails naming it instead of showing the template's image.
+    /// and recorded hash checked). <see cref="Dispose"/> deletes the folder when the capture ends, and the root once no
+    /// capture holds a folder (the held folders are a static list). A folder a capture left without disposing it goes
+    /// with the root, at the next import or disposal that finds no folder held: after an Editor that quit midway, the next
+    /// session's first capture; after a run dropped without disposal, only once a script reload or Editor restart has
+    /// emptied the list, since that run still counts as holding its folder. A file the export does not have is listed in
+    /// <see cref="Missing"/>, so each capture fails naming it instead of showing the template's image.
     /// </summary>
     internal sealed class SampleImages : IDisposable
     {
@@ -50,7 +53,7 @@ namespace DesignUi.Editor
             }
             if (present.Count == 0) return result;
 
-            if (s_Live.Count == 0 && AssetDatabase.IsValidFolder(Root)) AssetDatabase.DeleteAsset(Root); // a stopped capture's
+            if (s_Live.Count == 0 && AssetDatabase.IsValidFolder(Root)) AssetDatabase.DeleteAsset(Root); // leftovers (see the class)
             if (!AssetDatabase.IsValidFolder(Root)) AssetDatabase.CreateFolder("Assets", Path.GetFileName(Root));
             var run = Guid.NewGuid().ToString("N").Substring(0, 12);
             AssetDatabase.CreateFolder(Root, run);

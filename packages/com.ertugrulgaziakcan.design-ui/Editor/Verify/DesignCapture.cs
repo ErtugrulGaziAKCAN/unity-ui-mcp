@@ -180,8 +180,10 @@ namespace DesignUi.Editor
 
             public void Drop()
             {
-                Session?.Dispose();
+                // cleared first: a disposal that throws is not repeated by the next drop
+                var session = Session;
                 Session = null;
+                session?.Dispose();
             }
         }
 
@@ -240,8 +242,8 @@ namespace DesignUi.Editor
             {
                 if (own != null)
                 {
-                    shared.Drop();
-                    own.Dispose();
+                    try { shared.Drop(); }
+                    finally { own.Dispose(); } // even when the panel's disposal throws: its sample images go
                 }
             }
         }
@@ -437,8 +439,8 @@ namespace DesignUi.Editor
             }
             finally
             {
-                shared.Drop(); // an abandoned run still destroys its panel
-                screen?.Dispose(); // and deletes the sample images it imported
+                try { shared.Drop(); } // an abandoned run still destroys its panel
+                finally { screen?.Dispose(); } // and deletes the sample images it imported, even when that throws
             }
             // every PNG is on disk before the boxes and the done marker say the run went through
             foreach (var (name, file, task) in pngs)
@@ -1185,8 +1187,11 @@ namespace DesignUi.Editor
 
             public void Dispose()
             {
-                Mount.Dispose();
-                if (m_OwnsScreen) Screen.Dispose(); // after the panel that showed its sample images
+                try { Mount.Dispose(); }
+                finally
+                {
+                    if (m_OwnsScreen) Screen.Dispose(); // after the panel that showed its sample images, even when that throws
+                }
             }
         }
 
