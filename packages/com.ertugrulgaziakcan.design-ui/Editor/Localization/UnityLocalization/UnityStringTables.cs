@@ -217,13 +217,18 @@ namespace DesignUi.Editor
             return collection;
         }
 
-        /// <summary>The Addressables settings and their groups.</summary>
+        /// <summary>The Addressables settings, their groups and each group's schemas (Localization creates schemas with a new locale's group).</summary>
         static IEnumerable<Object> AddressablesAssets(AddressableAssetSettings settings)
         {
             if (settings == null) yield break;
             yield return settings;
             foreach (var group in settings.groups)
-                if (group != null) yield return group;
+            {
+                if (group == null) continue;
+                yield return group;
+                foreach (var schema in group.Schemas)
+                    if (schema != null) yield return schema;
+            }
         }
 
         static void EnsureFolder(string folder)

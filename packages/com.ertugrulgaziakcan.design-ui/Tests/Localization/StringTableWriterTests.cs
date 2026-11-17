@@ -273,6 +273,34 @@ namespace DesignUi.Localization.Tests
         }
 
         [Test]
+        public void TwoNewCollectionsInARow_BothImport_AndSaveTheSchemasOfTheGroupsTheyCreated_ButNotForeignOnes()
+        {
+            _fixture.Dispose(); // the setup's fixture has no schema groups: this test needs Localization to create them
+            _fixture = LocalizationFixture.WithSchemaGroups("en", "tr");
+            CleanProject();
+            var first = _tables.Write(NewCollection("DuiFirst", Text("first.key", "First", "Birinci")));
+            Assert.IsTrue(first.CreatedCollection);
+            var schemas = _fixture.Settings.groups.Where(g => g != null).SelectMany(g => g.Schemas).Where(s => s != null).ToList();
+            Assert.IsNotEmpty(schemas, "Localization created groups with schemas");
+            foreach (var schema in schemas) Assert.IsFalse(EditorUtility.IsDirty(schema), AssetDatabase.GetAssetPath(schema) + " is saved");
+
+            // the next import checks for unsaved work first: the first import left none behind
+            var request = NewCollection("DuiSecond", Text("second.key", "Second", "Ikinci"));
+            CollectionAssert.IsEmpty(_tables.Check(request));
+            Assert.IsTrue(_tables.Write(request).CreatedCollection);
+            foreach (var schema in _fixture.Settings.groups.Where(g => g != null).SelectMany(g => g.Schemas).Where(s => s != null))
+                Assert.IsFalse(EditorUtility.IsDirty(schema), AssetDatabase.GetAssetPath(schema) + " is saved");
+            CollectionAssert.IsEmpty(UnityStringTables.UnsavedWork());
+
+            // a schema someone had changed before the import stays unsaved, and the import says so
+            var foreign = schemas[0];
+            EditorUtility.SetDirty(foreign);
+            var third = NewCollection("DuiThird", Text("third.key", "Third", "Ucuncu"));
+            Assert.Throws<InvalidOperationException>(() => _tables.Write(third), "unsaved work is refused up front");
+            Assert.IsTrue(EditorUtility.IsDirty(foreign));
+        }
+
+        [Test]
         public void ANewCollection_IsRefused_WhileForeignWorkIsUnsaved_AndTheWorkStaysUnsaved()
         {
             CleanProject();

@@ -37,25 +37,37 @@ namespace DesignUi.Localization.Tests
         public readonly AddressableAssetSettings Settings;
         public readonly Dictionary<string, Locale> Locales = new Dictionary<string, Locale>();
 
-        public LocalizationFixture(params string[] codes)
+        public LocalizationFixture(params string[] codes) : this(false, codes) {}
+
+        /// <summary>
+        /// Persisted Addressables settings whose String Table groups Localization creates itself, one per locale and with
+        /// schema assets (the groups come on a collection's first creation and Addressables saves the project then: use it on
+        /// a project without unsaved work). The settings and groups live under <see cref="Folder"/> and go with it.
+        /// </summary>
+        public static LocalizationFixture WithSchemaGroups(params string[] codes) => new LocalizationFixture(true, codes);
+
+        LocalizationFixture(bool schemaGroups, string[] codes)
         {
             Assert.IsNotNull(s_Default, "Addressables has no AddressableAssetSettingsDefaultObject.s_DefaultSettingsObject any more; update the test fixture");
             _previous = (AddressableAssetSettings)s_Default.GetValue(null);
             _previousRules = AddressableGroupRules.Instance;
             // no default groups: Addressables adds their schemas with a project-wide save
-            Settings = AddressableAssetSettings.Create(Folder + "/AddressableAssetsData", "DesignUiTestSettings", false, false);
+            Settings = AddressableAssetSettings.Create(Folder + "/AddressableAssetsData", "DesignUiTestSettings", false, schemaGroups);
             _rules = UnityEngine.ScriptableObject.CreateInstance<AddressableGroupRules>();
             try
             {
                 s_Default.SetValue(null, Settings);
                 _rules.LocaleResolver = new GroupResolver(LocalesGroup);
-                _rules.StringTablesResolver = new GroupResolver(TablesGroup);
+                _rules.StringTablesResolver = schemaGroups ? new GroupResolver("DesignUi-Test-Tables-{LocaleName}", "DesignUi-Test-Tables-Shared") : new GroupResolver(TablesGroup);
                 AddressableGroupRules.Instance = _rules; // in memory: not written to the project's config
                 Settings.CreateGroup("Default Local Group", true, false, false, null);
                 Group(LocalesGroup);
-                Group(TablesGroup);
+                if (!schemaGroups) Group(TablesGroup);
                 if (!AssetDatabase.IsValidFolder(Folder)) AssetDatabase.CreateFolder("Assets", Folder.Substring("Assets/".Length));
                 foreach (var code in codes) AddLocale(code);
+                if (schemaGroups) // the persisted settings and their groups start saved, one by one (no project-wide save)
+                    foreach (var asset in new Object[] { Settings }.Concat(Settings.groups.Where(g => g != null)))
+                        AssetDatabase.SaveAssetIfDirty(asset);
             }
             catch
             {

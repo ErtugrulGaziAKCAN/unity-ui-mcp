@@ -9,6 +9,9 @@ numbers below are in [docs/findings/](docs/findings/); the decisions they cite (
 
 ### Fixed
 
+- A String Table import that creates a collection saves the Addressables group schemas it changed (the schema assets
+  Localization creates with a new locale's group), asset by asset. Before, they stayed unsaved and the next import that
+  created a collection was refused for unsaved work. A schema that was already unsaved is still left alone and noted.
 - SVG icons no longer get a square frame in Unity: the invisible extent rect that pins the viewBox now sets
   `stroke="none"` (and an inline `stroke:none`), so it cannot inherit a root `stroke="currentColor"` or other root stroke.
 - Verification on a project without the Unity Test Framework: the capture is an EditMode test, so the temporary copy now
