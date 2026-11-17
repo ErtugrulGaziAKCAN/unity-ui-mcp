@@ -637,11 +637,47 @@ at 1366×768 (0.98801, its crests' resampling) although every crest passed D-125
 the rows and passes at all six viewports (0.99091 at 1366×768). The default suite passes as before (4746 captures), and the
 comparison's time is unchanged within noise (eight fixtures with pictures and vectors, each compared alone: −15 to +10 %).
 
-Limit: an `<img>` or a vector paints no background, so it has no colour samples, and its SSIM (on luma) judges its picture
-alone: a flat picture of another hue at about the same lightness passes, the IR element's as before and now a copy's. In the
-simulation `crest#1` (Unity's teal-blue where the design is coral, luma 145 against 139) measures 0.9979–0.9991, the entry
-crests 0.9905–0.9983 and `badge#1` (sky for amber) 0.9836–0.9897: all pass, above 0.99 or above the small-element limit 0.984
-(at a scaled viewport D-125's 0.95).
+A picture is masked by its design box and only the part of its Unity box within `boxPx` (plus `GEOMETRY_EPS`) of it (fix round
+1): a copy's box is not compared and its own SSIM covers the design's region, so a picture Unity draws 40 × 40 or 120 × 40
+where the design has 24 × 24 fails its list (with the whole Unity box masked it passed: `compare.test.ts`, "fix round 1").
+
+**Picture colour (decision D-167).** An `<img>` or a vector paints no background, so it had no colour samples, and its SSIM, on
+luma, judged its picture alone: a flat picture of another hue at about the same lightness passed (in the simulation above
+`crest#1`, Unity's teal-blue where the design is coral, luma 145 against 139, measured 0.9979–0.9991, the entry crests
+0.9905–0.9983, `badge#1`, sky for amber, 0.9836–0.9897). Every content picture, the first item's and every copy's, now has a
+colour check: its area where both renderers draw it (the design's painted rect and Unity's box, whole pixels, a pixel in from
+their edges) is cut into a grid of up to 4 × 4 cells of at least 8 device px (one cell on an axis shorter than two cells), and
+each cell's mean colour is held against Unity's at the best offset of up to 1 px; pixels on text, an external region, an
+off-grid edge, outside the screen or under a later layer are left out. Limits: a raster picture `deltaE2000`, at a scaled
+viewport `deltaE2000ResampledPicture` where it is resampled (D-125); a vector its own measured key
+`deltaE2000VectorPictureCell`, 2.5 at the exact viewports and 3.5 in the scaled block (the measured highest 1.66 and 2.80 plus a
+margin: the check is for a wrong picture, whose cells measure 30–71). A picture no cell of which keeps a pixel (the dropdown's
+chevron inside the select's masked text box: 18 per viewport) is counted as not sampled, not judged by colour; its SSIM, box
+and edges still judge it.
+
+Measured on the default suite's captures (this task's full run), the worst cell ΔE2000 of the content pictures per fixture and
+viewport, with cells of at least 4 px (first measured) and at least 8 px (decided):
+
+| Fixture | Kind | Viewport | Pictures | Cells ≥ 4 px | Cells ≥ 8 px | Limit (≥ 8 px) |
+|---|---|---|---|---|---|---|
+| `icons` | vector | 3840×2160 | 55 | 0.86 | 0.86 | 2.5 |
+| `icons` | vector | 2560×1440 | 55 | 0.66 | 0.31 | 2.5 |
+| `icons` | vector | 1920×1080 | 55 | 1.66 | 1.66 | 2.5 |
+| `icons` | vector | 1600×900 (scaled) | 55 | 2.96 | 2.80 | 3.5 |
+| `icons` | vector | 1366×768 (scaled) | 55 | 2.32 | 1.15 | 3.5 |
+| `icons` | vector | 1280×720 | 55 | 1.15 | 0.36 | 2.5 |
+| `repeat-images` | raster | 3840×2160, 2560×1440, 1920×1080, 1280×720 | 17 each | 0.00 | 0.00 | 1 |
+| `repeat-images` | raster | 1600×900 (scaled) | 17 | 2.07 | 1.22 | 5.89 resampled |
+| `repeat-images` | raster | 1366×768 (scaled) | 17 | 6.36 | 1.86 | 5.89 resampled |
+| `object-fit` | raster | exact viewports | 26 each | ≤ 0.70 | ≤ 0.70 | 1 (5.89 where resampled at a scaled one) |
+| `object-fit` | raster | 1600×900, 1366×768 (scaled) | 26 each | 0.44, 0.78 | 0.44, 0.78 | 1 or 5.89 |
+| `background-images` | raster | exact viewports | 2 each | 0.00 | 0.00 | 1 |
+| `background-images` | raster | 1600×900, 1366×768 (scaled) | 2 each | 0.90, 0.44 | 0.90, 0.44 | 5.89 resampled |
+
+With 4 px cells correct pictures failed (vectors at four viewports, `entry-crest` at 1366×768: 6.36, a ~26 device px crest's
+dark half next to its inner edge, which the renderers resample differently); 8 px cells leave such fine rendering to SSIM.
+The simulation of the capture's old defect fails every capture through the crests and badges too: `crest#1` 71.27, `crest#3`
+30.33, `entry-crest#1` and `#4` 30.33, `entry-crest#3` 71.46, badges 40.32–52.63.
 
 **Small text (decision D-126).** Scaled only: text of at most 12.99 device px takes the ink colour limit 5.89
 (`scaled.textInkDeltaEFirstSmall`): measured over the suite's 10746 element samples of such text at the scaled viewports

@@ -899,6 +899,7 @@ Thresholds (`tools/design-export/fidelity-thresholds.json`; its `$comment` recor
 | Element SSIM of elements under 32768 device px² (`ssimElementSmall`) and of scaled raster pictures (`ssimPicture`) | ≥ 0.984; ≥ 0.985 | Fidelity suite: elements whose other checks pass, lowest 0.9851 (bordered fields, radios, icons), pictures 0.9867 (`docs/findings/ssim-small-elements.md`) |
 | Element SSIM of an animation sample rotated off the axes (`ssimRotated`) | ≥ 0.975 | Fidelity suite: 297 element samples, lowest 0.9779 (`docs/findings/animation.md`) |
 | Shadow band: mean colour of each baked shadow's band (shadow rect minus element box) | ΔE2000 ≤ 1 | Catches faint missing shadows that SSIM dilutes |
+| Content picture colour, per cell of a grid of up to 4 × 4 cells of at least 8 device px (`deltaE2000`, `deltaE2000ResampledPicture`, `deltaE2000VectorPictureCell`) | Raster ΔE2000 ≤ 1 (≤ 5.89 resampled at a scaled viewport); vector ≤ 2.5, ≤ 3.5 at scaled viewports | Fidelity suite: raster ≤ 0.70 exact, 1.86 resampled at 1366×768; vectors 1.66 exact, 2.80 at 1600×900; a wrong picture 30–71 (decision D-167, `docs/findings/viewport-classes.md`) |
 | Text ink colour per line (`textInkDeltaE`, `textInkDeltaESmall`): median of the 10 % ink pixels most different from the line's background | ΔE2000 ≤ 2 from 9 device px font size, ≤ 3 from 8 px, ≤ 10 below | Fidelity suite, every kit text style in both polarities at three viewports: ≤ 1.26 from 9 px, 2.12 at 8 px, 8.23 at 6 px (`docs/findings/text-ink.md`) |
 | Text ink amount per line (`textInkRatio`, `textInkCoverage`, `textInkMedianTolerance`): Unity's anti-aliasing-weighted ink relative to the design's | 0.9–1.1, and within ±15 % of the capture's median of the same polarity (3 or more lines) | Fidelity suite: 0.92–1.08, −5 % … +11.7 % of the median |
 | Text of at most 12 device px, later lines of small text, text with a blurred shadow (`textInkSmallPx`, `textInkDeltaELater`, `textInkShadowHigh`, …) | Own limits, listed in the thresholds file | Fidelity suite (`docs/findings/text-ink.md` §7–8, `docs/findings/text-baselines.md`) |
@@ -912,7 +913,9 @@ Unity colour within 1 px. An element that carries its own text (a button, a badg
 copied from the design, plus samples of its background, border and corner diagonals; elements that paint a background
 but leave no sample point are reported as "not sampled". A repeat's later items' copies of an element that paints a
 picture (a content image or vector, a url() background image) get the element's SSIM and colour samples with its limits,
-named by the copy (decision D-165; a copy's text gets the element's text checks, decision D-133).
+named by the copy (decision D-165; a copy's text gets the element's text checks, decision D-133). A content picture (an
+`<img>`, a vector), whose SSIM judges luma only, also gets a colour check (decision D-167): the mean colour of each cell of a
+grid of up to 4 × 4 cells of at least 8 device px over it, against Unity's at the best offset of up to 1 px.
 
 SSIM is the mean over non-overlapping 8×8 blocks of BT.601 luma with `C1 = (0.01·255)²`, `C2 = (0.03·255)²`
 (implemented in `tools/design-export/src/compare/ssim.ts`, defined and calibrated in M0 findings §11). For an element it is the mean over the blocks that overlap the
@@ -922,7 +925,7 @@ the element's border box, offset w/h is the image size minus the element size). 
 tolerated only inside text boxes: pixels inside text boxes (inflated by 2 px) are copied from the golden before the
 SSIM is computed. Regions marked `data-u-external` are masked the same way. A picture with an element SSIM of its own (also
 a later item's copy) is masked by its box, both sides, from the whole capture's SSIM and from its ancestors' SSIM and colour
-samples: its own check judges it (decision D-166). Limitation: SSIM is averaged over the
+samples: its own check judges it (decision D-166); its Unity box counts only within the box limit of its design box. Limitation: SSIM is averaged over the
 region, so small or faint defects are diluted; a missing 24 px soft shadow at 50 % black on a dark background still
 scores 0.994, and a defect counts against the element that owns it rather than its larger ancestors.
 A screen is **verified** (verdict `pass`) only when every viewport × state × class × pseudo-state capture and every

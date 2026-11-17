@@ -17,7 +17,13 @@ numbers below are in [docs/findings/](docs/findings/); the decisions they cite (
   passed whenever its container's SSIM diluted it. A picture with an element SSIM of its own, the first item's too, is
   masked by its box from its containers' SSIM and colour samples and from the whole capture's SSIM (decision D-166), so a
   narrow list of resampled pictures that pass their own checks no longer fails its own SSIM; what an item paints around
-  its picture (a chip's background, a row's divider) stays judged there.
+  its picture (a chip's background, a row's divider) stays judged there, and so does a picture Unity draws larger than its
+  box allows (only its Unity box within the box limit is masked). A content picture (an `<img>`, an inline svg), the first
+  item's and every copy's, is also judged by its colour (decision D-167): the mean colour of each cell of a grid of up to
+  4 × 4 cells of at least 8 device px against Unity's, within `deltaE2000` (a resampled raster picture at a scaled viewport:
+  D-125's limit; a vector: the new measured key `deltaE2000VectorPictureCell`, 2.5, and 3.5 at scaled viewports). Before, its
+  SSIM, on luma, passed a picture of another hue at the same lightness. A picture no cell of which keeps a pixel (inside a
+  masked text box) is counted as not sampled.
 - Repeat items show their own sample images in verify. An image bind's sample (an `<img data-u-bind>`, or an element
   painted only by a bound url() image) is now the image that item shows, `{ "$image": { "file", "sha256", "width",
   "height" } }` in `fixtures/sample-data.json`, or `{ "$image": null }` when it shows none (no source, or hidden by the

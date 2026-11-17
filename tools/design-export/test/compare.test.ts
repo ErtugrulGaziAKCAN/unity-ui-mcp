@@ -26,7 +26,7 @@ const T: Thresholds = {
   textInkDeltaELater: [], textInkLaterBelowPx: 12, textInkCoverageLater: 0.15,
   textInkSmallPx: 0, textInkDeltaEFirstSmall: 3, textInkBandSmall: [0.6, 1.2], textInkMedianToleranceSmall: 0.2, textInkShadowHigh: 1.15,
   ssimRotated: 0.99, ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, deltaE2000Ring: 1.5, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
-  ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1, textInkDirection: 0.66, ellipsisGraphemes: 0,
+  ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1, deltaE2000VectorPictureCell: 1, textInkDirection: 0.66, ellipsisGraphemes: 0,
 };
 /** The measured element SSIM limit of rotated animation samples (fidelity-thresholds.json, docs/findings/animation.md). */
 const ROTATED = 0.975;
@@ -1468,8 +1468,11 @@ describe("compareCapture: edge, colour and ink checks", () => {
     expect(t.deltaE2000RoundEdge).toBe(t.deltaE2000);
     for (const k of ["ssimFractionalEdge", "ssimVectorEdge"] as const) expect(t[k], k).toBe(t.ssimElement);
     expect(t.deltaE2000FractionalEdge).toBe(t.deltaE2000);
-    expect(Object.keys(t.scaled ?? {}).sort()).toEqual(["deltaE2000FractionalEdge", "deltaE2000ResampledPicture", "deltaE2000RoundEdge", "ellipsisGraphemes", "ssimFractionalEdge", "ssimResampledPicture", "ssimRoundEdge",
-      "ssimVectorEdge", "textInkDeltaEFirstSmall", "textInkSmallPx"]);
+    expect(Object.keys(t.scaled ?? {}).sort()).toEqual(["deltaE2000FractionalEdge", "deltaE2000ResampledPicture", "deltaE2000RoundEdge", "deltaE2000VectorPictureCell", "ellipsisGraphemes",
+      "ssimFractionalEdge", "ssimResampledPicture", "ssimRoundEdge", "ssimVectorEdge", "textInkDeltaEFirstSmall", "textInkSmallPx"]);
+    // decision D-167: a vector picture's colour cells, measured at both classes
+    expect(t.deltaE2000VectorPictureCell).toBe(2.5);
+    expect(t.scaled?.deltaE2000VectorPictureCell).toBe(3.5);
     // decision D-146: an ellipsized line's cut one grapheme off only at scaled viewports
     expect(t.ellipsisGraphemes).toBe(0);
     expect(t.scaled?.ellipsisGraphemes).toBe(1);
@@ -2435,55 +2438,110 @@ describe("compareCapture: edge, colour and ink checks", () => {
     });
   });
 
-  describe("the pictures of a repeat's later items (decisions D-165, D-166)", () => {
+  describe("the pictures of a repeat's later items (decisions D-165 to D-167)", () => {
     const repo = readThresholds();
     const exactT = thresholdsFor(repo, "exact"), scaledT = thresholdsFor(repo, "scaled");
     const issuesOf = (v: CaptureVerdict, id: string) => v.issues.filter((i) => i.id === id);
     const kinds = (v: CaptureVerdict) => v.issues.map((i) => `${i.id} ${i.kind}`);
     const rowOf = (v: CaptureVerdict, id: string) => v.elements.find((e) => e.id === id);
-    // a list of three rows (IR `row`, copies `row#1`, `row#2`), each with a 24×24 picture of one flat colour (IR `pic`) on a
-    // 32×32 chip (IR `chip`): the IR elements are the first item; each item shows its own picture
+    // a list of three rows (IR `row`, copies `row#1`, `row#2`), each with a 24×24 picture of one flat colour (IR `pic`, an
+    // `<img>`) on a 32×32 chip (IR `chip`): the IR elements are the first item; each item shows its own picture
     const bgC: Rgb = [16, 24, 32], rowC: Rgb = [30, 44, 56], chipC: Rgb = [60, 80, 96];
     const teal: Rgb = [0, 150, 136], green: Rgb = [80, 170, 70], coral: Rgb = [240, 120, 80];
     const right = [teal, green, coral];
     const at = (k: number) => ({ row: el(8, 8 + 48 * k, 240, 40), chip: el(20, 12 + 48 * k, 32, 32), pic: el(24, 16 + 48 * k, 24, 24) });
-    const draw = (pics: Rgb[], chip2: Rgb = chipC) => {
+    /** The list; `big`: where Unity draws the third item's picture instead of its 24 × 24 box. */
+    const draw = (pics: Rgb[], chip2: Rgb = chipC, big?: R) => {
       const png = canvas(256, 152, bgC);
-      pics.forEach((c, k) => { const b = at(k); fill(png, b.row, rowC); fill(png, b.chip, k === 2 ? chip2 : chipC); fill(png, b.pic, c); });
+      pics.forEach((c, k) => { const b = at(k); fill(png, b.row, rowC); fill(png, b.chip, k === 2 ? chip2 : chipC); fill(png, k === 2 && big ? big : b.pic, c); });
       return png;
     };
-    const boxes = (o: { drop?: string[]; hide?: string[] } = {}): CaptureBoxes => {
+    const boxes = (o: { drop?: string[]; hide?: string[]; big?: R } = {}): CaptureBoxes => {
       const items: Record<string, Box> = {};
       for (const k of [1, 2]) for (const [id, b] of Object.entries(at(k))) items[`${id}#${k}`] = b;
+      if (o.big) items["pic#2"] = el(o.big.x, o.big.y, o.big.w, o.big.h);
       for (const key of o.drop ?? []) delete items[key];
       for (const key of o.hide ?? []) items[key] = { ...items[key], visible: false };
       return { capture: "c", viewport: [256, 152], scale: 1, external: [], elements: { root: el(0, 0, 256, 152), list: el(8, 8, 240, 136), ...at(0) }, items };
     };
     const ctx: CaptureContext = { backgrounds: new Set(["row", "chip"]), painters: new Set(["row", "chip", "pic"]), paintsPicture: new Set(["pic"]),
-      order: ["root", "list", "row", "chip", "pic"], root: "root", parent: new Map([["list", "root"], ["row", "list"], ["chip", "row"], ["pic", "chip"]]),
-      repeats: new Set(["list"]), viewportClass: "exact" };
-    const run = (unity: Rgb[], c: CaptureContext = ctx, chip2?: Rgb, ub: CaptureBoxes = boxes()) =>
-      compareCapture({ png: draw(right), boxes: boxes() }, { png: draw(unity, chip2), boxes: ub }, [], exactT, c);
+      contentPictures: new Set(["pic"]), order: ["root", "list", "row", "chip", "pic"], root: "root",
+      parent: new Map([["list", "root"], ["row", "list"], ["chip", "row"], ["pic", "chip"]]), repeats: new Set(["list"]), viewportClass: "exact" };
+    /** The context before decisions D-165 to D-167: no picture facts. */
+    const before: CaptureContext = { ...ctx, paintsPicture: undefined, contentPictures: undefined };
+    const run = (unity: Rgb[], c: CaptureContext = ctx, chip2?: Rgb, ub: CaptureBoxes = boxes(), big?: R) =>
+      compareCapture({ png: draw(right), boxes: boxes() }, { png: draw(unity, chip2, big), boxes: ub }, [], exactT, c);
 
-    it("D-165: a later item's picture of another flat colour fails, named by its copy; the first item's picture is judged as before", () => {
+    it("D-165: a later item's picture of another flat colour fails, named by its copy; the first item's SSIM is judged as before", () => {
       const ok = run(right);
       expect(ok.issues).toEqual([]);
-      for (const k of ["pic", "pic#1", "pic#2"]) expect(rowOf(ok, k), k).toMatchObject({ status: "ok", ssim: 1 });
-      // the old capture's defect: every item shows the first item's picture (the template's)
+      for (const k of ["pic", "pic#1", "pic#2"]) expect(rowOf(ok, k), k).toMatchObject({ status: "ok", ssim: 1, pictureColour: 0 });
+      // the old capture's defect: every item shows the first item's picture (the template's); the copies' SSIM and colour fail
       const template = run([teal, teal, teal]);
-      expect(kinds(template)).toEqual(["pic#1 ssim", "pic#2 ssim"]);
-      expect(issuesOf(template, "pic#2")[0].detail).toMatch(/^element SSIM 0\.93\d+ .* \(limit 0\.99; 0\.984 for an element under 32768 device px²\)$/);
+      expect(kinds(template)).toEqual(["pic#1 color", "pic#2 color", "pic#1 ssim", "pic#2 ssim"]);
+      expect(issuesOf(template, "pic#2")[1].detail).toMatch(/^element SSIM 0\.93\d+ /);
+      expect(issuesOf(template, "pic#2")[0].detail).toMatch(/^picture colour ΔE2000 [\d.]+ in cell \(1, 1\) of 2×2: design #f07850, Unity #009688 \(mean colours; limit 1\)$/);
       expect(rowOf(template, "pic#1")).toMatchObject({ status: "fail" });
       // without the pictures' facts (before decision D-165) the same input passes: the copies had no checks of their own, and
       // their containers' SSIM dilutes a 24 px picture
-      expect(run([teal, teal, teal], { ...ctx, paintsPicture: undefined }).issues).toEqual([]);
-      // the first item's picture: the same row and issues with the pictures' facts and without them
+      expect(run([teal, teal, teal], before).issues).toEqual([]);
+      // the first item's picture: the same SSIM and the same SSIM issue with the pictures' facts and without them (its colour
+      // check is decision D-167's, below)
       for (const unity of [right, [coral, green, coral]]) {
-        const a = run(unity), b = run(unity, { ...ctx, paintsPicture: undefined });
-        expect(rowOf(a, "pic")).toEqual(rowOf(b, "pic"));
-        expect(issuesOf(a, "pic")).toEqual(issuesOf(b, "pic"));
+        const { pictureColour: _, ...a } = rowOf(run(unity), "pic")!, b = rowOf(run(unity, before), "pic")!;
+        expect(a).toEqual(b);
+        // the SSIM issue's measure (its relaxed limit now also needs the colour check to pass)
+        const ssimOf = (v: CaptureVerdict) => issuesOf(v, "pic").filter((i) => i.kind === "ssim").map((i) => i.detail.split(" (limit")[0]);
+        expect(ssimOf(run(unity))).toEqual(ssimOf(run(unity, before)));
       }
-      expect(kinds(run([coral, green, coral]))).toEqual(["pic ssim"]);
+      expect(kinds(run([coral, green, coral]))).toEqual(["pic color", "pic ssim"]);
+    });
+
+    it("D-167: a content picture of another hue at the same lightness fails on its colour, the first item's and a copy's", () => {
+      // the IR element's teal drawn brown and the third item's coral drawn green, each at about its luma (103.6 / 103.4,
+      // 151.3 / 148.2): SSIM, on luma, does not see it
+      const v = run([[150, 92, 40], green, [100, 190, 60]]);
+      expect(kinds(v)).toEqual(["pic color", "pic#2 color"]);
+      for (const k of ["pic", "pic#2"]) expect(rowOf(v, k)!.ssim, k).toBeGreaterThan(0.999);
+      expect(rowOf(v, "pic#2")!.pictureColour).toBeGreaterThan(20);
+      // before (no picture facts) it passed
+      expect(run([[150, 92, 40], green, [100, 190, 60]], before).issues).toEqual([]);
+    });
+
+    it("D-167: a vector picture's cells take their measured limit, at each viewport class", () => {
+      const vctx: CaptureContext = { ...ctx, vectorPictures: new Set(["pic"]) };
+      const third = (c: Rgb, x: CaptureContext = vctx, t: Thresholds = exactT) =>
+        compareCapture({ png: draw(right), boxes: boxes() }, { png: draw([teal, green, c]), boxes: boxes() }, [], t, x);
+      // the third item's coral drawn at ΔE2000 1.40 (its luma kept): a raster picture fails its colour limit 1, a vector passes 2.5
+      expect(kinds(third([236, 121, 86], ctx))).toEqual(["pic#2 color"]);
+      expect(third([236, 121, 86]).issues).toEqual([]);
+      // 2.90: over the exact viewports' 2.5, within the scaled class's 3.5; 4.51: over both
+      expect(issuesOf(third([232, 122, 92]), "pic#2")).toEqual([expect.objectContaining({ kind: "color", detail: expect.stringMatching(/limit 2\.5 for a vector picture's cells\)$/) })]);
+      expect(third([232, 122, 92], { ...vctx, viewportClass: "scaled" }, scaledT).issues).toEqual([]);
+      expect(kinds(third([228, 123, 98], { ...vctx, viewportClass: "scaled" }, scaledT))).toEqual(["pic#2 color"]);
+    });
+
+    it("D-167: a picture under two cells on an axis takes one cell there; one no cell of which keeps a pixel is not sampled", () => {
+      // a 6 × 6 picture (`dot`), and a 12 × 12 chevron (`chev`, a vector) inside a field whose box its text mask covers (a select)
+      const mini = (dot: Rgb, chev: Rgb) => {
+        const png = canvas(64, 48, bgC);
+        fill(png, { x: 20, y: 4, w: 6, h: 6 }, dot); fill(png, { x: 10, y: 20, w: 44, h: 20 }, chipC); fill(png, { x: 38, y: 24, w: 12, h: 12 }, chev);
+        return png;
+      };
+      const b: CaptureBoxes = { capture: "c", viewport: [64, 48], scale: 1, external: [],
+        elements: { root: el(0, 0, 64, 48), dot: el(20, 4, 6, 6), field: el(10, 20, 44, 20, { text: true }), chev: el(38, 24, 12, 12) } };
+      const c: CaptureContext = { backgrounds: new Set(["field"]), painters: new Set(["dot", "field", "chev"]), paintsPicture: new Set(["dot", "chev"]),
+        contentPictures: new Set(["dot", "chev"]), vectorPictures: new Set(["chev"]), order: ["root", "dot", "field", "chev"], root: "root",
+        parent: new Map([["dot", "root"], ["field", "root"], ["chev", "field"]]), viewportClass: "exact" };
+      const v = (dot: Rgb, chev: Rgb) => compareCapture({ png: mini(coral, teal), boxes: b }, { png: mini(dot, chev), boxes: b }, [], exactT, c);
+      expect(v(coral, teal).issues).toEqual([]);
+      // the 6 px picture of another hue at its lightness: one cell
+      expect(v([100, 190, 60], teal).issues).toEqual([expect.objectContaining({ id: "dot", kind: "color", detail: expect.stringMatching(/ in cell \(1, 1\) of 1×1: /) })]);
+      // the chevron of another hue: no cell keeps a pixel, so it is counted as not sampled and not judged by colour
+      const chev = v(coral, [150, 92, 40]);
+      expect(chev.issues).toEqual([]);
+      expect(chev.notSampled).toContain("chev");
+      expect(chev.elements.find((e) => e.id === "chev")!.pictureColour).toBeNull();
     });
 
     it("D-165: a picture copy Unity lacks or shows otherwise is an issue as a text copy's; one the design's clips hide may be absent", () => {
@@ -2508,9 +2566,20 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(rowOf(v, "pic#2")).toMatchObject({ status: "ok", ssim: 1 });
     });
 
+    it("D-166, fix round 1: a picture copy Unity draws larger stays judged past the box limit (its own SSIM covers the design's box only)", () => {
+      // the third item's coral picture drawn 40 × 40 (over its chip) and 120 × 40 (over its row), with its Unity box that size
+      for (const big of [{ x: 16, y: 104, w: 40, h: 40 }, { x: 16, y: 104, w: 120, h: 40 }]) {
+        const v = run(right, ctx, undefined, boxes({ big }), big);
+        expect(kinds(v), JSON.stringify(big)).toContain("list ssim");
+        // what the copy's own checks judge, the design's box, is right
+        expect(issuesOf(v, "pic#2"), JSON.stringify(big)).toEqual([]);
+      }
+    });
+
     it("D-166: at a scaled viewport a narrow list of resampled pictures that pass decision D-125 no longer fails its own SSIM", () => {
       // three items of a narrow list, each the D-125 crop (1600×900: a 225 × 135 device px picture drawn at 0.42 of its
-      // pixels): every picture passes its own check at ssimResampledPicture, and together they are most of the list's box
+      // pixels): every picture passes its own checks at D-125's limits (decision D-167's colour cells too), and together they
+      // are most of the list's box
       const crop = (side: string) => decodePng(fs.readFileSync(path.join(here, "fixtures", "compare", `d125-picture-1600.${side}.png`)));
       const stack = (side: string) => {
         const c = crop(side), png = canvas(256, 504, [0, 0, 0]);
@@ -2522,7 +2591,8 @@ describe("compareCapture: edge, colour and ink checks", () => {
       const b: CaptureBoxes = { capture: "c", viewport: [256, 504], scale: 0.625, external: [], elements: { root: el(0, 0, 256, 504), board: el(8, 8, 240, 488), pic: pic(0) },
         items: { "pic#1": pic(1), "pic#2": pic(2) } };
       const c: CaptureContext = { pictures: new Set(["pic", "pic#1", "pic#2"]), backgrounds: new Set(["pic"]), painters: new Set(["pic"]), paintsPicture: new Set(["pic"]),
-        order: ["root", "board", "pic"], root: "root", parent: new Map([["board", "root"], ["pic", "board"]]), repeats: new Set(["board"]), viewportClass: "scaled" };
+        contentPictures: new Set(["pic"]), order: ["root", "board", "pic"], root: "root", parent: new Map([["board", "root"], ["pic", "board"]]), repeats: new Set(["board"]),
+        viewportClass: "scaled" };
       const v = (x: CaptureContext) => compareCapture({ png: stack("design"), boxes: b }, { png: stack("unity"), boxes: b }, [], scaledT, x);
       const now = v(c);
       expect(now.issues).toEqual([]);
@@ -2531,10 +2601,70 @@ describe("compareCapture: edge, colour and ink checks", () => {
         expect(row.ssimLimit, k).toBe(0.95);
         expect(best, k).toBeGreaterThan(0.95);
         expect(best, k).toBeLessThan(0.97);
+        // the correct resampled picture's cells: within D-125's colour limit at the scaled viewport
+        expect(row.pictureColour, k).toBeLessThan(scaledT.deltaE2000ResampledPicture);
       }
       expect(rowOf(now, "board")!.ssim).toBeGreaterThan(0.999);
       // before decision D-166 the list judged its pictures again, at the general limit
-      expect(issuesOf(v({ ...c, paintsPicture: undefined }), "board")).toEqual([expect.objectContaining({ kind: "ssim" })]);
+      expect(issuesOf(v({ ...c, paintsPicture: undefined, contentPictures: undefined }), "board")).toEqual([expect.objectContaining({ kind: "ssim" })]);
+    });
+
+    describe("a url() background image's copies: their colour samples (fix round 1)", () => {
+      // a list (IR `list`, painting) of three rows (IR `row`, copies), each a 32×24 flag (IR `flag`, a url() background image of
+      // one flat colour) with a dot over its left edge (IR `dot`, painted after it; 6 px wide, the third item's 14 px)
+      const listC: Rgb = [20, 30, 40], flagC: Rgb = [138, 99, 210], dotC: Rgb = [242, 181, 68];
+      const flagAt = (k: number) => ({ row: el(8, 8 + 32 * k, 112, 24), flag: el(8, 8 + 32 * k, 32, 24), dot: el(8, 8 + 32 * k, k === 2 ? 14 : 6, 24) });
+      const paintFlags = (flags: Rgb[], dots: Rgb[]) => {
+        const png = canvas(128, 112, bgC);
+        fill(png, { x: 0, y: 0, w: 128, h: 112 }, listC);
+        flags.forEach((c, k) => { const b = flagAt(k); fill(png, b.flag, c); fill(png, b.dot, dots[k]); });
+        return png;
+      };
+      const flagBoxes = (): CaptureBoxes => {
+        const items: Record<string, Box> = {};
+        for (const k of [1, 2]) for (const [id, b] of Object.entries(flagAt(k))) items[`${id}#${k}`] = b;
+        return { capture: "c", viewport: [128, 112], scale: 1, external: [], elements: { root: el(0, 0, 128, 112), list: el(0, 0, 128, 112), ...flagAt(0) }, items };
+      };
+      const fctx: CaptureContext = { backgrounds: new Set(["list", "flag", "dot"]), painters: new Set(["list", "flag", "dot"]), paintsPicture: new Set(["flag"]),
+        contentPictures: new Set(), order: ["root", "list", "row", "flag", "dot"], root: "root",
+        parent: new Map([["list", "root"], ["row", "list"], ["flag", "row"], ["dot", "row"]]), repeats: new Set(["list"]), viewportClass: "exact" };
+      const flags = (unity: Rgb[], dots: Rgb[] = [dotC, dotC, dotC], t: Thresholds = exactT, c: CaptureContext = fctx) =>
+        compareCapture({ png: paintFlags([flagC, flagC, flagC], [dotC, dotC, dotC]), boxes: flagBoxes() }, { png: paintFlags(unity, dots), boxes: flagBoxes() }, [], t, c);
+      // ΔE2000 about 3 from the flag's colour, at about its lightness
+      const off: Rgb = [146, 99, 200];
+
+      it("judges a copy's background picture by its colour samples, named by the copy", () => {
+        expect(flags([flagC, flagC, flagC]).issues).toEqual([]);
+        const v = flags([flagC, flagC, off]);
+        expect(kinds(v)).toEqual(["flag#2 color"]);
+        expect(issuesOf(v, "flag#2")[0].detail).toMatch(/^ΔE2000 [\d.]+ at \(\d+, \d+\): design #8a63d2, Unity #9263c8 \(limit 1\)$/);
+      });
+
+      it("D-125: a copy resampled at a scaled viewport takes the resampled picture's colour limit by its own key", () => {
+        expect(issuesOf(flags([flagC, flagC, off], undefined, scaledT, { ...fctx, viewportClass: "scaled", pictures: new Set(["flag#2"]) }), "flag#2")).toEqual([]);
+        expect(issuesOf(flags([flagC, flagC, off], undefined, scaledT, { ...fctx, viewportClass: "scaled", pictures: new Set(["flag"]) }), "flag#2"))
+          .toEqual([expect.objectContaining({ kind: "color" })]);
+      });
+
+      it("leaves out of a copy's colour samples what paints after it (the dot over its left part)", () => {
+        // Unity draws the third item's dot in another hue at its lightness (SSIM does not see it): the flag's samples under it
+        // are not the flag's
+        const v = flags([flagC, flagC, flagC], [dotC, dotC, [150, 207, 190]]);
+        expect(issuesOf(v, "flag#2")).toEqual([]);
+        const row = rowOf(v, "flag#2")!;
+        expect(row.samples).toBeGreaterThan(0);
+        expect(row.samples).toBeLessThan(15);
+      });
+
+      it("D-166: takes a copy's picture out of its IR container's colour samples", () => {
+        // the second item's flag drawn in another colour: the list's grid points on it are the copy's to judge
+        const v = flags([flagC, [40, 160, 90], flagC]);
+        expect(kinds(v)).toContain("flag#1 color");
+        expect(issuesOf(v, "list").filter((i) => i.kind === "color")).toEqual([]);
+        // before, the list's own samples measured the copy's picture
+        expect(issuesOf(flags([flagC, [40, 160, 90], flagC], undefined, exactT, { ...fctx, paintsPicture: undefined, contentPictures: undefined }), "list"))
+          .toEqual([expect.objectContaining({ kind: "color" })]);
+      });
     });
   });
 
@@ -3634,7 +3764,7 @@ describe("design-export compare", () => {
       // edge bands (docs/findings/viewport-classes.md): ssimRoundEdge at every viewport (D-119); the round-edge corner limit and
       // the scaled class's own keys (D-121) off at exact viewports, measured at scaled ones
       ssimRoundEdge: 0.974, deltaE2000RoundEdge: 1, deltaE2000Ring: 3.1, ssimFractionalEdge: 0.99, ssimVectorEdge: 0.99, deltaE2000FractionalEdge: 1,
-      ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1,
+      ssimResampledPicture: 0.99, deltaE2000ResampledPicture: 1, deltaE2000VectorPictureCell: 2.5,
       // decision D-149: the measured noise of the ink statistic on fragments narrower than 4 em (docs/findings/text-ink.md §12);
       // decision D-151: the colour direction's measured noise where the ΔE2000 key exceeds 6.5 + 0.4; decision D-154: without text
       // that has a text-shadow
@@ -3644,7 +3774,7 @@ describe("design-export compare", () => {
       // the scaled class: D-109, D-115, D-121, and D-125 (resampled pictures), D-126 (small text ink, at most 6.5), D-146 (an
       // ellipsized line's cut one grapheme off)
       scaled: { ssimRoundEdge: 0.974, deltaE2000RoundEdge: 5.5, textInkSmallPx: 12.99, ssimFractionalEdge: 0.97, ssimVectorEdge: 0.975, deltaE2000FractionalEdge: 5.3,
-        ssimResampledPicture: 0.95, deltaE2000ResampledPicture: 5.89, textInkDeltaEFirstSmall: 5.89, ellipsisGraphemes: 1 },
+        ssimResampledPicture: 0.95, deltaE2000ResampledPicture: 5.89, deltaE2000VectorPictureCell: 3.5, textInkDeltaEFirstSmall: 5.89, ellipsisGraphemes: 1 },
     });
     // decision D-151: a colour direction key only on a row whose ΔE2000 key exceeds 6.5 + 0.4
     for (const full of [[[2, 6.15, 0.87, 3]], [[2, 6.15, 0.87]]]) {
@@ -3702,5 +3832,9 @@ describe("design-export compare", () => {
     expect(small({ scaled: { deltaE2000Ring: 5.5 } })).toThrow(/"scaled" cannot change "deltaE2000Ring"/);
     expect(small({ scaled: { ssimRoundEdge: 0.975, deltaE2000RoundEdge: 4 } })()).toMatchObject({ ssimRoundEdge: 0.99, deltaE2000RoundEdge: 1, scaled: { ssimRoundEdge: 0.975, deltaE2000RoundEdge: 4 } });
     expect(small({ deltaE2000Ring: 0.5 })).toThrow(/"deltaE2000Ring" must be at least deltaE2000/);
+    // D-167: a vector picture's cell limit is at least deltaE2000, and the scaled block's never below the file's own
+    expect(small({ deltaE2000VectorPictureCell: 0.5 })).toThrow(/"deltaE2000VectorPictureCell" must be at least deltaE2000/);
+    expect(small({ deltaE2000VectorPictureCell: 2.5, scaled: { deltaE2000VectorPictureCell: 2 } })).toThrow(/"scaled" "deltaE2000VectorPictureCell" may not be below the file's own \(2\.5\)/);
+    expect(small({ deltaE2000VectorPictureCell: 2.5, scaled: { deltaE2000VectorPictureCell: 3.5 } })()).toMatchObject({ deltaE2000VectorPictureCell: 2.5, scaled: { deltaE2000VectorPictureCell: 3.5 } });
   });
 });

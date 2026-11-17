@@ -45,8 +45,10 @@
  * named by the copy (`row#3`), and their text masked like it; their boxes are not compared. The copies of an element that
  * paints a picture (a content image or vector, a url() background image) get the element's SSIM and colour samples with its
  * limits, named by the copy, present and visible by the same rules (decision D-165). A picture with an element SSIM of its
- * own, the IR element's or a copy's, is masked (its box on both sides) from its ancestors' SSIM and colour samples and from
- * the whole capture's SSIM: its own check judges it (decision D-166); what an item paints around it stays theirs.
+ * own, the IR element's or a copy's, is masked (its design box, and its Unity box within the box limit of it) from its
+ * ancestors' SSIM and colour samples and from the whole capture's SSIM: its own check judges it (decision D-166); what an item
+ * paints around it stays theirs. A content picture (an `<img>`, a vector) also has its colour judged by the mean colours of a
+ * coarse grid of cells (decision D-167: `pictureCells`), since its SSIM sees luma only.
  * Masks are the union of both sides inflated by 2 px; Unity text is masked only for elements the design also shows. The
  * pixel row or column of a painted edge the design draws off the device grid (Chromium snaps boxes to whole CSS px, UI
  * Toolkit to whole device px) is copied from the design too, unless it would be the whole of a thin element; the box
@@ -199,6 +201,14 @@ export interface Thresholds {
    */
   deltaE2000ResampledPicture: number;
   /**
+   * The colour limit of a vector picture's colour cells (decision D-167: an inline svg or an svg image, the mean colour of each
+   * cell of a grid of up to PICTURE_CELLS × PICTURE_CELLS cells of at least PICTURE_CELL_MIN px against Unity's): the renderers
+   * anti-alias a vector's drawn edges differently (measured highest 1.66 at the exact viewports, 2.80 at the scaled ones), a
+   * wrong picture's cells measure 30 and more. At least `deltaE2000`; the scaled block's value never below the file's own.
+   * A raster picture's cells take `deltaE2000`, and `deltaE2000ResampledPicture` where it is resampled at a scaled viewport.
+   */
+  deltaE2000VectorPictureCell: number;
+  /**
    * The colour direction limit of a hairline line (decision D-138; degrees): a text line the design draws with fewer than
    * HAIRLINE_PIXELS fully covered pixels (an em dash or a "1" whose stroke lies between two device pixels), where the ink's
    * lightness and amount measure coverage, is judged by the angle between the design's and Unity's ink directions from the
@@ -250,7 +260,7 @@ export const THRESHOLDS_FILE = fileURLToPath(new URL("../../fidelity-thresholds.
 const THRESHOLD_KEYS = ["boxPx", "baselinePx", "deltaE2000", "ssimNonText", "ssimElement", "textInkDeltaE", "textInkRatio", "textInkCoverage",
   "textInkFullPx", "textInkMedianTolerance", "ssimPicture", "textInkLaterBelowPx", "textInkCoverageLater", "textInkSmallPx", "textInkDeltaEFirstSmall", "textInkMedianToleranceSmall", "textInkShadowHigh",
   "ssimRotated", "ssimRoundEdge", "deltaE2000RoundEdge", "deltaE2000Ring", "ssimFractionalEdge", "ssimVectorEdge", "deltaE2000FractionalEdge",
-  "ssimResampledPicture", "deltaE2000ResampledPicture", "textInkDirection", "ellipsisGraphemes"] as const;
+  "ssimResampledPicture", "deltaE2000ResampledPicture", "deltaE2000VectorPictureCell", "textInkDirection", "ellipsisGraphemes"] as const;
 /** No measured policy may accept an element SSIM below this. */
 export const SSIM_FLOOR = 0.97;
 /**
@@ -430,6 +440,8 @@ function checkThresholds(raw: Record<string, unknown>, file: string, scaled = fa
   if (scaled && !(resampled >= RESAMPLED_PICTURE_FLOOR && resampled <= 1)) throw new Error(`${file}: "ssimResampledPicture" must lie between ${RESAMPLED_PICTURE_FLOOR} and 1`);
   if (!scaled && resampledDe !== (raw.deltaE2000 as number)) throw new Error(`${file}: "deltaE2000ResampledPicture" must equal deltaE2000 (off): only "scaled" may raise it`);
   if (scaled && !(resampledDe >= (raw.deltaE2000 as number))) throw new Error(`${file}: "deltaE2000ResampledPicture" must be at least deltaE2000`);
+  // decision D-167: a vector picture's colour cells, never below the colour limit
+  if (!((raw.deltaE2000VectorPictureCell as number) >= (raw.deltaE2000 as number))) throw new Error(`${file}: "deltaE2000VectorPictureCell" must be at least deltaE2000`);
   // decision D-138: a hairline line's colour direction, in degrees
   if (!((raw.textInkDirection as number) > 0 && (raw.textInkDirection as number) <= 10)) throw new Error(`${file}: "textInkDirection" must lie above 0 and at most 10 (degrees)`);
   // decision D-146: an ellipsized line's cut may differ by one grapheme at scaled viewports only
@@ -478,6 +490,7 @@ export function readThresholds(file: string = THRESHOLDS_FILE): Thresholds {
     if (!(k in base) || k === "scaled") throw new Error(`${file}: "scaled" has an unknown threshold key "${k}"`);
   }
   const merged = checkThresholds({ ...raw, ...own }, `${file} (scaled)`, true);
+  if (merged.deltaE2000VectorPictureCell < base.deltaE2000VectorPictureCell) throw new Error(`${file}: "scaled" "deltaE2000VectorPictureCell" may not be below the file's own (${base.deltaE2000VectorPictureCell})`);
   const scaled = Object.fromEntries(Object.keys(own).map((k) => [k, merged[k as keyof Thresholds]])) as Thresholds["scaled"];
   return { ...base, scaled };
 }
@@ -640,6 +653,11 @@ export interface ElementRow {
   samples: number | null;
   /** Largest ring sample ΔE2000 (text-carrying elements: background inside the border, border, corners). */
   edge: number | null;
+  /**
+   * A content picture's colour (decision D-167): the largest ΔE2000 between the design's and Unity's mean colour of a cell of its
+   * grid, each at Unity's best offset of up to 1 px; absent for other elements, null when the picture leaves no cell.
+   */
+  pictureColour?: number | null;
   /** Largest ring colour sample ΔE2000 of a round element without text (the middle of each border side; `deltaE2000Ring`). */
   ring?: number | null;
   /**
@@ -905,6 +923,13 @@ export const GEOMETRY_EPS = 1e-3;
 const MIN_ELEMENT = 16;
 /** Painted elements thinner than this (device px) are lines: sampled on their centre line, one pixel at a time. */
 const THIN_PX = 8;
+/**
+ * Decision D-167: a content picture's colour grid, cells per axis, and the smallest cell side in device px (one SSIM block): a
+ * picture takes fewer cells where it is smaller, one on an axis under 2 × PICTURE_CELL_MIN px. Coarse cells leave the fine
+ * rendering (inner edges the renderers resample or anti-alias differently) to SSIM and still show a wrong picture.
+ */
+export const PICTURE_CELLS = 4;
+export const PICTURE_CELL_MIN = 8;
 const MIN_INK_PX = 16;
 const FX = [0.1, 0.3, 0.5, 0.7, 0.9], FY = [0.25, 0.5, 0.75];
 const fmt = (n: number, d = 2) => (n >= 0 ? "+" : "") + n.toFixed(d);
@@ -1258,7 +1283,8 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     if (!ctx.paintsPicture?.has(id)) continue;
     const uc = u.items?.[key], away = clippedAway(g, id, key, { ...gc, lines: [] });
     if (gc.text) {
-      if (uc && gc.visible && uc.visible && !away) pictureCopies.push({ key, id, g: gc, u: uc, copy: true });
+      // only one the text copy's checks found present and visible (its row, not hidden, missing or failed on visibility)
+      if (uc && rowOf.get(key)?.status === "ok" && !away) pictureCopies.push({ key, id, g: gc, u: uc, copy: true });
       continue;
     }
     const row = newRow(key);
@@ -1463,7 +1489,17 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
      * sides, leave the whole capture's SSIM and their ancestors' SSIM and colour samples (`picturesIn`).
      */
     const judgedPictures = [...compared.filter((id) => !!ctx.paintsPicture?.has(id)).map(irSubject), ...pictureCopies].filter(ownSsim);
-    const pictureBoxes = (ps: readonly Subject[]): Rect[] => ps.flatMap((p) => [p.g, p.u]);
+    /**
+     * What a judged picture's mask covers: its design box, and its Unity box only within the box limit of it (boxPx with
+     * GEOMETRY_EPS each way). A copy's box is not compared (decision D-133), and its own SSIM covers the design's region only: a
+     * picture Unity draws larger or elsewhere stays in its containers' checks past that limit (an IR picture's box check bounds
+     * its Unity box as well).
+     */
+    const pictureBoxes = (ps: readonly Subject[]): Rect[] => ps.flatMap((p) => {
+      const lim = grow(p.g, t.boxPx + GEOMETRY_EPS), u = p.u;
+      const x0 = Math.max(u.x, lim.x), y0 = Math.max(u.y, lim.y), x1 = Math.min(u.x + u.w, lim.x + lim.w), y1 = Math.min(u.y + u.h, lim.y + lim.h);
+      return x1 > x0 && y1 > y0 ? [p.g, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }] : [p.g];
+    });
     masked = [
       ...[...textBoxes, ...externalBoxes].filter((r) => r.w > 0 && r.h > 0).map((r) => ({ x: r6(r.x - 2), y: r6(r.y - 2), w: r6(r.w + 4), h: r6(r.h + 4) })),
       ...pictureBoxes(judgedPictures).filter((r) => r.w > 0 && r.h > 0).map((r) => ({ x: r6(r.x), y: r6(r.y), w: r6(r.w), h: r6(r.h) })),
@@ -1552,7 +1588,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       const x0 = Math.floor(region.x / 8) * 8, x1 = Math.ceil((region.x + region.w) / 8) * 8, y0 = Math.floor(region.y / 8) * 8, y1 = Math.ceil((region.y + region.h) / 8) * 8;
       const keys = new Set(inner.map((p) => p.key));
       return judgedPictures.every((p) => keys.has(p.key)
-        || [p.g, p.u].every((b) => Math.floor(b.x) >= x1 || Math.ceil(b.x + b.w) <= x0 || Math.floor(b.y) >= y1 || Math.ceil(b.y + b.h) <= y0));
+        || pictureBoxes([p]).every((b) => Math.floor(b.x) >= x1 || Math.ceil(b.x + b.w) <= x0 || Math.floor(b.y) >= y1 || Math.ceil(b.y + b.h) <= y0));
     };
     /** A border an edge band masks (an element's own, a descendant's or a later repeat item's), where each renderer draws it. */
     interface BandBorder { id: string; label: string; g: Rect; u: Rect; widths: readonly number[]; radii?: readonly number[] }
@@ -1969,6 +2005,54 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
     };
 
     /**
+     * Decision D-167: the colour of a content picture (an `<img>`, a vector), which its SSIM, on luma, does not judge. Its area
+     * where both renderers draw it (the design's painted rect and Unity's box, whole pixels, a pixel in from their edges) is cut
+     * into a grid of up to PICTURE_CELLS × PICTURE_CELLS cells of at least PICTURE_CELL_MIN px (one cell on an axis shorter than
+     * two), and each cell's mean colour in the design is held against Unity's at the best offset of up to 1 px (the colour
+     * samples' allowance for the ±1 px box limit). A pixel the line mask holds (text lines, external regions, off-grid edges,
+     * outside the screen) or under a later layer (`cover`, a pixel wider) is left out of both means. `cells` 0 when no cell
+     * keeps a pixel (an empty area, or a picture inside a masked text box): not sampled.
+     */
+    const pictureCells = (gPaint: Rect, ue: Rect, cover: readonly Rect[]): { cells: number; worst: { de: number; at: Rect; cell: string; a: number[]; b: number[] } | null } => {
+      const x0 = Math.max(0, Math.ceil(Math.max(gPaint.x, ue.x)) + 1), x1 = Math.min(w, Math.floor(Math.min(gPaint.x + gPaint.w, ue.x + ue.w)) - 1);
+      const y0 = Math.max(0, Math.ceil(Math.max(gPaint.y, ue.y)) + 1), y1 = Math.min(h, Math.floor(Math.min(gPaint.y + gPaint.h, ue.y + ue.h)) - 1);
+      if (x1 <= x0 || y1 <= y0) return { cells: 0, worst: null };
+      const nx = Math.max(1, Math.min(PICTURE_CELLS, Math.floor((x1 - x0) / PICTURE_CELL_MIN))), ny = Math.max(1, Math.min(PICTURE_CELLS, Math.floor((y1 - y0) / PICTURE_CELL_MIN)));
+      const area: Rect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      const over = cover.filter((c) => c.x - 1 < area.x + area.w && c.x + c.w + 1 > area.x && c.y - 1 < area.y + area.h && c.y + c.h + 1 > area.y);
+      const gd = gp.data, ud = up.data;
+      let cells = 0, worst: { de: number; at: Rect; cell: string; a: number[]; b: number[] } | null = null;
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+        const cx0 = x0 + Math.round((i * area.w) / nx), cx1 = x0 + Math.round(((i + 1) * area.w) / nx);
+        const cy0 = y0 + Math.round((j * area.h) / ny), cy1 = y0 + Math.round(((j + 1) * area.h) / ny);
+        const kept: number[] = [];
+        const a = [0, 0, 0];
+        for (let y = cy0; y < cy1; y++) for (let x = cx0; x < cx1; x++) {
+          if (lineMask[y * w + x] || over.some((c) => inside(c, x, y, 1))) continue;
+          const o = (y * w + x) * 4;
+          a[0] += gd[o]; a[1] += gd[o + 1]; a[2] += gd[o + 2];
+          kept.push(x, y);
+        }
+        const n = kept.length / 2;
+        if (!n) continue;
+        cells++;
+        const am = a.map((v) => v / n);
+        let best: { de: number; b: number[] } | null = null;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const b = [0, 0, 0];
+          for (let k = 0; k < kept.length; k += 2) {
+            const o = (Math.min(h - 1, Math.max(0, kept[k + 1] + dy)) * w + Math.min(w - 1, Math.max(0, kept[k] + dx))) * 4;
+            b[0] += ud[o]; b[1] += ud[o + 1]; b[2] += ud[o + 2];
+          }
+          const bm = b.map((v) => v / n), de = deltaE2000(am, bm);
+          if (!best || de < best.de) best = { de, b: bm };
+        }
+        if (!worst || best!.de > worst.de) worst = { de: best!.de, at: { x: cx0, y: cy0, w: cx1 - cx0, h: cy1 - cy0 }, cell: `cell (${i + 1}, ${j + 1}) of ${nx}×${ny}`, a: am, b: best!.b };
+      }
+      return { cells, worst };
+    };
+
+    /**
      * Elements below ssimElement, judged after every other check (a measured lower limit needs those to pass), with the mask
      * their SSIM was measured with (`base`: the text or line mask with the pictures inside them, decision D-166).
      */
@@ -2122,6 +2206,21 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
             issue(key, "color", `ΔE2000 ${bestS.de.toFixed(2)} at ${bestS.p.where}: design ${hex(bestS.a)}, Unity ${hex(bestS.b)} (limit ${limit}${limit > t.deltaE2000 ? " for a raster picture resampled at a scaled viewport" : ""})`,
               { x: bestS.p.gx - 1, y: bestS.p.gy - 1, w: 3, h: 3 });
           }
+        }
+      }
+
+      // decision D-167: a content picture's colour, cell by cell (its SSIM judges luma only): a vector's at its measured cell
+      // limit, a raster picture resampled at a scaled viewport at D-125's colour limit, as its colour samples. A picture no cell
+      // of which keeps a pixel is not sampled (counted; its SSIM, box and edges still judge it)
+      if (ctx.contentPictures?.has(id)) {
+        const r = pictureCells(gPaint, ue, cover);
+        row.pictureColour = r.worst ? r6(r.worst.de) : null;
+        if (!r.cells) notSampled.push(key);
+        const vector = !!ctx.vectorPictures?.has(id);
+        const limit = vector ? t.deltaE2000VectorPictureCell : ctx.pictures?.has(key) ? Math.max(t.deltaE2000, t.deltaE2000ResampledPicture) : t.deltaE2000;
+        if (r.worst && r.worst.de > limit + EPS) {
+          const why = vector ? " for a vector picture's cells" : limit > t.deltaE2000 ? " for a raster picture resampled at a scaled viewport" : "";
+          issue(key, "color", `picture colour ΔE2000 ${r.worst.de.toFixed(2)} in ${r.worst.cell}: design ${hex(r.worst.a)}, Unity ${hex(r.worst.b)} (mean colours; limit ${limit}${why})`, r.worst.at);
         }
       }
 

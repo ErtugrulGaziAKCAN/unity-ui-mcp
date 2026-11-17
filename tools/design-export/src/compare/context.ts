@@ -59,6 +59,14 @@ export interface CaptureContext {
    * and colour checks (decision D-166).
    */
   paintsPicture?: ReadonlySet<string>;
+  /**
+   * The elements of `paintsPicture` that draw a content picture (IR `asset`: an `<img>`, raster or svg, an inline svg; or kind
+   * `vector`), which paints no background and so has no background colour samples: a grid of cell means judges its colour
+   * (decision D-167), the IR element's and its copies'.
+   */
+  contentPictures?: ReadonlySet<string>;
+  /** The content pictures drawn from a vector (an inline svg, an `<img>` of an svg): their cells take `deltaE2000VectorPictureCell`. */
+  vectorPictures?: ReadonlySet<string>;
   /** Text elements whose `text-shadow` in this capture has a blur radius above 0 (a glow around the glyphs). */
   textShadows?: ReadonlySet<string>;
   /**
@@ -291,7 +299,7 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
   const fontPx: Record<string, number> = {};
   const radii: Record<string, [number, number, number, number]> = {};
   const pictures = new Set<string>(), textShadows = new Set<string>(), shadowedText = new Set<string>(), rotated = new Set<string>(), opaque = new Set<string>(), vectors = new Set<string>();
-  const repeats = new Set<string>(), paintsPicture = new Set<string>();
+  const repeats = new Set<string>(), paintsPicture = new Set<string>(), contentPictures = new Set<string>(), vectorPictures = new Set<string>();
   /** Per raster `<img>`, its picture's size; the url() background images drawn at another size than their own. */
   const rasterSize = new Map<string, { w: number; h: number }>(), resampledBackground = new Set<string>();
   const opacity = new Map<string, number>();
@@ -341,7 +349,11 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     }
     if (backgrounds.has(id) || borders[id] || sh || inset || n.asset || n.kind === "image" || n.kind === "vector") painters.add(id);
     // a picture: a content image or vector, or a url() background image (decision D-165)
-    if (isObj(n.asset) || n.kind === "vector" || (image !== undefined && /url\(/i.test(image))) paintsPicture.add(id);
+    if (isObj(n.asset) || n.kind === "vector") {
+      paintsPicture.add(id); contentPictures.add(id);
+      if (n.kind === "vector" || (isObj(n.asset) && n.asset.kind === "svg")) vectorPictures.add(id);
+    }
+    else if (image !== undefined && /url\(/i.test(image)) paintsPicture.add(id);
     // a raster picture is resampled unless its element box is its own size in device px
     if (isObj(n.asset) && n.asset.kind === "image") {
       const size = { w: Number(n.asset.width), h: Number(n.asset.height) };
@@ -397,5 +409,5 @@ export function captureContext(ix: IrIndex, setup: CaptureSetup, golden: Capture
     return movesBox(Array.isArray(anims) && typeof r.index === "number" ? anims[r.index] : undefined) ? r.elementId : null;
   }).filter((x): x is string => x !== null));
   if (runIds.size) for (const id of ix.order) for (let x: string | undefined = id; x !== undefined; x = ix.parent.get(x)) if (runIds.has(x)) { moving.add(id); break; }
-  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, paintsPicture, textShadows, shadowedText, rotated, clips };
+  return { order: ix.order, root: ix.root, parent: ix.parent, anim: !!setup.anim, moving, vectors, repeats, shadows, backgrounds, painters, opaque, borders, fontPx, radii, pictures, paintsPicture, contentPictures, vectorPictures, textShadows, shadowedText, rotated, clips };
 }
