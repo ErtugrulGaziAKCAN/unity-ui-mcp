@@ -2544,6 +2544,37 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(chev.elements.find((e) => e.id === "chev")!.pictureColour).toBeNull();
     });
 
+    it("D-167, fix round 2: a copy's colour cells measure the design's place, also when Unity's box for it is elsewhere", () => {
+      // the third item's box placed at x 120 by Unity (a copy's box is not compared), and a picture of another hue at its
+      // lightness drawn at the design's place: the design's place is judged, not left unsampled
+      const away = boxes();
+      away.items!["pic#2"] = el(120, 112, 24, 24);
+      const v = run([teal, green, [100, 190, 60]], ctx, undefined, away);
+      expect(kinds(v)).toEqual(["pic#2 color"]);
+      expect(v.notSampled).not.toContain("pic#2");
+    });
+
+    it("D-167, fix round 2: the colour cells' cost does not grow with the number of later layers times pixels", () => {
+      // a 1568 × 928 picture under 0 or 400 later 8 × 8 layers (a probe at 4K with 400 took 9.6 s per capture before)
+      const W = 1600, H = 960, photo = el(16, 16, 1568, 928);
+      const layers = Array.from({ length: 400 }, (_, k) => [`p${k}`, el(40 + (k % 25) * 60, 40 + Math.floor(k / 25) * 56, 8, 8)] as [string, Box]);
+      const timed = (n: number) => {
+        const png = fill(canvas(W, H, bgC), photo, coral);
+        const els = Object.fromEntries([["root", el(0, 0, W, H)], ["photo", photo], ...layers.slice(0, n)]);
+        const ids = layers.slice(0, n).map(([id]) => id);
+        const c: CaptureContext = { backgrounds: new Set(), painters: new Set(["photo", ...ids]), paintsPicture: new Set(["photo"]), contentPictures: new Set(["photo"]),
+          order: ["root", "photo", ...ids], root: "root", parent: new Map([["photo", "root"], ...ids.map((id): [string, string] => [id, "root"])]), viewportClass: "exact" };
+        const b: CaptureBoxes = { capture: "c", viewport: [W, H], scale: 1, external: [], elements: els };
+        let best = Infinity, v: CaptureVerdict | null = null;
+        for (let k = 0; k < 2; k++) { const t0 = performance.now(); v = compareCapture({ png, boxes: b }, { png, boxes: b }, [], exactT, c); best = Math.min(best, performance.now() - t0); }
+        expect(v!.issues).toEqual([]);
+        expect(v!.elements.find((e) => e.id === "photo")!.pictureColour).toBe(0);
+        return best;
+      };
+      const none = timed(0), many = timed(400);
+      expect(many, `${none.toFixed(0)} ms without layers, ${many.toFixed(0)} ms with 400`).toBeLessThan(3 * none + 300);
+    });
+
     it("D-165: a picture copy Unity lacks or shows otherwise is an issue as a text copy's; one the design's clips hide may be absent", () => {
       expect(kinds(run(right, ctx, undefined, boxes({ drop: ["pic#2"] })))).toEqual(["pic#2 missing"]);
       expect(kinds(run(right, ctx, undefined, boxes({ hide: ["pic#1"] })))).toEqual(["pic#1 visibility"]);

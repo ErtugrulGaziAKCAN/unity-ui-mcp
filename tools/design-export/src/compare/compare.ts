@@ -750,7 +750,10 @@ export interface CaptureVerdict {
   fragmentsBelowDomain?: string[];
   /** Text fragments whose width has no colour key (decision D-151): their ink colour is not judged; `<key>: line <k> of <n>`. */
   fragmentColourNotJudged?: string[];
-  /** Elements that paint a background but had no colour sample left (every point covered or on text). */
+  /**
+   * Elements (an element or a copy, each once) that paint a background or a content picture (decision D-167) but had no colour
+   * sample or cell left (every point covered or on text).
+   */
   notSampled: string[];
   /** Unity pixels with alpha below 255 (compared premultiplied). */
   translucent: number;
@@ -2010,8 +2013,10 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
      * into a grid of up to PICTURE_CELLS × PICTURE_CELLS cells of at least PICTURE_CELL_MIN px (one cell on an axis shorter than
      * two), and each cell's mean colour in the design is held against Unity's at the best offset of up to 1 px (the colour
      * samples' allowance for the ±1 px box limit). A pixel the line mask holds (text lines, external regions, off-grid edges,
-     * outside the screen) or under a later layer (`cover`, a pixel wider) is left out of both means. `cells` 0 when no cell
-     * keeps a pixel (an empty area, or a picture inside a masked text box): not sampled.
+     * outside the screen) or under a later layer (`cover`, a pixel wider; marked once per picture, so the cost does not grow
+     * with the number of layers times pixels) is left out of both means. `cells` 0 when no cell keeps a pixel (an empty area, or
+     * a picture inside a masked text box): not sampled. A later item's copy measures the design's painted rect alone (`ue`
+     * its own): its box is not compared (decision D-133), and a copy Unity draws elsewhere leaves the design's place to judge.
      */
     const pictureCells = (gPaint: Rect, ue: Rect, cover: readonly Rect[]): { cells: number; worst: { de: number; at: Rect; cell: string; a: number[]; b: number[] } | null } => {
       const x0 = Math.max(0, Math.ceil(Math.max(gPaint.x, ue.x)) + 1), x1 = Math.min(w, Math.floor(Math.min(gPaint.x + gPaint.w, ue.x + ue.w)) - 1);
@@ -2019,7 +2024,18 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       if (x1 <= x0 || y1 <= y0) return { cells: 0, worst: null };
       const nx = Math.max(1, Math.min(PICTURE_CELLS, Math.floor((x1 - x0) / PICTURE_CELL_MIN))), ny = Math.max(1, Math.min(PICTURE_CELLS, Math.floor((y1 - y0) / PICTURE_CELL_MIN)));
       const area: Rect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-      const over = cover.filter((c) => c.x - 1 < area.x + area.w && c.x + c.w + 1 > area.x && c.y - 1 < area.y + area.h && c.y + c.h + 1 > area.y);
+      // the later layers over the area, a pixel wider (`inside(c, x, y, 1)`), as a 2-D difference array summed once
+      const W = area.w + 1, under = new Int32Array(W * (area.h + 1));
+      for (const c of cover) {
+        const xa = Math.max(x0, Math.ceil(c.x - 1)), xb = Math.min(x1, Math.ceil(c.x + c.w + 1));
+        const ya = Math.max(y0, Math.ceil(c.y - 1)), yb = Math.min(y1, Math.ceil(c.y + c.h + 1));
+        if (xb <= xa || yb <= ya) continue;
+        under[(ya - y0) * W + (xa - x0)]++; under[(ya - y0) * W + (xb - x0)]--; under[(yb - y0) * W + (xa - x0)]--; under[(yb - y0) * W + (xb - x0)]++;
+      }
+      for (let y = 0; y <= area.h; y++) for (let x = 0; x <= area.w; x++) {
+        const p = y * W + x;
+        under[p] += (x ? under[p - 1] : 0) + (y ? under[p - W] : 0) - (x && y ? under[p - W - 1] : 0);
+      }
       const gd = gp.data, ud = up.data;
       let cells = 0, worst: { de: number; at: Rect; cell: string; a: number[]; b: number[] } | null = null;
       for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
@@ -2028,7 +2044,7 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
         const kept: number[] = [];
         const a = [0, 0, 0];
         for (let y = cy0; y < cy1; y++) for (let x = cx0; x < cx1; x++) {
-          if (lineMask[y * w + x] || over.some((c) => inside(c, x, y, 1))) continue;
+          if (lineMask[y * w + x] || under[(y - y0) * W + (x - x0)] > 0) continue;
           const o = (y * w + x) * 4;
           a[0] += gd[o]; a[1] += gd[o + 1]; a[2] += gd[o + 2];
           kept.push(x, y);
@@ -2213,9 +2229,9 @@ function analyze(golden: Side, unity: Side, removed: readonly string[], t: Thres
       // limit, a raster picture resampled at a scaled viewport at D-125's colour limit, as its colour samples. A picture no cell
       // of which keeps a pixel is not sampled (counted; its SSIM, box and edges still judge it)
       if (ctx.contentPictures?.has(id)) {
-        const r = pictureCells(gPaint, ue, cover);
+        const r = pictureCells(gPaint, s.copy ? gPaint : ue, cover);
         row.pictureColour = r.worst ? r6(r.worst.de) : null;
-        if (!r.cells) notSampled.push(key);
+        if (!r.cells && !notSampled.includes(key)) notSampled.push(key);
         const vector = !!ctx.vectorPictures?.has(id);
         const limit = vector ? t.deltaE2000VectorPictureCell : ctx.pictures?.has(key) ? Math.max(t.deltaE2000, t.deltaE2000ResampledPicture) : t.deltaE2000;
         if (r.worst && r.worst.de > limit + EPS) {

@@ -169,7 +169,7 @@ export function registerVerify(server: McpServer, ctx: ServerContext): void {
           ...(v.warnings ?? []).map((w) => `Warning: ${w}`),
           ...(v.colour?.space === "Linear" && v.colour.path !== "linear-panel"
             ? ["Colour: Linear colour space, captured through the gamma composite: in game this holds for panels rendered through DesignUiGammaComposite"] : []),
-          ...(v.notSampled ? [`Backgrounds not sampled (every point covered or on text): ${v.notSampled}`] : []),
+          ...(v.notSampled ? [`Backgrounds and pictures not sampled (every point covered or on text): ${v.notSampled}`] : []),
           ...(keptRun ? [`Unity captures kept in ${keptRun.dir} (${mb(keptRun.bytes)}; counted by cacheBudgetMB; removed by the next verify, an import that exports the screen again, a later cleanup over the budget or design_ui_clean). ` +
             `Compare them again offline: design-export compare ${exportDir} --unity ${keptRun.dir} --report <file.html>`] : []),
           ...(keepCaptures === true && !keptRun ? ["Unity captures were not kept: this comparison step cannot keep them."] : []),

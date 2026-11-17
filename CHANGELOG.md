@@ -22,8 +22,10 @@ numbers below are in [docs/findings/](docs/findings/); the decisions they cite (
   item's and every copy's, is also judged by its colour (decision D-167): the mean colour of each cell of a grid of up to
   4 × 4 cells of at least 8 device px against Unity's, within `deltaE2000` (a resampled raster picture at a scaled viewport:
   D-125's limit; a vector: the new measured key `deltaE2000VectorPictureCell`, 2.5, and 3.5 at scaled viewports). Before, its
-  SSIM, on luma, passed a picture of another hue at the same lightness. A picture no cell of which keeps a pixel (inside a
-  masked text box) is counted as not sampled.
+  SSIM, on luma, passed a picture of another hue at the same lightness. A later item's copy is measured at the design's
+  place, also when Unity puts its box elsewhere. A picture no cell of which keeps a pixel (inside a masked text box) is
+  counted as not sampled, once per element; the tally is labelled "backgrounds and pictures not sampled" in the report, the
+  CLI and `design_ui_verify`.
 - Repeat items show their own sample images in verify. An image bind's sample (an `<img data-u-bind>`, or an element
   painted only by a bound url() image) is now the image that item shows, `{ "$image": { "file", "sha256", "width",
   "height" } }` in `fixtures/sample-data.json`, or `{ "$image": null }` when it shows none (no source, or hidden by the

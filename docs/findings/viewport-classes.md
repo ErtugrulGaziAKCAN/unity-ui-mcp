@@ -646,14 +646,17 @@ luma, judged its picture alone: a flat picture of another hue at about the same 
 `crest#1`, Unity's teal-blue where the design is coral, luma 145 against 139, measured 0.9979–0.9991, the entry crests
 0.9905–0.9983, `badge#1`, sky for amber, 0.9836–0.9897). Every content picture, the first item's and every copy's, now has a
 colour check: its area where both renderers draw it (the design's painted rect and Unity's box, whole pixels, a pixel in from
-their edges) is cut into a grid of up to 4 × 4 cells of at least 8 device px (one cell on an axis shorter than two cells), and
-each cell's mean colour is held against Unity's at the best offset of up to 1 px; pixels on text, an external region, an
+their edges; for a later item's copy, whose box is not compared, the design's painted rect alone, so a copy Unity places
+elsewhere leaves the design's place to judge) is cut into a grid of up to 4 × 4 cells of at least 8 device px (one cell on an
+axis shorter than two cells), and each cell's mean colour is held against Unity's at the best offset of up to 1 px; pixels on text, an external region, an
 off-grid edge, outside the screen or under a later layer are left out. Limits: a raster picture `deltaE2000`, at a scaled
 viewport `deltaE2000ResampledPicture` where it is resampled (D-125); a vector its own measured key
 `deltaE2000VectorPictureCell`, 2.5 at the exact viewports and 3.5 in the scaled block (the measured highest 1.66 and 2.80 plus a
 margin: the check is for a wrong picture, whose cells measure 30–71). A picture no cell of which keeps a pixel (the dropdown's
-chevron inside the select's masked text box: 18 per viewport) is counted as not sampled, not judged by colour; its SSIM, box
-and edges still judge it.
+chevron inside the select's masked text box: 18 per viewport) is counted as not sampled (once per element, with the
+backgrounds: "backgrounds and pictures not sampled"), not judged by colour; its SSIM, box and edges still judge it. The later
+layers a cell leaves out are marked once per picture, so the check's time does not grow with their number (a 1568 × 928
+picture under 400 later layers: about 70 ms per capture, as under none; with a test per pixel and layer it took 1.5 s).
 
 Measured on the default suite's captures (this task's full run), the worst cell ΔE2000 of the content pictures per fixture and
 viewport, with cells of at least 4 px (first measured) and at least 8 px (decided):

@@ -100,7 +100,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       if (v.extra.length) io.out(`extra Unity captures (not compared): ${v.extra.join(", ")}\n`);
       for (const w of v.warnings) io.out(`warning: ${w}\n`);
       const notSampled = v.captures.reduce((a, c) => a + c.notSampled.length, 0);
-      if (notSampled) io.out(`backgrounds not sampled (every point covered or on text): ${notSampled}\n`);
+      if (notSampled) io.out(`backgrounds and pictures not sampled (every point covered or on text): ${notSampled}\n`);
       for (const line of summarizeIssues(v, 10, { notRun: false })) io.out(`- ${line}\n`);
       io.out(`report: ${report}\nverdict: ${verdictFile}\n`);
       return v.pass ? 0 : 1;

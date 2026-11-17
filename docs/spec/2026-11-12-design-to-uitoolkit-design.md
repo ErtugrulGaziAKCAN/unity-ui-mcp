@@ -911,11 +911,12 @@ best value with the Unity image offset by up to 1 px in x and y (a moved edge or
 missing shadow, another shape or a dashed border still does), and every colour sample is compared with the closest
 Unity colour within 1 px. An element that carries its own text (a button, a badge) is measured with only its text lines
 copied from the design, plus samples of its background, border and corner diagonals; elements that paint a background
-but leave no sample point are reported as "not sampled". A repeat's later items' copies of an element that paints a
+or a content picture but leave no sample point or cell are reported as "not sampled" (backgrounds and pictures, each once). A repeat's later items' copies of an element that paints a
 picture (a content image or vector, a url() background image) get the element's SSIM and colour samples with its limits,
 named by the copy (decision D-165; a copy's text gets the element's text checks, decision D-133). A content picture (an
 `<img>`, a vector), whose SSIM judges luma only, also gets a colour check (decision D-167): the mean colour of each cell of a
-grid of up to 4 × 4 cells of at least 8 device px over it, against Unity's at the best offset of up to 1 px.
+grid of up to 4 × 4 cells of at least 8 device px over it (a later item's copy: at the design's place), against Unity's at
+the best offset of up to 1 px.
 
 SSIM is the mean over non-overlapping 8×8 blocks of BT.601 luma with `C1 = (0.01·255)²`, `C2 = (0.03·255)²`
 (implemented in `tools/design-export/src/compare/ssim.ts`, defined and calibrated in M0 findings §11). For an element it is the mean over the blocks that overlap the

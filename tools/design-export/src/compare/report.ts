@@ -147,7 +147,7 @@ function captureSection(c: CaptureVerdict, i: number, img: { golden: string; uni
     ${(c.ellipsisNotJudged ?? []).length ? `<p class="muted">Ellipses not judged (below 16 device px the design's own dots do not resolve into three): ${c.ellipsisNotJudged!.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${(c.fragmentColourNotJudged ?? []).length ? `<p class="muted">Fragment colours not judged (no colour key measured for their width): ${c.fragmentColourNotJudged!.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${(c.fragmentsBelowDomain ?? []).length ? `<p class="muted">Fragments below the measured domain (the design's ink in what shows under 16 px; judged on presence, colour direction and amount band only): ${c.fragmentsBelowDomain!.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
-    ${c.notSampled.length ? `<p class="warn-text">Background not sampled (every sample point covered or on text): ${c.notSampled.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
+    ${c.notSampled.length ? `<p class="warn-text">Backgrounds and pictures not sampled (every point covered or on text): ${c.notSampled.map((x) => `<code>${esc(x)}</code>`).join(", ")}</p>` : ""}
     ${c.translucent ? `<p class="muted">${c.translucent} Unity pixels are translucent; colours were compared premultiplied.</p>` : ""}
     <details class="elements"><summary>Per-element measures (${listed.length} of ${c.elements.length}: elements that are ok or hidden are counted, not listed)</summary>
       <table><thead><tr><th>Element</th><th>Status</th><th>Box Δ x y w h (px)</th><th>SSIM</th><th>SSIM ≤ 1 px</th><th>Background ΔE (samples)</th><th>Edge ΔE</th><th>Shadow band ΔE</th><th>Text colour ΔE</th><th>Text ink</th><th>Ink extent Δ (px)</th><th>Lines design/Unity</th></tr></thead><tbody>${rows}</tbody></table>
@@ -310,7 +310,7 @@ ${v.warnings.length ? `<div class="warning" role="alert"><strong>Checks skipped 
   <div class="card"><div class="v"${hidden.length ? ' style="color:var(--warn)"' : ""}>${hidden.length}</div><div class="k">hidden in the design</div></div>
   <div class="card"><div class="v">${v.extra.length}</div><div class="k">extra Unity captures</div></div>
   <div class="card"><div class="v">${extraEls}</div><div class="k">elements only in Unity</div></div>
-  <div class="card"><div class="v"${notSampled ? ' style="color:var(--warn)"' : ""}>${notSampled}</div><div class="k">backgrounds not sampled</div></div>
+  <div class="card"><div class="v"${notSampled ? ' style="color:var(--warn)"' : ""}>${notSampled}</div><div class="k">backgrounds and pictures not sampled</div></div>
 </div>
 <div class="cards">
   <div class="card"><div class="v">${worstWhole ? num(worstWhole.ssim, 5) : "—"}</div><div class="k">lowest whole SSIM ${link(worstWhole, worstWhole ? esc(worstWhole.capture) : "")}</div></div>
