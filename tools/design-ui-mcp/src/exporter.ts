@@ -11,6 +11,7 @@ export { exportScreen as runExport, toolHash, type ExportResult } from "../../de
 export { classLines, compareScreen as runCompare, readThresholds, summarizeIssues, type ClassSummary, type ScreenVerdict } from "../../design-export/src/compare/compare.js";
 export { writeReport, writeVerdict } from "../../design-export/src/compare/report.js";
 export { BOXES_FILE, LEGACY_BOXES_FILE } from "../../design-export/src/boxes/file.js";
+export { EXPORT_FAILURE_FILE, failedExportDir } from "../../design-export/src/failed-export.js";
 export { writeReportPictures, type ReportPictures } from "../../design-export/src/compare/pictures.js";
 export { chromiumSandbox, type SandboxState } from "../../design-export/src/browser.js";
 export { IR_VERSION } from "../../design-export/src/ir/types.js";

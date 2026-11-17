@@ -164,12 +164,14 @@ namespace DesignUi.Editor
 
         /// <summary>
         /// Removes every line of these captures: the other lines are copied one at a time to <c>&lt;path&gt;.tmp</c>, which
-        /// then replaces the file; a file without them is left as it is.
+        /// then replaces the file; a file without them is left as it is. A last line without its newline (a run stopped
+        /// while writing it) stays without one, so readers still leave it out with a note.
         /// </summary>
         internal static void Remove(string boxesPath, ICollection<string> captureNames)
         {
             if (captureNames.Count == 0 || !File.Exists(boxesPath)) return;
             var tmp = boxesPath + ".tmp";
+            bool complete = EndsWithNewline(boxesPath);
             int removed = 0;
             using (var reader = new StreamReader(boxesPath, Utf8))
             using (var writer = new StreamWriter(tmp, false, Utf8))
@@ -180,7 +182,7 @@ namespace DesignUi.Editor
                     var name = NameOf(line);
                     if (name != null && captureNames.Contains(name)) { removed++; continue; }
                     writer.Write(line);
-                    writer.Write('\n');
+                    if (complete || !reader.EndOfStream) writer.Write('\n');
                 }
             }
             if (removed == 0) File.Delete(tmp);
@@ -195,12 +197,7 @@ namespace DesignUi.Editor
         {
             var all = new JObject();
             if (!File.Exists(boxesPath)) return all;
-            bool complete;
-            using (var f = File.OpenRead(boxesPath))
-            {
-                if (f.Length > 0) f.Seek(-1, SeekOrigin.End);
-                complete = f.Length == 0 || f.ReadByte() == '\n';
-            }
+            bool complete = EndsWithNewline(boxesPath);
             using (var reader = new StreamReader(boxesPath, Utf8))
             {
                 string line;
@@ -222,6 +219,17 @@ namespace DesignUi.Editor
 
         /// <summary>The element named <paramref name="name"/>: <paramref name="root"/> itself or its first descendant of that name.</summary>
         internal static VisualElement Find(VisualElement root, string name) => root.name == name ? root : root.Q(name);
+
+        /// <summary>Whether the file is empty or ends with <c>\n</c> (its last line is whole).</summary>
+        static bool EndsWithNewline(string path)
+        {
+            using (var f = File.OpenRead(path))
+            {
+                if (f.Length == 0) return true;
+                f.Seek(-1, SeekOrigin.End);
+                return f.ReadByte() == '\n';
+            }
+        }
 
         /// <summary>A capture's line: compact JSON with sorted keys, without its newline.</summary>
         internal static string Line(JObject capture) => Sort(capture).ToString(Formatting.None);

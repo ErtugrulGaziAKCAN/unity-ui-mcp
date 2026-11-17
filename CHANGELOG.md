@@ -13,10 +13,13 @@ numbers below are in [docs/findings/](docs/findings/); the decisions they cite (
   compact line per capture appended when the capture finishes, instead of one `boxes.json` built as a single string,
   which a screen of thousands of dense captures made too long for Node (`RangeError: Invalid string length`). The
   comparison reads the file line by line and reads each capture's boxes only when it compares it; a last line a stopped
-  run left incomplete is left out with a note, and an older export or capture's `boxes.json` is still read. Before
-  capturing, `design-export export` prints the number of captures and an estimate of their boxes, and warns above
-  200 MB; a capture that fails names what it was doing and how many captures were finished. `boxes.meta.json` is
-  unchanged.
+  run left incomplete is left out with a note, and an older export or capture's `boxes.json` is still read. A matrix
+  capture without golden boxes is now not run, so the screen cannot pass. Before capturing, the export prints the number
+  of captures and an estimate of their boxes and warns above 200 MB (`design_ui_import` shows the warning and sends the
+  estimate as a progress message). A capture that fails names what it was doing and how many captures were finished, and
+  the export keeps the captures it finished in `<out>.failed` (`.design-ui/export.failed` for the MCP server) with
+  `export-failure.json`: a newer failure replaces it, a successful export removes it, the cleanup counts it and
+  `design_ui_clean` removes it. `boxes.meta.json` is unchanged.
 - Captures with long names: a capture name over 100 characters (many classes and pseudo-states, often in written-out
   repeat items) gets a short, deterministic file, its first 64 characters, a dot and 16 hex characters of the name's
   SHA-256, recorded as `file` in `goldens/matrix.json`. The golden, the Unity capture, the difference image and the

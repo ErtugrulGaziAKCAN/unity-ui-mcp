@@ -53,6 +53,15 @@ export interface JobContext { state: string; apply: CaptureApply[]; item?: numbe
 export interface BoxesVolume { captures: number; elements: number; bytes: number }
 /** What stopped a capture run: the error and what the run was doing (opening a viewport, capturing a job, writing a file). */
 interface Failure { error: unknown; doing: string }
+/**
+ * A capture run that failed: what it was doing, how many of its captures were finished (their PNGs and boxes.jsonl lines
+ * are written) and how many it planned; `cause` is the error.
+ */
+export class CaptureFailed extends Error {
+  constructor(readonly doing: string, readonly finished: number, readonly total: number, cause: unknown) {
+    super(`capture failed while ${doing}, after ${finished} of ${total} captures were finished: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+  }
+}
 /** `volume`: the estimate printed before capturing (boxesVolume). The boxes are in `<goldensDir>/boxes.jsonl`. */
 export interface MatrixResult { jobs: CaptureJob[]; timings: MatrixTimings; hidden: HiddenJob[]; contexts: Record<string, JobContext>; volume: BoxesVolume }
 export interface MatrixOptions {
@@ -1196,8 +1205,7 @@ export async function captureMatrix(htmlPath: string, kit: KitConfig, ir: IrScre
   let failure: Failure | null = null;
   /** Captures whose boxes are in boxes.jsonl. */
   let finished = 0;
-  const stopped = (f: Failure) => new Error(`capture failed while ${f.doing}, after ${finished} of ${jobs.length} captures were finished: ` +
-    `${f.error instanceof Error ? f.error.message : String(f.error)}`, { cause: f.error });
+  const stopped = (f: Failure) => new CaptureFailed(f.doing, finished, jobs.length, f.error);
   const runGroup = async (key: string, list: CaptureJob[], step: { doing: string }) => {
     step.doing = `opening viewport ${key}`;
     const t1 = performance.now();

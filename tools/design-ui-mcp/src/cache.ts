@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { BOOKKEEPING_DIR, screenFolders } from "./design.js";
+import { failedExportDir } from "./exporter.js";
 
 /**
  * Disk use of the screens' bookkeeping (`<designRoot>/<screen>/.design-ui/`) and its cleanup, which the server runs by
@@ -10,10 +11,12 @@ import { BOOKKEEPING_DIR, screenFolders } from "./design.js";
  * export (import and verify read it), the latest report's pictures (`report/`) and verdict (`compare/verdict.json`), and
  * the newest `FAILED_RUNS_KEPT` failed runs, and the Unity captures a verify kept on request (`KEPT_CAPTURES_DIR`, the
  * verify's `keepCaptures`) until the next verify that gives a verdict, an import that exports the screen again, a later cleanup
- * over the budget or design_ui_clean (the verify's own cleanup keeps them and the export they are compared with). What goes: the Unity captures and difference images
+ * over the budget or design_ui_clean (the verify's own cleanup keeps them and the export they are compared with), and the
+ * captures an export finished before its capture failed (`FAILED_EXPORT_DIR`, the exporter's `<export>.failed`) until the
+ * next successful export, a cleanup over the budget or design_ui_clean. What goes: the Unity captures and difference images
  * of a finished verify (the report keeps crops of what failed), staging folders a run left behind, older failed runs and
- * `.tmp` files. When the designRoot's bookkeeping is larger than the budget (`cacheBudgetMB`), kept captures go first,
- * then the exports of the screens least recently imported or verified, oldest first; the next import or verify exports
+ * `.tmp` files. When the designRoot's bookkeeping is larger than the budget (`cacheBudgetMB`), failed exports and then kept
+ * captures go first, then the exports of the screens least recently imported or verified, oldest first; the next import or verify exports
  * them again. Never touched: the records, the design files, anything the server does not own, and a screen whose import
  * or verify is running.
  */
@@ -22,6 +25,11 @@ export const DEFAULT_CACHE_BUDGET_MB = 2048;
 export const FAILED_RUNS_KEPT = 3;
 /** Where a verify keeps its Unity captures when asked to (`keepCaptures`), in the screen's bookkeeping. */
 export const KEPT_CAPTURES_DIR = "kept-captures";
+/**
+ * Where the exporter keeps an export whose capture failed (the captures it finished), beside the screen's export: never
+ * read as an export; the next successful export of the screen removes it.
+ */
+export const FAILED_EXPORT_DIR = path.basename(failedExportDir("export"));
 /** The marker an import or verify keeps in the screen's bookkeeping while it runs. */
 export const BUSY_FILE = "busy.json";
 /** A run marker older than this (or of a process that is gone) is left over from a crash. */
@@ -40,6 +48,8 @@ export interface ScreenCache {
   exportBytes: number;
   /** Bytes of the Unity captures a verify kept on request (the budget removes them before any export). */
   keptBytes: number;
+  /** Bytes of the folder an export kept when its capture failed (the budget removes it first). */
+  failedExportBytes: number;
   /** Last import or verify (ms since the epoch), else the bookkeeping folder's time. */
   lastUsed: number;
   /** An import or verify of it is running. */
@@ -171,7 +181,10 @@ export function screenCache(designRoot: string, folder: string, now = Date.now()
   const imp = readJson(path.join(book, "last-import.json")), ver = readJson(path.join(book, "last-verify.json"));
   let lastUsed = Math.max(time(imp?.importedAt) || 0, time(ver?.verifiedAt) || 0);
   if (!lastUsed) { try { lastUsed = fs.statSync(book).mtimeMs; } catch { lastUsed = 0; } }
-  return { folder, bytes: bytesOf(book), exportBytes: bytesOf(path.join(book, "export")), keptBytes: bytesOf(path.join(book, KEPT_CAPTURES_DIR)), lastUsed, busy: isBusy(dir, now) };
+  return {
+    folder, bytes: bytesOf(book), exportBytes: bytesOf(path.join(book, "export")), keptBytes: bytesOf(path.join(book, KEPT_CAPTURES_DIR)),
+    failedExportBytes: bytesOf(path.join(book, FAILED_EXPORT_DIR)), lastUsed, busy: isBusy(dir, now),
+  };
 }
 
 /** Every screen folder under designRoot that has bookkeeping. */
@@ -181,12 +194,13 @@ export function screenCaches(designRoot: string): ScreenCache[] {
 }
 
 const KEPT_WHY = "Unity captures a verify kept on request (keepCaptures)";
+const FAILED_EXPORT_WHY = "captures an export finished before its capture failed";
 
 /**
  * What one screen's bookkeeping holds that it does not keep (see the module summary): captures and difference images of
  * a finished verify, staging folders left behind, failed runs beyond the newest FAILED_RUNS_KEPT, `.tmp` files; with
- * `kept` (design_ui_clean), also the captures a verify kept on request. A busy screen keeps its staging folders and kept
- * captures (its run writes or replaces them now).
+ * `kept` (design_ui_clean), also the captures a verify kept on request and the folder of a failed export. A busy screen
+ * keeps its staging folders, kept captures and failed export (its run writes or replaces them now).
  */
 export function screenRemovals(designRoot: string, folder: string, busy: boolean, kept = false): Removal[] {
   const book = path.join(designRoot, folder, BOOKKEEPING_DIR);
@@ -200,6 +214,7 @@ export function screenRemovals(designRoot: string, folder: string, busy: boolean
     add(path.join(book, "compare.next"), "comparison of a run that did not finish");
     add(path.join(book, "report.next"), "report pictures of a run that did not finish");
     if (kept) add(path.join(book, KEPT_CAPTURES_DIR), KEPT_WHY);
+    if (kept) add(path.join(book, FAILED_EXPORT_DIR), FAILED_EXPORT_WHY);
     for (const name of fs.readdirSync(book)) if (name.endsWith(".tmp")) add(path.join(book, name), "unfinished write");
   }
   const failed = fs.readdirSync(book).filter((n) => n.startsWith("failed-")).sort();
@@ -209,9 +224,9 @@ export function screenRemovals(designRoot: string, folder: string, busy: boolean
 
 /**
  * The cleanup of designRoot's bookkeeping (or of one screen folder): each screen's own removals, then, while the
- * bookkeeping of all screens is larger than the budget, the captures verifies kept on request and after them the exports
- * of the screens least recently imported or verified, oldest first (never a busy screen's). `kept` (design_ui_clean):
- * kept captures go whatever the budget. With `folder`, only that screen's removals are listed (the budget still counts
+ * bookkeeping of all screens is larger than the budget, the folders failed exports kept, the captures verifies kept on
+ * request and after them the exports of the screens least recently imported or verified, oldest first (never a busy
+ * screen's). `kept` (design_ui_clean): kept captures and failed exports go whatever the budget. With `folder`, only that screen's removals are listed (the budget still counts
  * every screen, so its export goes only when the whole designRoot is over budget and it is among the oldest).
  */
 export function planClean(designRoot: string, budgetMB: number, folder?: string, opts: { kept?: boolean; protect?: readonly string[] } = {}): CleanPlan {
@@ -227,6 +242,13 @@ export function planClean(designRoot: string, budgetMB: number, folder?: string,
   let after = total - removals.reduce((a, r) => a + r.bytes, 0);
   const oldest = (a: ScreenCache, b: ScreenCache) => a.lastUsed - b.lastUsed || a.folder.localeCompare(b.folder);
   if (after > budget && opts.kept !== true) {
+    for (const s of [...screens].filter((x) => !x.busy && x.failedExportBytes > 0).sort(oldest)) {
+      if (after <= budget) break;
+      const p = path.join(designRoot, s.folder, BOOKKEEPING_DIR, FAILED_EXPORT_DIR);
+      if (kept(p)) continue;
+      removals.push({ screen: s.folder, path: p, bytes: s.failedExportBytes, why: `${FAILED_EXPORT_WHY}; the bookkeeping is over the ${budgetMB} MB budget` });
+      after -= s.failedExportBytes;
+    }
     for (const s of [...screens].filter((x) => !x.busy && x.keptBytes > 0).sort(oldest)) {
       if (after <= budget) break;
       const p = path.join(designRoot, s.folder, BOOKKEEPING_DIR, KEPT_CAPTURES_DIR);

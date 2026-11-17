@@ -70,7 +70,8 @@ export function registerClean(server: McpServer, ctx: ServerContext): void {
     title: "Clean the screens' bookkeeping",
     description:
       "Reports and removes what the server's own cleanup would remove from the screens' bookkeeping (<designRoot>/<screen>/.design-ui/): " +
-      "Unity captures and difference images of finished verifications, the captures a verify kept on request (keepCaptures), staging " +
+      "Unity captures and difference images of finished verifications, the captures a verify kept on request (keepCaptures), the " +
+      "captures an export kept when its capture failed (export.failed), staging " +
       "folders left behind, failed runs beyond the newest 3, and, while the bookkeeping is over cacheBudgetMB, the exports of the screens " +
       "least recently imported or verified (the next import or verify exports them again). Records, design files and a screen whose " +
       "import or verify is running are never touched. The cleanup also runs by itself after every import and verify (it keeps kept " +

@@ -175,8 +175,8 @@ klasörü göster). Skill araçları ve Unity köprüsünü kontrol eder, kurall
    çözünürlük, durum, sınıf, etkileşim durumu, liste örneği ve animasyon örneği) ve tasarımla karşılaştırır. Sonuç
    `pass`, `fail` ya da `incomplete` olur; rapor `<designRoot>/<ekran-id>/report.html` dosyasındadır.
    `keepCaptures: true` ile çalışmanın Unity görüntüleri sonuç yazıldıktan sonra `<ekran-id>/.design-ui/kept-captures/`
-   içinde kalır (yakalama klasörünün tamamı: PNG'ler, `boxes.jsonl`, `boxes.meta.json`); bir hata yeni bir Unity çalışması
-   olmadan yeniden karşılaştırılabilir: `design-export compare <ekran-id>/.design-ui/export --unity
+   içinde kalır (yakalama klasörünün tamamı: PNG'ler, `boxes.jsonl`, `boxes.meta.json`); bir hata yeni bir Unity
+   çalışması olmadan yeniden karşılaştırılabilir: `design-export compare <ekran-id>/.design-ui/export --unity
    <ekran-id>/.design-ui/kept-captures --report <dosya.html>`. `cacheBudgetMB` sınırına sayılırlar; sonraki doğrulama
    (bir sonuç verdiğinde), ekranı yeniden dışa aktaran bir içe aktarma ve `design_ui_clean` onları siler. Ekranın dışa
    aktarımı dışa aktarıcının başka bir sürümüyle yapıldıysa doğrulama yakalama yapmaz ve sonuç vermez (altın görüntülerde
@@ -370,11 +370,16 @@ Ağır Unity işleri için kendi çalıştırıcısı olan bir proje (makine ça
 Yakalama, çıktı klasörüne her iş için bir PNG, `boxes.jsonl`, `boxes.meta.json` ve en son `capture-done.json` yazar;
 sunucu ardından karşılaştırır ve raporu yazar. `boxes.jsonl` (dışa aktarıcının `goldens/boxes.jsonl` dosyası da) her
 yakalama için bir satır tutar ve satır, yakalama bittiğinde eklenir: binlerce yakalamalı bir ekran tek bir dev metin
-gerektirmez, durdurulan bir çalışma bitirdiği yakalamaları korur. Karşılaştırma dosyayı satır satır okur ve eski bir dışa
-aktarmanın ya da yakalamanın `boxes.json` dosyasını da okur. `design-export export` yakalamaya başlamadan önce yakalama
-sayısını ve kutuların tahmini boyutunu yazar, 200 MB'ı aşınca uyarır. Başarısız olan, zaman aşımına uğrayan ya da bitmeyen bir çalışma, yarım
-kalan görüntülerini, meta dosyasını ve Unity günlüğünü `<designRoot>/<ekran-id>/.design-ui/failed-<run>/` altında tutar
-(en yeni üçünü). Komut senin yetkilerinle bir program olarak çalışır; yalnız güvendiğin ayar dosyalarını kullan.
+gerektirmez, durdurulan bir çalışma bitirdiği yakalamaları korur. Karşılaştırma dosyayı satır satır okur ve eski bir
+dışa aktarmanın ya da yakalamanın `boxes.json` dosyasını da okur. Dışa aktarma yakalamaya başlamadan önce yakalama
+sayısını ve kutuların tahmini boyutunu yazar (`design-export export` çıktısında, `design_ui_import` bir ilerleme
+mesajında ve `captureEstimate` alanında) ve 200 MB'ı aşınca uyarır (içe aktarmanın yanıtı uyarıyı gösterir). Yakalaması
+başarısız olan bir dışa aktarma, bitirdiği yakalamaları `<designRoot>/<ekran-id>/.design-ui/export.failed/` altında
+tutar (`design-export export` için `<out>.failed`), nedenini `export-failure.json` yazar ve hatası bu klasörü
+adlandırır; sonraki başarısızlık onu değiştirir, başarılı bir dışa aktarma onu siler ve hiçbir şey onu dışa aktarma
+olarak kullanmaz. Başarısız olan, zaman aşımına uğrayan ya da bitmeyen bir çalışma, yarım kalan görüntülerini, meta
+dosyasını ve Unity günlüğünü `<designRoot>/<ekran-id>/.design-ui/failed-<run>/` altında tutar (en yeni üçünü). Komut
+senin yetkilerinle bir program olarak çalışır; yalnız güvendiğin ayar dosyalarını kullan.
 
 ## Disk kullanımı
 
@@ -386,7 +391,10 @@ içindeki `cacheBudgetMB` sınırında tutar (varsayılan 2048): aşılırsa ön
 aktarılmamış ya da doğrulanmamış ekranların dışa aktarımları gider, sonraki içe aktarma ya da doğrulama onları yeniden
 üretir (bir doğrulamanın az önce tuttuğu görüntüleri o doğrulamanın kendi temizliği asla silmez; bütçe aşılınca sonraki
 bir temizlik silebilir, kayıt ve rapor bunu söyler). Kayıtlar, rapor görselleri ve her ekranın en yeni üç başarısız
-çalışması bütçe için asla silinmez; yalnız onlar bütçeden büyükse kayıtlar bütçenin üstünde kalabilir. Tutulan görüntüler aksi halde sonraki doğrulamaya, ekranı yeniden dışa
+çalışması bütçe için asla silinmez; yalnız onlar bütçeden büyükse kayıtlar bütçenin üstünde kalabilir. Yakalaması
+başarısız olan bir dışa aktarmanın tuttuğu yakalamalar (`.design-ui/export.failed/`) bütçe aşılınca tutulan
+görüntülerden önce gider; aksi halde ekranın sonraki başarılı dışa aktarmasına ya da onları her zaman silen
+`design_ui_clean` çağrısına kadar kalır. Tutulan görüntüler aksi halde sonraki doğrulamaya, ekranı yeniden dışa
 aktaran bir içe aktarmaya (artık altın görüntülerle eşleşmezler) ya da `design_ui_clean` çağrısına kadar kalır;
 `design_ui_clean` onları her zaman siler. Kit eşitleme ve her içe aktarma, hiçbir metin stilinin, derlenmiş
 ekranın ya da dil fontunun kullanmadığı font ikizlerini siler. `design_ui_status` kayıtların boyutunu ekran ekran ve toplam

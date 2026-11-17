@@ -66,6 +66,7 @@ import type { Rgba } from "../bake/png.js";
 import type { CaptureBoxes, LineEllipsis } from "../boxes/types.js";
 import { itemSuffix } from "../boxes/items.js";
 import { BOXES_FILE, LEGACY_BOXES_FILE, openBoxes } from "../boxes/file.js";
+import { EXPORT_FAILURE_FILE } from "../failed-export.js";
 import type { CaptureApply, CaptureJob } from "../capture/matrix.js";
 import { viewportClassOf, type ViewportClass } from "../viewport.js";
 import { deltaE2000, hex } from "./color.js";
@@ -2314,10 +2315,17 @@ export const LINEAR_PANEL_WARNING = "Linear colour space, colour path Linear Pan
  * is its matrix.json `file` (captureFiles), boxes and verdicts are keyed by its name. Either folder may hold the
  * boxes.json of an earlier version instead (boxes/file.ts). The boxes files are indexed, not loaded: a capture's boxes
  * are read when it is compared. A golden capture without a Unity one is not run (the screen does not pass); Unity
- * captures without a golden are listed as extra. Captures are compared in parallel.
+ * captures without a golden are listed as extra, and a matrix capture without golden boxes is not run. Captures are
+ * compared in parallel. The folder a failed export kept (failed-export.ts) is refused.
  */
 export async function compareScreen(exportDir: string, unityDir: string, t: Thresholds, opts: CompareOptions = {}): Promise<ScreenVerdict> {
   const t0 = performance.now();
+  const failure = path.join(exportDir, EXPORT_FAILURE_FILE);
+  if (fs.existsSync(failure)) {
+    const f = tryJson(failure);
+    throw new Error(`${exportDir} is the folder of an export whose capture failed (${EXPORT_FAILURE_FILE}), not a design export` +
+      `${isObj(f) && typeof f.error === "string" ? `: ${f.error}` : ""}`);
+  }
   const goldensDir = path.join(exportDir, "goldens");
   const golden = await openBoxes(goldensDir, "design");
   if (!golden) throw new Error(`${exportDir} is not a design export (no goldens/${BOXES_FILE} or goldens/${LEGACY_BOXES_FILE})`);
@@ -2327,8 +2335,9 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   const entries = matrixEntries(matrix);
   if (!entries.length) notes.push("goldens/matrix.json not found: captures in name order, no animation strips");
   const byName = new Map(entries.map((e) => [e.name, e]));
+  // every capture of the matrix, also one without golden boxes (not run, so the screen cannot pass), then any other golden
   const names = entries.length
-    ? [...entries.map((e) => e.name).filter((n) => golden.has(n)), ...golden.names.filter((n) => !byName.has(n)).sort()]
+    ? [...new Set(entries.map((e) => e.name).filter((n) => typeof n === "string")), ...golden.names.filter((n) => !byName.has(n)).sort()]
     : [...golden.names].sort();
   const unsafe = (n: string) => !/^[^/\\\0]+$/.test(n) || n.includes("..");
   const bad = names.find(unsafe);
@@ -2367,6 +2376,7 @@ export async function compareScreen(exportDir: string, unityDir: string, t: Thre
   for (const name of names) {
     const png = `${fileOf(name)}.png`;
     if (!fs.existsSync(path.join(goldensDir, png))) notRunReasons[name] = "the design capture PNG is missing from the export";
+    else if (!golden.has(name)) notRunReasons[name] = `the design capture has no boxes in the export's ${path.basename(golden.file)}`;
     else if (!finished) notRunReasons[name] = "Unity capture did not finish";
     else if (unityNotCaptured[name] !== undefined) notRunReasons[name] = unityNotCaptured[name];
     else if (!fs.existsSync(path.join(unityDir, png))) notRunReasons[name] = "no Unity capture PNG";

@@ -12,7 +12,8 @@ import path from "node:path";
 import { chromium, type Browser } from "playwright";
 import { BOXES_FILE } from "./boxes/file.js";
 import { CHROMIUM_ARGS, launchChromium } from "./browser.js";
-import { captureMatrix, volumeLines, type HiddenJob } from "./capture/capture.js";
+import { CaptureFailed, captureMatrix, volumeLines, type HiddenJob } from "./capture/capture.js";
+import { EXPORT_FAILURE_FILE, failedExportDir } from "./failed-export.js";
 import { buildIr } from "./extract/tree.js";
 import { stableStringify } from "./ir/stableStringify.js";
 import { IR_VERSION } from "./ir/types.js";
@@ -360,6 +361,7 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
       if (prev?.ok && prev.sourceSha === sourceSha && prev.kitSha === kitSha && prev.toolSha === toolSha && prev.contractSha === contractSha && prev.source === path.basename(htmlPath)
         && OUTPUTS.every((f) => fs.existsSync(path.join(outDir, f))) && irVersionOf(path.join(outDir, "screen.ir.json")) === IR_VERSION) {
         const lintReport = readJsonIf<{ findings: Finding[] }>(path.join(outDir, "lint-report.json"));
+        dropFailed(outDir, warnings);
         return {
           ok: true, skipped: true, findings: lintReport?.findings ?? [], outDir, warnings, hidden: hiddenOf(outDir), contract,
           timings: { load: 0, lint: 0, extract: 0, bake: 0, capture: 0, write: 0 }, totalMs: ms(t0),
@@ -371,6 +373,8 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
     const fresh = `${outDir}.tmp-${crypto.randomBytes(4).toString("hex")}`;
     fs.mkdirSync(fresh);
     fs.writeFileSync(path.join(fresh, MARKER_FILE), JSON.stringify(MARKER) + "\n");
+    // a failure while capturing keeps the folder (the captures finished so far) as <outDir>.failed
+    let capturing = false;
     try {
       const result = await withBrowser(opts.browser, async (browser) => {
         const timings: Record<string, number> = { load: 0, lint: 0, extract: 0, bake: 0, capture: 0, write: 0 };
@@ -406,9 +410,11 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
           fs.writeFileSync(path.join(fresh, "fixtures", "sample-data.json"), stableStringify(build.fixtures));
           lap("write");
 
+          capturing = true;
           const matrix = await captureMatrix(htmlPath, kit, build.ir, build.elements, path.join(fresh, "goldens"), {
             browser, open: [d], concurrency: opts.concurrency, log: opts.log,
           });
+          capturing = false;
           lap("capture");
           const volume = volumeLines(matrix.volume).warning;
           if (volume) warnings.push(volume);
@@ -431,10 +437,40 @@ export async function exportScreen(input: string, kitIn: string | KitConfig, out
       }
       replaceDir(fresh, outDir, warnings);
       if (result.ok && opts.lintReportFile) fs.rmSync(opts.lintReportFile, { force: true });
+      if (result.ok) dropFailed(outDir, warnings);
       return { ok: result.ok, findings: result.findings, outDir, timings: result.timings, totalMs: ms(t0), warnings, hidden: result.hidden, contract };
     } catch (e) {
+      if (capturing) throw keepFailed(fresh, outDir, e);
       fs.rmSync(fresh, { recursive: true, force: true });
       throw e;
     }
   } finally { release(); }
+}
+
+/**
+ * Keeps the folder of an export whose capture failed as `<outDir>.failed` (failed-export.ts), replacing an earlier one,
+ * with export-failure.json saying what failed and how many captures were finished; returns the error naming the folder.
+ * When it cannot be kept, the folder goes and the error says so.
+ */
+function keepFailed(fresh: string, outDir: string, e: unknown): Error {
+  const failed = failedExportDir(outDir);
+  const message = e instanceof Error ? e.message : String(e);
+  try {
+    fs.writeFileSync(path.join(fresh, EXPORT_FAILURE_FILE), stableStringify({
+      ok: false, stage: "capture", error: message,
+      ...(e instanceof CaptureFailed ? { doing: e.doing, finished: e.finished, captures: e.total } : {}),
+    }));
+    fs.rmSync(failed, { recursive: true, force: true });
+    fs.renameSync(fresh, failed);
+  } catch (keep) {
+    fs.rmSync(fresh, { recursive: true, force: true });
+    return new Error(`${message} (keeping the finished captures failed: ${(keep as Error).message})`, { cause: e });
+  }
+  return new Error(`${message}; the finished captures are kept in ${failed}`, { cause: e });
+}
+
+/** A successful export of `outDir` removes the folder an earlier failed capture kept beside it. */
+function dropFailed(outDir: string, warnings: string[]): void {
+  const failed = failedExportDir(outDir);
+  try { fs.rmSync(failed, { recursive: true, force: true }); } catch (e) { warnings.push(`could not remove ${failed}: ${(e as Error).message}`); }
 }

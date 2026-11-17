@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
 import { runCli } from "../src/commands.js";
 import { exportScreen, designHash, MARKER_FILE, toolHashInputs } from "../src/export.js";
+import { compareScreen, readThresholds } from "../src/compare/compare.js";
 import crypto from "node:crypto";
 import { validateBoxes } from "../src/boxes/validate.js";
 import { BOXES_FILE, openBoxes } from "../src/boxes/file.js";
@@ -219,6 +220,62 @@ describe("exportScreen: failures", () => {
     expect(fs.readFileSync(path.join(out, "keep.txt"), "utf8")).toBe("previous");
     expect(fs.readdirSync(path.dirname(out)).filter((n) => n.includes(".tmp-"))).toEqual([]);
   }, 120_000);
+
+  it("keeps the captures finished before a capture failure in <out>.failed; a newer failure replaces it, a successful export removes it", async () => {
+    // a browser whose new pages fail once the capture has started: the reference viewport (the export's own page) is
+    // captured, the next viewport cannot open
+    let started = false;
+    const failing = new Proxy(browser, {
+      get(t, p) {
+        if (p === "newContext") return (...a: Parameters<Browser["newContext"]>) => (started ? Promise.reject(new Error("the browser is gone")) : t.newContext(...a));
+        const v = Reflect.get(t, p, t);
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    });
+    const opts = { browser: failing, concurrency: 1, log: () => { started = true; } };
+    const out = path.join(tmp(), "out"), failed = `${out}.failed`;
+    const fail = async () => {
+      started = false;
+      const e = await exportScreen(fx("inbox-mini"), KIT, out, opts).then(() => null, (x: Error) => x);
+      expect(e?.message).toMatch(new RegExp(`^capture failed while opening viewport \\d+x\\d+, after (\\d+) of 9 captures were finished: the browser is gone; ` +
+        `the finished captures are kept in ${failed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
+      return Number(/after (\d+) of/.exec(e!.message)![1]);
+    };
+    const finished = await fail();
+    expect(finished).toBeGreaterThan(0);
+    expect(fs.existsSync(out)).toBe(false);
+    expect(fs.readdirSync(path.dirname(out)).filter((n) => n.includes(".tmp-"))).toEqual([]);
+    // the folder holds the IR, the N finished captures (PNG and boxes line each) and why it failed; it is no export
+    expect(readJson(failed, "export-failure.json")).toEqual({ ok: false, stage: "capture", doing: expect.stringMatching(/^opening viewport /), finished, captures: 9,
+      error: expect.stringMatching(/^capture failed while opening viewport .*: the browser is gone$/) });
+    expect(fs.existsSync(path.join(failed, "screen.ir.json"))).toBe(true);
+    expect(fs.existsSync(path.join(failed, "export-report.json"))).toBe(false);
+    const boxes = (await openBoxes(path.join(failed, "goldens"), "design"))!;
+    expect(boxes.names).toHaveLength(finished);
+    for (const n of boxes.names) {
+      expect(validateBoxes(await boxes.read(n)), n).toEqual([]);
+      expect(fs.existsSync(path.join(failed, "goldens", `${n}.png`)), n).toBe(true);
+    }
+    expect(fs.readdirSync(path.join(failed, "goldens")).filter((f) => f.endsWith(".png"))).toHaveLength(finished);
+    await expect(compareScreen(failed, failed, readThresholds())).rejects.toThrow(/is the folder of an export whose capture failed/);
+    // a newer failure replaces it
+    fs.writeFileSync(path.join(failed, "planted.txt"), "from the first failure");
+    expect(await fail()).toBe(finished);
+    expect(fs.existsSync(path.join(failed, "planted.txt"))).toBe(false);
+    expect(fs.existsSync(path.join(failed, "export-failure.json"))).toBe(true);
+    // the sweep of a crashed run's temp folders leaves it (a lint failure keeps the previous export and sweeps)
+    const crashed = `${out}.tmp-0123abcd`;
+    fs.mkdirSync(crashed);
+    const lint = await exportScreen(fx("lint-error"), KIT, out, { browser, lintReportFile: path.join(tmp(), "lint-report.json") });
+    expect(lint.ok).toBe(false);
+    expect(fs.existsSync(crashed)).toBe(false);
+    expect(fs.existsSync(path.join(failed, "export-failure.json"))).toBe(true);
+    // a successful export removes it
+    const ok = await exportScreen(fx("inbox-mini"), KIT, out, { browser, concurrency: 1 });
+    expect(ok.ok).toBe(true);
+    expect(fs.existsSync(failed)).toBe(false);
+    expect(fs.existsSync(path.join(out, "export-report.json"))).toBe(true);
+  }, 240_000);
 
   it("reports a missing design or kit as an error", async () => {
     await expect(exportScreen(path.join(tmp(), "nope"), KIT, path.join(tmp(), "o"), { browser })).rejects.toThrow(/not found|no such/i);

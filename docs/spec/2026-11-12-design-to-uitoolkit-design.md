@@ -376,7 +376,9 @@ sync and the status window's Text section name the chosen faces and count the ot
    written-out repeat items), and warns above 200 MB. Each capture's boxes are appended to `goldens/boxes.jsonl` as one
    line when it finishes (put in the matrix's order at the end): nothing builds the whole set as one string, which a
    dense screen of thousands of captures would not fit in. A failed capture names what failed and how many captures
-   were finished.
+   were finished, and the export keeps its folder (the IR and the finished goldens) as `<out>.failed` with
+   `export-failure.json`: one per output folder, replaced by the next failure, removed by a successful export, never
+   read as an export. A matrix capture without golden boxes is not run, so the screen cannot pass.
 4. **Styles.** Per element, record **specified** values from matched rules (`CSS.getMatchedStylesForNode`), which
    keep `%`, `auto` and flex intent and drive compilation, and **computed** values, which are used only for
    verification. Record pseudo-state, breakpoint and state deltas, transitions and keyframes.
@@ -843,9 +845,9 @@ The route and setup measured in M0 (`docs/findings/m0.md`):
 - **One mount per viewport.** A capture run mounts a viewport's screen once and moves it from job to job: state,
   classes, disabled and checked values, pointer, press, focus, picking modes and scroll offsets are given back after
   each job, and a job that leaves something behind (an overlay) makes the next job mount again (a fresh mount and a
-  kept one give the same pixels, tested). PNGs are encoded off the main thread, at most 8 pending. Each capture's line is
-  appended to `boxes.jsonl` when it finishes and `boxes.meta.json` is rewritten atomically every 25 jobs or 10 s, so a
-  stopped run leaves what it captured (a last line it stopped writing is left out with a note);
+  kept one give the same pixels, tested). PNGs are encoded off the main thread, at most 8 pending. Each capture's line
+  is appended to `boxes.jsonl` when it finishes and `boxes.meta.json` is rewritten atomically every 25 jobs or 10 s, so
+  a stopped run leaves what it captured (a last line it stopped writing is left out with a note);
   `capture-done.json`, written last, marks a finished run. The test's time limit is 120 s + 2 s per job.
 - **Readback.** `ReadPixels` into a linear `RGBA32` texture or `AsyncGPUReadback`, written to the PNG unchanged; no
   colour conversion. Gamma-space blending on a UNorm target reproduces the browser's colours (ΔE2000 ≤ 0.72 with

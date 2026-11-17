@@ -377,14 +377,18 @@ command into `command.capture` instead: it gets the same `{projectDir}`, `{expor
 `DESIGN_UI_EXPORT_DIR` / `DESIGN_UI_OUT_DIR`, runs the EditMode test above on its copy (listing the package in that copy's
 `testables`), writes into `DESIGN_UI_OUT_DIR` and removes its copy.
 
-The capture writes a PNG per job, `boxes.jsonl`, `boxes.meta.json` and, last, `capture-done.json` into the output folder;
-the server then compares and writes the report. `boxes.jsonl` (the exporter's `goldens/boxes.jsonl` too) holds one line
-per capture, appended when the capture finishes, so a screen of thousands of captures never needs one huge string and a
-stopped run keeps the captures it finished; the comparison reads it line by line, and still reads the `boxes.json` of an
-older export or capture. Before capturing, `design-export export` prints the number of captures and an estimate of their
-boxes, and warns above 200 MB. A run that fails, times out or does not finish keeps its partial
-captures, the meta file and the Unity log in `<designRoot>/<screen-id>/.design-ui/failed-<run>/` (the newest three). The
-command runs as a program with your rights; use only configs you trust.
+The capture writes a PNG per job, `boxes.jsonl`, `boxes.meta.json` and, last, `capture-done.json` into the output
+folder; the server then compares and writes the report. `boxes.jsonl` (the exporter's `goldens/boxes.jsonl` too) holds
+one line per capture, appended when the capture finishes, so a screen of thousands of captures never needs one huge
+string and a stopped run keeps the captures it finished; the comparison reads it line by line, and still reads the
+`boxes.json` of an older export or capture. Before capturing, the export prints the number of captures and an estimate
+of their boxes (`design-export export` on its output, `design_ui_import` as a progress message and as `captureEstimate`)
+and warns above 200 MB (the import's answer shows the warning). An export whose capture fails keeps the captures it
+finished in `<designRoot>/<screen-id>/.design-ui/export.failed/` (`<out>.failed` for `design-export export`), with
+`export-failure.json` saying why, and its error names that folder; the next failure replaces it, a successful export
+removes it, and nothing uses it as an export. A run that fails, times out or does not finish keeps its partial captures,
+the meta file and the Unity log in `<designRoot>/<screen-id>/.design-ui/failed-<run>/` (the newest three). The command
+runs as a program with your rights; use only configs you trust.
 
 ## Disk use
 
@@ -401,8 +405,12 @@ imported or verified, and the next import or verify exports them again (the capt
 screen's export beside them, are never removed by that verify's own cleanup, so the offline comparison its answer prints
 works; a later cleanup over the budget may remove the captures, and the record and report then say so). Records,
 report pictures and each screen's newest three failed runs are never removed for the budget, so the bookkeeping can
-stay above it when they alone are larger. Kept captures otherwise stay until the next verify that gives a verdict, an import that exports the screen again (they no
-longer match its goldens) or `design_ui_clean`, which always removes them. Kit sync and every import remove font twins no text style, compiled screen or locale font uses.
+stay above it when they alone are larger. The captures an export kept when its capture failed
+(`.design-ui/export.failed/`) go before the kept captures when the bookkeeping is over the budget, and otherwise stay
+until the next successful export of the screen or `design_ui_clean`, which always removes them.
+Kept captures otherwise stay until the next verify that gives a verdict, an import that exports the screen again (they
+no longer match its goldens) or `design_ui_clean`, which always removes them. Kit sync and every import remove font
+twins no text style, compiled screen or locale font uses.
 `design_ui_status` shows the bookkeeping per screen and in total, and `design_ui_clean` (`dryRun` to only report) runs the
 cleanup now. Do not delete these folders, generated files or font twins by hand.
 

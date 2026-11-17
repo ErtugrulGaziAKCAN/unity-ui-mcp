@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyClean, FAILED_RUNS_KEPT, isBusy, markBusy, planClean, ScreenBusyError } from "../src/cache.js";
+import { applyClean, FAILED_EXPORT_DIR, FAILED_RUNS_KEPT, isBusy, markBusy, planClean, ScreenBusyError } from "../src/cache.js";
+import { failedExportDir } from "../src/exporter.js";
+import { exportDirOf } from "../src/status.js";
 import { readConfig } from "../src/config.js";
 import { tempDir } from "./helpers.js";
 
@@ -131,6 +133,38 @@ describe("bookkeeping cleanup", () => {
     try {
       expect(names(planClean(d.root, 2048, undefined, { kept: true })).filter((n) => n.startsWith("old/"))).toEqual([]);
     } finally { done(); }
+  });
+
+  it("an export's finished captures kept when its capture failed: counted, kept within the budget, removed first over it and by design_ui_clean", () => {
+    const d = designRoot();
+    const old = d.screen("old", { importedAt: "2026-11-01T00:00:00.000Z", exportKB: 300 });
+    const fresh = d.screen("fresh", { importedAt: "2026-11-05T00:00:00.000Z", exportKB: 300 });
+    // where the exporter keeps them for the screen's export
+    expect(path.join(old, ".design-ui", FAILED_EXPORT_DIR)).toBe(failedExportDir(exportDirOf(old)));
+    for (const dir of [old, fresh]) {
+      const g = path.join(dir, ".design-ui", FAILED_EXPORT_DIR, "goldens");
+      fs.mkdirSync(g, { recursive: true });
+      fs.writeFileSync(path.join(g, "default@64x48.png"), Buffer.alloc(300 * KB));
+    }
+    const names = (plan: { removals: { path: string; screen: string }[] }) => plan.removals.map((r) => `${r.screen}/${path.basename(r.path)}`).sort();
+    // within the budget, the automatic cleanup keeps them; the budget counts them
+    const auto = planClean(d.root, 2048);
+    expect(names(auto)).toEqual(["fresh/diff", "fresh/unity", "old/diff", "old/unity"]);
+    expect(auto.screens.find((s) => s.folder === "old")!.failedExportBytes).toBe(300 * KB);
+    expect(auto.before).toBeGreaterThan(1300 * KB);
+    // over the budget they go first (oldest screen first), before any export
+    expect(names(planClean(d.root, 0.95))).toEqual(["fresh/diff", "fresh/unity", "old/diff", "old/export.failed", "old/unity"]);
+    expect(names(planClean(d.root, 0.7))).toEqual(["fresh/diff", "fresh/export.failed", "fresh/unity", "old/diff", "old/export.failed", "old/unity"]);
+    // asked for (design_ui_clean), they go whatever the budget, but not while the screen's import or verify runs
+    const done = markBusy(old, "import");
+    try {
+      expect(names(planClean(d.root, 2048, undefined, { kept: true })).filter((n) => n.startsWith("old/"))).toEqual([]);
+    } finally { done(); }
+    const plan = planClean(d.root, 2048, "fresh", { kept: true });
+    expect(names(plan)).toEqual(["fresh/diff", "fresh/export.failed", "fresh/unity"]);
+    applyClean(plan);
+    expect(left(fresh)).not.toContain(FAILED_EXPORT_DIR);
+    expect(left(fresh)).toContain("export");
   });
 
   it("skips a removal whose screen a run started on after the plan was made", () => {

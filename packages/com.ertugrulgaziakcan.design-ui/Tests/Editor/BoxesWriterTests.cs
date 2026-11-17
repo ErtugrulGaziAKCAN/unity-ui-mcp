@@ -327,7 +327,7 @@ namespace DesignUi.Editor.Tests
 
         /// <summary>A run stopped while writing a line (a killed Unity) leaves the captures before it readable.</summary>
         [Test]
-        public void ReadAll_AfterARunStoppedMidwayThroughALine_ReadsTheCapturesBeforeIt()
+        public void ReadAll_AfterARunStoppedMidwayThroughALine_ReadsTheCapturesBeforeIt_AndRemoveKeepsThatLineUnterminated()
         {
             _temp = Path.Combine(Path.GetTempPath(), "design-ui-boxes-" + Guid.NewGuid().ToString("N"));
             var file = Path.Combine(_temp, BoxesWriter.FileName);
@@ -335,6 +335,10 @@ namespace DesignUi.Editor.Tests
             var next = BoxesWriter.Line(Capture("c@10x10.n5", 5));
             File.AppendAllText(file, next.Substring(0, next.Length / 2));
             CollectionAssert.AreEqual(Enumerable.Range(0, 5).Select(i => "c@10x10.n" + i), BoxesWriter.ReadAll(file).Properties().Select(p => p.Name));
+            // a removal keeps that last line without its newline: readers still leave it out
+            BoxesWriter.Remove(file, "c@10x10.n0");
+            Assert.IsTrue(File.ReadAllText(file).EndsWith("\n" + next.Substring(0, next.Length / 2)), "the incomplete last line, still without a newline");
+            CollectionAssert.AreEqual(Enumerable.Range(1, 4).Select(i => "c@10x10.n" + i), BoxesWriter.ReadAll(file).Properties().Select(p => p.Name));
             // a broken line that is not the last is an error, not something to guess around
             File.AppendAllText(file, "\n" + BoxesWriter.Line(Capture("c@10x10.n6", 6)) + "\n");
             Assert.Throws<InvalidDataException>(() => BoxesWriter.ReadAll(file));

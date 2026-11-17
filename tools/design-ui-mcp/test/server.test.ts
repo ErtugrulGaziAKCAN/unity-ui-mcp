@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { readConfig } from "../src/config.js";
 import { RULES } from "../src/exporter.js";
 import { OLD_PACKAGE_NAME, PACKAGE_NAME } from "../src/package-stamp.js";
@@ -462,6 +463,29 @@ describe("design_ui_import", () => {
     expect(screenStatus(cfg, "clean-screen").state).toBe("design-changed");
   });
 
+  it("shows the exporter's warnings in the answer and sends its capture estimate as progress before capturing", async () => {
+    const p = tempProject({ prefer: "command" });
+    p.addScreen("clean-screen", "clean-screen");
+    const pipeline = stubPipeline();
+    const real = pipeline.exportScreen!;
+    const estimate = "capturing 2000 captures of 700 measured elements each: boxes.jsonl about 200 MB";
+    const warning = "the boxes are estimated at 200 MB (2000 captures × 700 measured elements), over 200 MB: the export and every comparison read that much";
+    pipeline.exportScreen = async (entry, kit, outDir, browser, log) => {
+      log?.(estimate);
+      return { ...(await real(entry, kit, outDir, browser)), warnings: [warning] };
+    };
+    const client = await serverFor(p.dir, pipeline);
+    const seen: { message?: string }[] = [];
+    const r = (await client.callTool({ name: "design_ui_import", arguments: { design: "clean-screen" } }, undefined, { onprogress: (x) => seen.push(x) })) as CallToolResult;
+    expect(r.isError).toBeFalsy();
+    expect(seen.map((x) => x.message)).toContain(estimate);
+    const text = r.content[0].type === "text" ? r.content[0].text : "";
+    expect(text).toMatch(/^Imported clean\.screen into Unity via command/);
+    expect(text).toContain(`\nExport warning: ${warning}`);
+    expect(r.structuredContent).toMatchObject({ exportWarnings: [warning], captureEstimate: estimate });
+    expect(JSON.parse(r.content[1].type === "text" ? r.content[1].text : "{}")).toMatchObject({ exportWarnings: [warning], captureEstimate: estimate });
+  });
+
   it("skips export and the Unity call when nothing changed", async () => {
     const p = tempProject({ prefer: "command" });
     p.addScreen("clean-screen", "clean-screen");
@@ -774,6 +798,9 @@ describe("design_ui_import", () => {
     for (const f of ["screen.ir.json", "lint-report.json", "export-report.json", "fixtures/sample-data.json", "goldens/boxes.jsonl", "goldens/matrix.json"]) {
       expect(fs.existsSync(path.join(exportDir, f)), f).toBe(true);
     }
+    // the installed exporter's estimate, printed before capturing, reaches the answer's data; no warning under 200 MB
+    expect(r.data.captureEstimate).toMatch(/^capturing \d+ captures of \d+ measured elements each: boxes\.jsonl about \d+ KB$/);
+    expect(r.data.exportWarnings).toBeUndefined();
     expect(fs.readdirSync(path.join(exportDir, "assets")).some((f) => f.endsWith(".png"))).toBe(true);
     expect(fs.readdirSync(path.join(exportDir, "goldens")).some((f) => f.endsWith(".png"))).toBe(true);
     expect(r.data).toMatchObject({ exported: true, unityCalled: true, code: 0 });

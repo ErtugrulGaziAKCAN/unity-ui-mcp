@@ -3144,6 +3144,26 @@ describe("compareScreen", () => {
     await expect(compareScreen(f.exportDir, f.unityDir, T)).rejects.toThrow(/is not a design export \(no goldens\/boxes\.jsonl or goldens\/boxes\.json\)/);
   });
 
+  it("does not run a matrix capture without golden boxes, so the screen cannot pass", async () => {
+    const f = screenFixture((_, s) => s);
+    const goldens = path.join(f.exportDir, "goldens"), gb = getBoxes(goldens);
+    delete gb["busy@320x192"];
+    putBoxes(goldens, gb);
+    const v = await compareScreen(f.exportDir, f.unityDir, T);
+    expect(v.notRun).toEqual(["busy@320x192"]);
+    expect(v.notRunReasons["busy@320x192"]).toBe("the design capture has no boxes in the export's boxes.jsonl");
+    expect(v.extra).toEqual([]);
+    expect(v).toMatchObject({ pass: false, status: "fail" });
+    expect(v.captures.map((c) => c.capture).sort()).toEqual(f.names.filter((n) => n !== "busy@320x192").sort());
+  });
+
+  it("refuses the folder an export kept when its capture failed", async () => {
+    const f = screenFixture((_, s) => s);
+    fs.writeFileSync(path.join(f.exportDir, "export-failure.json"), JSON.stringify({ ok: false, stage: "capture", error: "capture failed while capturing busy@320x192, after 1 of 4 captures were finished: page crashed" }));
+    await expect(compareScreen(f.exportDir, f.unityDir, T)).rejects.toThrow(
+      `${f.exportDir} is the folder of an export whose capture failed (export-failure.json), not a design export: capture failed while capturing busy@320x192`);
+  });
+
   it("compares the captures before an incomplete last line of a boxes.jsonl, with a note", async () => {
     const f = screenFixture((_, s) => s);
     const half = boxesLine(getBoxes(f.unityDir)["default@320x192"]);

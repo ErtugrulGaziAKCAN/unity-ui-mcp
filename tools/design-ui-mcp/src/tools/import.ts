@@ -9,7 +9,7 @@ import { versionDrift } from "../drift.js";
 import { designPath, findEntry, folderScreens, mixedScreens, resolveScreen, sha256, sourceSha } from "../design.js";
 import { packageStamp } from "../package-stamp.js";
 import { MISSING } from "../pipeline.js";
-import { guarded, Timings, toolResult } from "../result.js";
+import { guarded, progressOf, Timings, toolResult } from "../result.js";
 import { afterRun, whileBusy } from "./clean.js";
 import { dropKeptCaptures } from "../cache.js";
 import { CompileWaitTimeout, runUnity, UnityRunnerError, unityIssues, withIssues } from "../runner.js";
@@ -65,6 +65,12 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
       }
       // captures a verify kept, dropped when this import exports the screen again (said in the answer)
       let keptNote: string | null = null;
+      // what the exporter said: its warnings (boxes over 200 MB, ...) and, before capturing, the captures and their boxes' size
+      // (also sent as a progress message when the client asked for them)
+      let exportWarnings: string[] = [];
+      let captureEstimate: string | null = null;
+      const progress = progressOf(extra);
+      const exportLog = (line: string) => { if (line.startsWith("capturing ")) captureEstimate = line; progress?.(line); };
       const answer = withWarning(drift.message, await whileBusy(ref.dir, "import", async () => {
         const { dir } = ref;
         // exactly the page a path names; a folder argument takes the folder's only page
@@ -93,7 +99,8 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
 
         // one skip decision: the exporter's (design, kit and tool hashes); an unchanged export is reused as it is
         // the browser is only acquired when the exporter actually exports
-        const out = await t.async("export", () => exportScreen(entry, kit.kit, exportDir, () => ctx.runtime.browser()));
+        const out = await t.async("export", () => exportScreen(entry, kit.kit, exportDir, () => ctx.runtime.browser(), exportLog));
+        exportWarnings = out.warnings ?? [];
         if (!out.ok) {
           const errors = out.findings.filter((f) => f.severity === "error");
           return toolResult([
@@ -220,7 +227,7 @@ export function registerImport(server: McpServer, ctx: ServerContext): void {
           ...base, hidden, unityTimings: run.timings, timings: t.done(),
         }), wiring);
       }));
-      return afterRun(cfg, withLine(keptNote, "keptCapturesRemoved", answer));
+      return afterRun(cfg, withExportNotes(exportWarnings, captureEstimate, withLine(keptNote, "keptCapturesRemoved", answer)));
     });
   });
 }
@@ -278,6 +285,21 @@ function withLine(line: string | null, key: string, result: CallToolResult): Cal
   if (!line) return result;
   const content = result.content.map((c, i) => (i === 0 && c.type === "text" ? { ...c, text: `${c.text}\n${line}` } : c));
   const data = result.structuredContent ? { ...result.structuredContent, [key]: true } : undefined;
+  if (data && content[1]?.type === "text") content[1] = { ...content[1], text: JSON.stringify(data, null, 2) };
+  return { ...result, content, ...(data ? { structuredContent: data } : {}) };
+}
+
+/**
+ * Adds what the exporter said to a tool's answer: each warning as an `Export warning:` line and `exportWarnings` in the
+ * data, and the capture estimate it printed before capturing as `captureEstimate` in the data.
+ */
+function withExportNotes(warnings: string[], estimate: string | null, result: CallToolResult): CallToolResult {
+  if (!warnings.length && !estimate) return result;
+  const lines = warnings.map((w) => `Export warning: ${w}`).join("\n");
+  const content = result.content.map((c, i) => (i === 0 && c.type === "text" && lines ? { ...c, text: `${c.text}\n${lines}` } : c));
+  const data = result.structuredContent
+    ? { ...result.structuredContent, ...(warnings.length ? { exportWarnings: warnings } : {}), ...(estimate ? { captureEstimate: estimate } : {}) }
+    : undefined;
   if (data && content[1]?.type === "text") content[1] = { ...content[1], text: JSON.stringify(data, null, 2) };
   return { ...result, content, ...(data ? { structuredContent: data } : {}) };
 }

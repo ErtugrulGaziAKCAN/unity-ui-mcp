@@ -18,9 +18,14 @@ export interface ExportOutcome {
   skipped?: boolean;
   /** The screen contract read beside the design (absent: none, or an exporter that does not report it). */
   contract?: ContractLoad;
+  /** The exporter's warnings, e.g. boxes estimated over 200 MB (absent: none, or an exporter that does not report them). */
+  warnings?: string[];
 }
-/** Exports one design page into `outDir` (screen.ir.json, goldens/, assets/, fixtures/, lint-report.json). */
-export type ExportScreen = (entry: string, kit: KitConfig, outDir: string, browser: () => Promise<Browser>) => Promise<ExportOutcome>;
+/**
+ * Exports one design page into `outDir` (screen.ir.json, goldens/, assets/, fixtures/, lint-report.json). `log` gets the
+ * lines the exporter prints while it runs (before capturing: the captures and the estimated size of their boxes).
+ */
+export type ExportScreen = (entry: string, kit: KitConfig, outDir: string, browser: () => Promise<Browser>, log?: (line: string) => void) => Promise<ExportOutcome>;
 
 export interface CompareOutcome {
   pass: boolean;
@@ -89,10 +94,13 @@ export interface Pipeline {
  * whether those Unity steps can run depends on the project's runner configuration (see unityStep).
  */
 export const INSTALLED_PIPELINE: Pipeline = {
-  exportScreen: async (entry, kit, outDir, browser) => {
+  exportScreen: async (entry, kit, outDir, browser, log) => {
     // a lint failure keeps the previous export; its report goes next to the export folder
-    const r = await runExport(entry, kit, outDir, { browser, lintReportFile: path.join(path.dirname(outDir), "lint-report.json") });
-    return { ok: r.ok, findings: r.findings, timings: { ...r.timings, total: r.totalMs }, skipped: r.skipped, hidden: r.hidden, contract: r.contract };
+    const r = await runExport(entry, kit, outDir, { browser, log, lintReportFile: path.join(path.dirname(outDir), "lint-report.json") });
+    return {
+      ok: r.ok, findings: r.findings, timings: { ...r.timings, total: r.totalMs }, skipped: r.skipped, hidden: r.hidden, contract: r.contract,
+      warnings: r.warnings,
+    };
   },
   compareScreen: async (exportDir, unityDir, reportFile, opts = {}) => {
     // derived files live in the screen's bookkeeping folder (a dot folder: not design source); this run's go to staging
