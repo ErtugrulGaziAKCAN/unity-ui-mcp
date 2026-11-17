@@ -2542,6 +2542,9 @@ describe("compareCapture: edge, colour and ink checks", () => {
       expect(chev.issues).toEqual([]);
       expect(chev.notSampled).toContain("chev");
       expect(chev.elements.find((e) => e.id === "chev")!.pictureColour).toBeNull();
+      // a picture that also paints a background left without samples is counted once (fix round 2)
+      const both = compareCapture({ png: mini(coral, teal), boxes: b }, { png: mini(coral, teal), boxes: b }, [], exactT, { ...c, backgrounds: new Set(["field", "chev"]) });
+      expect(both.notSampled.filter((x) => x === "chev")).toEqual(["chev"]);
     });
 
     it("D-167, fix round 2: a copy's colour cells measure the design's place, also when Unity's box for it is elsewhere", () => {
